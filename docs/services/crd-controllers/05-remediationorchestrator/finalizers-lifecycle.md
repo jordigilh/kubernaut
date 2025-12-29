@@ -5,10 +5,10 @@
 Following Kubernetes finalizer naming convention:
 
 ```go
-const alertRemediationFinalizer = "remediation.kubernaut.io/alertremediation-cleanup"
+const alertRemediationFinalizer = "remediation.kubernaut.ai/alertremediation-cleanup"
 ```
 
-**Naming Pattern**: `{domain}.kubernaut.io/{resource}-cleanup`
+**Naming Pattern**: `{domain}.kubernaut.ai/{resource}-cleanup`
 
 **Why This Pattern**:
 - **Domain-Scoped**: `remediation.kubernaut.io` prevents conflicts with other services
@@ -36,7 +36,7 @@ import (
     "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-const alertRemediationFinalizer = "remediation.kubernaut.io/alertremediation-cleanup"
+const alertRemediationFinalizer = "remediation.kubernaut.ai/alertremediation-cleanup"
 
 type RemediationRequestReconciler struct {
     client.Client

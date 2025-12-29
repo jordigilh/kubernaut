@@ -1,0 +1,107 @@
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ⚠️  DEPRECATED: December 27, 2025
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# This docker-compose file is DEPRECATED per DD-INTEGRATION-001 v2.0.
+#
+# REPLACED BY: test/infrastructure/holmesgpt_integration.go
+# - Uses Go programmatic infrastructure (no subprocess calls)
+# - Correct composite image tags: localhost/datastorage:holmesgptapi-{uuid}
+# - Reuses 720 lines of shared utilities
+# - Consistent with all other services (Gateway, Notification, RO, WE, SP, AA)
+#
+# MIGRATION: Use Go integration tests instead:
+#   cd /path/to/kubernaut
+#   ginkgo -v ./test/integration/holmesgptapi/
+#
+# ISSUE: This file generates WRONG image names:
+#   ❌ integration-data-storage-service:latest (violates DD-INTEGRATION-001 v2.0)
+#   ✅ Should be: localhost/datastorage:holmesgptapi-{uuid}
+#
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Docker Compose for Workflow Catalog Integration Tests (DEPRECATED)
+# DD-TEST-001: HolmesGPT-API uses DIFFERENT ports than Data Storage's own tests
+# This allows both test suites to run in parallel without port conflicts
+version: '3.8'
+
+services:
+  postgres-integration:
+    image: postgres:16-alpine
+    container_name: kubernaut-hapi-postgres-integration
+    environment:
+      POSTGRES_DB: kubernaut_test
+      POSTGRES_USER: kubernaut
+      POSTGRES_PASSWORD: kubernaut_test_password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "15439:5432"  # DD-TEST-001: HolmesGPT-API uses 15439 (avoids conflict with RO 15435)
+    volumes:
+      - hapi-postgres-integration-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kubernaut -d kubernaut_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - kubernaut-hapi-integration
+
+  redis-integration:
+    image: redis:7-alpine
+    container_name: kubernaut-hapi-redis-integration
+    ports:
+      - "16387:6379"  # DD-TEST-001: HolmesGPT-API uses 16387 (avoids conflict with RO 16381)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - kubernaut-hapi-integration
+
+  # REMOVED: embedding-service
+  # Reason: Data Storage V1.0 uses label-only architecture (no pgvector, no embeddings)
+  # Per STATUS_DS_PGVECTOR_REMOVAL_PARTIAL.md (2025-12-11)
+  # V2.0 may reintroduce semantic search, but V1.0 is label-based filtering only
+
+  data-storage-service:
+    # DD-INTEGRATION-001 v2.0: Use composite image tag for collision avoidance
+    # Format: localhost/{infrastructure}:{consumer}-{timestamp}
+    # Note: This still violates v2.0 (should use uuid, not timestamp)
+    # Proper solution: Use test/infrastructure/holmesgpt_integration.go instead
+    image: localhost/datastorage:holmesgptapi-legacy
+    build:
+      context: ../../..
+      dockerfile: cmd/datastorage/Dockerfile
+    container_name: kubernaut-hapi-data-storage-integration
+    environment:
+      - CONFIG_PATH=/app/config/data-storage-integration.yaml
+      # REMOVED: EMBEDDING_SERVICE_URL (V1.0 label-only architecture)
+    ports:
+      - "18098:8080"  # DD-TEST-001 v1.8: HAPI allocation (CHANGED from 18094 - SignalProcessing)
+    volumes:
+      - ./data-storage-integration.yaml:/app/config/data-storage-integration.yaml:ro
+      - ./secrets/database-credentials.yaml:/app/secrets/database-credentials.yaml:ro
+      - ./secrets/redis-credentials.yaml:/app/secrets/redis-credentials.yaml:ro
+    depends_on:
+      postgres-integration:
+        condition: service_healthy
+      redis-integration:
+        condition: service_healthy
+      # REMOVED: embedding-service dependency (V1.0 label-only architecture)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - kubernaut-hapi-integration
+
+networks:
+  kubernaut-hapi-integration:
+    driver: bridge
+
+volumes:
+  hapi-postgres-integration-data:
+  hapi-embedding-model-cache:

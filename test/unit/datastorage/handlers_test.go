@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -7,7 +23,9 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/mocks"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 	. "github.com/onsi/ginkgo/v2"
@@ -179,21 +197,17 @@ var _ = Describe("REST API Handlers - BR-STORAGE-021, BR-STORAGE-024", func() {
 			// CORRECTNESS: HTTP 200 OK
 			Expect(rec.Code).To(Equal(http.StatusOK), "Handler should return 200 OK for valid ID")
 
-			// CORRECTNESS: Response is valid JSON with required fields
-			var response struct {
-				ID         int64  `json:"id"`
-				Namespace  string `json:"namespace"`
-				ActionType string `json:"action_type"`
-			}
+			// CORRECTNESS: Response is valid JSON with audit event structure
+			var response repository.AuditEvent
 			err := json.Unmarshal(rec.Body.Bytes(), &response)
 			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
 
-			// CORRECTNESS: ID matches requested ID
-			Expect(response.ID).To(Equal(int64(123)), "Response ID should match requested ID")
+			// CORRECTNESS: EventID is populated (not zero UUID)
+			Expect(response.EventID).ToNot(Equal(uuid.Nil), "EventID should be populated")
 
 			// CORRECTNESS: Required fields are populated (not empty)
-			Expect(response.Namespace).ToNot(BeEmpty(), "Namespace is a required field")
-			Expect(response.ActionType).ToNot(BeEmpty(), "ActionType is a required field")
+			Expect(response.ResourceNamespace).ToNot(BeEmpty(), "ResourceNamespace is a required field")
+			Expect(response.EventAction).ToNot(BeEmpty(), "EventAction is a required field")
 		})
 
 		// BR-STORAGE-024: RFC 7807 for not found

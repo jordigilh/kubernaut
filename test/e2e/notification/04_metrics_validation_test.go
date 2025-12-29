@@ -17,6 +17,7 @@ limitations under the License.
 package notification
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -28,16 +29,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	ntmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 )
 
+// Metrics E2E Validation using Kind NodePort
+// NodePort 30081 (in cluster) → localhost:9091 (on host via Kind extraPortMappings)
+// This follows the same pattern as Gateway service (NodePort 30080 → localhost:8080)
 var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
+
 	var (
 		metricsEndpoint string
 	)
 
 	BeforeEach(func() {
-		// Controller metrics server runs on :8080 by default (from suite setup)
-		metricsEndpoint = "http://localhost:8080/metrics"
+		// BR-NOT-054: Controller metrics exposed via NodePort (localhost:9186)
+		// Kind extraPortMappings: containerPort 30186 → hostPort 9186
+		// Per DD-TEST-001 port allocation strategy
+		metricsEndpoint = "http://localhost:9186/metrics"
 	})
 
 	Context("Metrics Endpoint Availability", func() {
@@ -89,24 +97,38 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				return fetchedNotification.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+			By("Waiting for metrics to be recorded and appear in endpoint")
+			var metricsOutput string
+			Eventually(func() string {
+				resp, err := http.Get(metricsEndpoint)
+				if err != nil {
+					return ""
+				}
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				return string(body)
+				// DD-005: kubernaut_notification_reconciler_active (proper namespace/subsystem)
+				// DD-005 V3.0: Use metric name constants
+			}, 15*time.Second, 1*time.Second).Should(ContainSubstring(ntmetrics.MetricNameReconcilerActive),
+				fmt.Sprintf("Metrics endpoint should contain %s gauge after notification is processed", ntmetrics.MetricNameReconcilerActive))
+
+			// Get final metrics output for validation
+			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
-
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+			metricsOutput = string(body)
 
-			By("Validating notification_phase metric exists")
-			Expect(metricsOutput).To(ContainSubstring("notification_phase"),
-				"Metrics should contain notification_phase gauge")
+			metricName := ntmetrics.MetricNameReconcilerActive
+			By(fmt.Sprintf("Validating %s metric exists (DD-005 V3.0 compliant)", metricName))
+			Expect(metricsOutput).To(ContainSubstring(metricName),
+				fmt.Sprintf("Metrics should contain %s gauge", metricName))
 
 			By("Validating metric has correct labels")
-			// Expect metrics with namespace and phase labels
-			Expect(metricsOutput).To(MatchRegexp(`notification_phase\{.*namespace="default".*\}`),
-				"Metric should have namespace label")
-			Expect(metricsOutput).To(MatchRegexp(`notification_phase\{.*phase=".*".*\}`),
+			// Expect metrics with phase label (namespace removed per actual implementation)
+			Expect(metricsOutput).To(MatchRegexp(fmt.Sprintf(`%s\{.*phase=".*".*\}`, metricName)),
 				"Metric should have phase label")
 		})
 
@@ -140,30 +162,43 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				return fetchedNotification.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+			By("Waiting for metrics to be recorded and appear in endpoint")
+			var metricsOutput string
+			Eventually(func() string {
+				resp, err := http.Get(metricsEndpoint)
+				if err != nil {
+					return ""
+				}
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				return string(body)
+				// DD-005: kubernaut_notification_delivery_attempts_total (proper namespace/subsystem)
+			}, 15*time.Second, 1*time.Second).Should(ContainSubstring(ntmetrics.MetricNameDeliveryAttemptsTotal),
+				fmt.Sprintf("Metrics endpoint should contain %s counter after notification is delivered", ntmetrics.MetricNameDeliveryAttemptsTotal))
+
+			// Get final metrics output for validation
+			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
-
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+			metricsOutput = string(body)
 
-			By("Validating notification_deliveries_total metric exists")
-			Expect(metricsOutput).To(ContainSubstring("notification_deliveries_total"),
-				"Metrics should contain notification_deliveries_total counter")
+			metricName := ntmetrics.MetricNameDeliveryAttemptsTotal
+			By(fmt.Sprintf("Validating %s metric exists (DD-005 V3.0 compliant)", metricName))
+			Expect(metricsOutput).To(ContainSubstring(metricName),
+				fmt.Sprintf("Metrics should contain %s counter", metricName))
 
 			By("Validating metric has correct labels")
-			// Expect metrics with namespace, status, channel labels
-			Expect(metricsOutput).To(MatchRegexp(`notification_deliveries_total\{.*namespace="default".*\}`),
-				"Metric should have namespace label")
-			Expect(metricsOutput).To(MatchRegexp(`notification_deliveries_total\{.*channel="console".*\}`),
+			// Expect metrics with channel and status labels
+			Expect(metricsOutput).To(MatchRegexp(fmt.Sprintf(`%s\{.*channel="console".*\}`, metricName)),
 				"Metric should have channel label")
-			Expect(metricsOutput).To(MatchRegexp(`notification_deliveries_total\{.*status="success".*\}`),
+			Expect(metricsOutput).To(MatchRegexp(fmt.Sprintf(`%s\{.*status="success".*\}`, metricName)),
 				"Metric should have status label for successful deliveries")
 		})
 
-		It("should track notification_delivery_duration_seconds metric", func() {
+		It("should track kubernaut_notification_delivery_duration_seconds metric", func() {
 			// BR-NOT-054: Observability - Track delivery duration
 			By("Creating a NotificationRequest")
 			notification := &notificationv1alpha1.NotificationRequest{
@@ -174,7 +209,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:    notificationv1alpha1.NotificationTypeSimple,
 					Subject: "Metrics Test: Delivery Duration",
-					Body:    "Testing notification_delivery_duration_seconds metric",
+					Body:    "Testing kubernaut_notification_delivery_duration_seconds metric",
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelConsole,
 					},
@@ -193,30 +228,43 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				return fetchedNotification.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+			By("Waiting for metrics to be recorded and appear in endpoint")
+			var metricsOutput string
+			Eventually(func() string {
+				resp, err := http.Get(metricsEndpoint)
+				if err != nil {
+					return ""
+				}
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				return string(body)
+			}, 15*time.Second, 1*time.Second).Should(ContainSubstring(ntmetrics.MetricNameDeliveryDuration),
+				fmt.Sprintf("Metrics endpoint should contain %s histogram after notification is delivered", ntmetrics.MetricNameDeliveryDuration))
+
+			// Get final metrics output for validation
+			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
-
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+			metricsOutput = string(body)
 
-			By("Validating notification_delivery_duration_seconds metric exists")
-			Expect(metricsOutput).To(ContainSubstring("notification_delivery_duration_seconds"),
-				"Metrics should contain notification_delivery_duration_seconds histogram")
+			metricName := ntmetrics.MetricNameDeliveryDuration
+			By(fmt.Sprintf("Validating %s metric exists (DD-005 V3.0 compliant)", metricName))
+			Expect(metricsOutput).To(ContainSubstring(metricName),
+				fmt.Sprintf("Metrics should contain %s histogram", metricName))
 
 			By("Validating metric has histogram buckets")
 			// Histogram metrics include _bucket, _sum, _count suffixes
-			Expect(metricsOutput).To(ContainSubstring("notification_delivery_duration_seconds_bucket"),
+			Expect(metricsOutput).To(ContainSubstring(fmt.Sprintf("%s_bucket", metricName)),
 				"Histogram should have bucket metrics")
-			Expect(metricsOutput).To(ContainSubstring("notification_delivery_duration_seconds_sum"),
+			Expect(metricsOutput).To(ContainSubstring(fmt.Sprintf("%s_sum", metricName)),
 				"Histogram should have sum metric")
-			Expect(metricsOutput).To(ContainSubstring("notification_delivery_duration_seconds_count"),
+			Expect(metricsOutput).To(ContainSubstring(fmt.Sprintf("%s_count", metricName)),
 				"Histogram should have count metric")
 		})
 	})
-
 
 	Context("Metrics Integration Health", func() {
 		It("should validate key notification metrics are exposed", func() {
@@ -250,21 +298,41 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				return fetchedNotification.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Querying metrics endpoint")
+			By("Waiting for all core metrics to be recorded and appear in endpoint")
+			var metricsOutput string
+			Eventually(func() bool {
+				resp, err := http.Get(metricsEndpoint)
+				if err != nil {
+					return false
+				}
+				defer resp.Body.Close()
+				body, _ := io.ReadAll(resp.Body)
+				metricsOutput = string(body)
+
+				// Check if all core metrics are present (DD-005 V3.0 compliant names)
+				return metricsOutput != "" &&
+					strings.Contains(metricsOutput, ntmetrics.MetricNameDeliveryAttemptsTotal) &&
+					strings.Contains(metricsOutput, ntmetrics.MetricNameDeliveryDuration) &&
+					strings.Contains(metricsOutput, ntmetrics.MetricNameReconcilerActive)
+			}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+				"All core notification metrics should appear in endpoint after notification is processed")
+
+			// Get final metrics output for validation
+			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
-
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
-			metricsOutput := string(body)
+			metricsOutput = string(body)
 
-			By("Validating core notification metrics are present and being recorded")
+			By("Validating core notification metrics are present and being recorded (DD-005 V3.0 compliant)")
 			// These are the metrics that are actually being recorded by the controller
+			// DD-005 V3.0: Use metric name constants to prevent typos
 			coreMetrics := []string{
-				"notification_deliveries_total",          // RecordDeliveryAttempt - recorded
-				"notification_delivery_duration_seconds", // RecordDeliveryDuration - recorded
-				"notification_phase",                     // UpdatePhaseCount - recorded
+				ntmetrics.MetricNameDeliveryAttemptsTotal, // RecordDeliveryAttempt - recorded
+				ntmetrics.MetricNameDeliveryDuration,      // RecordDeliveryDuration - recorded
+				ntmetrics.MetricNameReconcilerActive,      // UpdatePhaseCount - recorded
 			}
 
 			for _, metric := range coreMetrics {
@@ -272,28 +340,26 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 					"Core metric %s should be present and recorded", metric)
 			}
 
-			By("Validating additional registered metrics are present")
-			// These metrics are registered in the controller package
-			// They may not appear in Prometheus output until they have data
-			registeredMetrics := []string{
-				"notification_failure_rate",
-				"notification_retry_count",
-				"notification_stuck_duration_seconds",
+			By("Validating additional registered metrics are present (DD-005 V3.0 compliant)")
+			// Additional metrics that are registered (may not have data in this test)
+			// DD-005 V3.0: Use metric name constants
+			additionalMetrics := []string{
+				ntmetrics.MetricNameDeliveryRetriesTotal,
+				ntmetrics.MetricNameReconcilerErrorsTotal,
+				ntmetrics.MetricNameChannelHealthScore,
 			}
 
-			registeredCount := 0
-			for _, metric := range registeredMetrics {
+			additionalCount := 0
+			for _, metric := range additionalMetrics {
 				if strings.Contains(metricsOutput, metric) {
-					registeredCount++
+					additionalCount++
 				}
 			}
 
-			// These metrics are registered but may not have data yet - that's OK
+			// Additional metrics may not appear until specific conditions trigger them
 			// As long as core metrics are working, the integration is valid
-			GinkgoWriter.Printf("INFO: %d of %d registered metrics found in output (expected: may vary)\n",
-				registeredCount, len(registeredMetrics))
+			GinkgoWriter.Printf("INFO: %d of %d additional metrics found in output (expected: may vary)\n",
+				additionalCount, len(additionalMetrics))
 		})
 	})
 })
-
-

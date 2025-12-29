@@ -9,7 +9,6 @@ server:
 
 # Invalid indentation
 middleware:
-rate_limit:
-  requests_per_minute: 100
+  # Rate limiting removed (ADR-048)
 
 

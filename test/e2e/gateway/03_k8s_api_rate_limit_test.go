@@ -27,9 +27,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -43,7 +43,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 		// gatewayURL is suite-level variable set in SynchronizedBeforeSuite
@@ -52,7 +52,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute)
-		testLogger = logger.With(zap.String("test", "k8s-api-rate-limit"))
+		testLogger = logger.WithValues("test", "k8s-api-rate-limit")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -61,7 +61,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		// Generate unique namespace for this test
 		testNamespace = fmt.Sprintf("rate-limit-%d", time.Now().UnixNano())
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		// Deploy Redis and Gateway in test namespace
 
@@ -73,10 +73,10 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		// gatewayURL is set per-process in SynchronizedBeforeSuite (8081-8084)
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 
-		testLogger.Info("✅ Test services ready", zap.String("namespace", testNamespace))
+		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -87,8 +87,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		// Check if test failed - preserve namespace for debugging
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -107,7 +107,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		// ✅ Cleanup test namespace (CRDs only)
 		// Note: Redis flush removed for parallel execution safety
 		// Redis keys are namespaced by fingerprint, TTL handles cleanup
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -173,15 +173,19 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			payloadBytes, err := json.Marshal(webhookPayload)
 			Expect(err).ToNot(HaveOccurred())
 
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payloadBytes),
-			)
+			resp, err := func() (*http.Response, error) {
+				req4, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payloadBytes))
+				if err != nil {
+					return nil, err
+				}
+				req4.Header.Set("Content-Type", "application/json")
+				req4.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req4)
+			}()
 			if err != nil {
 				// Connection error - count as error but don't fail test
 				errorCount++
-				testLogger.Warn(fmt.Sprintf("  ⚠️  Alert %d connection error: %v", i+1, err))
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d connection error: %v", i+1, err))
 				continue
 			}
 			resp.Body.Close()
@@ -196,10 +200,10 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 			case http.StatusInternalServerError: // 500 - Unexpected error
 				errorCount++
-				testLogger.Warn(fmt.Sprintf("  ⚠️  Alert %d returned HTTP 500 (unexpected)", i+1))
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d returned HTTP 500 (unexpected)", i+1))
 
 			default:
-				testLogger.Warn(fmt.Sprintf("  ⚠️  Alert %d returned unexpected status: %d", i+1, resp.StatusCode))
+				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d returned unexpected status: %d", i+1, resp.StatusCode))
 			}
 
 			// No delay - send as fast as possible to stress test
@@ -238,7 +242,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
-				testLogger.Debug("  Retrying CRD list...", zap.Error(err))
+				testLogger.V(1).Info("  Retrying CRD list...", "error", err)
 				return err
 			}
 			crdCount = len(crdList.Items)

@@ -19,6 +19,8 @@ package testutil
 import (
 	"context"
 	"fmt"
+
+	"github.com/pgvector/pgvector-go"
 )
 
 // MockEmbeddingClient is a mock implementation of embedding.EmbeddingAPIClient for unit tests.
@@ -117,3 +119,33 @@ func (m *MockEmbeddingClient) Health(ctx context.Context) error {
 	return nil
 }
 
+// ========================================
+// embedding.Service INTERFACE IMPLEMENTATION
+// ========================================
+// These methods implement the embedding.Service interface
+// required by server.WithEmbeddingService()
+
+// GenerateEmbedding implements embedding.Service interface.
+// Returns a pgvector.Vector for use in semantic search.
+func (m *MockEmbeddingClient) GenerateEmbedding(ctx context.Context, text string) (*pgvector.Vector, error) {
+	embedding, err := m.Embed(ctx, text)
+	if err != nil {
+		return nil, err
+	}
+	vec := pgvector.NewVector(embedding)
+	return &vec, nil
+}
+
+// GenerateBatchEmbeddings implements embedding.Service interface.
+// Generates embeddings for multiple texts.
+func (m *MockEmbeddingClient) GenerateBatchEmbeddings(ctx context.Context, texts []string) ([]*pgvector.Vector, error) {
+	results := make([]*pgvector.Vector, len(texts))
+	for i, text := range texts {
+		vec, err := m.GenerateEmbedding(ctx, text)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate embedding for text %d: %w", i, err)
+		}
+		results[i] = vec
+	}
+	return results, nil
+}

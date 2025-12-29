@@ -1,10 +1,16 @@
 # Gateway Service - API Specification
 
-**Version**: v2.25
-**Last Updated**: November 7, 2025
+**Version**: v2.26
+**Last Updated**: December 6, 2025
 **Service Type**: Stateless HTTP API Service
 **HTTP Port**: 8080
 **Metrics Port**: 9090
+
+> **📋 Changelog**
+> | Version | Date | Changes |
+> |---------|------|---------|
+> | v2.26 | 2025-12-06 | Removed `environment` and `priority` from HTTP response; Classification owned by SP |
+> | v2.25 | 2025-11-07 | K8s API retry logic and error responses |
 
 ---
 
@@ -74,11 +80,12 @@ Authorization: Bearer <kubernetes-serviceaccount-token>
   "status": "accepted",
   "fingerprint": "sha256:a1b2c3d4e5f6...",
   "remediationRequestRef": "remediation-request-abc123",
-  "environment": "prod",
-  "priority": "P0",
   "isStorm": false
 }
 ```
+
+> **Note (2025-12-06)**: `environment` and `priority` fields removed from response.
+> Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001.
 
 **Response** (202 Accepted - Deduplicated):
 ```json
@@ -148,8 +155,6 @@ Authorization: Bearer <kubernetes-serviceaccount-token>
   "status": "accepted",
   "fingerprint": "sha256:b2c3d4e5f6a7...",
   "remediationRequestRef": "remediation-request-xyz789",
-  "environment": "prod",
-  "priority": "P1",
   "isStorm": false
 }
 ```
@@ -198,11 +203,13 @@ Authorization: Bearer <kubernetes-serviceaccount-token>
   "timestamp": "2025-10-04T10:00:00Z",
   "dependencies": {
     "redis": "healthy",
-    "kubernetes-api": "healthy",
-    "rego-policies": "loaded"
+    "kubernetes-api": "healthy"
   }
 }
 ```
+
+> **Note (2025-12-06)**: `rego-policies` dependency removed.
+> Priority assignment (Rego) moved to Signal Processing service per DD-CATEGORIZATION-001.
 
 **Response** (503 Service Unavailable):
 ```json
@@ -211,8 +218,7 @@ Authorization: Bearer <kubernetes-serviceaccount-token>
   "timestamp": "2025-10-04T10:00:00Z",
   "dependencies": {
     "redis": "unhealthy",
-    "kubernetes-api": "healthy",
-    "rego-policies": "loaded"
+    "kubernetes-api": "healthy"
   },
   "reason": "Redis connection failed"
 }
@@ -254,11 +260,8 @@ gateway_deduplication_rate{source="kubernetes-event"} 0.28
 gateway_storm_detected_total{type="rate"} 12
 gateway_storm_detected_total{type="pattern"} 5
 
-# HELP gateway_priority_assigned_total Priority assignments
-# TYPE gateway_priority_assigned_total counter
-gateway_priority_assigned_total{priority="P0",environment="prod"} 45
-gateway_priority_assigned_total{priority="P1",environment="prod"} 234
-gateway_priority_assigned_total{priority="P2",environment="staging"} 567
+# Note: gateway_priority_assigned_total metric removed (2025-12-06)
+# Priority assignment moved to Signal Processing service per DD-CATEGORIZATION-001
 ```
 
 ---
@@ -294,9 +297,8 @@ type NormalizedSignal struct {
 	FiringTime   time.Time              `json:"firingTime"`   // When alert started firing
 	ReceivedTime time.Time              `json:"receivedTime"` // When Gateway received it
 
-	// Processing results
-	Environment  string                 `json:"environment,omitempty"` // "prod", "staging", "dev"
-	Priority     string                 `json:"priority,omitempty"`    // "P0", "P1", "P2"
+	// Note (2025-12-06): Environment and Priority fields removed
+	// Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001
 
 	// Source tracking
 	SourceType   string                 `json:"sourceType"`  // "prometheus" or "kubernetes-event"
@@ -315,27 +317,30 @@ type ResourceIdentifier struct {
 
 ```go
 // SignalResponse is the HTTP response format
+// Note (2025-12-06): Environment and Priority fields removed
+// Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001
 type SignalResponse struct {
 	Status                string `json:"status"` // "accepted" or "deduplicated"
 	Fingerprint           string `json:"fingerprint"`
 	Count                 int    `json:"count,omitempty"` // for duplicates
 	RemediationRequestRef string `json:"remediationRequestRef"`
-	Environment           string `json:"environment,omitempty"`
-	Priority              string `json:"priority,omitempty"`
 	IsStorm               bool   `json:"isStorm,omitempty"`
 	Message               string `json:"message,omitempty"`
 }
 ```
 
-### **ErrorResponse** (HTTP error response)
+### **ErrorResponse** (HTTP error response - RFC 7807)
 
 ```go
-// ErrorResponse is the standard error format
-type ErrorResponse struct {
-	Error     string `json:"error"`
-	Message   string `json:"message"`
-	RequestID string `json:"requestId,omitempty"`
-	Timestamp string `json:"timestamp"`
+// RFC7807Error represents an RFC 7807 Problem Details error response
+// BR-GATEWAY-101: RFC 7807 compliant error format
+type RFC7807Error struct {
+	Type      string `json:"type"`                 // URI reference identifying the problem type
+	Title     string `json:"title"`                // Short, human-readable summary
+	Detail    string `json:"detail"`               // Human-readable explanation
+	Status    int    `json:"status"`               // HTTP status code
+	Instance  string `json:"instance,omitempty"`   // URI reference identifying specific occurrence
+	RequestID string `json:"requestId,omitempty"`  // Request ID for correlation
 }
 ```
 
@@ -407,16 +412,17 @@ Each signal goes through:
 3. **Normalization** (to NormalizedSignal) - ~1ms
 4. **Deduplication Check** (Redis lookup) - ~3-5ms
 5. **Storm Detection** (rate + pattern) - ~2-3ms
-6. **Environment Classification** (namespace labels) - ~2-3ms (cached)
-7. **Priority Assignment** (Rego policy) - ~5-8ms
-8. **CRD Creation** (RemediationRequest) - ~10-15ms
+6. **CRD Creation** (RemediationRequest) - ~10-15ms
    - **Namespace Handling**: Creates CRD in signal's origin namespace
    - **Fallback Behavior**: If namespace doesn't exist → creates in `kubernaut-system`
    - **Cluster-Scoped Signals**: NodeNotReady, ClusterMemoryPressure → `kubernaut-system`
-   - **Labels Added**: `kubernaut.io/origin-namespace`, `kubernaut.io/cluster-scoped`
-9. **Response** - ~1ms
+   - **Labels Added**: `kubernaut.ai/origin-namespace`, `kubernaut.ai/cluster-scoped`
+7. **Response** - ~1ms
 
-**Total**: 20-50ms (p95)
+> **Note (2025-12-06)**: Steps 6-7 (Environment Classification, Priority Assignment) removed.
+> Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001.
+
+**Total**: 15-30ms (p95)
 
 ---
 
@@ -445,8 +451,8 @@ Labels: (standard labels only)
 Signal namespace: "" (empty - e.g., NodeNotReady)
 CRD created in: "kubernaut-system"
 Labels:
-  - kubernaut.io/origin-namespace: ""
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: ""
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 **Scenario 3: Invalid Namespace (Deleted After Alert)**
@@ -454,8 +460,8 @@ Labels:
 Signal namespace: "deleted-app"
 CRD created in: "storm-ttl-1762470354788403000"  # Auto-detected Gateway namespace
 Labels:
-  - kubernaut.io/origin-namespace: "deleted-app"
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: "deleted-app"
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 ### CRD Fallback Namespace Strategy (v2.25 - Configurable)
@@ -501,8 +507,8 @@ Gateway running in: "kubernaut-system"
 Signal namespace: "deleted-app"
 CRD created in: "kubernaut-system"  # Auto-detected
 Labels:
-  - kubernaut.io/origin-namespace: "deleted-app"
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: "deleted-app"
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 **Example (E2E Test)**:
@@ -511,8 +517,8 @@ Gateway running in: "storm-ttl-1762470354788403000"
 Signal namespace: "production"
 CRD created in: "storm-ttl-1762470354788403000"  # Auto-detected test namespace
 Labels:
-  - kubernaut.io/origin-namespace: "production"
-  - kubernaut.io/cluster-scoped: "true"
+  - kubernaut.ai/origin-namespace: "production"
+  - kubernaut.ai/cluster-scoped: "true"
 ```
 
 ### Querying Fallback CRDs
@@ -521,17 +527,17 @@ Labels:
 ```bash
 # Production (Gateway in kubernaut-system)
 kubectl get remediationrequests -n kubernaut-system \
-  -l kubernaut.io/cluster-scoped=true
+  -l kubernaut.ai/cluster-scoped=true
 
 # E2E Test (Gateway in test namespace)
 kubectl get remediationrequests -n storm-ttl-1762470354788403000 \
-  -l kubernaut.io/cluster-scoped=true
+  -l kubernaut.ai/cluster-scoped=true
 ```
 
 **Find CRDs by origin namespace**:
 ```bash
 kubectl get remediationrequests -A \
-  -l kubernaut.io/origin-namespace=production
+  -l kubernaut.ai/origin-namespace=production
 ```
 
 ### Rationale
@@ -1008,11 +1014,11 @@ type InfrastructureSettings struct {
 #### Processing Settings
 
 ```go
+// Note (2025-12-06): Environment and Priority settings removed
+// Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001
 type ProcessingSettings struct {
     Deduplication DeduplicationSettings `yaml:"deduplication"`
     Storm         StormSettings         `yaml:"storm"`
-    Environment   EnvironmentSettings   `yaml:"environment"`
-    Priority      PrioritySettings      `yaml:"priority"`
     CRD           CRDSettings           `yaml:"crd"`
     Retry         RetrySettings         `yaml:"retry"`  // NEW in v2.25
 }
@@ -1025,16 +1031,6 @@ type StormSettings struct {
     RateThreshold     int           `yaml:"rate_threshold"`     // Default: 10 alerts/minute
     PatternThreshold  int           `yaml:"pattern_threshold"`  // Default: 5 similar alerts
     AggregationWindow time.Duration `yaml:"aggregation_window"` // Default: 1m
-}
-
-type EnvironmentSettings struct {
-    CacheTTL           time.Duration `yaml:"cache_ttl"`           // Default: 30s
-    ConfigMapNamespace string        `yaml:"configmap_namespace"` // Default: "kubernaut-system"
-    ConfigMapName      string        `yaml:"configmap_name"`      // Default: "kubernaut-environment-overrides"
-}
-
-type PrioritySettings struct {
-    PolicyPath string `yaml:"policy_path"` // Path to Rego policy file
 }
 
 type CRDSettings struct {
@@ -1109,13 +1105,8 @@ processing:
     pattern_threshold: 5
     aggregation_window: 1m
 
-  environment:
-    cache_ttl: 30s
-    configmap_namespace: kubernaut-system
-    configmap_name: kubernaut-environment-overrides
-
-  priority:
-    policy_path: /etc/gateway-policy/priority-policy.rego
+  # Note (2025-12-06): environment and priority settings removed
+  # Classification is now owned by Signal Processing service per DD-CATEGORIZATION-001
 
   # NEW in v2.25: Configurable CRD fallback namespace
   crd:

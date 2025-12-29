@@ -1,0 +1,246 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+// Package audit provides audit trail management for WorkflowExecution.
+//
+// This package implements BR-WE-005 (Audit Trail) by recording all workflow lifecycle
+// events to the Data Storage service via the pkg/audit shared library.
+//
+// Audit Events:
+// - workflow.started: PipelineRun initiated
+// - workflow.completed: PipelineRun succeeded
+// - workflow.failed: PipelineRun failed or timed out
+//
+// Per ADR-032: Audit is MANDATORY for WorkflowExecution (P0 service).
+// Per DD-AUDIT-004: Uses type-safe WorkflowExecutionAuditPayload structures.
+//
+// Per Controller Refactoring Pattern Library (P3: Audit Manager):
+// - Extracted from internal/controller/workflowexecution/audit.go
+// - Testable audit logic in isolation
+// - Consistent package structure with other controllers
+//
+// Reference: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md
+package audit
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/go-logr/logr"
+
+	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
+	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
+)
+
+// ServiceName is the canonical service identifier for audit events.
+const ServiceName = "workflowexecution-controller"
+
+// Event category for WorkflowExecution audit events (ADR-034 v1.2: Service-level category)
+const (
+	CategoryWorkflow = "workflow" // Service-level identifier per ADR-034 v1.2
+)
+
+// Event actions for WorkflowExecution audit events (per DD-AUDIT-003)
+const (
+	ActionStarted   = "started"
+	ActionCompleted = "completed"
+	ActionFailed    = "failed"
+)
+
+// Event types for WorkflowExecution audit events (per ADR-034)
+const (
+	EventTypeStarted   = "workflow.started"
+	EventTypeCompleted = "workflow.completed"
+	EventTypeFailed    = "workflow.failed"
+)
+
+// Manager handles audit trail recording for WorkflowExecution lifecycle events.
+//
+// The Manager provides typed methods for each audit event type, ensuring
+// consistent audit event structure across all workflow execution events.
+//
+// Usage:
+//
+//	auditMgr := audit.NewManager(auditStore, logger)
+//	err := auditMgr.RecordWorkflowStarted(ctx, wfe)
+type Manager struct {
+	store  audit.AuditStore
+	logger logr.Logger
+}
+
+// NewManager creates a new audit manager.
+//
+// Parameters:
+// - store: AuditStore for writing audit events (from pkg/audit)
+// - logger: Logger for audit operations
+//
+// The store may be nil to disable audit (graceful degradation), though
+// per ADR-032 audit is MANDATORY for WorkflowExecution (P0 service).
+func NewManager(store audit.AuditStore, logger logr.Logger) *Manager {
+	return &Manager{
+		store:  store,
+		logger: logger,
+	}
+}
+
+// RecordWorkflowStarted records a workflow.started audit event.
+//
+// This event is emitted when a PipelineRun is successfully created.
+func (m *Manager) RecordWorkflowStarted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	return m.recordAuditEvent(ctx, wfe, EventTypeStarted, "success")
+}
+
+// RecordWorkflowCompleted records a workflow.completed audit event.
+//
+// This event is emitted when a PipelineRun completes successfully.
+func (m *Manager) RecordWorkflowCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	return m.recordAuditEvent(ctx, wfe, EventTypeCompleted, "success")
+}
+
+// RecordWorkflowFailed records a workflow.failed audit event.
+//
+// This event is emitted when a PipelineRun fails or times out.
+func (m *Manager) RecordWorkflowFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	return m.recordAuditEvent(ctx, wfe, EventTypeFailed, "failure")
+}
+
+// recordAuditEvent is the internal implementation for recording audit events.
+//
+// This method builds the audit event structure and writes it to the Data Storage Service.
+// It handles all the common audit event fields and WFE-specific payload construction.
+func (m *Manager) recordAuditEvent(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	action string,
+	outcome string,
+) error {
+	// Audit is MANDATORY per ADR-032: No graceful degradation allowed
+	// ADR-032 Audit Mandate: "No Audit Loss - audit writes are MANDATORY, not best-effort"
+	if m.store == nil {
+		err := fmt.Errorf("AuditStore is nil - audit is MANDATORY per ADR-032")
+		m.logger.Error(err, "CRITICAL: Cannot record audit event - manager misconfigured",
+			"action", action,
+			"wfe", wfe.Name,
+		)
+		// Return error to block business operation
+		// ADR-032: "No Audit Loss" - audit write failures must be detected
+		return err
+	}
+
+	// Build audit event per ADR-034 schema (DD-AUDIT-002 V2.0: OpenAPI types)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	// Event type = action (e.g., "workflow.started")
+	// Service context is provided by event_category and actor fields
+	audit.SetEventType(event, action)
+	audit.SetEventCategory(event, CategoryWorkflow)
+	// Event action = just the action part (e.g., "started" from "workflow.started")
+	// Split on "." and take the last part
+	parts := strings.Split(action, ".")
+	eventAction := parts[len(parts)-1] // Get last part after final dot
+	audit.SetEventAction(event, eventAction)
+
+	// Map outcome string to OpenAPI enum
+	switch outcome {
+	case "success":
+		audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	case "failure":
+		audit.SetEventOutcome(event, audit.OutcomeFailure)
+	case "pending":
+		audit.SetEventOutcome(event, audit.OutcomePending)
+	default:
+		audit.SetEventOutcome(event, audit.OutcomeSuccess) // default to success
+	}
+
+	audit.SetActor(event, "service", ServiceName)
+	audit.SetResource(event, "WorkflowExecution", wfe.Name)
+
+	// Correlation ID from labels (set by RemediationOrchestrator)
+	correlationID := wfe.Name // Fallback: use WFE name as correlation ID
+	if wfe.Labels != nil {
+		if corrID, ok := wfe.Labels["kubernaut.ai/correlation-id"]; ok {
+			correlationID = corrID
+		}
+	}
+	audit.SetCorrelationID(event, correlationID)
+
+	// Set namespace context
+	audit.SetNamespace(event, wfe.Namespace)
+
+	// Build structured event data (type-safe per DD-AUDIT-004)
+	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
+	payload := weconditions.WorkflowExecutionAuditPayload{
+		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
+		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
+		TargetResource:  wfe.Spec.TargetResource,
+		Phase:           string(wfe.Status.Phase),
+		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ExecutionName:   wfe.Name,
+	}
+
+	// Add timing info if available
+	if wfe.Status.StartTime != nil {
+		payload.StartedAt = &wfe.Status.StartTime.Time
+	}
+	if wfe.Status.CompletionTime != nil {
+		payload.CompletedAt = &wfe.Status.CompletionTime.Time
+	}
+	if wfe.Status.Duration != "" {
+		payload.Duration = wfe.Status.Duration
+	}
+
+	// Add failure details if present
+	if wfe.Status.FailureDetails != nil {
+		payload.FailureReason = wfe.Status.FailureDetails.Reason
+		payload.FailureMessage = wfe.Status.FailureDetails.Message
+		if wfe.Status.FailureDetails.FailedTaskName != "" {
+			payload.FailedTaskName = wfe.Status.FailureDetails.FailedTaskName
+		}
+	}
+
+	// Add PipelineRun reference if present
+	if wfe.Status.PipelineRunRef != nil {
+		payload.PipelineRunName = wfe.Status.PipelineRunRef.Name
+	}
+
+	// Set event data using type-safe payload (V2.2 - Direct Assignment)
+	// Per DD-AUDIT-004 v1.3: Direct struct assignment, no conversion needed
+	// Zero unstructured data: payload is structured Go type, SetEventData handles serialization
+	audit.SetEventData(event, payload)
+
+	// Store audit event - MANDATORY per ADR-032
+	// ADR-032: "Write Verification - audit write failures must be detected and handled"
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
+			"action", action,
+			"wfe", wfe.Name,
+		)
+		// Return error per ADR-032 "No Audit Loss" - audit writes are MANDATORY
+		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
+	}
+
+	m.logger.V(1).Info("Audit event recorded",
+		"action", action,
+		"wfe", wfe.Name,
+		"outcome", outcome,
+	)
+	return nil
+}
+
+
+

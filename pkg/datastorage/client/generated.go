@@ -4,6 +4,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,396 +15,842 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for IncidentAlertSeverity.
+// Defines values for AuditEventEventCategory.
 const (
-	IncidentAlertSeverityCritical IncidentAlertSeverity = "critical"
-	IncidentAlertSeverityHigh     IncidentAlertSeverity = "high"
-	IncidentAlertSeverityLow      IncidentAlertSeverity = "low"
-	IncidentAlertSeverityMedium   IncidentAlertSeverity = "medium"
+	AuditEventEventCategoryAnalysis         AuditEventEventCategory = "analysis"
+	AuditEventEventCategoryExecution        AuditEventEventCategory = "execution"
+	AuditEventEventCategoryGateway          AuditEventEventCategory = "gateway"
+	AuditEventEventCategoryNotification     AuditEventEventCategory = "notification"
+	AuditEventEventCategoryOrchestration    AuditEventEventCategory = "orchestration"
+	AuditEventEventCategorySignalprocessing AuditEventEventCategory = "signalprocessing"
+	AuditEventEventCategoryWorkflow         AuditEventEventCategory = "workflow"
 )
 
-// Defines values for IncidentExecutionStatus.
+// Defines values for AuditEventEventOutcome.
 const (
-	Cancelled  IncidentExecutionStatus = "cancelled"
-	Completed  IncidentExecutionStatus = "completed"
-	Failed     IncidentExecutionStatus = "failed"
-	InProgress IncidentExecutionStatus = "in_progress"
-	Pending    IncidentExecutionStatus = "pending"
+	AuditEventEventOutcomeFailure AuditEventEventOutcome = "failure"
+	AuditEventEventOutcomePending AuditEventEventOutcome = "pending"
+	AuditEventEventOutcomeSuccess AuditEventEventOutcome = "success"
 )
 
-// Defines values for IncidentTypeSuccessRateResponseConfidence.
+// Defines values for AuditEventRequestEventCategory.
 const (
-	IncidentTypeSuccessRateResponseConfidenceHigh             IncidentTypeSuccessRateResponseConfidence = "high"
-	IncidentTypeSuccessRateResponseConfidenceInsufficientData IncidentTypeSuccessRateResponseConfidence = "insufficient_data"
-	IncidentTypeSuccessRateResponseConfidenceLow              IncidentTypeSuccessRateResponseConfidence = "low"
-	IncidentTypeSuccessRateResponseConfidenceMedium           IncidentTypeSuccessRateResponseConfidence = "medium"
+	AuditEventRequestEventCategoryAnalysis         AuditEventRequestEventCategory = "analysis"
+	AuditEventRequestEventCategoryExecution        AuditEventRequestEventCategory = "execution"
+	AuditEventRequestEventCategoryGateway          AuditEventRequestEventCategory = "gateway"
+	AuditEventRequestEventCategoryNotification     AuditEventRequestEventCategory = "notification"
+	AuditEventRequestEventCategoryOrchestration    AuditEventRequestEventCategory = "orchestration"
+	AuditEventRequestEventCategorySignalprocessing AuditEventRequestEventCategory = "signalprocessing"
+	AuditEventRequestEventCategoryWorkflow         AuditEventRequestEventCategory = "workflow"
 )
 
-// Defines values for MultiDimensionalSuccessRateResponseConfidence.
+// Defines values for AuditEventRequestEventOutcome.
 const (
-	MultiDimensionalSuccessRateResponseConfidenceHigh             MultiDimensionalSuccessRateResponseConfidence = "high"
-	MultiDimensionalSuccessRateResponseConfidenceInsufficientData MultiDimensionalSuccessRateResponseConfidence = "insufficient_data"
-	MultiDimensionalSuccessRateResponseConfidenceLow              MultiDimensionalSuccessRateResponseConfidence = "low"
-	MultiDimensionalSuccessRateResponseConfidenceMedium           MultiDimensionalSuccessRateResponseConfidence = "medium"
+	AuditEventRequestEventOutcomeFailure AuditEventRequestEventOutcome = "failure"
+	AuditEventRequestEventOutcomePending AuditEventRequestEventOutcome = "pending"
+	AuditEventRequestEventOutcomeSuccess AuditEventRequestEventOutcome = "success"
 )
 
-// Defines values for WorkflowSuccessRateResponseConfidence.
+// Defines values for DetectedLabelsFailedDetections.
 const (
-	WorkflowSuccessRateResponseConfidenceHigh             WorkflowSuccessRateResponseConfidence = "high"
-	WorkflowSuccessRateResponseConfidenceInsufficientData WorkflowSuccessRateResponseConfidence = "insufficient_data"
-	WorkflowSuccessRateResponseConfidenceLow              WorkflowSuccessRateResponseConfidence = "low"
-	WorkflowSuccessRateResponseConfidenceMedium           WorkflowSuccessRateResponseConfidence = "medium"
+	GitOpsManaged   DetectedLabelsFailedDetections = "gitOpsManaged"
+	HelmManaged     DetectedLabelsFailedDetections = "helmManaged"
+	HpaEnabled      DetectedLabelsFailedDetections = "hpaEnabled"
+	NetworkIsolated DetectedLabelsFailedDetections = "networkIsolated"
+	PdbProtected    DetectedLabelsFailedDetections = "pdbProtected"
+	ServiceMesh     DetectedLabelsFailedDetections = "serviceMesh"
+	Stateful        DetectedLabelsFailedDetections = "stateful"
 )
 
-// Defines values for ListIncidentsParamsSeverity.
+// Defines values for DetectedLabelsGitOpsTool.
 const (
-	Critical ListIncidentsParamsSeverity = "critical"
-	High     ListIncidentsParamsSeverity = "high"
-	Low      ListIncidentsParamsSeverity = "low"
-	Medium   ListIncidentsParamsSeverity = "medium"
+	DetectedLabelsGitOpsToolArgocd   DetectedLabelsGitOpsTool = "argocd"
+	DetectedLabelsGitOpsToolAsterisk DetectedLabelsGitOpsTool = "*"
+	DetectedLabelsGitOpsToolFlux     DetectedLabelsGitOpsTool = "flux"
 )
 
-// AIExecutionModeStats defines model for AIExecutionModeStats.
-type AIExecutionModeStats struct {
-	// CatalogSelected Number of times AI selected a single workflow from the catalog (90-95% expected per ADR-033 Hybrid Model)
-	CatalogSelected int `json:"catalog_selected"`
+// Defines values for DetectedLabelsServiceMesh.
+const (
+	DetectedLabelsServiceMeshAsterisk DetectedLabelsServiceMesh = "*"
+	DetectedLabelsServiceMeshIstio    DetectedLabelsServiceMesh = "istio"
+	DetectedLabelsServiceMeshLinkerd  DetectedLabelsServiceMesh = "linkerd"
+)
 
-	// Chained Number of times AI chained multiple workflows together (4-9% expected per ADR-033 Hybrid Model)
-	Chained int `json:"chained"`
+// Defines values for MandatoryLabelsPriority.
+const (
+	MandatoryLabelsPriorityAsterisk MandatoryLabelsPriority = "*"
+	MandatoryLabelsPriorityP0       MandatoryLabelsPriority = "P0"
+	MandatoryLabelsPriorityP1       MandatoryLabelsPriority = "P1"
+	MandatoryLabelsPriorityP2       MandatoryLabelsPriority = "P2"
+	MandatoryLabelsPriorityP3       MandatoryLabelsPriority = "P3"
+)
 
-	// ManualEscalation Number of times AI escalated to human operator (<1% expected per ADR-033 Hybrid Model)
-	ManualEscalation int `json:"manual_escalation"`
+// Defines values for MandatoryLabelsSeverity.
+const (
+	MandatoryLabelsSeverityCritical MandatoryLabelsSeverity = "critical"
+	MandatoryLabelsSeverityHigh     MandatoryLabelsSeverity = "high"
+	MandatoryLabelsSeverityLow      MandatoryLabelsSeverity = "low"
+	MandatoryLabelsSeverityMedium   MandatoryLabelsSeverity = "medium"
+)
+
+// Defines values for NotificationAuditChannel.
+const (
+	NotificationAuditChannelEmail     NotificationAuditChannel = "email"
+	NotificationAuditChannelPagerduty NotificationAuditChannel = "pagerduty"
+	NotificationAuditChannelSlack     NotificationAuditChannel = "slack"
+	NotificationAuditChannelWebhook   NotificationAuditChannel = "webhook"
+)
+
+// Defines values for NotificationAuditStatus.
+const (
+	NotificationAuditStatusFailed  NotificationAuditStatus = "failed"
+	NotificationAuditStatusPending NotificationAuditStatus = "pending"
+	NotificationAuditStatusSent    NotificationAuditStatus = "sent"
+)
+
+// Defines values for NotificationAuditResponseChannel.
+const (
+	NotificationAuditResponseChannelEmail     NotificationAuditResponseChannel = "email"
+	NotificationAuditResponseChannelPagerduty NotificationAuditResponseChannel = "pagerduty"
+	NotificationAuditResponseChannelSlack     NotificationAuditResponseChannel = "slack"
+	NotificationAuditResponseChannelWebhook   NotificationAuditResponseChannel = "webhook"
+)
+
+// Defines values for NotificationAuditResponseStatus.
+const (
+	NotificationAuditResponseStatusFailed  NotificationAuditResponseStatus = "failed"
+	NotificationAuditResponseStatusPending NotificationAuditResponseStatus = "pending"
+	NotificationAuditResponseStatusSent    NotificationAuditResponseStatus = "sent"
+)
+
+// Defines values for RemediationWorkflowStatus.
+const (
+	RemediationWorkflowStatusActive     RemediationWorkflowStatus = "active"
+	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "archived"
+	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "deprecated"
+	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "disabled"
+)
+
+// Defines values for WorkflowSearchFiltersPriority.
+const (
+	WorkflowSearchFiltersPriorityP0 WorkflowSearchFiltersPriority = "P0"
+	WorkflowSearchFiltersPriorityP1 WorkflowSearchFiltersPriority = "P1"
+	WorkflowSearchFiltersPriorityP2 WorkflowSearchFiltersPriority = "P2"
+	WorkflowSearchFiltersPriorityP3 WorkflowSearchFiltersPriority = "P3"
+)
+
+// Defines values for WorkflowSearchFiltersSeverity.
+const (
+	WorkflowSearchFiltersSeverityCritical WorkflowSearchFiltersSeverity = "critical"
+	WorkflowSearchFiltersSeverityHigh     WorkflowSearchFiltersSeverity = "high"
+	WorkflowSearchFiltersSeverityLow      WorkflowSearchFiltersSeverity = "low"
+	WorkflowSearchFiltersSeverityMedium   WorkflowSearchFiltersSeverity = "medium"
+)
+
+// Defines values for WorkflowSearchFiltersStatus.
+const (
+	WorkflowSearchFiltersStatusActive     WorkflowSearchFiltersStatus = "active"
+	WorkflowSearchFiltersStatusArchived   WorkflowSearchFiltersStatus = "archived"
+	WorkflowSearchFiltersStatusDeprecated WorkflowSearchFiltersStatus = "deprecated"
+	WorkflowSearchFiltersStatusDisabled   WorkflowSearchFiltersStatus = "disabled"
+)
+
+// Defines values for WorkflowUpdateRequestStatus.
+const (
+	WorkflowUpdateRequestStatusActive     WorkflowUpdateRequestStatus = "active"
+	WorkflowUpdateRequestStatusArchived   WorkflowUpdateRequestStatus = "archived"
+	WorkflowUpdateRequestStatusDeprecated WorkflowUpdateRequestStatus = "deprecated"
+	WorkflowUpdateRequestStatusDisabled   WorkflowUpdateRequestStatus = "disabled"
+)
+
+// Defines values for QueryAuditEventsParamsEventOutcome.
+const (
+	Failure QueryAuditEventsParamsEventOutcome = "failure"
+	Pending QueryAuditEventsParamsEventOutcome = "pending"
+	Success QueryAuditEventsParamsEventOutcome = "success"
+)
+
+// Defines values for ListWorkflowsParamsStatus.
+const (
+	ListWorkflowsParamsStatusActive     ListWorkflowsParamsStatus = "active"
+	ListWorkflowsParamsStatusArchived   ListWorkflowsParamsStatus = "archived"
+	ListWorkflowsParamsStatusDeprecated ListWorkflowsParamsStatus = "deprecated"
+	ListWorkflowsParamsStatusDisabled   ListWorkflowsParamsStatus = "disabled"
+)
+
+// AuditEvent defines model for AuditEvent.
+type AuditEvent struct {
+	ActorId     *string `json:"actor_id,omitempty"`
+	ActorType   *string `json:"actor_type,omitempty"`
+	ClusterName *string `json:"cluster_name"`
+
+	// CorrelationId Unique identifier for request correlation
+	CorrelationId string `json:"correlation_id"`
+	DurationMs    *int   `json:"duration_ms"`
+
+	// EventAction Action performed (ADR-034)
+	EventAction string `json:"event_action"`
+
+	// EventCategory Service-level event category (ADR-034 v1.2).
+	// Values:
+	// - gateway: Gateway Service
+	// - notification: Notification Service
+	// - analysis: AI Analysis Service
+	// - signalprocessing: Signal Processing Service
+	// - workflow: Workflow Catalog Service
+	// - execution: Remediation Execution Service
+	// - orchestration: Remediation Orchestrator Service
+	EventCategory AuditEventEventCategory `json:"event_category"`
+
+	// EventData Service-specific event data as structured Go type.
+	// Accepts any JSON-marshalable type (structs, maps, etc.).
+	// V1.0: Eliminates map[string]interface{} - use structured types directly.
+	// See DD-AUDIT-004 for structured type requirements.
+	EventData interface{} `json:"event_data"`
+
+	// EventDate Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage.
+	EventDate *openapi_types.Date `json:"event_date"`
+	EventId   *openapi_types.UUID `json:"event_id,omitempty"`
+
+	// EventOutcome Result of the event
+	EventOutcome AuditEventEventOutcome `json:"event_outcome"`
+
+	// EventTimestamp ISO 8601 timestamp when the event occurred
+	EventTimestamp time.Time `json:"event_timestamp"`
+
+	// EventType Event type identifier (e.g., gateway.signal.received)
+	EventType     string              `json:"event_type"`
+	Namespace     *string             `json:"namespace"`
+	ParentEventId *openapi_types.UUID `json:"parent_event_id"`
+	ResourceId    *string             `json:"resource_id,omitempty"`
+	ResourceType  *string             `json:"resource_type,omitempty"`
+	Severity      *string             `json:"severity"`
+
+	// Version Schema version (e.g., "1.0")
+	Version string `json:"version"`
 }
 
-// Incident defines model for Incident.
-type Incident struct {
-	// ActionTimestamp Timestamp when the action was executed (ISO 8601)
-	ActionTimestamp time.Time `json:"action_timestamp"`
+// AuditEventEventCategory Service-level event category (ADR-034 v1.2).
+// Values:
+// - gateway: Gateway Service
+// - notification: Notification Service
+// - analysis: AI Analysis Service
+// - signalprocessing: Signal Processing Service
+// - workflow: Workflow Catalog Service
+// - execution: Remediation Execution Service
+// - orchestration: Remediation Orchestrator Service
+type AuditEventEventCategory string
 
-	// ActionType Type of remediation action taken (e.g., scale, restart, check)
-	ActionType string `json:"action_type"`
+// AuditEventEventOutcome Result of the event
+type AuditEventEventOutcome string
 
-	// AlertFingerprint Unique alert fingerprint from Prometheus
-	AlertFingerprint *string `json:"alert_fingerprint,omitempty"`
+// AuditEventRequest defines model for AuditEventRequest.
+type AuditEventRequest struct {
+	ActorId     *string `json:"actor_id,omitempty"`
+	ActorType   *string `json:"actor_type,omitempty"`
+	ClusterName *string `json:"cluster_name"`
 
-	// AlertName Name of the Prometheus alert or Kubernetes event
-	AlertName string `json:"alert_name"`
+	// CorrelationId Unique identifier for request correlation
+	CorrelationId string `json:"correlation_id"`
+	DurationMs    *int   `json:"duration_ms"`
 
-	// AlertSeverity Severity level of the alert
-	AlertSeverity IncidentAlertSeverity `json:"alert_severity"`
+	// EventAction Action performed (ADR-034)
+	EventAction string `json:"event_action"`
 
-	// ClusterName Kubernetes cluster identifier
-	ClusterName *string `json:"cluster_name,omitempty"`
+	// EventCategory Service-level event category (ADR-034 v1.2).
+	// Values:
+	// - gateway: Gateway Service
+	// - notification: Notification Service
+	// - analysis: AI Analysis Service
+	// - signalprocessing: Signal Processing Service
+	// - workflow: Workflow Catalog Service
+	// - execution: Remediation Execution Service
+	// - orchestration: Remediation Orchestrator Service
+	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 
-	// Duration Duration of the remediation in milliseconds
-	Duration *int64 `json:"duration,omitempty"`
+	// EventData Service-specific event data as structured Go type.
+	// Accepts any JSON-marshalable type (structs, maps, etc.).
+	// V1.0: Eliminates map[string]interface{} - use structured types directly.
+	// See DD-AUDIT-004 for structured type requirements.
+	EventData interface{} `json:"event_data"`
 
-	// EndTime When the remediation completed (ISO 8601)
-	EndTime *time.Time `json:"end_time,omitempty"`
+	// EventOutcome Result of the event
+	EventOutcome AuditEventRequestEventOutcome `json:"event_outcome"`
 
-	// Environment Environment (e.g., production, staging, development)
-	Environment *string `json:"environment,omitempty"`
+	// EventTimestamp ISO 8601 timestamp when the event occurred
+	EventTimestamp time.Time `json:"event_timestamp"`
 
-	// ErrorMessage Error message if the remediation failed
-	ErrorMessage *string `json:"error_message,omitempty"`
+	// EventType Event type identifier (e.g., gateway.signal.received)
+	EventType     string              `json:"event_type"`
+	Namespace     *string             `json:"namespace"`
+	ParentEventId *openapi_types.UUID `json:"parent_event_id"`
+	ResourceId    *string             `json:"resource_id,omitempty"`
+	ResourceType  *string             `json:"resource_type,omitempty"`
+	Severity      *string             `json:"severity"`
 
-	// ExecutionStatus Current status of the remediation action
-	ExecutionStatus IncidentExecutionStatus `json:"execution_status"`
+	// Version Schema version (e.g., "1.0")
+	Version string `json:"version"`
+}
 
-	// Id Unique incident identifier (from resource_action_traces table)
+// AuditEventRequestEventCategory Service-level event category (ADR-034 v1.2).
+// Values:
+// - gateway: Gateway Service
+// - notification: Notification Service
+// - analysis: AI Analysis Service
+// - signalprocessing: Signal Processing Service
+// - workflow: Workflow Catalog Service
+// - execution: Remediation Execution Service
+// - orchestration: Remediation Orchestrator Service
+type AuditEventRequestEventCategory string
+
+// AuditEventRequestEventOutcome Result of the event
+type AuditEventRequestEventOutcome string
+
+// AuditEventResponse defines model for AuditEventResponse.
+type AuditEventResponse struct {
+	EventId        openapi_types.UUID `json:"event_id"`
+	EventTimestamp time.Time          `json:"event_timestamp"`
+	Message        string             `json:"message"`
+}
+
+// AuditEventsQueryResponse defines model for AuditEventsQueryResponse.
+type AuditEventsQueryResponse struct {
+	Data       *[]AuditEvent `json:"data,omitempty"`
+	Pagination *struct {
+		// HasMore Whether more results are available beyond current page
+		HasMore *bool `json:"has_more,omitempty"`
+
+		// Limit Maximum number of events per page
+		Limit *int `json:"limit,omitempty"`
+
+		// Offset Number of events to skip
+		Offset *int `json:"offset,omitempty"`
+
+		// Total Total number of events matching the query
+		Total *int `json:"total,omitempty"`
+	} `json:"pagination,omitempty"`
+}
+
+// BatchAuditEventResponse defines model for BatchAuditEventResponse.
+type BatchAuditEventResponse struct {
+	EventIds *[]openapi_types.UUID `json:"event_ids,omitempty"`
+	Message  *string               `json:"message,omitempty"`
+}
+
+// CustomLabels Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format
+type CustomLabels map[string][]string
+
+// DetectedLabels Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types
+type DetectedLabels struct {
+	// FailedDetections Fields where detection failed (RBAC, timeout, etc.) - consumer should ignore these fields
+	FailedDetections *[]DetectedLabelsFailedDetections `json:"failed_detections,omitempty"`
+
+	// GitOpsManaged Resource is managed by GitOps (ArgoCD/Flux)
+	GitOpsManaged *bool `json:"gitOpsManaged,omitempty"`
+
+	// GitOpsTool GitOps tool: argocd, flux, or * (wildcard = any tool)
+	GitOpsTool *DetectedLabelsGitOpsTool `json:"gitOpsTool,omitempty"`
+
+	// HelmManaged Resource is managed by Helm
+	HelmManaged *bool `json:"helmManaged,omitempty"`
+
+	// HpaEnabled HorizontalPodAutoscaler is configured
+	HpaEnabled *bool `json:"hpaEnabled,omitempty"`
+
+	// NetworkIsolated NetworkPolicy restricts traffic
+	NetworkIsolated *bool `json:"networkIsolated,omitempty"`
+
+	// PdbProtected PodDisruptionBudget protects this workload
+	PdbProtected *bool `json:"pdbProtected,omitempty"`
+
+	// ServiceMesh Service mesh type: istio, linkerd, or * (wildcard = any mesh)
+	ServiceMesh *DetectedLabelsServiceMesh `json:"serviceMesh,omitempty"`
+
+	// Stateful Workload uses persistent storage or is StatefulSet
+	Stateful *bool `json:"stateful,omitempty"`
+}
+
+// DetectedLabelsFailedDetections defines model for DetectedLabels.FailedDetections.
+type DetectedLabelsFailedDetections string
+
+// DetectedLabelsGitOpsTool GitOps tool: argocd, flux, or * (wildcard = any tool)
+type DetectedLabelsGitOpsTool string
+
+// DetectedLabelsServiceMesh Service mesh type: istio, linkerd, or * (wildcard = any mesh)
+type DetectedLabelsServiceMesh string
+
+// MandatoryLabels 5 mandatory workflow labels (DD-WORKFLOW-001 v2.3)
+type MandatoryLabels struct {
+	// Component Kubernetes resource type this workflow targets (e.g., pod, deployment, node)
+	Component string `json:"component"`
+
+	// Environment Target environment (production, staging, development, test, * for any)
+	Environment string `json:"environment"`
+
+	// Priority Business priority level (P0, P1, P2, P3, * for any)
+	Priority MandatoryLabelsPriority `json:"priority"`
+
+	// Severity Severity level this workflow is designed for
+	Severity MandatoryLabelsSeverity `json:"severity"`
+
+	// SignalType Signal type this workflow handles (e.g., OOMKilled, CrashLoopBackOff)
+	SignalType string `json:"signal_type"`
+}
+
+// MandatoryLabelsPriority Business priority level (P0, P1, P2, P3, * for any)
+type MandatoryLabelsPriority string
+
+// MandatoryLabelsSeverity Severity level this workflow is designed for
+type MandatoryLabelsSeverity string
+
+// NotificationAudit Notification audit record for tracking delivery attempts.
+// Maps to `notification_audit` PostgreSQL table.
+type NotificationAudit struct {
+	// Channel Notification delivery channel.
+	// Determines recipient format and delivery mechanism.
+	Channel NotificationAuditChannel `json:"channel"`
+
+	// DeliveryStatus HTTP status code or delivery confirmation from notification channel.
+	// Optional - only present for sent notifications.
+	DeliveryStatus *string `json:"delivery_status"`
+
+	// ErrorMessage Error message from notification channel if delivery failed.
+	// Optional - only present for failed notifications.
+	ErrorMessage *string `json:"error_message"`
+
+	// EscalationLevel Escalation level for notification (0 = first attempt, 1+ = escalated).
+	// Tracks how many times this incident has been escalated.
+	EscalationLevel *int `json:"escalation_level,omitempty"`
+
+	// MessageSummary Human-readable summary of notification content.
+	// Truncated to 1000 characters for audit purposes.
+	MessageSummary string `json:"message_summary"`
+
+	// NotificationId Unique notification identifier from Notification Controller.
+	// Used as unique constraint to prevent duplicate audit records.
+	NotificationId string `json:"notification_id"`
+
+	// Recipient Notification recipient (email address, Slack channel, PagerDuty key, etc.).
+	// Format depends on channel type.
+	Recipient string `json:"recipient"`
+
+	// RemediationId Kubernetes RemediationRequest CRD name.
+	// Links notification to originating remediation workflow.
+	RemediationId string `json:"remediation_id"`
+
+	// SentAt Timestamp when notification was sent (RFC 3339 format).
+	// Used to calculate audit lag (time between event and audit write).
+	SentAt time.Time `json:"sent_at"`
+
+	// Status Notification delivery status from Notification Controller.
+	Status NotificationAuditStatus `json:"status"`
+}
+
+// NotificationAuditChannel Notification delivery channel.
+// Determines recipient format and delivery mechanism.
+type NotificationAuditChannel string
+
+// NotificationAuditStatus Notification delivery status from Notification Controller.
+type NotificationAuditStatus string
+
+// NotificationAuditResponse defines model for NotificationAuditResponse.
+type NotificationAuditResponse struct {
+	// Channel Notification delivery channel.
+	// Determines recipient format and delivery mechanism.
+	Channel NotificationAuditResponseChannel `json:"channel"`
+
+	// CreatedAt Timestamp when record was created in PostgreSQL.
+	CreatedAt time.Time `json:"created_at"`
+
+	// DeliveryStatus HTTP status code or delivery confirmation from notification channel.
+	// Optional - only present for sent notifications.
+	DeliveryStatus *string `json:"delivery_status"`
+
+	// ErrorMessage Error message from notification channel if delivery failed.
+	// Optional - only present for failed notifications.
+	ErrorMessage *string `json:"error_message"`
+
+	// EscalationLevel Escalation level for notification (0 = first attempt, 1+ = escalated).
+	// Tracks how many times this incident has been escalated.
+	EscalationLevel *int `json:"escalation_level,omitempty"`
+
+	// Id Auto-generated primary key from PostgreSQL.
 	Id int64 `json:"id"`
 
-	// Metadata Additional metadata as JSON string
-	Metadata *string `json:"metadata,omitempty"`
+	// MessageSummary Human-readable summary of notification content.
+	// Truncated to 1000 characters for audit purposes.
+	MessageSummary string `json:"message_summary"`
 
-	// ModelConfidence Confidence score from the AI model (0.0 to 1.0)
-	ModelConfidence float64 `json:"model_confidence"`
+	// NotificationId Unique notification identifier from Notification Controller.
+	// Used as unique constraint to prevent duplicate audit records.
+	NotificationId string `json:"notification_id"`
 
-	// ModelUsed AI model used for analysis (e.g., gpt-4, claude-3)
-	ModelUsed string `json:"model_used"`
+	// Recipient Notification recipient (email address, Slack channel, PagerDuty key, etc.).
+	// Format depends on channel type.
+	Recipient string `json:"recipient"`
 
-	// Namespace Kubernetes namespace where the action was taken
-	Namespace *string `json:"namespace,omitempty"`
+	// RemediationId Kubernetes RemediationRequest CRD name.
+	// Links notification to originating remediation workflow.
+	RemediationId string `json:"remediation_id"`
 
-	// RemediationRequestId Unique remediation request identifier
-	RemediationRequestId *string `json:"remediation_request_id,omitempty"`
+	// SentAt Timestamp when notification was sent (RFC 3339 format).
+	// Used to calculate audit lag (time between event and audit write).
+	SentAt time.Time `json:"sent_at"`
 
-	// StartTime When the remediation started (ISO 8601)
-	StartTime *time.Time `json:"start_time,omitempty"`
+	// Status Notification delivery status from Notification Controller.
+	Status NotificationAuditResponseStatus `json:"status"`
 
-	// TargetResource Target Kubernetes resource (e.g., deployment/my-app)
-	TargetResource *string `json:"target_resource,omitempty"`
+	// UpdatedAt Timestamp when record was last updated in PostgreSQL.
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// IncidentAlertSeverity Severity level of the alert
-type IncidentAlertSeverity string
+// NotificationAuditResponseChannel Notification delivery channel.
+// Determines recipient format and delivery mechanism.
+type NotificationAuditResponseChannel string
 
-// IncidentExecutionStatus Current status of the remediation action
-type IncidentExecutionStatus string
+// NotificationAuditResponseStatus Notification delivery status from Notification Controller.
+type NotificationAuditResponseStatus string
 
-// IncidentListResponse defines model for IncidentListResponse.
-type IncidentListResponse struct {
-	// Data Array of incidents matching the filter criteria
-	Data       []Incident `json:"data"`
-	Pagination Pagination `json:"pagination"`
-}
-
-// IncidentTypeBreakdownItem defines model for IncidentTypeBreakdownItem.
-type IncidentTypeBreakdownItem struct {
-	// Executions Number of times this workflow was used for this incident type
-	Executions int `json:"executions"`
-
-	// IncidentType Incident type identifier
-	IncidentType string `json:"incident_type"`
-
-	// SuccessRate Success rate for this specific incident type
-	SuccessRate float64 `json:"success_rate"`
-}
-
-// IncidentTypeSuccessRateResponse defines model for IncidentTypeSuccessRateResponse.
-type IncidentTypeSuccessRateResponse struct {
-	AiExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
-
-	// Confidence Confidence level based on sample size:
-	// - high: >=100 samples
-	// - medium: 20-99 samples
-	// - low: 5-19 samples
-	// - insufficient_data: <5 samples (or below min_samples threshold)
-	Confidence IncidentTypeSuccessRateResponseConfidence `json:"confidence"`
-
-	// FailedExecutions Number of failed remediation attempts
-	FailedExecutions int `json:"failed_executions"`
-
-	// IncidentType The incident type being analyzed (e.g., "pod-oom-killer")
-	IncidentType string `json:"incident_type"`
-
-	// MinSamplesMet Whether the minimum sample size threshold was met
-	MinSamplesMet bool `json:"min_samples_met"`
-
-	// SuccessRate Success rate percentage (0-100%)
-	SuccessRate float64 `json:"success_rate"`
-
-	// SuccessfulExecutions Number of successful remediation attempts
-	SuccessfulExecutions int `json:"successful_executions"`
-
-	// TimeRange Time window for this analysis (e.g., "7d")
-	TimeRange string `json:"time_range"`
-
-	// TotalExecutions Total number of remediation attempts for this incident type
-	TotalExecutions int `json:"total_executions"`
-
-	// WorkflowBreakdown Breakdown by workflow showing which workflows were tried for this incident type
-	WorkflowBreakdown *[]WorkflowBreakdownItem `json:"workflow_breakdown,omitempty"`
-}
-
-// IncidentTypeSuccessRateResponseConfidence Confidence level based on sample size:
-// - high: >=100 samples
-// - medium: 20-99 samples
-// - low: 5-19 samples
-// - insufficient_data: <5 samples (or below min_samples threshold)
-type IncidentTypeSuccessRateResponseConfidence string
-
-// MultiDimensionalSuccessRateResponse defines model for MultiDimensionalSuccessRateResponse.
-type MultiDimensionalSuccessRateResponse struct {
-	// Confidence Statistical confidence level based on sample size
-	Confidence MultiDimensionalSuccessRateResponseConfidence `json:"confidence"`
-	Dimensions QueryDimensions                               `json:"dimensions"`
-
-	// FailedExecutions Number of failed executions
-	FailedExecutions int `json:"failed_executions"`
-
-	// MinSamplesMet Whether minimum sample size threshold was met
-	MinSamplesMet bool `json:"min_samples_met"`
-
-	// SuccessRate Success rate percentage (successful / total * 100)
-	SuccessRate float64 `json:"success_rate"`
-
-	// SuccessfulExecutions Number of successful executions
-	SuccessfulExecutions int `json:"successful_executions"`
-
-	// TimeRange Time window for this analysis
-	TimeRange string `json:"time_range"`
-
-	// TotalExecutions Total number of action executions matching the dimension filters
-	TotalExecutions int `json:"total_executions"`
-}
-
-// MultiDimensionalSuccessRateResponseConfidence Statistical confidence level based on sample size
-type MultiDimensionalSuccessRateResponseConfidence string
-
-// Pagination defines model for Pagination.
-type Pagination struct {
-	// HasMore Whether there are more results available (for next page)
-	HasMore bool `json:"has_more"`
-
-	// Limit Maximum number of results returned in this response
-	Limit int `json:"limit"`
-
-	// Offset Number of results skipped (pagination offset)
-	Offset int `json:"offset"`
-
-	// Total Total number of incidents matching the filter criteria
-	Total int64 `json:"total"`
-}
-
-// QueryDimensions defines model for QueryDimensions.
-type QueryDimensions struct {
-	// ActionType Action type filter (empty if not specified)
-	ActionType *string `json:"action_type,omitempty"`
-
-	// IncidentType Incident type filter (empty if not specified)
-	IncidentType *string `json:"incident_type,omitempty"`
-
-	// WorkflowId Workflow ID filter (empty if not specified)
-	WorkflowId *string `json:"workflow_id,omitempty"`
-
-	// WorkflowVersion Workflow version filter (empty if not specified)
-	WorkflowVersion *string `json:"workflow_version,omitempty"`
-}
-
-// RFC7807Error defines model for RFC7807Error.
-type RFC7807Error struct {
-	// Detail Human-readable explanation specific to this occurrence
+// RFC7807Problem RFC 7807 Problem Details for HTTP APIs.
+// Standard error response format (BR-STORAGE-024).
+// See: https://www.rfc-editor.org/rfc/rfc7807.html
+type RFC7807Problem struct {
+	// Detail Human-readable explanation specific to this occurrence.
 	Detail *string `json:"detail,omitempty"`
 
-	// Instance URI reference identifying the specific occurrence of the problem
+	// FieldErrors Map of field names to error messages for validation errors.
+	// Only present for 400 Bad Request responses.
+	FieldErrors *map[string]string `json:"field_errors,omitempty"`
+
+	// Instance URI reference identifying the specific occurrence.
 	Instance *string `json:"instance,omitempty"`
 
-	// Status HTTP status code
-	Status int `json:"status"`
+	// Status HTTP status code for this occurrence.
+	Status int32 `json:"status"`
 
-	// Title Short, human-readable summary of the problem
+	// Title Short, human-readable summary of the problem type.
+	// Should not change from occurrence to occurrence.
 	Title string `json:"title"`
 
-	// Type URI reference identifying the problem type
+	// Type URI reference identifying the problem type.
+	// Dereferenceable URI when possible.
 	Type string `json:"type"`
 }
 
-// WorkflowBreakdownItem defines model for WorkflowBreakdownItem.
-type WorkflowBreakdownItem struct {
-	// Executions Number of times this workflow was used
-	Executions int `json:"executions"`
+// RemediationWorkflow defines model for RemediationWorkflow.
+type RemediationWorkflow struct {
+	// ActualSuccessRate Actual success rate (0.0-1.0)
+	ActualSuccessRate *float32 `json:"actual_success_rate,omitempty"`
 
-	// SuccessRate Success rate for this specific workflow
-	SuccessRate float64 `json:"success_rate"`
+	// ApprovedAt When this version was approved
+	ApprovedAt *time.Time `json:"approved_at,omitempty"`
 
-	// WorkflowId Workflow identifier
-	WorkflowId string `json:"workflow_id"`
+	// ApprovedBy Who approved this version
+	ApprovedBy *string `json:"approved_by,omitempty"`
 
-	// WorkflowVersion Workflow version
-	WorkflowVersion string `json:"workflow_version"`
+	// ChangeSummary Summary of changes in this version
+	ChangeSummary *string `json:"change_summary,omitempty"`
+
+	// ContainerDigest OCI image digest
+	ContainerDigest *string `json:"container_digest,omitempty"`
+
+	// ContainerImage OCI image reference
+	ContainerImage *string `json:"container_image,omitempty"`
+
+	// Content YAML workflow definition
+	Content string `json:"content"`
+
+	// ContentHash SHA-256 hash of content
+	ContentHash string     `json:"content_hash"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	CreatedBy   *string    `json:"created_by,omitempty"`
+
+	// CustomLabels Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format
+	CustomLabels *CustomLabels `json:"custom_labels,omitempty"`
+
+	// DeprecationNotice Deprecation notice
+	DeprecationNotice *string `json:"deprecation_notice,omitempty"`
+
+	// Description Workflow description
+	Description string `json:"description"`
+
+	// DetectedLabels Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types
+	DetectedLabels *DetectedLabels `json:"detected_labels,omitempty"`
+
+	// DisabledAt When workflow was disabled
+	DisabledAt *time.Time `json:"disabled_at,omitempty"`
+
+	// DisabledBy Who disabled the workflow
+	DisabledBy *string `json:"disabled_by,omitempty"`
+
+	// DisabledReason Why workflow was disabled
+	DisabledReason *string `json:"disabled_reason,omitempty"`
+
+	// ExecutionEngine Execution engine (e.g., argo-workflows)
+	ExecutionEngine string `json:"execution_engine"`
+
+	// ExpectedDurationSeconds Expected execution duration
+	ExpectedDurationSeconds *int `json:"expected_duration_seconds,omitempty"`
+
+	// ExpectedSuccessRate Expected success rate (0.0-1.0)
+	ExpectedSuccessRate *float32 `json:"expected_success_rate,omitempty"`
+
+	// IsLatestVersion Is this the latest version?
+	IsLatestVersion *bool `json:"is_latest_version,omitempty"`
+
+	// Labels 5 mandatory workflow labels (DD-WORKFLOW-001 v2.3)
+	Labels MandatoryLabels `json:"labels"`
+
+	// Maintainer Workflow maintainer email
+	Maintainer *openapi_types.Email `json:"maintainer,omitempty"`
+
+	// Name Human-readable workflow title
+	Name string `json:"name"`
+
+	// Owner Workflow owner
+	Owner *string `json:"owner,omitempty"`
+
+	// Parameters Workflow parameters (JSONB)
+	Parameters *map[string]interface{} `json:"parameters,omitempty"`
+
+	// PreviousVersion Previous version identifier
+	PreviousVersion *string `json:"previous_version,omitempty"`
+
+	// Status Workflow lifecycle status
+	Status RemediationWorkflowStatus `json:"status"`
+
+	// SuccessfulExecutions Number of successful executions
+	SuccessfulExecutions *int `json:"successful_executions,omitempty"`
+
+	// TotalExecutions Total number of executions
+	TotalExecutions *int       `json:"total_executions,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	UpdatedBy       *string    `json:"updated_by,omitempty"`
+
+	// Version Semantic version (e.g., v1.0.0)
+	Version string `json:"version"`
+
+	// VersionNotes Version release notes
+	VersionNotes *string `json:"version_notes,omitempty"`
+
+	// WorkflowId Unique workflow identifier (UUID, auto-generated)
+	WorkflowId *openapi_types.UUID `json:"workflow_id,omitempty"`
+
+	// WorkflowName Workflow name (identifier for versions)
+	WorkflowName string `json:"workflow_name"`
 }
 
-// WorkflowSuccessRateResponse defines model for WorkflowSuccessRateResponse.
-type WorkflowSuccessRateResponse struct {
-	AiExecutionMode *AIExecutionModeStats `json:"ai_execution_mode,omitempty"`
+// RemediationWorkflowStatus Workflow lifecycle status
+type RemediationWorkflowStatus string
 
-	// Confidence Confidence level based on sample size
-	Confidence WorkflowSuccessRateResponseConfidence `json:"confidence"`
+// WorkflowDisableRequest Convenience request to disable a workflow
+type WorkflowDisableRequest struct {
+	// Reason Why the workflow is being disabled
+	Reason *string `json:"reason,omitempty"`
 
-	// FailedExecutions Number of failed workflow executions
-	FailedExecutions int `json:"failed_executions"`
-
-	// IncidentTypeBreakdown Breakdown by incident type showing which problems this workflow solves
-	IncidentTypeBreakdown *[]IncidentTypeBreakdownItem `json:"incident_type_breakdown,omitempty"`
-
-	// MinSamplesMet Whether the minimum sample size threshold was met
-	MinSamplesMet bool `json:"min_samples_met"`
-
-	// SuccessRate Success rate percentage (0-100%)
-	SuccessRate float64 `json:"success_rate"`
-
-	// SuccessfulExecutions Number of successful workflow executions
-	SuccessfulExecutions int `json:"successful_executions"`
-
-	// TimeRange Time window for this analysis (e.g., "7d")
-	TimeRange string `json:"time_range"`
-
-	// TotalExecutions Total number of times this workflow was executed
-	TotalExecutions int `json:"total_executions"`
-
-	// WorkflowId The workflow identifier being analyzed (e.g., "pod-oom-recovery")
-	WorkflowId string `json:"workflow_id"`
-
-	// WorkflowVersion Specific workflow version (null if aggregated across all versions)
-	WorkflowVersion *string `json:"workflow_version"`
+	// UpdatedBy Who is disabling the workflow
+	UpdatedBy *string `json:"updated_by,omitempty"`
 }
 
-// WorkflowSuccessRateResponseConfidence Confidence level based on sample size
-type WorkflowSuccessRateResponseConfidence string
+// WorkflowListResponse defines model for WorkflowListResponse.
+type WorkflowListResponse struct {
+	Limit     *int                   `json:"limit,omitempty"`
+	Offset    *int                   `json:"offset,omitempty"`
+	Total     *int                   `json:"total,omitempty"`
+	Workflows *[]RemediationWorkflow `json:"workflows,omitempty"`
+}
 
-// ListIncidentsParams defines parameters for ListIncidents.
-type ListIncidentsParams struct {
-	// AlertName Filter by alert name pattern (exact match)
-	AlertName *string `form:"alert_name,omitempty" json:"alert_name,omitempty"`
+// WorkflowSearchFilters defines model for WorkflowSearchFilters.
+type WorkflowSearchFilters struct {
+	// Component Component type (mandatory: pod, node, deployment, etc.)
+	Component string `json:"component"`
 
-	// Severity Filter by alert severity
-	Severity *ListIncidentsParamsSeverity `form:"severity,omitempty" json:"severity,omitempty"`
+	// CustomLabels Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format
+	CustomLabels *CustomLabels `json:"custom_labels,omitempty"`
 
-	// ActionType Filter by action type (e.g., scale, restart, check)
-	ActionType *string `form:"action_type,omitempty" json:"action_type,omitempty"`
+	// DetectedLabels Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types
+	DetectedLabels *DetectedLabels `json:"detected_labels,omitempty"`
 
-	// Namespace Filter by Kubernetes namespace
-	Namespace *string `form:"namespace,omitempty" json:"namespace,omitempty"`
+	// Environment Environment (mandatory: production, staging, development)
+	Environment string `json:"environment"`
 
-	// Limit Maximum number of results to return
+	// Priority Priority level (mandatory: P0, P1, P2, P3)
+	Priority WorkflowSearchFiltersPriority `json:"priority"`
+
+	// Severity Severity level (mandatory: critical, high, medium, low)
+	Severity WorkflowSearchFiltersSeverity `json:"severity"`
+
+	// SignalType Signal type (mandatory: OOMKilled, CrashLoopBackOff, etc.)
+	SignalType string `json:"signal_type"`
+
+	// Status Workflow lifecycle status filter
+	Status *[]WorkflowSearchFiltersStatus `json:"status,omitempty"`
+}
+
+// WorkflowSearchFiltersPriority Priority level (mandatory: P0, P1, P2, P3)
+type WorkflowSearchFiltersPriority string
+
+// WorkflowSearchFiltersSeverity Severity level (mandatory: critical, high, medium, low)
+type WorkflowSearchFiltersSeverity string
+
+// WorkflowSearchFiltersStatus defines model for WorkflowSearchFilters.Status.
+type WorkflowSearchFiltersStatus string
+
+// WorkflowSearchRequest defines model for WorkflowSearchRequest.
+type WorkflowSearchRequest struct {
+	Filters WorkflowSearchFilters `json:"filters"`
+
+	// IncludeDisabled Include disabled workflows in results
+	IncludeDisabled *bool `json:"include_disabled,omitempty"`
+
+	// MinScore Minimum normalized score threshold (0.0-1.0)
+	MinScore *float32 `json:"min_score,omitempty"`
+
+	// RemediationId Optional remediation ID for audit correlation
+	RemediationId *string `json:"remediation_id,omitempty"`
+
+	// TopK Maximum number of results to return
+	TopK *int `json:"top_k,omitempty"`
+}
+
+// WorkflowSearchResponse defines model for WorkflowSearchResponse.
+type WorkflowSearchResponse struct {
+	Filters *WorkflowSearchFilters `json:"filters,omitempty"`
+
+	// TotalResults Total number of matching workflows
+	TotalResults *int                    `json:"total_results,omitempty"`
+	Workflows    *[]WorkflowSearchResult `json:"workflows,omitempty"`
+}
+
+// WorkflowSearchResult Flat response structure (DD-WORKFLOW-002 v3.0)
+type WorkflowSearchResult struct {
+	// Confidence Normalized label score (0.0-1.0)
+	Confidence float32 `json:"confidence"`
+
+	// ContainerDigest OCI image digest
+	ContainerDigest *string `json:"container_digest,omitempty"`
+
+	// ContainerImage OCI image reference
+	ContainerImage *string `json:"container_image,omitempty"`
+
+	// CustomLabels Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format
+	CustomLabels *CustomLabels `json:"custom_labels,omitempty"`
+
+	// Description Workflow description
+	Description string `json:"description"`
+
+	// DetectedLabels Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types
+	DetectedLabels *DetectedLabels `json:"detected_labels,omitempty"`
+
+	// FinalScore Final normalized score (same as confidence)
+	FinalScore float32 `json:"final_score"`
+
+	// LabelBoost Boost from matching DetectedLabels
+	LabelBoost *float32 `json:"label_boost,omitempty"`
+
+	// LabelPenalty Penalty from conflicting DetectedLabels
+	LabelPenalty *float32 `json:"label_penalty,omitempty"`
+
+	// Rank Position in result set (1-based)
+	Rank int `json:"rank"`
+
+	// SignalType Signal type this workflow handles
+	SignalType string `json:"signal_type"`
+
+	// Title Human-readable workflow name
+	Title string `json:"title"`
+
+	// WorkflowId UUID primary key (DD-WORKFLOW-002 v3.0)
+	WorkflowId openapi_types.UUID `json:"workflow_id"`
+}
+
+// WorkflowUpdateRequest Update mutable workflow fields only (DD-WORKFLOW-012)
+type WorkflowUpdateRequest struct {
+	// DisabledBy Who disabled the workflow
+	DisabledBy *string `json:"disabled_by,omitempty"`
+
+	// DisabledReason Why the workflow was disabled
+	DisabledReason *string `json:"disabled_reason,omitempty"`
+
+	// Status Workflow status (mutable)
+	Status *WorkflowUpdateRequestStatus `json:"status,omitempty"`
+}
+
+// WorkflowUpdateRequestStatus Workflow status (mutable)
+type WorkflowUpdateRequestStatus string
+
+// QueryAuditEventsParams defines parameters for QueryAuditEvents.
+type QueryAuditEventsParams struct {
+	// EventType Filter by event type (ADR-034)
+	EventType *string `form:"event_type,omitempty" json:"event_type,omitempty"`
+
+	// EventCategory Filter by event category (ADR-034)
+	EventCategory *string `form:"event_category,omitempty" json:"event_category,omitempty"`
+
+	// EventOutcome Filter by event outcome (ADR-034)
+	EventOutcome *QueryAuditEventsParamsEventOutcome `form:"event_outcome,omitempty" json:"event_outcome,omitempty"`
+
+	// Severity Filter by severity level
+	Severity *string `form:"severity,omitempty" json:"severity,omitempty"`
+
+	// CorrelationId Filter by correlation ID
+	CorrelationId *string `form:"correlation_id,omitempty" json:"correlation_id,omitempty"`
+
+	// Since Start time (relative like "24h" or absolute RFC3339)
+	Since *string `form:"since,omitempty" json:"since,omitempty"`
+
+	// Until End time (absolute RFC3339)
+	Until *string `form:"until,omitempty" json:"until,omitempty"`
+
+	// Limit Page size (1-1000, default 50)
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 
-	// Offset Number of results to skip (for pagination)
+	// Offset Page offset (default 0)
 	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// ListIncidentsParamsSeverity defines parameters for ListIncidents.
-type ListIncidentsParamsSeverity string
+// QueryAuditEventsParamsEventOutcome defines parameters for QueryAuditEvents.
+type QueryAuditEventsParamsEventOutcome string
 
-// GetSuccessRateByIncidentTypeParams defines parameters for GetSuccessRateByIncidentType.
-type GetSuccessRateByIncidentTypeParams struct {
-	// IncidentType The incident type to query (e.g., "pod-oom-killer", "disk-pressure", "network-timeout").
-	// This is the PRIMARY dimension for success tracking per ADR-033.
-	IncidentType string `form:"incident_type" json:"incident_type"`
+// CreateAuditEventsBatchJSONBody defines parameters for CreateAuditEventsBatch.
+type CreateAuditEventsBatchJSONBody = []AuditEventRequest
 
-	// TimeRange Time window for analysis. Valid formats: "1h", "24h", "7d", "30d".
-	// Default: "7d" (last 7 days).
-	TimeRange *string `form:"time_range,omitempty" json:"time_range,omitempty"`
-
-	// MinSamples Minimum sample size for confidence calculation.
-	// - high confidence: >=100 samples
-	// - medium confidence: 20-99 samples
-	// - low confidence: 5-19 samples
-	// - insufficient_data: <5 samples (or below this threshold)
-	MinSamples *int `form:"min_samples,omitempty" json:"min_samples,omitempty"`
+// ListWorkflowsParams defines parameters for ListWorkflows.
+type ListWorkflowsParams struct {
+	Status      *ListWorkflowsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
+	Environment *string                    `form:"environment,omitempty" json:"environment,omitempty"`
+	Priority    *string                    `form:"priority,omitempty" json:"priority,omitempty"`
+	Component   *string                    `form:"component,omitempty" json:"component,omitempty"`
+	Limit       *int                       `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset      *int                       `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
-// GetSuccessRateMultiDimensionalParams defines parameters for GetSuccessRateMultiDimensional.
-type GetSuccessRateMultiDimensionalParams struct {
-	IncidentType    *string `form:"incident_type,omitempty" json:"incident_type,omitempty"`
-	WorkflowId      *string `form:"workflow_id,omitempty" json:"workflow_id,omitempty"`
-	WorkflowVersion *string `form:"workflow_version,omitempty" json:"workflow_version,omitempty"`
-	ActionType      *string `form:"action_type,omitempty" json:"action_type,omitempty"`
-	TimeRange       *string `form:"time_range,omitempty" json:"time_range,omitempty"`
-	MinSamples      *int    `form:"min_samples,omitempty" json:"min_samples,omitempty"`
-}
+// ListWorkflowsParamsStatus defines parameters for ListWorkflows.
+type ListWorkflowsParamsStatus string
 
-// GetSuccessRateByWorkflowParams defines parameters for GetSuccessRateByWorkflow.
-type GetSuccessRateByWorkflowParams struct {
-	// WorkflowId The workflow identifier to query (e.g., "pod-oom-recovery", "disk-cleanup").
-	// This is the SECONDARY dimension for success tracking per ADR-033.
-	WorkflowId string `form:"workflow_id" json:"workflow_id"`
+// CreateAuditEventJSONRequestBody defines body for CreateAuditEvent for application/json ContentType.
+type CreateAuditEventJSONRequestBody = AuditEventRequest
 
-	// WorkflowVersion Optional: Filter by specific workflow version (e.g., "v1.2", "v2.0").
-	// Omit to aggregate across all versions.
-	WorkflowVersion *string `form:"workflow_version,omitempty" json:"workflow_version,omitempty"`
+// CreateAuditEventsBatchJSONRequestBody defines body for CreateAuditEventsBatch for application/json ContentType.
+type CreateAuditEventsBatchJSONRequestBody = CreateAuditEventsBatchJSONBody
 
-	// TimeRange Time window for analysis. Valid formats: "1h", "24h", "7d", "30d".
-	// Default: "7d" (last 7 days).
-	TimeRange *string `form:"time_range,omitempty" json:"time_range,omitempty"`
+// CreateNotificationAuditJSONRequestBody defines body for CreateNotificationAudit for application/json ContentType.
+type CreateNotificationAuditJSONRequestBody = NotificationAudit
 
-	// MinSamples Minimum sample size for confidence calculation.
-	// Same thresholds as incident-type endpoint.
-	MinSamples *int `form:"min_samples,omitempty" json:"min_samples,omitempty"`
-}
+// CreateWorkflowJSONRequestBody defines body for CreateWorkflow for application/json ContentType.
+type CreateWorkflowJSONRequestBody = RemediationWorkflow
+
+// SearchWorkflowsJSONRequestBody defines body for SearchWorkflows for application/json ContentType.
+type SearchWorkflowsJSONRequestBody = WorkflowSearchRequest
+
+// UpdateWorkflowJSONRequestBody defines body for UpdateWorkflow for application/json ContentType.
+type UpdateWorkflowJSONRequestBody = WorkflowUpdateRequest
+
+// DisableWorkflowJSONRequestBody defines body for DisableWorkflow for application/json ContentType.
+type DisableWorkflowJSONRequestBody = WorkflowDisableRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -478,20 +925,49 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
-	// ListIncidents request
-	ListIncidents(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// QueryAuditEvents request
+	QueryAuditEvents(ctx context.Context, params *QueryAuditEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetIncidentByID request
-	GetIncidentByID(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// CreateAuditEventWithBody request with any body
+	CreateAuditEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetSuccessRateByIncidentType request
-	GetSuccessRateByIncidentType(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateAuditEvent(ctx context.Context, body CreateAuditEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetSuccessRateMultiDimensional request
-	GetSuccessRateMultiDimensional(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// CreateAuditEventsBatchWithBody request with any body
+	CreateAuditEventsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetSuccessRateByWorkflow request
-	GetSuccessRateByWorkflow(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateAuditEventsBatch(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateNotificationAuditWithBody request with any body
+	CreateNotificationAuditWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateNotificationAudit(ctx context.Context, body CreateNotificationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkflows request
+	ListWorkflows(ctx context.Context, params *ListWorkflowsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateWorkflowWithBody request with any body
+	CreateWorkflowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateWorkflow(ctx context.Context, body CreateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SearchWorkflowsWithBody request with any body
+	SearchWorkflowsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SearchWorkflows(ctx context.Context, body SearchWorkflowsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkflowByID request
+	GetWorkflowByID(ctx context.Context, workflowId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateWorkflowWithBody request with any body
+	UpdateWorkflowWithBody(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateWorkflow(ctx context.Context, workflowId openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DisableWorkflowWithBody request with any body
+	DisableWorkflowWithBody(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DisableWorkflow(ctx context.Context, workflowId openapi_types.UUID, body DisableWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// HealthCheck request
 	HealthCheck(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -501,10 +977,13 @@ type ClientInterface interface {
 
 	// ReadinessCheck request
 	ReadinessCheck(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMetrics request
+	GetMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) ListIncidents(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListIncidentsRequest(c.Server, params)
+func (c *Client) QueryAuditEvents(ctx context.Context, params *QueryAuditEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryAuditEventsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -515,8 +994,8 @@ func (c *Client) ListIncidents(ctx context.Context, params *ListIncidentsParams,
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetIncidentByID(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetIncidentByIDRequest(c.Server, id)
+func (c *Client) CreateAuditEventWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAuditEventRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -527,8 +1006,8 @@ func (c *Client) GetIncidentByID(ctx context.Context, id int64, reqEditors ...Re
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetSuccessRateByIncidentType(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSuccessRateByIncidentTypeRequest(c.Server, params)
+func (c *Client) CreateAuditEvent(ctx context.Context, body CreateAuditEventJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAuditEventRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -539,8 +1018,8 @@ func (c *Client) GetSuccessRateByIncidentType(ctx context.Context, params *GetSu
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetSuccessRateMultiDimensional(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSuccessRateMultiDimensionalRequest(c.Server, params)
+func (c *Client) CreateAuditEventsBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAuditEventsBatchRequestWithBody(c.Server, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -551,8 +1030,152 @@ func (c *Client) GetSuccessRateMultiDimensional(ctx context.Context, params *Get
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetSuccessRateByWorkflow(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSuccessRateByWorkflowRequest(c.Server, params)
+func (c *Client) CreateAuditEventsBatch(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAuditEventsBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateNotificationAuditWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateNotificationAuditRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateNotificationAudit(ctx context.Context, body CreateNotificationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateNotificationAuditRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListWorkflows(ctx context.Context, params *ListWorkflowsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkflowsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkflowWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkflowRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateWorkflow(ctx context.Context, body CreateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateWorkflowRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchWorkflowsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchWorkflowsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SearchWorkflows(ctx context.Context, body SearchWorkflowsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchWorkflowsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetWorkflowByID(ctx context.Context, workflowId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkflowByIDRequest(c.Server, workflowId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateWorkflowWithBody(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWorkflowRequestWithBody(c.Server, workflowId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateWorkflow(ctx context.Context, workflowId openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWorkflowRequest(c.Server, workflowId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DisableWorkflowWithBody(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableWorkflowRequestWithBody(c.Server, workflowId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DisableWorkflow(ctx context.Context, workflowId openapi_types.UUID, body DisableWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDisableWorkflowRequest(c.Server, workflowId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -599,8 +1222,20 @@ func (c *Client) ReadinessCheck(ctx context.Context, reqEditors ...RequestEditor
 	return c.Client.Do(req)
 }
 
-// NewListIncidentsRequest generates requests for ListIncidents
-func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.Request, error) {
+func (c *Client) GetMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMetricsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// NewQueryAuditEventsRequest generates requests for QueryAuditEvents
+func NewQueryAuditEventsRequest(server string, params *QueryAuditEventsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -608,7 +1243,7 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/incidents")
+	operationPath := fmt.Sprintf("/api/v1/audit/events")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -621,9 +1256,41 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 	if params != nil {
 		queryValues := queryURL.Query()
 
-		if params.AlertName != nil {
+		if params.EventType != nil {
 
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "alert_name", runtime.ParamLocationQuery, *params.AlertName); err != nil {
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "event_type", runtime.ParamLocationQuery, *params.EventType); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EventCategory != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "event_category", runtime.ParamLocationQuery, *params.EventCategory); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EventOutcome != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "event_outcome", runtime.ParamLocationQuery, *params.EventOutcome); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -653,9 +1320,9 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 
 		}
 
-		if params.ActionType != nil {
+		if params.CorrelationId != nil {
 
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "action_type", runtime.ParamLocationQuery, *params.ActionType); err != nil {
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "correlation_id", runtime.ParamLocationQuery, *params.CorrelationId); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -669,9 +1336,25 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 
 		}
 
-		if params.Namespace != nil {
+		if params.Since != nil {
 
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "namespace", runtime.ParamLocationQuery, *params.Namespace); err != nil {
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "since", runtime.ParamLocationQuery, *params.Since); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Until != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "until", runtime.ParamLocationQuery, *params.Until); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -728,13 +1411,342 @@ func NewListIncidentsRequest(server string, params *ListIncidentsParams) (*http.
 	return req, nil
 }
 
-// NewGetIncidentByIDRequest generates requests for GetIncidentByID
-func NewGetIncidentByIDRequest(server string, id int64) (*http.Request, error) {
+// NewCreateAuditEventRequest calls the generic CreateAuditEvent builder with application/json body
+func NewCreateAuditEventRequest(server string, body CreateAuditEventJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateAuditEventRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateAuditEventRequestWithBody generates requests for CreateAuditEvent with any type of body
+func NewCreateAuditEventRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/events")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateAuditEventsBatchRequest calls the generic CreateAuditEventsBatch builder with application/json body
+func NewCreateAuditEventsBatchRequest(server string, body CreateAuditEventsBatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateAuditEventsBatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateAuditEventsBatchRequestWithBody generates requests for CreateAuditEventsBatch with any type of body
+func NewCreateAuditEventsBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/events/batch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateNotificationAuditRequest calls the generic CreateNotificationAudit builder with application/json body
+func NewCreateNotificationAuditRequest(server string, body CreateNotificationAuditJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateNotificationAuditRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateNotificationAuditRequestWithBody generates requests for CreateNotificationAudit with any type of body
+func NewCreateNotificationAuditRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/notifications")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListWorkflowsRequest generates requests for ListWorkflows
+func NewListWorkflowsRequest(server string, params *ListWorkflowsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workflows")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "status", runtime.ParamLocationQuery, *params.Status); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Environment != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "environment", runtime.ParamLocationQuery, *params.Environment); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Priority != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "priority", runtime.ParamLocationQuery, *params.Priority); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Component != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "component", runtime.ParamLocationQuery, *params.Component); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "limit", runtime.ParamLocationQuery, *params.Limit); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "offset", runtime.ParamLocationQuery, *params.Offset); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateWorkflowRequest calls the generic CreateWorkflow builder with application/json body
+func NewCreateWorkflowRequest(server string, body CreateWorkflowJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateWorkflowRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateWorkflowRequestWithBody generates requests for CreateWorkflow with any type of body
+func NewCreateWorkflowRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workflows")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSearchWorkflowsRequest calls the generic SearchWorkflows builder with application/json body
+func NewSearchWorkflowsRequest(server string, body SearchWorkflowsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSearchWorkflowsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSearchWorkflowsRequestWithBody generates requests for SearchWorkflows with any type of body
+func NewSearchWorkflowsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workflows/search")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWorkflowByIDRequest generates requests for GetWorkflowByID
+func NewGetWorkflowByIDRequest(server string, workflowId openapi_types.UUID) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "workflow_id", runtime.ParamLocationPath, workflowId)
 	if err != nil {
 		return nil, err
 	}
@@ -744,7 +1756,7 @@ func NewGetIncidentByIDRequest(server string, id int64) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/incidents/%s", pathParam0)
+	operationPath := fmt.Sprintf("/api/v1/workflows/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -762,16 +1774,34 @@ func NewGetIncidentByIDRequest(server string, id int64) (*http.Request, error) {
 	return req, nil
 }
 
-// NewGetSuccessRateByIncidentTypeRequest generates requests for GetSuccessRateByIncidentType
-func NewGetSuccessRateByIncidentTypeRequest(server string, params *GetSuccessRateByIncidentTypeParams) (*http.Request, error) {
+// NewUpdateWorkflowRequest calls the generic UpdateWorkflow builder with application/json body
+func NewUpdateWorkflowRequest(server string, workflowId openapi_types.UUID, body UpdateWorkflowJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateWorkflowRequestWithBody(server, workflowId, "application/json", bodyReader)
+}
+
+// NewUpdateWorkflowRequestWithBody generates requests for UpdateWorkflow with any type of body
+func NewUpdateWorkflowRequestWithBody(server string, workflowId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "workflow_id", runtime.ParamLocationPath, workflowId)
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/success-rate/incident-type")
+	operationPath := fmt.Sprintf("/api/v1/workflows/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -781,203 +1811,44 @@ func NewGetSuccessRateByIncidentTypeRequest(server string, params *GetSuccessRat
 		return nil, err
 	}
 
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "incident_type", runtime.ParamLocationQuery, params.IncidentType); err != nil {
-			return nil, err
-		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-			return nil, err
-		} else {
-			for k, v := range parsed {
-				for _, v2 := range v {
-					queryValues.Add(k, v2)
-				}
-			}
-		}
-
-		if params.TimeRange != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "time_range", runtime.ParamLocationQuery, *params.TimeRange); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.MinSamples != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "min_samples", runtime.ParamLocationQuery, *params.MinSamples); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
 
-// NewGetSuccessRateMultiDimensionalRequest generates requests for GetSuccessRateMultiDimensional
-func NewGetSuccessRateMultiDimensionalRequest(server string, params *GetSuccessRateMultiDimensionalParams) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
+// NewDisableWorkflowRequest calls the generic DisableWorkflow builder with application/json body
+func NewDisableWorkflowRequest(server string, workflowId openapi_types.UUID, body DisableWorkflowJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-
-	operationPath := fmt.Sprintf("/api/v1/success-rate/multi-dimensional")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if params.IncidentType != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "incident_type", runtime.ParamLocationQuery, *params.IncidentType); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.WorkflowId != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_id", runtime.ParamLocationQuery, *params.WorkflowId); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.WorkflowVersion != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_version", runtime.ParamLocationQuery, *params.WorkflowVersion); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.ActionType != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "action_type", runtime.ParamLocationQuery, *params.ActionType); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.TimeRange != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "time_range", runtime.ParamLocationQuery, *params.TimeRange); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.MinSamples != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "min_samples", runtime.ParamLocationQuery, *params.MinSamples); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
+	bodyReader = bytes.NewReader(buf)
+	return NewDisableWorkflowRequestWithBody(server, workflowId, "application/json", bodyReader)
 }
 
-// NewGetSuccessRateByWorkflowRequest generates requests for GetSuccessRateByWorkflow
-func NewGetSuccessRateByWorkflowRequest(server string, params *GetSuccessRateByWorkflowParams) (*http.Request, error) {
+// NewDisableWorkflowRequestWithBody generates requests for DisableWorkflow with any type of body
+func NewDisableWorkflowRequestWithBody(server string, workflowId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "workflow_id", runtime.ParamLocationPath, workflowId)
+	if err != nil {
+		return nil, err
+	}
 
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/api/v1/success-rate/workflow")
+	operationPath := fmt.Sprintf("/api/v1/workflows/%s/disable", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -987,76 +1858,12 @@ func NewGetSuccessRateByWorkflowRequest(server string, params *GetSuccessRateByW
 		return nil, err
 	}
 
-	if params != nil {
-		queryValues := queryURL.Query()
-
-		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_id", runtime.ParamLocationQuery, params.WorkflowId); err != nil {
-			return nil, err
-		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-			return nil, err
-		} else {
-			for k, v := range parsed {
-				for _, v2 := range v {
-					queryValues.Add(k, v2)
-				}
-			}
-		}
-
-		if params.WorkflowVersion != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "workflow_version", runtime.ParamLocationQuery, *params.WorkflowVersion); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.TimeRange != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "time_range", runtime.ParamLocationQuery, *params.TimeRange); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		if params.MinSamples != nil {
-
-			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "min_samples", runtime.ParamLocationQuery, *params.MinSamples); err != nil {
-				return nil, err
-			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
-				return nil, err
-			} else {
-				for k, v := range parsed {
-					for _, v2 := range v {
-						queryValues.Add(k, v2)
-					}
-				}
-			}
-
-		}
-
-		queryURL.RawQuery = queryValues.Encode()
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	req, err := http.NewRequest("PATCH", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -1142,6 +1949,33 @@ func NewReadinessCheckRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewGetMetricsRequest generates requests for GetMetrics
+func NewGetMetricsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/metrics")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -1185,20 +2019,49 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
-	// ListIncidentsWithResponse request
-	ListIncidentsWithResponse(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*ListIncidentsResponse, error)
+	// QueryAuditEventsWithResponse request
+	QueryAuditEventsWithResponse(ctx context.Context, params *QueryAuditEventsParams, reqEditors ...RequestEditorFn) (*QueryAuditEventsResponse, error)
 
-	// GetIncidentByIDWithResponse request
-	GetIncidentByIDWithResponse(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*GetIncidentByIDResponse, error)
+	// CreateAuditEventWithBodyWithResponse request with any body
+	CreateAuditEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAuditEventResponse, error)
 
-	// GetSuccessRateByIncidentTypeWithResponse request
-	GetSuccessRateByIncidentTypeWithResponse(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByIncidentTypeResponse, error)
+	CreateAuditEventWithResponse(ctx context.Context, body CreateAuditEventJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAuditEventResponse, error)
 
-	// GetSuccessRateMultiDimensionalWithResponse request
-	GetSuccessRateMultiDimensionalWithResponse(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*GetSuccessRateMultiDimensionalResponse, error)
+	// CreateAuditEventsBatchWithBodyWithResponse request with any body
+	CreateAuditEventsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAuditEventsBatchResponse, error)
 
-	// GetSuccessRateByWorkflowWithResponse request
-	GetSuccessRateByWorkflowWithResponse(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByWorkflowResponse, error)
+	CreateAuditEventsBatchWithResponse(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAuditEventsBatchResponse, error)
+
+	// CreateNotificationAuditWithBodyWithResponse request with any body
+	CreateNotificationAuditWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateNotificationAuditResponse, error)
+
+	CreateNotificationAuditWithResponse(ctx context.Context, body CreateNotificationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateNotificationAuditResponse, error)
+
+	// ListWorkflowsWithResponse request
+	ListWorkflowsWithResponse(ctx context.Context, params *ListWorkflowsParams, reqEditors ...RequestEditorFn) (*ListWorkflowsResponse, error)
+
+	// CreateWorkflowWithBodyWithResponse request with any body
+	CreateWorkflowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkflowResponse, error)
+
+	CreateWorkflowWithResponse(ctx context.Context, body CreateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkflowResponse, error)
+
+	// SearchWorkflowsWithBodyWithResponse request with any body
+	SearchWorkflowsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SearchWorkflowsResponse, error)
+
+	SearchWorkflowsWithResponse(ctx context.Context, body SearchWorkflowsJSONRequestBody, reqEditors ...RequestEditorFn) (*SearchWorkflowsResponse, error)
+
+	// GetWorkflowByIDWithResponse request
+	GetWorkflowByIDWithResponse(ctx context.Context, workflowId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetWorkflowByIDResponse, error)
+
+	// UpdateWorkflowWithBodyWithResponse request with any body
+	UpdateWorkflowWithBodyWithResponse(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error)
+
+	UpdateWorkflowWithResponse(ctx context.Context, workflowId openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error)
+
+	// DisableWorkflowWithBodyWithResponse request with any body
+	DisableWorkflowWithBodyWithResponse(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DisableWorkflowResponse, error)
+
+	DisableWorkflowWithResponse(ctx context.Context, workflowId openapi_types.UUID, body DisableWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*DisableWorkflowResponse, error)
 
 	// HealthCheckWithResponse request
 	HealthCheckWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthCheckResponse, error)
@@ -1208,18 +2071,19 @@ type ClientWithResponsesInterface interface {
 
 	// ReadinessCheckWithResponse request
 	ReadinessCheckWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ReadinessCheckResponse, error)
+
+	// GetMetricsWithResponse request
+	GetMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetricsResponse, error)
 }
 
-type ListIncidentsResponse struct {
-	Body                      []byte
-	HTTPResponse              *http.Response
-	JSON200                   *IncidentListResponse
-	ApplicationproblemJSON400 *RFC7807Error
-	ApplicationproblemJSON500 *RFC7807Error
+type QueryAuditEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AuditEventsQueryResponse
 }
 
 // Status returns HTTPResponse.Status
-func (r ListIncidentsResponse) Status() string {
+func (r QueryAuditEventsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1227,23 +2091,24 @@ func (r ListIncidentsResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r ListIncidentsResponse) StatusCode() int {
+func (r QueryAuditEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetIncidentByIDResponse struct {
+type CreateAuditEventResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
-	JSON200                   *Incident
-	ApplicationproblemJSON404 *RFC7807Error
-	ApplicationproblemJSON500 *RFC7807Error
+	JSON201                   *AuditEventResponse
+	JSON202                   *AuditEventResponse
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON500 *RFC7807Problem
 }
 
 // Status returns HTTPResponse.Status
-func (r GetIncidentByIDResponse) Status() string {
+func (r CreateAuditEventResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1251,23 +2116,21 @@ func (r GetIncidentByIDResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetIncidentByIDResponse) StatusCode() int {
+func (r CreateAuditEventResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetSuccessRateByIncidentTypeResponse struct {
-	Body                      []byte
-	HTTPResponse              *http.Response
-	JSON200                   *IncidentTypeSuccessRateResponse
-	ApplicationproblemJSON400 *RFC7807Error
-	ApplicationproblemJSON500 *RFC7807Error
+type CreateAuditEventsBatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *BatchAuditEventResponse
 }
 
 // Status returns HTTPResponse.Status
-func (r GetSuccessRateByIncidentTypeResponse) Status() string {
+func (r CreateAuditEventsBatchResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1275,23 +2138,29 @@ func (r GetSuccessRateByIncidentTypeResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetSuccessRateByIncidentTypeResponse) StatusCode() int {
+func (r CreateAuditEventsBatchResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetSuccessRateMultiDimensionalResponse struct {
-	Body                      []byte
-	HTTPResponse              *http.Response
-	JSON200                   *MultiDimensionalSuccessRateResponse
-	ApplicationproblemJSON400 *RFC7807Error
-	ApplicationproblemJSON500 *RFC7807Error
+type CreateNotificationAuditResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *NotificationAuditResponse
+	JSON202      *struct {
+		Message string                           `json:"message"`
+		Status  CreateNotificationAudit202Status `json:"status"`
+	}
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON409 *RFC7807Problem
+	ApplicationproblemJSON500 *RFC7807Problem
 }
+type CreateNotificationAudit202Status string
 
 // Status returns HTTPResponse.Status
-func (r GetSuccessRateMultiDimensionalResponse) Status() string {
+func (r CreateNotificationAuditResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1299,23 +2168,22 @@ func (r GetSuccessRateMultiDimensionalResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetSuccessRateMultiDimensionalResponse) StatusCode() int {
+func (r CreateNotificationAuditResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type GetSuccessRateByWorkflowResponse struct {
+type ListWorkflowsResponse struct {
 	Body                      []byte
 	HTTPResponse              *http.Response
-	JSON200                   *WorkflowSuccessRateResponse
-	ApplicationproblemJSON400 *RFC7807Error
-	ApplicationproblemJSON500 *RFC7807Error
+	JSON200                   *WorkflowListResponse
+	ApplicationproblemJSON500 *RFC7807Problem
 }
 
 // Status returns HTTPResponse.Status
-func (r GetSuccessRateByWorkflowResponse) Status() string {
+func (r ListWorkflowsResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -1323,7 +2191,126 @@ func (r GetSuccessRateByWorkflowResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetSuccessRateByWorkflowResponse) StatusCode() int {
+func (r ListWorkflowsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateWorkflowResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON201                   *RemediationWorkflow
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON500 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateWorkflowResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateWorkflowResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SearchWorkflowsResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *WorkflowSearchResponse
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON500 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchWorkflowsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchWorkflowsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetWorkflowByIDResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *RemediationWorkflow
+	ApplicationproblemJSON404 *RFC7807Problem
+	ApplicationproblemJSON500 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkflowByIDResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkflowByIDResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateWorkflowResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *RemediationWorkflow
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON404 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateWorkflowResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateWorkflowResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DisableWorkflowResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *RemediationWorkflow
+	ApplicationproblemJSON404 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r DisableWorkflowResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DisableWorkflowResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -1333,7 +2320,16 @@ func (r GetSuccessRateByWorkflowResponse) StatusCode() int {
 type HealthCheckResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	JSON200      *struct {
+		Status *HealthCheck200Status `json:"status,omitempty"`
+	}
+	JSON503 *struct {
+		Error  *string               `json:"error,omitempty"`
+		Status *HealthCheck503Status `json:"status,omitempty"`
+	}
 }
+type HealthCheck200Status string
+type HealthCheck503Status string
 
 // Status returns HTTPResponse.Status
 func (r HealthCheckResponse) Status() string {
@@ -1393,49 +2389,171 @@ func (r ReadinessCheckResponse) StatusCode() int {
 	return 0
 }
 
-// ListIncidentsWithResponse request returning *ListIncidentsResponse
-func (c *ClientWithResponses) ListIncidentsWithResponse(ctx context.Context, params *ListIncidentsParams, reqEditors ...RequestEditorFn) (*ListIncidentsResponse, error) {
-	rsp, err := c.ListIncidents(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListIncidentsResponse(rsp)
+type GetMetricsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
 }
 
-// GetIncidentByIDWithResponse request returning *GetIncidentByIDResponse
-func (c *ClientWithResponses) GetIncidentByIDWithResponse(ctx context.Context, id int64, reqEditors ...RequestEditorFn) (*GetIncidentByIDResponse, error) {
-	rsp, err := c.GetIncidentByID(ctx, id, reqEditors...)
-	if err != nil {
-		return nil, err
+// Status returns HTTPResponse.Status
+func (r GetMetricsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
 	}
-	return ParseGetIncidentByIDResponse(rsp)
+	return http.StatusText(0)
 }
 
-// GetSuccessRateByIncidentTypeWithResponse request returning *GetSuccessRateByIncidentTypeResponse
-func (c *ClientWithResponses) GetSuccessRateByIncidentTypeWithResponse(ctx context.Context, params *GetSuccessRateByIncidentTypeParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByIncidentTypeResponse, error) {
-	rsp, err := c.GetSuccessRateByIncidentType(ctx, params, reqEditors...)
-	if err != nil {
-		return nil, err
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMetricsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
 	}
-	return ParseGetSuccessRateByIncidentTypeResponse(rsp)
+	return 0
 }
 
-// GetSuccessRateMultiDimensionalWithResponse request returning *GetSuccessRateMultiDimensionalResponse
-func (c *ClientWithResponses) GetSuccessRateMultiDimensionalWithResponse(ctx context.Context, params *GetSuccessRateMultiDimensionalParams, reqEditors ...RequestEditorFn) (*GetSuccessRateMultiDimensionalResponse, error) {
-	rsp, err := c.GetSuccessRateMultiDimensional(ctx, params, reqEditors...)
+// QueryAuditEventsWithResponse request returning *QueryAuditEventsResponse
+func (c *ClientWithResponses) QueryAuditEventsWithResponse(ctx context.Context, params *QueryAuditEventsParams, reqEditors ...RequestEditorFn) (*QueryAuditEventsResponse, error) {
+	rsp, err := c.QueryAuditEvents(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetSuccessRateMultiDimensionalResponse(rsp)
+	return ParseQueryAuditEventsResponse(rsp)
 }
 
-// GetSuccessRateByWorkflowWithResponse request returning *GetSuccessRateByWorkflowResponse
-func (c *ClientWithResponses) GetSuccessRateByWorkflowWithResponse(ctx context.Context, params *GetSuccessRateByWorkflowParams, reqEditors ...RequestEditorFn) (*GetSuccessRateByWorkflowResponse, error) {
-	rsp, err := c.GetSuccessRateByWorkflow(ctx, params, reqEditors...)
+// CreateAuditEventWithBodyWithResponse request with arbitrary body returning *CreateAuditEventResponse
+func (c *ClientWithResponses) CreateAuditEventWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAuditEventResponse, error) {
+	rsp, err := c.CreateAuditEventWithBody(ctx, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetSuccessRateByWorkflowResponse(rsp)
+	return ParseCreateAuditEventResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateAuditEventWithResponse(ctx context.Context, body CreateAuditEventJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAuditEventResponse, error) {
+	rsp, err := c.CreateAuditEvent(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAuditEventResponse(rsp)
+}
+
+// CreateAuditEventsBatchWithBodyWithResponse request with arbitrary body returning *CreateAuditEventsBatchResponse
+func (c *ClientWithResponses) CreateAuditEventsBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAuditEventsBatchResponse, error) {
+	rsp, err := c.CreateAuditEventsBatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAuditEventsBatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateAuditEventsBatchWithResponse(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAuditEventsBatchResponse, error) {
+	rsp, err := c.CreateAuditEventsBatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAuditEventsBatchResponse(rsp)
+}
+
+// CreateNotificationAuditWithBodyWithResponse request with arbitrary body returning *CreateNotificationAuditResponse
+func (c *ClientWithResponses) CreateNotificationAuditWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateNotificationAuditResponse, error) {
+	rsp, err := c.CreateNotificationAuditWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateNotificationAuditResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateNotificationAuditWithResponse(ctx context.Context, body CreateNotificationAuditJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateNotificationAuditResponse, error) {
+	rsp, err := c.CreateNotificationAudit(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateNotificationAuditResponse(rsp)
+}
+
+// ListWorkflowsWithResponse request returning *ListWorkflowsResponse
+func (c *ClientWithResponses) ListWorkflowsWithResponse(ctx context.Context, params *ListWorkflowsParams, reqEditors ...RequestEditorFn) (*ListWorkflowsResponse, error) {
+	rsp, err := c.ListWorkflows(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkflowsResponse(rsp)
+}
+
+// CreateWorkflowWithBodyWithResponse request with arbitrary body returning *CreateWorkflowResponse
+func (c *ClientWithResponses) CreateWorkflowWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateWorkflowResponse, error) {
+	rsp, err := c.CreateWorkflowWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkflowResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateWorkflowWithResponse(ctx context.Context, body CreateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateWorkflowResponse, error) {
+	rsp, err := c.CreateWorkflow(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateWorkflowResponse(rsp)
+}
+
+// SearchWorkflowsWithBodyWithResponse request with arbitrary body returning *SearchWorkflowsResponse
+func (c *ClientWithResponses) SearchWorkflowsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SearchWorkflowsResponse, error) {
+	rsp, err := c.SearchWorkflowsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchWorkflowsResponse(rsp)
+}
+
+func (c *ClientWithResponses) SearchWorkflowsWithResponse(ctx context.Context, body SearchWorkflowsJSONRequestBody, reqEditors ...RequestEditorFn) (*SearchWorkflowsResponse, error) {
+	rsp, err := c.SearchWorkflows(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchWorkflowsResponse(rsp)
+}
+
+// GetWorkflowByIDWithResponse request returning *GetWorkflowByIDResponse
+func (c *ClientWithResponses) GetWorkflowByIDWithResponse(ctx context.Context, workflowId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetWorkflowByIDResponse, error) {
+	rsp, err := c.GetWorkflowByID(ctx, workflowId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkflowByIDResponse(rsp)
+}
+
+// UpdateWorkflowWithBodyWithResponse request with arbitrary body returning *UpdateWorkflowResponse
+func (c *ClientWithResponses) UpdateWorkflowWithBodyWithResponse(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error) {
+	rsp, err := c.UpdateWorkflowWithBody(ctx, workflowId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWorkflowResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateWorkflowWithResponse(ctx context.Context, workflowId openapi_types.UUID, body UpdateWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkflowResponse, error) {
+	rsp, err := c.UpdateWorkflow(ctx, workflowId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWorkflowResponse(rsp)
+}
+
+// DisableWorkflowWithBodyWithResponse request with arbitrary body returning *DisableWorkflowResponse
+func (c *ClientWithResponses) DisableWorkflowWithBodyWithResponse(ctx context.Context, workflowId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DisableWorkflowResponse, error) {
+	rsp, err := c.DisableWorkflowWithBody(ctx, workflowId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableWorkflowResponse(rsp)
+}
+
+func (c *ClientWithResponses) DisableWorkflowWithResponse(ctx context.Context, workflowId openapi_types.UUID, body DisableWorkflowJSONRequestBody, reqEditors ...RequestEditorFn) (*DisableWorkflowResponse, error) {
+	rsp, err := c.DisableWorkflow(ctx, workflowId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDisableWorkflowResponse(rsp)
 }
 
 // HealthCheckWithResponse request returning *HealthCheckResponse
@@ -1465,36 +2583,78 @@ func (c *ClientWithResponses) ReadinessCheckWithResponse(ctx context.Context, re
 	return ParseReadinessCheckResponse(rsp)
 }
 
-// ParseListIncidentsResponse parses an HTTP response from a ListIncidentsWithResponse call
-func ParseListIncidentsResponse(rsp *http.Response) (*ListIncidentsResponse, error) {
+// GetMetricsWithResponse request returning *GetMetricsResponse
+func (c *ClientWithResponses) GetMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetMetricsResponse, error) {
+	rsp, err := c.GetMetrics(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMetricsResponse(rsp)
+}
+
+// ParseQueryAuditEventsResponse parses an HTTP response from a QueryAuditEventsWithResponse call
+func ParseQueryAuditEventsResponse(rsp *http.Response) (*QueryAuditEventsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &ListIncidentsResponse{
+	response := &QueryAuditEventsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest IncidentListResponse
+		var dest AuditEventsQueryResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseCreateAuditEventResponse parses an HTTP response from a CreateAuditEventWithResponse call
+func ParseCreateAuditEventResponse(rsp *http.Response) (*CreateAuditEventResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateAuditEventResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest AuditEventResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest AuditEventResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest RFC7807Error
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.ApplicationproblemJSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest RFC7807Error
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1505,36 +2665,232 @@ func ParseListIncidentsResponse(rsp *http.Response) (*ListIncidentsResponse, err
 	return response, nil
 }
 
-// ParseGetIncidentByIDResponse parses an HTTP response from a GetIncidentByIDWithResponse call
-func ParseGetIncidentByIDResponse(rsp *http.Response) (*GetIncidentByIDResponse, error) {
+// ParseCreateAuditEventsBatchResponse parses an HTTP response from a CreateAuditEventsBatchWithResponse call
+func ParseCreateAuditEventsBatchResponse(rsp *http.Response) (*CreateAuditEventsBatchResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetIncidentByIDResponse{
+	response := &CreateAuditEventsBatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest BatchAuditEventResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateNotificationAuditResponse parses an HTTP response from a CreateNotificationAuditWithResponse call
+func ParseCreateNotificationAuditResponse(rsp *http.Response) (*CreateNotificationAuditResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateNotificationAuditResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest NotificationAuditResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest struct {
+			Message string                           `json:"message"`
+			Status  CreateNotificationAudit202Status `json:"status"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkflowsResponse parses an HTTP response from a ListWorkflowsWithResponse call
+func ParseListWorkflowsResponse(rsp *http.Response) (*ListWorkflowsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkflowsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Incident
+		var dest WorkflowListResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateWorkflowResponse parses an HTTP response from a CreateWorkflowWithResponse call
+func ParseCreateWorkflowResponse(rsp *http.Response) (*CreateWorkflowResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateWorkflowResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest RemediationWorkflow
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchWorkflowsResponse parses an HTTP response from a SearchWorkflowsWithResponse call
+func ParseSearchWorkflowsResponse(rsp *http.Response) (*SearchWorkflowsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchWorkflowsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkflowSearchResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkflowByIDResponse parses an HTTP response from a GetWorkflowByIDWithResponse call
+func ParseGetWorkflowByIDResponse(rsp *http.Response) (*GetWorkflowByIDResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkflowByIDResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest RemediationWorkflow
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
-		var dest RFC7807Error
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest RFC7807Error
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -1545,120 +2901,73 @@ func ParseGetIncidentByIDResponse(rsp *http.Response) (*GetIncidentByIDResponse,
 	return response, nil
 }
 
-// ParseGetSuccessRateByIncidentTypeResponse parses an HTTP response from a GetSuccessRateByIncidentTypeWithResponse call
-func ParseGetSuccessRateByIncidentTypeResponse(rsp *http.Response) (*GetSuccessRateByIncidentTypeResponse, error) {
+// ParseUpdateWorkflowResponse parses an HTTP response from a UpdateWorkflowWithResponse call
+func ParseUpdateWorkflowResponse(rsp *http.Response) (*UpdateWorkflowResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetSuccessRateByIncidentTypeResponse{
+	response := &UpdateWorkflowResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest IncidentTypeSuccessRateResponse
+		var dest RemediationWorkflow
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest RFC7807Error
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.ApplicationproblemJSON400 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest RFC7807Error
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSON500 = &dest
+		response.ApplicationproblemJSON404 = &dest
 
 	}
 
 	return response, nil
 }
 
-// ParseGetSuccessRateMultiDimensionalResponse parses an HTTP response from a GetSuccessRateMultiDimensionalWithResponse call
-func ParseGetSuccessRateMultiDimensionalResponse(rsp *http.Response) (*GetSuccessRateMultiDimensionalResponse, error) {
+// ParseDisableWorkflowResponse parses an HTTP response from a DisableWorkflowWithResponse call
+func ParseDisableWorkflowResponse(rsp *http.Response) (*DisableWorkflowResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetSuccessRateMultiDimensionalResponse{
+	response := &DisableWorkflowResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest MultiDimensionalSuccessRateResponse
+		var dest RemediationWorkflow
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest RFC7807Error
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest RFC7807Problem
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest RFC7807Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetSuccessRateByWorkflowResponse parses an HTTP response from a GetSuccessRateByWorkflowWithResponse call
-func ParseGetSuccessRateByWorkflowResponse(rsp *http.Response) (*GetSuccessRateByWorkflowResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSuccessRateByWorkflowResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest WorkflowSuccessRateResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest RFC7807Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest RFC7807Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSON500 = &dest
+		response.ApplicationproblemJSON404 = &dest
 
 	}
 
@@ -1676,6 +2985,28 @@ func ParseHealthCheckResponse(rsp *http.Response) (*HealthCheckResponse, error) 
 	response := &HealthCheckResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Status *HealthCheck200Status `json:"status,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest struct {
+			Error  *string               `json:"error,omitempty"`
+			Status *HealthCheck503Status `json:"status,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	return response, nil
@@ -1706,6 +3037,22 @@ func ParseReadinessCheckResponse(rsp *http.Response) (*ReadinessCheckResponse, e
 	}
 
 	response := &ReadinessCheckResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseGetMetricsResponse parses an HTTP response from a GetMetricsWithResponse call
+func ParseGetMetricsResponse(rsp *http.Response) (*GetMetricsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMetricsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}

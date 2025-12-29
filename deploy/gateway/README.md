@@ -1,66 +1,69 @@
 # Gateway Service Deployment
 
-The Gateway Service provides signal ingestion from Prometheus AlertManager and Kubernetes Events, with state-based deduplication (DD-GATEWAY-009), buffered storm aggregation (DD-GATEWAY-008), and RemediationRequest CRD creation.
+**Version**: v1.0
+**Status**: ✅ Production-Ready (SOC2 Compliant)
+**Last Updated**: December 20, 2025
 
-**Features**:
-- **State-Based Deduplication** (DD-GATEWAY-009): Query CRD state to prevent duplicate incidents
-- **Buffered Storm Aggregation** (DD-GATEWAY-008): Buffer first N alerts before creating aggregation window (90%+ cost savings)
-- **Sliding Window** (BR-GATEWAY-008): Inactivity timeout with max duration safety limit
-- **Multi-Tenant Isolation** (BR-GATEWAY-011): Per-namespace buffer limits and overflow protection
+---
+
+## Overview
+
+The Gateway Service provides signal ingestion from Prometheus AlertManager and Kubernetes Events with Kubernetes-native state management for deduplication and RemediationRequest CRD creation.
+
+**V1.0 Features**:
+- **K8s-Native Deduplication** (DD-GATEWAY-011): Uses RemediationRequest status fields for deduplication state
+- **CRD-Based State Management** (DD-GATEWAY-012): No external dependencies - all state in Kubernetes CRDs
+- **SOC2-Compliant Audit Traces**: Full audit trail for enterprise compliance
+- **Multi-Signal Support**: Prometheus AlertManager webhooks and Kubernetes Events
+
+**Architecture Changes**:
+- ❌ **Redis Removed** (DD-GATEWAY-012): Migrated to K8s-native state management
+- ❌ **Storm Detection Removed** (DD-GATEWAY-015): Simplified V1.0 architecture
+
+---
 
 ## 📋 **Prerequisites**
 
-- Kubernetes cluster (1.24+) or OpenShift (4.12+)
-- kubectl or oc CLI configured
-- Redis (included in deployment)
+- **Kubernetes cluster** (v1.24+)
+- **kubectl** CLI configured
+- **Data Storage service** (for audit events)
+
+---
 
 ## 🚀 **Quick Start**
 
-### **OpenShift Deployment**
+### **Deploy Gateway Service**
 
 ```bash
-# Deploy Gateway + Redis to OpenShift
-oc apply -k deploy/gateway/overlays/openshift/
-
-# Verify deployment
-oc get pods -n kubernaut-system -l app.kubernetes.io/component=gateway
-oc logs -n kubernaut-system -l app.kubernetes.io/component=gateway --tail=50
-```
-
-### **Vanilla Kubernetes Deployment**
-
-```bash
-# Deploy Gateway + Redis to Kubernetes
-kubectl apply -k deploy/gateway/overlays/kubernetes/
+# Deploy to Kubernetes
+kubectl apply -k deploy/gateway/base/
 
 # Verify deployment
 kubectl get pods -n kubernaut-system -l app.kubernetes.io/component=gateway
 kubectl logs -n kubernaut-system -l app.kubernetes.io/component=gateway --tail=50
+
+# Check readiness
+kubectl exec -n kubernaut-system $(kubectl get pod -n kubernaut-system -l app.kubernetes.io/component=gateway -o jsonpath='{.items[0].metadata.name}') -- curl localhost:8080/ready
 ```
+
+---
 
 ## 📁 **Directory Structure**
 
 ```
-deploy/gateway/
-├── base/                          # Platform-agnostic base manifests
-│   ├── kustomization.yaml
-│   ├── 00-namespace.yaml          # kubernaut-system namespace
-│   ├── 01-rbac.yaml               # ServiceAccount + ClusterRole + Binding
-│   ├── 02-configmap.yaml          # Gateway config + Rego policies
-│   ├── 03-deployment.yaml         # Gateway deployment
-│   ├── 04-service.yaml            # Gateway service (8080, 9090)
-│   ├── 05-redis.yaml              # Redis deployment + service
-│   └── 06-servicemonitor.yaml     # Prometheus ServiceMonitor
-├── overlays/
-│   ├── openshift/                 # OpenShift-specific
-│   │   ├── kustomization.yaml
-│   │   └── patches/
-│   │       ├── remove-security-context.yaml        # Gateway SCC fix
-│   │       └── remove-redis-security-context.yaml  # Redis SCC fix
-│   └── kubernetes/                # Vanilla K8s (uses base as-is)
-│       └── kustomization.yaml
-└── README.md                      # This file
+deploy/gateway/base/
+├── kustomization.yaml              # Kustomize configuration
+├── 00-namespace.yaml               # kubernaut-system namespace
+├── 01-rbac.yaml                    # ServiceAccount + ClusterRole + Binding
+├── 02-configmap.yaml               # Gateway configuration
+├── 03-deployment.yaml              # Gateway deployment
+├── 04-service.yaml                 # ClusterIP service (8080, 9090)
+└── 06-servicemonitor.yaml          # Prometheus metrics
 ```
+
+**Note**: V1.0 provides standard Kubernetes manifests. Platform-specific overlays (OpenShift SCC, etc.) will be added in V1.1 based on user feedback.
+
+---
 
 ## 🔧 **Configuration**
 
@@ -68,24 +71,21 @@ deploy/gateway/
 
 Gateway configuration is managed via ConfigMap (`gateway-config`):
 
-- **Redis**: `redis-gateway.kubernaut-system.svc.cluster.local:6379`
-- **Deduplication TTL**: 5 minutes (fallback for DD-GATEWAY-009)
-- **Storm Detection**: Rate threshold 10, Pattern threshold 5
-- **Storm Buffering** (DD-GATEWAY-008):
-  - Buffer threshold: 5 alerts
-  - Inactivity timeout: 60s (sliding window)
-  - Max window duration: 5m (safety limit)
-  - Default namespace buffer: 1000 alerts
-  - Global buffer limit: 5000 alerts
-  - Sampling threshold: 95% utilization
-- **Priority Policy**: `/config.app/gateway/policies/priority.rego`
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `DATA_STORAGE_URL` | Audit event destination | `http://datastorage.kubernaut-system.svc.cluster.local:8080` |
+| `LOG_LEVEL` | Logging verbosity | `info`, `debug`, `error` |
+| `METRICS_PORT` | Prometheus metrics port | `9090` |
 
 ### **Customization**
 
 To customize configuration:
 
 1. Edit `base/02-configmap.yaml`
-2. Redeploy: `kubectl apply -k deploy/gateway/overlays/[platform]/`
+2. Redeploy: `kubectl apply -k deploy/gateway/base/`
+3. Restart: `kubectl rollout restart deployment/gateway -n kubernaut-system`
+
+---
 
 ## 🏗️ **Architecture**
 
@@ -93,102 +93,166 @@ To customize configuration:
 
 | Component | Purpose | Port |
 |---|---|---|
-| **Gateway** | Signal ingestion + processing | 8080 (HTTP), 9090 (metrics) |
-| **Redis** | Deduplication cache | 6379 |
+| **Gateway** | Signal ingestion + CRD creation | 8080 (HTTP), 9090 (metrics) |
 
-### **Endpoints**
+**State Management**: All deduplication state is stored in RemediationRequest CRD status fields (DD-GATEWAY-011). No external dependencies.
+
+### **API Endpoints**
 
 - `POST /api/v1/signals/prometheus` - Prometheus AlertManager webhooks
 - `POST /api/v1/signals/kubernetes-event` - Kubernetes Events
-- `GET /health` - Health check
+- `GET /health` - Health check (liveness probe)
 - `GET /ready` - Readiness probe
-- `GET /metrics` - Prometheus metrics
+- `GET /metrics` - Prometheus metrics (port 9090)
 
-## 🔍 **Troubleshooting**
-
-### **Gateway Pod Not Starting (OpenShift)**
-
-**Symptom**: `Error: unable to validate against any security context constraint`
-
-**Solution**: Ensure you're using the OpenShift overlay:
-```bash
-oc apply -k deploy/gateway/overlays/openshift/
-```
-
-### **Redis Connection Failures**
-
-**Symptom**: `Failed to connect to Redis`
-
-**Check Redis status**:
-```bash
-kubectl get pods -n kubernaut-system -l app=redis-gateway
-kubectl logs -n kubernaut-system -l app=redis-gateway
-```
-
-### **Image Pull Errors**
-
-**Symptom**: `ImagePullBackOff` or `ErrImagePull`
-
-**Solution**: Ensure image repository is public or configure imagePullSecrets:
-```bash
-# Check image
-kubectl describe pod -n kubernaut-system [gateway-pod-name]
-```
+---
 
 ## 📊 **Monitoring**
 
 ### **Prometheus Metrics**
 
-Gateway exposes 23+ metrics at `:9090/metrics`:
+Gateway exposes metrics at `:9090/metrics`:
 
 **Core Metrics**:
 - `gateway_signals_received_total` - Total signals received
-- `gateway_signals_deduplicated_total` - Deduplicated signals
-- `gateway_storm_detected_total` - Storm detections
+- `gateway_signals_deduplicated_total` - Signals deduplicated via CRD status
 - `gateway_crds_created_total` - RemediationRequests created
-- `gateway_redis_operations_total` - Redis operations
+- `gateway_crd_updates_total` - Deduplication updates to existing CRDs
+- `gateway_processing_duration_seconds` - Signal processing latency
 
-**DD-GATEWAY-008 Storm Buffering Metrics** (BR-GATEWAY-016, BR-GATEWAY-008, BR-GATEWAY-011):
-- `gateway_storm_cost_savings_percent` - Cost savings from aggregation (0-100%)
-- `gateway_storm_aggregation_ratio` - Ratio of alerts aggregated (0.0-1.0, higher=better)
-- `gateway_storm_window_duration_seconds` - Histogram of window durations
-- `gateway_namespace_buffer_utilization` - Buffer utilization per namespace (0.0-1.0)
-- `gateway_namespace_buffer_blocking_total` - Namespace capacity blocking events
-- `gateway_storm_buffer_overflow_total` - Buffer overflow events
+**SOC2 Audit Metrics**:
+- `gateway_audit_events_emitted_total` - Audit events sent to Data Storage
+- `gateway_audit_failures_total` - Audit event emission failures
 
 ### **Health Checks**
 
 ```bash
-# Health check
+# Health check (liveness)
 kubectl exec -n kubernaut-system [gateway-pod] -- curl localhost:8080/health
 
 # Readiness check
 kubectl exec -n kubernaut-system [gateway-pod] -- curl localhost:8080/ready
 ```
 
+---
+
+## 🔍 **Troubleshooting**
+
+### **Gateway Pod Not Starting**
+
+**Symptom**: Pod in `CrashLoopBackOff` or `Error` state
+
+**Check**:
+```bash
+kubectl describe pod -n kubernaut-system -l app.kubernetes.io/component=gateway
+kubectl logs -n kubernaut-system -l app.kubernetes.io/component=gateway
+```
+
+**Common Issues**:
+1. **DATA_STORAGE_URL not set**: Gateway requires Data Storage for audit events (ADR-032)
+2. **RBAC permissions**: Check ClusterRole for CRD access
+3. **Image pull errors**: Verify image availability
+
+### **CRD Creation Failures**
+
+**Symptom**: Signals received but no RemediationRequest CRDs created
+
+**Check**:
+```bash
+# Check Gateway logs for errors
+kubectl logs -n kubernaut-system -l app.kubernetes.io/component=gateway | grep ERROR
+
+# Verify CRD permissions
+kubectl auth can-i create remediationrequests.remediation.kubernaut.ai \
+  --as=system:serviceaccount:kubernaut-system:gateway
+```
+
+### **Deduplication Not Working**
+
+**Symptom**: Duplicate RemediationRequest CRDs for same signal
+
+**Check**:
+```bash
+# Check RemediationRequest status for deduplication metadata
+kubectl get remediationrequest -n [namespace] [rr-name] -o jsonpath='{.status.deduplication}'
+
+# Verify fingerprint calculation
+kubectl logs -n kubernaut-system -l app.kubernetes.io/component=gateway | grep fingerprint
+```
+
+**Note**: Deduplication state is stored in RemediationRequest status.deduplication field per DD-GATEWAY-011
+
+### **Audit Events Not Emitted**
+
+**Symptom**: No audit events in Data Storage
+
+**Check**:
+```bash
+# Verify Data Storage connectivity
+kubectl exec -n kubernaut-system [gateway-pod] -- curl http://datastorage.kubernaut-system.svc.cluster.local:8080/health
+
+# Check audit failure metrics
+kubectl exec -n kubernaut-system [gateway-pod] -- curl localhost:9090/metrics | grep gateway_audit_failures_total
+```
+
+---
+
 ## 🔄 **Upgrading**
 
 ```bash
-# Update image tag in base/kustomization.yaml
+# Update image tag in base/kustomization.yaml or base/03-deployment.yaml
 # Then redeploy
-kubectl apply -k deploy/gateway/overlays/[platform]/
+kubectl apply -k deploy/gateway/base/
+
+# Monitor rollout
+kubectl rollout status deployment/gateway -n kubernaut-system
 
 # Or use kubectl set image
 kubectl set image deployment/gateway gateway=quay.io/jordigilh/kubernaut-gateway:v1.1.0 -n kubernaut-system
 ```
 
+---
+
 ## 🗑️ **Uninstall**
 
 ```bash
-# OpenShift
-oc delete -k deploy/gateway/overlays/openshift/
+# Delete Gateway service
+kubectl delete -k deploy/gateway/base/
 
-# Kubernetes
-kubectl delete -k deploy/gateway/overlays/kubernetes/
+# Or delete namespace (removes all kubernaut resources)
+# kubectl delete namespace kubernaut-system
 ```
+
+---
 
 ## 📚 **References**
 
+### **Architecture Decisions**
+- [DD-GATEWAY-011 - Shared Status Deduplication](../../docs/architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md)
+- [DD-GATEWAY-012 - Redis Removal Complete](../../docs/handoff/NOTICE_DD_GATEWAY_012_REDIS_REMOVAL_COMPLETE.md)
+- [DD-GATEWAY-015 - Storm Detection Removal](../../docs/architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md)
+
+### **Implementation**
 - [Gateway Service Documentation](../../docs/services/stateless/gateway-service/)
-- [Implementation Plan v2.23](../../docs/services/stateless/gateway-service/IMPLEMENTATION_PLAN_V2.23.md)
-- [Completion Summary](../../docs/services/stateless/gateway-service/GATEWAY_V2.23_COMPLETE.md)
+- [V1.0 Completion Summary](../../docs/handoff/GATEWAY_V1_0_COMPLETE_25_25_TESTS_PASSING_DEC_20_2025.md)
+- [P0 Maturity Compliance](../../docs/handoff/GATEWAY_P0_MATURITY_COMPLIANCE_COMPLETE_DEC_20_2025.md)
+
+### **Testing**
+- **Tests**: 443 total (314 unit + 104 integration + 25 E2E)
+- **Coverage**: 100% P0 requirements (6/6)
+- **Status**: ✅ All tests passing
+
+---
+
+## 🎯 **V1.0 Status**
+
+| Aspect | Status | Details |
+|--------|--------|---------|
+| **Production Ready** | ✅ Complete | 443 tests passing, 100% P0 compliance |
+| **SOC2 Compliance** | ✅ Complete | Full audit trail, enterprise-ready |
+| **K8s-Native** | ✅ Complete | No external dependencies (Redis removed) |
+| **Architecture** | ✅ Simplified | Storm detection removed, CRD-based state |
+
+**Maintainer**: Kubernaut Gateway Team
+**Last Validated**: December 20, 2025
+**Version**: v1.0 Production-Ready

@@ -1,8 +1,20 @@
 ## Testing Strategy
 
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.6 | 2025-12-04 | Fixed test pattern violations: All examples now use DescribeTable, BR references added to all Describe() blocks | [03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc), [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) |
+> | v1.5 | 2025-12-03 | Removed TC-DL-008 (podSecurityLevel removed in DD-WORKFLOW-001 v2.2), updated BR range | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.4 | 2025-11-30 | Added 5 more Rego security wrapper tests (TC-CL-008 to TC-CL-012) for 100% confidence | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.3 | 2025-11-30 | Added label detection test scenarios (OwnerChain, DetectedLabels, CustomLabels) | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
+> | v1.2 | 2025-11-28 | Added ADR-004, DD-TEST-002 refs, fixed test paths, updated coverage targets | [ADR-004](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md) |
+> | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Terminology: Alert → Signal | [ADR-015](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md) |
+> | v1.0 | 2025-01-15 | Initial testing strategy | - |
+
 **Testing Framework Reference**: [.cursor/rules/03-testing-strategy.mdc](../../../.cursor/rules/03-testing-strategy.mdc)
 
-### Testing Pyramid
+### Defense-in-Depth Testing Approach
 
 Following Kubernaut's defense-in-depth testing strategy:
 
@@ -10,15 +22,19 @@ Following Kubernaut's defense-in-depth testing strategy:
 |-----------|----------------|-------|------------|
 | **Unit Tests** | 70%+ | Controller logic, reconciliation phases, business rules | 85-90% |
 | **Integration Tests** | >50% | CRD interactions, K8s API integration, cross-component flows | 80-85% |
-| **E2E Tests** | 10-15% | Complete remediation flow, real cluster scenarios | 90-95% |
+| **E2E Tests** | <10% | Complete remediation flow, real cluster scenarios | 90-95% |
+
+**Standard Methodology**: Unit → Integration → E2E (per [ADR-005](../../../architecture/decisions/ADR-005-integration-test-coverage.md))
+
+**Parallel Execution**: 4 concurrent processes for all test tiers (per [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md))
 
 **Rationale**: CRD controllers require high integration test coverage (>50%) to validate Kubernetes API interactions, CRD lifecycle management, and watch-based coordination patterns that cannot be adequately tested in unit tests alone.
 
 ### Unit Tests (Primary Coverage Layer)
 
 **Test Directory**: [test/unit/](../../../test/unit/)
-**Service Tests**: Create `test/unit/remediationprocessing/controller_test.go`
-**Coverage Target**: 70%+ of business requirements (BR-SP-001 to BR-SP-050)
+**Service Tests**: Create `test/unit/signalprocessing/controller_test.go`
+**Coverage Target**: 70%+ of business requirements (BR-SP-001 to BR-SP-104)
 **Confidence**: 85-90%
 **Execution**: `make test`
 
@@ -31,22 +47,263 @@ Following Kubernaut's defense-in-depth testing strategy:
 - ✅ **Acceptable Speed**: ~0.8s execution (worth the trade-off for production safety)
 - ✅ **Upgrade Protection**: Breaking API changes explicit, not hidden
 
-**Test File Structure** (aligned with package name `alertprocessor`):
+**Test File Structure** (aligned with package name `signalprocessing`):
 ```
-test/unit/
-├── alertprocessor/                 # Matches pkg/remediationprocessing/
-│   ├── controller_test.go          # Main controller reconciliation tests
-│   ├── enrichment_test.go          # Alert enrichment phase tests
-│   ├── classification_test.go      # Environment classification tests
-│   ├── routing_test.go             # Routing decision tests
-│   └── suite_test.go               # Ginkgo test suite setup
-└── ...
+test/unit/signalprocessing/           # Signal Processing unit tests
+├── controller_test.go               # Main controller reconciliation tests
+├── enricher_test.go                 # K8s enrichment phase tests
+├── classifier_test.go               # Environment classification tests
+├── categorizer_test.go              # Priority categorization tests
+├── retry_test.go                    # Retry strategy tests
+├── ownerchain_test.go               # ⭐ NEW: Owner chain builder tests
+├── detected_labels_test.go          # ⭐ NEW: DetectedLabels detection tests
+├── custom_labels_test.go            # ⭐ NEW: CustomLabels Rego tests
+└── suite_test.go                    # Ginkgo test suite setup
+
+test/integration/signalprocessing/    # Signal Processing integration tests
+├── controller_integration_test.go   # CRD lifecycle tests
+├── rego_policy_test.go              # Rego policy integration tests
+├── label_detection_integration_test.go  # ⭐ NEW: Label detection with real K8s
+└── suite_test.go                    # Integration test suite setup
+
+test/e2e/signalprocessing/            # Signal Processing E2E tests
+├── e2e_test.go                      # Complete workflow tests
+├── labels_e2e_test.go               # ⭐ NEW: Label detection E2E
+└── suite_test.go                    # E2E test suite setup
 ```
 
-**Migration Note**: Rename `test/unit/alert/` → `test/unit/remediationprocessing/` to match package structure.
+### Label Detection Test Scenarios (DD-WORKFLOW-001 v2.2) ⭐ UPDATED
+
+**Reference**: [implementation-checklist.md](./implementation-checklist.md) Phase 3.25
+
+#### OwnerChain Unit Tests
+
+| TC ID | Input | Expected Outcome | BR |
+|-------|-------|------------------|-----|
+| TC-OC-001 | Pod owned by ReplicaSet owned by Deployment | Chain: Pod→RS→Deployment (3 entries) | BR-SP-100 |
+| TC-OC-002 | StatefulSet Pod | Chain: Pod→StatefulSet (2 entries) | BR-SP-100 |
+| TC-OC-003 | DaemonSet Pod | Chain: Pod→DaemonSet (2 entries) | BR-SP-100 |
+| TC-OC-004 | Node (cluster-scoped) | Chain entry with empty namespace | BR-SP-100 |
+| TC-OC-005 | Orphan Pod (no owner) | Chain: Pod only (1 entry) | BR-SP-100 |
+| TC-OC-006 | Max depth reached (10 levels) | Chain truncated at 10 | BR-SP-100 |
 
 ```go
-package alertprocessor
+// test/unit/signalprocessing/ownerchain_test.go
+// ✅ CORRECT: Use DescribeTable for 6 similar test scenarios (per 03-testing-strategy.mdc)
+var _ = Describe("BR-SP-100: OwnerChain Builder", func() {
+    var (
+        ctx     context.Context
+        builder *ownerchain.Builder
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+    })
+
+    DescribeTable("should build owner chain for various resource types",
+        func(setupFn func() client.Client, namespace, kind, name string, expectedLen int, expectedKinds []string) {
+            fakeClient := setupFn()
+            builder = ownerchain.NewBuilder(fakeClient, logr.Discard())
+
+            chain, err := builder.Build(ctx, namespace, kind, name)
+
+            Expect(err).ToNot(HaveOccurred())
+            Expect(chain).To(HaveLen(expectedLen))
+            for i, expectedKind := range expectedKinds {
+                Expect(chain[i].Kind).To(Equal(expectedKind))
+            }
+        },
+        Entry("TC-OC-001: Pod→RS→Deployment chain",
+            setupDeploymentChain, "default", "Pod", "web-app-xyz", 3, []string{"Pod", "ReplicaSet", "Deployment"}),
+        Entry("TC-OC-002: StatefulSet Pod",
+            setupStatefulSetChain, "default", "Pod", "db-0", 2, []string{"Pod", "StatefulSet"}),
+        Entry("TC-OC-003: DaemonSet Pod",
+            setupDaemonSetChain, "kube-system", "Pod", "fluentd-xyz", 2, []string{"Pod", "DaemonSet"}),
+        Entry("TC-OC-004: Node (cluster-scoped)",
+            setupNodeOnly, "", "Node", "worker-1", 1, []string{"Node"}),
+        Entry("TC-OC-005: Orphan Pod (no owner)",
+            setupOrphanPod, "default", "Pod", "orphan-pod", 1, []string{"Pod"}),
+        Entry("TC-OC-006: Max depth reached (10 levels)",
+            setupDeepChain, "default", "Pod", "deep-pod", 10, nil), // nil = just check length
+    )
+})
+```
+
+#### DetectedLabels Unit Tests
+
+| TC ID | Input | Expected Outcome | BR |
+|-------|-------|------------------|-----|
+| TC-DL-001 | ArgoCD-annotated Deployment | `gitOpsManaged: true, gitOpsTool: "argocd"` | BR-SP-101 |
+| TC-DL-002 | Flux-labeled Deployment | `gitOpsManaged: true, gitOpsTool: "flux"` | BR-SP-101 |
+| TC-DL-003 | Deployment with PDB | `pdbProtected: true` | BR-SP-101 |
+| TC-DL-004 | Deployment with HPA | `hpaEnabled: true` | BR-SP-101 |
+| TC-DL-005 | StatefulSet Pod | `stateful: true` | BR-SP-101 |
+| TC-DL-006 | Helm-managed Deployment | `helmManaged: true` | BR-SP-101 |
+| TC-DL-007 | Namespace with NetworkPolicy | `networkIsolated: true` | BR-SP-101 |
+| TC-DL-008 | Istio-injected Pod | `serviceMesh: "istio"` | BR-SP-101 |
+
+```go
+// test/unit/signalprocessing/detected_labels_test.go
+// ✅ CORRECT: Use DescribeTable for 8 similar detection scenarios (per 03-testing-strategy.mdc)
+var _ = Describe("BR-SP-101: DetectedLabels", func() {
+    var (
+        ctx      context.Context
+        detector *detection.LabelDetector
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+    })
+
+    DescribeTable("should detect labels from K8s context",
+        func(setupFn func() (*signalprocessingv1.KubernetesContext, client.Client),
+             checkFn func(labels *sharedtypes.DetectedLabels)) {
+            k8sCtx, fakeClient := setupFn()
+            detector = detection.NewLabelDetector(fakeClient, logr.Discard())
+
+            labels := detector.DetectLabels(ctx, k8sCtx)
+
+            checkFn(labels)
+        },
+        Entry("TC-DL-001: ArgoCD from annotations",
+            setupArgoCDDeployment,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.GitOpsManaged).To(BeTrue())
+                Expect(l.GitOpsTool).To(Equal("argocd"))
+            }),
+        Entry("TC-DL-002: Flux from labels",
+            setupFluxDeployment,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.GitOpsManaged).To(BeTrue())
+                Expect(l.GitOpsTool).To(Equal("flux"))
+            }),
+        Entry("TC-DL-003: PDB protection",
+            setupDeploymentWithPDB,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.PDBProtected).To(BeTrue())
+            }),
+        Entry("TC-DL-004: HPA enabled",
+            setupDeploymentWithHPA,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.HPAEnabled).To(BeTrue())
+            }),
+        Entry("TC-DL-005: StatefulSet",
+            setupStatefulSetPod,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.Stateful).To(BeTrue())
+            }),
+        Entry("TC-DL-006: Helm managed",
+            setupHelmDeployment,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.HelmManaged).To(BeTrue())
+            }),
+        Entry("TC-DL-007: NetworkPolicy",
+            setupNamespaceWithNetworkPolicy,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.NetworkIsolated).To(BeTrue())
+            }),
+        Entry("TC-DL-008: Istio service mesh",
+            setupIstioInjectedPod,
+            func(l *sharedtypes.DetectedLabels) {
+                Expect(l.ServiceMesh).To(Equal("istio"))
+            }),
+    )
+})
+```
+
+#### CustomLabels/Rego Unit Tests
+
+| TC ID | Input | Expected Outcome | BR |
+|-------|-------|------------------|-----|
+| TC-CL-001 | Rego extracts `team` from ns label | `{"kubernaut.io": ["team=payments"]}` | BR-SP-102 |
+| TC-CL-002 | Rego sets risk-tolerance | `{"kubernaut.io": ["risk-tolerance=high"]}` | BR-SP-102 |
+| TC-CL-003 | Rego sets constraint | `{"constraint.kubernaut.io": ["cost-constrained"]}` | BR-SP-102 |
+| TC-CL-004 | Policy tries to set `signal-type` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-005 | Policy tries to set `severity` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-006 | Empty policy | Empty map returned | BR-SP-102 |
+| TC-CL-007 | Policy evaluation error | Empty map returned (non-fatal) | BR-SP-102 |
+| TC-CL-008 | Policy tries to set `component` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-009 | Policy tries to set `environment` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-010 | Policy tries to set `priority` | Label stripped (security wrapper) | BR-SP-103 |
+| TC-CL-011 | Policy sets all 5 mandatory labels | All 5 stripped, empty result | BR-SP-103 |
+| TC-CL-012 | Policy sets 2 mandatory + 2 custom | 2 mandatory stripped, 2 custom kept | BR-SP-103 |
+
+```go
+// test/unit/signalprocessing/custom_labels_test.go
+// ✅ CORRECT: Use DescribeTable for 12 similar Rego test scenarios (per 03-testing-strategy.mdc)
+var _ = Describe("BR-SP-102, BR-SP-103: CustomLabels Rego", func() {
+    var (
+        ctx    context.Context
+        engine *rego.Engine
+    )
+
+    BeforeEach(func() {
+        ctx = context.Background()
+        engine = rego.NewEngine(fakeClient, logr.Discard())
+    })
+
+    DescribeTable("should evaluate Rego policies and apply security wrapper",
+        func(policy string, expectedAllowedKeys []string, expectedBlockedKeys []string) {
+            engine.SetTestPolicy(policy)
+            input := &rego.Input{
+                Namespace: rego.NamespaceContext{Name: "default"},
+            }
+
+            customLabels, err := engine.EvaluatePolicyWithSecurityWrapper(ctx, input)
+
+            Expect(err).ToNot(HaveOccurred())
+            for _, key := range expectedBlockedKeys {
+                Expect(customLabels).ToNot(HaveKey(key), "expected %s to be blocked", key)
+            }
+            for _, key := range expectedAllowedKeys {
+                Expect(customLabels).To(HaveKey(key), "expected %s to be allowed", key)
+            }
+        },
+        Entry("TC-CL-001: extracts team from ns label",
+            `package signalprocessing.labels
+             labels["kubernaut.io/team"] = "payments" if { true }`,
+            []string{"kubernaut.io/team"}, []string{}),
+        Entry("TC-CL-004: blocks signal-type override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/signal-type"] = "hacked" if { true }`,
+            []string{}, []string{"kubernaut.io/signal-type"}),
+        Entry("TC-CL-005: blocks severity override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/severity"] = "critical" if { true }`,
+            []string{}, []string{"kubernaut.io/severity"}),
+        Entry("TC-CL-009: blocks environment override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/environment"] = "production" if { true }`,
+            []string{}, []string{"kubernaut.io/environment"}),
+        Entry("TC-CL-010: blocks priority override",
+            `package signalprocessing.labels
+             labels["kubernaut.io/priority"] = "P0" if { true }`,
+            []string{}, []string{"kubernaut.io/priority"}),
+        Entry("TC-CL-012: 2 mandatory stripped, 2 custom kept",
+            `package signalprocessing.labels
+             labels["kubernaut.io/environment"] = "prod" if { true }
+             labels["kubernaut.io/priority"] = "P0" if { true }
+             labels["kubernaut.io/team"] = "payments" if { true }
+             labels["kubernaut.io/cost-center"] = "cc-123" if { true }`,
+            []string{"kubernaut.io/team", "kubernaut.io/cost-center"},
+            []string{"kubernaut.io/environment", "kubernaut.io/priority"}),
+    )
+})
+```
+
+**K8s Client Mandate** (per [ADR-004](../../../architecture/decisions/ADR-004-fake-kubernetes-client.md)):
+
+| Test Tier | MANDATORY Interface | Package |
+|-----------|---------------------|---------|
+| **Unit Tests** | **Fake K8s Client** | `sigs.k8s.io/controller-runtime/pkg/client/fake` |
+| **Integration** | Real K8s API (envtest) | `sigs.k8s.io/controller-runtime/pkg/client` |
+| **E2E** | Real K8s API (KIND) | `sigs.k8s.io/controller-runtime/pkg/client` |
+
+**❌ FORBIDDEN**: Custom `MockK8sClient` implementations
+**✅ APPROVED**: `fake.NewClientBuilder()` for all unit tests
+
+```go
+package signalprocessing
 
 import (
     . "github.com/onsi/ginkgo/v2"
@@ -55,7 +312,7 @@ import (
     "time"
 
     remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1"
-    processingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1"
     "github.com/jordigilh/kubernaut/internal/controller"
     "github.com/jordigilh/kubernaut/pkg/processor/environment"
     "github.com/jordigilh/kubernaut/pkg/testutil"
@@ -79,7 +336,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
 
         // Use REAL business logic components
         classifier         *environment.Classifier
-        reconciler         *controller.RemediationProcessingReconciler
+        reconciler         *controller.SignalProcessingReconciler
         ctx                context.Context
     )
 
@@ -102,7 +359,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
         // Use REAL business logic
         classifier = environment.NewClassifier(testutil.NewTestConfig())
 
-        reconciler = &controller.RemediationProcessingReconciler{
+        reconciler = &controller.SignalProcessingReconciler{
             Client:         fakeK8sClient,
             Scheme:         scheme,
             ContextService: mockContextService,
@@ -113,13 +370,13 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
     Context("BR-SP-010: Alert Enrichment Phase", func() {
         It("should enrich alert with kubernetes context and transition to classifying", func() {
             // Setup test alert
-            ap := &processingv1.RemediationProcessing{
+            ap := &processingv1.SignalProcessing{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:              "test-alert-high-memory",
                     Namespace:         "default",
                     CreationTimestamp: metav1.Now(),
                 },
-                Spec: processingv1.RemediationProcessingSpec{
+                Spec: processingv1.SignalProcessingSpec{
                     Alert: processingv1.Alert{
                         Fingerprint: "mem-pressure-prod-123",
                         Namespace:   "production",
@@ -185,7 +442,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
         })
 
         It("BR-SP-011: should handle context service failures with degraded mode", func() {
-            ap := testutil.NewRemediationProcessing("test-alert-degraded", "default")
+            ap := testutil.NewSignalProcessing("test-alert-degraded", "default")
 
             mockK8sClient.On("Get", ctx, client.ObjectKeyFromObject(ap), ap).Return(nil)
 
@@ -210,12 +467,12 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
     Context("BR-SP-020: Environment Classification Phase", func() {
         It("should classify production environment with high confidence", func() {
             // Setup alert with production indicators
-            ap := &processingv1.RemediationProcessing{
+            ap := &processingv1.SignalProcessing{
                 ObjectMeta: metav1.ObjectMeta{
                     Name:      "test-prod-classification",
                     Namespace: "default",
                 },
-                Spec: processingv1.RemediationProcessingSpec{
+                Spec: processingv1.SignalProcessingSpec{
                     Alert: processingv1.Alert{
                         Namespace: "prod-webapp",
                         Labels: map[string]string{
@@ -228,7 +485,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
                         ConfidenceThreshold:   0.8,
                     },
                 },
-                Status: processingv1.RemediationProcessingStatus{
+                Status: processingv1.SignalProcessingStatus{
                     Phase: "classifying",
                     EnrichmentResults: processingv1.EnrichmentResults{
                         KubernetesContext: &processingv1.KubernetesContext{
@@ -258,7 +515,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
         })
 
         It("BR-SP-021: should classify staging environment with medium priority", func() {
-            ap := testutil.NewRemediationProcessingWithPhase("test-staging", "default", "classifying")
+            ap := testutil.NewSignalProcessingWithPhase("test-staging", "default", "classifying")
             ap.Spec.Alert.Namespace = "staging-api"
             ap.Spec.Alert.Labels = map[string]string{"environment": "staging"}
 
@@ -275,7 +532,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
 
     Context("BR-SP-030: Routing Decision Phase", func() {
         It("should create AIAnalysis CRD and mark processing complete", func() {
-            ap := testutil.NewRemediationProcessingWithPhase("test-routing", "default", "routing")
+            ap := testutil.NewSignalProcessingWithPhase("test-routing", "default", "routing")
             ap.Spec.Signal.Fingerprint = "route-test-456"
             ap.Status.EnvironmentClassification = processingv1.EnvironmentClassification{
                 Environment:      "production",
@@ -302,7 +559,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
         })
 
         It("BR-SP-031: should handle duplicate AIAnalysis CRD gracefully", func() {
-            ap := testutil.NewRemediationProcessingWithPhase("test-duplicate", "default", "routing")
+            ap := testutil.NewSignalProcessingWithPhase("test-duplicate", "default", "routing")
 
             mockK8sClient.On("Get", ctx, client.ObjectKeyFromObject(ap), ap).Return(nil)
             mockK8sClient.On("Create", ctx, mock.Anything).Return(errors.NewAlreadyExists(
@@ -323,7 +580,7 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
         It("should complete full processing cycle within performance targets", func() {
             startTime := time.Now()
 
-            ap := testutil.NewRemediationProcessing("perf-test", "default")
+            ap := testutil.NewSignalProcessing("perf-test", "default")
 
             // Mock all phases
             mockK8sClient.On("Get", ctx, mock.Anything, mock.Anything).Return(nil)
@@ -351,17 +608,17 @@ var _ = Describe("BR-SP-001: Alert Processing Controller", func() {
 ### Integration Tests (Component Interaction Layer)
 
 **Test Directory**: [test/integration/](../../../test/integration/)
-**Service Tests**: Create `test/integration/remediationprocessing/integration_test.go`
+**Service Tests**: Create `test/integration/signalprocessing/integration_test.go`
 **Coverage Target**: 20% of business requirements
 **Confidence**: 80-85%
 **Execution**: `make test-integration-kind` (local) or `make test-integration-kind-ci` (CI)
 
 **Strategy**: Test CRD interactions with real Kubernetes API server in KIND cluster.
 
-**Test File Structure** (aligned with package name `alertprocessor`):
+**Test File Structure** (aligned with package name `signalprocessing`):
 ```
 test/integration/
-├── alertprocessor/                 # Matches pkg/remediationprocessing/
+├── signalprocessing/                 # Matches pkg/signalprocessing/
 │   ├── integration_test.go         # CRD lifecycle and interaction tests
 │   ├── crd_phase_transitions_test.go  # Phase state machine tests
 │   ├── context_service_integration_test.go  # Real Context Service calls
@@ -369,7 +626,7 @@ test/integration/
 └── ...
 ```
 
-**Migration Note**: Rename `test/integration/alert_processing/` → `test/integration/remediationprocessing/` to match package structure.
+**Migration Note**: Rename `test/integration/alert_processing/` → `test/integration/signalprocessing/` to match package structure.
 
 ```go
 var _ = Describe("BR-INTEGRATION-AP-001: Alert Processing CRD Integration", func() {
@@ -394,7 +651,7 @@ var _ = Describe("BR-INTEGRATION-AP-001: Alert Processing CRD Integration", func
         Expect(k8sClient.Create(ctx, alertRemediation)).To(Succeed())
 
         // Create SignalProcessing CRD
-        alertProcessing := testutil.NewRemediationProcessing("integration-alert", namespace)
+        alertProcessing := testutil.NewSignalProcessing("integration-alert", namespace)
         alertProcessing.Spec.RemediationRequestRef = testutil.ObjectRefFrom(alertRemediation)
         Expect(k8sClient.Create(ctx, alertProcessing)).To(Succeed())
 
@@ -422,15 +679,15 @@ var _ = Describe("BR-INTEGRATION-AP-001: Alert Processing CRD Integration", func
 ### E2E Tests (End-to-End Workflow Layer)
 
 **Test Directory**: [test/e2e/](../../../test/e2e/)
-**Service Tests**: Create `test/e2e/alertprocessor/e2e_test.go`
+**Service Tests**: Create `test/e2e/signalprocessing/e2e_test.go`
 **Coverage Target**: 10% of critical business workflows
 **Confidence**: 90-95%
 **Execution**: `make test-e2e-kind` (KIND) or `make test-e2e-ocp` (Kubernetes)
 
-**Test File Structure** (aligned with package name `alertprocessor`):
+**Test File Structure** (aligned with package name `signalprocessing`):
 ```
 test/e2e/
-├── alertprocessor/                 # Matches pkg/remediationprocessing/
+├── signalprocessing/                 # Matches pkg/signalprocessing/
 │   ├── e2e_test.go                 # End-to-end workflow tests
 │   ├── production_alert_flow_test.go  # Production alert processing
 │   ├── staging_alert_flow_test.go     # Staging alert processing
@@ -438,7 +695,7 @@ test/e2e/
 └── ...
 ```
 
-**Migration Note**: Create new `test/e2e/alertprocessor/` directory to match package structure.
+**Migration Note**: Create new `test/e2e/signalprocessing/` directory to match package structure.
 
 ```go
 var _ = Describe("BR-E2E-AP-001: Complete Alert Processing Workflow", func() {
@@ -527,7 +784,7 @@ flowchart TD
 - ✅ Setup is **straightforward** (< 20 lines of mock configuration)
 - ✅ Test remains **readable and maintainable** with mocking
 
-**RemediationProcessing Unit Test Examples**:
+**SignalProcessing Unit Test Examples**:
 - Alert enrichment business rules
 - Environment classification algorithms (production vs staging vs dev)
 - Routing decision logic
@@ -538,15 +795,15 @@ flowchart TD
 
 ### Move to Integration Level WHEN
 
-- ✅ Scenario requires **CRD watch-based coordination** (RemediationProcessing → AIAnalysis creation)
+- ✅ Scenario requires **CRD watch-based coordination** (SignalProcessing → AIAnalysis creation)
 - ✅ Validating **real Kubernetes API behavior** (CRD lifecycle, status updates, owner references)
 - ✅ Unit test would require **excessive mocking** (>50 lines of K8s client mock setup)
 - ✅ Integration test is **simpler to understand** and maintain
 - ✅ Testing **real Context Service HTTP integration** (not just business logic)
 
-**RemediationProcessing Integration Test Examples**:
+**SignalProcessing Integration Test Examples**:
 - Complete CRD reconciliation loop with real K8s API
-- Owner reference cascade behavior (RemediationRequest → RemediationProcessing)
+- Owner reference cascade behavior (RemediationRequest → SignalProcessing)
 - Status watch patterns and phase transitions in real cluster
 - Context Service HTTP integration with real service (monitoring + business contexts)
 - **Context API HTTP integration for recovery attempts (Alternative 2 - BR-WF-RECOVERY-011)**:
@@ -554,19 +811,19 @@ flowchart TD
   - Dual enrichment validation: Both Context Service (monitoring/business) AND Context API (recovery) called
   - Temporal consistency: All contexts captured at same timestamp
   - Graceful degradation: Context API unavailable → fallback to `failedWorkflowRef`
-- Child CRD creation (RemediationProcessing → AIAnalysis)
+- Child CRD creation (SignalProcessing → AIAnalysis)
 
 ---
 
 ### Move to E2E Level WHEN
 
-- ✅ Testing **complete alert-to-analysis journey** (Webhook → Gateway → RemediationProcessing → AIAnalysis)
+- ✅ Testing **complete alert-to-analysis journey** (Webhook → Gateway → SignalProcessing → AIAnalysis)
 - ✅ Validating **cross-service workflow** spanning multiple CRD controllers
 - ✅ Lower-level tests **cannot reproduce realistic scenarios** (e.g., timing-based race conditions)
 
-**RemediationProcessing E2E Test Examples**:
+**SignalProcessing E2E Test Examples**:
 - Complete alert processing pipeline (end-to-end)
-- Multi-service coordination (Gateway → RemediationProcessing → AIAnalysis → WorkflowExecution)
+- Multi-service coordination (Gateway → SignalProcessing → AIAnalysis → WorkflowExecution)
 - Production-like failure scenarios (Context Service timeout → degraded mode → recovery)
 
 ---
@@ -580,7 +837,7 @@ flowchart TD
 - ✅ **YES** → Consider integration test
 - ❌ **NO** → Unit test acceptable
 
-**RemediationProcessing Example**:
+**SignalProcessing Example**:
 ```go
 // ❌ COMPLEX: 60+ lines of CRD watch mock setup
 mockK8sClient.On("Watch", ...).Return(complexWatchMock)
@@ -596,7 +853,7 @@ mockK8sClient.On("List", ...).Return(complexListMock)
 - ✅ **YES** → Unit test is good
 - ❌ **NO** → Consider higher test level
 
-**RemediationProcessing Example**:
+**SignalProcessing Example**:
 ```go
 // ✅ READABLE: Clear business logic test
 It("should classify production alert with high confidence", func() {
@@ -614,7 +871,7 @@ It("should classify production alert with high confidence", func() {
 - ✅ **YES** → Move to integration test (testing implementation, not behavior)
 - ❌ **NO** → Unit test is appropriate
 
-**RemediationProcessing Example**:
+**SignalProcessing Example**:
 ```go
 // ❌ FRAGILE: Breaks if we change internal phase transition logic
 Expect(reconciler.internalPhaseCounter).To(Equal(3))
@@ -630,7 +887,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 - **Business Logic** → Unit test
 - **Infrastructure** → Integration test
 
-**RemediationProcessing Decision**:
+**SignalProcessing Decision**:
 - **Unit**: Environment classification rules (business logic)
 - **Integration**: CRD status update propagation (infrastructure)
 
@@ -640,7 +897,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 **Question**: How much effort to maintain this vs integration test?
 - **Lower cost** → Choose that option
 
-**RemediationProcessing Example**:
+**SignalProcessing Example**:
 - **Unit test with 80-line K8s mock**: HIGH maintenance (breaks on K8s API changes)
 - **Integration test with real K8s**: LOW maintenance (automatically adapts to API changes)
 
@@ -650,9 +907,9 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 
 **Principle**: Test realistic combinations necessary to validate business requirements - not more, not less.
 
-### RemediationProcessing: Requirement-Driven Coverage
+### SignalProcessing: Requirement-Driven Coverage
 
-**Business Requirement Analysis** (BR-SP-001 to BR-SP-050):
+**Business Requirement Analysis** (BR-SP-001 to BR-SP-104):
 
 | Input Dimension | Realistic Values | Test Strategy |
 |---|---|---|
@@ -662,7 +919,7 @@ Expect(ap.Status.Phase).To(Equal("completed"))
 | **Context Depth** | detailed, standard, minimal | Test enrichment quality differences |
 
 **Total Possible Combinations**: 4 × 3 × 3 × 3 = 108 combinations
-**Distinct Business Behaviors**: 12 behaviors (per BR-SP-001 to BR-SP-050)
+**Distinct Business Behaviors**: 19 behaviors (per BR-SP-001 to BR-SP-104)
 **Tests Needed**: ~20 tests (covering 12 distinct behaviors with boundaries)
 
 ---
@@ -772,7 +1029,7 @@ Ask these 4 questions:
 
 ---
 
-### RemediationProcessing Test Coverage Example with DescribeTable
+### SignalProcessing Test Coverage Example with DescribeTable
 
 **BR-SP-020: Environment Classification (8 distinct behaviors)**
 

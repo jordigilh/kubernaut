@@ -1,32 +1,42 @@
 ## Reconciliation Architecture
 
-> **📋 Design Decision: DD-001 - Alternative 2**
-> **Pattern**: RemediationProcessing enriches ALL contexts (monitoring + business + recovery)
-> **Status**: ✅ Approved Design | **Confidence**: 95%
-> **See**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.6 | 2025-11-30 | Added OwnerChain, fixed CustomLabels format (map[string][]string), DD-WORKFLOW-001 v1.8 | [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md), [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.6 (snake_case API fields) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.6](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+> | v1.3 | 2025-11-30 | Added label detection (DetectedLabels V1.0, CustomLabels V1.0) to enriching phase | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
+> | v1.2 | 2025-11-28 | Performance target <5s, graceful shutdown, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
+> | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.1 | 2025-11-27 | Context API deprecated: Recovery context from spec.failureData | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
+> | v1.1 | 2025-11-27 | Added categorizing phase | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
+> | v1.0 | 2025-01-15 | Initial reconciliation phases | - |
 
-**Reference**: Alternative 2 - RemediationProcessing Enrichment Pattern
-**See**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2)
+> **📋 Design Decision: DD-001 - Recovery Context Enrichment**
+> **UPDATE (2025-11-11)**: Signal Processing no longer queries Context API for historical recovery data.
+> Remediation Orchestrator embeds current failure data from WorkflowExecution CRD in `spec.failureData`.
+> **Status**: ✅ Approved Design | **Confidence**: 95%
+> **See**: [DD-001](../../../architecture/decisions/DD-001-recovery-context-enrichment.md), [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)
 
 ### Phase Transitions
 
 ```
-pending → enriching → classifying → completed
-   ↓          ↓            ↓            ↓
-(initial)  (3-5 sec)    (1-2 sec)   (final)
+pending → enriching → classifying → categorizing → completed
+   ↓          ↓            ↓             ↓            ↓
+(initial)  (3-5 sec)    (1-2 sec)     (1 sec)     (final)
 ```
 
-**Special Case - Recovery Flow (Alternative 2)**:
+**Special Case - Recovery Flow**:
 ```
 Workflow Fails
    ↓
-Remediation Orchestrator creates RemediationProcessing #2 (recovery)
-   ↓
-pending → enriching (ALL contexts!) → classifying → completed
+Remediation Orchestrator creates SignalProcessing #2 (recovery)
+   ↓ (embeds failureData from WorkflowExecution CRD)
+pending → enriching → classifying → categorizing → completed
              ↓
-   Monitoring (FRESH!)
-   Business (FRESH!)
-   Recovery (Context API - FRESH!)
+   K8s Context (FRESH!)
+   Recovery Context (from spec.failureData)
 ```
 
 ---
@@ -39,7 +49,7 @@ pending → enriching (ALL contexts!) → classifying → completed
 
 **Actions**:
 - CRD created by Remediation Orchestrator or Gateway Service
-- Validate alert data completeness
+- Validate signal data completeness
 - Prepare for enrichment
 - Check if recovery attempt (`spec.isRecoveryAttempt`)
 
@@ -47,178 +57,239 @@ pending → enriching (ALL contexts!) → classifying → completed
 
 **Transition Criteria**:
 ```go
-if alertDataValid {
+if signalDataValid {
     phase = "enriching"
 } else {
     phase = "failed"
-    reason = "invalid_alert_data"
+    reason = "invalid_signal_data"
 }
 ```
 
 ---
 
-#### 2. **enriching** Phase (BR-SP-060, BR-WF-RECOVERY-011)
+#### 2. **enriching** Phase (BR-SP-060)
 
-**Purpose**: Enrich alert with Kubernetes context, business metadata, and (if recovery) historical failure context
+**Purpose**: Enrich signal with Kubernetes context, detect labels, and (if recovery) read embedded failure context
 
 **Actions**:
 
 **A. ALWAYS (Initial & Recovery)**:
-- Query Context Service for monitoring context (BR-SP-060)
+- Query enrichment service for Kubernetes context (BR-SP-060)
   - Pod states, resource usage, recent events
   - Current cluster metrics
-- Query Context Service for business context
+- Query for business context
   - Owner team, runbook version, SLA level
   - Contact information
 - Update `status.enrichmentResults`
 
-**B. IF RECOVERY ATTEMPT (Alternative 2)**:
-- Detect `spec.isRecoveryAttempt = true`
-- Query Context API for recovery context (BR-WF-RECOVERY-011)
-  - Previous workflow failures
-  - Related alerts and correlations
-  - Historical patterns
-  - Successful strategies
-- Graceful degradation if Context API unavailable
-  - Build fallback context from `spec.failedWorkflowRef`
-  - Set `contextQuality = "degraded"`
-- Update `status.enrichmentResults.recoveryContext`
+**B. OWNER CHAIN (DD-WORKFLOW-001 v1.8)**:
+- Build ownership chain from K8s `ownerReferences`
+- Traverse: Pod → ReplicaSet → Deployment (or StatefulSet/DaemonSet)
+- Use first `controller: true` ownerReference at each level
+- Populate `status.enrichmentResults.ownerChain[]`
+- **Purpose**: HolmesGPT-API uses for DetectedLabels validation
+  - If RCA identifies resource NOT in owner chain → DetectedLabels excluded from filtering
+  - 100% safe default: EXCLUDE if relationship cannot be proven
 
-**Timeout**: 5 seconds (3s for monitoring/business, 2s for recovery context)
+**C. LABEL DETECTION (V1.0, DD-WORKFLOW-001 v1.8)**:
+- **DetectedLabels (V1.0)**: Auto-detect cluster characteristics from K8s resources
+  - GitOps management (ArgoCD/Flux annotations)
+  - Workload protection (PDB, HPA queries)
+  - Workload characteristics (StatefulSet, Helm)
+  - Security posture (NetworkPolicy, PSS, ServiceMesh)
+  - **Convention**: Boolean fields only included when `true`, omit when `false`
+  - **Dual-use** (DD-WORKFLOW-001 v1.8):
+    - LLM Prompt Context: ALWAYS included
+    - Workflow Filtering: CONDITIONAL (only when owner chain validates relationship)
+- **CustomLabels (V1.0)**: Extract user-defined labels via Rego policies
+  - Query ConfigMap `signal-processing-policies` in `kubernaut-system`
+  - Evaluate Rego policy with K8s context + DetectedLabels as input
+  - **Output format**: `map[string][]string` (subdomain → list of values)
+    - Example: `{"constraint": ["cost-constrained"], "team": ["name=payments"]}`
+  - **Security**: Wrapped with security policy that strips 5 mandatory labels
+
+**D. IF RECOVERY ATTEMPT**:
+- Detect `spec.isRecoveryAttempt = true`
+- Read embedded failure data from `spec.failureData` (provided by Remediation Orchestrator)
+- Build `status.enrichmentResults.recoveryContext` from embedded data
+- Set `contextQuality = "complete"` or `"degraded"` based on data availability
+
+**Note**: Context API is DEPRECATED per [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md). Recovery context is now embedded by Remediation Orchestrator.
+
+**Note**: Label detection follows [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0. Both DetectedLabels and CustomLabels are V1.0. CustomLabels requires Rego ConfigMap.
+
+**Timeout**: 5 seconds
 
 **Transition Criteria**:
 ```go
 // Normal enrichment complete
-if monitoringContextRetrieved && businessContextRetrieved {
-    // If recovery, also check recovery context
+if kubernetesContextRetrieved && businessContextRetrieved {
+    // If recovery, also check embedded failure data
     if spec.IsRecoveryAttempt {
-        if recoveryContextRetrieved || fallbackContextCreated {
-            phase = "classifying"
+        if spec.FailureData != nil {
+            // Build recovery context from embedded data
+            status.enrichmentResults.recoveryContext = buildFromFailureData(spec.FailureData)
         } else {
-            // Context API totally failed, use degraded mode
-            status.enrichmentResults.contextQuality = "degraded"
-            phase = "classifying"  // Continue anyway (graceful degradation)
+            // Use degraded mode - minimal context from spec fields
+            status.enrichmentResults.recoveryContext = buildDegradedContext(spec)
         }
-    } else {
-        phase = "classifying"
     }
+    phase = "classifying"
 } else if timeout {
     phase = "failed"
     reason = "enrichment_timeout"
 }
 ```
 
-**Example CRD Update (Normal Enrichment)**:
+**Example CRD Update (Normal Enrichment with Label Detection - DD-WORKFLOW-001 v1.8)**:
 ```yaml
 status:
   phase: enriching
   enrichmentResults:
-    monitoringContext:
-      clusterMetrics:
-        cpu: "75%"
-        memory: "82%"
-      podStates:
-      - name: "web-app-789"
+    kubernetesContext:
+      namespace: "production"
+      podDetails:
+        name: "web-app-789"
         phase: "Running"
         restartCount: 3
-    businessContext:
-      ownerTeam: "platform-team"
-      runbookVersion: "v2.1"
-      slaLevel: "P1"
-    contextQuality: "complete"
+      deploymentDetails:
+        name: "web-app"
+        replicas: 3
+        readyReplicas: 2
+    historicalContext:
+      previousSignals: 5
+      signalFrequency: 2.5
+
+    # OwnerChain (DD-WORKFLOW-001 v1.8) - K8s ownership traversal
+    # Used by HolmesGPT-API to validate DetectedLabels applicability
+    ownerChain:
+    - namespace: "production"
+      kind: "Pod"
+      name: "web-app-789"
+    - namespace: "production"
+      kind: "ReplicaSet"
+      name: "web-app-abc123"
+    - namespace: "production"
+      kind: "Deployment"
+      name: "web-app"
+
+    # DetectedLabels (V1.0) - Auto-detected from K8s
+    # CONVENTION: Boolean fields only when TRUE, omit when false
+    detectedLabels:
+      gitOpsManaged: true      # Included (true)
+      gitOpsTool: "argocd"     # String, included if non-empty
+      pdbProtected: true       # Included (true)
+      hpaEnabled: true         # Included (true)
+      # stateful: omitted      # Would be here if true
+      helmManaged: true        # Included (true)
+      networkIsolated: true    # Included (true)
+      podSecurityLevel: "restricted"
+      serviceMesh: "istio"
+
+    # CustomLabels (V1.0) - Extracted via Rego policies
+    # FORMAT: map[string][]string (subdomain → list of values)
+    # See: HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.2
+    customLabels:
+      kubernaut.io:
+      - "team=platform"
+      - "region=us-east-1"
+      - "risk-tolerance=high"
+      constraint.kubernaut.io:
+      - "cost-constrained"     # Boolean true (no value)
+      - "stateful-safe"
+      custom.kubernaut.io:
+      - "business-category=payment-service"
+
+    enrichmentQuality: 0.95
     enrichedAt: "2025-01-15T10:00:00Z"
 ```
 
-**Example CRD Update (Recovery Enrichment - Alternative 2)**:
+**Example CRD Update (Recovery Enrichment)**:
 ```yaml
+# spec.failureData embedded by Remediation Orchestrator
+spec:
+  isRecoveryAttempt: true
+  recoveryAttemptNumber: 2
+  failureData:
+    workflowRef: "workflow-001"
+    attemptNumber: 1
+    failedStep: 3
+    action: "scale-deployment"
+    errorType: "timeout"
+    failureReason: "Operation timed out after 5m"
+    duration: "5m3s"
+    failedAt: "2025-01-15T09:50:00Z"
+    resourceState:
+      replicas: "3"
+      readyReplicas: "1"
+
 status:
   phase: enriching
   enrichmentResults:
-    # FRESH monitoring context (current cluster state!)
-    monitoringContext:
-      clusterMetrics:
-        cpu: "82%"  # May have changed since initial attempt!
-        memory: "95%"
-      podStates:
-      - name: "web-app-789"
+    # FRESH Kubernetes context (current cluster state!)
+    kubernetesContext:
+      namespace: "production"
+      podDetails:
+        name: "web-app-789"
         phase: "CrashLoopBackOff"
         restartCount: 7  # Increased from 3!
 
-    # FRESH business context (may have been updated!)
-    businessContext:
-      ownerTeam: "platform-team"
-      runbookVersion: "v2.2"  # Runbook updated between attempts!
-      slaLevel: "P0"  # Escalated to P0!
-
-    # Recovery context from Context API (Alternative 2)
+    # Recovery context from embedded failureData
     recoveryContext:
       contextQuality: "complete"
-      previousFailures:
-      - workflowRef: "workflow-001"
+      previousFailure:
+        workflowRef: "workflow-001"
         attemptNumber: 1
         failedStep: 3
         action: "scale-deployment"
         errorType: "timeout"
         failureReason: "Operation timed out after 5m"
+        duration: "5m3s"
         timestamp: "2025-01-15T09:50:00Z"
-      relatedAlerts:
-      - alertFingerprint: "related-alert-123"
-        alertName: "HighMemoryUsage"
-        correlation: 0.85
-      historicalPatterns:
-      - pattern: "scale_timeout_high_memory"
-        occurrences: 12
-        successRate: 0.73
-      successfulStrategies:
-      - strategy: "force-delete-pods-then-scale"
-        confidence: 0.88
-        successCount: 8
-      retrievedAt: "2025-01-15T10:00:00Z"
+      processedAt: "2025-01-15T10:00:00Z"
 
-    contextQuality: "complete"
-    enrichedAt: "2025-01-15T10:00:00Z"  # All contexts same timestamp!
+    enrichmentQuality: 0.95
+    enrichedAt: "2025-01-15T10:00:00Z"
 ```
 
-**Graceful Degradation Example (Context API Failed)**:
+**Degraded Recovery Context Example (no failureData)**:
 ```yaml
 status:
   phase: enriching
   enrichmentResults:
-    # Monitoring/business still FRESH (success!)
-    monitoringContext: {...}
-    businessContext: {...}
+    # Kubernetes context still FRESH (success!)
+    kubernetesContext: {...}
 
-    # Recovery context degraded (Context API failed)
+    # Recovery context degraded (no embedded failureData)
     recoveryContext:
       contextQuality: "degraded"
-      previousFailures:
-      - workflowRef: "workflow-001"  # Extracted from spec.failedWorkflowRef
-        failedStep: 3                 # Extracted from spec.failedStep
-        failureReason: "timeout"      # Extracted from spec.failureReason
-      retrievedAt: "2025-01-15T10:00:00Z"
+      previousFailure:
+        workflowRef: "workflow-001"  # From spec.failedWorkflowRef
+        failedStep: 3                 # From spec.failedStep
+        failureReason: "timeout"      # From spec.failureReason
+      processedAt: "2025-01-15T10:00:00Z"
 
-    contextQuality: "degraded"
+    enrichmentQuality: 0.8
 ```
 
 ---
 
 #### 3. **classifying** Phase (BR-SP-051, BR-SP-052, BR-SP-053)
 
-**Purpose**: Classify environment tier and finalize enrichment
+**Purpose**: Classify environment tier
 
 **Actions**:
 - Detect environment tier from namespace labels (BR-SP-051)
 - Validate environment classification (BR-SP-052)
 - Load environment-specific configuration (BR-SP-053)
-- Finalize enrichment results
-- Prepare for AIAnalysis creation by Remediation Orchestrator
+- Determine business criticality level
 
 **Duration**: 1-2 seconds
 
 **Transition Criteria**:
 ```go
 if environmentClassified && configurationLoaded {
-    phase = "completed"
+    phase = "categorizing"
 } else {
     phase = "failed"
     reason = "classification_failed"
@@ -230,29 +301,89 @@ if environmentClassified && configurationLoaded {
 status:
   phase: classifying
   environmentClassification:
-    tier: "production"
+    environment: "production"
     confidence: 0.95
-    source: "namespace-labels"
+    businessCriticality: "critical"
+    slaRequirement: "5m"
   enrichmentResults:
     # ... (enrichment data from previous phase)
 ```
 
 ---
 
-#### 4. **completed** Phase
+#### 4. **categorizing** Phase (BR-SP-070 to BR-SP-075, DD-CATEGORIZATION-001)
+
+**Purpose**: Assign priority based on enriched Kubernetes context
+
+**Actions**:
+- Calculate priority score based on environment classification
+- Consider namespace labels and annotations
+- Factor in workload type and business criticality
+- Set final priority (P0-P3)
+- Prepare routing decision for downstream services
+
+**Duration**: 1 second
+
+**Added per [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)**: Gateway sets placeholder priority; Signal Processing has richer K8s context for accurate categorization.
+
+**Transition Criteria**:
+```go
+if priorityAssigned {
+    phase = "completed"
+} else {
+    phase = "failed"
+    reason = "categorization_failed"
+}
+```
+
+**Example CRD Update**:
+```yaml
+status:
+  phase: categorizing
+  categorization:
+    priority: "P0"
+    priorityScore: 95
+    categorizationFactors:
+    - factor: "environment"
+      value: "production"
+      weight: 0.4
+      contribution: 40
+    - factor: "namespace_labels"
+      value: "tier=critical"
+      weight: 0.3
+      contribution: 30
+    - factor: "workload_type"
+      value: "deployment"
+      weight: 0.2
+      contribution: 15
+    - factor: "signal_severity"
+      value: "critical"
+      weight: 0.1
+      contribution: 10
+    categorizationSource: "enriched_context"
+    categorizationTime: "2025-01-15T10:00:03Z"
+  routingDecision:
+    nextService: "ai-analysis"
+    routingKey: "signal-fingerprint-123"
+    priority: 9
+```
+
+---
+
+#### 5. **completed** Phase
 
 **Purpose**: Terminal success state - enrichment complete, ready for AIAnalysis
 
 **Actions**:
 - Set `status.phase = "completed"`
-- Set `status.completionTime`
+- Set `status.processingTime`
 - Emit event for RemediationRequest controller
 - RemediationRequest controller watches this status change
 - RemediationRequest creates AIAnalysis CRD with enrichment data
 
-**Post-Completion Flow (Alternative 2)**:
+**Post-Completion Flow**:
 ```
-RemediationProcessing.status.phase = "completed"
+SignalProcessing.status.phase = "completed"
    ↓ (watch event)
 Remediation Orchestrator detects completion
    ↓
@@ -260,22 +391,33 @@ Remediation Orchestrator creates AIAnalysis CRD
    ↓
 Copies status.enrichmentResults → AIAnalysis.spec.enrichmentData
    ↓
-AIAnalysis has ALL contexts (monitoring + business + recovery)
+AIAnalysis has ALL contexts (K8s + recovery if applicable)
 ```
 
 **Example Final Status**:
 ```yaml
 status:
   phase: completed
-  completionTime: "2025-01-15T10:00:05Z"
+  processingTime: "4.2s"
   enrichmentResults:
-    monitoringContext: {...}
-    businessContext: {...}
+    kubernetesContext: {...}
+    historicalContext: {...}
     recoveryContext: {...}  # Only present if isRecoveryAttempt = true
-    contextQuality: "complete"
+    enrichmentQuality: 0.95
     enrichedAt: "2025-01-15T10:00:00Z"
   environmentClassification:
-    tier: "production"
+    environment: "production"
+    confidence: 0.95
+    businessCriticality: "critical"
+    slaRequirement: "5m"
+  categorization:
+    priority: "P0"
+    priorityScore: 95
+    categorizationSource: "enriched_context"
+  routingDecision:
+    nextService: "ai-analysis"
+    routingKey: "signal-fingerprint-123"
+    priority: 9
 ```
 
 ---
@@ -284,13 +426,14 @@ status:
 
 #### **failed** Phase
 
-**Purpose**: Terminal failure state when enrichment cannot complete
+**Purpose**: Terminal failure state when processing cannot complete
 
 **Causes**:
-- Invalid alert data (missing required fields)
+- Invalid signal data (missing required fields)
 - Enrichment timeout (> 5 seconds)
 - Classification failure
-- Unrecoverable Context Service error
+- Categorization failure
+- Unrecoverable enrichment service error
 
 **Actions**:
 - Set `status.phase = "failed"`
@@ -302,33 +445,32 @@ status:
 ```yaml
 status:
   phase: failed
-  failureReason: "context_service_unavailable"
-  completionTime: "2025-01-15T10:00:30Z"
+  failureReason: "enrichment_service_unavailable"
+  processingTime: "30s"
 ```
 
 ---
 
-### Recovery Enrichment Flow (Alternative 2)
+### Recovery Enrichment Flow
 
 #### Comparison: Initial vs Recovery Enrichment
 
-| Aspect | Initial Enrichment | Recovery Enrichment (Alternative 2) |
-|--------|-------------------|-------------------------------------|
-| **Monitoring Context** | Current cluster state | **FRESH** current cluster state |
+| Aspect | Initial Enrichment | Recovery Enrichment |
+|--------|-------------------|---------------------|
+| **K8s Context** | Current cluster state | **FRESH** current cluster state |
 | **Business Context** | Current ownership/runbooks | **FRESH** current ownership/runbooks |
-| **Recovery Context** | N/A | **NEW** - Historical failures from Context API |
-| **Context API Call** | No | **Yes** - `/context/remediation/{id}` |
-| **Graceful Degradation** | N/A | Fallback from `failedWorkflowRef` |
-| **ContextQuality** | "complete" or "partial" | "complete", "partial", or "degraded" |
-| **Temporal Consistency** | Single timestamp | **All contexts same timestamp** ✅ |
+| **Recovery Context** | N/A | **From spec.failureData** (embedded by Remediation Orchestrator) |
+| **Context API Call** | No | **No** (deprecated per DD-CONTEXT-006) |
+| **Graceful Degradation** | N/A | Fallback from `failedWorkflowRef` fields |
+| **ContextQuality** | "complete" or "partial" | "complete" or "degraded" |
 
 #### Recovery Enrichment Benefits
 
-1. ✅ **Fresh Monitoring Data**: Recovery sees CURRENT cluster state (not 10min old)
+1. ✅ **Fresh K8s Data**: Recovery sees CURRENT cluster state (not stale from initial attempt)
 2. ✅ **Fresh Business Data**: Runbooks/ownership may have changed
-3. ✅ **Historical Context**: AI knows what already failed
-4. ✅ **Temporal Consistency**: All contexts captured at same moment
-5. ✅ **Immutable Audit Trail**: Each SignalProcessing CRD is separate
+3. ✅ **Historical Context**: AI knows what already failed (from embedded data)
+4. ✅ **No External Dependency**: No Context API call needed (simplified architecture)
+5. ✅ **Immutable Audit Trail**: Each SignalProcessing CRD contains complete snapshot
 6. ✅ **Pattern Reuse**: Recovery uses same enrichment flow as initial
 
 ---
@@ -337,19 +479,25 @@ status:
 
 **Target Timing** (Normal Enrichment):
 - `pending` → `enriching`: < 100ms
-- `enriching` (monitoring + business): 3 seconds
-- `enriching` (+ recovery context): +2 seconds = 5 seconds total
+- `enriching` (K8s context): 3 seconds
 - `classifying`: 1-2 seconds
-- **Total**: 4-7 seconds (6-9 seconds for recovery)
+- `categorizing`: 1 second
+- **Total**: 4-6 seconds
+
+**Target Timing** (Recovery Enrichment):
+- Same as initial (no additional API calls needed)
+- Recovery context read from embedded data (< 100ms)
+- **Total**: 4-7 seconds
 
 **Timeout Configuration**:
 ```yaml
 apiVersion: signalprocessing.kubernaut.io/v1
-kind: RemediationProcessing
+kind: SignalProcessing
 metadata:
   annotations:
     kubernaut.io/enrichment-timeout: "5s"
     kubernaut.io/classification-timeout: "2s"
+    kubernaut.io/categorization-timeout: "1s"
 ```
 
 ---
@@ -359,36 +507,39 @@ metadata:
 **Metrics**:
 ```go
 // Enrichment duration by type
-kubernaut_remediation_processing_enrichment_duration_seconds{type="monitoring|business|recovery"}
+kubernaut_signal_processing_enrichment_duration_seconds{type="kubernetes|historical|recovery"}
 
 // Context quality distribution
-kubernaut_remediation_processing_context_quality_total{quality="complete|partial|degraded"}
+kubernaut_signal_processing_context_quality_total{quality="complete|partial|degraded"}
 
-// Recovery enrichment success rate
-kubernaut_remediation_processing_recovery_enrichment_success_total{outcome="success|degraded|failed"}
+// Phase duration
+kubernaut_signal_processing_phase_duration_seconds{phase="enriching|classifying|categorizing"}
 
-// Context API latency (recovery only)
-kubernaut_remediation_processing_context_api_duration_seconds
+// Categorization source
+kubernaut_signal_processing_categorization_source_total{source="enriched_context|fallback_labels|default"}
 
-// Fresh context benefit (recovery only)
-kubernaut_remediation_processing_fresh_context_age_seconds{type="monitoring|business"}
+// Priority distribution
+kubernaut_signal_processing_priority_total{priority="P0|P1|P2|P3"}
 ```
 
 **Log Patterns**:
 ```
 # Normal enrichment
-INFO  Enriching alert processing  isRecovery=false  attemptNumber=0
-INFO  Monitoring context retrieved  duration=1.2s  quality=complete
+INFO  Enriching signal processing  isRecovery=false  fingerprint=signal-123
+INFO  Kubernetes context retrieved  duration=1.2s  quality=complete
 INFO  Business context retrieved  duration=0.8s
-INFO  Enrichment complete  totalDuration=2.1s  contextQuality=complete
+INFO  Environment classified  environment=production  confidence=0.95
+INFO  Priority categorized  priority=P0  score=95  source=enriched_context
+INFO  Signal processing complete  totalDuration=4.2s  phase=completed
 
-# Recovery enrichment (Alternative 2)
-INFO  Enriching alert processing (RECOVERY)  isRecovery=true  attemptNumber=2
-INFO  Monitoring context retrieved (FRESH!)  duration=1.3s  cpuChange=+7%  memoryChange=+13%
-INFO  Business context retrieved (FRESH!)  duration=0.9s  runbookUpdated=true
-INFO  Querying Context API for recovery context  remediationRequestID=rr-001
-INFO  Recovery context retrieved  duration=1.8s  previousFailures=1  patterns=5  quality=complete
-INFO  Enrichment complete (ALL CONTEXTS)  totalDuration=4.2s  contextQuality=complete
+# Recovery enrichment
+INFO  Enriching signal processing (RECOVERY)  isRecovery=true  attemptNumber=2
+INFO  Kubernetes context retrieved (FRESH!)  duration=1.3s  restartCountChange=+4
+INFO  Reading embedded failure data from spec.failureData
+INFO  Recovery context built  contextQuality=complete  failedStep=3  errorType=timeout
+INFO  Environment classified  environment=production  confidence=0.95
+INFO  Priority categorized  priority=P0  score=95  source=enriched_context
+INFO  Signal processing complete (RECOVERY)  totalDuration=4.5s  phase=completed
 ```
 
 ---
@@ -396,18 +547,18 @@ INFO  Enrichment complete (ALL CONTEXTS)  totalDuration=4.2s  contextQuality=com
 ### Testing Scenarios
 
 **Unit Tests**:
-- Normal enrichment (monitoring + business)
-- Recovery enrichment (monitoring + business + recovery)
-- Context API success (recovery)
-- Context API failure → graceful degradation (recovery)
+- Normal enrichment (K8s + business context)
+- Recovery enrichment (K8s + embedded failure data)
+- Recovery enrichment with missing failureData → degraded context
 - Enrichment timeout handling
 - Classification logic
+- Categorization logic with various factors
 
 **Integration Tests**:
-- End-to-end enrichment with real Context Service
-- End-to-end recovery enrichment with real Context API
-- Fresh context validation (monitoring/business updated between attempts)
-- Temporal consistency verification (all contexts same timestamp)
+- End-to-end enrichment with real enrichment service
+- End-to-end recovery enrichment with embedded failure data
+- Fresh context validation (K8s state updated between attempts)
+- Categorization accuracy testing
 
 ---
 
@@ -415,7 +566,6 @@ INFO  Enrichment complete (ALL CONTEXTS)  totalDuration=4.2s  contextQuality=com
 
 - **Controller Implementation**: [`controller-implementation.md`](./controller-implementation.md)
 - **CRD Schema**: [`crd-schema.md`](./crd-schema.md)
-- **Alternative 2 Architecture**: [`docs/architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md)
-- **Business Requirements**: [`docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`](../../../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md) (BR-WF-RECOVERY-011)
-- **Context API Specification**: [`docs/services/stateless/context-api/api-specification.md`](../../stateless/context-api/api-specification.md)
-
+- **Context API Deprecation**: [`DD-CONTEXT-006`](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)
+- **Categorization Consolidation**: [`DD-CATEGORIZATION-001`](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)
+- **Business Requirements**: [`docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`](../../../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)

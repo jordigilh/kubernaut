@@ -1,8 +1,16 @@
 # Effectiveness Logic Service - Clarification Report
 
+> **⚠️ SUPERSEDED BY DD-017** (December 1, 2025)
+>
+> This document concluded Effectiveness Monitor should be included in V1.0.
+> **DD-017-effectiveness-monitor-v1.1-deferral.md** has SUPERSEDED this decision.
+>
+> **New Decision**: Effectiveness Monitor deferred to V1.1 due to year-end timeline constraints.
+> See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
+
 **Date**: October 6, 2025
 **Question**: "Which service of the existing ones in docs/services/stateless contains the effectiveness logic? Do we need a new service?"
-**Status**: ✅ **ANSWERED**
+**Status**: ⚠️ **SUPERSEDED** (see DD-017)
 
 ---
 

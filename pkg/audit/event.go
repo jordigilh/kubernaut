@@ -37,7 +37,7 @@ type AuditEvent struct {
 	EventID uuid.UUID `json:"event_id"`
 
 	// EventVersion is the schema version for this event (default: "1.0")
-	EventVersion string `json:"event_version"`
+	EventVersion string `json:"version"`
 
 	// ========================================
 	// TEMPORAL INFORMATION

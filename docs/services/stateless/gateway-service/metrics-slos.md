@@ -1,39 +1,37 @@
 # Gateway Service - Metrics & SLOs
 
 **Version**: v1.0
-**Last Updated**: October 4, 2025
-**Status**: ✅ Design Complete
+**Last Updated**: December 21, 2025
+**Status**: ✅ Production (Redis Removed per DD-GATEWAY-012)
+
+**Changelog**:
+- **2025-12-21**: Redis metrics removed (Gateway no longer uses Redis)
+- **2025-12-21**: Metric names updated to match actual implementation
+- **2025-12-21**: DD-005 V3.0 metric constants applied
 
 ---
 
 ## Prometheus Metrics
 
-### Alert Ingestion Metrics
+### Signal Ingestion Metrics
 
 ```go
+// BR-GATEWAY-066: Signal ingestion metrics
 var (
-    alertsReceivedTotal = promauto.NewCounterVec(
+    signalsReceivedTotal = promauto.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "gateway_alerts_received_total",
-            Help: "Total alerts received by source and severity",
+            Name: "gateway_signals_received_total",
+            Help: "Total signals received by source type and severity",
         },
-        []string{"source", "severity", "environment"},
+        []string{"source_type", "severity"},
     )
 
-    alertsDeduplicatedTotal = promauto.NewCounterVec(
+    signalsDeduplicatedTotal = promauto.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "gateway_alerts_deduplicated_total",
-            Help: "Total alerts deduplicated",
+            Name: "gateway_signals_deduplicated_total",
+            Help: "Total signals deduplicated",
         },
-        []string{"alertname", "environment"},
-    )
-
-    alertStormsDetectedTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "gateway_alert_storms_detected_total",
-            Help: "Total alert storms detected",
-        },
-        []string{"storm_type", "alertname"},
+        []string{"signal_name"},
     )
 )
 ```
@@ -41,19 +39,20 @@ var (
 ### CRD Creation Metrics
 
 ```go
+// BR-GATEWAY-068: CRD creation metrics
 var (
-    alertRemediationCreatedTotal = promauto.NewCounterVec(
+    crdsCreatedTotal = promauto.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "gateway_remediationrequest_created_total",
-            Help: "Total RemediationRequest CRDs created",
+            Name: "gateway_crds_created_total",
+            Help: "Total RemediationRequest CRDs created by source type",
         },
-        []string{"environment", "priority"},
+        []string{"source_type", "status"},
     )
 
-    alertRemediationCreationFailuresTotal = promauto.NewCounterVec(
+    crdCreationErrorsTotal = promauto.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "gateway_remediationrequest_creation_failures_total",
-            Help: "Total RemediationRequest CRD creation failures",
+            Name: "gateway_crd_creation_errors_total",
+            Help: "Total CRD creation errors by error type",
         },
         []string{"error_type"},
     )
@@ -63,6 +62,7 @@ var (
 ### Performance Metrics
 
 ```go
+// BR-GATEWAY-067, BR-GATEWAY-079: Performance metrics
 var (
     httpRequestDuration = promauto.NewHistogramVec(
         prometheus.HistogramOpts{
@@ -72,21 +72,13 @@ var (
         },
         []string{"endpoint", "method", "status"},
     )
-
-    redisOperationDuration = promauto.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "gateway_redis_operation_duration_seconds",
-            Help:    "Redis operation duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
-        },
-        []string{"operation"},
-    )
 )
 ```
 
 ### Deduplication Metrics
 
 ```go
+// BR-GATEWAY-069: Deduplication metrics
 var (
     deduplicationCacheHitsTotal = promauto.NewCounter(
         prometheus.CounterOpts{
@@ -110,9 +102,9 @@ var (
 
 ### Key Panels
 
-**1. Alert Ingestion Rate**
+**1. Signal Ingestion Rate**
 ```promql
-rate(gateway_alerts_received_total[5m])
+rate(gateway_signals_received_total[5m])
 ```
 
 **2. Deduplication Rate**
@@ -120,16 +112,17 @@ rate(gateway_alerts_received_total[5m])
 gateway_deduplication_rate
 ```
 
-**3. Storm Detection Events**
+**3. High Occurrence Count Signals (Persistent Issues)**
 ```promql
-rate(gateway_alert_storms_detected_total[5m])
+# Signals with high occurrence count (persistent issues)
+count(kube_customresource_remediation_request_status_deduplication_occurrence_count >= 5)
 ```
 
 **4. CRD Creation Success Rate**
 ```promql
-rate(gateway_remediationrequest_created_total[5m]) / 
-(rate(gateway_remediationrequest_created_total[5m]) + 
- rate(gateway_remediationrequest_creation_failures_total[5m]))
+rate(gateway_crds_created_total{status="success"}[5m]) /
+(rate(gateway_crds_created_total[5m]) +
+ rate(gateway_crd_creation_errors_total[5m]))
 ```
 
 **5. API Latency (P50/P95/P99)**
@@ -137,11 +130,6 @@ rate(gateway_remediationrequest_created_total[5m]) /
 histogram_quantile(0.50, rate(gateway_http_request_duration_seconds_bucket[5m]))
 histogram_quantile(0.95, rate(gateway_http_request_duration_seconds_bucket[5m]))
 histogram_quantile(0.99, rate(gateway_http_request_duration_seconds_bucket[5m]))
-```
-
-**6. Redis Performance**
-```promql
-histogram_quantile(0.95, rate(gateway_redis_operation_duration_seconds_bucket[5m]))
 ```
 
 ---
@@ -154,7 +142,7 @@ histogram_quantile(0.95, rate(gateway_redis_operation_duration_seconds_bucket[5m
 **Measurement**: Successful HTTP 202 responses / total requests
 **Query**:
 ```promql
-sum(rate(gateway_http_request_duration_seconds_count{status="202"}[5m])) / 
+sum(rate(gateway_http_request_duration_seconds_count{status="202"}[5m])) /
 sum(rate(gateway_http_request_duration_seconds_count[5m]))
 ```
 
@@ -172,7 +160,7 @@ histogram_quantile(0.99, rate(gateway_http_request_duration_seconds_bucket[5m]))
 **Target**: < 0.1% error rate
 **Query**:
 ```promql
-sum(rate(gateway_http_request_duration_seconds_count{status=~"5.."}[5m])) / 
+sum(rate(gateway_http_request_duration_seconds_count{status=~"5.."}[5m])) /
 sum(rate(gateway_http_request_duration_seconds_count[5m])) < 0.001
 ```
 
@@ -187,7 +175,7 @@ groups:
     # High CRD creation failure rate
     - alert: GatewayHighCRDCreationFailureRate
       expr: |
-        rate(gateway_remediationrequest_creation_failures_total[5m]) > 0.1
+        rate(gateway_crd_creation_errors_total[5m]) > 0.1
       for: 5m
       labels:
         severity: warning
@@ -204,25 +192,31 @@ groups:
       annotations:
         summary: "Gateway API p95 latency >100ms"
 
-    # High Redis latency
-    - alert: GatewayHighRedisLatency
+    # Low deduplication rate
+    - alert: GatewayLowDeduplicationRate
       expr: |
-        histogram_quantile(0.95, rate(gateway_redis_operation_duration_seconds_bucket[5m])) > 0.050
-      for: 5m
+        gateway_deduplication_rate < 0.5
+      for: 10m
       labels:
-        severity: warning
+        severity: info
       annotations:
-        summary: "Gateway Redis p95 latency >50ms"
-
-    # High rate limit rejections
-    - alert: GatewayHighRateLimitRejections
-      expr: |
-        rate(gateway_rate_limit_exceeded_total[5m]) > 10
-      for: 2m
-      labels:
-        severity: warning
-      annotations:
-        summary: "Gateway rate limit rejections >10/s"
+        summary: "Gateway deduplication rate <50%"
 ```
 
-**Confidence**: 95%
+---
+
+## DD-005 V3.0 Compliance
+
+**Status**: ✅ Fully Compliant
+
+All metric names are defined as exported constants in `pkg/gateway/metrics/metrics.go`:
+
+- `MetricNameSignalsReceivedTotal = "gateway_signals_received_total"`
+- `MetricNameSignalsDeduplicatedTotal = "gateway_signals_deduplicated_total"`
+- `MetricNameCRDsCreatedTotal = "gateway_crds_created_total"`
+- `MetricNameCRDCreationErrorsTotal = "gateway_crd_creation_errors_total"`
+- `MetricNameHTTPRequestDuration = "gateway_http_request_duration_seconds"`
+- `MetricNameDeduplicationCacheHitsTotal = "gateway_deduplication_cache_hits_total"`
+- `MetricNameDeduplicationRate = "gateway_deduplication_rate"`
+
+**Confidence**: 100%

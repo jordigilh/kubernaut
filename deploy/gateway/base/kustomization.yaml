@@ -12,7 +12,6 @@ resources:
   - 02-configmap.yaml
   - 03-deployment.yaml
   - 04-service.yaml
-  - 05-redis.yaml
   - 06-servicemonitor.yaml
 
 # Common labels applied to all resources

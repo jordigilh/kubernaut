@@ -1,0 +1,836 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package infrastructure
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+)
+
+// ========================================
+// GATEWAY E2E INFRASTRUCTURE
+// ========================================
+//
+// Gateway E2E tests require:
+// - Kind cluster (RemediationRequest CRD)
+// - PostgreSQL (Data Storage dependency)
+// - Redis (Data Storage dependency)
+// - Data Storage service (audit events)
+// - Gateway service (signal ingestion)
+//
+// Pattern: Follows AIAnalysis E2E infrastructure pattern
+// Authority: test/infrastructure/aianalysis.go
+// ========================================
+
+// Gateway E2E service ports (DD-TEST-001 port allocation strategy)
+const (
+	GatewayE2EHostPort     = 8080  // Gateway API (NodePort 30080 → host port 8080)
+	GatewayE2EMetricsPort  = 9080  // Gateway metrics
+	GatewayDataStoragePort = 30081 // Data Storage NodePort (from shared deployDataStorage)
+	DataStorageE2EHostPort = 18091 // Data Storage host port (NodePort 30081 → host port 18091)
+)
+
+// SetupGatewayInfrastructureParallel creates the full E2E infrastructure with parallel execution.
+// This optimizes setup time by running independent tasks concurrently.
+//
+// Parallel Execution Strategy:
+//
+//	Phase 1 (Sequential): Create Kind cluster + CRDs + namespace (~2.6 min)
+//	Phase 2 (PARALLEL):   Build/Load Gateway image | Build/Load DS image | Deploy PostgreSQL+Redis (~2 min)
+//	Phase 3 (Sequential): Deploy DataStorage (~30s)
+//	Phase 4 (Sequential): Deploy Gateway (~30s)
+//
+// Total time: ~5.5 minutes (vs ~7.6 minutes sequential)
+// Savings: ~2 minutes (27% faster)
+//
+// Reference: test/infrastructure/signalprocessing.go:246 (authoritative pattern)
+func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "🚀 Gateway E2E Infrastructure (PARALLEL MODE)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "  Parallel optimization: ~2 min saved per E2E run (27% faster)")
+	fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	namespace := "kubernaut-system"
+
+	// Generate consistent DataStorage image name for build, load, and deploy
+	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
+	dataStorageImage := GenerateInfraImageName("datastorage", "gateway")
+	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 1: Create Kind cluster + CRDs + namespace (Sequential - must be first)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + CRDs + namespace...")
+
+	// Create Kind cluster
+	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// Install RemediationRequest CRD
+	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
+	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd.Stdout = writer
+	crdCmd.Stderr = writer
+	if err := crdCmd.Run(); err != nil {
+		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
+	}
+
+	// Create namespace
+	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Parallel infrastructure setup
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
+	fmt.Fprintln(writer, "  ├── Building + Loading Gateway image")
+	fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
+
+	type result struct {
+		name string
+		err  error
+	}
+
+	results := make(chan result, 3)
+
+	// Goroutine 1: Build and load Gateway image
+	go func() {
+		var err error
+		if buildErr := buildAndLoadGatewayImage(clusterName, writer); buildErr != nil {
+			err = fmt.Errorf("Gateway image build/load failed: %w", buildErr)
+		}
+		results <- result{name: "Gateway image", err: err}
+	}()
+
+	// Goroutine 2: Build and load DataStorage image with dynamic tag
+	go func() {
+		var err error
+		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
+			err = fmt.Errorf("DS image build failed: %w", buildErr)
+		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
+			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		}
+		results <- result{name: "DataStorage image", err: err}
+	}()
+
+	// Goroutine 3: Deploy PostgreSQL and Redis
+	go func() {
+		var err error
+		if pgErr := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); pgErr != nil {
+			err = fmt.Errorf("PostgreSQL deploy failed: %w", pgErr)
+		} else if redisErr := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); redisErr != nil {
+			err = fmt.Errorf("Redis deploy failed: %w", redisErr)
+		}
+		results <- result{name: "PostgreSQL+Redis", err: err}
+	}()
+
+	// Wait for all parallel tasks to complete
+	var errors []string
+	for i := 0; i < 3; i++ {
+		r := <-results
+		if r.err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
+			fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
+		} else {
+			fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("parallel setup failed: %v", errors)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+
+	// Deploy DataStorage using AIAnalysis's proven pattern
+	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Deploy Gateway (requires DataStorage)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Gateway...")
+
+	// Deploy Gateway service
+	if err := deployGatewayService(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Gateway: %w", err)
+	}
+
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (PARALLEL MODE)!")
+	fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
+	fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
+	fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return nil
+}
+
+// SetupGatewayInfrastructureSequentialWithCoverage creates the full E2E infrastructure with coverage enabled using SEQUENTIAL setup.
+// This is the RECOMMENDED approach that fixes Kind cluster timeout issues (Dec 25, 2025).
+//
+// SEQUENTIAL APPROACH (Build → Cluster → Load → Deploy):
+// 1. Build images FIRST (Gateway ~2-3min with SKIP_SYSTEM_UPDATE, DataStorage ~1-2min)
+// 2. Create Kind cluster (10s)
+// 3. Load images immediately (30s) - no idle time for cluster
+// 4. Deploy services (1-2min)
+//
+// Why Sequential vs Parallel:
+// - OLD (Parallel): Cluster created → sits idle 10min during Gateway build → container crashes → FAIL
+// - NEW (Sequential): Build 3min → create cluster → load immediately → SUCCESS
+//
+// Per DD-TEST-007: E2E Coverage Capture Standard
+//
+// Differences from standard setup:
+// 1. Builds Gateway image with GOFLAGS=-cover + SKIP_SYSTEM_UPDATE=true (2-3min vs 10min)
+// 2. Deploys Gateway with GOCOVERDIR=/coverdata
+// 3. Uses hostPath volume for coverage data collection
+//
+// Usage: Set COVERAGE_MODE=true environment variable
+func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "📊 Gateway E2E Infrastructure (SEQUENTIAL MODE + COVERAGE)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "  Per DD-TEST-007: E2E Coverage Capture Standard")
+	fmt.Fprintln(writer, "  Sequential setup (Build→Cluster→Load) prevents Kind timeout")
+	fmt.Fprintln(writer, "  With SKIP_SYSTEM_UPDATE=true: 2-3min builds vs 10min")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	namespace := "kubernaut-system"
+
+	// Generate consistent DataStorage image name for build, load, and deploy
+	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
+	dataStorageImage := GenerateInfraImageName("datastorage", "gateway")
+	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+
+	// DD-TEST-007: Create coverdata directory BEFORE anything else
+	projectRoot := getProjectRoot()
+	coverdataPath := filepath.Join(projectRoot, "coverdata")
+	fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 1: Build images FIRST (before cluster creation)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images (BEFORE cluster creation)...")
+	fmt.Fprintln(writer, "  This prevents Kind cluster from sitting idle during long builds")
+
+	fmt.Fprintln(writer, "  🔨 Building Gateway image with coverage...")
+	if err := BuildGatewayImageWithCoverage(writer); err != nil {
+		return fmt.Errorf("Gateway coverage image build failed: %w", err)
+	}
+	fmt.Fprintln(writer, "  ✅ Gateway image built")
+
+	fmt.Fprintln(writer, "  🔨 Building DataStorage image with dynamic tag...")
+	if err := buildDataStorageImageWithTag(dataStorageImage, writer); err != nil {
+		return fmt.Errorf("DataStorage image build failed: %w", err)
+	}
+	fmt.Fprintln(writer, "  ✅ DataStorage image built")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Create Kind cluster + CRDs + namespace
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster (NOW - after builds complete)...")
+
+	// Create Kind cluster (uses config with /coverdata mount)
+	fmt.Fprintln(writer, "📦 Creating Kind cluster with /coverdata mount...")
+	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// Install RemediationRequest CRD
+	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
+	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd.Stdout = writer
+	crdCmd.Stderr = writer
+	if err := crdCmd.Run(); err != nil {
+		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
+	}
+
+	// Create namespace
+	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3: Load images IMMEDIATELY (cluster is fresh and healthy)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster (immediately after cluster creation)...")
+
+	fmt.Fprintln(writer, "  📦 Loading Gateway image...")
+	if err := LoadGatewayCoverageImage(clusterName, writer); err != nil {
+		return fmt.Errorf("Gateway coverage image load failed: %w", err)
+	}
+	fmt.Fprintln(writer, "  ✅ Gateway image loaded")
+
+	fmt.Fprintln(writer, "  📦 Loading DataStorage image with dynamic tag...")
+	if err := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); err != nil {
+		return fmt.Errorf("DataStorage image load failed: %w", err)
+	}
+	fmt.Fprintln(writer, "  ✅ DataStorage image loaded")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Deploy infrastructure services (PostgreSQL + Redis)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Data Storage infrastructure...")
+
+	// Deploy shared Data Storage infrastructure (PostgreSQL + Redis + Migrations + Data Storage)
+	// Use same image tag that was built and loaded earlier
+	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
+	}
+	fmt.Fprintln(writer, "  ✅ Data Storage infrastructure deployed")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 6: Deploy Gateway WITH COVERAGE (requires DataStorage)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 6: Deploying Gateway (coverage-enabled)...")
+
+	if err := DeployGatewayCoverageManifest(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Gateway: %w", err)
+	}
+	fmt.Fprintln(writer, "  ✅ Gateway deployed with coverage")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// SUCCESS
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "✅ Gateway E2E Infrastructure Ready (Sequential + Coverage)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return nil
+}
+
+// SetupGatewayInfrastructureParallelWithCoverage creates the full E2E infrastructure with coverage enabled.
+// ⚠️ DEPRECATED (Dec 25, 2025): Use SetupGatewayInfrastructureSequentialWithCoverage instead.
+// This parallel approach causes Kind cluster timeouts when Gateway build takes 10+ minutes.
+//
+// Per DD-TEST-007: E2E Coverage Capture Standard
+//
+// Differences from standard setup:
+// 1. Builds Gateway image with GOFLAGS=-cover
+// 2. Deploys Gateway with GOCOVERDIR=/coverdata
+// 3. Uses hostPath volume for coverage data collection
+//
+// Usage: Set COVERAGE_MODE=true environment variable
+func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "📊 Gateway E2E Infrastructure (PARALLEL MODE + COVERAGE)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "  Per DD-TEST-007: E2E Coverage Capture Standard")
+	fmt.Fprintln(writer, "  Parallel optimization + Coverage instrumentation")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	namespace := "kubernaut-system"
+
+	// Generate consistent DataStorage image name for build, load, and deploy
+	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
+	dataStorageImage := GenerateInfraImageName("datastorage", "gateway")
+	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+
+	// DD-TEST-007: Create coverdata directory BEFORE Kind cluster creation
+	// Kind needs the hostPath to exist before mounting it
+	projectRoot := getProjectRoot()
+	coverdataPath := filepath.Join(projectRoot, "coverdata")
+	fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 1: Create Kind cluster + CRDs + namespace (Sequential - must be first)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + CRDs + namespace...")
+
+	// Create Kind cluster (uses config with /coverdata mount)
+	fmt.Fprintln(writer, "📦 Creating Kind cluster with /coverdata mount...")
+	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// Install RemediationRequest CRD
+	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
+	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd.Stdout = writer
+	crdCmd.Stderr = writer
+	if err := crdCmd.Run(); err != nil {
+		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
+	}
+
+	// Create namespace
+	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Parallel infrastructure setup (WITH COVERAGE)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup (coverage-enabled)...")
+	fmt.Fprintln(writer, "  ├── Building + Loading Gateway image (WITH COVERAGE)")
+	fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
+
+	type result struct {
+		name string
+		err  error
+	}
+
+	results := make(chan result, 3)
+
+	// Goroutine 1: Build and load Gateway image WITH COVERAGE
+	go func() {
+		var err error
+		if buildErr := BuildGatewayImageWithCoverage(writer); buildErr != nil {
+			err = fmt.Errorf("Gateway coverage image build failed: %w", buildErr)
+		} else if loadErr := LoadGatewayCoverageImage(clusterName, writer); loadErr != nil {
+			err = fmt.Errorf("Gateway coverage image load failed: %w", loadErr)
+		}
+		results <- result{name: "Gateway image (coverage)", err: err}
+	}()
+
+	// Goroutine 2: Build and load DataStorage image with dynamic tag
+	go func() {
+		var err error
+		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
+			err = fmt.Errorf("DS image build failed: %w", buildErr)
+		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
+			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		}
+		results <- result{name: "DataStorage image", err: err}
+	}()
+
+	// Goroutine 3: Deploy PostgreSQL and Redis
+	go func() {
+		var err error
+		if pgErr := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); pgErr != nil {
+			err = fmt.Errorf("PostgreSQL deploy failed: %w", pgErr)
+		} else if redisErr := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); redisErr != nil {
+			err = fmt.Errorf("Redis deploy failed: %w", redisErr)
+		}
+		results <- result{name: "PostgreSQL+Redis", err: err}
+	}()
+
+	// Wait for all parallel tasks to complete
+	var errors []string
+	for i := 0; i < 3; i++ {
+		r := <-results
+		if r.err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
+			fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
+		} else {
+			fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("parallel setup failed: %v", errors)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+
+	// Deploy DataStorage using AIAnalysis's proven pattern
+	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Deploy Gateway WITH COVERAGE (requires DataStorage)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Gateway (coverage-enabled)...")
+
+	// Deploy Gateway with coverage manifest (includes GOCOVERDIR and /coverdata mount)
+	if err := DeployGatewayCoverageManifest(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Gateway with coverage: %w", err)
+	}
+
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (PARALLEL + COVERAGE)!")
+	fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
+	fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
+	fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	fmt.Fprintln(writer, "  • Coverage Dir: /coverdata (mounted from Kind worker node)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return nil
+}
+
+// CreateGatewayCluster creates a Kind cluster for Gateway E2E tests (SEQUENTIAL - DEPRECATED)
+// This function is deprecated in favor of SetupGatewayInfrastructureParallel.
+// Kept for backward compatibility.
+//
+// DEPRECATED: Use SetupGatewayInfrastructureParallel for ~27% faster setup
+func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "Gateway E2E Cluster Setup")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "Dependencies:")
+	fmt.Fprintf(writer, "  • PostgreSQL (port 5433) - Data Storage persistence\n")
+	fmt.Fprintf(writer, "  • Redis (port 6380) - Data Storage caching\n")
+	fmt.Fprintf(writer, "  • Data Storage (host port %d, NodePort %d) - Audit trail\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	fmt.Fprintf(writer, "  • Gateway (host port %d) - Signal ingestion\n", GatewayE2EHostPort)
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// 1. Create Kind cluster
+	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// 2. Install RemediationRequest CRD (reuse from signalprocessing.go)
+	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
+	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd.Stdout = writer
+	crdCmd.Stderr = writer
+	if err := crdCmd.Run(); err != nil {
+		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
+	}
+
+	// 3. Build and load Gateway Docker image
+	fmt.Fprintln(writer, "🐳 Building Gateway Docker image...")
+	if err := buildAndLoadGatewayImage(clusterName, writer); err != nil {
+		return fmt.Errorf("failed to build Gateway image: %w", err)
+	}
+
+	fmt.Fprintln(writer, "✅ Gateway E2E cluster created successfully")
+	return nil
+}
+
+// DeployTestServices deploys Gateway and its dependencies to the Kind cluster
+// This includes:
+// 0. Namespace creation
+// 1. PostgreSQL deployment
+// 2. Redis deployment
+// 3. Data Storage deployment
+// 4. Gateway deployment
+func DeployTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
+	fmt.Fprintln(writer, "📦 Deploying Gateway E2E services...")
+
+	// 0. Create namespace first (shared function from datastorage.go)
+	// Deploy shared Data Storage infrastructure (Namespace + PostgreSQL + Redis + Migrations + Data Storage)
+	// Use same image tag that was built and loaded earlier
+	fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure...")
+	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
+		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
+	}
+	fmt.Fprintln(writer, "✅ Data Storage infrastructure deployed")
+
+	// 5. Deploy Gateway service
+	fmt.Fprintln(writer, "🚪 Deploying Gateway service...")
+	if err := deployGatewayService(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy Gateway: %w", err)
+	}
+
+	fmt.Fprintln(writer, "✅ All services deployed successfully")
+	return nil
+}
+
+// DeleteGatewayCluster deletes the Kind cluster
+func DeleteGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "🗑️  Deleting Gateway E2E cluster...")
+
+	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	// Set KIND_EXPERIMENTAL_PROVIDER=podman to use Podman instead of Docker
+	cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to delete cluster: %w", err)
+	}
+
+	fmt.Fprintln(writer, "✅ Gateway E2E cluster deleted")
+	return nil
+}
+
+// ========================================
+// INTERNAL HELPERS
+// ========================================
+
+// createGatewayKindCluster creates a Kind cluster for Gateway E2E tests
+func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	// Use Gateway-specific Kind configuration (2-node cluster with API server tuning)
+	// Reference: test/infrastructure/kind-aianalysis-config.yaml pattern
+	projectRoot := getProjectRoot()
+	kindConfigPath := projectRoot + "/test/infrastructure/kind-gateway-config.yaml"
+
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", clusterName,
+		"--config", kindConfigPath,
+		"--kubeconfig", kubeconfigPath,
+		"--wait", "5m",
+	)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	// DD-TEST-007: Set working directory to project root so ./coverdata in Kind config resolves correctly
+	cmd.Dir = projectRoot
+
+	// Set KIND_EXPERIMENTAL_PROVIDER=podman to use Podman instead of Docker
+	cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kind create cluster failed: %w", err)
+	}
+
+	return nil
+}
+
+// buildAndLoadGatewayImage builds Gateway Docker image using shared build utilities and loads it into Kind
+// DD-TEST-001: Uses shared build script for unique container tags and multi-team testing support
+func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
+	projectRoot := getProjectRoot()
+
+	// Use shared build utilities (DD-TEST-001 compliant)
+	// Benefits:
+	// - Unique tags prevent multi-developer test conflicts
+	// - Consistent with all other services (notification, signalprocessing, etc.)
+	// - Zero maintenance (Platform Team owns shared script)
+	// - Automatic cleanup support
+	fmt.Fprintln(writer, "   Building Gateway image via shared build utilities (DD-TEST-001)...")
+
+	buildScript := filepath.Join(projectRoot, "scripts", "build-service-image.sh")
+	buildCmd := exec.Command(buildScript,
+		"gateway",
+		"--kind",
+		"--cluster", clusterName,
+	)
+	buildCmd.Dir = projectRoot
+	buildCmd.Stdout = writer
+	buildCmd.Stderr = writer
+
+	if err := buildCmd.Run(); err != nil {
+		return fmt.Errorf("shared build script failed: %w", err)
+	}
+
+	fmt.Fprintln(writer, "   ✅ Gateway image built and loaded to Kind with unique tag")
+	return nil
+}
+
+// deployDataStorageToCluster is DEPRECATED - replaced by shared deployDataStorage from aianalysis.go
+// See: docs/handoff/DS_TEAM_GATEWAY_E2E_DATASTORAGE_ISSUE.md (Option A)
+// This function is no longer called and will be removed in future cleanup.
+func deployDataStorageToCluster_DEPRECATED(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Deploy using Data Storage's shared deployment function
+	// This is a simplified version - full deployment would include ConfigMap, Secrets, etc.
+	// For now, Gateway E2E tests will use a basic deployment
+
+	// Use the existing deployDataStorage function from aianalysis.go pattern
+	// But for Gateway, we don't need all the complexity
+	// Gateway only needs Data Storage to be available for audit events
+
+	// Create Data Storage deployment YAML
+	deploymentYAML := fmt.Sprintf(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: datastorage
+  namespace: %s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: datastorage
+  template:
+    metadata:
+      labels:
+        app: datastorage
+    spec:
+      containers:
+      - name: datastorage
+        image: datastorage:e2e-test
+        ports:
+        - containerPort: 8080
+        env:
+        - name: POSTGRES_HOST
+          value: postgres
+        - name: POSTGRES_PORT
+          value: "5432"
+        - name: POSTGRES_USER
+          value: testuser
+        - name: POSTGRES_PASSWORD
+          value: testpass
+        - name: POSTGRES_DB
+          value: testdb
+        - name: REDIS_ADDR
+          value: redis:6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: datastorage
+  namespace: %s
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: %d
+  selector:
+    app: datastorage
+`, namespace, namespace, GatewayDataStoragePort)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(deploymentYAML)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply Data Storage failed: %w", err)
+	}
+
+	// Wait for Data Storage to be ready
+	fmt.Fprintln(writer, "   Waiting for Data Storage pod...")
+	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=ready", "pod",
+		"-l", "app=datastorage",
+		"-n", namespace,
+		"--timeout=120s")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("Data Storage pod not ready: %w", err)
+	}
+
+	return nil
+}
+
+// deployGatewayService deploys Gateway service to the cluster
+// DD-TEST-001: Uses unique image tag generated by shared build utilities
+func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	projectRoot := getProjectRoot()
+
+	// Read the unique image tag generated by shared build script (DD-TEST-001)
+	tagFilePath := filepath.Join(projectRoot, ".last-image-tag-gateway.env")
+	tagContent, err := os.ReadFile(tagFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read image tag file %s: %w (did build script run?)", tagFilePath, err)
+	}
+
+	// Parse IMAGE_TAG=gateway-user-hash-timestamp
+	tagLine := strings.TrimSpace(string(tagContent))
+	if !strings.HasPrefix(tagLine, "IMAGE_TAG=") {
+		return fmt.Errorf("invalid tag file format: expected IMAGE_TAG=..., got: %s", tagLine)
+	}
+	imageTag := strings.TrimPrefix(tagLine, "IMAGE_TAG=")
+	fullImage := fmt.Sprintf("localhost/gateway:%s", imageTag)
+
+	fmt.Fprintf(writer, "   Using Gateway image: %s (DD-TEST-001 unique tag)\n", fullImage)
+
+	// Read deployment manifest and replace hardcoded tag with actual tag
+	deploymentPath := filepath.Join(projectRoot, "test/e2e/gateway/gateway-deployment.yaml")
+	deploymentContent, err := os.ReadFile(deploymentPath)
+	if err != nil {
+		return fmt.Errorf("failed to read deployment file: %w", err)
+	}
+
+	// Replace hardcoded tag with actual unique tag
+	updatedContent := strings.ReplaceAll(string(deploymentContent),
+		"localhost/kubernaut-gateway:e2e-test",
+		fullImage)
+
+	// Create temporary modified deployment file
+	tmpDeployment := filepath.Join(os.TempDir(), "gateway-deployment-e2e.yaml")
+	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
+		return fmt.Errorf("failed to write temp deployment: %w", err)
+	}
+	defer os.Remove(tmpDeployment)
+
+	// Apply the modified deployment
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-f", tmpDeployment,
+		"-n", namespace)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("kubectl apply Gateway deployment failed: %w", err)
+	}
+
+	// Wait for Gateway to be ready (extended timeout for RBAC propagation + initial image pull in Podman)
+	fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
+	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=ready", "pod",
+		"-l", "app=gateway",
+		"-n", namespace,
+		"--timeout=300s") // 5 minutes for Podman-based Kind clusters
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("Gateway pod not ready: %w", err)
+	}
+
+	return nil
+}
+
+// waitForDataStorageInfraReady waits for PostgreSQL and Redis to be ready
+// This is a simplified version for Gateway E2E tests
+func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Wait for PostgreSQL
+	fmt.Fprintln(writer, "   Waiting for PostgreSQL...")
+	pgCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=ready", "pod",
+		"-l", "app=postgresql",
+		"-n", namespace,
+		"--timeout=120s")
+	pgCmd.Stdout = writer
+	pgCmd.Stderr = writer
+	if err := pgCmd.Run(); err != nil {
+		return fmt.Errorf("PostgreSQL not ready: %w", err)
+	}
+
+	// Wait for Redis
+	fmt.Fprintln(writer, "   Waiting for Redis...")
+	redisCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=ready", "pod",
+		"-l", "app=redis",
+		"-n", namespace,
+		"--timeout=120s")
+	redisCmd.Stdout = writer
+	redisCmd.Stderr = writer
+	if err := redisCmd.Run(); err != nil {
+		return fmt.Errorf("Redis not ready: %w", err)
+	}
+
+	return nil
+}

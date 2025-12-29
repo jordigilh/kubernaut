@@ -1,7 +1,7 @@
 # Notification Service - API Specification
 
-**Version**: 2.0
-**Last Updated**: 2025-11-21
+**Version**: 2.3
+**Last Updated**: 2025-12-11
 **Service Type**: CRD Controller (NotificationRequest CRD)
 **Architecture**: Declarative Kubernetes-native notification delivery
 **Audit Integration**: ADR-034 Unified Audit Table (v2.0)
@@ -489,6 +489,259 @@ type SimpleNotificationResponse struct {
 	Channels       map[string]ChannelStatus  `json:"channels"`
 }
 ```
+
+### **NotificationRequest CRD Types**
+
+```go
+// NotificationRequest is the Schema for the notificationrequests API
+type NotificationRequest struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   NotificationRequestSpec   `json:"spec,omitempty"`
+	Status NotificationRequestStatus `json:"status,omitempty"`
+}
+
+type NotificationRequestSpec struct {
+	// Type: "escalation" | "simple" | "approval" | "manual-review"
+	Type string `json:"type"`
+
+	// Recipient: email address or user identifier
+	Recipient string `json:"recipient,omitempty"`
+
+	// Channels: explicit channel list (if empty, uses routing rules)
+	Channels []string `json:"channels,omitempty"`
+
+	// Priority: "critical" | "high" | "normal" | "low"
+	Priority string `json:"priority,omitempty"`
+
+	// Subject: notification subject line
+	Subject string `json:"subject,omitempty"`
+
+	// Body: notification body content
+	Body string `json:"body"`
+
+	// Metadata: additional structured data
+	Metadata *runtime.RawExtension `json:"metadata,omitempty"`
+}
+
+type NotificationRequestStatus struct {
+	// Phase: Current lifecycle phase
+	// Values: "Pending" | "Sending" | "Sent" | "PartiallySent" | "Failed"
+	Phase string `json:"phase,omitempty"`
+
+	// DeliveryAttempts: Record of all delivery attempts
+	DeliveryAttempts []DeliveryAttempt `json:"deliveryAttempts,omitempty"`
+
+	// FailureReason: Human-readable failure reason
+	FailureReason string `json:"failureReason,omitempty"`
+
+	// LastAttemptTime: Timestamp of most recent delivery attempt
+	LastAttemptTime *metav1.Time `json:"lastAttemptTime,omitempty"`
+
+	// Conditions: Standard Kubernetes conditions for status reporting
+	// Supported conditions:
+	//   - RoutingResolved (BR-NOT-069): Routing rule resolution status
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type DeliveryAttempt struct {
+	Channel   string       `json:"channel"`
+	Timestamp metav1.Time  `json:"timestamp"`
+	Success   bool         `json:"success"`
+	Error     string       `json:"error,omitempty"`
+	Attempt   int          `json:"attempt"`
+}
+```
+
+#### **Kubernetes Conditions (BR-NOT-069)**
+
+The `Status.Conditions` field follows standard Kubernetes conventions:
+
+**RoutingResolved Condition**:
+- **Type**: `RoutingResolved`
+- **Status**: `True` | `False` | `Unknown`
+- **Reason**: `RoutingRuleMatched` | `RoutingFallback` | `RoutingError`
+- **Message**: Human-readable description (e.g., "Matched rule 'critical-alerts' → channels: [pagerduty, slack]")
+
+**Example kubectl Output**:
+```bash
+$ kubectl describe notificationrequest notif-abc123
+...
+Status:
+  Phase: Sent
+  Conditions:
+    Type:                RoutingResolved
+    Status:              True
+    Last Transition Time: 2025-12-11T10:30:00Z
+    Reason:              RoutingRuleMatched
+    Message:             Matched rule 'critical-alerts' → channels: [pagerduty, slack]
+    Observed Generation: 1
+```
+
+**Related Documentation**:
+- Full specification: [BR-NOT-069](../../../requirements/BR-NOT-069-routing-rule-visibility-conditions.md)
+- Routing rules: BR-NOT-065 (Channel Routing Based on Labels)
+
+---
+
+## 🏷️ Routing Labels (BR-NOT-065)
+
+The Notification Service supports **label-based routing** for notifications. When `NotificationRequest.spec.channels` is NOT specified, the service uses labels on the CRD to determine which channels to route to.
+
+### **Supported Routing Labels**
+
+All labels use the `kubernaut.ai/` domain (NOT `kubernaut.io/`).
+
+| Label Key | Purpose | Values | Example |
+|-----------|---------|--------|---------|
+| `kubernaut.ai/notification-type` | Notification type routing | `escalation`, `approval_required`, `completed`, `failed`, `status_update` | Route approvals to PagerDuty |
+| `kubernaut.ai/severity` | Severity-based routing | `critical`, `high`, `medium`, `low` | Route critical to PagerDuty |
+| `kubernaut.ai/environment` | Environment-based routing | `production`, `staging`, `development`, `test` | Route prod to oncall |
+| `kubernaut.ai/priority` | Priority-based routing | `P0`, `P1`, `P2`, `P3` | Route P0 to all channels |
+| `kubernaut.ai/namespace` | Namespace-based routing | Any Kubernetes namespace | Route payment-ns to finance |
+| `kubernaut.ai/component` | Source component routing | `remediation-orchestrator`, `workflow-execution`, etc. | Route by source |
+| `kubernaut.ai/remediation-request` | Correlation routing | RemediationRequest CRD name | Link to parent remediation |
+| `kubernaut.ai/skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
+| `kubernaut.ai/investigation-outcome` | HolmesGPT investigation outcome routing (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow-selected` | Route inconclusive to ops for review |
+
+### **Skip-Reason Label (DD-WE-004 Integration)**
+
+The `kubernaut.ai/skip-reason` label enables fine-grained routing based on WorkflowExecution skip reasons:
+
+| Skip Reason | Severity | Recommended Routing | Rationale |
+|-------------|----------|---------------------|-----------|
+| `PreviousExecutionFailed` | **CRITICAL** | PagerDuty (immediate) | Cluster state unknown - manual intervention required |
+| `ExhaustedRetries` | HIGH | Slack (#ops channel) | Infrastructure issues - team awareness required |
+| `ResourceBusy` | LOW | Console/Bulk | Temporary - auto-resolves |
+| `RecentlyRemediated` | LOW | Console/Bulk | Temporary - auto-resolves |
+
+**Example Routing Configuration** (Alertmanager-compatible per BR-NOT-066):
+```yaml
+route:
+  routes:
+    # CRITICAL: Execution failures → PagerDuty
+    - match:
+        kubernaut.ai/skip-reason: PreviousExecutionFailed
+      receiver: pagerduty-oncall
+
+    # HIGH: Exhausted retries → Slack
+    - match:
+        kubernaut.ai/skip-reason: ExhaustedRetries
+      receiver: slack-ops
+
+    # LOW: Temporary conditions → Console only
+    - match_re:
+        kubernaut.ai/skip-reason: "^(ResourceBusy|RecentlyRemediated)$"
+      receiver: console-only
+
+  receiver: default-slack
+
+receivers:
+  - name: pagerduty-oncall
+    pagerduty_configs:
+      - service_key: ${PAGERDUTY_KEY}
+  - name: slack-ops
+    slack_configs:
+      - channel: '#kubernaut-ops'
+  - name: console-only
+    console_config:
+      enabled: true
+  - name: default-slack
+    slack_configs:
+      - channel: '#kubernaut-alerts'
+```
+
+### **Investigation-Outcome Label (BR-HAPI-200)**
+
+The `kubernaut.ai/investigation-outcome` label enables routing based on HolmesGPT investigation results:
+
+| Investigation Outcome | Scenario | Recommended Routing | Rationale |
+|-----------------------|----------|---------------------|-----------|
+| `resolved` | Problem self-resolved before AI intervention | **Skip notification** (null-receiver) | No action needed - prevent alert fatigue |
+| `inconclusive` | LLM cannot determine root cause | Slack (#ops channel) | Human review required |
+| `workflow-selected` | Normal workflow execution | Continue to default routing | Standard flow |
+
+**Example Routing Configuration** (Alertmanager-compatible):
+```yaml
+route:
+  routes:
+    # Self-resolved: Skip notification by default
+    - match:
+        kubernaut.ai/investigation-outcome: resolved
+      receiver: null-receiver  # No notification
+
+    # Inconclusive: Route to ops for manual review
+    - match:
+        kubernaut.ai/investigation-outcome: inconclusive
+      receiver: slack-ops
+
+    # Workflow selected: Fall through to normal routing
+    - match:
+        kubernaut.ai/investigation-outcome: workflow-selected
+      continue: true
+
+  receiver: default-slack
+
+receivers:
+  - name: null-receiver  # Drops notifications silently
+  - name: slack-ops
+    slack_configs:
+      - channel: '#kubernaut-ops'
+  - name: default-slack
+    slack_configs:
+      - channel: '#kubernaut-alerts'
+```
+
+**Related Documentation**:
+- [BR-HAPI-200](../../../../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md) - Cross-team notice
+- [BR-HAPI-197](../../../../docs/requirements/BR-HAPI-197-needs-human-review-field.md) - Parent requirement
+
+---
+
+### **Go Constants** (`pkg/notification/routing/labels.go`)
+
+```go
+// Label keys
+const (
+    LabelNotificationType    = "kubernaut.ai/notification-type"
+    LabelSeverity            = "kubernaut.ai/severity"
+    LabelEnvironment         = "kubernaut.ai/environment"
+    LabelPriority            = "kubernaut.ai/priority"
+    LabelNamespace           = "kubernaut.ai/namespace"
+    LabelComponent           = "kubernaut.ai/component"
+    LabelRemediationRequest  = "kubernaut.ai/remediation-request"
+    LabelSkipReason          = "kubernaut.ai/skip-reason"
+    LabelInvestigationOutcome = "kubernaut.ai/investigation-outcome"  // BR-HAPI-200
+)
+
+// Skip reason values (DD-WE-004)
+const (
+    SkipReasonPreviousExecutionFailed = "PreviousExecutionFailed"  // CRITICAL
+    SkipReasonExhaustedRetries        = "ExhaustedRetries"         // HIGH
+    SkipReasonResourceBusy            = "ResourceBusy"             // LOW
+    SkipReasonRecentlyRemediated      = "RecentlyRemediated"       // LOW
+)
+
+// Investigation outcome values (BR-HAPI-200)
+const (
+    InvestigationOutcomeResolved        = "resolved"          // No action needed
+    InvestigationOutcomeInconclusive    = "inconclusive"      // Human review required
+    InvestigationOutcomeWorkflowSelected = "workflow-selected" // Normal flow
+)
+```
+
+### **Routing Resolution Priority**
+
+1. If `spec.channels` is specified → Use those channels directly
+2. If `spec.channels` is empty → Resolve from routing rules based on labels
+3. If no routing rules match → Use default receiver (console)
+
+**Related Documentation**:
+- [BR-NOT-065: Channel Routing Based on Labels](./BUSINESS_REQUIREMENTS.md#br-not-065-channel-routing-based-on-labels)
+- [BR-NOT-066: Alertmanager-Compatible Configuration Format](./BUSINESS_REQUIREMENTS.md#br-not-066-alertmanager-compatible-configuration-format)
+- [DD-WE-004: Exponential Backoff Cooldown](../../../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
+- [Cross-Team Notice](../../../../handoff/NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md)
 
 ---
 

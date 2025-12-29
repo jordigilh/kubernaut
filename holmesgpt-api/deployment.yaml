@@ -50,12 +50,31 @@ metadata:
   labels:
     app: holmesgpt-api
 data:
+  # Environment Configuration
   ENVIRONMENT: "production"
   DEV_MODE: "false"
   AUTH_ENABLED: "true"
+
+  # LLM Configuration (REQUIRED for production)
+  # Supported providers: openai, anthropic, ollama, vertex_ai
   LLM_PROVIDER: "ollama"
   LLM_MODEL: "llama2"
   LLM_ENDPOINT: "http://ollama-service:11434"
+
+  # Data Storage Service (REQUIRED)
+  # Used for workflow catalog search and audit storage
+  DATASTORAGE_URL: "http://datastorage:8080"
+
+  # Logging Configuration (OPTIONAL)
+  LOG_LEVEL: "INFO"
+
+  # Mock Mode for Testing (OPTIONAL - testing/development only)
+  # When MOCK_LLM_MODE=true:
+  # - Returns deterministic responses (no real LLM calls)
+  # - LLM_MODEL/LLM_PROVIDER/LLM_ENDPOINT not required
+  # - Use for integration tests and E2E tests
+  # IMPORTANT: Variable name is "MOCK_LLM_MODE" (NOT "MOCK_LLM_ENABLED")
+  # MOCK_LLM_MODE: "false"
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -1,9 +1,27 @@
 # Security & Access Control - Business Requirements
 
-**Document Version**: 1.0
+**Document Version**: 2.0
 **Date**: January 2025
+**Last Updated**: December 18, 2025
 **Status**: Business Requirements Specification
 **Module**: Security & Access Control (`pkg/security/`)
+
+---
+
+## Changelog
+
+### Version 2.0 (December 18, 2025)
+- **BR-AUDIT-005 EXPANDED**: Upgraded from basic real-time event streaming to comprehensive enterprise-grade audit integrity and compliance
+- **V1.0 Scope** (USA Enterprise): Tamper-evidence, legal hold, signed exports, RBAC audit API, RR reconstruction API (100% field coverage), SOC 2 Type II readiness
+- **V1.1 Scope** (European & Advanced): PII pseudonymization, EU AI Act compliance, CLI wrapper, GDPR full compliance
+- **Market Focus**: V1.0 targets USA enterprise customers (open source deployment model), V1.1 adds European market compliance
+- **Authority**: BR-AUDIT-005 v2.0 now serves as the authoritative requirement for all V1.0 and V1.1 enterprise compliance work
+- **Target**: 92% enterprise compliance at V1.0 launch (USA), 98% at V1.1 launch (global), 100% RR reconstruction accuracy (both versions)
+- **Implementation Plan**: [AUDIT_V1_0_ENTERPRISE_COMPLIANCE_PLAN_DEC_18_2025.md](../../handoff/AUDIT_V1_0_ENTERPRISE_COMPLIANCE_PLAN_DEC_18_2025.md)
+
+### Version 1.0 (January 2025)
+- Initial security and access control business requirements
+- Basic audit logging and compliance requirements (BR-AUDIT-001 to BR-AUDIT-020)
 
 ---
 
@@ -112,7 +130,38 @@ The Security & Access Control layer provides comprehensive authentication, autho
 - **BR-AUDIT-002**: MUST record all administrative actions with user attribution
 - **BR-AUDIT-003**: MUST track all secret access and modification events
 - **BR-AUDIT-004**: MUST implement immutable audit logs with integrity protection
-- **BR-AUDIT-005**: MUST provide real-time security event streaming
+- **BR-AUDIT-005 v2.0**: **Enterprise-Grade Audit Integrity and Compliance** (EXPANDED - December 2025)
+  - **v1.0 Baseline**: Real-time security event streaming
+  - **v2.0 V1.0 Scope** (USA Enterprise Focus - 10.5 days):
+    1. **Tamper-Evident Audit Logs**: MUST implement cryptographic hashing (SHA-256) for immutable, tamper-proof audit trails
+    2. **Legal Hold Mechanism**: MUST support litigation hold to prevent audit log deletion during legal proceedings
+    3. **Signed Audit Exports**: MUST provide digitally signed audit exports with chain of custody for legal evidence
+    4. **RBAC for Audit API**: MUST enforce role-based access control for audit data queries with principle of least privilege
+    5. **RR CRD Reconstruction**: MUST support RemediationRequest CRD reconstruction from audit traces via REST API (100% field coverage including optional TimeoutConfig)[^1]
+    6. **Multi-Framework Compliance** (USA Enterprise): MUST achieve readiness for:
+       - SOC 2 Type II (90% at V1.0) - PRIMARY TARGET
+       - ISO 27001 (85% at V1.0)
+       - NIST 800-53 (88% at V1.0)
+       - HIPAA (80% at V1.0)
+       - PCI-DSS (75% at V1.0)
+       - Sarbanes-Oxley (70% at V1.0)
+    7. **Operational Integrity**: MUST provide forensic investigation capabilities, complete audit trail for all business operations, and support for external audit evidence collection
+  - **v2.0 V1.1 Scope** (European & Advanced Features - 8.5 days):
+    1. **PII Pseudonymization** (0.5 days): MUST pseudonymize Personally Identifiable Information (emails, usernames) in audit events for GDPR/CCPA compliance
+       - One-way hashing (SHA-256 + cluster-specific salt)
+       - Applies to RAR (Remediation Authorization Request) approver/requester fields
+       - Applies to notification recipient fields
+    2. **EU AI Act Compliance** (8 days): MUST comply with EU Regulation 2024/1689 (AI Act) for high-risk AI systems:
+       - Risk Management System (Article 9): Formal risk assessment, mitigation procedures, monitoring plan
+       - Technical Documentation (Article 11): EU Declaration of Conformity, system design specs, validation reports
+       - Transparency (Article 13): User-facing AI decision explanations, plain-language documentation
+       - Accuracy & Robustness (Article 15): Measured accuracy metrics, robustness testing results, cybersecurity assessment
+       - Target: EU market readiness (applies August 2026)
+    3. **CLI Wrapper** (1-2 days): Command-line interface for RR reconstruction (thin wrapper around REST API)
+    4. **GDPR Full Compliance** (95%+): European data protection requirements with PII pseudonymization
+  - **Implementation Authority**: See [AUDIT_V1_0_ENTERPRISE_COMPLIANCE_PLAN_DEC_18_2025.md](../../handoff/AUDIT_V1_0_ENTERPRISE_COMPLIANCE_PLAN_DEC_18_2025.md) for V1.0 implementation plan (10.5 days)
+  - **Target**: 92% enterprise compliance at V1.0 launch (USA focus), 98% at V1.1 launch (global)
+  - **Gap Analysis**: [AUDIT_COMPLIANCE_100_PERCENT_GAP_ANALYSIS_DEC_18_2025.md](../../handoff/AUDIT_COMPLIANCE_100_PERCENT_GAP_ANALYSIS_DEC_18_2025.md)
 
 #### 4.1.2 Compliance Reporting
 - **BR-AUDIT-006**: MUST generate compliance reports for SOC2, SOX, and PCI requirements
@@ -134,6 +183,23 @@ The Security & Access Control layer provides comprehensive authentication, autho
 - **BR-AUDIT-018**: MUST implement automated response to security threats
 - **BR-AUDIT-019**: MUST support security incident containment and remediation
 - **BR-AUDIT-020**: MUST provide post-incident analysis and improvement recommendations
+
+#### 4.1.5 Workflow Selection Audit Trail (Extended)
+
+> **See**: [BR-AUDIT-021-030-WORKFLOW-SELECTION-AUDIT-TRAIL.md](./BR-AUDIT-021-030-WORKFLOW-SELECTION-AUDIT-TRAIL.md)
+
+The following audit requirements extend the base audit capabilities for workflow catalog operations:
+
+- **BR-AUDIT-021**: MUST propagate `remediation_id` from HolmesGPT API to Data Storage Service
+- **BR-AUDIT-022**: HolmesGPT API MUST NOT generate audit events (Data Storage responsibility)
+- **BR-AUDIT-023**: Data Storage Service MUST generate audit event for every workflow search
+- **BR-AUDIT-024**: Audit MUST be asynchronous and non-blocking (ADR-038 pattern)
+- **BR-AUDIT-025**: MUST capture complete query metadata in audit events
+- **BR-AUDIT-026**: MUST capture complete scoring breakdown (confidence, boost, penalty)
+- **BR-AUDIT-027**: MUST capture full workflow metadata for each returned workflow
+- **BR-AUDIT-028**: MUST capture search execution metadata (timing, index usage)
+- **BR-AUDIT-029**: MUST retain audit events per compliance requirements (90-365 days)
+- **BR-AUDIT-030**: MUST provide API endpoints for querying workflow selection audit events
 
 ---
 
@@ -329,6 +395,12 @@ The Security & Access Control layer provides comprehensive authentication, autho
 - Compliance requirements are met with minimal operational burden
 - Security becomes an enabler rather than an impediment to business operations
 - Risk reduction and compliance demonstrate clear ROI to business stakeholders
+
+---
+
+## Footnotes
+
+[^1]: **100% Reconstruction Accuracy Definition**: Captures all `.spec` fields (immutable, system-generated at RR creation) and all system-managed `.status` fields (lifecycle phases, timestamps, references). User-modified status fields (e.g., manual phase transitions, custom annotations added after RR creation) are intentionally excluded as they represent human intervention after the original RR was created and cannot be derived from the original signal/event data. This definition ensures we can recreate the RR exactly as the system originally created it, which is the primary use case for enterprise audit compliance and incident investigation.
 
 ---
 

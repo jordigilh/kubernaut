@@ -27,7 +27,7 @@ Design Decision: DD-HOLMESGPT-011, DD-HOLMESGPT-012, DD-004 (RFC 7807)
 
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ class RFC7807Error(BaseModel):
     class Config:
         json_schema_extra = {
             "example": {
-                "type": "https://kubernaut.io/errors/validation-error",
+                "type": "https://kubernaut.ai/problems/validation-error",
                 "title": "Bad Request",
                 "detail": "Missing required field: 'namespace'",
                 "status": 400,
@@ -71,11 +71,13 @@ class RFC7807Error(BaseModel):
 
 # Error type URI constants
 # BR-HAPI-200: RFC 7807 error format
-ERROR_TYPE_VALIDATION_ERROR = "https://kubernaut.io/errors/validation-error"
-ERROR_TYPE_UNAUTHORIZED = "https://kubernaut.io/errors/unauthorized"
-ERROR_TYPE_NOT_FOUND = "https://kubernaut.io/errors/not-found"
-ERROR_TYPE_INTERNAL_ERROR = "https://kubernaut.io/errors/internal-error"
-ERROR_TYPE_SERVICE_UNAVAILABLE = "https://kubernaut.io/errors/service-unavailable"
+# Updated: December 18, 2025 - Changed domain from kubernaut.io to kubernaut.ai
+#                              Changed path from /errors/ to /problems/ (RFC 7807 standard)
+ERROR_TYPE_VALIDATION_ERROR = "https://kubernaut.ai/problems/validation-error"
+ERROR_TYPE_UNAUTHORIZED = "https://kubernaut.ai/problems/unauthorized"
+ERROR_TYPE_NOT_FOUND = "https://kubernaut.ai/problems/not-found"
+ERROR_TYPE_INTERNAL_ERROR = "https://kubernaut.ai/problems/internal-error"
+ERROR_TYPE_SERVICE_UNAVAILABLE = "https://kubernaut.ai/problems/service-unavailable"
 
 
 def create_rfc7807_error(
@@ -125,7 +127,7 @@ class HolmesGPTAPIError(Exception):
         super().__init__(message)
         self.message = message
         self.details = details or {}
-        self.timestamp = datetime.utcnow()
+        self.timestamp = datetime.now(timezone.utc)
 
 
 class AuthenticationError(HolmesGPTAPIError):
@@ -221,7 +223,7 @@ class CircuitBreaker:
         """Check if enough time has passed to attempt reset"""
         if not self.last_failure_time:
             return True
-        return datetime.utcnow() - self.last_failure_time > timedelta(seconds=self.recovery_timeout)
+        return datetime.now(timezone.utc) - self.last_failure_time > timedelta(seconds=self.recovery_timeout)
 
     def _on_success(self):
         """Handle successful call"""
@@ -233,7 +235,7 @@ class CircuitBreaker:
     def _on_failure(self):
         """Handle failed call"""
         self.failure_count += 1
-        self.last_failure_time = datetime.utcnow()
+        self.last_failure_time = datetime.now(timezone.utc)
 
         if self.failure_count >= self.failure_threshold:
             self.state = "open"

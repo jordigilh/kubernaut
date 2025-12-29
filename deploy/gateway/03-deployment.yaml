@@ -42,9 +42,6 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
-          args:
-            - --redis
-            - redis-gateway.kubernaut-system.svc.cluster.local:6379
           env:
             - name: POD_NAME
               valueFrom:

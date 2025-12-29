@@ -4,21 +4,20 @@
 
 ### Business Requirements
 
-- **V1 Scope**: BR-AR-001 to BR-AR-067 (25 BRs total)
-  - BR-AR-001 to 060: Core orchestration (18 BRs)
-    - CRD lifecycle coordination
-    - Status aggregation
-    - Event-driven phase transitions
-  - BR-AR-061 to 067: CRD monitoring (7 BRs, migrated from BR-ALERT-*)
-    - Lifecycle monitoring
-    - Status aggregation
-    - Event coordination
-    - Cross-controller integration
-- **Reserved for V2**: BR-AR-068 to BR-AR-180
-  - Parallel remediation workflows
-  - Cross-alert correlation and batch remediation
-  - ML-based timeout prediction
-  - Multi-cluster orchestration
+**V1 Defined BRs** (11 BRs with dedicated files):
+- **BR-ORCH-001**: Approval notification creation
+- **BR-ORCH-025, BR-ORCH-026**: Workflow data pass-through, approval orchestration
+- **BR-ORCH-027, BR-ORCH-028**: Global and per-phase timeout management
+- **BR-ORCH-029, BR-ORCH-030, BR-ORCH-031**: Notification handling, status tracking, cascade cleanup
+- **BR-ORCH-032, BR-ORCH-033, BR-ORCH-034**: WE Skipped phase, duplicate tracking, bulk notification
+
+**See**: [BR_MAPPING.md](./BR_MAPPING.md) for authoritative BR references and test coverage.
+
+**V2 Future** (BRs not yet defined):
+- Parallel remediation workflows
+- Cross-alert correlation and batch remediation
+- ML-based timeout prediction
+- Multi-cluster orchestration
 
 ### Logging Library
 

@@ -333,11 +333,18 @@ E2E tests run in GitHub Actions:
 
 ## ✅ **Status**
 
-| Scenario | Status | Priority | Estimated Effort |
-|----------|--------|----------|------------------|
-| Scenario 1: Happy Path | 🎯 TODO | P0 | 3 hours |
-| Scenario 2: DLQ Fallback | 🎯 TODO | P0 | 2 hours |
-| Scenario 3: Query API | 🎯 TODO | P1 | 2 hours |
+| Scenario | Status | Priority | Actual Implementation |
+|----------|--------|----------|----------------------|
+| Scenario 1: Happy Path | ✅ **COMPLETE** | P0 | `01_happy_path_test.go` |
+| Scenario 2: DLQ Fallback | ✅ **COMPLETE** | P0 | `02_dlq_fallback_test.go` |
+| Scenario 3: Query API | ✅ **COMPLETE** | P1 | `03_query_api_timeline_test.go` |
+| Scenario 4: Workflow Search | ✅ **COMPLETE** | P1 | `04_workflow_search_test.go` |
+| Scenario 5: Workflow Search Audit | ✅ **COMPLETE** | P2 | `06_workflow_search_audit_test.go` |
+| Scenario 6: Workflow Versions | ✅ **COMPLETE** | P1 | `07_workflow_version_management_test.go` |
+| Scenario 7: Edge Cases | ✅ **COMPLETE** | P1 | `08_workflow_search_edge_cases_test.go` |
+| Scenario 8: JSONB Queries | ✅ **COMPLETE** | P1 | `09_event_type_jsonb_comprehensive_test.go` |
+| Scenario 9: Malformed Events | ✅ **COMPLETE** | P2 | `10_malformed_event_rejection_test.go` |
+| Scenario 10: Connection Pool | ✅ **COMPLETE** | P1 | `11_connection_pool_exhaustion_test.go` |
 
-**Total Estimated Effort**: 7 hours (excluding infrastructure setup)
+**V1.0 E2E Test Suite**: ✅ **100% COMPLETE** - 84 of 84 specs passing
 

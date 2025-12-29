@@ -25,9 +25,9 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -53,33 +53,25 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		ctx           context.Context
 		gatewayServer *gateway.Server
 		testServer    *httptest.Server
-		redisClient   *RedisTestClient
 		k8sClient     *K8sTestClient
-		logger        *zap.Logger
-		testNamespace string // Unique namespace per test
-		testCounter   int    // Counter to ensure unique namespaces
+		logger        logr.Logger // DD-005: Use logr.Logger
+		testNamespace string      // Unique namespace per test
+		testCounter   int         // Counter to ensure unique namespaces
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
+		_ = logger              // Suppress unused variable warning
 
 		// Setup test infrastructure using helpers
-		redisClient = SetupRedisTestClient(ctx)
-		Expect(redisClient).ToNot(BeNil(), "Redis client required for integration tests")
-		Expect(redisClient.Client).ToNot(BeNil(), "Redis connection required")
 
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
 
 		// Clean Redis before each test
-		err := redisClient.Client.FlushDB(ctx).Err()
-		Expect(err).ToNot(HaveOccurred(), "Should clean Redis before test")
 
 		// Verify Redis is actually empty (prevent state leakage between tests)
-		keys, err := redisClient.Client.Keys(ctx, "*").Result()
-		Expect(err).ToNot(HaveOccurred(), "Should query Redis keys")
-		Expect(keys).To(BeEmpty(), "Redis should be completely empty after FlushDB")
 
 		// Create unique production namespace for this test (prevents collisions)
 		// Use counter to ensure uniqueness even when tests run in same second
@@ -90,8 +82,10 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Register namespace for suite-level cleanup
 		RegisterTestNamespace(testNamespace)
 
+		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 		// Create Gateway server using helper
-		gatewayServer, err = StartTestGateway(ctx, redisClient, k8sClient)
+		var err error
+		gatewayServer, err = StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
 		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
 
@@ -100,18 +94,13 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
 		logger.Info("Test setup complete",
-			zap.String("test_server_url", testServer.URL),
-			zap.String("test_namespace", testNamespace),
-			zap.String("redis_addr", redisClient.Client.Options().Addr),
+			"test_server_url", testServer.URL,
+			"test_namespace", testNamespace,
 		)
 	})
 
 	AfterEach(func() {
-		// Reset Redis config to prevent OOM cascade failures
-		if redisClient != nil && redisClient.Client != nil {
-			redisClient.Client.ConfigSet(ctx, "maxmemory", "2147483648")
-			redisClient.Client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-		}
+		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
 		// NOTE: Namespace cleanup handled by suite-level AfterSuite (batch cleanup)
 		// This prevents "namespace is being terminated" errors from parallel test execution
@@ -119,9 +108,6 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Cleanup
 		if testServer != nil {
 			testServer.Close()
-		}
-		if redisClient != nil && redisClient.Client != nil {
-			_ = redisClient.Client.FlushDB(ctx).Err()
 		}
 	})
 
@@ -154,7 +140,11 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// Send webhook to Gateway
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
-			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+			Expect(err).ToNot(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer resp.Body.Close()
 
@@ -170,12 +160,9 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(ok).To(BeTrue(), "Response should contain fingerprint")
 			Expect(fingerprint).NotTo(BeEmpty(), "Fingerprint should not be empty")
 
-			// BUSINESS OUTCOME 2: Fingerprint stored in Redis for deduplication
-			// Check Redis IMMEDIATELY after HTTP response (before 5-second TTL expires)
-			exists, err := redisClient.Client.Exists(ctx, "gateway:dedup:fingerprint:"+fingerprint).Result()
-			Expect(err).NotTo(HaveOccurred(), "Redis query should succeed")
-			Expect(exists).To(Equal(int64(1)),
-				"Fingerprint must be stored in Redis to enable deduplication")
+			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: BUSINESS OUTCOME 2: Deduplication tracked in RR status
+			// Fingerprint-based deduplication validated in dd_gateway_011_status_deduplication_test.go
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
@@ -184,15 +171,13 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
 			crd := crdList.Items[0]
-			Expect(crd.Spec.Priority).To(Equal("P0"),
-				"critical + production = P0 (revenue-impacting)")
-			Expect(crd.Spec.Environment).To(Equal("production"),
-				"Environment should be classified from namespace label")
+			// Note: Priority and Environment assertions removed (2025-12-06)
+			// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 			Expect(crd.Spec.SignalName).To(Equal("HighMemoryUsage"),
 				"Alert name enables AI to understand failure type")
 
 			// Verify fingerprint label matches response fingerprint (truncated to K8s 63-char limit)
-			fingerprintLabel := crd.Labels["kubernaut.io/signal-fingerprint"]
+			fingerprintLabel := crd.Labels["kubernaut.ai/signal-fingerprint"]
 			expectedLabel := fingerprint
 			if len(expectedLabel) > 63 {
 				expectedLabel = expectedLabel[:63] // K8s label value max length
@@ -237,7 +222,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
 			// First alert: Creates CRD
-			resp1, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req1.Header.Set("Content-Type", "application/json")
+
+			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp1, err := http.DefaultClient.Do(req1)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp1.Body.Close()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
@@ -256,7 +249,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			firstCRDName = crdList1.Items[0].Name
 
 			// Second alert: Duplicate (within TTL)
-			resp2, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req2.Header.Set("Content-Type", "application/json")
+
+			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp2, err := http.DefaultClient.Do(req2)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp2.Body.Close()
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
@@ -272,7 +273,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				"Same CRD name confirms deduplication")
 
 			// Third alert: Still duplicate
-			resp3, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			req3, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req3.Header.Set("Content-Type", "application/json")
+
+			req3.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp3, err := http.DefaultClient.Do(req3)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp3.Body.Close()
 			Expect(resp3.StatusCode).To(Equal(http.StatusAccepted),
@@ -313,7 +322,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
 
 			// First alert
-			resp1, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req1.Header.Set("Content-Type", "application/json")
+
+			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp1, err := http.DefaultClient.Do(req1)
 			Expect(err).NotTo(HaveOccurred(), "Should send first alert")
 			defer resp1.Body.Close()
 
@@ -327,132 +344,44 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// Send 4 more duplicates
 			for i := 0; i < 4; i++ {
-				resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+				Expect(err).ToNot(HaveOccurred())
+
+				req.Header.Set("Content-Type", "application/json")
+
+				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+				resp, err := http.DefaultClient.Do(req)
 				Expect(err).NotTo(HaveOccurred(), "Should send duplicate alert")
 				resp.Body.Close()
 			}
 
-			// BUSINESS OUTCOME: Redis metadata tracks duplicate count
-			// Use Eventually because Redis writes are async
-			Eventually(func() int {
-				count, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "count").Int()
-				if err != nil {
+			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
+			// DD-GATEWAY-011: BUSINESS OUTCOME: RR status.deduplication tracks duplicate count
+			// Verify duplicate count via K8s CRD status
+			Eventually(func() int32 {
+				// Get the first (and only) CRD
+				crds := ListRemediationRequests(ctx, k8sClient, testNamespace)
+				if len(crds) == 0 || crds[0].Status.Deduplication == nil {
 					return 0
 				}
-				return count
-			}, "2s", "100ms").Should(BeNumerically(">=", 5),
+				return crds[0].Status.Deduplication.OccurrenceCount
+			}, "5s", "100ms").Should(BeNumerically(">=", 5),
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
-			firstSeen, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "firstSeen").Result()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(firstSeen).NotTo(BeEmpty(),
-				"First seen timestamp shows when issue started")
-
-			lastSeen, err := redisClient.Client.HGet(ctx, "gateway:dedup:fingerprint:"+fingerprint, "lastSeen").Result()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(lastSeen).NotTo(BeEmpty(),
-				"Last seen timestamp shows issue is ongoing")
+			// Verify timestamps in status.deduplication
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespace)
+			Expect(crds).To(HaveLen(1))
+			Expect(crds[0].Status.Deduplication).ToNot(BeNil())
+			Expect(crds[0].Status.Deduplication.FirstSeenAt).ToNot(BeNil(),
+				"First occurrence timestamp shows when issue started")
+			Expect(crds[0].Status.Deduplication.LastSeenAt).ToNot(BeNil(),
+				"Last occurrence timestamp shows issue is ongoing")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Duplicate tracking provides operational visibility
 			// ✅ Metadata helps ops understand alert escalation patterns
-		})
-	})
-
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// BR-GATEWAY-013: Storm Detection
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-	Context("BR-GATEWAY-013: Storm Detection", func() {
-		It("aggregates multiple related alerts into single storm CRD", func() {
-			// BR-GATEWAY-013: Storm detection prevents CRD flood
-			// NOTE: This tests rate-based storm detection, not DD-GATEWAY-008 threshold buffering
-			// BUSINESS SCENARIO: Node failure → 15 pod alerts in 10 seconds
-			// Expected: 3 CRDs (2 before storm + 1 aggregated), not 15 individual CRDs
-			//
-			// Storm detection flow (rate-based):
-			// - Alerts 1-2: Create individual CRDs (rate threshold=2 not yet exceeded)
-			// - Alert 3+: Storm detected (rate > 2/sec), start aggregation window
-			// - Alerts 3-15: Added to aggregation window (no new CRDs)
-			//
-			// Business outcome: 80% reduction in K8s API load (3 CRDs vs 15)
-			processID := GinkgoParallelProcess()
-
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
-
-		// Simulate node failure: 15 pods on same node report issues
-		// Stagger alerts by 100ms each to ensure they arrive within the 1-second storm window
-		// Without staggering, all alerts arrive in < 1ms and storm detection doesn't trigger
-		for i := 1; i <= 15; i++ {
-			// Stagger alerts to ensure they hit within storm detection window
-			time.Sleep(100 * time.Millisecond)
-
-			payload := []byte(fmt.Sprintf(`{
-				"alerts": [{
-					"status": "firing",
-					"labels": {
-						"alertname": "PodNotReady",
-						"severity": "critical",
-						"namespace": "%s",
-						"pod": "app-pod-p%d-%d",
-						"node": "worker-node-03"
-					},
-					"annotations": {
-						"summary": "Pod not ready after node failure"
-					},
-					"startsAt": "2025-10-22T14:00:00Z"
-				}]
-			}`, testNamespace, processID, i))
-
-			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
-			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
-		}
-
-	// Wait for all alerts to be processed (1.5s for 15 alerts @ 100ms each + 500ms buffer)
-	time.Sleep(2 * time.Second)
-
-		// BUSINESS OUTCOME: Storm aggregation prevents CRD flood (BR-GATEWAY-013)
-		// Expected: 3 CRDs total (2 before storm threshold + 1 aggregated storm CRD)
-		// - Alerts 1-2: Individual CRDs (before rate threshold of 2 is exceeded)
-		// - Alerts 3-15: Aggregated into 1 storm CRD (after storm detection kicks in)
-		var crdList remediationv1alpha1.RemediationRequestList
-
-		// Use Eventually to wait for CRDs to be created
-		// Force direct API calls to bypass controller-runtime cache
-		Eventually(func() int {
-			err := k8sClient.Client.List(ctx, &crdList,
-				client.InNamespace(testNamespace),
-				client.MatchingFields{}) // Force direct API call, bypass cache
-			if err != nil {
-				return 0
-			}
-			GinkgoWriter.Printf("Found %d CRDs in namespace %s (waiting for 3)\n", len(crdList.Items), testNamespace)
-			return len(crdList.Items)
-		}, 60*time.Second, 2*time.Second).Should(Equal(3),
-			"BR-GATEWAY-013: Storm detection should create 3 CRDs (2 before storm + 1 aggregated), not 15 (60s timeout for parallel execution)")
-
-			// Find the storm CRD (has kubernaut.io/storm label)
-			var stormCRD *remediationv1alpha1.RemediationRequest
-			for i := range crdList.Items {
-				if crdList.Items[i].Labels["kubernaut.io/storm"] == "true" {
-					stormCRD = &crdList.Items[i]
-					break
-				}
-			}
-			Expect(stormCRD).ToNot(BeNil(), "Should have 1 storm CRD with storm label")
-
-			// Verify storm CRD aggregated alerts 3-15 (13 total)
-			// NOTE: StormAlertCount may vary based on timing - check for reasonable range
-			Expect(stormCRD.Spec.StormAlertCount).To(BeNumerically(">=", 5),
-				"Storm CRD should aggregate at least 5 alerts (BR-GATEWAY-013)")
-			Expect(stormCRD.Labels["kubernaut.io/storm"]).To(Equal("true"),
-				"Storm label indicates aggregated CRD")
-
-			// BUSINESS CAPABILITY VERIFIED:
-			// ✅ BR-GATEWAY-013: Rate-based storm detection (80% cost reduction)
-			// ✅ Storm detection prevents K8s API overload (3 CRDs, not 15)
-			// ✅ Related alerts aggregated for efficient AI analysis
 		})
 	})
 
@@ -481,7 +410,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			}`, testNamespace, testNamespace))
 
 			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
-			resp, err := http.Post(url, "application/json", bytes.NewReader(payload))
+			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req.Header.Set("Content-Type", "application/json")
+
+			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -504,6 +441,156 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ K8s events trigger remediation workflow
 			// ✅ Event details provide AI with root cause context
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-TARGET-RESOURCE: Target Resource Population
+	// Business Outcome: SignalProcessing and RO can access resource info directly
+	// Reference: RESPONSE_TARGET_RESOURCE_SCHEMA.md - Option A
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Context("BR-GATEWAY-TARGET-RESOURCE: Target Resource in CRD (Integration)", func() {
+		It("populates spec.targetResource from Prometheus alert for downstream services", func() {
+			// BUSINESS SCENARIO: SignalProcessing receives CRD and needs resource info
+			// to query K8s API for context enrichment.
+			// MUST be able to access: rr.Spec.TargetResource.Kind, .Name, .Namespace
+			// WITHOUT parsing ProviderData JSON
+
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"status": "firing",
+					"labels": {
+						"alertname": "PodCrashLooping",
+						"severity": "critical",
+						"namespace": "%s",
+						"pod": "payment-service-abc123"
+					},
+					"annotations": {
+						"summary": "Pod is crash looping"
+					},
+					"startsAt": "2025-10-22T12:00:00Z"
+				}]
+			}`, testNamespace))
+
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req.Header.Set("Content-Type", "application/json")
+
+			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Alert should create CRD")
+
+			// BUSINESS OUTCOME: CRD has spec.targetResource populated
+			var crdList remediationv1alpha1.RemediationRequestList
+			Eventually(func() int {
+				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+				Expect(err).NotTo(HaveOccurred())
+				return len(crdList.Items)
+			}, "5s", "100ms").Should(Equal(1), "CRD should be created")
+
+			crd := crdList.Items[0]
+
+			// INTEGRATION VERIFICATION: TargetResource is populated in actual K8s CRD
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
+			Expect(crd.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"SignalProcessing needs Kind to query correct K8s resource type")
+			Expect(crd.Spec.TargetResource.Name).To(Equal("payment-service-abc123"),
+				"SignalProcessing needs Name to query specific resource")
+			Expect(crd.Spec.TargetResource.Namespace).To(Equal(testNamespace),
+				"SignalProcessing needs Namespace to scope K8s API query")
+
+			// CORRECTNESS: ProviderData does NOT duplicate resource info
+			var providerData map[string]interface{}
+			err = json.Unmarshal(crd.Spec.ProviderData, &providerData)
+			Expect(err).NotTo(HaveOccurred(), "ProviderData should be valid JSON")
+			Expect(providerData).NotTo(HaveKey("resource"),
+				"ProviderData should NOT contain resource{} - data is in spec.targetResource")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ spec.targetResource populated from Prometheus alert
+			// ✅ SignalProcessing can access resource info directly (no JSON parsing)
+			// ✅ No data duplication between spec.targetResource and ProviderData
+		})
+
+		It("populates spec.targetResource from Kubernetes event for downstream services", func() {
+			// BUSINESS SCENARIO: K8s event triggers remediation
+			// RO needs resource info for workflow routing decisions
+			// NOTE: Gateway only processes Warning/Error events (Normal events are filtered)
+
+			payload := []byte(fmt.Sprintf(`{
+				"type": "Warning",
+				"reason": "FailedMount",
+				"message": "Unable to attach or mount volumes: failed to attach volume",
+				"involvedObject": {
+					"kind": "Pod",
+					"name": "nginx-pod-abc123",
+					"namespace": "%s",
+					"apiVersion": "v1"
+				},
+				"firstTimestamp": "2025-10-22T12:00:00Z",
+				"lastTimestamp": "2025-10-22T12:00:00Z",
+				"count": 1,
+				"source": {
+					"component": "kubelet",
+					"host": "worker-node-1"
+				}
+			}`, testNamespace))
+
+			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
+			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+
+			Expect(err).ToNot(HaveOccurred())
+
+			req.Header.Set("Content-Type", "application/json")
+
+			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).ToNot(HaveOccurred())
+			defer resp.Body.Close()
+
+			// Warning events should create CRD
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Warning event should create CRD")
+
+			// Verify CRD was created with TargetResource
+			var crdList remediationv1alpha1.RemediationRequestList
+			Eventually(func() int {
+				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+				Expect(err).NotTo(HaveOccurred())
+				return len(crdList.Items)
+			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")
+
+			// Find the CRD for this event
+			var targetCRD *remediationv1alpha1.RemediationRequest
+			for i := range crdList.Items {
+				if crdList.Items[i].Spec.SignalType == "kubernetes-event" {
+					targetCRD = &crdList.Items[i]
+					break
+				}
+			}
+
+			Expect(targetCRD).NotTo(BeNil(), "K8s event CRD should exist")
+
+			// INTEGRATION VERIFICATION: TargetResource populated from K8s event
+			// TargetResource is a REQUIRED value type (per API_CONTRACT_TRIAGE.md)
+			Expect(targetCRD.Spec.TargetResource.Kind).To(Equal("Pod"),
+				"RO uses Kind for resource-type-specific workflows")
+			Expect(targetCRD.Spec.TargetResource.Name).To(Equal("nginx-pod-abc123"),
+				"RO uses Name for targeting specific resources")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ K8s events populate spec.targetResource
+			// ✅ RO can route workflows based on resource type
 		})
 	})
 })

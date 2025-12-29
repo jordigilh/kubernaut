@@ -173,7 +173,7 @@ kubectl logs -f deployment/notification-controller \
 #### **Create Test NotificationRequest**
 
 ```yaml
-apiVersion: notification.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: NotificationRequest
 metadata:
   name: ubi9-migration-test

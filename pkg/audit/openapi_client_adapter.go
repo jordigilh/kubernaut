@@ -1,0 +1,195 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package audit
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"time"
+
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+)
+
+// ========================================
+// OPENAPI CLIENT ADAPTER (DD-API-001)
+// 📋 Design Decision: DD-API-001 | ✅ Approved Design | Confidence: 98%
+// See: docs/architecture/decisions/DD-API-001-openapi-client-mandatory-v1.md
+// ========================================
+//
+// OpenAPIClientAdapter implements DataStorageClient using the generated OpenAPI client
+// instead of direct HTTP calls.
+//
+// WHY DD-API-001?
+// - ✅ Type safety: Compile-time validation of API contracts
+// - ✅ Contract enforcement: Breaking changes caught during development
+// - ✅ Spec-code sync: No divergence between spec and implementation
+// - ✅ Proven reliability: NT Team found critical bugs using this approach
+//
+// MIGRATION FROM HTTPDataStorageClient:
+//
+//	// OLD (deprecated - violates DD-API-001)
+//	httpClient := &http.Client{Timeout: 5 * time.Second}
+//	dsClient := audit.NewHTTPDataStorageClient(datastorageURL, httpClient)
+//
+//	// NEW (DD-API-001 compliant)
+//	dsClient, err := audit.NewOpenAPIClientAdapter(datastorageURL, 5*time.Second)
+//	if err != nil {
+//	    return err
+//	}
+//
+// BEHAVIORAL COMPATIBILITY:
+// - ✅ Same interface (DataStorageClient)
+// - ✅ Same error types (HTTPError, NetworkError)
+// - ✅ Same retry semantics (4xx not retryable, 5xx retryable)
+// - ✅ Same async behavior (via BufferedAuditStore wrapper)
+//
+// Authority: DD-API-001 (OpenAPI Generated Client MANDATORY)
+// Related: DD-AUDIT-002 (Audit Shared Library Design)
+// ========================================
+
+// OpenAPIClientAdapter implements DataStorageClient using generated OpenAPI client.
+//
+// This adapter provides a seamless migration path from HTTPDataStorageClient
+// while enforcing DD-API-001 compliance (OpenAPI generated client mandatory).
+//
+// The adapter:
+// - Uses generated OpenAPI client for type-safe API calls
+// - Returns same error types as HTTPDataStorageClient (for BufferedStore compatibility)
+// - Preserves retry semantics (4xx not retryable, 5xx retryable)
+// - Supports same interface (drop-in replacement)
+type OpenAPIClientAdapter struct {
+	client  *dsgen.ClientWithResponses
+	baseURL string
+	timeout time.Duration
+}
+
+// NewOpenAPIClientAdapter creates a new DD-API-001 compliant Data Storage client.
+//
+// This is the REQUIRED replacement for audit.NewHTTPDataStorageClient (deprecated).
+//
+// Parameters:
+//   - baseURL: Data Storage Service base URL (e.g., "http://datastorage-service:8080")
+//   - timeout: HTTP request timeout (e.g., 5*time.Second)
+//
+// Returns:
+//   - DataStorageClient: Client implementing the DataStorageClient interface
+//   - error: Error if client creation fails
+//
+// Example:
+//
+//	dsClient, err := audit.NewOpenAPIClientAdapter("http://localhost:8080", 5*time.Second)
+//	if err != nil {
+//	    return fmt.Errorf("failed to create Data Storage client: %w", err)
+//	}
+//
+//	// Use with BufferedAuditStore (async fire-and-forget)
+//	auditStore, err := audit.NewBufferedStore(dsClient, config, "my-service", logger)
+//
+// Authority: DD-API-001 (OpenAPI Generated Client MANDATORY for V1.0)
+func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorageClient, error) {
+	if baseURL == "" {
+		return nil, fmt.Errorf("baseURL cannot be empty")
+	}
+
+	if timeout <= 0 {
+		timeout = 5 * time.Second // Default timeout
+	}
+
+	// Create HTTP client with configured timeout
+	httpClient := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+
+	// Create generated OpenAPI client (DD-API-001 compliant)
+	client, err := dsgen.NewClientWithResponses(baseURL, dsgen.WithHTTPClient(httpClient))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
+	}
+
+	return &OpenAPIClientAdapter{
+		client:  client,
+		baseURL: baseURL,
+		timeout: timeout,
+	}, nil
+}
+
+// StoreBatch writes a batch of audit events to Data Storage Service using generated OpenAPI client.
+//
+// This method implements the DataStorageClient interface and provides DD-API-001 compliant
+// batch writes with type-safe parameters and contract validation.
+//
+// Endpoint: POST {baseURL}/api/v1/audit/events/batch (via generated client)
+// Content-Type: application/json (set by generated client)
+//
+// Error Handling (compatible with HTTPDataStorageClient):
+// - NetworkError: Connection failures, timeouts (retryable)
+// - HTTPError (4xx): Client errors - invalid data (NOT retryable)
+// - HTTPError (5xx): Server errors - temporary failures (retryable)
+//
+// The BufferedAuditStore uses these error types to determine retry behavior.
+//
+// Authority: DD-API-001 (OpenAPI Generated Client MANDATORY)
+// Related: DD-AUDIT-002 (Audit Shared Library Design)
+func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error {
+	if len(events) == 0 {
+		return nil // No events to write
+	}
+
+	// Convert []*AuditEventRequest to []AuditEventRequest (value slice)
+	// The generated client expects a value slice, not pointer slice
+	valueEvents := make([]dsgen.AuditEventRequest, len(events))
+	for i, event := range events {
+		if event != nil {
+			valueEvents[i] = *event
+		}
+	}
+
+	// ✅ DD-API-001 COMPLIANCE: Use generated OpenAPI client instead of direct HTTP
+	// Type-safe parameters, contract-validated request/response
+	resp, err := a.client.CreateAuditEventsBatchWithResponse(ctx, valueEvents)
+	if err != nil {
+		// Network-level error (connection failure, timeout, DNS resolution)
+		// These are retryable per GAP-11 retry logic
+		return NewNetworkError(err)
+	}
+
+	// Check response status code (same logic as HTTPDataStorageClient)
+	statusCode := resp.StatusCode()
+	if statusCode < 200 || statusCode >= 300 {
+		// HTTP error (4xx client error or 5xx server error)
+		// GAP-11: 4xx NOT retryable (invalid data), 5xx retryable (server issue)
+		message := http.StatusText(statusCode)
+
+		// Try to extract error message from response body if available
+		// Note: CreateAuditEventsBatchResponse only has JSON201 field for success
+		// Error responses are in the raw HTTPResponse body
+		if resp.HTTPResponse != nil && len(resp.Body) > 0 {
+			message = string(resp.Body)
+		}
+
+		return NewHTTPError(statusCode, message)
+	}
+
+	// Success (2xx status code)
+	return nil
+}

@@ -1,0 +1,122 @@
+#!/bin/bash
+# Pre-commit hook for anti-pattern detection
+# Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
+#
+# Installation:
+#   git config core.hooksPath .githooks
+#   chmod +x .githooks/pre-commit
+
+set -e
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🛡️  PRE-COMMIT: Anti-Pattern Detection"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+VIOLATIONS=0
+
+# ========================================
+# CHECK 1: NULL-TESTING Anti-Pattern Detection
+# ========================================
+echo ""
+echo "🔍 Checking for NULL-TESTING anti-patterns..."
+
+# Get staged test files
+STAGED_TEST_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '_test\.go$' || true)
+
+if [ -n "$STAGED_TEST_FILES" ]; then
+    # Check for ToNot(BeNil()) without immediate value validation
+    NULL_NIL=$(echo "$STAGED_TEST_FILES" | xargs grep -nH 'ToNot(BeNil())' 2>/dev/null || true)
+    if [ -n "$NULL_NIL" ]; then
+        echo "❌ VIOLATION: NULL-TESTING anti-pattern detected (ToNot(BeNil))"
+        echo "$NULL_NIL"
+        echo ""
+        echo "   Per TESTING_GUIDELINES.md: Validate business outcomes, not just nil checks"
+        echo "   Example fix: Expect(*event.ActorType).To(Equal(\"service\"))"
+        echo ""
+        VIOLATIONS=$((VIOLATIONS + 1))
+    fi
+
+    # Check for ToNot(BeEmpty()) without specific value/count validation
+    NULL_EMPTY=$(echo "$STAGED_TEST_FILES" | xargs grep -nH 'ToNot(BeEmpty())' 2>/dev/null || true)
+    if [ -n "$NULL_EMPTY" ]; then
+        # Exclude approved exceptions
+        NULL_EMPTY_FILTERED=$(echo "$NULL_EMPTY" | grep -v 'APPROVED EXCEPTION' || true)
+        if [ -n "$NULL_EMPTY_FILTERED" ]; then
+            echo "❌ VIOLATION: NULL-TESTING anti-pattern detected (ToNot(BeEmpty))"
+            echo "$NULL_EMPTY_FILTERED"
+            echo ""
+            echo "   Per TESTING_GUIDELINES.md: Validate specific values or counts"
+            echo "   Example fix: Expect(events).To(HaveLen(2)) or Expect(phase).To(Equal(NotificationPhaseSent))"
+            echo ""
+            VIOLATIONS=$((VIOLATIONS + 1))
+        fi
+    fi
+fi
+
+# ========================================
+# CHECK 2: Skip() Anti-Pattern Detection
+# ========================================
+echo ""
+echo "🔍 Checking for Skip() in integration tests..."
+
+STAGED_INTEGRATION=$(git diff --cached --name-only --diff-filter=ACM | grep 'test/integration/.*_test\.go$' || true)
+
+if [ -n "$STAGED_INTEGRATION" ]; then
+    SKIP_VIOLATIONS=$(echo "$STAGED_INTEGRATION" | xargs grep -nH '\bSkip(' 2>/dev/null | grep -v 'APPROVED EXCEPTION' || true)
+    if [ -n "$SKIP_VIOLATIONS" ]; then
+        echo "❌ VIOLATION: Skip() forbidden in integration tests with required infrastructure"
+        echo "$SKIP_VIOLATIONS"
+        echo ""
+        echo "   Per DD-AUDIT-003: Integration tests must Fail() when required infrastructure unavailable"
+        echo "   Example fix: Use Fail() instead of Skip() for mandatory audit infrastructure"
+        echo ""
+        VIOLATIONS=$((VIOLATIONS + 1))
+    fi
+fi
+
+# ========================================
+# CHECK 3: time.Sleep() Anti-Pattern Detection
+# ========================================
+echo ""
+echo "🔍 Checking for time.Sleep() without approved exceptions..."
+
+if [ -n "$STAGED_TEST_FILES" ]; then
+    # Check for time.Sleep() outside approved exception files
+    SLEEP_VIOLATIONS=$(echo "$STAGED_TEST_FILES" | xargs grep -nH 'time\.Sleep(' 2>/dev/null | \
+        grep -v 'crd_rapid_lifecycle_test.go' | \
+        grep -v 'APPROVED EXCEPTION' || true)
+
+    if [ -n "$SLEEP_VIOLATIONS" ]; then
+        echo "⚠️  WARNING: time.Sleep() detected (use Eventually/Consistently preferred)"
+        echo "$SLEEP_VIOLATIONS"
+        echo ""
+        echo "   Per TESTING_GUIDELINES.md: Prefer Eventually/Consistently for async validation"
+        echo "   If intentional timing test, add ✅ APPROVED EXCEPTION comment"
+        echo ""
+        # Don't block commit, just warn
+    fi
+fi
+
+# ========================================
+# RESULT
+# ========================================
+echo ""
+if [ $VIOLATIONS -gt 0 ]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "❌ COMMIT BLOCKED: $VIOLATIONS anti-pattern violation(s) detected"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "📚 References:"
+    echo "   - docs/development/business-requirements/TESTING_GUIDELINES.md"
+    echo "   - docs/handoff/NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md"
+    echo "   - .golangci.yml (forbidigo rules)"
+    echo ""
+    exit 1
+else
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "✅ PASS: No anti-pattern violations detected"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    exit 0
+fi
+

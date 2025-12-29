@@ -1,0 +1,491 @@
+openapi: 3.0.3
+info:
+  title: Data Storage Service API
+  description: |
+    Data Storage Service provides persistent storage for audit events, workflows, and incidents.
+
+    **Features**:
+    - Unified audit event storage (ADR-034)
+    - Workflow catalog management
+    - RFC 7807 error responses
+    - PostgreSQL + Redis backend
+
+  version: 1.0.0
+  contact:
+    name: Kubernaut Platform Team
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://data-storage.kubernaut-system:8080
+    description: Kubernetes cluster internal service
+
+tags:
+  - name: Audit
+    description: Audit event operations
+  - name: Workflows
+    description: Workflow catalog operations
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /api/v1/audit/events:
+    post:
+      summary: Create audit event
+      description: Write a single audit event to the unified audit_events table
+      operationId: createAuditEvent
+      tags:
+        - Audit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditEventRequest'
+            examples:
+              gatewayEvent:
+                summary: Gateway signal received event
+                value:
+                  version: "1.0"
+                  event_type: gateway.signal.received
+                  event_timestamp: "2025-12-13T02:00:00Z"
+                  event_category: signal
+                  event_action: received
+                  event_outcome: success
+                  actor_type: service
+                  actor_id: gateway-service
+                  resource_type: Signal
+                  resource_id: fp-abc123
+                  correlation_id: rr-2025-001
+                  event_data:
+                    version: "1.0"
+                    service: gateway
+                    operation: signal_received
+                    status: success
+                    payload:
+                      signal_type: prometheus
+                      alert_name: PodOOMKilled
+                      severity: critical
+
+      responses:
+        '201':
+          description: Audit event created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventResponse'
+        '202':
+          description: Audit event accepted (DLQ fallback)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventResponse'
+        '400':
+          description: Bad request - validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
+    get:
+      summary: Query audit events
+      description: Query audit events with filters and pagination
+      operationId: queryAuditEvents
+      tags:
+        - Audit
+      parameters:
+        - name: event_type
+          in: query
+          schema:
+            type: string
+          description: Filter by event type
+        - name: correlation_id
+          in: query
+          schema:
+            type: string
+          description: Filter by correlation ID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Maximum number of results
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Number of results to skip
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventsQueryResponse'
+
+  /api/v1/audit/events/batch:
+    post:
+      summary: Create audit events batch
+      description: Write multiple audit events in a single request
+      operationId: createAuditEventsBatch
+      tags:
+        - Audit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/AuditEventRequest'
+      responses:
+        '201':
+          description: Batch created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchAuditEventResponse'
+
+  /api/v1/workflows:
+    post:
+      summary: Create workflow
+      description: Register a new remediation workflow in the catalog
+      operationId: createWorkflow
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowCreateRequest'
+      responses:
+        '201':
+          description: Workflow created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowResponse'
+
+  /api/v1/workflows/search:
+    post:
+      summary: Search workflows
+      description: Search for workflows using label-based matching
+      operationId: searchWorkflows
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkflowSearchRequest'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkflowSearchResponse'
+
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+
+  /livez:
+    get:
+      summary: Liveness check
+      operationId: livenessCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is alive
+
+  /readyz:
+    get:
+      summary: Readiness check
+      operationId: readinessCheck
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready
+
+components:
+  schemas:
+    AuditEventRequest:
+      type: object
+      required:
+        - version
+        - event_type
+        - event_timestamp
+        - event_category
+        - event_action
+        - event_outcome
+        - correlation_id
+        - event_data
+      properties:
+        version:
+          type: string
+          example: "1.0"
+        event_type:
+          type: string
+          example: gateway.signal.received
+        event_timestamp:
+          type: string
+          format: date-time
+          example: "2025-12-13T02:00:00Z"
+        event_category:
+          type: string
+          example: signal
+        event_action:
+          type: string
+          example: received
+        event_outcome:
+          type: string
+          enum: [success, failure, pending]
+          example: success
+        actor_type:
+          type: string
+          example: service
+        actor_id:
+          type: string
+          example: gateway-service
+        resource_type:
+          type: string
+          example: Signal
+        resource_id:
+          type: string
+          example: fp-abc123
+        correlation_id:
+          type: string
+          example: rr-2025-001
+        parent_event_id:
+          type: string
+          format: uuid
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        cluster_name:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          nullable: true
+        duration_ms:
+          type: integer
+          nullable: true
+        event_data:
+          type: object
+          description: Service-specific event data (CommonEnvelope structure)
+          additionalProperties: true
+
+    AuditEventResponse:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          required:
+            - event_id
+            - created_at
+          properties:
+            event_id:
+              type: string
+              format: uuid
+            created_at:
+              type: string
+              format: date-time
+        message:
+          type: string
+
+    BatchAuditEventResponse:
+      type: object
+      properties:
+        event_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        message:
+          type: string
+
+    AuditEventsQueryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+        total_count:
+          type: integer
+        pagination:
+          type: object
+          properties:
+            limit:
+              type: integer
+            offset:
+              type: integer
+
+    AuditEvent:
+      allOf:
+        - $ref: '#/components/schemas/AuditEventRequest'
+        - type: object
+          properties:
+            event_id:
+              type: string
+              format: uuid
+            event_date:
+              type: string
+              format: date
+
+    WorkflowCreateRequest:
+      type: object
+      required:
+        - name
+        - signal_type
+        - severity
+        - environment
+        - priority
+        - component
+      properties:
+        name:
+          type: string
+        signal_type:
+          type: string
+        severity:
+          type: string
+        environment:
+          type: string
+        priority:
+          type: string
+        component:
+          type: string
+        description:
+          type: string
+        spec:
+          type: object
+
+    WorkflowSearchRequest:
+      type: object
+      required:
+        - filters
+      properties:
+        filters:
+          type: object
+          required:
+            - signal_type
+            - severity
+            - component
+            - environment
+            - priority
+          properties:
+            signal_type:
+              type: string
+            severity:
+              type: string
+            component:
+              type: string
+            environment:
+              type: string
+            priority:
+              type: string
+            custom_labels:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+        top_k:
+          type: integer
+          default: 10
+        min_score:
+          type: number
+          format: float
+          default: 0.0
+
+    WorkflowSearchResponse:
+      type: object
+      properties:
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowSearchResult'
+        total_results:
+          type: integer
+        filters:
+          $ref: '#/components/schemas/WorkflowSearchRequest'
+
+    WorkflowSearchResult:
+      type: object
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        score:
+          type: number
+          format: float
+
+    WorkflowResponse:
+      type: object
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    RFC7807Problem:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        invalid_fields:
+          type: object
+          additionalProperties:
+            type: string
+
+

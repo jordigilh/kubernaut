@@ -171,7 +171,7 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
 **Purpose**: Graceful cleanup before cascade deletion
 
 ```go
-const FinalizerName = "remediation.kubernaut.io/finalizer"
+const FinalizerName = "remediation.kubernaut.ai/finalizer"
 
 // Adding finalizer to RemediationRequest
 func (r *RemediationRequestReconciler) addFinalizer(

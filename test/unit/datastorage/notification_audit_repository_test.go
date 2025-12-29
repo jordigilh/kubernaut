@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -6,10 +22,11 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
+	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -21,13 +38,22 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// NOTIFICATION AUDIT REPOSITORY UNIT TESTS (DD-010)
+// 📋 Business Requirements:
+//   - BR-STORAGE-001: Notification Audit Persistence
+//   - BR-STORAGE-002: Audit Write Operations
+//   - BR-STORAGE-007: Query Performance Tracking
+//
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("NotificationAuditRepository", func() {
 	var (
 		repo   *repository.NotificationAuditRepository
 		mockDB *sql.DB
 		mock   sqlmock.Sqlmock
 		ctx    context.Context
-		logger *zap.Logger
+		logger logr.Logger
 		audit  *models.NotificationAudit
 		now    time.Time
 	)
@@ -37,7 +63,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 		mockDB, mock, err = sqlmock.New(sqlmock.MonitorPingsOption(true))
 		Expect(err).ToNot(HaveOccurred())
 
-		logger = zap.NewNop()
+		logger = kubelog.NewLogger(kubelog.DefaultOptions())
 		repo = repository.NewNotificationAuditRepository(mockDB, logger)
 		ctx = context.Background()
 		now = time.Now()
@@ -62,6 +88,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 	Describe("Create", func() {
 		Context("with valid audit record", func() {
+			// BEHAVIOR: Repository inserts valid audit records into database
+			// CORRECTNESS: Returns created audit with ID, timestamps populated
 			It("should insert successfully and return audit with ID", func() {
 				expectedID := int64(123)
 				expectedCreatedAt := now

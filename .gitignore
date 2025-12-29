@@ -11,10 +11,20 @@ dependencies/
 *.bak
 *.bak2
 
-# Root directory markdown files (except README.md)
+# Compiled Go binaries (service executables - root directory only)
+/aianalysis
+/remediationorchestrator
+/signalprocessing
+/workflowexecution
+/datastorage
+/gateway
+/kubernaut
+
+# Root directory markdown files (except README.md and CHANGELOG*.md)
 # Note: Leading slash ensures this only applies to root directory
 /*.md
 !/README.md
+!/CHANGELOG*.md
 # Python artifacts
 *.pyc
 __pycache__/
@@ -114,6 +124,11 @@ TDD-*.md
 [A-Z][A-Z-]*-*-FIX*.md
 [A-Z][A-Z-]*-*-BUG*.md
 [A-Z][A-Z-]*-*-RECOVERY*.md
+
+# EXCEPTIONS: Allow Design Decision documents (DD-*.md, ADR-*.md) in architecture/decisions
+!docs/architecture/decisions/DD-*.md
+!docs/architecture/decisions/ADR-*.md
+
 # Pattern with underscores (e.g., CONTEXT_API_*) - GLOBAL
 [A-Z][A-Z_]*_*_SUMMARY.md
 [A-Z][A-Z_]*_*_COMPLETE.md
@@ -141,3 +156,50 @@ PR_DESCRIPTION.md
 /junit*.xml
 /coverage-*.out
 /coverage-*.html
+
+# Session and triage files (ephemeral documentation)
+*_TRIAGE.md
+*_SUMMARY.md
+*_STATUS.md
+*_ANALYSIS.md
+*_PLAN.md
+*_PROGRESS.md
+*_HANDOFF.md
+*_COMPLETE.md
+SESSION_*.md
+SESSION_*.txt
+GOOD_*.md
+OVERNIGHT_*.md
+
+# EXCEPTIONS: Allow all files in docs/handoff/ (cross-team Q&A archive)
+# Must be at the END of the file to override all ignore patterns above
+!docs/handoff/
+!docs/handoff/**
+
+# Auto-generated OpenAPI spec copies (via go:generate)
+# DD-API-002: These are auto-generated from api/openapi/*.yaml
+pkg/*/server/middleware/openapi_spec_data.yaml
+pkg/audit/openapi_spec_data.yaml
+
+/workflowexecution
+
+# Test coverage files (all tiers - unit, integration, e2e)
+# Go coverage metadata files (generated during coverage collection)
+covcounters.*
+covmeta.*
+
+# Coverage report files (all formats and tiers)
+e2e-coverage*
+unit-coverage*
+integration-coverage*
+coverage.html
+coverage.txt
+
+# Coverage directories (all tiers)
+coverage-unit/
+coverage-integration/
+coverage-e2e/
+**/coverdata/
+
+# Generated integration test configs (ADR-030)
+test/infrastructure/.generated-configs/

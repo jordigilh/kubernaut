@@ -1,18 +1,22 @@
 # Kubernaut - Approved Microservices Architecture
 
-> **⚠️ DEPRECATION NOTICE** (2025-11-13): Context API service has been deprecated.
-> All Context API functionality has been consolidated into Data Storage Service (DD-CONTEXT-006).
-> This document retains Context API references for historical context. See DD-CONTEXT-006 for deprecation details.
+> **⚠️ DEPRECATION & DEFERRAL NOTICES**:
+> - **Context API** (2025-11-13): Deprecated, consolidated into Data Storage Service (DD-CONTEXT-006)
+> - **Dynamic Toolset** (2025-11-21): Deferred to V2.0, V1.x uses static config (DD-016)
+> - **Effectiveness Monitor** (2025-12-01): Deferred to V1.1 due to year-end timeline (DD-017)
+>
+> This document retains historical references. See DD-CONTEXT-006, DD-016, DD-017 for details.
 
-**Document Version**: 2.5
-**Date**: November 13, 2025
+**Document Version**: 2.6
+**Date**: December 1, 2025
 **Status**: **V1 IMPLEMENTATION** - Current Architecture Specification
-**Architecture Type**: V1 Microservices (10 Services) with V2 Roadmap (14 Services)
+**Architecture Type**: V1.0 Microservices (8 Services) with V1.1 (1 Service) and V2 Roadmap (15+ Services)
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 2.6 | Dec 1, 2025 | **DD-016 & DD-017 Integration**: Updated V1.0 service count from 10 to 8. Dynamic Toolset deferred to V2.0 (DD-016). Effectiveness Monitor deferred to V1.1 (DD-017, year-end timeline constraints). Updated service breakdown and architecture overview. | AI Assistant |
 | 2.5 | Nov 13, 2025 | **Context API Deprecation**: Updated service count from 11 to 10. Context API deprecated in favor of Data Storage Service (DD-CONTEXT-006). Document retains historical Context API references. | AI Assistant |
 | 2.4 | Oct 31, 2025 | Updated 2 sequence diagrams: K8s Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
 | 2.3 | Oct 2025 | RemediationOrchestrator Specification & Approval Notification Integration | - |
@@ -21,9 +25,11 @@
 
 ## 🎯 **EXECUTIVE SUMMARY**
 
-This document defines the **V1 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1 architecture implements **10 core microservices** (4 CRD controllers + 6 stateless services), each adhering to the **Single Responsibility Principle**, with a **V2 roadmap** for 4 additional advanced services. This provides rapid deployment capability while maintaining complete business requirements coverage.
+This document defines the **V1.0 microservices architecture** for Kubernaut, an intelligent Kubernetes remediation agent. The V1.0 architecture implements **8 core microservices** (4 CRD controllers + 4 stateless services), each adhering to the **Single Responsibility Principle**, with a **V1.1 roadmap** for 1 additional service and **V2 roadmap** for advanced services. This provides rapid deployment capability before year-end 2025 while maintaining complete core remediation requirements coverage.
 
-**V2.1 Update**: Effectiveness Monitor Service moved from V2 to V1 with graceful degradation strategy to enable progressive capability improvement as remediation data accumulates.
+**December 2025 Updates**:
+- **Dynamic Toolset** deferred to V2.0 (DD-016, redundant with HolmesGPT-API's Prometheus discovery)
+- **Effectiveness Monitor** deferred to V1.1 (DD-017, requires 8+ weeks of remediation data for meaningful assessments)
 
 ### **V1 Implementation Strategy**
 **Complete V1 Strategy**: See [Implementation Roadmap](KUBERNAUT_IMPLEMENTATION_ROADMAP.md) for detailed V1 timeline (3-4 weeks), HolmesGPT-API integration approach, and 95% confidence assessment.
@@ -37,25 +43,33 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ---
 
-## 🏗️ **V1 MICROSERVICES OVERVIEW (10 Services)**
+## 🏗️ **V1.0 MICROSERVICES OVERVIEW (8 Services)**
 
-### **V1 Service Portfolio - Current Implementation (10 Services)**
-| Service | Responsibility | Business Requirements | External Connections |
-|---------|---------------|----------------------|---------------------|
-| **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources |
-| **🔍 Signal Processing** | Signal Enrichment + Business Classification | BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) |
-| **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API |
-| **🎯 Workflow Execution** | Workflow Orchestration with Tekton Pipelines | BR-WF-001 to BR-WF-165 | Tekton Pipelines, Kubernetes Clusters |
-| **🎛️ Remediation Orchestrator** | End-to-End Remediation Lifecycle Management | BR-ORCH-001 to BR-ORCH-050 | None (internal only) |
-| **📊 Data Storage** | Data Persistence & Semantic Search | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Vector DB |
-| **🔍 HolmesGPT API** | AI Investigation Wrapper | BR-HAPI-001 to BR-HAPI-185 | HolmesGPT Python SDK |
-| **🧩 Dynamic Toolset** | HolmesGPT Toolset Configuration | BR-TOOLSET-001 to BR-TOOLSET-020 | HolmesGPT API |
-| **📈 Effectiveness Monitor** | Performance Assessment & Oscillation Detection | BR-INS-001 to BR-INS-010 | None (internal only) |
-| **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty |
+### **V1.0 Service Portfolio - Current Implementation (8 Services)**
+| Service | Responsibility | Business Requirements | External Connections | Status |
+|---------|---------------|----------------------|---------------------|--------|
+| **🔗 Gateway** | HTTP Gateway & Security | BR-WH-001 to BR-WH-015 | Multi-Signal Sources | ✅ Production-Ready |
+| **🔍 Signal Processing** | Signal Enrichment + Business Classification | BR-SP-001 to BR-SP-050, BR-ENV-001 to BR-ENV-050 | None (internal only) | 🔄 In Progress (Phase 3) |
+| **🤖 AI Analysis** | AI Analysis & Decision Making (HolmesGPT-Only) | BR-AI-001 to BR-AI-050 | HolmesGPT-API | 🔄 In Progress (Phase 4) |
+| **🎯 Workflow Execution** | Workflow Orchestration with Tekton Pipelines | BR-WF-001 to BR-WF-165 | Tekton Pipelines, Kubernetes Clusters | 🔄 In Progress (Phase 3) |
+| **🎛️ Remediation Orchestrator** | End-to-End Remediation Lifecycle Management | BR-ORCH-001 to BR-ORCH-050 | None (internal only) | ⏸️ Planned (Phase 5) |
+| **📊 Data Storage** | Data Persistence & Semantic Search | BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030 | PostgreSQL, Vector DB | ✅ Production-Ready |
+| **🔍 HolmesGPT API** | AI Investigation Wrapper | BR-HAPI-001 to BR-HAPI-185 | HolmesGPT Python SDK | ✅ Production-Ready |
+| **📢 Notifications** | Multi-Channel Notifications | BR-NOTIF-001 to BR-NOTIF-120 | Slack, Teams, Email, PagerDuty | ✅ Production-Ready |
+
+### **V1.1 Services (Deferred from V1.0)**
+| Service | Responsibility | Business Requirements | Deferral Reason |
+|---------|---------------|----------------------|-----------------|
+| **📈 Effectiveness Monitor** | Performance Assessment & Oscillation Detection | BR-INS-001 to BR-INS-010 | DD-017: Requires 8+ weeks of remediation data |
+
+### **V2.0 Services (Deferred from V1.x)**
+| Service | Responsibility | Business Requirements | Deferral Reason |
+|---------|---------------|----------------------|-----------------|
+| **🧩 Dynamic Toolset** | HolmesGPT Toolset Configuration | BR-TOOLSET-001 to BR-TOOLSET-020 | DD-016: Redundant with HolmesGPT-API Prometheus discovery |
 
 **Service Breakdown**:
 - **CRD Controllers** (4): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator
-- **Stateless Services** (6): Gateway, Data Storage, HolmesGPT API, Dynamic Toolset, Effectiveness Monitor, Notifications
+- **Stateless Services** (4): Gateway, Data Storage, HolmesGPT API, Notifications
 
 **Important Notes**:
 - **Oscillation detection** (preventing remediation loops) is a capability of the Effectiveness Monitor service (queries PostgreSQL action_history table), not a separate service.
@@ -74,9 +88,9 @@ This document defines the **V1 microservices architecture** for Kubernaut, an in
 
 ## 🔄 **SERVICE FLOW ARCHITECTURE**
 
-### **V1 Complete Architecture (11 Services)**
+### **V1.0 Complete Architecture (8 Services)**
 
-This diagram shows all V1 services and their interactions:
+This diagram shows all V1.0 services and their interactions (Historical diagram retains deprecated/deferred services for reference):
 
 ```mermaid
 flowchart TB

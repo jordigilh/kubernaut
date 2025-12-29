@@ -1,0 +1,59 @@
+# GolangCI-Lint Configuration for Kubernaut
+# Enforces anti-pattern detection per TESTING_GUIDELINES.md
+
+version: 2
+
+run:
+  timeout: 5m
+  tests: true
+  skip-dirs:
+    - vendor
+
+linters:
+  enable:
+    - forbidigo  # Detects forbidden patterns (NULL-TESTING, Skip(), time.Sleep())
+    - errcheck   # Ensures error returns are checked
+    - staticcheck
+    - unused
+    - govet
+
+linters-settings:
+  forbidigo:
+    # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
+    forbid:
+      # NULL-TESTING Anti-Pattern (Per TESTING_GUIDELINES.md)
+      - p: '\bExpect\([^)]+\)\.ToNot\(BeNil\(\)\)'
+        msg: "NULL-TESTING anti-pattern: Validate business outcomes, not just nil checks. See TESTING_GUIDELINES.md"
+      - p: '\bExpect\([^)]+\)\.ToNot\(BeEmpty\(\)\)'
+        msg: "NULL-TESTING anti-pattern: Validate specific values or counts, not just empty checks. See TESTING_GUIDELINES.md"
+      - p: '\.ShouldNot\(BeEmpty\(\)\)'
+        msg: "NULL-TESTING anti-pattern: Validate terminal states like NotificationPhaseSent/Failed, not just empty checks"
+      - p: '\.ShouldNot\(BeNil\(\)\)'
+        msg: "NULL-TESTING anti-pattern: Validate actual pointer values after checking non-nil"
+
+      # Skip() Anti-Pattern (Per TESTING_GUIDELINES.md: Integration tests must Fail() when required infra unavailable)
+      - p: '\bSkip\('
+        msg: "Skip() forbidden in integration tests when required infrastructure unavailable (DD-AUDIT-003). Use Fail() instead."
+
+      # time.Sleep() Anti-Pattern (Per TESTING_GUIDELINES.md v2.0.0: ABSOLUTELY FORBIDDEN)
+      - p: 'time\.Sleep\('
+        msg: "time.Sleep() ABSOLUTELY FORBIDDEN per TESTING_GUIDELINES.md v2.0.0. Use Eventually/Consistently for async validation."
+
+issues:
+  exclude-rules:
+    # Exclude test setup/teardown code from some checks
+    - path: _test\.go
+      linters:
+        - errcheck
+      text: "Error return value of.*Close.*is not checked"
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+# Per TESTING_GUIDELINES.md v2.0.0: Enforce best practices with NO EXCEPTIONS
+# - NULL-TESTING: Weak assertions (ToNot(BeNil), ToNot(BeEmpty)) - FORBIDDEN
+# - Skip(): Forbidden for required infrastructure (DD-AUDIT-003) - FORBIDDEN
+# - time.Sleep(): ABSOLUTELY FORBIDDEN per v2.0.0 - Use Eventually/Consistently
+#
+# NO EXCEPTIONS ALLOWED: All violations must be remediated per TESTING_GUIDELINES.md v2.0.0
+

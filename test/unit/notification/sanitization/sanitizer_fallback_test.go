@@ -1,4 +1,4 @@
-package sanitization_test
+package sanitization
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/notification/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
 func TestSanitizerFallback(t *testing.T) {
@@ -34,7 +34,7 @@ var _ = Describe("Sanitizer Fallback - Category E: Graceful Degradation", func()
 			result, err := sanitizer.SanitizeWithFallback(input)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ContainSubstring("***REDACTED***"))
+			Expect(result).To(ContainSubstring("[REDACTED]"))
 			Expect(result).NotTo(ContainSubstring("secret123"))
 		})
 
@@ -82,7 +82,7 @@ var _ = Describe("Sanitizer Fallback - Category E: Graceful Degradation", func()
 			result, err := sanitizer.SanitizeWithFallback(inputStr)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result).To(ContainSubstring("***REDACTED***"))
+			Expect(result).To(ContainSubstring("[REDACTED]"))
 		})
 	})
 
@@ -212,7 +212,7 @@ var _ = Describe("Sanitizer Fallback - Category E: Graceful Degradation", func()
 				Expect(result).NotTo(ContainSubstring("dbpass123"))
 			} else {
 				// Normal path - verify proper sanitization
-				Expect(result).To(ContainSubstring("***REDACTED***"))
+				Expect(result).To(ContainSubstring("[REDACTED]"))
 			}
 		})
 
@@ -237,7 +237,7 @@ Error: validation failed
 			// Secrets should be redacted
 			if err == nil {
 				// Normal sanitization
-				Expect(result).To(ContainSubstring("***REDACTED***"))
+				Expect(result).To(ContainSubstring("[REDACTED]"))
 			} else {
 				// Fallback sanitization
 				Expect(result).To(ContainSubstring("[REDACTED]"))

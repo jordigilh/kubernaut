@@ -1,0 +1,70 @@
+# Kind cluster configuration for HolmesGPT-API E2E tests
+#
+# Per DD-TEST-001 v1.2:
+# - HolmesGPT API: Host Port 8088, NodePort 30088
+# - Data Storage: Host Port 8089, NodePort 30089
+# - PostgreSQL: Host Port 5488, NodePort 30488
+# - Embedding Service: Host Port 8188, NodePort 30288
+# - Redis: Host Port 6388, NodePort 30388
+#
+# Per ADR-016: Uses Podman as container runtime
+# Per TESTING_GUIDELINES.md section 4: Real infrastructure, mock LLM only
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+nodes:
+- role: control-plane
+  # Expose service NodePorts to host machine
+  # This eliminates kubectl port-forward instability (per DD-TEST-001)
+  extraPortMappings:
+  # HolmesGPT API Service
+  - containerPort: 30088    # HAPI NodePort
+    hostPort: 8088          # localhost:8088
+    protocol: TCP
+  - containerPort: 30188    # HAPI Metrics NodePort
+    hostPort: 9188          # localhost:9188
+    protocol: TCP
+
+  # Data Storage Service (dependency)
+  - containerPort: 30089    # Data Storage NodePort
+    hostPort: 8089          # localhost:8089
+    protocol: TCP
+  - containerPort: 30189    # Data Storage Metrics NodePort
+    hostPort: 9189          # localhost:9189
+    protocol: TCP
+
+  # PostgreSQL + pgvector (workflow catalog storage)
+  - containerPort: 30488    # PostgreSQL NodePort
+    hostPort: 5488          # localhost:5488
+    protocol: TCP
+
+  # Embedding Service (vector embeddings for semantic search)
+  - containerPort: 30288    # Embedding Service NodePort
+    hostPort: 8188          # localhost:8188
+    protocol: TCP
+
+  # Redis (Data Storage DLQ)
+  - containerPort: 30388    # Redis NodePort
+    hostPort: 6388          # localhost:6388
+    protocol: TCP
+
+  kubeadmConfigPatches:
+  - |
+    kind: ClusterConfiguration
+    apiServer:
+      extraArgs:
+        # Increase API server rate limits for parallel integration testing
+        # With 4 parallel test processes × 100 concurrent requests = 400 QPS
+        # These limits provide 2x headroom for test stability
+        max-requests-inflight: "800"
+        max-mutating-requests-inflight: "400"
+    controllerManager:
+      extraArgs:
+        # Increase controller manager QPS for CRD operations
+        kube-api-qps: "100"
+        kube-api-burst: "200"
+
+- role: worker
+
+

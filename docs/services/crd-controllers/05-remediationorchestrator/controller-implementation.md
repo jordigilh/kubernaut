@@ -74,10 +74,11 @@ func (r *RemediationRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
         }
     }
 
-    // Handle terminal states
+    // Handle terminal states (including Skipped per DD-RO-001)
     if remediation.Status.OverallPhase == "completed" ||
        remediation.Status.OverallPhase == "failed" ||
-       remediation.Status.OverallPhase == "timeout" {
+       remediation.Status.OverallPhase == "timeout" ||
+       remediation.Status.OverallPhase == "Skipped" {
         return r.handleTerminalState(ctx, &remediation)
     }
 
@@ -197,6 +198,9 @@ func (r *RemediationRequestReconciler) orchestratePhase(
             }
         } else if workflowExecution.Status.Phase == "failed" {
             return r.handleFailure(ctx, remediation, "workflow_execution", "Workflow execution failed")
+        } else if workflowExecution.Status.Phase == "Skipped" {
+            // DD-RO-001: Handle resource lock deduplication (BR-ORCH-032, BR-ORCH-033, BR-ORCH-034)
+            return r.handleWorkflowExecutionSkipped(ctx, remediation, &workflowExecution)
         }
 
     case "recovering":
@@ -274,11 +278,31 @@ func (r *RemediationRequestReconciler) orchestratePhase(
     return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 }
 
-// Handle terminal state (completed, failed, timeout)
+// Handle terminal state (completed, failed, timeout, Skipped)
 func (r *RemediationRequestReconciler) handleTerminalState(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
 ) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    // DD-RO-001 (BR-ORCH-034): Send bulk notification if this RR has duplicates
+    // Only for completed/failed (not skipped RRs themselves)
+    if remediation.Status.DuplicateCount > 0 &&
+       (remediation.Status.OverallPhase == "completed" || remediation.Status.OverallPhase == "failed") {
+        // Get WorkflowExecution for notification context
+        var we workflowexecutionv1.WorkflowExecution
+        if remediation.Status.WorkflowExecutionRef != nil {
+            if err := r.Get(ctx, client.ObjectKey{
+                Name:      remediation.Status.WorkflowExecutionRef.Name,
+                Namespace: remediation.Namespace,
+            }, &we); err == nil {
+                if err := r.sendBulkDuplicateNotification(ctx, remediation, &we); err != nil {
+                    log.Error(err, "Failed to send bulk notification", "rr", remediation.Name)
+                    // Non-fatal: remediation is complete regardless
+                }
+            }
+        }
+    }
 
     // Check if 24-hour retention has expired
     if remediation.Status.RetentionExpiryTime != nil {
@@ -342,6 +366,173 @@ func (r *RemediationRequestReconciler) handleFailure(
     return ctrl.Result{}, r.Status().Update(ctx, remediation)
 }
 
+// ============================================================================
+// DD-RO-001: Resource Lock Deduplication Handling (BR-ORCH-032, BR-ORCH-033, BR-ORCH-034)
+// ============================================================================
+
+// Handle WorkflowExecution Skipped phase due to resource lock
+func (r *RemediationRequestReconciler) handleWorkflowExecutionSkipped(
+    ctx context.Context,
+    rr *remediationv1.RemediationRequest,
+    we *workflowexecutionv1.WorkflowExecution,
+) (ctrl.Result, error) {
+    log := log.FromContext(ctx)
+
+    // Extract skip details from WE status
+    skipReason := we.Status.SkipDetails.Reason
+    var parentRRName string
+
+    switch skipReason {
+    case "ResourceBusy":
+        parentRRName = we.Status.SkipDetails.ConflictingWorkflow.RemediationRequestRef
+    case "RecentlyRemediated":
+        parentRRName = we.Status.SkipDetails.RecentRemediation.RemediationRequestRef
+    }
+
+    // Update this RR as skipped duplicate (BR-ORCH-032)
+    rr.Status.OverallPhase = "Skipped"
+    rr.Status.SkipReason = skipReason
+    rr.Status.DuplicateOf = parentRRName
+    rr.Status.Message = fmt.Sprintf("Skipped: %s - see %s", skipReason, parentRRName)
+    rr.Status.CompletionTime = &metav1.Time{Time: time.Now()}
+    rr.Status.RetentionExpiryTime = &metav1.Time{Time: time.Now().Add(24 * time.Hour)}
+
+    if err := r.Status().Update(ctx, rr); err != nil {
+        return ctrl.Result{}, fmt.Errorf("failed to update skipped RR: %w", err)
+    }
+
+    // Track duplicate on parent RR (BR-ORCH-033)
+    if err := r.trackDuplicateOnParent(ctx, parentRRName, rr.Name); err != nil {
+        log.Error(err, "Failed to track duplicate on parent",
+            "parent", parentRRName, "duplicate", rr.Name)
+        // Non-fatal: continue even if tracking fails
+    }
+
+    log.Info("RemediationRequest skipped due to resource lock",
+        "rr", rr.Name,
+        "skipReason", skipReason,
+        "duplicateOf", parentRRName)
+
+    // Record audit
+    if err := r.recordAudit(ctx, rr); err != nil {
+        log.Error(err, "Failed to record audit for skipped RR")
+    }
+
+    r.Recorder.Event(rr, "Normal", "Skipped",
+        fmt.Sprintf("Remediation skipped: %s (duplicate of %s)", skipReason, parentRRName))
+
+    return ctrl.Result{}, nil
+}
+
+// Track duplicate on parent RemediationRequest (BR-ORCH-033)
+func (r *RemediationRequestReconciler) trackDuplicateOnParent(
+    ctx context.Context,
+    parentRRName string,
+    duplicateRRName string,
+) error {
+    parentRR := &remediationv1.RemediationRequest{}
+    if err := r.Get(ctx, types.NamespacedName{
+        Name:      parentRRName,
+        Namespace: r.Namespace,
+    }, parentRR); err != nil {
+        return fmt.Errorf("failed to get parent RR: %w", err)
+    }
+
+    // Update duplicate tracking
+    parentRR.Status.DuplicateCount++
+    parentRR.Status.DuplicateRefs = append(parentRR.Status.DuplicateRefs, duplicateRRName)
+
+    return r.Status().Update(ctx, parentRR)
+}
+
+// Send bulk notification when parent completes with duplicates (BR-ORCH-034)
+// Called from handleTerminalState when parent has duplicates
+func (r *RemediationRequestReconciler) sendBulkDuplicateNotification(
+    ctx context.Context,
+    rr *remediationv1.RemediationRequest,
+    we *workflowexecutionv1.WorkflowExecution,
+) error {
+    // Count skip reasons
+    resourceBusyCount := 0
+    recentlyRemediatedCount := 0
+
+    for _, dupRef := range rr.Status.DuplicateRefs {
+        dupRR := &remediationv1.RemediationRequest{}
+        if err := r.Get(ctx, types.NamespacedName{
+            Name:      dupRef,
+            Namespace: rr.Namespace,
+        }, dupRR); err != nil {
+            continue // Skip if can't fetch
+        }
+        switch dupRR.Status.SkipReason {
+        case "ResourceBusy":
+            resourceBusyCount++
+        case "RecentlyRemediated":
+            recentlyRemediatedCount++
+        }
+    }
+
+    // Build notification body
+    resultEmoji := "✅ Successful"
+    if rr.Status.OverallPhase == "failed" {
+        resultEmoji = "❌ Failed"
+    }
+
+    body := fmt.Sprintf(`Target: %s
+Result: %s
+Duration: %s
+
+Duplicates Suppressed: %d
+├─ ResourceBusy: %d (signals during execution)
+└─ RecentlyRemediated: %d (cooldown period)
+
+First signal: %s
+Last signal: %s`,
+        buildTargetResource(rr),
+        resultEmoji,
+        rr.Status.CompletionTime.Sub(rr.Status.StartTime.Time),
+        rr.Status.DuplicateCount,
+        resourceBusyCount,
+        recentlyRemediatedCount,
+        rr.Spec.Deduplication.FirstOccurrence.Format(time.RFC3339),
+        rr.Spec.Deduplication.LastOccurrence.Format(time.RFC3339),
+    )
+
+    // Create notification request
+    notification := &notificationv1.NotificationRequest{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("%s-completion", rr.Name),
+            Namespace: rr.Namespace,
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(rr, remediationv1.GroupVersion.WithKind("RemediationRequest")),
+            },
+        },
+        Spec: notificationv1.NotificationRequestSpec{
+            EventType: "RemediationCompleted",
+            Priority:  r.mapPriority(rr),
+            Subject:   fmt.Sprintf("Remediation Completed: %s", we.Spec.WorkflowRef.WorkflowID),
+            Body:      body,
+            Metadata: map[string]string{
+                "remediationRequestRef": rr.Name,
+                "workflowId":            we.Spec.WorkflowRef.WorkflowID,
+                "targetResource":        buildTargetResource(rr),
+                "duplicateCount":        strconv.Itoa(rr.Status.DuplicateCount),
+            },
+        },
+    }
+
+    return r.Create(ctx, notification)
+}
+
+// Build targetResource string from RemediationRequest.spec.targetResource
+func buildTargetResource(rr *remediationv1.RemediationRequest) string {
+    tr := rr.Spec.TargetResource
+    if tr.Namespace != "" {
+        return fmt.Sprintf("%s/%s/%s", tr.Namespace, tr.Kind, tr.Name)
+    }
+    return fmt.Sprintf("%s/%s", tr.Kind, tr.Name)
+}
+
 // Finalizer cleanup
 func (r *RemediationRequestReconciler) finalizeRemediation(
     ctx context.Context,
@@ -352,7 +543,7 @@ func (r *RemediationRequestReconciler) finalizeRemediation(
     return r.recordAudit(ctx, remediation)
 }
 
-const remediationFinalizerName = "kubernaut.io/remediation-retention"
+const remediationFinalizerName = "kubernaut.ai/remediation-retention"
 ```
 
 ---

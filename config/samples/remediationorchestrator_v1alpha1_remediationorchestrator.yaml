@@ -1,4 +1,4 @@
-apiVersion: remediationorchestrator.kubernaut.io/v1alpha1
+apiVersion: remediationorchestrator.kubernaut.ai/v1alpha1
 kind: RemediationOrchestrator
 metadata:
   labels:

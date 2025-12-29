@@ -1,0 +1,598 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package notification
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+
+	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+// ========================================
+// CONTROLLER AUDIT EMISSION TESTS
+// ========================================
+//
+// Defense-in-Depth Testing Strategy (BR-NOT-062, BR-NOT-063, BR-NOT-064):
+//
+// Layer 1 (Unit): pkg/audit/* - Audit library functions
+// Layer 2 (Unit): internal/controller/notification/audit.go - Audit helpers
+// Layer 3 (Integration): audit_integration_test.go - AuditStore → DataStorage → PostgreSQL
+// Layer 4 (Integration): THIS FILE - Controller → Audit emission at lifecycle points
+//
+// These tests verify the CONTROLLER emits audit events at correct lifecycle points:
+// - Message sent → notification.message.sent event created
+// - Message failed → notification.message.failed event created with error details
+// - Correct correlation_id for workflow tracing
+// - Per-channel audit events for multi-channel notifications
+//
+// ========================================
+
+var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", func() {
+	var (
+		dsClient       *dsgen.ClientWithResponses
+		dataStorageURL string
+		queryCtx       context.Context
+	)
+
+	// Setup Data Storage REST API client for querying audit events
+	// Per DD-AUDIT-003 mandate: Integration tests MUST use REAL Data Storage service
+	BeforeEach(func() {
+		queryCtx = context.Background()
+
+		// Get Data Storage URL from environment or use NT integration port
+		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
+		if dataStorageURL == "" {
+			dataStorageURL = "http://localhost:18110" // NT integration port
+		}
+
+		// Create REST API client for querying audit events
+		var err error
+		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage REST API client")
+	})
+
+	// Helper function to query audit events from Data Storage REST API
+	// Note: OpenAPI spec doesn't have resource_id query param, so we filter client-side
+	queryAuditEvents := func(eventType, resourceID string) []dsgen.AuditEvent {
+		eventCategory := "notification"
+		params := &dsgen.QueryAuditEventsParams{
+			EventType:     &eventType,
+			EventCategory: &eventCategory,
+		}
+		resp, err := dsClient.QueryAuditEventsWithResponse(queryCtx, params)
+		if err != nil || resp.JSON200 == nil || resp.JSON200.Data == nil {
+			return nil
+		}
+
+		// Client-side filtering by resource_id (OpenAPI spec gap)
+		var filtered []dsgen.AuditEvent
+		for _, event := range *resp.JSON200.Data {
+			if event.ResourceId != nil && *event.ResourceId == resourceID {
+				filtered = append(filtered, event)
+			}
+		}
+		return filtered
+	}
+
+	// ========================================
+	// TEST 1: Successful delivery emits audit event
+	// BR-NOT-062: Unified audit table integration
+	// ========================================
+	Context("BR-NOT-062: Audit on Successful Delivery", func() {
+		It("should emit notification.message.sent when Console delivery succeeds", func() {
+			// Create unique notification name for this test
+			testID := fmt.Sprintf("audit-sent-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-console-success-%s", testID[:8])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "Audit Emission Test - Console Success",
+					Body:     "Testing controller emits audit on successful console delivery",
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+					// No Metadata - let correlation ID fallback to notification.UID
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to be sent
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
+			// Per DD-AUDIT-003: Integration tests MUST use real Data Storage service (no mocks)
+			var sentEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				events := queryAuditEvents("notification.message.sent", notificationName)
+				if len(events) > 0 {
+					sentEvent = &events[0]
+					return true
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should emit notification.message.sent audit event to Data Storage")
+
+			Expect(sentEvent).ToNot(BeNil(), "Controller must emit 'notification.message.sent' event (DD-AUDIT-003)")
+
+			// ========================================
+			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0 - MANDATORY)
+			// Use testutil.ValidateAuditEvent for structured validation
+			// ========================================
+			testutil.ValidateAuditEvent(*sentEvent, testutil.ExpectedAuditEvent{
+				EventType:     "notification.message.sent",
+				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventAction:   "sent",
+				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				CorrelationID: string(notification.UID),
+			})
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 2: Slack delivery emits audit event
+	// BR-NOT-062: Unified audit table integration
+	// ========================================
+	Context("BR-NOT-062: Audit on Slack Delivery", func() {
+		It("should emit notification.message.sent when Slack delivery succeeds", func() {
+			// Create unique notification name
+			testID := fmt.Sprintf("audit-slack-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-slack-success-%s", testID[:8])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "Audit Emission Test - Slack Success",
+					Body:     "Testing controller emits audit on successful Slack delivery",
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
+					Recipients: []notificationv1alpha1.Recipient{
+						{Slack: "#test-channel"},
+					},
+					Metadata: map[string]string{
+						"remediationRequestName": testID,
+					},
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to be sent (Slack delivery to mock server)
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
+			var slackEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				events := queryAuditEvents("notification.message.sent", notificationName)
+				if len(events) > 0 {
+					slackEvent = &events[0]
+					return true
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should emit audit event for Slack delivery to Data Storage")
+
+			Expect(slackEvent).ToNot(BeNil(), "Controller must emit audit event for Slack delivery")
+
+			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
+			testutil.ValidateAuditEvent(*slackEvent, testutil.ExpectedAuditEvent{
+				EventType:     "notification.message.sent",
+				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventAction:   "sent",
+				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+			})
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 3: Correlation ID propagation
+	// BR-NOT-064: Workflow tracing via correlation_id
+	// ========================================
+	Context("BR-NOT-064: Correlation ID Propagation", func() {
+		It("should include remediationRequestName as correlation_id in audit events", func() {
+			// Create notification with specific remediation context
+			testID := fmt.Sprintf("audit-corr-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-correlation-%s", testID[:8])
+			remediationID := fmt.Sprintf("remediation-%s", testID[:12])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "Correlation ID Test",
+					Body:     "Testing correlation_id propagation to audit events",
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+					Metadata: map[string]string{
+						"remediationRequestName": remediationID, // Used as correlation_id
+					},
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to be processed
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check correlation_id matches remediationID
+			var corrEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				events := queryAuditEvents("notification.message.sent", notificationName)
+				for _, e := range events {
+					if e.CorrelationId == remediationID {
+						corrEvent = &e
+						return true
+					}
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Audit event correlation_id should match remediationID for workflow tracing (DD-AUDIT-003)")
+
+			Expect(corrEvent).ToNot(BeNil())
+			Expect(corrEvent.CorrelationId).To(Equal(remediationID), "Correlation ID must propagate to audit events")
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 4: Multi-channel audit events
+	// BR-NOT-062: Per-channel audit tracking
+	// ========================================
+	Context("BR-NOT-062: Multi-Channel Audit Events", func() {
+		It("should emit separate audit event for each channel delivery", func() {
+			// Create notification with multiple channels
+			testID := fmt.Sprintf("audit-multi-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-multichannel-%s", testID[:8])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "Multi-Channel Audit Test",
+					Body:     "Testing audit events for multiple channels",
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelSlack,
+					},
+					Recipients: []notificationv1alpha1.Recipient{
+						{Slack: "#test-channel"},
+					},
+					Metadata: map[string]string{
+						"remediationRequestName": testID,
+					},
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to be processed
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for events from each channel
+			Eventually(func() int {
+				events := queryAuditEvents("notification.message.sent", notificationName)
+				return len(events)
+			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 2),
+				"Controller should emit audit event for each channel (Console + Slack) to Data Storage (DD-AUDIT-003)")
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 5: Acknowledged notification audit event
+	// BR-NOT-062: Unified audit table integration
+	// ========================================
+	Context("BR-NOT-062: Audit on Acknowledged Notification", func() {
+		It("should emit notification.message.acknowledged when notification is acknowledged", func() {
+			// NOTE: Acknowledgment is a V2.0 roadmap feature (interactive Slack buttons)
+			// This integration test validates the audit emission mechanism is working
+			// even though acknowledgment is not yet implemented in controller logic
+
+			// Create unique notification name for this test
+			testID := fmt.Sprintf("audit-ack-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-acknowledged-%s", testID[:8])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "Audit Emission Test - Acknowledgment",
+					Body:     "Testing controller emits audit on notification acknowledgment",
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+					// No Metadata - let correlation ID fallback to notification.UID
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to be sent
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for acknowledged event
+			// NOTE: In V2.0, this event will be emitted when user clicks [Acknowledge] button
+			// For V1.0, we validate the audit emission mechanism through controller method
+			var ackEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				events := queryAuditEvents("notification.message.acknowledged", notificationName)
+				if len(events) > 0 {
+					ackEvent = &events[0]
+					return true
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should emit notification.message.acknowledged audit event to Data Storage (DD-AUDIT-003)")
+
+			// Verify event details and field matching (Per TESTING_GUIDELINES.md)
+			Expect(ackEvent).ToNot(BeNil(), "Controller must emit 'notification.message.acknowledged' event (BR-AUDIT-004)")
+
+			// ========================================
+			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0 - MANDATORY)
+			// Use testutil.ValidateAuditEvent for structured validation
+			// See: docs/development/business-requirements/TESTING_GUIDELINES.md §1224-1309
+			// ========================================
+			actorType := "service"
+			actorID := "notification-controller"
+
+			testutil.ValidateAuditEvent(*ackEvent, testutil.ExpectedAuditEvent{
+				EventType:     "notification.message.acknowledged",
+				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventAction:   "acknowledged",
+				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				CorrelationID: string(notification.UID),
+				ActorType:     &actorType,
+				ActorID:       &actorID,
+			})
+
+			Expect(ackEvent.ResourceType).ToNot(BeNil(), "ResourceType is required (ADR-034)")
+			Expect(*ackEvent.ResourceType).To(Equal("NotificationRequest"), "Resource type must be CRD kind (DD-AUDIT-002)")
+
+			Expect(ackEvent.ResourceId).ToNot(BeNil(), "ResourceId is required (ADR-034)")
+			Expect(*ackEvent.ResourceId).To(Equal(notificationName), "Resource ID must match notification name (DD-AUDIT-002)")
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 6: ADR-034 compliance in emitted events
+	// ========================================
+	Context("ADR-034: Field Compliance in Controller Events", func() {
+		It("should emit events with all ADR-034 required fields", func() {
+			testID := fmt.Sprintf("audit-adr034-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-adr034-%s", testID[:8])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "ADR-034 Compliance Test",
+					Body:     "Testing ADR-034 field compliance",
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
+					Metadata: map[string]string{
+						"remediationRequestName": testID,
+					},
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to be sent
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check ADR-034 fields
+			var validEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				events := queryAuditEvents("notification.message.sent", notificationName)
+				for _, e := range events {
+					// Verify all ADR-034 required fields (OpenAPI types use pointers)
+					if string(e.EventCategory) == "notification" &&
+						e.EventAction == "sent" &&
+						string(e.EventOutcome) == "success" &&
+						e.ActorType != nil && *e.ActorType == "service" &&
+						e.ActorId != nil && *e.ActorId == "notification-controller" &&
+						e.ResourceType != nil && *e.ResourceType == "NotificationRequest" &&
+						e.ResourceId != nil && *e.ResourceId == notificationName {
+						validEvent = &e
+						return true
+					}
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Audit event should have all ADR-034 required fields populated correctly (DD-AUDIT-003)")
+
+			Expect(validEvent).ToNot(BeNil(), "Must find valid ADR-034 compliant event in Data Storage")
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 7: Failed delivery emits audit event with error details
+	// BR-NOT-062: Unified audit table integration
+	// ========================================
+	Context("BR-NOT-062: Audit on Failed Delivery", func() {
+		It("should emit notification.message.failed when Slack delivery fails", func() {
+			// Configure mock Slack webhook to fail (triggers delivery failure)
+			ConfigureFailureMode("always", 0, http.StatusServiceUnavailable)
+			defer ConfigureFailureMode("none", 0, 0) // Reset after test
+
+			// Create notification with Slack channel to trigger failure
+			testID := fmt.Sprintf("audit-failed-%d", time.Now().UnixNano())
+			notificationName := fmt.Sprintf("audit-slack-failure-%s", testID[:8])
+
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      notificationName,
+					Namespace: testNamespace,
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Subject:  "Audit Emission Test - Slack Failure",
+					Body:     "Testing controller emits audit on failed Slack delivery",
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
+					Recipients: []notificationv1alpha1.Recipient{
+						{Slack: "#test-failure"},
+					},
+					Metadata: map[string]string{
+						"remediationRequestName": testID,
+					},
+				},
+			}
+
+			// Create the notification
+			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
+
+			// Wait for notification to reach Failed phase
+			// (Slack delivery will fail due to mock returning 503)
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var n notificationv1alpha1.NotificationRequest
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+					return ""
+				}
+				return n.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(
+				Equal(notificationv1alpha1.NotificationPhaseFailed),
+				"Notification should reach Failed phase due to mock Slack webhook failure (503)")
+
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for failed event
+			var failedEvent *dsgen.AuditEvent
+			Eventually(func() bool {
+				events := queryAuditEvents("notification.message.failed", notificationName)
+				if len(events) > 0 {
+					failedEvent = &events[0]
+					return true
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should emit notification.message.failed audit event when delivery fails (DD-AUDIT-003)")
+
+			Expect(failedEvent).ToNot(BeNil(), "Controller must emit 'notification.message.failed' event")
+
+			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
+			testutil.ValidateAuditEvent(*failedEvent, testutil.ExpectedAuditEvent{
+				EventType:     "notification.message.failed",
+				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventAction:   "sent", // Action was "sent" (attempted), outcome is "failure"
+				EventOutcome:  dsgen.AuditEventEventOutcomeFailure,
+			})
+
+			// Verify error details are included in event_data
+			// Per DD-AUDIT-004: Type-safe audit events with structured payloads
+			Expect(failedEvent.EventData).ToNot(BeNil(), "Failed event must include error details in event_data")
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
+		})
+	})
+
+	// ========================================
+	// TEST 8: Escalated notification emits audit event
+	// BR-NOT-062: Unified audit table integration
+	// ========================================
+	// NOTE: Escalation is a V2.0 roadmap feature not yet implemented
+	// Test removed per "NO SKIPPED TESTS" rule - will be added when escalation is implemented
+	// Related audit function exists but is never called: CreateMessageEscalatedEvent()
+})

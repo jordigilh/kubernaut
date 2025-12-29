@@ -17,10 +17,13 @@ limitations under the License.
 package middleware
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"time"
+
+	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 )
 
 // Constants for timestamp validation
@@ -44,32 +47,45 @@ const (
 // - BR-GATEWAY-074: Webhook timestamp validation (5min window)
 // - BR-GATEWAY-075: Replay attack prevention
 //
-// Security:
-// - Prevents replay attacks by rejecting old timestamps
+// Security (Pre-Release - Mandatory Validation):
+// - **MANDATORY**: X-Timestamp header is required (no backward compatibility needed)
+// - Prevents replay attacks by rejecting old timestamps (> tolerance)
 // - Prevents clock skew attacks by rejecting far-future timestamps
 // - Allows small clock skew tolerance (2 minutes) for legitimate time differences
 //
 // Timestamp Validation Flow:
-// 1. Extract timestamp from X-Timestamp header
+// 1. Extract timestamp from X-Timestamp header (REQUIRED)
 // 2. Parse timestamp as Unix epoch (seconds)
 // 3. Check if timestamp is within tolerance window
 // 4. Reject if too old (> tolerance) or too far in future (> clockSkewTolerance)
 //
 // Error Handling:
 // - 400 Bad Request: Missing timestamp, invalid format, timestamp out of range
+//
+// Design Decision (Dec 24, 2025):
+// - Pre-release product: No backward compatibility requirement
+// - Mandatory timestamp improves security posture from day 1
+// - All webhook sources must include X-Timestamp header
 func TimestampValidator(tolerance time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Check if timestamp header is present
-			timestampStr := r.Header.Get(timestampHeader)
-			if timestampStr == "" {
-				// No timestamp header - pass through (optional validation)
-				// Most webhook sources (including Prometheus) don't send timestamps
+			// Skip validation for GET requests (health/metrics endpoints)
+			// BR-GATEWAY-074: Timestamp validation only applies to write operations
+			if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Timestamp header present - validate it
+			// Skip validation for health and metrics endpoints
+			// These endpoints should be accessible for monitoring without timestamps
+			if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// SECURITY: Timestamp header is MANDATORY for write operations (POST/PUT/PATCH)
+			// BR-GATEWAY-074/075: Pre-release product, no backward compatibility needed
+			// Decision: Mandatory timestamp validation for write operations (Dec 24, 2025)
 			timestamp, err := extractTimestamp(r)
 			if err != nil {
 				respondTimestampError(w, err.Error())
@@ -130,9 +146,17 @@ func validateTimestampWindow(requestTime time.Time, tolerance time.Duration) err
 	return nil
 }
 
-// respondTimestampError writes a structured JSON error response for timestamp validation failures
+// respondTimestampError writes an RFC 7807 compliant error response for timestamp validation failures
+// BR-GATEWAY-101: RFC 7807 error format
 func respondTimestampError(w http.ResponseWriter, message string) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusBadRequest)
-	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
+
+	errorResponse := gwerrors.RFC7807Error{
+		Type:   gwerrors.ErrorTypeValidationError,
+		Title:  gwerrors.TitleBadRequest,
+		Detail: message,
+		Status: http.StatusBadRequest,
+	}
+	_ = json.NewEncoder(w).Encode(errorResponse)
 }

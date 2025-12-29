@@ -16,4 +16,3 @@ func TestMiddleware(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Gateway Middleware Test Suite")
 }
-

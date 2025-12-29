@@ -235,9 +235,9 @@ type NotificationRequestReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests/finalizers,verbs=update
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -457,7 +457,7 @@ func main() {
 		Port:                   9443,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "notification.kubernaut.ai",
+		LeaderElectionID:       "kubernaut.ai",
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -495,14 +495,14 @@ func main() {
 make manifests
 
 # Verify CRD generated
-ls -la config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml
+ls -la config/crd/bases/kubernaut.ai_notificationrequests.yaml
 ```
 
 **Validation:**
 - [ ] All packages created
 - [ ] Controller skeleton compiles (`go build ./internal/controller/notification/`)
 - [ ] Main application compiles (`go build ./cmd/notification/`)
-- [ ] CRD manifests generated (`config/crd/bases/notification.kubernaut.ai_notificationrequests.yaml`)
+- [ ] CRD manifests generated (`config/crd/bases/kubernaut.ai_notificationrequests.yaml`)
 - [ ] Zero lint errors (`golangci-lint run ./internal/controller/notification/ ./pkg/notification/ ./cmd/notification/`)
 - [ ] Imports resolve correctly
 
@@ -757,9 +757,9 @@ type NotificationRequestReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=notification.kubernaut.ai,resources=notificationrequests/finalizers,verbs=update
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=kubernaut.ai,resources=notificationrequests/finalizers,verbs=update
 
 // Reconcile implements the reconciliation loop for NotificationRequest CRDs
 func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

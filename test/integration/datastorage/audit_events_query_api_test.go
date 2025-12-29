@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,7 +47,7 @@ func createTestAuditEvent(baseURL, service, eventType, correlationID string) err
 			WithSignalType("prometheus").
 			WithAlertName("TestAlert").
 			Build()
-	case "aianalysis":
+	case "analysis": // ADR-034: Use "analysis" not "aianalysis"
 		eventData, err = audit.NewAIAnalysisEvent(eventType).
 			WithAnalysisID("test-analysis").
 			Build()
@@ -64,12 +65,12 @@ func createTestAuditEvent(baseURL, service, eventType, correlationID string) err
 
 	eventPayload := map[string]interface{}{
 		"version":         "1.0",
-		"service":         service,
+		"event_category":  service, // ADR-034: Use event_category instead of service
 		"event_type":      fmt.Sprintf("%s.%s", service, eventType),
 		"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 		"correlation_id":  correlationID,
-		"outcome":         "success",
-		"operation":       "test",
+		"event_outcome":   "success", // ADR-034: Use event_outcome instead of outcome
+		"event_action":    "test",    // ADR-034: Use event_action instead of operation
 		"event_data":      eventData,
 	}
 	body, _ := json.Marshal(eventPayload)
@@ -97,13 +98,31 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 		usePublicSchema()
 
 		baseURL = datastorageURL + "/api/v1/audit/events"
+
+		// DD-TEST-001: Clean up any leftover audit events from previous test runs
+		// This ensures test isolation even if AfterEach failed
+		if db != nil {
+			_, err := db.ExecContext(context.Background(),
+				"DELETE FROM audit_events WHERE correlation_id LIKE 'test-' || $1 || '-%'",
+				GinkgoParallelProcess())
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to clean up stale audit events: %v\n", err)
+			}
+		}
 	})
 
 	AfterEach(func() {
 		// Clean up test data to prevent pollution between test runs
 		// This is critical for CI/CD where tests must be deterministic
-		// Note: We can't use correlation_id for cleanup since each test generates a unique one
-		// Instead, we rely on the test database being reset between full test suite runs
+		// DD-TEST-001: Clean up audit events created by this test process
+		if db != nil {
+			_, err := db.ExecContext(context.Background(),
+				"DELETE FROM audit_events WHERE correlation_id LIKE 'test-' || $1 || '-%'",
+				GinkgoParallelProcess())
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to clean up audit events: %v\n", err)
+			}
+		}
 	})
 
 	Context("Query by correlation_id", func() {
@@ -132,12 +151,12 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 				// Create JSON body with all required fields
 				eventPayload := map[string]interface{}{
 					"version":         "1.0",
-					"service":         "gateway",
+					"event_category":  "gateway",
 					"event_type":      eventType,
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  correlationID,
-					"outcome":         "success",
-					"operation":       "test",
+					"event_outcome":   "success",
+					"event_action":    "test",
 					"event_data":      eventData,
 				}
 				body, err := json.Marshal(eventPayload)
@@ -154,6 +173,7 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 				resp.Body.Close()
 
 				// Add small delay to ensure chronological ordering
+				// Per TESTING_GUIDELINES.md: ACCEPTABLE - testing timing behavior (chronological order)
 				time.Sleep(10 * time.Millisecond)
 			}
 
@@ -187,7 +207,7 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 			// ASSERT: Pagination metadata is present
 			pagination, ok := response["pagination"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "response should have 'pagination' object")
-			Expect(pagination["limit"]).To(BeNumerically("==", 100)) // Default limit
+			Expect(pagination["limit"]).To(BeNumerically("==", 50)) // Default limit per OpenAPI spec
 			Expect(pagination["offset"]).To(BeNumerically("==", 0))
 			Expect(pagination["total"]).To(BeNumerically("==", 5))
 			Expect(pagination["has_more"]).To(BeFalse())
@@ -218,12 +238,12 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 					// Create JSON body with all required fields
 					eventPayload := map[string]interface{}{
 						"version":         "1.0",
-						"service":         "gateway",
+						"event_category":  "gateway",
 						"event_type":      eventType,
 						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 						"correlation_id":  correlationID,
-						"outcome":         "success",
-						"operation":       "test",
+						"event_outcome":   "success",
+						"event_action":    "test",
 						"event_data":      eventData,
 					}
 					body, err := json.Marshal(eventPayload)
@@ -273,13 +293,13 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 		It("should return only events from the specified service", func() {
 			// BR-STORAGE-022: Query filtering by event_category (ADR-034: service renamed to event_category)
 
-			// ARRANGE: Insert events from different services
-			correlationID := generateTestID() // Unique per test for isolation
-			services := map[string]int{
-				"gateway":    2,
-				"aianalysis": 3,
-				"workflow":   1,
-			}
+		// ARRANGE: Insert events from different services
+		correlationID := generateTestID() // Unique per test for isolation
+		services := map[string]int{
+			"gateway":  2,
+			"analysis": 3, // ADR-034: Use "analysis" not "aianalysis"
+			"workflow": 1,
+		}
 
 			for service, count := range services {
 				for i := 0; i < count; i++ {
@@ -288,9 +308,9 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 				}
 			}
 
-			// ACT: Query by service (backward compatible) and correlation_id for test isolation
-			targetService := "aianalysis"
-			resp, err := http.Get(fmt.Sprintf("%s?service=%s&correlation_id=%s", baseURL, targetService, correlationID))
+		// ACT: Query by event_category (ADR-034) and correlation_id for test isolation
+		targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
+		resp, err := http.Get(fmt.Sprintf("%s?event_category=%s&correlation_id=%s", baseURL, targetService, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -405,12 +425,12 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 
 				eventPayload := map[string]interface{}{
 					"version":         "1.0",
-					"service":         "gateway",
+					"event_category":  "gateway",
 					"event_type":      "gateway.signal.received",
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  correlationID,
-					"outcome":         outcome,
-					"operation":       "test",
+					"event_outcome":   outcome,
+					"event_action":    "test",
 					"event_data":      eventData,
 				}
 				body, _ := json.Marshal(eventPayload)
@@ -423,8 +443,8 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 				resp.Body.Close()
 			}
 
-			// ACT: Query with multiple filters
-			resp, err := http.Get(fmt.Sprintf("%s?service=gateway&outcome=failure", baseURL))
+			// ACT: Query with multiple filters (ADR-034 field names)
+			resp, err := http.Get(fmt.Sprintf("%s?event_category=gateway&event_outcome=failure", baseURL))
 			Expect(err).ToNot(HaveOccurred())
 			defer resp.Body.Close()
 
@@ -489,16 +509,16 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 			Expect(ok).To(BeTrue())
 			Expect(data).To(HaveLen(50), "should return 50 events (page 1)")
 
-		// ASSERT: Pagination metadata is correct
-		pagination, ok := response["pagination"].(map[string]interface{})
-		Expect(ok).To(BeTrue())
-		Expect(pagination["limit"]).To(BeNumerically("==", 50))
-		Expect(pagination["offset"]).To(BeNumerically("==", 0))
-		// Note: Total may include events from previous test runs in the same suite
-		// The important validation is that pagination works correctly (limit/offset)
-		Expect(pagination["total"]).To(BeNumerically(">=", 150),
-			"should have at least 150 events for this correlation_id")
-		Expect(pagination["has_more"]).To(BeTrue())
+			// ASSERT: Pagination metadata is correct
+			pagination, ok := response["pagination"].(map[string]interface{})
+			Expect(ok).To(BeTrue())
+			Expect(pagination["limit"]).To(BeNumerically("==", 50))
+			Expect(pagination["offset"]).To(BeNumerically("==", 0))
+			// Note: Total may include events from previous test runs in the same suite
+			// The important validation is that pagination works correctly (limit/offset)
+			Expect(pagination["total"]).To(BeNumerically(">=", 150),
+				"should have at least 150 events for this correlation_id")
+			Expect(pagination["has_more"]).To(BeTrue())
 
 			// ACT: Query page 2 (limit=50, offset=50)
 			resp2, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=50", baseURL, correlationID))
@@ -560,11 +580,11 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(problem["type"]).To(Equal("https://kubernaut.io/errors/validation-error"))
-			Expect(problem["title"]).To(Equal("Validation Error"))
-			Expect(problem["status"]).To(BeNumerically("==", 400))
-			Expect(problem["detail"]).To(ContainSubstring("limit"))
-			Expect(problem["detail"]).To(ContainSubstring("must be between 1 and 1000"))
+		Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
+		Expect(problem["title"]).To(Equal("Validation Error"))
+		Expect(problem["status"]).To(BeNumerically("==", 400))
+		Expect(problem["detail"]).To(ContainSubstring("limit"))
+		Expect(problem["detail"]).To(ContainSubstring("must be at least 1"))
 		})
 
 		It("should return RFC 7807 error for invalid limit (1001)", func() {
@@ -583,11 +603,11 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(problem["detail"]).To(ContainSubstring("limit"))
-			Expect(problem["detail"]).To(ContainSubstring("must be between 1 and 1000"))
-		})
+		Expect(problem["detail"]).To(ContainSubstring("limit"))
+		Expect(problem["detail"]).To(ContainSubstring("must be at most 1000"))
+	})
 
-		It("should return RFC 7807 error for invalid offset (-1)", func() {
+	It("should return RFC 7807 error for invalid offset (-1)", func() {
 			// BR-STORAGE-023: Pagination validation (offset: ≥0)
 
 			// ACT: Query with invalid offset=-1
@@ -603,8 +623,8 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(problem["detail"]).To(ContainSubstring("offset"))
-			Expect(problem["detail"]).To(ContainSubstring("non-negative"))
+		Expect(problem["detail"]).To(ContainSubstring("offset"))
+		Expect(problem["detail"]).To(ContainSubstring("must be at least 0"))
 		})
 	})
 
@@ -625,7 +645,7 @@ var _ = Describe("Audit Events Query API", Serial, func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(problem["type"]).To(Equal("https://kubernaut.io/errors/validation-error"))
+			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
 			// Validation error message includes "query" and "invalid time format"
 			Expect(problem["detail"]).To(ContainSubstring("invalid time format"))
 		})

@@ -1,7 +1,7 @@
 # This rule is not used by the project kubernaut itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants full permissions ('*') over remediationorchestrator.kubernaut.io.
+# Grants full permissions ('*') over remediationorchestrator.kubernaut.ai.
 # This role is intended for users authorized to modify roles and bindings within the cluster,
 # enabling them to delegate specific permissions to other users or groups as needed.
 
@@ -14,13 +14,13 @@ metadata:
   name: remediationorchestrator-remediationorchestrator-admin-role
 rules:
 - apiGroups:
-  - remediationorchestrator.kubernaut.io
+  - remediationorchestrator.kubernaut.ai
   resources:
   - remediationorchestrators
   verbs:
   - '*'
 - apiGroups:
-  - remediationorchestrator.kubernaut.io
+  - remediationorchestrator.kubernaut.ai
   resources:
   - remediationorchestrators/status
   verbs:

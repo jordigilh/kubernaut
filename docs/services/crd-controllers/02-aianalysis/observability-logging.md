@@ -25,10 +25,11 @@ log.Info("Approval policy evaluated",
 
 ## Metrics Endpoint
 
-### Port Configuration
+### Port Configuration (per [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md))
 
 - **Port 9090**: Metrics endpoint
-- **Port 8080**: Health probes (follows kube-apiserver pattern)
+- **Port 8081**: Health probes (`/healthz`, `/readyz`)
+- **Port 8084**: Service host port (Kind extraPortMappings)
 - **Endpoint**: `/metrics`
 - **Format**: Prometheus text format
 - **Authentication**: Kubernetes TokenReviewer API (validates ServiceAccount tokens)
@@ -153,7 +154,7 @@ func main() {
     var enableLeaderElection bool
 
     flag.StringVar(&metricsAddr, "metrics-bind-address", ":9090", "The address the metric endpoint binds to.")
-    flag.StringVar(&probeAddr, "health-probe-bind-address", ":8080", "The address the probe endpoint binds to.")
+    flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.") // DD-TEST-001
     flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 
     // Zap logger options with controller-runtime integration (Split Strategy)
@@ -171,7 +172,7 @@ func main() {
         Metrics: server.Options{
             BindAddress: metricsAddr,  // Port 9090 for metrics
         },
-        HealthProbeBindAddress: probeAddr,  // Port 8080 for health checks
+        HealthProbeBindAddress: probeAddr,  // Port 8081 for health checks (DD-TEST-001)
         LeaderElection:         enableLeaderElection,
         LeaderElectionID:       "ai-analysis.kubernaut.io",
     })

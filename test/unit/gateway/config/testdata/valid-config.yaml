@@ -1,5 +1,6 @@
 # Gateway Service Configuration - Test Fixture
 # BR-GATEWAY-024: Configuration management
+# DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 
 server:
   listen_addr: ":8080"
@@ -8,17 +9,12 @@ server:
   idle_timeout: 120s
 
 middleware:
-  rate_limit:
-    requests_per_minute: 100
-    burst: 10
+  # Rate limiting removed (ADR-048) - delegated to proxy
 
 infrastructure:
-  redis:
-    addr: "redis-gateway:6379"
-    password: ""
-    db: 0
-    max_retries: 3
-    pool_size: 10
+  # DD-GATEWAY-012: Redis REMOVED - Gateway uses K8s status for state
+  # DD-AUDIT-003: Data Storage URL for audit event emission
+  data_storage_url: "http://data-storage-service:8080"
 
 processing:
   deduplication:
@@ -26,7 +22,8 @@ processing:
   storm:
     rate_threshold: 10
     pattern_threshold: 5
-    window_duration: 60s
-  environment:
-    cache_ttl: 30s
-
+    # DD-GATEWAY-008: Storm aggregation settings
+    buffer_threshold: 5
+    inactivity_timeout: 60s
+    max_window_duration: 5m
+  # environment settings removed (DD-CATEGORIZATION-001)

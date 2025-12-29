@@ -1,64 +1,58 @@
-# Gateway Service
+# Gateway Service - Documentation Hub
 
-**Version**: v1.0
-**Status**: ✅ Design Complete (100%)
-**Service Type**: Stateless HTTP API
-**Health/Ready Port**: 8080 (`/health`, `/ready` - no auth required)
-**Metrics Port**: 9090 (`/metrics` - with auth filter)
-**API Endpoints** (Adapter-Specific):
-- `POST /api/v1/signals/prometheus` - Prometheus AlertManager webhooks
-- `POST /api/v1/signals/kubernetes-event` - Kubernetes Event API signals
-- `POST /api/v1/signals/grafana` - Grafana alert webhooks (future)
+**Version**: v1.6 (Production Ready)
+**Last Updated**: December 15, 2025
+**Service Type**: Stateless HTTP API (Signal Ingestion & Deduplication)
+**Status**: ✅ **PRODUCTION READY** - All 3 Testing Tiers Complete
+**Test Coverage**: 442 tests passing (314 Unit + 104 Integration + 24 E2E)
 **Priority**: **P0 - CRITICAL** (Entry point to entire system)
-**Effort**: 46-60 hours (6-8 days)
+**HTTP Port**: 8080 (REST API + Health)
+**Metrics Port**: 9090 (`/metrics`)
 
 ---
 
-## 🎯 **CURRENT DESIGN: Design B (Adapter-Specific Endpoints)**
+## Quick Reference
 
-**Architecture**: Each adapter registers its own HTTP route (e.g., `/api/v1/signals/prometheus`)
+| Attribute | Value |
+|-----------|-------|
+| **API Port** | 8080 |
+| **Health Port** | 8081 (`/healthz`, `/readyz`) |
+| **Metrics Port** | 9090 (`/metrics` with auth) |
+| **Namespace** | `kubernaut-system` |
+| **Replicas** | 2-5 (horizontal scaling) |
 
-**Key Documents**:
-1. **[DESIGN_B_IMPLEMENTATION_SUMMARY.md](./DESIGN_B_IMPLEMENTATION_SUMMARY.md)** ← **START HERE**
-2. **[implementation.md](./implementation.md)** - Implementation details
-3. **[CONFIGURATION_DRIVEN_ADAPTERS.md](./CONFIGURATION_DRIVEN_ADAPTERS.md)** - Configuration patterns
+### API Endpoints
 
-**Superseded Documents** (Historical reference only):
-- ⚠️ [ADAPTER_REGISTRY_DESIGN.md](./ADAPTER_REGISTRY_DESIGN.md) - Detection-based architecture (Design A)
-- ⚠️ [ADAPTER_DETECTION_FLOW.md](./ADAPTER_DETECTION_FLOW.md) - Detection flow logic
-
-**Why Design B**:
-- ✅ ~70% less code (no detection logic)
-- ✅ Better security (no source spoofing)
-- ✅ Better performance (~50-100μs faster)
-- ✅ Industry standard (REST pattern)
-- ✅ **Confidence: 92%** (Very High)
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/v1/signals/prometheus` | POST | Prometheus AlertManager webhooks |
+| `/api/v1/signals/kubernetes-event` | POST | Kubernetes Event ingestion |
+| `/healthz` | GET | Liveness probe |
+| `/readyz` | GET | Readiness probe |
+| `/metrics` | GET | Prometheus metrics (authenticated) |
 
 ---
 
 ## 🗂️ Documentation Index
 
-| Document | Purpose | Est. Lines | Status |
-|----------|---------|------------|--------|
-| **[📋 IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md)** | **✅ PRIMARY: Status tracking, BRs, test counts, deployment** | ~800 | ✅ **Complete** |
-| **[Overview](./overview.md)** | Service purpose, architecture, key decisions | ~400 | ✅ Complete |
-| **[Implementation](./implementation.md)** | HTTP handlers, alert adapters, processing pipeline | ~1,300 | ✅ Complete |
-| **[Kind Template Triage](./GATEWAY_KIND_TEMPLATE_TRIAGE.md)** | Migration to Kind cluster test template | ~1,100 | ✅ Complete |
-| **[DESIGN_B_IMPLEMENTATION_SUMMARY.md](./DESIGN_B_IMPLEMENTATION_SUMMARY.md)** | **✅ CURRENT: Adapter-specific endpoints (NO detection)** | ~400 | ✅ **Complete** |
-| **[CONFIGURATION_DRIVEN_ADAPTERS.md](./CONFIGURATION_DRIVEN_ADAPTERS.md)** | **Configuration-driven registration (NOT hardcoded/REST)** | ~450 | ✅ **Complete** |
-| **[ADAPTER_REGISTRY_DESIGN.md](./ADAPTER_REGISTRY_DESIGN.md)** | ⚠️ **SUPERSEDED** - Detection-based architecture (Design A) | ~1,130 | ⚠️ **Historical** |
-| **[ADAPTER_DETECTION_FLOW.md](./ADAPTER_DETECTION_FLOW.md)** | ⚠️ **SUPERSEDED** - Detection flow (NOT current design) | ~350 | ⚠️ **Historical** |
-| **[Deduplication](./deduplication.md)** | Redis fingerprinting, storm detection, rate limiting | ~500 | ✅ Complete |
-| **[CRD Integration](./crd-integration.md)** | RemediationRequest CRD creation patterns | ~350 | ✅ Complete |
-| **[Security Configuration](./security-configuration.md)** | JWT authentication, RBAC, security patterns | ~450 | ✅ Complete |
-| **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing, correlation | ~400 | ✅ Complete |
-| **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards, alert rules | ~450 | ✅ Complete |
-| **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, mock patterns (APDC-TDD) | ~550 | ✅ Complete |
-| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks, validation steps | ~250 | ✅ Complete |
-| **[SIGNAL_API_RISK_ANALYSIS.md](./SIGNAL_API_RISK_ANALYSIS.md)** | Risk assessment for source-agnostic API | ~750 | ✅ Complete |
-| **[API_NAMING_CONFIDENCE_ASSESSMENT.md](./API_NAMING_CONFIDENCE_ASSESSMENT.md)** | Plural vs singular endpoint naming analysis | ~350 | ✅ Complete |
+| Document | Purpose | Lines | Status |
+|----------|---------|-------|--------|
+| **[overview.md](./overview.md)** | Service architecture, decisions, diagrams | ~612 | ✅ Complete |
+| **[BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md)** | Complete BR catalog (BR-GATEWAY-*) | ~735 | ✅ Complete |
+| **[BR_MAPPING.md](./BR_MAPPING.md)** | Test-to-BR traceability matrix | ~307 | ✅ Complete |
+| **[api-specification.md](./api-specification.md)** | OpenAPI specification | ~1,182 | ✅ Complete |
+| **[implementation.md](./implementation.md)** | HTTP handlers, processing pipeline | ~1,354 | ✅ Complete |
+| **[implementation-checklist.md](./implementation-checklist.md)** | APDC-TDD phased checklist | ~302 | ✅ Complete |
+| **[integration-points.md](./integration-points.md)** | CRD creation, Redis, upstream/downstream | ~324 | ✅ Complete |
+| **[deduplication.md](./deduplication.md)** | Deduplication algorithm details | ~605 | ✅ Complete |
+| **[crd-integration.md](./crd-integration.md)** | RemediationRequest CRD creation | ~333 | ✅ Complete |
+| **[security-configuration.md](./security-configuration.md)** | RBAC, NetworkPolicy, Secrets | ~340 | ✅ Complete |
+| **[observability-logging.md](./observability-logging.md)** | Structured logging, tracing | ~280 | ✅ Complete |
+| **[metrics-slos.md](./metrics-slos.md)** | Prometheus metrics, SLI/SLO | ~228 | ✅ Complete |
+| **[testing-strategy.md](./testing-strategy.md)** | Defense-in-depth testing approach | ~803 | ✅ Complete |
 
-**Total**: ~10,680 lines across 18 documents
+**Total**: ~7,405 lines across 13 core specification documents
+**Status**: ✅ **100% Complete** - Production-ready Signal Ingestion Gateway
 
 ---
 
@@ -67,234 +61,342 @@
 ```
 gateway-service/
 ├── 📄 README.md (you are here)              - Service index & navigation
-├── 📘 overview.md                           - High-level architecture
-├── ⚙️  implementation.md                    - HTTP handlers & adapters
-├── 🔍 deduplication.md                      - Redis, storm detection, rate limiting
-├── 🔗 crd-integration.md                    - RemediationRequest CRD creation
-├── 🔒 security-configuration.md             - Security patterns (COMMON PATTERN)
-├── 📊 observability-logging.md              - Logging & tracing (COMMON PATTERN)
-├── 📈 metrics-slos.md                       - Prometheus & Grafana (COMMON PATTERN)
-├── 🧪 testing-strategy.md                   - Test patterns (COMMON PATTERN)
-└── ✅ implementation-checklist.md           - APDC-TDD phases & tasks
+├── 📘 overview.md                           - High-level architecture ✅ (612 lines)
+├── 📋 BUSINESS_REQUIREMENTS.md              - 74 BRs with test mapping ✅ (735 lines)
+├── 🔗 BR_MAPPING.md                         - Test-to-BR traceability ✅ (307 lines)
+├── 🔧 api-specification.md                  - OpenAPI specification ✅ (1,182 lines)
+├── ⚙️  implementation.md                    - HTTP handlers, pipeline ✅ (1,354 lines)
+├── ✅ implementation-checklist.md           - APDC-TDD phases ✅ (302 lines)
+├── 🔗 integration-points.md                 - CRD, Redis, integrations ✅ (324 lines)
+├── 🧹 deduplication.md                      - Dedup algorithm details ✅ (605 lines)
+├── 📝 crd-integration.md                    - RemediationRequest CRD ✅ (333 lines)
+├── 🔒 security-configuration.md             - RBAC, NetworkPolicy ✅ (340 lines)
+├── 📊 observability-logging.md              - Logging & tracing ✅ (280 lines)
+├── 📈 metrics-slos.md                       - Prometheus metrics ✅ (228 lines)
+├── 🧪 testing-strategy.md                   - Test patterns ✅ (803 lines)
+├── 📁 implementation/                       - Implementation phase guides
+│   ├── plans/                               - DD-GATEWAY-008, 009, 010 plans
+│   ├── IMPLEMENTATION_PLAN_V2.28.md         - Current implementation plan
+│   └── 00-HANDOFF-SUMMARY.md                - Handoff summary
+├── 🧪 e2e-testing/                          - E2E test documentation
+│   ├── GATEWAY_E2E_SUMMARY.md               - E2E test summary
+│   └── GATEWAY_E2E_INFRASTRUCTURE_ASSESSMENT.md
+└── 📁 archive/                              - Historical progress tracking
+    ├── day-reports/                         - DAY1-DAY9 progress files
+    ├── implementation-progress/             - PHASE, COMPLETE files
+    ├── migration-status/                    - CHI migration files
+    └── debug-reports/                       - Debug & troubleshooting files
 ```
 
 **Legend**:
-- **(COMMON PATTERN)** = Shared patterns across all services with Gateway-specific adaptations
-- Service-specific files contain Gateway unique logic
+- ✅ = Complete documentation
+- 📋 = Core specification document
+- 🧪 = Test-related documentation
+- 🔒 = Security-related documentation
+- 📁 = Directory
 
 ---
 
-## 🚀 Quick Start
+## 🏗️ Implementation Structure
 
-**📋 PRIMARY SOURCE OF TRUTH**: [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) ← **START HERE**
+### **Binary Location**
+- **Directory**: `cmd/gateway/`
+- **Entry Point**: `cmd/gateway/main.go`
+- **Build Command**: `go build -o bin/gateway ./cmd/gateway`
 
-**For New Developers**:
-1. **Implementation Status**: Start with [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) (10 min read) ← **PRIMARY**
-2. **Understand the Service**: Read [Overview](./overview.md) (5 min read)
-3. **Review Architecture**: See [Implementation](./implementation.md) → Adapter Pattern (10 min read)
+### **API Gateway Components**
+- **Package**: `pkg/gateway/`
+  - `server.go` - HTTP server and routing
+  - `config/` - Configuration management
+  - `adapters/` - Signal source adapters (Prometheus, K8s Events)
+  - `processing/` - Core processing logic
+    - `normalizer.go` - Signal normalization
+    - `deduplication.go` - Status-based deduplication (DD-GATEWAY-011)
+    - `classifier.go` - Environment classification
+    - `crd_creator.go` - RemediationRequest CRD creation
+  - `metrics/` - Prometheus metrics
 
-**For Implementers**:
-1. **Implementation Plan**: Use [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) for status tracking ← **PRIMARY**
-2. **Technical Details**: Reference [Implementation](./implementation.md) for code patterns
-3. **Test Strategy**: Follow [Testing Strategy](./testing-strategy.md) APDC-TDD workflow
+### **Tests** ✅ ALL PASSING (2025-12-15)
+- `test/unit/gateway/` - **314 specs** (7 test suites, business logic with external mocks)
+- `test/integration/gateway/` - **104 specs** (96 main + 8 processing, real K8s API via envtest)
+- `test/e2e/gateway/` - **24 specs** (Full Kind cluster deployment)
 
-**For Reviewers**:
-1. **Status & Progress**: Check [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) → Test counts & BRs ← **PRIMARY**
-2. **Security Review**: Verify [Security Configuration](./security-configuration.md) → JWT auth
-3. **Observability**: Validate [Metrics & SLOs](./metrics-slos.md) → Comprehensive metrics
+**Total**: **442 specs** - 100% pass rate across all tiers
+
+**Test Infrastructure**:
+- Unit: In-memory (Ginkgo/Gomega BDD framework)
+- Integration: envtest + Data Storage + PostgreSQL
+- E2E: Kind cluster (full Gateway deployment)
+
+**See Also**: [cmd/ directory structure](../../../../cmd/README.md) for complete binary organization.
 
 ---
 
 ## 🎯 Service Purpose
 
-**Gateway Service** is the **entry point** for all external signals (Prometheus alerts and Kubernetes events) into the Kubernaut remediation system.
+Gateway Service is the **single entry point** for all external signals into the Kubernaut intelligent remediation system:
 
-### Terminology
+```
+Prometheus AlertManager  ─┐
+                         ├──► Gateway Service ──► RemediationRequest CRD
+Kubernetes Events        ─┘
+```
 
-- **Signal**: Generic term for any remediation trigger (alerts, events, future sources)
-- **Alert**: Prometheus AlertManager specific signals
-- **Event**: Kubernetes Event API signals (Warning/Error types)
+### Core Capabilities
 
-### Core Responsibilities
+1. **Signal Ingestion** - Prometheus AlertManager webhooks, Kubernetes Events
+2. **Resource Validation** - Reject signals without Kubernetes resource info
+3. **Deduplication** - Status-based fingerprinting (40-60% reduction, DD-GATEWAY-011)
+4. **CRD Creation** - RemediationRequest with TargetResource, TargetType
 
-1. **Multi-Source Signal Ingestion** - Accept signals from Prometheus AlertManager and Kubernetes Event API via adapter-specific endpoints
-2. **Deduplication** - Redis-based fingerprinting to prevent duplicate RemediationRequest CRDs
-3. **Storm Detection** - Hybrid (rate + pattern) detection to aggregate related alerts
-4. **Environment Classification** - Namespace labels + ConfigMap override
-5. **Priority Assignment** - Rego policies with severity/environment fallback
-6. **RemediationRequest Creation** - Create CRD for Remediation Orchestrator orchestration
+### V1 Scope
 
----
+✅ **Included**:
+- Prometheus AlertManager webhook ingestion
+- Kubernetes Event API ingestion
+- Status-based deduplication with occurrence tracking (DD-GATEWAY-011)
+- RemediationRequest CRD creation
+- Resource validation (reject non-K8s signals)
 
-## 🔗 Related Services
-
-| Service | Relationship | Purpose |
-|---------|--------------|---------|
-| **Prometheus AlertManager** | External (Upstream) | Sends webhook POST to `/api/v1/signals/prometheus` |
-| **Kubernetes Event API** | External (Upstream) | Sends events to `/api/v1/signals/kubernetes-event` or Gateway watches events |
-| **RemediationRequest Controller** | Downstream | Consumes RemediationRequest CRDs created by Gateway |
-| **Redis** | External Dependency | Persistent deduplication state, storm detection |
-| **Context Service** | External (Optional) | Environment classification metadata (ConfigMap fallback) |
-
-**Coordination Pattern**: Webhook-based ingestion → CRD creation → Controller watch coordination
+❌ **Excluded (V2)**:
+- Non-Kubernetes signals (AWS, Azure, Datadog)
+- Multi-cluster aggregation
 
 ---
 
-## 📋 Business Requirements Coverage
+## 🏛️ Architecture
 
-| Category | Range | Description |
-|----------|-------|-------------|
-| **Primary** | BR-GATEWAY-001 to BR-GATEWAY-023 | Webhook handling, deduplication, storm detection |
-| **Environment** | BR-GATEWAY-051 to BR-GATEWAY-053 | Environment classification (dynamic: any label value) |
-| **GitOps** | BR-GATEWAY-071 to BR-GATEWAY-072 | Environment determines remediation behavior |
-| **Notification** | BR-GATEWAY-091 to BR-GATEWAY-092 | Priority-based notification routing (via priority field) |
+```mermaid
+graph LR
+    subgraph "Signal Sources"
+        PM[Prometheus<br/>AlertManager]
+        KE[Kubernetes<br/>Events]
+    end
 
----
+    subgraph "Gateway Service"
+        WH[Webhook<br/>Handler]
+        DD[Deduplication]
+        CC[CRD<br/>Creator]
+    end
 
-## ⚙️  Technology Stack
+    subgraph "State"
+        K8s[("K8s CRD<br/>Status")]
+    end
 
-- **Language**: Go 1.21+
-- **HTTP Framework**: Standard library `net/http` with middleware
-- **Redis**: `go-redis/redis/v8` for deduplication and storm detection
-- **Kubernetes Client**: `sigs.k8s.io/controller-runtime` for CRD operations
-- **Rego**: `open-policy-agent/opa` for priority assignment
-- **Authentication**: Kubernetes `TokenReviewer` API
-- **Testing**: Ginkgo/Gomega BDD framework
+    subgraph "Downstream"
+        RR[RemediationRequest<br/>CRD]
+    end
 
----
-
-## 🔑 Key Architectural Decisions
-
-### 1. Adapter-Specific Self-Registered Endpoints
-**Decision**: Each adapter registers its own HTTP route (e.g., `/api/v1/signals/prometheus`) - NO generic endpoint with detection
-**Rationale**:
-- **Security**: No source spoofing, explicit routing, clear audit trail
-- **Performance**: ~50-100μs faster (no detection overhead)
-- **Simplicity**: ~70% less code (no detection logic)
-- **Industry Standard**: Follows REST/HTTP best practices (Stripe, GitHub, Datadog pattern)
-- **Operations**: Clear 404 errors, simple troubleshooting, per-route metrics
-- **Configuration-Driven**: Enable/disable adapters via YAML config
-
-**See**:
-- [DESIGN_B_IMPLEMENTATION_SUMMARY.md](./DESIGN_B_IMPLEMENTATION_SUMMARY.md) - **Current architecture (92% confidence)**
-- [ADAPTER_ENDPOINT_DESIGN_COMPARISON.md](./ADAPTER_ENDPOINT_DESIGN_COMPARISON.md) - Design comparison (90% confidence for Design B)
-- [CONFIGURATION_DRIVEN_ADAPTERS.md](./CONFIGURATION_DRIVEN_ADAPTERS.md) - Configuration principles
-
-### 2. Redis Persistent Deduplication
-**Decision**: Redis persistent storage (not in-memory)
-**Rationale**: Survives Gateway restarts, supports HA multi-instance deployments
-
-### 3. Hybrid Storm Detection
-**Decision**: Rate-based (>10/min) + Pattern-based (similar alerts across resources)
-**Rationale**: Prevents both repetitive single-alert storms and distributed pattern storms
-
-### 4. Minimal CRD Context
-**Decision**: Only include data Gateway already has (alert payload + Redis metadata)
-**Rationale**: Fast response (<50ms target), downstream services enrich with additional context
-
-### 5. Synchronous Error Handling
-**Decision**: HTTP status codes (202/400/500), no queue
-**Rationale**: Alertmanager has retry logic, simpler implementation, clear error feedback
-
-### 6. Per-Source Rate Limiting
-**Decision**: Rate limit by source IP (token bucket algorithm)
-**Rationale**: Fair multi-tenancy, isolated noisy sources, better debugging
+    PM --> WH
+    KE --> WH
+    WH --> DD
+    DD <--> K8s
+    DD --> CC
+    CC --> RR
+```
 
 ---
 
-## 📊 Performance Targets
+## 📊 Test Coverage - Production Ready ✅
 
-- **Webhook Response Time**: p95 < 50ms, p99 < 100ms
-- **Redis Deduplication**: p95 < 5ms, p99 < 10ms
-- **CRD Creation**: p95 < 30ms, p99 < 50ms
-- **Throughput**: >100 alerts/second (Redis-limited, sufficient for production)
-- **Deduplication Rate**: 40-60% (typical for production alert volumes)
+| Test Type | Count | Coverage | Status |
+|-----------|-------|----------|--------|
+| **Unit Tests** | 314 specs | 70%+ | ✅ Passing |
+| **Integration Tests** | 104 specs | 20% | ✅ Passing |
+| **E2E Tests** | 24 specs | 10% | ✅ Passing |
+| **TOTAL** | **442 specs** | **100%** | ✅ **Production Ready** |
 
----
+### Running Tests
 
-## 🔐 Security Considerations
+```bash
+# Unit tests (7 suites, business logic with external mocks)
+make test-unit-gateway
+# Expected: 314 specs passing
 
-- **Authentication**: Bearer Token (JWT) validated via Kubernetes TokenReviewer API
-- **Rate Limiting**: Per-source rate limiting (100 alerts/min default, configurable)
-- **RBAC**: Alertmanager ServiceAccount needs ClusterRole for webhook POST
-- **Network Policies**: Ingress from Alertmanager/K8s API only
-- **Secret Management**: Redis credentials via Kubernetes Secrets
+# Integration tests (requires envtest + PostgreSQL)
+make test-integration-gateway
+# Expected: 104 specs passing (96 main + 8 processing)
 
----
+# E2E tests (requires Kind cluster)
+make test-e2e-gateway
+# Expected: 24 specs passing (full deployment validation)
 
-## 🧪 Testing Strategy
+# All tests
+make test-gateway
+# Expected: 442 specs passing across all tiers
+```
 
-Following Kubernaut's APDC-Enhanced TDD methodology:
+### Test Infrastructure
 
-- **Unit Tests (70%+)**: HTTP handlers, adapters, deduplication logic, storm detection
-- **Integration Tests (>50%)**: Redis integration, CRD creation, end-to-end webhook flow
-- **E2E Tests (<10%)**: Prometheus → Gateway → RemediationRequest → Completion
+**Unit Tests**:
+- Framework: Ginkgo/Gomega BDD
+- Execution: In-memory, no external dependencies
+- Coverage: Configuration, deduplication, normalization, CRD creation, error handling
 
-**Mock Strategy**:
-- **MOCK**: Redis (unit tests only), Kubernetes API (unit tests only)
-- **REAL**: All business logic, HTTP handlers, adapters
+**Integration Tests**:
+- Framework: envtest (real Kubernetes API)
+- Dependencies: PostgreSQL (Data Storage audit), Redis (deduplication cache)
+- Coverage: CRD creation/update, status subresource, parallel execution safety
 
----
-
-## 📈 Implementation Status
-
-**📋 DETAILED STATUS**: See [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) for complete tracking
-
-| Phase | Tests | Status | Effort | Confidence |
-|-------|-------|--------|--------|------------|
-| **Design Specification** | N/A | ✅ Complete | 16h | 100% |
-| **Unit Tests** | 0/75 | ⏸️ Not Started | 20-25h | 85% |
-| **Integration Tests** | 0/30 | ⏸️ Not Started | 15-20h | 85% |
-| **E2E Tests** | 0/5 | ⏸️ Not Started | 5-10h | 85% |
-| **Deployment** | N/A | ⏸️ Not Started | 8h | 90% |
-
-**Total**: 0/110 tests passing (estimated total)
-**Business Requirements**: ~40 BRs (0% implemented)
-
-**See**: [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) for detailed BR tracking and test breakdown
+**E2E Tests**:
+- Framework: Kind cluster (full Kubernetes deployment)
+- Infrastructure: Shared build utilities (DD-TEST-001)
+- Coverage: Full service deployment, webhook handling, RBAC, deduplication, fingerprint stability
 
 ---
 
-## 🚧 Known Limitations (V1)
+## 🔗 Related Design Decisions
 
-**Out of Scope** (deferred to V2 if needed):
-- ❌ Grafana alerts ingestion (Prometheus + K8s Events cover 90% of use cases)
-- ❌ Cloud-specific alerts (CloudWatch, Azure Monitor)
-- ❌ Advanced ML-based storm detection (hybrid approach sufficient)
-- ❌ Multi-cluster alert aggregation (single cluster for V1)
-
----
-
-## 📚 Additional Resources
-
-**Decision Documents**:
-- [Gateway Service Final Decisions](../GATEWAY_SERVICE_DECISIONS_FINAL.md) - User-approved choices
-
-**Architecture References**:
-- [Multi-CRD Reconciliation Architecture](../../design/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
-- [Service Connectivity Specification](../../design/SERVICE_CONNECTIVITY_SPECIFICATION.md)
-
-**Related CRD Services**:
-- [RemediationRequest Controller](../crd-controllers/05-remediationorchestrator/) - Central orchestrator
-- [Remediation Processor](../crd-controllers/01-signalprocessing/) - Alert enrichment
+| Decision | Purpose |
+|----------|---------|
+| [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) | Categorization delegation to SignalProcessing |
+| [DD-GATEWAY-008](../../../architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md) | ❌ Superseded by DD-GATEWAY-015 (Storm detection removed) |
+| [DD-GATEWAY-009](../../../architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md) | State-based deduplication |
+| [DD-GATEWAY-011](../../../architecture/decisions/DD-GATEWAY-011-shared-status-deduplication.md) | Status-based deduplication (Redis deprecated) |
+| [DD-GATEWAY-015](../../../architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md) | Storm detection removal |
+| [DD-GATEWAY-NON-K8S-SIGNALS](../../../architecture/decisions/DD-GATEWAY-NON-K8S-SIGNALS.md) | Non-Kubernetes signal support (V1.x/V2.0) |
 
 ---
 
-## 📞 Critical Questions for User (If Needed)
+## 🎉 Recent Enhancements (V1.0 Production Ready)
 
-Before implementation, clarify these decisions:
+### **GAP-8: Enhanced Configuration Validation** ✅ Complete
+- **Purpose**: Structured error reporting for configuration issues
+- **Implementation**: New `ConfigError` type with field-level diagnostics
+- **Business Value**: Faster troubleshooting, reduced deployment failures
+- **Documentation**: `pkg/gateway/config/errors.go`, `pkg/gateway/config/config.go`
 
-1. **Redis Persistence Strategy**: How long to keep deduplication fingerprints? (Current: 5 min)
-2. **Storm Detection Thresholds**: Are >10 alerts/min and >5 similar alerts appropriate? (Configurable via ConfigMap)
-3. **Port Assignments**: Confirm 8080 (HTTP) and 9090 (metrics) are available
-4. **Rate Limiting**: Default 100 alerts/min per source acceptable?
+### **GAP-10: Structured Error Wrapping** ✅ Complete
+- **Purpose**: Comprehensive error context for CRD operations
+- **Implementation**: `OperationError`, `CRDCreationError`, `DeduplicationError`, `RetryError`
+- **Business Value**: Improved debuggability, better audit trails
+- **Documentation**: `pkg/gateway/processing/errors.go`
 
-**User Guidance**: These have sensible defaults, but can be adjusted based on production telemetry.
+### **DD-TEST-001: Shared Build Utilities Integration** ✅ Complete
+- **Purpose**: Unique container image tags for E2E test isolation
+- **Implementation**: Integrated `scripts/build-service-image.sh`
+- **Business Value**: Parallel test execution, consistent build process
+- **Documentation**: `test/infrastructure/gateway_e2e.go`
+
+### **RBAC Fix: RemediationRequest Status Updates** ✅ Complete
+- **Issue**: E2E test skipped due to missing `remediationrequests/status` permission
+- **Fix**: Added status subresource verbs (`update`, `patch`) to ClusterRole
+- **Impact**: All 24 E2E specs now passing
+- **Documentation**: `test/e2e/gateway/gateway-deployment.yaml`
 
 ---
 
-**Document Status**: ✅ Navigation Hub Complete
-**Last Updated**: October 4, 2025
-**Confidence**: 90.5% (Very High)
-**Next Step**: Create [overview.md](./overview.md)
+## 📝 Version History
 
+### **v1.6** (2025-12-15) - **CURRENT - PRODUCTION READY**
+- ✅ **Production Ready**: All 3 testing tiers complete (442 specs passing)
+- ✅ **GAP-8 Implementation**: Enhanced configuration validation with structured errors
+- ✅ **GAP-10 Implementation**: Structured error wrapping for CRD operations
+- ✅ **DD-TEST-001 Integration**: Shared build utilities for E2E tests
+- ✅ **RBAC Fix**: Added `remediationrequests/status` permissions
+- ✅ **Test Count Verification**: Confirmed 314 unit + 104 integration + 24 E2E
+- ✅ **E2E Infrastructure**: Full Kind cluster deployment with unique image tags
+- 📋 **Handoff Ready**: Storm field removal documented for RO team
+
+### **v1.5** (2025-12-03)
+- ✅ **Documentation Standardization**: README restructured to match ADR-039 template
+- ✅ **Documentation Index**: Added comprehensive doc catalog with line counts
+- ✅ **File Organization**: Visual tree showing all documentation files
+- ✅ **Implementation Structure**: Added binary/gateway/pkg location guide
+- ✅ **Enhanced Navigation**: Consistent structure with all V1.0 services
+
+### **v1.4** (2025-12-03)
+- Added `TargetResource` field to RemediationRequest spec
+- Added `TargetType` field for future non-K8s support
+- Implemented resource validation (reject signals without K8s resource info)
+- Added `gateway_signals_rejected_total` metric
+- Fixed all integration test failures
+
+### **v1.3** (2025-12-01)
+- Aligned `DeduplicationInfo` with shared types
+- Renamed `firstSeen/lastSeen` to `firstOccurrence/lastOccurrence`
+
+### **v1.2** (2025-11-27)
+- Delegated categorization to SignalProcessing
+- Gateway now sets placeholder priority values
+
+---
+
+## 🚀 Production Readiness Checklist
+
+- ✅ **Unit Tests**: 314 specs passing (70%+ coverage)
+- ✅ **Integration Tests**: 104 specs passing (real K8s API)
+- ✅ **E2E Tests**: 24 specs passing (full deployment)
+- ✅ **Configuration Validation**: GAP-8 structured error reporting
+- ✅ **Error Handling**: GAP-10 comprehensive error context
+- ✅ **Build Process**: DD-TEST-001 unique image tags
+- ✅ **RBAC**: Status subresource permissions configured
+- ✅ **Documentation**: 7,405+ lines across 13 core documents
+- ✅ **Deduplication**: Status-based fingerprinting (40-60% reduction)
+- ✅ **CRD Integration**: RemediationRequest creation validated
+
+**Status**: ✅ **READY FOR SEGMENTED E2E TESTING WITH RO TEAM**
+
+**Pending Handoff**: Storm detection fields in `RemediationRequest.spec` (DD-GATEWAY-015) - See `docs/handoff/HANDOFF_RO_STORM_FIELDS_REMOVAL.md`
+
+---
+
+**Document Status**: ✅ Complete
+**Last Updated**: 2025-12-15
+
+---
+
+## 📚 Handoff Documentation
+
+### Production Ready Documents
+- **[GATEWAY_ALL_WORK_COMPLETE_2025-12-15.md](../../../handoff/GATEWAY_ALL_WORK_COMPLETE_2025-12-15.md)** - Comprehensive work summary
+- **[GATEWAY_FINAL_STATUS_PRE_RO_SEGMENTED_E2E.md](../../../handoff/GATEWAY_FINAL_STATUS_PRE_RO_SEGMENTED_E2E.md)** - Pre-RO testing status
+- **[GATEWAY_ALL_TESTING_TIERS_COMPLETE.md](../../../handoff/GATEWAY_ALL_TESTING_TIERS_COMPLETE.md)** - Complete test verification
+
+### Implementation Documents
+- **[GATEWAY_GAP8_GAP10_IMPLEMENTATION_PLAN.md](../../../handoff/GATEWAY_GAP8_GAP10_IMPLEMENTATION_PLAN.md)** - GAP-8/GAP-10 implementation
+- **[GATEWAY_RBAC_FIX_COMPLETE.md](../../../handoff/GATEWAY_RBAC_FIX_COMPLETE.md)** - RBAC permission fix
+- **[TRIAGE_GATEWAY_E2E_SKIPPED_TEST.md](../../../handoff/TRIAGE_GATEWAY_E2E_SKIPPED_TEST.md)** - E2E test triage
+
+### Cross-Team Handoff
+- **[HANDOFF_RO_STORM_FIELDS_REMOVAL.md](../../../handoff/HANDOFF_RO_STORM_FIELDS_REMOVAL.md)** - RO team action item (DD-GATEWAY-015)
+- **[CONFIDENCE_ASSESSMENT_RR_SPEC_IMMUTABILITY.md](../../../handoff/CONFIDENCE_ASSESSMENT_RR_SPEC_IMMUTABILITY.md)** - Spec immutability verification
+
+---
+
+## 📊 Summary
+
+- **Service**: Gateway Service
+- **Type**: Stateless HTTP API (Signal Ingestion & Deduplication)
+- **Status**: ✅ **Production Ready** - All 3 testing tiers complete
+- **Test Coverage**: 442 specs passing (314 Unit + 104 Integration + 24 E2E)
+- **Key Features**: Prometheus/K8s Event ingestion, status-based deduplication, RemediationRequest CRD creation
+- **Performance**: 40-60% signal reduction via deduplication
+- **Dependencies**: Kubernetes API, Data Storage Service (audit), Redis (deduplication cache)
+- **Documentation**: 7,405+ lines across 13 core specification documents
+- **Priority**: P0 - Critical (system entry point)
+
+**Next Step**: Segmented E2E testing with RO team
+
+---
+
+## 📞 Support
+
+### Documentation Links
+
+- **Parent**: [../README.md](../README.md) - All stateless services
+- **Architecture**: [../../architecture/](../../architecture/)
+- **Business Requirements**: [BUSINESS_REQUIREMENTS.md](./BUSINESS_REQUIREMENTS.md)
+
+### Contact
+
+- **Team**: Kubernaut Gateway Team
+- **Slack**: #gateway-team
+- **Issue Tracker**: GitHub Issues
+
+---
+
+**Document Maintainer**: Kubernaut Documentation Team
+**Last Updated**: December 15, 2025
+**Status**: ✅ Production Ready
+**Version**: 1.6

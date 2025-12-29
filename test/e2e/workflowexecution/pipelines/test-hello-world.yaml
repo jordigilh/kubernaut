@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: workflow
+spec:
+  params:
+    - name: TARGET_RESOURCE
+      type: string
+      description: Target resource being remediated
+    - name: MESSAGE
+      type: string
+      default: "Hello from Kubernaut!"
+  tasks:
+    - name: hello
+      taskSpec:
+        params:
+          - name: message
+            type: string
+        steps:
+          - name: echo
+            image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+            script: |
+              #!/bin/sh
+              echo "$(params.message)"
+              echo "Target: $(params.TARGET_RESOURCE)"
+              echo "Workflow completed successfully!"
+      params:
+        - name: message
+          value: "$(params.MESSAGE)"

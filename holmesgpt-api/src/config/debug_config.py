@@ -22,7 +22,9 @@ Usage:
 
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Optional
+
+from src.models.config_models import AppConfig
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +57,7 @@ class DebugConfig:
         )
 
 
-def get_debug_config(app_config: Optional[Dict[str, Any]] = None) -> DebugConfig:
+def get_debug_config(app_config: Optional[AppConfig] = None) -> DebugConfig:
     """
     Get debug configuration from app config and environment variables.
 
@@ -65,7 +67,7 @@ def get_debug_config(app_config: Optional[Dict[str, Any]] = None) -> DebugConfig
     3. Defaults (all false)
 
     Args:
-        app_config: Application configuration dictionary
+        app_config: Application configuration TypedDict
 
     Returns:
         DebugConfig instance with resolved settings
@@ -78,7 +80,7 @@ def get_debug_config(app_config: Optional[Dict[str, Any]] = None) -> DebugConfig
         True
 
         >>> # From config file
-        >>> app_config = {'debug': {'enabled': True, 'litellm': True}}
+        >>> app_config: AppConfig = {'debug': {'enabled': True, 'litellm': True}}
         >>> cfg = get_debug_config(app_config)
         >>> cfg.litellm
         True

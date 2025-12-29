@@ -1,7 +1,7 @@
 # Authoritative CRD Schemas
 
-**Version**: v1.0
-**Last Updated**: October 5, 2025
+**Version**: v1.1
+**Last Updated**: December 7, 2025
 **Status**: ✅ Authoritative Reference
 
 ---
@@ -10,9 +10,9 @@
 
 This document defines the **authoritative CRD schemas** for the Kubernaut project. All services must reference and implement these schemas exactly as specified.
 
-**Schema Authority**:
-- Gateway Service creates CRDs and is the **source of truth** for field definitions
-- Central Controller orchestrates CRDs but **follows Gateway's schema**
+**Schema Authority** (Updated per [ADR-049](decisions/ADR-049-remediationrequest-crd-ownership.md)):
+- **Remediation Orchestrator (RO)** owns the RemediationRequest CRD schema definition
+- Gateway Service creates RR instances by importing RO's types
 - All other services consume CRDs according to these specifications
 
 ---
@@ -21,26 +21,36 @@ This document defines the **authoritative CRD schemas** for the Kubernaut projec
 
 ### Metadata
 
-**API Group**: `remediation.kubernaut.io/v1`
+**API Group**: `remediation.kubernaut.ai/v1alpha1`
 **Kind**: `RemediationRequest`
-**Owner**: Central Controller Service
-**Created By**: Gateway Service
+**Schema Owner**: Remediation Orchestrator (RO) - per [ADR-049](decisions/ADR-049-remediationrequest-crd-ownership.md)
+**Instances Created By**: Gateway Service
 **Scope**: Namespaced
 
 ### Purpose
 
-Entry point for the remediation workflow. Gateway Service creates one RemediationRequest CRD per unique signal (Prometheus alert, Kubernetes event). Central Controller orchestrates downstream service CRDs based on this request.
+Entry point for the remediation workflow. Gateway Service creates one RemediationRequest CRD per unique signal (Prometheus alert, Kubernetes event). Remediation Orchestrator owns the schema and orchestrates downstream service CRDs based on this request.
 
-### Source of Truth
+### Ownership Clarification (ADR-049)
 
-**Gateway Service** creates RemediationRequest CRDs and populates all fields based on ingested signals. The schema below reflects Gateway's comprehensive data collection.
+| Aspect | Owner |
+|--------|-------|
+| **Schema Definition** | Remediation Orchestrator (RO) |
+| **Instance Creation** | Gateway Service |
+| **Reconciliation** | Remediation Orchestrator (RO) |
+| **Status (Deduplication, Storm)** | Gateway Service (per DD-GATEWAY-011) |
+| **Status (Lifecycle)** | Remediation Orchestrator (RO) |
 
-**Why Gateway is Authoritative**:
-- Gateway performs deduplication and storm detection
-- Gateway assigns priority based on Rego policies
-- Gateway enriches signal with environment classification
-- Gateway captures all temporal and source metadata
-- Central Controller was designed before Gateway's full capabilities were known
+**Why RO Owns the Schema**:
+- RO is the controller that reconciles RR (K8s pattern: reconciler owns schema)
+- RR represents remediation lifecycle, which is RO's domain
+- Clean dependency direction: Gateway → RO types (not reverse)
+- RO can evolve schema based on orchestration needs
+
+**Gateway's Role**:
+- Creates RR instances using types imported from RO
+- Owns `status.deduplication` and `status.stormAggregation` (per DD-GATEWAY-011)
+- Performs deduplication and storm detection before instance creation
 
 ### Multi-Provider Architecture
 
@@ -889,8 +899,8 @@ type AIAnalysisStatus struct {
     // +kubebuilder:validation:MaxLength=253
     InvestigationID string `json:"investigationId,omitempty"`
 
-    // +kubebuilder:validation:Minimum=0
-    TokensUsed int `json:"tokensUsed,omitempty"`
+    // NOTE: TokensUsed REMOVED (Dec 2025) - HAPI owns LLM cost observability
+    // Use InvestigationID to correlate with HAPI's holmesgpt_llm_token_usage_total metric
 
     // +kubebuilder:validation:Minimum=0
     InvestigationTime int64 `json:"investigationTime,omitempty"` // milliseconds
@@ -1531,7 +1541,7 @@ type DeliveryAttempt struct {
 - **Enum**: LLMProvider, Phase
 - **Numeric**: MaxTokens (1-100000), Temperature (0.0-1.0), Confidence (0.0-1.0)
 - **MaxLength**: LLMModel (253), InvestigationID (253)
-- **Minimum**: TokensUsed (≥0), InvestigationTime (≥0)
+- **Minimum**: InvestigationTime (≥0)
 
 ### WorkflowExecution
 - **Enum**: Phase, RollbackStrategy, ExecutionStrategy, StepStatus, Outcome, ResourceHealth
@@ -1557,4 +1567,6 @@ type DeliveryAttempt struct {
 **Last Updated**: October 12, 2025 (Added NotificationRequest CRD)
 **Validates Against**: Kubebuilder v3.x, Kubernetes 1.28+
 **Confidence**: 95% - All validations tested and verified in generated CRD manifests
+
+
 

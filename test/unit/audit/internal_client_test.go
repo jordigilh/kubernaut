@@ -19,17 +19,31 @@ package audit
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	audit "github.com/jordigilh/kubernaut/pkg/audit"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
+
+// Helper to create test event for internal client tests
+// DD-AUDIT-002 V2.0: Uses OpenAPI types
+func createInternalTestEvent(resourceID string) *dsgen.AuditEventRequest {
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "datastorage.audit.written")
+	audit.SetEventCategory(event, "storage")
+	audit.SetEventAction(event, "written")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", "datastorage")
+	audit.SetResource(event, "AuditEvent", resourceID)
+	audit.SetCorrelationID(event, "test-correlation-id")
+	audit.SetEventData(event, map[string]interface{}{"version": "1.0", "service": "datastorage"})
+	return event
+}
 
 // ========================================
 // INTERNAL AUDIT CLIENT TESTS (TDD RED Phase)
@@ -95,31 +109,17 @@ var _ = Describe("InternalAuditClient", func() {
 				// BUSINESS SCENARIO: Data Storage Service audits successful write
 				// BR-STORAGE-013: Must not create circular dependency
 
-				event := &audit.AuditEvent{
-					EventID:        uuid.New(),
-					EventVersion:   "1.0",
-					EventTimestamp: time.Now().UTC(),
-					EventType:      "datastorage.audit.written",
-					EventCategory:  "storage",
-					EventAction:    "written",
-					EventOutcome:   "success",
-					ActorType:      "service",
-					ActorID:        "datastorage",
-					ResourceType:   "AuditEvent",
-					ResourceID:     "test-event-id",
-					CorrelationID:  "test-correlation-id",
-					EventData:      json.RawMessage(`{"version":"1.0","service":"datastorage"}`),
-					RetentionDays:  2555,
-					IsSensitive:    false,
-				}
+				event := createInternalTestEvent("test-event-id")
 
 				// BEHAVIOR: Writes directly to PostgreSQL (not HTTP)
+				// DD-AUDIT-002 V2.0: OpenAPI types don't have EventID, RetentionDays, IsSensitive
+				// (those are database-specific and generated server-side)
 				mock.ExpectBegin()
 				mock.ExpectPrepare("INSERT INTO audit_events")
 				mock.ExpectExec("INSERT INTO audit_events").
 					WithArgs(
-						event.EventID,
-						event.EventVersion,
+						sqlmock.AnyArg(), // event_id (UUID generated server-side)
+						event.Version,
 						sqlmock.AnyArg(), // event_timestamp
 						sqlmock.AnyArg(), // event_date (partitioning key)
 						event.EventType,
@@ -127,18 +127,18 @@ var _ = Describe("InternalAuditClient", func() {
 						event.EventAction,
 						event.EventOutcome,
 						event.ActorType,
-						event.ActorID,
+						event.ActorId, // Note: lowercase 'd' in OpenAPI type
 						event.ResourceType,
-						event.ResourceID,
-						event.CorrelationID,
-						sqlmock.AnyArg(), // event_data (JSONB)
-						event.RetentionDays,
-						event.IsSensitive,
+						event.ResourceId,    // Note: lowercase 'd' in OpenAPI type
+						event.CorrelationId, // Note: lowercase 'd' in OpenAPI type
+						sqlmock.AnyArg(),    // event_data (JSONB)
+						sqlmock.AnyArg(),    // retention_days (database default)
+						sqlmock.AnyArg(),    // is_sensitive (database default)
 					).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 				mock.ExpectCommit()
 
-				err := client.StoreBatch(ctx, []*audit.AuditEvent{event})
+				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
 
 				// CORRECTNESS: Write succeeds without REST API call
 				Expect(err).ToNot(HaveOccurred())
@@ -154,42 +154,15 @@ var _ = Describe("InternalAuditClient", func() {
 				// BUSINESS SCENARIO: Data Storage Service audits multiple operations
 				// BR-STORAGE-014: Must not block business operations (batch for performance)
 
-				events := []*audit.AuditEvent{
-					{
-						EventID:        uuid.New(),
-						EventVersion:   "1.0",
-						EventTimestamp: time.Now().UTC(),
-						EventType:      "datastorage.audit.written",
-						EventCategory:  "storage",
-						EventAction:    "written",
-						EventOutcome:   "success",
-						ActorType:      "service",
-						ActorID:        "datastorage",
-						ResourceType:   "AuditEvent",
-						ResourceID:     "event-1",
-						CorrelationID:  "correlation-1",
-						EventData:      json.RawMessage(`{"version":"1.0"}`),
-						RetentionDays:  2555,
-						IsSensitive:    false,
-					},
-					{
-						EventID:        uuid.New(),
-						EventVersion:   "1.0",
-						EventTimestamp: time.Now().UTC(),
-						EventType:      "datastorage.audit.failed",
-						EventCategory:  "storage",
-						EventAction:    "write_failed",
-						EventOutcome:   "failure",
-						ActorType:      "service",
-						ActorID:        "datastorage",
-						ResourceType:   "AuditEvent",
-						ResourceID:     "event-2",
-						CorrelationID:  "correlation-2",
-						EventData:      json.RawMessage(`{"version":"1.0"}`),
-						RetentionDays:  2555,
-						IsSensitive:    false,
-					},
-				}
+				// Create test events using OpenAPI types
+				event1 := createInternalTestEvent("event-1")
+				event2 := createInternalTestEvent("event-2")
+				audit.SetEventType(event2, "datastorage.audit.failed")
+				audit.SetEventAction(event2, "write_failed")
+				audit.SetEventOutcome(event2, audit.OutcomeFailure)
+				audit.SetCorrelationID(event2, "correlation-2")
+
+				events := []*dsgen.AuditEventRequest{event1, event2}
 
 				// BEHAVIOR: Single transaction with multiple inserts
 				mock.ExpectBegin()
@@ -217,7 +190,7 @@ var _ = Describe("InternalAuditClient", func() {
 				// BR-STORAGE-014: Must not waste resources on empty operations
 
 				// BEHAVIOR: No database calls for empty batch
-				err := client.StoreBatch(ctx, []*audit.AuditEvent{})
+				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{})
 
 				// CORRECTNESS: No error, no database calls
 				Expect(err).ToNot(HaveOccurred())
@@ -232,28 +205,12 @@ var _ = Describe("InternalAuditClient", func() {
 				// BUSINESS SCENARIO: PostgreSQL unavailable during audit write
 				// BR-STORAGE-014: Audit failures must not crash service
 
-				event := &audit.AuditEvent{
-					EventID:        uuid.New(),
-					EventVersion:   "1.0",
-					EventTimestamp: time.Now().UTC(),
-					EventType:      "datastorage.audit.written",
-					EventCategory:  "storage",
-					EventAction:    "written",
-					EventOutcome:   "success",
-					ActorType:      "service",
-					ActorID:        "datastorage",
-					ResourceType:   "AuditEvent",
-					ResourceID:     "test-event-id",
-					CorrelationID:  "test-correlation-id",
-					EventData:      json.RawMessage(`{"version":"1.0"}`),
-					RetentionDays:  2555,
-					IsSensitive:    false,
-				}
+				event := createInternalTestEvent("test-event-id")
 
 				// BEHAVIOR: Database connection fails
 				mock.ExpectBegin().WillReturnError(fmt.Errorf("connection refused"))
 
-				err := client.StoreBatch(ctx, []*audit.AuditEvent{event})
+				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
 
 				// CORRECTNESS: Error returned gracefully (no panic)
 				Expect(err).To(HaveOccurred())
@@ -269,23 +226,7 @@ var _ = Describe("InternalAuditClient", func() {
 				// BUSINESS SCENARIO: Transaction commit fails (disk full, etc.)
 				// BR-STORAGE-014: Must handle transient failures gracefully
 
-				event := &audit.AuditEvent{
-					EventID:        uuid.New(),
-					EventVersion:   "1.0",
-					EventTimestamp: time.Now().UTC(),
-					EventType:      "datastorage.audit.written",
-					EventCategory:  "storage",
-					EventAction:    "written",
-					EventOutcome:   "success",
-					ActorType:      "service",
-					ActorID:        "datastorage",
-					ResourceType:   "AuditEvent",
-					ResourceID:     "test-event-id",
-					CorrelationID:  "test-correlation-id",
-					EventData:      json.RawMessage(`{"version":"1.0"}`),
-					RetentionDays:  2555,
-					IsSensitive:    false,
-				}
+				event := createInternalTestEvent("test-event-id")
 
 				// BEHAVIOR: Transaction begins, insert succeeds, commit fails
 				mock.ExpectBegin()
@@ -295,7 +236,7 @@ var _ = Describe("InternalAuditClient", func() {
 				mock.ExpectCommit().WillReturnError(fmt.Errorf("disk full"))
 				mock.ExpectRollback()
 
-				err := client.StoreBatch(ctx, []*audit.AuditEvent{event})
+				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
 
 				// CORRECTNESS: Error returned, transaction rolled back
 				Expect(err).To(HaveOccurred())
@@ -310,23 +251,7 @@ var _ = Describe("InternalAuditClient", func() {
 				// BUSINESS SCENARIO: Insert fails (constraint violation, etc.)
 				// BR-STORAGE-014: Must handle database errors gracefully
 
-				event := &audit.AuditEvent{
-					EventID:        uuid.New(),
-					EventVersion:   "1.0",
-					EventTimestamp: time.Now().UTC(),
-					EventType:      "datastorage.audit.written",
-					EventCategory:  "storage",
-					EventAction:    "written",
-					EventOutcome:   "success",
-					ActorType:      "service",
-					ActorID:        "datastorage",
-					ResourceType:   "AuditEvent",
-					ResourceID:     "test-event-id",
-					CorrelationID:  "test-correlation-id",
-					EventData:      json.RawMessage(`{"version":"1.0"}`),
-					RetentionDays:  2555,
-					IsSensitive:    false,
-				}
+				event := createInternalTestEvent("test-event-id")
 
 				// BEHAVIOR: Insert fails
 				mock.ExpectBegin()
@@ -335,7 +260,7 @@ var _ = Describe("InternalAuditClient", func() {
 					WillReturnError(fmt.Errorf("constraint violation"))
 				mock.ExpectRollback()
 
-				err := client.StoreBatch(ctx, []*audit.AuditEvent{event})
+				err := client.StoreBatch(ctx, []*dsgen.AuditEventRequest{event})
 
 				// CORRECTNESS: Error returned, transaction rolled back
 				Expect(err).To(HaveOccurred())
@@ -353,26 +278,10 @@ var _ = Describe("InternalAuditClient", func() {
 				cancelCtx, cancel := context.WithCancel(ctx)
 				cancel() // Cancel immediately
 
-				event := &audit.AuditEvent{
-					EventID:        uuid.New(),
-					EventVersion:   "1.0",
-					EventTimestamp: time.Now().UTC(),
-					EventType:      "datastorage.audit.written",
-					EventCategory:  "storage",
-					EventAction:    "written",
-					EventOutcome:   "success",
-					ActorType:      "service",
-					ActorID:        "datastorage",
-					ResourceType:   "AuditEvent",
-					ResourceID:     "test-event-id",
-					CorrelationID:  "test-correlation-id",
-					EventData:      json.RawMessage(`{"version":"1.0"}`),
-					RetentionDays:  2555,
-					IsSensitive:    false,
-				}
+				event := createInternalTestEvent("test-event-id")
 
 				// BEHAVIOR: Context cancellation handled
-				err := client.StoreBatch(cancelCtx, []*audit.AuditEvent{event})
+				err := client.StoreBatch(cancelCtx, []*dsgen.AuditEventRequest{event})
 
 				// CORRECTNESS: Error indicates context cancellation
 				Expect(err).To(HaveOccurred())

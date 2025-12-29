@@ -3,11 +3,93 @@
 **Date**: November 14, 2025
 **Status**: ✅ APPROVED
 **Deciders**: Architecture Team
-**Version**: 2.0
+**Version**: 3.3
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), ADR-034 (Unified Audit Table), DD-WORKFLOW-014 (Workflow Selection Audit Trail), DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: This DD's semantic search relies on workflow immutability.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- Workflow embeddings are immutable (cannot change after creation)
+- Semantic search results remain consistent for same workflow version
+- Description and labels cannot be updated (would invalidate embeddings)
+
+**Cross-Reference**: All semantic search operations assume workflow immutability per DD-WORKFLOW-012.
+
+---
 
 ---
 
 ## Changelog
+
+### Version 3.3 (2025-11-30)
+- **BREAKING**: Standardized all filter field names to **snake_case** for consistency
+- Changed `signal-type` → `signal_type` in all filter parameters and examples
+- Changed `label.signal-type` → `filters.signal_type` parameter naming convention
+- All filter fields now use snake_case: `signal_type`, `severity`, `environment`, `priority`, `custom_labels`
+- **Rationale**: snake_case is the standard JSON API convention, aligns with Python (HolmesGPT-API), and matches Kubernetes JSON field naming
+- **Impact**: Data Storage must update Go struct JSON tags from `json:"signal-type"` to `json:"signal_type"`
+- **Notification**: See `HANDOFF_FILTER_NAMING_STANDARDIZATION.md` for Data Storage team
+
+### Version 3.2 (2025-11-30)
+- **BREAKING**: Changed `custom_labels` type from `map[string]string` to `map[string][]string`
+- Custom labels now use **subdomain-based structure**: key = subdomain, value = array of label values
+- Label values can be **boolean** (`"cost-constrained"`) or **key-value** (`"name=payments"`)
+- Query logic: Multiple values within same subdomain are **ORed**, different subdomains are **ANDed**
+- SignalProcessing strips `*.kubernaut.io/` prefix - Data Storage receives clean subdomain keys
+- Cross-reference: DD-WORKFLOW-001 v1.8, DD-WORKFLOW-004 v2.2, HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md v1.1
+- **Impact**: HolmesGPT-API and Data Storage must use new structure
+
+### Version 3.1 (2025-11-30)
+- **NEW**: Added `custom_labels` parameter for customer-defined label filtering
+- Custom labels are customer-defined via Rego policies (per HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md v3.0)
+- Custom labels use hard WHERE filter (not boost/penalty scoring) per DD-WORKFLOW-004 v2.1
+- Label prefixes: `kubernaut.io/*`, `constraint.kubernaut.io/*`, `custom.kubernaut.io/*`
+- Cross-reference: DD-WORKFLOW-001 v1.8 (5 mandatory labels + customer-derived, snake_case)
+- **Impact**: Enables filtering by arbitrary customer-defined labels in workflow search
+- **SUPERSEDED BY v3.2**: Structure changed to `map[string][]string`
+
+### Version 3.0 (2025-11-29)
+- **BREAKING**: `workflow_id` is now a UUID (auto-generated primary key)
+- **BREAKING**: Removed `version` from `search_workflow_catalog` response - LLM only needs `workflow_id`
+- **BREAKING**: Removed `estimated_duration` from response - field is circumstantial and irrelevant to LLM
+- **BREAKING**: Response structure is now FLAT (no nested `workflow` object) per DD-WORKFLOW-002 contract
+- **BREAKING**: Renamed `name` to `title` in search response for clarity
+- **BREAKING**: Changed `signal_types` (array) to `signal_type` (string) - one workflow per signal type
+- `workflow_name` and `version` remain as metadata fields (for humans), not in search response
+- Database uses `UNIQUE (workflow_name, version)` constraint to prevent duplicates
+- Updated DD-WORKFLOW-012 cross-reference for UUID primary key design
+- **Impact**: All consumers must update to use UUID `workflow_id` as single identifier
+
+### Version 2.4 (2025-11-28)
+- **BREAKING**: Added `container_image` and `container_digest` to `search_workflow_catalog` response contract
+- HolmesGPT-API now resolves `workflow_id` → `container_image` during MCP search (per DD-CONTRACT-001 v1.2)
+- RO no longer needs to call Data Storage for workflow resolution - passes through from AIAnalysis
+- Added cross-reference to DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
+- **Impact**: Data Storage must return `container_image` and `container_digest` in workflow search results
+
+### Version 2.3 (2025-11-27)
+- **API DESIGN**: Clarified that `remediation_id` is passed in JSON request body (not HTTP header)
+- Added cross-reference to DD-WORKFLOW-014 v2.1 for transport mechanism decision
+- Updated implementation notes to show JSON body approach for consistency
+- **Impact**: Implementation clarification - JSON body is the standard transport
+
+### Version 2.2 (2025-11-27)
+- **CRITICAL CLARIFICATION**: Clarified `remediation_id` usage constraint - field is MANDATORY but for CORRELATION/AUDIT ONLY
+- Added `usage_note` to `remediation_id` parameter: "Pass-through value from investigation context. Do not interpret or use in search logic."
+- Explicitly documented that LLM must NOT use `remediation_id` for RCA analysis or workflow matching
+- Updated description to emphasize: "⚠️ IMPORTANT: This field is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching"
+- **Impact**: No functional change - clarifies existing behavior for LLM implementers
+
+### Version 2.1 (2025-11-27)
+- **MANDATORY**: Added `remediation_id` as required parameter for audit trail correlation
+- Added cross-references to ADR-034 (Unified Audit Table) and DD-WORKFLOW-014 (Workflow Selection Audit Trail)
+- Updated MCP tool contract to require `remediation_id` for all workflow search requests
+- Ensures workflow selection audit events can be correlated with remediation requests
+- **Impact**: All MCP clients must provide `remediation_id` when calling `search_workflow_catalog`
 
 ### Version 2.0 (2025-11-22)
 - **BREAKING**: Updated all query examples to use structured format per DD-LLM-001
@@ -86,6 +168,15 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
   "description": "Search the workflow catalog using structured query format '<signal_type> <severity>' with optional label filters for exact matching.",
 
   "parameters": {
+    "remediation_id": {
+      "type": "string",
+      "required": true,
+      "description": "Remediation request ID for audit correlation. MANDATORY for audit trail tracking per ADR-034. ⚠️ IMPORTANT: This field is for CORRELATION/AUDIT ONLY - do NOT use for RCA analysis or workflow matching. Simply propagate from request context to workflow search for traceability.",
+      "example": "req-2025-10-06-abc123",
+      "usage_note": "Pass-through value from investigation context. Do not interpret or use in search logic.",
+      "transport": "JSON body (not HTTP header) - per DD-WORKFLOW-014 v2.1"
+    },
+
     "query": {
       "type": "string",
       "required": true,
@@ -93,45 +184,71 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
       "example": "OOMKilled critical"
     },
 
-    "label.signal-type": {
+    "signal_type": {
       "type": "string",
       "required": false,
       "description": "Exact match filter for signal type (canonical Kubernetes event reason)",
       "example": "OOMKilled"
     },
-    "label.severity": {
+    "severity": {
       "type": "string",
       "required": false,
       "enum": ["critical", "high", "medium", "low"],
       "description": "Exact match filter for RCA severity assessment",
       "example": "critical"
     },
-    "label.environment": {
+    "environment": {
       "type": "string",
       "required": false,
       "enum": ["production", "staging", "development", "test"],
       "description": "Exact match filter for environment (pass-through from input)",
       "example": "production"
     },
-    "label.priority": {
+    "priority": {
       "type": "string",
       "required": false,
       "enum": ["P0", "P1", "P2", "P3"],
       "description": "Exact match filter for business priority (pass-through from input)",
       "example": "P0"
     },
-    "label.risk-tolerance": {
+    "risk_tolerance": {
       "type": "string",
       "required": false,
       "enum": ["low", "medium", "high"],
       "description": "Exact match filter for risk tolerance (pass-through from input)",
       "example": "low"
     },
-    "label.business-category": {
+    "business_category": {
       "type": "string",
       "required": false,
       "description": "Exact match filter for business category (pass-through from input)",
       "example": "revenue-critical"
+    },
+
+    "custom_labels": {
+      "type": "object",
+      "required": false,
+      "description": "Customer-defined labels for exact match filtering (v3.2: subdomain-based structure). Keys are subdomains (e.g., 'constraint', 'team'), values are arrays of label strings. Labels are defined via Rego policies in Signal Processing. Uses hard WHERE filter (not scoring). Multiple values in same subdomain are ORed; different subdomains are ANDed. See DD-WORKFLOW-001 v1.8 and HANDOFF_CUSTOM_LABELS_QUERY_STRUCTURE.md.",
+      "structure": "map[string][]string (subdomain → values)",
+      "example": {
+        "constraint": ["cost-constrained", "stateful-safe"],
+        "team": ["name=payments"],
+        "region": ["zone=us-east-1"]
+      },
+      "label_types": {
+        "boolean": "key only (e.g., 'cost-constrained') - presence = true",
+        "key_value": "key=value (e.g., 'name=payments') - explicit value"
+      },
+      "query_logic": {
+        "within_subdomain": "OR (any value matches)",
+        "between_subdomains": "AND (all subdomains must match)"
+      },
+      "notes": [
+        "Subdomains are customer-defined (no validation by Data Storage)",
+        "SignalProcessing strips *.kubernaut.io/ prefix before passing to downstream",
+        "Empty arrays are ignored (no filter for that subdomain)",
+        "False booleans are omitted by SignalProcessing (not passed)"
+      ]
     },
 
     "top_k": {
@@ -145,17 +262,22 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
 
   "returns": {
     "type": "array",
+    "description": "FLAT array of workflow results (no nested objects) - v3.0",
     "items": {
-      "workflow_id": "string",
-      "version": "string",
-      "title": "string",
-      "description": "string",
-      "signal_types": "array",
-      "similarity_score": "number (0.0-1.0)",
-      "estimated_duration": "string",
-      "success_rate": "number (0.0-1.0)"
+      "workflow_id": "string (UUID - auto-generated primary key, single identifier for all operations)",
+      "title": "string (human-readable workflow name)",
+      "description": "string (workflow description)",
+      "signal_type": "string (the signal type this workflow handles, e.g., 'OOMKilled')",
+      "container_image": "string (OCI bundle reference, e.g., quay.io/kubernaut/workflow-oomkill:v1.0.0)",
+      "container_digest": "string (sha256 digest for audit, e.g., sha256:abc123...)",
+      "confidence": "number (0.0-1.0, semantic similarity score)"
     }
-  }
+  },
+  "notes": [
+    "container_image and container_digest are resolved by Data Storage from the workflow catalog (DD-WORKFLOW-009)",
+    "HolmesGPT-API passes these through to AIAnalysis.status.selectedWorkflow (DD-CONTRACT-001 v1.2)",
+    "RO does NOT need to call Data Storage for workflow resolution - passes through from AIAnalysis"
+  ]
 }
 ```
 
@@ -170,29 +292,24 @@ The Kubernaut architecture requires a way for the LLM (via HolmesGPT API) to sea
 
   "parameters": {
     "workflow_id": {
-      "type": "string",
+      "type": "string (UUID)",
       "required": true,
-      "description": "Playbook identifier"
-    },
-    "version": {
-      "type": "string",
-      "required": true,
-      "description": "Playbook version (semantic version)"
+      "description": "Workflow UUID (from search_workflow_catalog response)"
     }
   },
 
   "returns": {
-    "workflow_id": "string",
-    "version": "string",
+    "workflow_id": "string (UUID)",
+    "workflow_name": "string (human-readable name)",
+    "version": "string (human metadata, informational only)",
     "title": "string",
     "description": "string",
-    "signal_types": "array",
+    "signal_type": "string (the signal type this workflow handles)",
     "steps": "array",
     "prerequisites": "array",
     "rollback_steps": "array",
-    "estimated_duration": "string",
     "risk_level": "string",
-    "success_rate": "number"
+    "content": "string (full workflow-schema.yaml)"
   }
 }
 ```
@@ -269,11 +386,14 @@ LLM decides to search workflows
   ↓
 Calls search_workflow_catalog MCP tool (per DD-LLM-001 format)
   query: "OOMKilled critical"
-  label.signal-type: "OOMKilled"
-  label.severity: "critical"
-  label.environment: "production"
-  label.business-category: "payments"
-  label.risk-tolerance: "low"
+  filters:
+    signal_type: "OOMKilled"
+    severity: "critical"
+    environment: "production"
+    priority: "P0"
+    custom_labels:
+      constraint: ["cost-constrained"]
+      team: ["name=payments"]
 ```
 
 ### Step 3: Embedding Generation
@@ -292,11 +412,16 @@ Embedding Service calls Data Storage REST API
   {
     "query": "OOMKilled critical",
     "embedding": [0.123, -0.456, ...],
-    "label.signal-type": "OOMKilled",
-    "label.severity": "critical",
-    "label.environment": "production",
-    "label.business-category": "payments",
-    "label.risk-tolerance": "low",
+    "filters": {
+      "signal_type": "OOMKilled",
+      "severity": "critical",
+      "environment": "production",
+      "priority": "P0",
+      "custom_labels": {
+        "constraint": ["cost-constrained"],
+        "team": ["name=payments"]
+      }
+    },
     "top_k": 10
   }
   ↓
@@ -307,11 +432,13 @@ Data Storage executes two-phase search:
   SELECT *, 1 - (embedding <=> $1) AS confidence
   FROM workflow_catalog
   WHERE status = 'active'
-    AND labels->>'signal-type' = 'OOMKilled'
+    AND labels->>'signal_type' = 'OOMKilled'
     AND labels->>'severity' = 'critical'
     AND labels->>'environment' = 'production'
-    AND labels->>'business-category' = 'payments'
-    AND labels->>'risk-tolerance' = 'low'
+    AND labels->>'priority' = 'P0'
+    -- Custom labels filtering (DD-HAPI-001: auto-appended by HolmesGPT-API)
+    AND custom_labels->'constraint' ? 'cost-constrained'
+    AND custom_labels->'team' ? 'name=payments'
   ORDER BY embedding <=> $1
   LIMIT 10
   ↓
@@ -363,49 +490,36 @@ POST http://data-storage:8085/api/v1/workflows/search
 }
 
 // Step 4: Data Storage returns workflows with high confidence (90-95%)
+// DD-WORKFLOW-002 v3.0: FLAT response structure with UUID workflow_id
 {
   "workflows": [
     {
-      "workflow_id": "increase-memory-conservative-oom",
-      "version": "v1.2",
+      "workflow_id": "550e8400-e29b-41d4-a716-446655440000",
       "title": "OOMKilled Remediation - Conservative Memory Increase",
       "description": "OOMKilled critical: Increases memory limits conservatively without restart",
-      "labels": {
-        "signal-type": "OOMKilled",
-        "severity": "critical",
-        "environment": "production",
-        "business-category": "payments",
-        "risk-tolerance": "low"
-      },
-      "confidence": 0.95,
-      "estimated_duration": "10 minutes",
-      "success_rate": 0.92
+      "signal_type": "OOMKilled",
+      "container_image": "quay.io/kubernaut/workflow-oom-conservative:v1.2.0",
+      "container_digest": "sha256:abc123def456...",
+      "confidence": 0.95
     },
     {
-      "workflow_id": "scale-horizontal-oom-recovery",
-      "version": "v2.0",
+      "workflow_id": "660f9500-f30c-52e5-b827-557766551111",
       "title": "OOMKilled Remediation - Horizontal Scaling",
       "description": "OOMKilled critical: Add replicas to distribute load before increasing memory",
-      "labels": {
-        "signal-type": "OOMKilled",
-        "severity": "critical",
-        "environment": "production",
-        "business-category": "payments",
-        "risk-tolerance": "medium"
-      },
-      "confidence": 0.88,
-      "estimated_duration": "15 minutes",
-      "success_rate": 0.85
+      "signal_type": "OOMKilled",
+      "container_image": "quay.io/kubernaut/workflow-oom-horizontal:v2.0.0",
+      "container_digest": "sha256:def789ghi012...",
+      "confidence": 0.88
     }
   ],
   "total_results": 2
 }
 
-// Step 5: LLM selects workflow based on confidence and risk tolerance match
+// Step 5: LLM selects workflow based on confidence
+// DD-WORKFLOW-002 v3.0: Only workflow_id (UUID) needed for selection
 {
   "selected_workflow": {
-    "workflow_id": "increase-memory-conservative-oom",
-    "version": "v1.2"
+    "workflow_id": "550e8400-e29b-41d4-a716-446655440000"
   },
   "reasoning": "MCP search with structured query 'OOMKilled critical' and exact label matching returned this workflow with 95% confidence. Workflow respects low risk tolerance by avoiding service restart."
 }
@@ -523,10 +637,20 @@ POST http://data-storage:8085/api/v1/workflows/search
 
 ---
 
-**Document Version**: 2.0
-**Last Updated**: November 22, 2025
-**Status**: ✅ APPROVED (MCP Architecture + DD-LLM-001 Query Format)
-**Next Review**: After Embedding Service V1.0 deployment
+**Document Version**: 3.2
+**Last Updated**: November 30, 2025
+**Status**: ✅ APPROVED (MCP Architecture + UUID Primary Key + Flat Response + Subdomain Custom Labels)
+**Next Review**: After custom labels implementation in Data Storage
 
-**Breaking Changes in v2.0**: Query format changed from free-text to structured format per DD-LLM-001. All implementations must use `<signal_type> <severity>` query format with `label.*` parameters for exact matching.
+**Breaking Changes in v3.2**:
+- `custom_labels` type changed from `map[string]string` to `map[string][]string`
+- Keys are now subdomains (e.g., `constraint`) not full labels (e.g., `constraint.kubernaut.io/cost-constrained`)
+- Values are arrays of strings (boolean or key=value format)
+
+**Breaking Changes in v3.0**:
+- `workflow_id` is now UUID (auto-generated)
+- Response is FLAT (no nested objects)
+- Removed `version`, `estimated_duration` from search response
+- Changed `signal_types` (array) to `signal_type` (string)
+- Renamed `name` to `title`
 

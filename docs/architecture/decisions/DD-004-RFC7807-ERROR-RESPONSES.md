@@ -1,9 +1,37 @@
 # DD-004: RFC 7807 Error Response Standard
 
 **Status**: ✅ **APPROVED** (Production Standard)
+**Version**: 1.2
 **Date**: October 30, 2025
-**Last Reviewed**: October 30, 2025
+**Last Updated**: December 18, 2025
+**Last Reviewed**: December 18, 2025
 **Confidence**: 95%
+
+---
+
+## 📝 **Changelog**
+
+### **Version 1.2** (December 18, 2025)
+**Changes**:
+- **Format Correction**: Removed "Implementation Status by Service" section (operational tracking)
+- **Rationale**: DD documents define decisions, not track implementation status
+- **Impact**: Documentation-only change (no functional impact)
+- **Moved To**: Implementation tracking moved to `docs/handoff/DD_004_V1_1_IMPLEMENTATION_TRACKER.md`
+- **Validation Section**: Replaced status tracking with proper validation strategy (how to verify compliance)
+
+### **Version 1.1** (December 18, 2025)
+**Changes**:
+- **Domain Correction**: Changed error type URI domain from `kubernaut.io` to `kubernaut.ai`
+- **Path Standardization**: Changed path from `/errors/` to `/problems/` (aligns with RFC 7807 "Problem Details" terminology)
+- **Rationale**: `kubernaut.ai` is the correct production domain; `/problems/` matches RFC 7807 naming convention
+- **Impact**: Metadata-only change (status codes and error structure unchanged)
+
+### **Version 1.0** (October 30, 2025)
+**Initial Release**:
+- Established RFC 7807 as mandatory standard for all HTTP error responses
+- Defined error type URI convention (original: `https://kubernaut.io/errors/{error-type}`)
+- Documented required fields, content-type headers, and implementation patterns
+- Set production readiness approval
 
 ---
 
@@ -13,7 +41,7 @@ This design decision establishes **RFC 7807 (Problem Details for HTTP APIs)** as
 
 **Key Principle**: All HTTP error responses (4xx, 5xx) MUST use RFC 7807 Problem Details format. Success responses (2xx) use service-specific formats.
 
-**Scope**: All Kubernaut services that expose HTTP APIs (Gateway, Context API, HolmesGPT API, Effectiveness Monitor, etc.).
+**Scope**: All Kubernaut services that expose HTTP APIs (Gateway, HolmesGPT API, DataStorage, etc.).
 
 ---
 
@@ -35,7 +63,7 @@ This design decision establishes **RFC 7807 (Problem Details for HTTP APIs)** as
 
 ### **Challenge**
 
-Kubernaut consists of multiple microservices (Gateway, Context API, HolmesGPT API, etc.) that expose HTTP APIs. Without a standardized error format:
+Kubernaut consists of multiple microservices (Gateway, HolmesGPT API, DataStorage, etc.) that expose HTTP APIs. Without a standardized error format:
 
 1. ⚠️ **Inconsistent Errors**: Each service uses different error formats
 2. ⚠️ **Poor Client Experience**: Clients must parse multiple error formats
@@ -59,7 +87,7 @@ Kubernaut consists of multiple microservices (Gateway, Context API, HolmesGPT AP
 |----|-------------|----------|--------|
 | **FR-1** | All HTTP error responses (4xx, 5xx) use RFC 7807 | P0 | 🔄 In Progress |
 | **FR-2** | Error responses include type, title, detail, status, instance | P0 | 🔄 In Progress |
-| **FR-3** | Error type URIs follow `https://kubernaut.io/errors/{error-type}` | P0 | 🔄 In Progress |
+| **FR-3** | Error type URIs follow `https://kubernaut.ai/problems/{error-type}` (v1.1) | P0 | 🔄 In Progress |
 | **FR-4** | Content-Type header set to `application/problem+json` | P0 | 🔄 In Progress |
 | **FR-5** | Optional request ID for tracing (extension member) | P1 | 🔄 In Progress |
 | **FR-6** | Success responses (2xx) use service-specific formats | P0 | 🔄 In Progress |
@@ -109,10 +137,10 @@ Kubernaut consists of multiple microservices (Gateway, Context API, HolmesGPT AP
 
 **Approach**: Use IETF standard RFC 7807 for all error responses
 
-**Example**:
+**Example** (v1.1):
 ```json
 {
-  "type": "https://kubernaut.io/errors/validation-error",
+  "type": "https://kubernaut.ai/problems/validation-error",
   "title": "Bad Request",
   "detail": "Invalid Content-Type header format",
   "status": 400,
@@ -209,7 +237,11 @@ type RFC7807Error struct {
 
 ### **Error Type URI Convention**
 
-**Format**: `https://kubernaut.io/errors/{error-type}`
+**Format**: `https://kubernaut.ai/problems/{error-type}`
+
+**Version History**:
+- **v1.1** (Dec 18, 2025): Changed to `https://kubernaut.ai/problems/{error-type}`
+- **v1.0** (Oct 30, 2025): Original `https://kubernaut.io/errors/{error-type}`
 
 **Standard Error Types**:
 
@@ -222,10 +254,10 @@ type RFC7807Error struct {
 | **503** | `service-unavailable` | Service Unavailable | Dependencies down, graceful shutdown |
 | **504** | `gateway-timeout` | Gateway Timeout | Upstream service timeout |
 
-**Example URIs**:
-- `https://kubernaut.io/errors/validation-error`
-- `https://kubernaut.io/errors/service-unavailable`
-- `https://kubernaut.io/errors/internal-error`
+**Example URIs** (v1.1):
+- `https://kubernaut.ai/problems/validation-error`
+- `https://kubernaut.ai/problems/service-unavailable`
+- `https://kubernaut.ai/problems/internal-error`
 
 ---
 
@@ -316,10 +348,10 @@ curl -X POST http://<service>:8080/api/v1/<endpoint> \
   -d '{"invalid": "json"}'
 ```
 
-**Response** (HTTP 400):
+**Response** (HTTP 400, v1.1):
 ```json
 {
-  "type": "https://kubernaut.io/errors/validation-error",
+  "type": "https://kubernaut.ai/problems/validation-error",
   "title": "Bad Request",
   "detail": "Invalid Content-Type header format",
   "status": 400,
@@ -342,10 +374,10 @@ Content-Type: application/problem+json
 curl http://<service>:8080/ready
 ```
 
-**Response** (HTTP 503):
+**Response** (HTTP 503, v1.1):
 ```json
 {
-  "type": "https://kubernaut.io/errors/service-unavailable",
+  "type": "https://kubernaut.ai/problems/service-unavailable",
   "title": "Service Unavailable",
   "detail": "Service is temporarily unavailable",
   "status": 503,
@@ -367,10 +399,10 @@ Content-Type: application/problem+json
 curl -X GET http://<service>:8080/api/v1/<endpoint>
 ```
 
-**Response** (HTTP 405):
+**Response** (HTTP 405, v1.1):
 ```json
 {
-  "type": "https://kubernaut.io/errors/method-not-allowed",
+  "type": "https://kubernaut.ai/problems/method-not-allowed",
   "title": "Method Not Allowed",
   "detail": "Only POST method is allowed for this endpoint",
   "status": 405,
@@ -395,10 +427,10 @@ curl -X POST http://<service>:8080/api/v1/<endpoint> \
   -d '{"data": "test"}'
 ```
 
-**Response** (HTTP 500):
+**Response** (HTTP 500, v1.1):
 ```json
 {
-  "type": "https://kubernaut.io/errors/internal-error",
+  "type": "https://kubernaut.ai/problems/internal-error",
   "title": "Internal Server Error",
   "detail": "Failed to process request due to internal error",
   "status": 500,
@@ -437,12 +469,13 @@ type RFC7807Error struct {
 
 // Error type URI constants
 const (
-    ErrorTypeValidationError      = "https://kubernaut.io/errors/validation-error"
-    ErrorTypeUnsupportedMediaType = "https://kubernaut.io/errors/unsupported-media-type"
-    ErrorTypeMethodNotAllowed     = "https://kubernaut.io/errors/method-not-allowed"
-    ErrorTypeInternalError        = "https://kubernaut.io/errors/internal-error"
-    ErrorTypeServiceUnavailable   = "https://kubernaut.io/errors/service-unavailable"
-    ErrorTypeUnknown              = "https://kubernaut.io/errors/unknown"
+    // v1.1 (Dec 18, 2025): Updated domain to kubernaut.ai, path to /problems/
+    ErrorTypeValidationError      = "https://kubernaut.ai/problems/validation-error"
+    ErrorTypeUnsupportedMediaType = "https://kubernaut.ai/problems/unsupported-media-type"
+    ErrorTypeMethodNotAllowed     = "https://kubernaut.ai/problems/method-not-allowed"
+    ErrorTypeInternalError        = "https://kubernaut.ai/problems/internal-error"
+    ErrorTypeServiceUnavailable   = "https://kubernaut.ai/problems/service-unavailable"
+    ErrorTypeUnknown              = "https://kubernaut.ai/problems/unknown"
 )
 
 // Error title constants
@@ -525,8 +558,8 @@ It("should return RFC 7807 error for invalid request", func() {
     err := json.NewDecoder(resp.Body).Decode(&errorResp)
     Expect(err).ToNot(HaveOccurred())
 
-    // Verify required fields
-    Expect(errorResp.Type).To(Equal("https://kubernaut.io/errors/validation-error"))
+    // Verify required fields (v1.1)
+    Expect(errorResp.Type).To(Equal("https://kubernaut.ai/problems/validation-error"))
     Expect(errorResp.Title).To(Equal("Bad Request"))
     Expect(errorResp.Status).To(Equal(400))
     Expect(errorResp.Instance).To(ContainSubstring("/api/"))
@@ -550,33 +583,23 @@ It("should return RFC 7807 error for invalid request", func() {
 
 ## ✅ **Validation**
 
-### **Implementation Status by Service**
+### **Validation Strategy**
 
-#### **Gateway Service** ✅ **COMPLETE**
+**How to Verify DD-004 Compliance**:
 
-**Status**: ✅ RFC 7807 fully implemented
+Services are DD-004 compliant when all HTTP error responses (4xx, 5xx) meet these criteria:
 
-**Evidence**:
-- ✅ `pkg/gateway/errors/rfc7807.go` - Error types defined
-- ✅ `pkg/gateway/server.go` - Helper functions implemented
-- ✅ All error responses use RFC 7807 format
-- ✅ Integration tests passing (115 specs)
-- ✅ Readiness probe errors use RFC 7807
+1. ✅ **Content-Type**: `application/problem+json` header present
+2. ✅ **Required Fields**: type, title, detail, status, instance all populated
+3. ✅ **Error Type URI**: Matches `https://kubernaut.ai/problems/{error-type}` format (v1.1)
+4. ✅ **Status Codes**: HTTP status codes unchanged from service's existing behavior
+5. ✅ **Extension Members**: Optional request_id field present when available
 
-**Example**: See `docs/architecture/RFC7807_READINESS_UPDATE.md`
+**Reference Implementation**: `pkg/gateway/errors/rfc7807.go` demonstrates compliant structure
 
----
+**Implementation Tracking**: See `docs/handoff/DD_004_V1_1_IMPLEMENTATION_TRACKER.md` for service-specific status
 
-#### **Other Services** 🔄 **IN PROGRESS**
-
-| Service | Status | Priority | Target Date |
-|---------|--------|----------|-------------|
-| **Context API** | 🔄 Planned | P0 | Before production |
-| **HolmesGPT API** | 🔄 Planned | P0 | Before production |
-| **Effectiveness Monitor** | 🔄 Planned | P1 | Before production |
-| **CRD Controllers** | ✅ N/A | - | No HTTP APIs |
-
-**Note**: Gateway service serves as the reference implementation for all other services.
+**Note**: Success responses (2xx) are not affected by DD-004 and may use service-specific formats.
 
 ---
 
@@ -586,7 +609,7 @@ It("should return RFC 7807 error for invalid request", func() {
 
 1. **Content-Type Header**: Verify `application/problem+json`
 2. **Required Fields**: Verify type, title, detail, status, instance
-3. **Error Type URIs**: Verify `https://kubernaut.io/errors/{type}` format
+3. **Error Type URIs**: Verify `https://kubernaut.ai/problems/{type}` format (v1.1)
 4. **Status Code Mapping**: Verify correct error type for each status
 5. **Request ID**: Verify request_id included when available
 
@@ -607,8 +630,8 @@ var _ = Describe("RFC 7807 Compliance", func() {
         err := json.NewDecoder(resp.Body).Decode(&errorResp)
         Expect(err).ToNot(HaveOccurred())
 
-        // Verify required fields
-        Expect(errorResp.Type).To(HavePrefix("https://kubernaut.io/errors/"))
+        // Verify required fields (v1.1)
+        Expect(errorResp.Type).To(HavePrefix("https://kubernaut.ai/problems/"))
         Expect(errorResp.Title).ToNot(BeEmpty())
         Expect(errorResp.Detail).ToNot(BeEmpty())
         Expect(errorResp.Status).To(Equal(400))
@@ -688,10 +711,18 @@ var _ = Describe("RFC 7807 Compliance", func() {
 
 #### **2. Error Type URI Convention**
 
-**Decision**: Use `https://kubernaut.io/errors/{error-type}` format
+**Decision**: Use `https://kubernaut.ai/problems/{error-type}` format (v1.1)
+
+**Version History**:
+- **v1.1** (Dec 18, 2025): `https://kubernaut.ai/problems/{error-type}`
+  - Changed domain to kubernaut.ai (correct production domain)
+  - Changed path to /problems/ (aligns with RFC 7807 "Problem Details" terminology)
+- **v1.0** (Oct 30, 2025): `https://kubernaut.io/errors/{error-type}` (original)
 
 **Rationale**:
 - Consistent namespace for all Kubernaut errors
+- Production domain (kubernaut.ai) instead of staging/legacy (kubernaut.io)
+- "Problems" terminology matches RFC 7807 specification name
 - Enables future documentation at these URIs
 - Follows RFC 7807 best practices
 
@@ -754,8 +785,8 @@ var _ = Describe("RFC 7807 Compliance", func() {
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: October 30, 2025
+**Document Version**: 1.1
+**Last Updated**: December 18, 2025
 **Status**: ✅ **APPROVED FOR PRODUCTION**
-**Next Review**: After all services implement RFC 7807
+**Next Review**: After all services migrate to v1.1 domain/path standards
 

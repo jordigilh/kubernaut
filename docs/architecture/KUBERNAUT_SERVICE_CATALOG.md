@@ -1,9 +1,20 @@
 # Kubernaut Service Catalog
 
-**Document Version**: 3.0
-**Date**: January 2025
+**Document Version**: 3.2
+**Date**: December 1, 2025
 
 ## Changelog
+
+### Version 3.2 (2025-12-01)
+
+**DD-016 & DD-017 Integration**: Updated V1.0 service count from 10 to 8.
+
+**Changes**:
+- Dynamic Toolset deferred to V2.0 (DD-016)
+- Effectiveness Monitor deferred to V1.1 (DD-017)
+- Updated service count and catalog entries
+- Added V1.1 and V2.0 deferral sections
+**Status**: V1.0 Implementation Focus (8 Services)
 
 ### Version 3.1 (2025-11-15)
 
@@ -13,17 +24,22 @@
 - Updated service catalog entries
 - Aligned all service descriptions with authoritative naming
 - Maintained consistency across documentation
-**Status**: V1 Implementation Focus (10 Services)
+**Status**: V1 Implementation Focus (10 Services) → SUPERSEDED by 3.2
 **Parent**: [Architecture Overview](KUBERNAUT_ARCHITECTURE_OVERVIEW.md)
 
 ---
 
-## 📋 **V1 Service Catalog Overview**
+## 📋 **V1.0 Service Catalog Overview**
 
-This document provides detailed specifications for the **10 V1 core services** in the Kubernaut architecture, organized by functional category with clear responsibilities and integration points.
+This document provides detailed specifications for the **8 V1.0 core services** in the Kubernaut architecture, organized by functional category with clear responsibilities and integration points.
 
-### **V1 Implementation Strategy**
-**Complete V1 Strategy**: See [Implementation Roadmap](KUBERNAUT_IMPLEMENTATION_ROADMAP.md) for detailed V1 timeline, HolmesGPT-API integration approach, and implementation confidence assessment.
+**Deferred Services**:
+- **Dynamic Toolset** → V2.0 (DD-016: Redundant with HolmesGPT-API Prometheus discovery)
+- **Effectiveness Monitor** → V1.1 (DD-017: Requires 8+ weeks of remediation data)
+
+### **V1.0 Implementation Strategy**
+**Timeline**: End of December 2025 | **Parallel Development**: Phases 3 & 4 running simultaneously for API contract validation
+**Complete V1.0 Strategy**: See [Implementation Roadmap](KUBERNAUT_IMPLEMENTATION_ROADMAP.md) for detailed timeline and implementation approach.
 
 ---
 
@@ -580,10 +596,13 @@ Alert Correlation:
 
 The following 5 services will be added in V2 to provide advanced capabilities:
 
-### **V2 Enhancement Services**
+### **V1.1 Enhancement Services**
+1. **📈 Effectiveness Monitor Service** (8080) - Performance assessment & continuous improvement (DD-017: Requires 8+ weeks of remediation data)
+
+### **V2.0 Enhancement Services**
 1. **🧠 Multi-Model Orchestration Service** (8092) - Ensemble AI decision making with OpenAI, Anthropic, Azure OpenAI
 2. **🔍 Intelligence Service** (8086) - Advanced pattern discovery & ML analytics
-3. **📈 Effectiveness Monitor Service** (8080) - Performance assessment & optimization
+3. **🧩 Dynamic Toolset Service** (8087) - HolmesGPT toolset configuration (DD-016: Redundant with HolmesGPT-API Prometheus discovery in V1.x)
 4. **🔐 Security & Access Control Service** (8093) - RBAC, authentication & secrets management
 5. **💚 Enhanced Health Monitoring Service** (8096) - LLM health & enterprise monitoring
 

@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package repository
 
 import (
@@ -5,10 +21,11 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/jackc/pgx/v5/pgconn" // DD-010: Migrated from lib/pq
-	"go.uber.org/zap"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/sqlutil"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
 
@@ -34,12 +51,12 @@ import (
 // NotificationAuditRepository handles PostgreSQL operations for notification_audit table.
 type NotificationAuditRepository struct {
 	db        *sql.DB
-	logger    *zap.Logger
+	logger    logr.Logger
 	validator *validation.NotificationAuditValidator
 }
 
 // NewNotificationAuditRepository creates a new repository instance.
-func NewNotificationAuditRepository(db *sql.DB, logger *zap.Logger) *NotificationAuditRepository {
+func NewNotificationAuditRepository(db *sql.DB, logger logr.Logger) *NotificationAuditRepository {
 	return &NotificationAuditRepository{
 		db:        db,
 		logger:    logger,
@@ -68,13 +85,9 @@ func (r *NotificationAuditRepository) Create(ctx context.Context, audit *models.
 	`
 
 	// Handle optional fields (delivery_status, error_message)
-	var deliveryStatus, errorMessage sql.NullString
-	if audit.DeliveryStatus != "" {
-		deliveryStatus = sql.NullString{String: audit.DeliveryStatus, Valid: true}
-	}
-	if audit.ErrorMessage != "" {
-		errorMessage = sql.NullString{String: audit.ErrorMessage, Valid: true}
-	}
+	// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication
+	deliveryStatus := sqlutil.ToNullStringValue(audit.DeliveryStatus)
+	errorMessage := sqlutil.ToNullStringValue(audit.ErrorMessage)
 
 	// Execute query
 	var id int64

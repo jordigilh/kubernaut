@@ -26,16 +26,8 @@ data:
         requests_per_minute: 100
         burst: 10
 
-    # Infrastructure dependencies
-    infrastructure:
-      redis:
-        addr: redis-gateway.kubernaut-system.svc.cluster.local:6379
-        db: 0
-        dial_timeout: 5s
-        read_timeout: 3s
-        write_timeout: 3s
-        pool_size: 10
-        min_idle_conns: 2
+    # DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free (K8s-native)
+    # All deduplication and storm state managed via RR status fields
 
     # Business logic configuration
     processing:

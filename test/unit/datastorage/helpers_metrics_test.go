@@ -27,8 +27,17 @@ import (
 // 	RunSpecs(t, "...")
 // }
 
+// ========================================
+// METRICS CARDINALITY PROTECTION HELPERS UNIT TESTS
+// 📋 Business Requirements:
+//   - BR-STORAGE-019: Prometheus Metrics (cardinality limits per DD-005)
+//
+// 📋 Testing Principle: Behavior + Correctness
+// ========================================
 var _ = Describe("Cardinality Protection Helpers", func() {
 	Context("SanitizeFailureReason", func() {
+		// BEHAVIOR: Sanitizer maps known reasons to themselves, unknown to "unknown"
+		// CORRECTNESS: Cardinality is bounded to known values plus "unknown"
 		DescribeTable("should return known reasons unchanged",
 			func(reason string, expected string) {
 				result := metrics.SanitizeFailureReason(reason)

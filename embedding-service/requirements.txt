@@ -9,8 +9,11 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 
 # ML/Embeddings
-sentence-transformers==2.2.2
-torch==2.1.0
+# NOTE: sentence-transformers 2.7.0+ requires transformers 4.41.0+
+# and torch 2.3.0+ to avoid 'register_pytree_node' AttributeError
+sentence-transformers==2.7.0
+torch>=2.3.0
+transformers>=4.41.0
 
 # Logging
 structlog==23.2.0

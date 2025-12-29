@@ -15,12 +15,14 @@ Usage:
 
 import os
 import logging
-from typing import Dict, Any, Optional
+from typing import Optional
+
+from src.models.config_models import AppConfig
 
 logger = logging.getLogger(__name__)
 
 
-def get_log_level(app_config: Optional[Dict[str, Any]] = None) -> str:
+def get_log_level(app_config: Optional[AppConfig] = None) -> str:
     """
     Get log level from environment variable or config file.
 
@@ -30,7 +32,7 @@ def get_log_level(app_config: Optional[Dict[str, Any]] = None) -> str:
     3. Default (INFO)
 
     Args:
-        app_config: Application configuration dictionary
+        app_config: Application configuration TypedDict
 
     Returns:
         Log level string (DEBUG, INFO, WARNING, ERROR)
@@ -40,7 +42,7 @@ def get_log_level(app_config: Optional[Dict[str, Any]] = None) -> str:
         >>> get_log_level()
         'DEBUG'
 
-        >>> app_config = {'log_level': 'WARNING'}
+        >>> app_config: AppConfig = {'log_level': 'WARNING'}
         >>> get_log_level(app_config)
         'WARNING'
     """
@@ -59,7 +61,7 @@ def get_log_level(app_config: Optional[Dict[str, Any]] = None) -> str:
     return "INFO"
 
 
-def setup_logging(app_config: Optional[Dict[str, Any]] = None) -> None:
+def setup_logging(app_config: Optional[AppConfig] = None) -> None:
     """
     Setup logging for the entire holmesgpt-api application.
 
@@ -69,7 +71,7 @@ def setup_logging(app_config: Optional[Dict[str, Any]] = None) -> None:
     3. Apply log level to HolmesGPT SDK modules
 
     Args:
-        app_config: Application configuration dictionary
+        app_config: Application configuration TypedDict
 
     Side Effects:
         - Modifies environment variables (LITELLM_LOG, LITELLM_DROP_PARAMS)

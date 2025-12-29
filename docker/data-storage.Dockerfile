@@ -2,17 +2,22 @@
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 
-# Build stage - Red Hat UBI9 Go 1.24 toolset
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24 AS builder
+# Build stage - Red Hat UBI9 Go 1.25 toolset (latest stable)
+FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
 
-# Build arguments for multi-architecture support
+# Auto-detect target architecture from --platform flag
+# Podman/Docker automatically set TARGETARCH when --platform is specified
+ARG TARGETARCH
 ARG GOOS=linux
-ARG GOARCH=amd64
+# Use TARGETARCH if set (multi-arch build), otherwise detect from runtime
+ARG GOARCH=${TARGETARCH:-amd64}
+# Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
+ARG GOFLAGS=""
 
 # Switch to root for package installation
 USER root
 
-# Install build dependencies
+# Install build dependencies (dnf update required for security compliance)
 RUN dnf update -y && \
 	dnf install -y git ca-certificates tzdata && \
 	dnf clean all
@@ -26,9 +31,6 @@ WORKDIR /opt/app-root/src
 # Copy go mod files
 COPY --chown=1001:0 go.mod go.sum ./
 
-# Download dependencies
-RUN go mod download
-
 # Copy source code
 COPY --chown=1001:0 . .
 
@@ -36,11 +38,29 @@ COPY --chown=1001:0 . .
 # CGO_ENABLED=0 for static linking (no C dependencies)
 # Uses pgx pure-Go PostgreSQL driver (not lib/pq which requires CGO)
 # GOOS and GOARCH from build args for multi-architecture support
-RUN CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
+# GOFLAGS can include -cover for E2E coverage profiling (E2E_COVERAGE_COLLECTION.md)
+# -mod=mod: Automatically download dependencies during build (no separate go mod download step)
+#
+# DD-TEST-007: Coverage build uses SIMPLE flags (per SP team guidance)
+# - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
+# - Production: Keep all optimizations for size/performance
+# NOTE: vendor/ excluded in .dockerignore, so we use -mod=mod
+# Toolchain pinned to go1.25.3 in go.mod to match UBI9 go-toolset:1.25
+RUN if [ "${GOFLAGS}" = "-cover" ]; then \
+	echo "Building with coverage instrumentation (simple build per DD-TEST-007)..."; \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
+	-mod=mod \
+	-o data-storage \
+	./cmd/datastorage/main.go; \
+	else \
+	echo "Building production binary (with symbol stripping)..."; \
+	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
+	-mod=mod \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
 	-o data-storage \
-	./cmd/datastorage/main.go
+	./cmd/datastorage/main.go; \
+	fi
 
 # Runtime stage - Red Hat UBI9 minimal runtime image
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
@@ -55,6 +75,9 @@ RUN useradd -r -u 1001 -g root data-storage-user
 
 # Copy the binary from builder stage
 COPY --from=builder /opt/app-root/src/data-storage /usr/local/bin/data-storage
+
+# Copy OpenAPI spec for validation middleware (BR-STORAGE-034)
+COPY --from=builder /opt/app-root/src/api/openapi/data-storage-v1.yaml /usr/local/share/kubernaut/api/openapi/data-storage-v1.yaml
 
 # Set proper permissions
 RUN chmod +x /usr/local/bin/data-storage

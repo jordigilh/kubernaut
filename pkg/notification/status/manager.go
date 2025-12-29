@@ -3,11 +3,14 @@ package status
 import (
 	"context"
 	"fmt"
+	"time"
 
+	k8sretry "k8s.io/client-go/util/retry"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	notificationphase "github.com/jordigilh/kubernaut/pkg/notification/phase"
 )
 
 // Manager handles NotificationRequest status updates
@@ -24,115 +27,223 @@ func NewManager(client client.Client) *Manager {
 
 // RecordDeliveryAttempt records a delivery attempt in the NotificationRequest status
 // Satisfies BR-NOT-051: Complete Audit Trail
+//
+// This method uses retry logic to handle optimistic locking conflicts.
+// See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, attempt notificationv1alpha1.DeliveryAttempt) error {
-	// Append the attempt to the delivery attempts list
-	notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		// 1. Refetch to get latest resourceVersion
+		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+			return fmt.Errorf("failed to refetch notification: %w", err)
+		}
 
-	// Update counters
-	notification.Status.TotalAttempts++
+		// 2. Append the attempt to the delivery attempts list
+		notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
 
-	if attempt.Status == "success" {
-		notification.Status.SuccessfulDeliveries++
-	} else if attempt.Status == "failed" {
-		notification.Status.FailedDeliveries++
-	}
+		// 3. Update counters
+		notification.Status.TotalAttempts++
 
-	// Update status using status subresource
-	if err := m.client.Status().Update(ctx, notification); err != nil {
-		return fmt.Errorf("failed to record delivery attempt: %w", err)
-	}
+		if attempt.Status == "success" {
+			notification.Status.SuccessfulDeliveries++
+		} else if attempt.Status == "failed" {
+			notification.Status.FailedDeliveries++
+		}
 
-	return nil
+		// 4. Update status using status subresource
+		if err := m.client.Status().Update(ctx, notification); err != nil {
+			return fmt.Errorf("failed to record delivery attempt: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// AtomicStatusUpdate atomically updates phase and delivery attempts in a single API call
+// This prevents race conditions and reduces API server load (1 write instead of N+1 writes)
+//
+// This method consolidates:
+// - Phase transition (UpdatePhase)
+// - Multiple delivery attempt records (RecordDeliveryAttempt x N)
+//
+// Satisfies BR-NOT-051, BR-NOT-056, and improves performance by 50-90%
+func (m *Manager) AtomicStatusUpdate(
+	ctx context.Context,
+	notification *notificationv1alpha1.NotificationRequest,
+	newPhase notificationv1alpha1.NotificationPhase,
+	reason string,
+	message string,
+	attempts []notificationv1alpha1.DeliveryAttempt,
+) error {
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		// 1. Refetch to get latest resourceVersion
+		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+			return fmt.Errorf("failed to refetch notification: %w", err)
+		}
+
+		// 2. Validate phase transition (if phase is changing)
+		if notification.Status.Phase != newPhase {
+			if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
+				return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
+			}
+
+			// Update phase fields
+			notification.Status.Phase = newPhase
+			notification.Status.Reason = reason
+			notification.Status.Message = message
+
+			// Set completion time for terminal phases
+			if isTerminalPhase(newPhase) {
+				now := metav1.Now()
+				notification.Status.CompletionTime = &now
+			}
+		}
+
+		// 3. Record all delivery attempts atomically
+		// De-duplicate attempts to prevent concurrent reconciles from recording the same attempt twice
+		for _, attempt := range attempts {
+			// Check if this exact attempt already exists (same channel, attempt number, timestamp within 1 second)
+			alreadyExists := false
+			for _, existing := range notification.Status.DeliveryAttempts {
+				if existing.Channel == attempt.Channel &&
+					existing.Attempt == attempt.Attempt &&
+					abs(existing.Timestamp.Time.Sub(attempt.Timestamp.Time)) < time.Second {
+					alreadyExists = true
+					break
+				}
+			}
+
+			if alreadyExists {
+				continue // Skip this attempt, it's already recorded
+			}
+
+			notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
+			notification.Status.TotalAttempts++
+
+			if attempt.Status == "success" {
+				notification.Status.SuccessfulDeliveries++
+			} else if attempt.Status == "failed" {
+				notification.Status.FailedDeliveries++
+			}
+		}
+
+		// 4. SINGLE ATOMIC UPDATE: All changes committed together
+		if err := m.client.Status().Update(ctx, notification); err != nil {
+			return fmt.Errorf("failed to atomically update status: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // UpdatePhase updates the NotificationRequest phase with validation
 // Satisfies BR-NOT-056: CRD Lifecycle Management
+//
+// NOTE: For phase transitions that include delivery attempts, use AtomicStatusUpdate instead
+// to reduce API calls and eliminate race conditions.
+//
+// This method uses retry logic to handle optimistic locking conflicts.
+// See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, newPhase notificationv1alpha1.NotificationPhase, reason, message string) error {
-	// Validate phase transition
-	if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
-		return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
-	}
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		// 1. Refetch to get latest resourceVersion
+		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+			return fmt.Errorf("failed to refetch notification: %w", err)
+		}
 
-	// Update phase fields
-	notification.Status.Phase = newPhase
-	notification.Status.Reason = reason
-	notification.Status.Message = message
+		// 2. Validate phase transition
+		if !isValidPhaseTransition(notification.Status.Phase, newPhase) {
+			return fmt.Errorf("invalid phase transition from %s to %s", notification.Status.Phase, newPhase)
+		}
 
-	// Set completion time for terminal phases
-	if isTerminalPhase(newPhase) {
-		now := metav1.Now()
-		notification.Status.CompletionTime = &now
-	}
+		// 3. Update phase fields
+		notification.Status.Phase = newPhase
+		notification.Status.Reason = reason
+		notification.Status.Message = message
 
-	// Update status using status subresource
-	if err := m.client.Status().Update(ctx, notification); err != nil {
-		return fmt.Errorf("failed to update phase: %w", err)
-	}
+		// 4. Set completion time for terminal phases
+		if isTerminalPhase(newPhase) {
+			now := metav1.Now()
+			notification.Status.CompletionTime = &now
+		}
 
-	return nil
+		// 5. Update status using status subresource
+		if err := m.client.Status().Update(ctx, notification); err != nil {
+			return fmt.Errorf("failed to update phase: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // UpdateObservedGeneration updates the ObservedGeneration to match Generation
 // Satisfies BR-NOT-051: Complete Audit Trail (generation tracking)
+//
+// This method uses retry logic to handle optimistic locking conflicts.
+// See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) UpdateObservedGeneration(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	notification.Status.ObservedGeneration = notification.Generation
+	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		// 1. Refetch to get latest resourceVersion
+		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+			return fmt.Errorf("failed to refetch notification: %w", err)
+		}
 
-	// Update status using status subresource
-	if err := m.client.Status().Update(ctx, notification); err != nil {
-		return fmt.Errorf("failed to update observed generation: %w", err)
-	}
+		// 2. Update ObservedGeneration
+		notification.Status.ObservedGeneration = notification.Generation
 
-	return nil
+		// 3. Update status using status subresource
+		if err := m.client.Status().Update(ctx, notification); err != nil {
+			return fmt.Errorf("failed to update observed generation: %w", err)
+		}
+
+		return nil
+	})
 }
 
 // isValidPhaseTransition checks if a phase transition is valid
+// ========================================
+// PATTERN 1: Use Centralized Phase Logic
+// 📋 Design Decision: Controller Refactoring Pattern Library §1
+// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md
+// ========================================
+//
+// This function delegates to pkg/notification/phase.CanTransition()
+// to maintain a single source of truth for phase transitions.
+//
+// BENEFITS:
+// - ✅ Single source of truth (pkg/notification/phase/types.go)
+// - ✅ Consistent validation across controller and status manager
+// - ✅ Includes initial phase transition ("" → Pending)
+// - ✅ Easy to maintain (update once, applies everywhere)
+// ========================================
 func isValidPhaseTransition(current, new notificationv1alpha1.NotificationPhase) bool {
-	// Terminal phases cannot transition to any other phase
-	if isTerminalPhase(current) {
-		return false
-	}
-
-	// Valid transitions:
-	// Pending → Sending
-	// Sending → Sent | Failed | PartiallySent
-	validTransitions := map[notificationv1alpha1.NotificationPhase][]notificationv1alpha1.NotificationPhase{
-		notificationv1alpha1.NotificationPhasePending: {
-			notificationv1alpha1.NotificationPhaseSending,
-		},
-		notificationv1alpha1.NotificationPhaseSending: {
-			notificationv1alpha1.NotificationPhaseSent,
-			notificationv1alpha1.NotificationPhaseFailed,
-			notificationv1alpha1.NotificationPhasePartiallySent,
-		},
-	}
-
-	allowedTransitions, ok := validTransitions[current]
-	if !ok {
-		return false
-	}
-
-	for _, allowed := range allowedTransitions {
-		if new == allowed {
-			return true
-		}
-	}
-
-	return false
+	// Use centralized phase transition validation (Pattern 1)
+	return notificationphase.CanTransition(notificationphase.Phase(current), notificationphase.Phase(new))
 }
 
 // isTerminalPhase checks if a phase is terminal (no further transitions allowed)
+// ========================================
+// PATTERN 1: Use Centralized Phase Logic
+// 📋 Design Decision: Controller Refactoring Pattern Library §1
+// See: docs/architecture/patterns/CONTROLLER_REFACTORING_PATTERN_LIBRARY.md
+// ========================================
+//
+// This function delegates to pkg/notification/phase.IsTerminal()
+// to maintain a single source of truth for terminal state detection.
+//
+// BENEFITS:
+// - ✅ Single source of truth (pkg/notification/phase/types.go)
+// - ✅ Consistent with phase state machine
+// - ✅ Easy to maintain (add terminal phase once, applies everywhere)
+// ========================================
 func isTerminalPhase(phase notificationv1alpha1.NotificationPhase) bool {
-	terminalPhases := []notificationv1alpha1.NotificationPhase{
-		notificationv1alpha1.NotificationPhaseSent,
-		notificationv1alpha1.NotificationPhaseFailed,
-		notificationv1alpha1.NotificationPhasePartiallySent,
-	}
+	// Use centralized terminal phase detection (Pattern 1)
+	return notificationphase.IsTerminal(notificationphase.Phase(phase))
+}
 
-	for _, terminal := range terminalPhases {
-		if phase == terminal {
-			return true
-		}
+// abs returns the absolute value of a duration
+func abs(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
 	}
-
-	return false
+	return d
 }

@@ -1,8 +1,10 @@
 # Gateway Service - Security Configuration
 
-**Version**: v1.0
-**Last Updated**: October 4, 2025
-**Status**: ✅ Design Complete
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.1 | 2025-12-03 | Added RemediationRequest CRD write permissions, Redis secret access | API contract alignment |
+> | v1.0 | 2025-10-04 | Initial security configuration | - |
 
 ---
 

@@ -60,7 +60,7 @@ def test_rfc7807_error_model_structure():
 
     # Create RFC 7807 error with all fields
     error = RFC7807Error(
-        type="https://kubernaut.io/errors/validation-error",
+        type="https://kubernaut.ai/problems/validation-error",
         title="Bad Request",
         detail="Invalid JSON in request body",
         status=400,
@@ -69,7 +69,7 @@ def test_rfc7807_error_model_structure():
     )
 
     # Verify all required fields present
-    assert error.type == "https://kubernaut.io/errors/validation-error"
+    assert error.type == "https://kubernaut.ai/problems/validation-error"
     assert error.title == "Bad Request"
     assert error.detail == "Invalid JSON in request body"
     assert error.status == 400
@@ -92,13 +92,14 @@ def test_rfc7807_error_model_structure():
 
 def test_error_type_uri_format():
     """
-    Test 2: Error type URIs follow kubernaut.io convention
+    Test 2: Error type URIs follow kubernaut.ai convention
 
     BR-HAPI-200: RFC 7807 error format
+    Updated: December 18, 2025 - Changed domain to kubernaut.ai, path to /problems/
 
     Validates:
-    - Error type URIs use https://kubernaut.io/errors/{error-type} format
-    - Consistent with Gateway, Context API, Dynamic Toolset services
+    - Error type URIs use https://kubernaut.ai/problems/{error-type} format
+    - Consistent with DD-004 v1.1 RFC 7807 standard
     """
     from src.errors import (
         ERROR_TYPE_VALIDATION_ERROR,
@@ -109,11 +110,11 @@ def test_error_type_uri_format():
     )
 
     # Verify all error type URIs follow convention
-    assert ERROR_TYPE_VALIDATION_ERROR == "https://kubernaut.io/errors/validation-error"
-    assert ERROR_TYPE_UNAUTHORIZED == "https://kubernaut.io/errors/unauthorized"
-    assert ERROR_TYPE_NOT_FOUND == "https://kubernaut.io/errors/not-found"
-    assert ERROR_TYPE_INTERNAL_ERROR == "https://kubernaut.io/errors/internal-error"
-    assert ERROR_TYPE_SERVICE_UNAVAILABLE == "https://kubernaut.io/errors/service-unavailable"
+    assert ERROR_TYPE_VALIDATION_ERROR == "https://kubernaut.ai/problems/validation-error"
+    assert ERROR_TYPE_UNAUTHORIZED == "https://kubernaut.ai/problems/unauthorized"
+    assert ERROR_TYPE_NOT_FOUND == "https://kubernaut.ai/problems/not-found"
+    assert ERROR_TYPE_INTERNAL_ERROR == "https://kubernaut.ai/problems/internal-error"
+    assert ERROR_TYPE_SERVICE_UNAVAILABLE == "https://kubernaut.ai/problems/service-unavailable"
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -142,7 +143,7 @@ def test_bad_request_400_error():
     )
 
     assert error.status == 400
-    assert error.type == "https://kubernaut.io/errors/validation-error"
+    assert error.type == "https://kubernaut.ai/problems/validation-error"
     assert error.title == "Bad Request"
     assert error.detail == "Missing required field: 'namespace'"
     assert error.instance == "/api/v1/recovery/analyze"
@@ -174,7 +175,7 @@ def test_unauthorized_401_error():
     )
 
     assert error.status == 401
-    assert error.type == "https://kubernaut.io/errors/unauthorized"
+    assert error.type == "https://kubernaut.ai/problems/unauthorized"
     assert error.title == "Unauthorized"
     assert error.detail == "Invalid or missing authentication token"
 
@@ -204,7 +205,7 @@ def test_not_found_404_error():
     )
 
     assert error.status == 404
-    assert error.type == "https://kubernaut.io/errors/not-found"
+    assert error.type == "https://kubernaut.ai/problems/not-found"
     assert error.title == "Not Found"
     assert error.detail == "Analysis ID 'abc-123' not found"
 
@@ -234,7 +235,7 @@ def test_internal_server_error_500():
     )
 
     assert error.status == 500
-    assert error.type == "https://kubernaut.io/errors/internal-error"
+    assert error.type == "https://kubernaut.ai/problems/internal-error"
     assert error.title == "Internal Server Error"
     assert error.detail == "Unexpected error during LLM analysis"
 
@@ -265,7 +266,7 @@ def test_service_unavailable_503_error():
     )
 
     assert error.status == 503
-    assert error.type == "https://kubernaut.io/errors/service-unavailable"
+    assert error.type == "https://kubernaut.ai/problems/service-unavailable"
     assert error.title == "Service Unavailable"
     assert error.detail == "Service is shutting down gracefully"
 

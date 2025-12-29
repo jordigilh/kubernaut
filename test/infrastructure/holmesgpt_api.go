@@ -1,0 +1,390 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package infrastructure
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+)
+
+// SetupHAPIInfrastructure sets up HolmesGPT API E2E infrastructure
+// Deploys: PostgreSQL + Redis + Data Storage + HAPI to Kind cluster
+// Uses sequential builds to avoid OOM with Python pip install
+//
+// Port Allocations (per DD-TEST-001 v1.8):
+// - HAPI: NodePort 30120 → Container 8080
+// - Data Storage: NodePort 30098 → Container 8080
+// - PostgreSQL: NodePort 30439 → Container 5432
+// - Redis: NodePort 30387 → Container 6379
+func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "🚀 HAPI E2E Infrastructure Setup")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "  Strategy: Sequential builds → Create cluster → Deploy services")
+	fmt.Fprintln(writer, "  Duration: ~5-7 minutes (sequential to avoid Python build OOM)")
+	fmt.Fprintln(writer, "  Per DD-TEST-001 v1.8: Dedicated HAPI ports")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	projectRoot := getProjectRoot()
+
+	// Generate unique image tags per DD-TEST-001: {infrastructure}:{consumer}-{uuid}
+	dataStorageImage := GenerateInfraImageName("datastorage", "holmesgpt-api")
+	hapiImage := GenerateInfraImageName("holmesgpt-api", "holmesgpt-api")
+
+	fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
+	fmt.Fprintf(writer, "  📦 HAPI image: %s\n", hapiImage)
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 1: Build images SEQUENTIALLY (Data Storage, then HAPI)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images sequentially...")
+	fmt.Fprintln(writer, "  (Sequential to avoid OOM - Python pip uses 2-3GB)")
+	fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
+	fmt.Fprintln(writer, "  └── HolmesGPT-API (2-3 min)")
+
+	// Build Data Storage
+	fmt.Fprintf(writer, "🔨 [%s] Building Data Storage...\n", time.Now().Format("15:04:05"))
+	if err := buildImageOnly("Data Storage", dataStorageImage,
+		"docker/data-storage.Dockerfile", projectRoot, writer); err != nil {
+		return fmt.Errorf("failed to build datastorage image: %w", err)
+	}
+	fmt.Fprintf(writer, "✅ [%s] Data Storage image built: %s\n", time.Now().Format("15:04:05"), dataStorageImage)
+
+	// Build HAPI (using standard Dockerfile with optimizations)
+	fmt.Fprintf(writer, "🔨 [%s] Building HolmesGPT-API...\n", time.Now().Format("15:04:05"))
+	if err := buildImageOnly("HolmesGPT-API", hapiImage,
+		"holmesgpt-api/Dockerfile", projectRoot, writer); err != nil {
+		return fmt.Errorf("failed to build holmesgpt-api image: %w", err)
+	}
+	fmt.Fprintf(writer, "✅ [%s] HolmesGPT-API image built: %s\n", time.Now().Format("15:04:05"), hapiImage)
+
+	fmt.Fprintln(writer, "\n✅ All images built sequentially!")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Create Kind cluster
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	if err := createHAPIKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3: Load images in PARALLEL (DD-TEST-002 MANDATE)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
+	type imageLoadResult struct {
+		name string
+		err  error
+	}
+	loadResults := make(chan imageLoadResult, 2)
+
+	go func() {
+		err := loadImageToKind(clusterName, dataStorageImage, writer)
+		loadResults <- imageLoadResult{"DataStorage", err}
+	}()
+	go func() {
+		err := loadImageToKind(clusterName, hapiImage, writer)
+		loadResults <- imageLoadResult{"HolmesGPT-API", err}
+	}()
+
+	for i := 0; i < 2; i++ {
+		result := <-loadResults
+		if result.err != nil {
+			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
+		}
+		fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
+	}
+	fmt.Fprintln(writer, "✅ All images loaded!")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+
+	// Create namespace FIRST (required for all subsequent deployments)
+	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	type deployResult struct {
+		name string
+		err  error
+	}
+	deployResults := make(chan deployResult, 5)
+
+	// Launch ALL kubectl apply commands concurrently
+	go func() {
+		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"PostgreSQL", err}
+	}()
+	go func() {
+		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"Redis", err}
+	}()
+	go func() {
+		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"Migrations", err}
+	}()
+	go func() {
+		// Use NodePort 30098 for HAPI E2E (per DD-TEST-001 v1.8)
+		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30098, writer)
+		deployResults <- deployResult{"DataStorage", err}
+	}()
+	go func() {
+		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer)
+		deployResults <- deployResult{"HolmesGPT-API", err}
+	}()
+
+	// Collect ALL results before proceeding (MANDATORY)
+	var deployErrors []error
+	for i := 0; i < 5; i++ {
+		result := <-deployResults
+		if result.err != nil {
+			fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			deployErrors = append(deployErrors, result.err)
+		} else {
+			fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+		}
+	}
+
+	if len(deployErrors) > 0 {
+		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
+	}
+	fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+
+	// Single wait for ALL services ready (Kubernetes handles dependencies)
+	fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	if err := waitForHAPIServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("services not ready: %w", err)
+	}
+
+	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "✅ HAPI E2E Infrastructure Ready")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
+
+// createHAPIKindCluster creates a Kind cluster with HAPI-specific port mappings
+// Per DD-TEST-001 v1.8
+func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	kindConfig := fmt.Sprintf(`kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  # HolmesGPT API (HAPI) - Per DD-TEST-001 v1.8
+  - containerPort: 30120
+    hostPort: 30120
+    protocol: TCP
+  # Data Storage - Per DD-TEST-001 v1.8
+  - containerPort: 30098
+    hostPort: 30098
+    protocol: TCP
+  # PostgreSQL - Per DD-TEST-001 v1.8
+  - containerPort: 30439
+    hostPort: 30439
+    protocol: TCP
+  # Redis - Per DD-TEST-001 v1.8
+  - containerPort: 30387
+    hostPort: 30387
+    protocol: TCP
+- role: worker
+`)
+
+	// Write kind config to temp file
+	tmpfile, err := os.CreateTemp("", "kind-hapi-e2e-*.yaml")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpfile.Name())
+
+	if _, err := tmpfile.Write([]byte(kindConfig)); err != nil {
+		return err
+	}
+	if err := tmpfile.Close(); err != nil {
+		return err
+	}
+
+	// Create Kind cluster
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", clusterName,
+		"--config", tmpfile.Name(),
+		"--kubeconfig", kubeconfigPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	return cmd.Run()
+}
+
+// deployDataStorageForHAPI deploys Data Storage service to Kind cluster
+// Uses HAPI-specific NodePort (30098) per DD-TEST-001 v1.8
+// deployHAPIOnly deploys HAPI service to Kind cluster
+// Per DD-TEST-001 v1.8: NodePort 30120
+func deployHAPIOnly(clusterName, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+	// ADR-030: Create HAPI ConfigMap with minimal config
+	deployment := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: %s
+data:
+  config.yaml: |
+    logging:
+      level: "INFO"
+    llm:
+      provider: "mock"
+      model: "mock/test-model"
+      endpoint: "http://localhost:11434"
+    data_storage:
+      url: "http://datastorage:8080"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: %s
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: holmesgpt-api
+  template:
+    metadata:
+      labels:
+        app: holmesgpt-api
+    spec:
+      containers:
+      - name: holmesgpt-api
+        image: %s
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        args:
+        - "-config"
+        - "/etc/holmesgpt/config.yaml"
+        env:
+        - name: MOCK_LLM_MODE
+          value: "true"
+        - name: DATA_STORAGE_URL
+          value: "http://datastorage:8080"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/holmesgpt
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: holmesgpt-api-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api
+  namespace: %s
+spec:
+  type: NodePort
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30120
+  selector:
+    app: holmesgpt-api
+`, namespace, namespace, imageTag, namespace)
+
+	// Apply manifest
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(deployment)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	return cmd.Run()
+}
+
+// waitForHAPIServicesReady waits for DataStorage and HolmesGPT-API pods to be ready
+// Per DD-TEST-002: Single readiness check after parallel deployment
+func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Build Kubernetes clientset
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to build kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	// Wait for DataStorage pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=datastorage",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
+	fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+
+	// Wait for HolmesGPT-API pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for HolmesGPT-API pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=holmesgpt-api",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "HolmesGPT-API pod should become ready")
+	fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
+
+	return nil
+}
+

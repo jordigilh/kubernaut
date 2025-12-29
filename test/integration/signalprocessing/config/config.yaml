@@ -1,0 +1,44 @@
+service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: host.containers.internal
+  port: 15436
+  name: kubernaut
+  user: kubernaut
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+  secretsFile: "/etc/datastorage/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+
+redis:
+  addr: host.containers.internal:16382
+  db: 0
+  dlq_stream_name: dlq-stream
+  dlq_max_len: 1000
+  dlq_consumer_group: dlq-group
+  secretsFile: "/etc/datastorage/redis-secrets.yaml"
+  passwordKey: "password"
+
+logging:
+  level: debug
+  format: json
+
+
+
+
+
+

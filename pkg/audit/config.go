@@ -71,30 +71,118 @@ func DefaultConfig() Config {
 
 // RecommendedConfig returns service-specific recommended configurations.
 //
-// Some services have different traffic patterns and may benefit from tuned configurations:
-// - Gateway: High volume (2x buffer size)
-// - AI Analysis: LLM retries (1.5x buffer size)
-// - Default: Standard configuration for most services
+// Authority: DD-AUDIT-004 (Buffer Sizing Strategy for Burst Traffic)
+//
+// Buffer sizes are based on 3-tier strategy for handling burst traffic (10x normal rate):
+// - HIGH-VOLUME SERVICES (>2000 events/day): 50,000 buffer
+// - MEDIUM-VOLUME SERVICES (1000-2000 events/day): 30,000 buffer
+// - LOW-VOLUME SERVICES (<1000 events/day): 20,000 buffer
+//
+// Rationale: Stress testing showed 90% event loss with 20,000 buffer under 25,000 burst.
+// New sizes provide 1.2x-2x headroom for burst scenarios while minimizing memory footprint.
+//
+// See: docs/architecture/decisions/DD-AUDIT-004-buffer-sizing-strategy.md
 func RecommendedConfig(serviceName string) Config {
 	switch serviceName {
+	// ========================================
+	// HIGH-VOLUME SERVICES (>2000 events/day)
+	// DD-AUDIT-004: 50,000 buffer for burst handling
+	// ========================================
+	case "datastorage":
+		// DataStorage: 5000 events/day (highest volume service)
+		// Buffer sized for 10x burst + 1.5x safety margin
+		return Config{
+			BufferSize:    50000, // DD-AUDIT-004: HIGH tier
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
+	case "workflowexecution":
+		// WorkflowExecution: 2000 events/day (high volume)
+		// Buffer sized for 10x burst + 1.5x safety margin
+		return Config{
+			BufferSize:    50000, // DD-AUDIT-004: HIGH tier
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
+
+	// ========================================
+	// MEDIUM-VOLUME SERVICES (1000-2000 events/day)
+	// DD-AUDIT-004: 30,000 buffer for burst handling
+	// ========================================
 	case "gateway":
-		// Gateway receives all external signals, high volume expected
+		// Gateway: 1000 events/day (external signal ingestion)
+		// Buffer sized for 10x burst + 1.5x safety margin
 		return Config{
-			BufferSize:    20000, // 2x default
+			BufferSize:    30000, // DD-AUDIT-004: MEDIUM tier (was 20000)
 			BatchSize:     1000,
 			FlushInterval: 1 * time.Second,
 			MaxRetries:    3,
 		}
-	case "ai-analysis":
-		// AI Analysis may generate multiple events per analysis (LLM retries, fallbacks)
+	case "signalprocessing":
+		// SignalProcessing: 1000 events/day (enrichment operations)
+		// Buffer sized for 10x burst + 1.5x safety margin
 		return Config{
-			BufferSize:    15000, // 1.5x default
+			BufferSize:    30000, // DD-AUDIT-004: MEDIUM tier
 			BatchSize:     1000,
 			FlushInterval: 1 * time.Second,
 			MaxRetries:    3,
 		}
+	case "remediation-orchestrator":
+		// RemediationOrchestrator: 1200 events/day (lifecycle coordination)
+		// Buffer sized for 10x burst + 1.5x safety margin
+		return Config{
+			BufferSize:    30000, // DD-AUDIT-004: MEDIUM tier
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
+
+	// ========================================
+	// LOW-VOLUME SERVICES (<1000 events/day)
+	// DD-AUDIT-004: 20,000 buffer for burst handling
+	// ========================================
+	case "aianalysis", "ai-analysis":
+		// AIAnalysis: 500 events/day (LLM analysis operations)
+		// Buffer sized for 10x burst + 1.5x safety margin
+		return Config{
+			BufferSize:    20000, // DD-AUDIT-004: LOW tier (was 15000)
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
+	case "notification", "notification-controller":
+		// Notification: 500 events/day (delivery operations)
+		// Buffer sized for 10x burst + 1.5x safety margin
+		return Config{
+			BufferSize:    20000, // DD-AUDIT-004: LOW tier
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
+	case "effectivenessmonitor":
+		// EffectivenessMonitor: 500 events/day (learning loop operations)
+		// Buffer sized for 10x burst + 1.5x safety margin
+		return Config{
+			BufferSize:    20000, // DD-AUDIT-004: LOW tier
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
+
+	// ========================================
+	// DEFAULT: MEDIUM tier for unknown services
+	// DD-AUDIT-004: Conservative default
+	// ========================================
 	default:
-		return DefaultConfig()
+		// Unknown services get medium-tier buffer (conservative)
+		return Config{
+			BufferSize:    30000, // DD-AUDIT-004: MEDIUM tier default
+			BatchSize:     1000,
+			FlushInterval: 1 * time.Second,
+			MaxRetries:    3,
+		}
 	}
 }
 

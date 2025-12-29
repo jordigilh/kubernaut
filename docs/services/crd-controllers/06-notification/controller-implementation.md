@@ -510,7 +510,7 @@ slack:
 
 ```bash
 # Apply CRDs
-kubectl apply -f config/crd/notification.kubernaut.ai_notificationrequests.yaml
+kubectl apply -f config/crd/kubernaut.ai_notificationrequests.yaml
 
 # Deploy controller
 kubectl apply -f deploy/notification/

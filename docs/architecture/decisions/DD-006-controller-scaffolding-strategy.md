@@ -424,7 +424,60 @@ After copying templates, developers must customize:
 
 ---
 
-**Last Updated**: October 31, 2025
+## Appendix: Service Documentation Structure
+
+### Standard Directory Layout
+
+Each CRD controller service uses a directory-per-service structure under `docs/services/crd-controllers/`:
+
+```
+XX-servicename/
+├── 📄 README.md                    - Service index & navigation (COMMON)
+├── 📘 overview.md                  - High-level architecture (COMMON)
+├── 🔧 crd-schema.md               - CRD type definitions (COMMON)
+├── ⚙️  controller-implementation.md - Reconciler logic (COMMON)
+├── 🔄 reconciliation-phases.md     - Phase details & coordination (COMMON)
+├── 🧹 finalizers-lifecycle.md      - Cleanup & lifecycle management (COMMON)
+├── 🧪 testing-strategy.md          - Test patterns (COMMON)
+├── 🔒 security-configuration.md    - Security patterns (COMMON)
+├── 📊 observability-logging.md     - Logging & tracing (COMMON)
+├── 📈 metrics-slos.md              - Prometheus & Grafana (COMMON)
+├── 💾 database-integration.md      - Audit storage & schema (COMMON)
+├── 🔗 integration-points.md        - Service coordination (COMMON)
+├── 🔀 migration-current-state.md   - Existing code & migration (COMMON)
+├── ✅ implementation-checklist.md  - APDC-TDD phases & tasks (COMMON)
+├── 📋 BR_MAPPING.md                - Business requirements (COMMON)
+└── 🔧 [SERVICE-SPECIFIC FILES]     - Domain-specific documents (SERVICE-SPECIFIC)
+```
+
+### Document Classification
+
+| Classification | Description | Examples |
+|----------------|-------------|----------|
+| **COMMON PATTERN** | Standard files present in ALL CRD services. Structure and sections are templated, but content is service-specific. | `testing-strategy.md`, `metrics-slos.md`, `security-configuration.md` |
+| **SERVICE-SPECIFIC** | Files unique to a service's domain. Not all services will have these. | `REGO_POLICY_EXAMPLES.md` (AIAnalysis), Tekton pipeline specs (WorkflowExecution), Notification channel configs (Notification) |
+
+### Service-Specific Document Guidelines
+
+When a service requires domain-specific documentation not covered by common patterns:
+
+1. **Create appropriately named files** that clearly indicate the domain:
+   - AIAnalysis: `REGO_POLICY_EXAMPLES.md`, `ai-holmesgpt-approval.md`
+   - WorkflowExecution: `tekton-pipeline-spec.md`, `workflow-parameters.md`
+   - Notification: `notification-channels.md`, `template-engine.md`
+
+2. **Reference in README.md** with `(SERVICE-SPECIFIC)` annotation
+
+3. **Cross-reference from CRD_SERVICE_SPECIFICATION_TEMPLATE.md** if the pattern may apply to future services
+
+### Template Reference
+
+- **Documentation Template**: `docs/development/templates/CRD_SERVICE_SPECIFICATION_TEMPLATE.md`
+- **Code Templates**: `docs/templates/crd-controller-gap-remediation/`
+
+---
+
+**Last Updated**: November 30, 2025
 **Approved By**: Development Team
 **Next Review**: January 31, 2026
 

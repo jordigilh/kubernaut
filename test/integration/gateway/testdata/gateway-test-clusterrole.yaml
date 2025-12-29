@@ -4,7 +4,7 @@ metadata:
   name: gateway-test-remediation-creator
 rules:
 - apiGroups:
-  - remediation.kubernaut.io
+  - remediation.kubernaut.ai
   resources:
   - remediationrequests
   verbs:

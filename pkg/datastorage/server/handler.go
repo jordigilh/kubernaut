@@ -24,30 +24,35 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/go-logr/logr"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/embedding"
+	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
 // DBInterface defines the database operations required by handlers
 // This interface allows us to use both MockDB (tests) and real database (production)
+// V1.0: All methods use structured types (eliminates map[string]interface{})
 type DBInterface interface {
-	Query(filters map[string]string, limit, offset int) ([]map[string]interface{}, error)
-	Get(id int) (map[string]interface{}, error)
+	// Query returns audit events matching the filters (structured type)
+	Query(filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error)
+	// Get returns a single audit event by ID (structured type)
+	Get(id int) (*repository.AuditEvent, error)
 	// CountTotal returns the total number of records matching the filters (for pagination metadata)
 	// This is used to populate pagination.total with the actual database count, not page size
 	CountTotal(filters map[string]string) (int64, error)
 
-	// BR-STORAGE-030: Aggregation endpoints
+	// BR-STORAGE-030: Aggregation endpoints with structured types
 	// AggregateSuccessRate calculates success rate for a workflow
-	AggregateSuccessRate(workflowID string) (map[string]interface{}, error)
+	AggregateSuccessRate(workflowID string) (*models.SuccessRateAggregationResponse, error)
 	// AggregateByNamespace groups incidents by namespace
-	AggregateByNamespace() (map[string]interface{}, error)
+	AggregateByNamespace() (*models.NamespaceAggregationResponse, error)
 	// AggregateBySeverity groups incidents by severity
-	AggregateBySeverity() (map[string]interface{}, error)
+	AggregateBySeverity() (*models.SeverityAggregationResponse, error)
 	// AggregateIncidentTrend returns incident counts over time
-	AggregateIncidentTrend(period string) (map[string]interface{}, error)
+	AggregateIncidentTrend(period string) (*models.TrendAggregationResponse, error)
 }
 
 // Handler handles REST API requests for Data Storage Service
@@ -55,12 +60,13 @@ type DBInterface interface {
 // BR-STORAGE-024: RFC 7807 error responses
 //
 // REFACTOR: Enhanced with structured logging, request timing, and observability
+// V1.0: Embedding service removed (label-only search per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
 type Handler struct {
 	db                    DBInterface
-	logger                *zap.Logger
+	logger                logr.Logger
 	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
-	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog
-	embeddingService      embedding.Service                 // BR-STORAGE-013: Embedding generation
+	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
+	auditStore            audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -68,11 +74,9 @@ type HandlerOption func(*Handler)
 
 // WithLogger sets a custom logger for the handler
 // REFACTOR: Production deployments should provide a real logger
-func WithLogger(logger *zap.Logger) HandlerOption {
+func WithLogger(logger logr.Logger) HandlerOption {
 	return func(h *Handler) {
-		if logger != nil {
-			h.logger = logger
-		}
+		h.logger = logger
 	}
 }
 
@@ -92,11 +96,11 @@ func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 	}
 }
 
-// WithEmbeddingService sets the embedding service for semantic search
-// BR-STORAGE-013: Embedding generation for semantic search
-func WithEmbeddingService(service embedding.Service) HandlerOption {
+// WithAuditStore sets the audit store for workflow search audit events
+// BR-AUDIT-023: Workflow search audit event generation
+func WithAuditStore(store audit.AuditStore) HandlerOption {
 	return func(h *Handler) {
-		h.embeddingService = service
+		h.auditStore = store
 	}
 }
 
@@ -106,7 +110,7 @@ func WithEmbeddingService(service embedding.Service) HandlerOption {
 func NewHandler(db DBInterface, opts ...HandlerOption) *Handler {
 	h := &Handler{
 		db:     db,
-		logger: zap.NewNop(), // Noop logger by default (tests don't need logs)
+		logger: logr.Discard(), // Noop logger by default (tests don't need logs)
 	}
 
 	// Apply options
@@ -136,11 +140,11 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 
 	// REFACTOR: Log incoming request with context
 	h.logger.Info("Handling ListIncidents request",
-		zap.String("request_id", requestID),
-		zap.String("method", r.Method),
-		zap.String("path", r.URL.Path),
-		zap.String("query", r.URL.RawQuery),
-		zap.String("remote_addr", r.RemoteAddr),
+		"request_id", requestID,
+		"method", r.Method,
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+		"remote_addr", r.RemoteAddr,
 	)
 
 	// Parse query parameters
@@ -149,23 +153,23 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	// BR-STORAGE-023: Parse and validate pagination
 	limit, err := parseLimit(query.Get("limit"))
 	if err != nil {
-		h.logger.Warn("Invalid limit parameter",
-			zap.String("request_id", requestID),
-			zap.String("limit_value", query.Get("limit")),
-			zap.Error(err),
+		h.logger.Info("Invalid limit parameter",
+			"request_id", requestID,
+			"limit_value", query.Get("limit"),
+			"error", err,
 		)
-		h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-limit", "Invalid Limit", err.Error())
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-limit", "Invalid Limit", err.Error(), h.logger)
 		return
 	}
 
 	offset, err := parseOffset(query.Get("offset"))
 	if err != nil {
-		h.logger.Warn("Invalid offset parameter",
-			zap.String("request_id", requestID),
-			zap.String("offset_value", query.Get("offset")),
-			zap.Error(err),
+		h.logger.Info("Invalid offset parameter",
+			"request_id", requestID,
+			"offset_value", query.Get("offset"),
+			"error", err,
 		)
-		h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-offset", "Invalid Offset", err.Error())
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-offset", "Invalid Offset", err.Error(), h.logger)
 		return
 	}
 
@@ -180,11 +184,11 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	if sev := query.Get("severity"); sev != "" {
 		// BR-STORAGE-025: Validate severity values to prevent invalid input
 		if !isValidSeverity(sev) {
-			h.logger.Warn("Invalid severity parameter",
-				zap.String("request_id", requestID),
-				zap.String("severity_value", sev),
+			h.logger.Info("Invalid severity parameter",
+				"request_id", requestID,
+				"severity_value", sev,
 			)
-			h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-severity", "Invalid Severity", fmt.Sprintf("severity must be one of: info, warning, critical, got: %s", sev))
+			response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-severity", "Invalid Severity", fmt.Sprintf("severity must be one of: info, warning, critical, got: %s", sev), h.logger)
 			return
 		}
 		filters["severity"] = sev
@@ -202,13 +206,12 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	// Query database
 	incidents, err := h.db.Query(filters, limit, offset)
 	if err != nil {
-		h.logger.Error("Database query failed",
-			zap.String("request_id", requestID),
-			zap.Error(err),
-			zap.Int("limit", limit),
-			zap.Int("offset", offset),
+		h.logger.Error(err, "Database query failed",
+			"request_id", requestID,
+			"limit", limit,
+			"offset", offset,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error(), h.logger)
 		return
 	}
 
@@ -217,11 +220,10 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	// See: docs/services/stateless/data-storage/implementation/DATA-STORAGE-INTEGRATION-TEST-TRIAGE.md
 	totalCount, err := h.db.CountTotal(filters)
 	if err != nil {
-		h.logger.Error("Database count query failed",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Database count query failed",
+			"request_id", requestID,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Count Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Count Error", err.Error(), h.logger)
 		return
 	}
 
@@ -244,10 +246,9 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		// Note: We've already written the status code, so we can't change the response
 		// Log the encoding failure for observability
-		h.logger.Error("Failed to encode JSON response",
-			zap.String("request_id", requestID),
-			zap.Error(err),
-			zap.Int("result_count", len(incidents)),
+		h.logger.Error(err, "Failed to encode JSON response",
+			"request_id", requestID,
+			"result_count", len(incidents),
 		)
 		return
 	}
@@ -255,12 +256,12 @@ func (h *Handler) ListIncidents(w http.ResponseWriter, r *http.Request) {
 	// REFACTOR: Log successful response with timing
 	duration := time.Since(startTime)
 	h.logger.Info("ListIncidents request completed successfully",
-		zap.String("request_id", requestID),
-		zap.Int("result_count", len(incidents)),
-		zap.Int("limit", limit),
-		zap.Int("offset", offset),
-		zap.Duration("duration", duration),
-		zap.Int("status_code", http.StatusOK),
+		"request_id", requestID,
+		"result_count", len(incidents),
+		"limit", limit,
+		"offset", offset,
+		"duration", duration,
+		"status_code", http.StatusOK,
 	)
 }
 
@@ -283,51 +284,50 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	// Simple extraction for GREEN phase - will be enhanced with proper router in REFACTOR
 	pathParts := strings.Split(r.URL.Path, "/")
 	if len(pathParts) < 5 {
-		h.logger.Warn("Invalid path - incident ID not provided",
-			zap.String("request_id", requestID),
-			zap.String("path", r.URL.Path),
+		h.logger.Info("Invalid path - incident ID not provided",
+			"request_id", requestID,
+			"path", r.URL.Path,
 		)
-		h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-path", "Invalid Path", "incident ID not provided")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-path", "Invalid Path", "incident ID not provided", h.logger)
 		return
 	}
 
 	idStr := pathParts[len(pathParts)-1]
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		h.logger.Warn("Invalid incident ID format",
-			zap.String("request_id", requestID),
-			zap.String("id_string", idStr),
-			zap.Error(err),
+		h.logger.Info("Invalid incident ID format",
+			"request_id", requestID,
+			"id_string", idStr,
+			"error", err,
 		)
-		h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-id", "Invalid ID", fmt.Sprintf("incident ID must be a number, got: %s", idStr))
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-id", "Invalid ID", fmt.Sprintf("incident ID must be a number, got: %s", idStr), h.logger)
 		return
 	}
 
 	h.logger.Info("Handling GetIncident request",
-		zap.String("request_id", requestID),
-		zap.Int("incident_id", id),
-		zap.String("path", r.URL.Path),
+		"request_id", requestID,
+		"incident_id", id,
+		"path", r.URL.Path,
 	)
 
 	// Query database
 	incident, err := h.db.Get(id)
 	if err != nil {
-		h.logger.Error("Database query failed for GetIncident",
-			zap.String("request_id", requestID),
-			zap.Int("incident_id", id),
-			zap.Error(err),
+		h.logger.Error(err, "Database query failed for GetIncident",
+			"request_id", requestID,
+			"incident_id", id,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error(), h.logger)
 		return
 	}
 
 	// BR-STORAGE-024: RFC 7807 error for not found
 	if incident == nil {
 		h.logger.Info("Incident not found",
-			zap.String("request_id", requestID),
-			zap.Int("incident_id", id),
+			"request_id", requestID,
+			"incident_id", id,
 		)
-		h.writeRFC7807Error(w, http.StatusNotFound, "not-found", "Incident Not Found", fmt.Sprintf("incident with ID %d not found", id))
+		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Incident Not Found", fmt.Sprintf("incident with ID %d not found", id), h.logger)
 		return
 	}
 
@@ -340,10 +340,9 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(incident); err != nil {
 		// Note: We've already written the status code, so we can't change the response
 		// Log the encoding failure for observability
-		h.logger.Error("Failed to encode JSON response",
-			zap.String("request_id", requestID),
-			zap.Int("incident_id", id),
-			zap.Error(err),
+		h.logger.Error(err, "Failed to encode JSON response",
+			"request_id", requestID,
+			"incident_id", id,
 		)
 		return
 	}
@@ -351,38 +350,15 @@ func (h *Handler) GetIncident(w http.ResponseWriter, r *http.Request) {
 	// REFACTOR: Log successful response with timing
 	duration := time.Since(startTime)
 	h.logger.Info("GetIncident request completed successfully",
-		zap.String("request_id", requestID),
-		zap.Int("incident_id", id),
-		zap.Duration("duration", duration),
-		zap.Int("status_code", http.StatusOK),
+		"request_id", requestID,
+		"incident_id", id,
+		"duration", duration,
+		"status_code", http.StatusOK,
 	)
 }
 
-// writeRFC7807Error writes an RFC 7807 Problem Details error response
-// BR-STORAGE-024: RFC 7807 error responses
-func (h *Handler) writeRFC7807Error(w http.ResponseWriter, status int, errorType, title, detail string) {
-	problemDetail := map[string]interface{}{
-		"type":   fmt.Sprintf("https://api.kubernaut.io/problems/%s", errorType),
-		"title":  title,
-		"status": status,
-		"detail": detail,
-	}
-
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(status)
-
-	// BR-STORAGE-024: Encode RFC 7807 error response - handle encoding errors properly
-	if err := json.NewEncoder(w).Encode(problemDetail); err != nil {
-		// Note: We've already written the status code, so we can't change the response
-		// Log the encoding failure for observability
-		h.logger.Error("Failed to encode RFC 7807 error response",
-			zap.Int("status", status),
-			zap.String("error_type", errorType),
-			zap.Error(err),
-		)
-		// Still return - client gets the status code at least
-	}
-}
+// RFC 7807 error responses are now handled by response.WriteRFC7807Error
+// See: pkg/datastorage/server/response/rfc7807.go (canonical implementation)
 
 // parseLimit parses and validates the limit query parameter
 // BR-STORAGE-023: Limit must be 1-1000, default is 100
@@ -457,29 +433,28 @@ func (h *Handler) AggregateSuccessRate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("Handling AggregateSuccessRate request",
-		zap.String("request_id", requestID),
-		zap.String("query", r.URL.RawQuery),
+		"request_id", requestID,
+		"query", r.URL.RawQuery,
 	)
 
 	// BR-STORAGE-031: Require workflow_id parameter
 	workflowID := r.URL.Query().Get("workflow_id")
 	if workflowID == "" {
-		h.logger.Warn("Missing workflow_id parameter",
-			zap.String("request_id", requestID),
+		h.logger.Info("Missing workflow_id parameter",
+			"request_id", requestID,
 		)
-		h.writeRFC7807Error(w, http.StatusBadRequest, "missing-parameter", "Missing Parameter", "workflow_id parameter is required")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "missing-parameter", "Missing Parameter", "workflow_id parameter is required", h.logger)
 		return
 	}
 
 	// Query database for aggregation
 	result, err := h.db.AggregateSuccessRate(workflowID)
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
-			zap.String("request_id", requestID),
-			zap.String("workflow_id", workflowID),
-			zap.Error(err),
+		h.logger.Error(err, "Database aggregation failed",
+			"request_id", requestID,
+			"workflow_id", workflowID,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error(), h.logger)
 		return
 	}
 
@@ -489,18 +464,17 @@ func (h *Handler) AggregateSuccessRate(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Failed to encode aggregation response",
+			"request_id", requestID,
 		)
 		return
 	}
 
 	duration := time.Since(startTime)
 	h.logger.Info("AggregateSuccessRate request completed",
-		zap.String("request_id", requestID),
-		zap.String("workflow_id", workflowID),
-		zap.Duration("duration", duration),
+		"request_id", requestID,
+		"workflow_id", workflowID,
+		"duration", duration,
 	)
 }
 
@@ -518,17 +492,16 @@ func (h *Handler) AggregateByNamespace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("Handling AggregateByNamespace request",
-		zap.String("request_id", requestID),
+		"request_id", requestID,
 	)
 
 	// Query database for namespace aggregation
 	result, err := h.db.AggregateByNamespace()
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Database aggregation failed",
+			"request_id", requestID,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error(), h.logger)
 		return
 	}
 
@@ -538,17 +511,16 @@ func (h *Handler) AggregateByNamespace(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Failed to encode aggregation response",
+			"request_id", requestID,
 		)
 		return
 	}
 
 	duration := time.Since(startTime)
 	h.logger.Info("AggregateByNamespace request completed",
-		zap.String("request_id", requestID),
-		zap.Duration("duration", duration),
+		"request_id", requestID,
+		"duration", duration,
 	)
 }
 
@@ -566,17 +538,16 @@ func (h *Handler) AggregateBySeverity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("Handling AggregateBySeverity request",
-		zap.String("request_id", requestID),
+		"request_id", requestID,
 	)
 
 	// Query database for severity aggregation
 	result, err := h.db.AggregateBySeverity()
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Database aggregation failed",
+			"request_id", requestID,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error(), h.logger)
 		return
 	}
 
@@ -586,17 +557,16 @@ func (h *Handler) AggregateBySeverity(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Failed to encode aggregation response",
+			"request_id", requestID,
 		)
 		return
 	}
 
 	duration := time.Since(startTime)
 	h.logger.Info("AggregateBySeverity request completed",
-		zap.String("request_id", requestID),
-		zap.Duration("duration", duration),
+		"request_id", requestID,
+		"duration", duration,
 	)
 }
 
@@ -614,8 +584,8 @@ func (h *Handler) AggregateIncidentTrend(w http.ResponseWriter, r *http.Request)
 	}
 
 	h.logger.Info("Handling AggregateIncidentTrend request",
-		zap.String("request_id", requestID),
-		zap.String("query", r.URL.RawQuery),
+		"request_id", requestID,
+		"query", r.URL.RawQuery,
 	)
 
 	// BR-STORAGE-034: Parse period parameter (default to 7d)
@@ -626,23 +596,22 @@ func (h *Handler) AggregateIncidentTrend(w http.ResponseWriter, r *http.Request)
 
 	// Validate period format
 	if !isValidPeriod(period) {
-		h.logger.Warn("Invalid period parameter",
-			zap.String("request_id", requestID),
-			zap.String("period", period),
+		h.logger.Info("Invalid period parameter",
+			"request_id", requestID,
+			"period", period,
 		)
-		h.writeRFC7807Error(w, http.StatusBadRequest, "invalid-parameter", "Invalid Parameter", "period must be one of: 7d, 30d, 90d")
+		response.WriteRFC7807Error(w, http.StatusBadRequest, "invalid-parameter", "Invalid Parameter", "period must be one of: 7d, 30d, 90d", h.logger)
 		return
 	}
 
 	// Query database for trend aggregation
 	result, err := h.db.AggregateIncidentTrend(period)
 	if err != nil {
-		h.logger.Error("Database aggregation failed",
-			zap.String("request_id", requestID),
-			zap.String("period", period),
-			zap.Error(err),
+		h.logger.Error(err, "Database aggregation failed",
+			"request_id", requestID,
+			"period", period,
 		)
-		h.writeRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error())
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "database-error", "Database Error", err.Error(), h.logger)
 		return
 	}
 
@@ -652,18 +621,17 @@ func (h *Handler) AggregateIncidentTrend(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 
 	if err := json.NewEncoder(w).Encode(result); err != nil {
-		h.logger.Error("Failed to encode aggregation response",
-			zap.String("request_id", requestID),
-			zap.Error(err),
+		h.logger.Error(err, "Failed to encode aggregation response",
+			"request_id", requestID,
 		)
 		return
 	}
 
 	duration := time.Since(startTime)
 	h.logger.Info("AggregateIncidentTrend request completed",
-		zap.String("request_id", requestID),
-		zap.String("period", period),
-		zap.Duration("duration", duration),
+		"request_id", requestID,
+		"period", period,
+		"duration", duration,
 	)
 }
 

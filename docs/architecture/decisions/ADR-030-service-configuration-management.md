@@ -997,6 +997,193 @@ env:
 
 ---
 
+## 7. Startup Behavior: Crash-if-Missing Pattern
+
+**Status**: ✅ **MANDATORY** (Effective December 2, 2025)
+
+### Principle
+
+**Services MUST crash at startup if required configuration or dependencies are unavailable.**
+
+This provides:
+- **Fail Fast**: Issues detected immediately, not at first request
+- **Deterministic**: No partial functionality or silent degradation
+- **Clear Errors**: Operators know exactly what's wrong from logs
+- **Kubernetes Integration**: Pods restart, AlertManager detects CrashLoopBackOff
+
+### Dependency Classification
+
+| Category | Behavior | Examples |
+|----------|----------|----------|
+| **Required Config** | Crash if missing | `CONFIG_PATH`, database host |
+| **Required Dependency** | Crash if unavailable | PostgreSQL, Redis, Tekton |
+| **Optional Config** | Use defaults | Log level, timeouts |
+| **Optional Dependency** | Degrade gracefully | Embedding service, cache |
+
+### Implementation Pattern
+
+```go
+func main() {
+    logger, _ := zap.NewProduction()
+
+    // ========================================
+    // REQUIRED: Configuration file
+    // ========================================
+    cfgPath := os.Getenv("CONFIG_PATH")
+    if cfgPath == "" {
+        // CRASH: Required config path not provided
+        logger.Fatal("CONFIG_PATH environment variable required")
+    }
+
+    cfg, err := config.LoadFromFile(cfgPath)
+    if err != nil {
+        // CRASH: Config file missing or invalid
+        logger.Fatal("Failed to load configuration",
+            zap.String("path", cfgPath),
+            zap.Error(err))
+    }
+
+    // ========================================
+    // REQUIRED: Validate configuration
+    // ========================================
+    if err := cfg.Validate(); err != nil {
+        // CRASH: Invalid configuration values
+        logger.Fatal("Invalid configuration", zap.Error(err))
+    }
+
+    // ========================================
+    // REQUIRED: Check dependencies
+    // ========================================
+    if err := checkRequiredDependencies(cfg); err != nil {
+        // CRASH: Required dependency unavailable
+        logger.Fatal("Required dependency check failed", zap.Error(err))
+    }
+
+    // ========================================
+    // OPTIONAL: Start with degraded features
+    // ========================================
+    features := discoverOptionalFeatures(cfg)
+    if !features.EmbeddingAvailable {
+        logger.Warn("Embedding service unavailable, semantic search disabled")
+    }
+
+    // ... start service
+}
+
+func checkRequiredDependencies(cfg *config.Config) error {
+    // Example: Tekton check for WorkflowExecution
+    _, err := clientset.TektonV1beta1().Pipelines("").List(ctx, metav1.ListOptions{Limit: 1})
+    if err != nil {
+        return fmt.Errorf("Tekton Pipelines not installed or not accessible: %w", err)
+    }
+
+    // Example: PostgreSQL check for Data Storage
+    if err := db.Ping(); err != nil {
+        return fmt.Errorf("PostgreSQL not available: %w", err)
+    }
+
+    return nil
+}
+```
+
+### Service-Specific Requirements
+
+**Reference**: [CONFIG_STANDARDS.md](../../configuration/CONFIG_STANDARDS.md)
+
+| Service | Required Dependencies | Crash-if-Missing |
+|---------|----------------------|------------------|
+| **Gateway** | Redis | Yes |
+| **Data Storage** | PostgreSQL | Yes |
+| **HolmesGPT-API** | LLM Provider, Data Storage | Yes |
+| **WorkflowExecution** | Tekton Pipelines | Yes |
+| **AIAnalysis** | HolmesGPT-API | Yes |
+| **RemediationOrchestrator** | None | No (uses defaults) |
+| **SignalProcessing** | None | No (uses defaults) |
+| **Notification** | None (channels optional) | No (uses defaults) |
+| **Dynamic Toolset** | None | No (uses defaults) |
+
+### Optional Features with Graceful Degradation
+
+Services with optional features MUST:
+1. **Log a warning** when optional feature unavailable
+2. **Disable the feature** cleanly
+3. **Continue operating** with core functionality
+
+```go
+// Example: Data Storage with optional embedding
+func initOptionalFeatures(cfg *config.Config, logger *zap.Logger) *Features {
+    f := &Features{}
+
+    // Optional: Embedding service
+    if cfg.Embedding.Enabled {
+        client, err := embedding.NewClient(cfg.Embedding.URL)
+        if err != nil {
+            logger.Warn("Embedding service unavailable, semantic search disabled",
+                zap.Error(err))
+            f.EmbeddingAvailable = false
+        } else {
+            f.EmbeddingClient = client
+            f.EmbeddingAvailable = true
+        }
+    }
+
+    return f
+}
+```
+
+### Kubernetes Liveness/Readiness Integration
+
+```yaml
+# deployment.yaml
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8081
+  initialDelaySeconds: 5
+  periodSeconds: 5
+```
+
+**Behavior**:
+- If service crashes at startup → Pod enters `CrashLoopBackOff`
+- AlertManager triggers `KubernautPodCrashLooping` alert
+- Operators investigate via `kubectl logs`
+
+### Testing Crash-if-Missing
+
+```go
+var _ = Describe("Startup", func() {
+    It("should crash when CONFIG_PATH not set", func() {
+        cmd := exec.Command("./bin/service")
+        // CONFIG_PATH not set
+        err := cmd.Run()
+        Expect(err).To(HaveOccurred())
+        // Verify exit code is non-zero
+        var exitErr *exec.ExitError
+        Expect(errors.As(err, &exitErr)).To(BeTrue())
+        Expect(exitErr.ExitCode()).ToNot(Equal(0))
+    })
+
+    It("should crash when required dependency unavailable", func() {
+        cmd := exec.Command("./bin/service")
+        cmd.Env = append(os.Environ(),
+            "CONFIG_PATH=testdata/valid-config.yaml",
+            "TEKTON_AVAILABLE=false", // Test hook
+        )
+        err := cmd.Run()
+        Expect(err).To(HaveOccurred())
+    })
+})
+```
+
+---
+
 ## Related Decisions
 
 - **ADR-027**: Multi-Architecture Docker Images (uses UBI9 base images)

@@ -1,0 +1,180 @@
+"""
+Integration Test Infrastructure Configuration for HAPI
+
+Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
+Design Decision: DD-TEST-001 v1.8 - Port Allocation
+Pattern: DD-INTEGRATION-001 v2.0 - Go-Bootstrapped Infrastructure
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CORRECT ARCHITECTURE (December 29, 2025)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+HAPI is a Python service → Tests should be in Python
+Infrastructure bootstrap → Uses shared Go library
+
+Services Started By: test/infrastructure/holmesgpt_integration.go (Go)
+Test Logic: holmesgpt-api/tests/integration/*.py (Python)
+
+This conftest.py provides fixtures to discover Go-started services.
+It does NOT start services itself (that's handled by Go infrastructure).
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Port Allocation (per DD-TEST-001 v1.8):
+- PostgreSQL: 15439 (HAPI-specific, shared with Notification/WE)
+- Redis: 16387 (HAPI-specific, shared with Notification/WE)
+- Data Storage Service: 18098 (HAPI allocation)
+- HolmesGPT API: 18120 (HAPI primary port)
+
+Usage:
+    def test_workflow_search(hapi_url, data_storage_url):
+        # Services already running via Go infrastructure
+        response = requests.post(f"{hapi_url}/api/v1/incident/analyze", ...)
+
+Running Tests:
+    # Start Go infrastructure first (in separate terminal or via script)
+    cd /path/to/kubernaut
+    ginkgo run ./test/integration/holmesgptapi/
+
+    # Then run Python tests (they discover Go-started services)
+    cd holmesgpt-api
+    python -m pytest tests/integration/ -v
+
+See: holmesgpt-api/tests/integration/PYTHON_TESTS_WITH_GO_INFRASTRUCTURE.md
+"""
+
+import os
+import pytest
+import requests
+
+
+# ========================================
+# DD-TEST-001 v1.8: Port Allocation
+# ========================================
+# Read from environment (set by Go infrastructure or CI)
+# Defaults match test/infrastructure/holmesgpt_integration.go
+HAPI_PORT = int(os.getenv("HAPI_INTEGRATION_PORT", "18120"))
+DATA_STORAGE_PORT = int(os.getenv("DS_INTEGRATION_PORT", "18098"))
+POSTGRES_PORT = int(os.getenv("PG_INTEGRATION_PORT", "15439"))
+REDIS_PORT = int(os.getenv("REDIS_INTEGRATION_PORT", "16387"))
+
+# Service URLs
+HAPI_URL = os.getenv("HAPI_URL", f"http://localhost:{HAPI_PORT}")
+DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://localhost:{DATA_STORAGE_PORT}")
+
+
+# ========================================
+# PYTEST FIXTURES
+# ========================================
+
+@pytest.fixture(scope="session")
+def hapi_url():
+    """
+    HAPI service URL (started by Go infrastructure).
+
+    Returns:
+        str: HAPI base URL (e.g., http://localhost:18120)
+    """
+    return HAPI_URL
+
+
+@pytest.fixture(scope="session")
+def data_storage_url():
+    """
+    Data Storage service URL (started by Go infrastructure).
+
+    Returns:
+        str: Data Storage base URL (e.g., http://localhost:18098)
+    """
+    return DATA_STORAGE_URL
+
+
+@pytest.fixture(scope="session")
+def integration_infrastructure():
+    """
+    Integration infrastructure URLs (services started by Go infrastructure).
+
+    This fixture provides backward compatibility with existing tests that
+    expect a dictionary with service URLs.
+
+    Returns:
+        dict: Service URLs
+            {
+                "hapi_url": "http://localhost:18120",
+                "data_storage_url": "http://localhost:18098",
+            }
+    """
+    return {
+        "hapi_url": HAPI_URL,
+        "data_storage_url": DATA_STORAGE_URL,
+    }
+
+
+# ========================================
+# HELPER FUNCTIONS
+# ========================================
+
+def is_service_available(url: str, timeout: float = 2.0) -> bool:
+    """
+    Check if a service is available at the given URL.
+
+    Args:
+        url: Service URL to check (e.g., http://localhost:18120/health)
+        timeout: Request timeout in seconds
+
+    Returns:
+        bool: True if service responds with 200 OK, False otherwise
+    """
+    try:
+        response = requests.get(url, timeout=timeout)
+        return response.status_code == 200
+    except (requests.RequestException, ConnectionError):
+        return False
+
+
+def is_integration_infra_available() -> bool:
+    """
+    Check if HAPI integration infrastructure is available.
+
+    Returns:
+        bool: True if all required services are available
+    """
+    hapi_available = is_service_available(f"{HAPI_URL}/health")
+    ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
+
+    return hapi_available and ds_available
+
+
+# ========================================
+# PYTEST MARKERS
+# ========================================
+
+def pytest_configure(config):
+    """Register custom pytest markers."""
+    config.addinivalue_line(
+        "markers",
+        "requires_data_storage: mark test as requiring Data Storage service"
+    )
+    config.addinivalue_line(
+        "markers",
+        "requires_hapi: mark test as requiring HAPI service"
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Auto-skip tests if required infrastructure is not available.
+
+    This is a safety mechanism. In practice, tests should fail (not skip)
+    if infrastructure is missing, per TESTING_GUIDELINES.md.
+    """
+    if config.getoption("--collect-only"):
+        return
+
+    infra_available = is_integration_infra_available()
+
+    if not infra_available:
+        skip_infra = pytest.mark.skip(reason="Integration infrastructure not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
+        for item in items:
+            if "requires_data_storage" in item.keywords or "requires_hapi" in item.keywords:
+                item.add_marker(skip_infra)

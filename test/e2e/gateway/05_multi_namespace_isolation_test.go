@@ -19,7 +19,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -27,9 +26,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -47,7 +46,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 	var (
 		testCtx        context.Context
 		testCancel     context.CancelFunc
-		testLogger     *zap.Logger
+		testLogger     logr.Logger
 		testNamespace1 string
 		testNamespace2 string
 		httpClient     *http.Client
@@ -56,7 +55,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "multi-namespace"))
+		testLogger = logger.WithValues("test", "multi-namespace")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -70,8 +69,8 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testNamespace2 = fmt.Sprintf("tenant-b-%d-%d", processID, timestamp)
 
 		testLogger.Info("Creating test namespaces...",
-			zap.String("namespace1", testNamespace1),
-			zap.String("namespace2", testNamespace2))
+			"namespace1", testNamespace1,
+			"namespace2", testNamespace2)
 
 		k8sClient = getKubernetesClient()
 
@@ -96,9 +95,9 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespaces for debugging",
-				zap.String("namespace1", testNamespace1),
-				zap.String("namespace2", testNamespace2))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespaces for debugging",
+				"namespace1", testNamespace1,
+				"namespace2", testNamespace2)
 			if testCancel != nil {
 				testCancel()
 			}
@@ -133,15 +132,28 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testLogger.Info("Step 1: Send 10 alerts to namespace 1 (trigger storm threshold)")
 
 		for i := 0; i < 10; i++ {
-			payload := createNamespacedAlertPayload(alertName, testNamespace1, fmt.Sprintf("pod-%d", i))
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: alertName,
+				Namespace: testNamespace1,
+				PodName:   fmt.Sprintf("pod-%d", i),
+				Severity:  "critical",
+				Annotations: map[string]string{
+					"summary":     fmt.Sprintf("Multi-namespace test: %s in %s", alertName, testNamespace1),
+					"description": "Testing namespace isolation",
+				},
+			})
+			resp, err := func() (*http.Response, error) {
+				req7, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+				if err != nil {
+					return nil, err
+				}
+				req7.Header.Set("Content-Type", "application/json")
+				req7.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req7)
+			}()
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  NS1 Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  NS1 Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 10 alerts to namespace 1")
 
@@ -150,15 +162,28 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testLogger.Info("Step 2: Send 10 alerts to namespace 2 (trigger storm threshold)")
 
 		for i := 0; i < 10; i++ {
-			payload := createNamespacedAlertPayload(alertName, testNamespace2, fmt.Sprintf("pod-%d", i))
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: alertName,
+				Namespace: testNamespace2,
+				PodName:   fmt.Sprintf("pod-%d", i),
+				Severity:  "critical",
+				Annotations: map[string]string{
+					"summary":     fmt.Sprintf("Multi-namespace test: %s in %s", alertName, testNamespace2),
+					"description": "Testing namespace isolation",
+				},
+			})
+			resp, err := func() (*http.Response, error) {
+				req8, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
+				if err != nil {
+					return nil, err
+				}
+				req8.Header.Set("Content-Type", "application/json")
+				req8.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req8)
+			}()
 			Expect(err).ToNot(HaveOccurred())
 			resp.Body.Close()
-			testLogger.Debug(fmt.Sprintf("  NS2 Alert %d: HTTP %d", i+1, resp.StatusCode))
+			testLogger.V(1).Info(fmt.Sprintf("  NS2 Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 10 alerts to namespace 2")
 
@@ -172,16 +197,16 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace1))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs in NS1", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs in NS1", "error", err)
 				return -1
 			}
 			crdCountNS1 = len(crdList.Items)
@@ -201,16 +226,16 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			freshClient := getKubernetesClientSafe()
 			if freshClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
-					testLogger.Debug("Failed to create K8s client", zap.Error(err))
+					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				} else {
-					testLogger.Debug("Failed to create K8s client (unknown error)")
+					testLogger.V(1).Info("Failed to create K8s client (unknown error)")
 				}
 				return -1
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
 			err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace2))
 			if err != nil {
-				testLogger.Debug("Failed to list CRDs in NS2", zap.Error(err))
+				testLogger.V(1).Info("Failed to list CRDs in NS2", "error", err)
 				return -1
 			}
 			crdCountNS2 = len(crdList.Items)
@@ -264,27 +289,4 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 	})
 })
 
-// createNamespacedAlertPayload creates a Prometheus alert payload with explicit namespace
-func createNamespacedAlertPayload(alertName, namespace, podName string) []byte {
-	payload := map[string]interface{}{
-		"alerts": []map[string]interface{}{
-			{
-				"status": "firing",
-				"labels": map[string]interface{}{
-					"alertname": alertName,
-					"severity":  "critical",
-					"namespace": namespace,
-					"pod":       podName,
-				},
-				"annotations": map[string]interface{}{
-					"summary":     fmt.Sprintf("Multi-namespace test: %s in %s", alertName, namespace),
-					"description": "Testing namespace isolation",
-				},
-				"startsAt": time.Now().Format(time.RFC3339),
-			},
-		},
-	}
-
-	payloadBytes, _ := json.Marshal(payload)
-	return payloadBytes
-}
+// NOTE: Removed local createNamespacedAlertPayload() - now using shared createPrometheusWebhookPayload() from deduplication_helpers.go

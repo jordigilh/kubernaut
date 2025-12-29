@@ -1,5 +1,13 @@
 ## Security Configuration
 
+> **📋 Changelog**
+> | Version | Date | Changes | Reference |
+> |---------|------|---------|-----------|
+> | v1.3 | 2025-11-30 | Added Rego policy ConfigMap RBAC, PDB/HPA/NetworkPolicy read access | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [HANDOFF v3.2](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) |
+> | v1.2 | 2025-11-28 | RBAC API groups updated to kubernaut.io, resource names fixed | [001-crd-api-group-rationale.md](../../../architecture/decisions/001-crd-api-group-rationale.md) |
+> | v1.1 | 2025-11-27 | Service rename: SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
+> | v1.0 | 2025-01-15 | Initial security configuration | - |
+
 ### ServiceAccount & RBAC Least Privilege
 
 **ServiceAccount Setup**:
@@ -8,41 +16,67 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: alertprocessing-controller
+  name: signalprocessing-controller
   namespace: kubernaut-system
 automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: alertprocessing-controller
+  name: signalprocessing-controller
 rules:
 # SignalProcessing CRD permissions (full control)
-- apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["alertprocessings"]
+- apiGroups: ["kubernaut.io"]
+  resources: ["signalprocessings"]
   verbs: ["get", "list", "watch", "update", "patch"]
-- apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["alertprocessings/status"]
+- apiGroups: ["kubernaut.io"]
+  resources: ["signalprocessings/status"]
   verbs: ["get", "update", "patch"]
-- apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["alertprocessings/finalizers"]
+- apiGroups: ["kubernaut.io"]
+  resources: ["signalprocessings/finalizers"]
   verbs: ["update"]
 
 # RemediationRequest CRD permissions (read-only for parent reference)
-- apiGroups: ["remediation.kubernaut.io"]
-  resources: ["alertremediations"]
+- apiGroups: ["kubernaut.io"]
+  resources: ["remediationrequests"]
   verbs: ["get", "list", "watch"]
 # NOTE: NO status write permissions - Remediation Orchestrator Pattern (see below)
 
 # Kubernetes core resources (read-only for enrichment)
 - apiGroups: [""]
-  resources: ["pods", "nodes", "namespaces", "configmaps", "secrets"]
+  resources: ["pods", "nodes", "namespaces", "secrets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["batch"]
   resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+
+# ========================================
+# LABEL DETECTION RBAC (DD-WORKFLOW-001 v1.8) ⭐ NEW
+# ========================================
+
+# Rego policy ConfigMap (signal-processing-policies in kubernaut-system)
+# Required for CustomLabels extraction via Rego
+- apiGroups: [""]
+  resources: ["configmaps"]
+  resourceNames: ["signal-processing-policies"]
+  verbs: ["get", "watch", "list"]
+
+# DetectedLabels detection: PodDisruptionBudgets
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch"]
+
+# DetectedLabels detection: HorizontalPodAutoscalers
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+
+# DetectedLabels detection: NetworkPolicies
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
   verbs: ["get", "list", "watch"]
 
 # Event emission (write-only)
@@ -53,14 +87,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: alertprocessing-controller
+  name: signalprocessing-controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: alertprocessing-controller
+  name: signalprocessing-controller
 subjects:
 - kind: ServiceAccount
-  name: alertprocessing-controller
+  name: signalprocessing-controller
   namespace: kubernaut-system
 ```
 
@@ -68,13 +102,15 @@ subjects:
 - ✅ Read-only access to Kubernetes resources (no modifications)
 - ✅ Write access ONLY to SignalProcessing CRDs
 - ✅ No Secret modification permissions (read-only for enrichment metadata)
-- ✅ Event creation scoped to RemediationProcessing events only
+- ✅ Event creation scoped to SignalProcessing events only
+- ✅ Rego ConfigMap read limited to specific resource name (`signal-processing-policies`) ⭐ NEW
+- ✅ PDB/HPA/NetworkPolicy read-only for DetectedLabels detection ⭐ NEW
 
 **Remediation Orchestrator Pattern - RBAC Justification**:
 
 This controller follows the **Remediation Orchestrator Pattern** where:
-- ✅ **This controller** updates ONLY `RemediationProcessing.status`
-- ✅ **RemediationRequest Controller** (Remediation Orchestrator) watches `RemediationProcessing` and aggregates status
+- ✅ **This controller** updates ONLY `SignalProcessing.status`
+- ✅ **RemediationRequest Controller** (Remediation Orchestrator) watches `SignalProcessing` and aggregates status
 - ❌ **NO status write permissions** needed on `RemediationRequest` - watch-based coordination handles all status updates
 
 **Why No RemediationRequest.status Write Access**:
@@ -87,7 +123,7 @@ This controller follows the **Remediation Orchestrator Pattern** where:
 - ✅ `get` - Read parent CRD for owner reference setup
 - ✅ `list` - List parent CRDs for audit/tracing
 - ✅ `watch` - Watch for parent lifecycle events (deletion)
-- ❌ NO `update` or `patch` on `alertremediations` or `alertremediations/status`
+- ❌ NO `update` or `patch` on `remediationrequests` or `remediationrequests/status`
 
 **Reference**:
 - See: [Remediation Orchestrator Architecture](../05-remediationorchestrator/overview.md)
@@ -109,12 +145,12 @@ This controller follows the **Remediation Orchestrator Pattern** where:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: alertprocessing-controller
+  name: signalprocessing-controller
   namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
-      app: alertprocessing-controller
+      app: signalprocessing-controller
   policyTypes:
   - Ingress
   - Egress
@@ -187,7 +223,7 @@ spec:
 
 **No Sensitive Data in SignalProcessing CRDs**:
 
-RemediationProcessing controller does NOT handle secrets directly. All sensitive data handling follows these patterns:
+SignalProcessing controller does NOT handle secrets directly. All sensitive data handling follows these patterns:
 
 **Pattern 1: Secret Reference Only** (Recommended):
 ```go
@@ -197,15 +233,15 @@ import (
     "context"
     "fmt"
 
-    alertprocessorv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 
     corev1 "k8s.io/api/core/v1"
     "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *RemediationProcessingReconciler) enrichWithSecretMetadata(
+func (r *SignalProcessingReconciler) enrichWithSecretMetadata(
     ctx context.Context,
-    ap *alertprocessorv1.RemediationProcessing,
+    ap *signalprocessingv1.SignalProcessing,
 ) error {
     // Get Pod that references Secret
     var pod corev1.Pod
@@ -217,10 +253,10 @@ func (r *RemediationProcessingReconciler) enrichWithSecretMetadata(
     }
 
     // Extract Secret reference (NOT content)
-    secretRefs := []alertprocessorv1.SecretReference{}
+    secretRefs := []signalprocessingv1.SecretReference{}
     for _, volume := range pod.Spec.Volumes {
         if volume.Secret != nil {
-            secretRefs = append(secretRefs, alertprocessorv1.SecretReference{
+            secretRefs = append(secretRefs, signalprocessingv1.SecretReference{
                 Name:      volume.Secret.SecretName,
                 Namespace: pod.Namespace,
                 Type:      "volume",  // volume | env | imagePullSecret
@@ -243,7 +279,7 @@ import (
     "fmt"
     "regexp"
 
-    alertprocessorv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 )
 
 var (
@@ -264,9 +300,9 @@ func sanitizeAlertPayload(payload string) string {
     return sanitized
 }
 
-func (r *RemediationProcessingReconciler) recordAudit(
+func (r *SignalProcessingReconciler) recordAudit(
     ctx context.Context,
-    ap *alertprocessorv1.RemediationProcessing,
+    ap *signalprocessingv1.SignalProcessing,
 ) error {
     // Sanitize before audit logging
     sanitizedPayload := sanitizeAlertPayload(string(ap.Spec.Alert.Payload))
@@ -288,13 +324,13 @@ package controller
 import (
     "fmt"
 
-    alertprocessorv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 
     "k8s.io/client-go/tools/record"
 )
 
-func (r *RemediationProcessingReconciler) emitEventSanitized(
-    ap *alertprocessorv1.RemediationProcessing,
+func (r *SignalProcessingReconciler) emitEventSanitized(
+    ap *signalprocessingv1.SignalProcessing,
     eventType string,
     reason string,
     message string,
@@ -306,8 +342,8 @@ func (r *RemediationProcessingReconciler) emitEventSanitized(
 }
 
 // Example: Enrichment completed event with sanitized details
-func (r *RemediationProcessingReconciler) emitEnrichmentEvent(
-    ap *alertprocessorv1.RemediationProcessing,
+func (r *SignalProcessingReconciler) emitEnrichmentEvent(
+    ap *signalprocessingv1.SignalProcessing,
 ) {
     // Build message with potentially sensitive data
     message := fmt.Sprintf(
@@ -329,12 +365,12 @@ package controller
 import (
     "context"
 
-    alertprocessorv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/remediationprocessing/v1"
 
     "github.com/go-logr/logr"
 )
 
-func (r *RemediationProcessingReconciler) logWithSanitization(
+func (r *SignalProcessingReconciler) logWithSanitization(
     log logr.Logger,
     message string,
     keysAndValues ...interface{},
@@ -353,9 +389,9 @@ func (r *RemediationProcessingReconciler) logWithSanitization(
 }
 
 // Example usage
-func (r *RemediationProcessingReconciler) enrichAlert(
+func (r *SignalProcessingReconciler) enrichAlert(
     ctx context.Context,
-    ap *alertprocessorv1.RemediationProcessing,
+    ap *signalprocessingv1.SignalProcessing,
     log logr.Logger,
 ) error {
     // Sanitize before logging
@@ -425,19 +461,19 @@ var secretPatterns = []*regexp.Regexp{
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: alertprocessing-controller
+  name: signalprocessing-controller
   namespace: kubernaut-system
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: alertprocessing-controller
+      app: signalprocessing-controller
   template:
     metadata:
       labels:
-        app: alertprocessing-controller
+        app: signalprocessing-controller
     spec:
-      serviceAccountName: alertprocessing-controller
+      serviceAccountName: signalprocessing-controller
       securityContext:
         # Pod-level security context
         runAsNonRoot: true
@@ -448,7 +484,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: manager
-        image: alertprocessing-controller:latest
+        image: signalprocessing-controller:latest
         securityContext:
           # Container-level security context
           allowPrivilegeEscalation: false

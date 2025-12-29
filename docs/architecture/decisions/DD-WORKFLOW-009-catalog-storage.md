@@ -1,9 +1,24 @@
 # DD-WORKFLOW-009: Workflow Catalog Storage
 
-**Date**: 2025-11-15  
-**Status**: Confirmed  
-**Version**: v1.1  
-**Related**: DD-WORKFLOW-007, DD-WORKFLOW-008
+**Date**: 2025-11-15
+**Status**: Confirmed
+**Version**: v1.1
+**Related**: DD-WORKFLOW-007, DD-WORKFLOW-008, DD-WORKFLOW-012 (Workflow Immutability)
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: This DD defines the PRIMARY KEY that enforces workflow immutability.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- `PRIMARY KEY (workflow_id, version)` enforces immutability
+- Cannot overwrite existing workflow versions
+- All schema fields are immutable per DD-WORKFLOW-012
+
+**Cross-Reference**: The composite primary key design is the database-level enforcement mechanism for DD-WORKFLOW-012 immutability constraints.
+
+---
 
 ---
 
@@ -11,8 +26,8 @@
 
 ### Decision: PostgreSQL with pgvector
 
-**Database**: PostgreSQL with pgvector extension  
-**Managed By**: Workflow Catalog Controller  
+**Database**: PostgreSQL with pgvector extension
+**Managed By**: Workflow Catalog Controller
 **Concurrency**: Handled at database level
 
 ---
@@ -67,28 +82,28 @@ CREATE TABLE playbooks (
     -- Primary identification
     workflow_id VARCHAR(255) PRIMARY KEY,
     version VARCHAR(50) NOT NULL,
-    
+
     -- Container information
     container_image TEXT NOT NULL,
     container_digest VARCHAR(71) NOT NULL, -- sha256:...
-    
+
     -- Schema (stored as JSONB for querying)
     parameters JSONB NOT NULL,
     labels JSONB NOT NULL,
-    
+
     -- Metadata
     title TEXT,
     description TEXT,
-    
+
     -- Validation status
     validated BOOLEAN NOT NULL DEFAULT false,
     validated_at TIMESTAMP WITH TIME ZONE,
-    
+
     -- Audit fields
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     created_by VARCHAR(255),
-    
+
     -- Version constraint: unique workflow_id + version combination
     UNIQUE(workflow_id, version)
 );
@@ -171,7 +186,7 @@ BEGIN;
 INSERT INTO playbooks (workflow_id, version, ...)
 VALUES ('oomkill-cost-optimized', '1.0.0', ...)
 ON CONFLICT (workflow_id, version) DO UPDATE
-SET 
+SET
     container_image = EXCLUDED.container_image,
     container_digest = EXCLUDED.container_digest,
     parameters = EXCLUDED.parameters,
@@ -186,7 +201,7 @@ BEGIN;
 INSERT INTO playbooks (workflow_id, version, ...)
 VALUES ('oomkill-cost-optimized', '1.0.0', ...)
 ON CONFLICT (workflow_id, version) DO UPDATE
-SET 
+SET
     container_image = EXCLUDED.container_image,
     container_digest = EXCLUDED.container_digest,
     parameters = EXCLUDED.parameters,
@@ -226,7 +241,7 @@ import (
     "database/sql"
     "encoding/json"
     "fmt"
-    
+
     "github.com/lib/pq"
 )
 
@@ -240,18 +255,18 @@ func (c *PlaybookCatalogController) RegisterPlaybook(req *RegisterRequest) error
     if err != nil {
         return fmt.Errorf("schema extraction failed: %w", err)
     }
-    
+
     // 2. Validate schema format
     if err := c.validateSchema(schema); err != nil {
         return fmt.Errorf("schema validation failed: %w", err)
     }
-    
+
     // 3. Get image digest
     digest, err := c.getImageDigest(req.ContainerImage)
     if err != nil {
         return fmt.Errorf("failed to get image digest: %w", err)
     }
-    
+
     // 4. Insert/update in database (PostgreSQL handles concurrency)
     query := `
         INSERT INTO playbooks (
@@ -268,7 +283,7 @@ func (c *PlaybookCatalogController) RegisterPlaybook(req *RegisterRequest) error
             created_by
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $10)
         ON CONFLICT (workflow_id, version) DO UPDATE
-        SET 
+        SET
             container_image = EXCLUDED.container_image,
             container_digest = EXCLUDED.container_digest,
             parameters = EXCLUDED.parameters,
@@ -280,17 +295,17 @@ func (c *PlaybookCatalogController) RegisterPlaybook(req *RegisterRequest) error
             updated_at = NOW()
         RETURNING workflow_id, version, created_at, updated_at
     `
-    
+
     parametersJSON, _ := json.Marshal(schema.Parameters)
     labelsJSON, _ := json.Marshal(schema.Labels)
-    
+
     var result struct {
         PlaybookID string
         Version    string
         CreatedAt  time.Time
         UpdatedAt  time.Time
     }
-    
+
     err = c.db.QueryRow(
         query,
         schema.PlaybookID,
@@ -304,22 +319,22 @@ func (c *PlaybookCatalogController) RegisterPlaybook(req *RegisterRequest) error
         true, // validated
         req.CreatedBy,
     ).Scan(&result.PlaybookID, &result.Version, &result.CreatedAt, &result.UpdatedAt)
-    
+
     if err != nil {
         return fmt.Errorf("database insert failed: %w", err)
     }
-    
+
     // Log whether this was insert or update
     if result.CreatedAt.Equal(result.UpdatedAt) {
-        log.Info("Playbook registered (new)", 
-            "workflow_id", result.PlaybookID, 
+        log.Info("Playbook registered (new)",
+            "workflow_id", result.PlaybookID,
             "version", result.Version)
     } else {
-        log.Info("Playbook updated (existing)", 
-            "workflow_id", result.PlaybookID, 
+        log.Info("Playbook updated (existing)",
+            "workflow_id", result.PlaybookID,
             "version", result.Version)
     }
-    
+
     return nil
 }
 ```
@@ -329,7 +344,7 @@ func (c *PlaybookCatalogController) RegisterPlaybook(req *RegisterRequest) error
 ```go
 func (c *PlaybookCatalogController) SearchPlaybooks(criteria *SearchCriteria) ([]*Playbook, error) {
     query := `
-        SELECT 
+        SELECT
             workflow_id,
             version,
             container_image,
@@ -346,25 +361,25 @@ func (c *PlaybookCatalogController) SearchPlaybooks(criteria *SearchCriteria) ([
         ORDER BY updated_at DESC
         LIMIT $2
     `
-    
+
     // Build label filter
     labelFilter := map[string]interface{}{
         "signal_type": criteria.SignalType,
         "severity":    criteria.Severity,
     }
     labelFilterJSON, _ := json.Marshal(labelFilter)
-    
+
     rows, err := c.db.Query(query, labelFilterJSON, criteria.Limit)
     if err != nil {
         return nil, fmt.Errorf("search query failed: %w", err)
     }
     defer rows.Close()
-    
+
     var playbooks []*Playbook
     for rows.Next() {
         var p Playbook
         var parametersJSON, labelsJSON []byte
-        
+
         err := rows.Scan(
             &p.PlaybookID,
             &p.Version,
@@ -380,13 +395,13 @@ func (c *PlaybookCatalogController) SearchPlaybooks(criteria *SearchCriteria) ([
         if err != nil {
             return nil, err
         }
-        
+
         json.Unmarshal(parametersJSON, &p.Parameters)
         json.Unmarshal(labelsJSON, &p.Labels)
-        
+
         playbooks = append(playbooks, &p)
     }
-    
+
     return playbooks, nil
 }
 ```
@@ -534,10 +549,10 @@ export DB_SSL_MODE=require
 
 ## Summary
 
-**Storage**: PostgreSQL + pgvector  
-**Concurrency**: Handled at database level (ACID transactions)  
-**Controller**: Go service with REST API  
-**Schema**: JSONB for flexible querying  
+**Storage**: PostgreSQL + pgvector
+**Concurrency**: Handled at database level (ACID transactions)
+**Controller**: Go service with REST API
+**Schema**: JSONB for flexible querying
 
 **Confidence**: 100% (database-level concurrency is standard practice)
 
@@ -547,5 +562,5 @@ export DB_SSL_MODE=require
 - ✅ Flexible JSONB queries
 - ✅ Integration with existing kubernaut infrastructure
 
-**Status**: Confirmed for v1.1 implementation  
+**Status**: Confirmed for v1.1 implementation
 **Next Step**: Define Workflow Catalog Controller API specification

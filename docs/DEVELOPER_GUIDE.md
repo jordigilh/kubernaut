@@ -32,9 +32,13 @@ This guide provides a complete developer onboarding path for contributing to Kub
 
 ### **System Architecture**
 
-Kubernaut is a microservices platform with 10 services:
+Kubernaut is a microservices platform with 8 V1.0 services:
 - **4 CRD Controllers**: Signal Processing, AI Analysis, Remediation Execution, Remediation Orchestrator
-- **6 Stateless Services**: Gateway, Data Storage, HolmesGPT API, Dynamic Toolset, Notification, Effectiveness Monitor
+- **4 Stateless Services**: Gateway, Data Storage, HolmesGPT API, Notification
+
+**Deferred Services**:
+- **Dynamic Toolset** → V2.0 (DD-016: Static config in V1.x)
+- **Effectiveness Monitor** → V1.1 (DD-017: Requires 8+ weeks of remediation data)
 
 **Communication**: All services communicate via **Kubernetes Custom Resources (CRDs)** for event-driven, resilient workflows.
 

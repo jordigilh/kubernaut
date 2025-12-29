@@ -26,9 +26,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -37,14 +37,14 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 	var (
 		testCtx       context.Context
 		testCancel    context.CancelFunc
-		testLogger    *zap.Logger
+		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
-		testLogger = logger.With(zap.String("test", "structured-logging"))
+		testLogger = logger.WithValues("test", "structured-logging")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -52,7 +52,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		testNamespace = GenerateUniqueNamespace("logging")
-		testLogger.Info("Deploying test services...", zap.String("namespace", testNamespace))
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
@@ -60,8 +60,8 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		k8sClient := getKubernetesClient()
 		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
 
-		testLogger.Info("✅ Test namespace ready", zap.String("namespace", testNamespace))
-		testLogger.Info("✅ Using shared Gateway", zap.String("url", gatewayURL))
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -71,8 +71,8 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		if CurrentSpecReport().Failed() {
-			testLogger.Warn("⚠️  Test FAILED - Preserving namespace for debugging",
-				zap.String("namespace", testNamespace))
+			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
+				"namespace", testNamespace)
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
@@ -84,7 +84,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", zap.String("namespace", testNamespace))
+		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
 		}
@@ -128,11 +128,15 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		payloadBytes, _ := json.Marshal(webhookPayload)
 
 		Eventually(func() error {
-			resp, err := httpClient.Post(
-				gatewayURL+"/api/v1/signals/prometheus",
-				"application/json",
-				bytes.NewBuffer(payloadBytes),
-			)
+			resp, err := func() (*http.Response, error) {
+				req24, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payloadBytes))
+				if err != nil {
+					return nil, err
+				}
+				req24.Header.Set("Content-Type", "application/json")
+				req24.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+				return httpClient.Do(req24)
+			}()
 			if err != nil {
 				return err
 			}
@@ -144,26 +148,29 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 			return nil
 		}, 10*time.Second, 1*time.Second).Should(Succeed(), "Alert should be accepted")
 
-		testLogger.Info("✅ Alert sent with unique marker", zap.String("marker", uniqueMarker))
+		testLogger.Info("✅ Alert sent with unique marker", "marker", uniqueMarker)
 
 		testLogger.Info("Step 2: Retrieve Gateway logs")
-		// Wait a moment for logs to be written
-		time.Sleep(2 * time.Second)
+		// Wait for logs to be written using Eventually
+		var logs string
+		Eventually(func() bool {
+			cmd := exec.CommandContext(testCtx, "kubectl", "logs",
+				"-n", gatewayNamespace,
+				"-l", "app=gateway",
+				"--tail=100",
+				"--kubeconfig", kubeconfigPath)
+			output, err := cmd.Output()
+			if err != nil {
+				testLogger.Info("Could not retrieve Gateway logs", "error", err)
+				return false
+			}
+			logs = string(output)
+			// Check if logs contain our unique marker
+			return len(logs) > 0
+		}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
 
-		// Get Gateway pod logs
-		cmd := exec.CommandContext(testCtx, "kubectl", "logs",
-			"-n", gatewayNamespace,
-			"-l", "app=gateway",
-			"--tail=100",
-			"--kubeconfig", kubeconfigPath)
-		output, err := cmd.Output()
-		if err != nil {
-			testLogger.Warn("Could not retrieve Gateway logs", zap.Error(err))
-			// Don't fail the test if we can't get logs - this might be a permissions issue
-		}
-
-		logs := string(output)
-		testLogger.Info("Retrieved Gateway logs", zap.Int("bytes", len(logs)))
+		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))
+		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))
 
 		testLogger.Info("Step 3: Verify structured log format")
 		// Check if logs contain JSON-formatted entries
@@ -206,11 +213,11 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		}
 
 		testLogger.Info("Log analysis results",
-			zap.Int("totalLines", len(lines)),
-			zap.Int("jsonLogs", jsonLogCount),
-			zap.Bool("hasTimestamp", hasTimestamp),
-			zap.Bool("hasLevel", hasLevel),
-			zap.Bool("hasMessage", hasMessage))
+			"totalLines", len(lines),
+			"jsonLogs", jsonLogCount,
+			"hasTimestamp", hasTimestamp,
+			"hasLevel", hasLevel,
+			"hasMessage", hasMessage)
 
 		// Verify structured logging is in use
 		if jsonLogCount > 0 {
@@ -228,4 +235,3 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 })
-

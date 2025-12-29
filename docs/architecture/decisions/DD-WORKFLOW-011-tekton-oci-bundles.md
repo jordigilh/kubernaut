@@ -1,9 +1,9 @@
 # DD-WORKFLOW-011: Tekton Pipeline OCI Bundles for Workflow Execution
 
-**Status**: ✅ Approved  
-**Version**: 1.0  
-**Date**: 2025-11-15  
-**Confidence**: 100%  
+**Status**: ✅ Approved
+**Version**: 1.0
+**Date**: 2025-11-15
+**Confidence**: 100%
 
 ---
 
@@ -124,11 +124,18 @@ spec:
 
 ### Workflow Structure
 
+**Authority**: See [ADR-043: Workflow Schema Definition Standard](./ADR-043-workflow-schema-definition-standard.md) for complete schema specification.
+
 ```
-quay.io/kubernaut/playbook-oomkill-scale-down:v1.0.0 (OCI Bundle)
-├── pipeline.yaml (Tekton Pipeline wrapper)
-└── playbook-schema.json (parameter definitions)
+quay.io/kubernaut/workflow-oomkill-scale-down:v1.0.0 (OCI Bundle)
+├── pipeline.yaml           # Tekton Pipeline (execution)
+└── workflow-schema.yaml    # Kubernaut Schema (discovery + validation)
 ```
+
+**Note**: The `workflow-schema.yaml` file (not JSON) provides rich metadata including:
+- Discovery labels for MCP search
+- Parameter validation (enum, pattern, min/max)
+- Execution engine hint for V2 multi-engine support
 
 ### Pipeline Wrapper (Thin - 10-20 lines)
 
@@ -149,7 +156,7 @@ spec:
       type: string
     - name: SCALE_TARGET_REPLICAS
       type: string
-  
+
   tasks:
     - name: execute-playbook
       taskSpec:
@@ -189,7 +196,7 @@ func (w *WorkflowEngine) createPipelineRunFromBundle(
             Value: tektonv1.ParamValue{Type: "string", StringVal: value},
         })
     }
-    
+
     // Create PipelineRun referencing OCI bundle
     pipelineRun := &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
@@ -228,7 +235,7 @@ func (w *WorkflowEngine) createPipelineRunFromBundle(
             Params: tektonParams,
         },
     }
-    
+
     // Create PipelineRun in cluster
     return w.tektonClient.TektonV1beta1().
         PipelineRuns(w.namespace).

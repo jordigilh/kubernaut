@@ -1,9 +1,13 @@
 # RemediationOrchestrator Enhancement Guide: WorkflowExecution v1.2 Patterns
 
 **Purpose**: Enhance existing RemediationOrchestrator implementation with proven patterns from WorkflowExecution v1.2
-**Target Plan**: [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) (v1.0.1)
+**Target Plan**: [IMPLEMENTATION_PLAN_V1.1.md](./IMPLEMENTATION_PLAN_V1.1.md) (v1.1.0)
 **Status**: Enhancement Guide - Apply patterns to existing plan
 **Date**: 2025-10-17
+
+> **📝 BR Reference Note**: This enhancement guide may reference conceptual BR numbers (BR-ORCH-050, etc.)
+> from early design phases. See [BR_MAPPING.md](../BR_MAPPING.md) for the authoritative list of 11 formally
+> defined V1 BRs: BR-ORCH-001, BR-ORCH-025-034.
 
 ---
 
@@ -476,10 +480,10 @@ var _ = Describe("Multi-CRD Coordination", func() {
 	})
 
 	// ============================================================================
-	// BR-REM-041: Watch 4 Child CRD Types Simultaneously
+	// BR-ORCH-041: Watch 4 Child CRD Types Simultaneously
 	// ============================================================================
 
-	Describe("BR-REM-041: 4-Way CRD Watch Coordination", func() {
+	Describe("BR-ORCH-041: 4-Way CRD Watch Coordination", func() {
 		It("should create and coordinate all 4 child CRDs in sequence", func() {
 			// GIVEN: RemediationRequest with complete targeting data
 			rr = &remediationv1alpha1.RemediationRequest{
@@ -674,10 +678,10 @@ var _ = Describe("Multi-CRD Coordination", func() {
 	})
 
 	// ============================================================================
-	// BR-REM-050: Status Aggregation from All Children
+	// BR-ORCH-050: Status Aggregation from All Children
 	// ============================================================================
 
-	Describe("BR-REM-050: Status Aggregation", func() {
+	Describe("BR-ORCH-050: Status Aggregation", func() {
 		It("should aggregate progress from all child CRDs", func() {
 			// GIVEN: RemediationRequest with all children at various stages
 			rr = &remediationv1alpha1.RemediationRequest{
@@ -1295,5 +1299,5 @@ After applying these enhancements, the RemediationOrchestrator implementation pl
 **Document Owner**: Platform Architecture Team
 **Last Updated**: 2025-10-17
 **Status**: ✅ **Enhancement Guide Complete**
-**Next Action**: Apply enhancements to [IMPLEMENTATION_PLAN_V1.0.md](./IMPLEMENTATION_PLAN_V1.0.md) during implementation
+**Next Action**: Apply enhancements to [IMPLEMENTATION_PLAN_V1.1.md](./IMPLEMENTATION_PLAN_V1.1.md) during implementation
 

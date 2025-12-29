@@ -332,7 +332,7 @@ spec:
             cpu: 500m
             memory: 512Mi
         ports:
-        - containerPort: 8080
+        - containerPort: 8081  # Health probes (DD-TEST-001)
           name: health
           protocol: TCP
         - containerPort: 9090
@@ -341,13 +341,13 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: 8080
+            port: 8081  # DD-TEST-001
           initialDelaySeconds: 15
           periodSeconds: 20
         readinessProbe:
           httpGet:
             path: /readyz
-            port: 8080
+            port: 8081  # DD-TEST-001
           initialDelaySeconds: 5
           periodSeconds: 10
         env:

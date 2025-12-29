@@ -1,9 +1,14 @@
 # HolmesGPT Prompt Engineering Guidelines for Dependency Specification
 
+> ⚠️ **V2.0+ DEFERRED**: This document describes dependency validation features (BR-AI-051-053) that are **out of V1.0 scope**.
+> V1.0 uses predefined workflows from catalog (DD-WORKFLOW-002) - no runtime dependency validation needed.
+> This document is retained for future reference. See [BR_MAPPING.md](./BR_MAPPING.md) v1.3 for V1.0 scope.
+
 **Date**: October 16, 2025 (Updated)
 **Purpose**: Guidelines for structuring HolmesGPT prompts to generate remediation recommendations with step dependencies
-**Business Requirements**: BR-LLM-035, BR-LLM-036, BR-LLM-037, BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033
+**Business Requirements**: ~~BR-LLM-035, BR-LLM-036, BR-LLM-037, BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033~~ *(Legacy - invalid BR categories)*
 **Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
+**V1.0 Status**: ❌ **DEFERRED** - See BR_MAPPING.md for V1.0 scope
 
 ---
 

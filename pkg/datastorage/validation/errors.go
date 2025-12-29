@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package validation
 
 import (
@@ -55,7 +71,7 @@ func (v *ValidationError) Error() string {
 // ToRFC7807 converts ValidationError to RFC 7807 Problem format.
 func (v *ValidationError) ToRFC7807() *RFC7807Problem {
 	return &RFC7807Problem{
-		Type:     "https://kubernaut.io/errors/validation-error",
+		Type:     "https://kubernaut.ai/problems/validation-error",
 		Title:    "Validation Error",
 		Status:   http.StatusBadRequest,
 		Detail:   v.Message,
@@ -161,7 +177,7 @@ func NewValidationErrorProblem(resource string, fieldErrors map[string]string) *
 	}
 
 	return &RFC7807Problem{
-		Type:     "https://kubernaut.io/errors/validation-error",
+		Type:     "https://kubernaut.ai/problems/validation-error",
 		Title:    "Validation Error",
 		Status:   http.StatusBadRequest,
 		Detail:   detail,
@@ -176,7 +192,7 @@ func NewValidationErrorProblem(resource string, fieldErrors map[string]string) *
 // NewNotFoundProblem creates an RFC 7807 problem for resource not found.
 func NewNotFoundProblem(resource, id string) *RFC7807Problem {
 	return &RFC7807Problem{
-		Type:     "https://kubernaut.io/errors/not-found",
+		Type:     "https://kubernaut.ai/problems/not-found",
 		Title:    "Resource Not Found",
 		Status:   http.StatusNotFound,
 		Detail:   fmt.Sprintf("Resource %s with ID '%s' not found", resource, id),
@@ -191,7 +207,7 @@ func NewNotFoundProblem(resource, id string) *RFC7807Problem {
 // NewInternalErrorProblem creates an RFC 7807 problem for internal errors.
 func NewInternalErrorProblem(detail string) *RFC7807Problem {
 	return &RFC7807Problem{
-		Type:   "https://kubernaut.io/errors/internal-error",
+		Type:   "https://kubernaut.ai/problems/internal-error",
 		Title:  "Internal Server Error",
 		Status: http.StatusInternalServerError,
 		Detail: detail,
@@ -204,7 +220,7 @@ func NewInternalErrorProblem(detail string) *RFC7807Problem {
 // NewServiceUnavailableProblem creates an RFC 7807 problem for service unavailable.
 func NewServiceUnavailableProblem(detail string) *RFC7807Problem {
 	return &RFC7807Problem{
-		Type:   "https://kubernaut.io/errors/service-unavailable",
+		Type:   "https://kubernaut.ai/problems/service-unavailable",
 		Title:  "Service Unavailable",
 		Status: http.StatusServiceUnavailable,
 		Detail: detail,
@@ -217,7 +233,7 @@ func NewServiceUnavailableProblem(detail string) *RFC7807Problem {
 // NewConflictProblem creates an RFC 7807 problem for resource conflicts.
 func NewConflictProblem(resource, field, value string) *RFC7807Problem {
 	return &RFC7807Problem{
-		Type:     "https://kubernaut.io/errors/conflict",
+		Type:     "https://kubernaut.ai/problems/conflict",
 		Title:    "Resource Conflict",
 		Status:   http.StatusConflict,
 		Detail:   fmt.Sprintf("Resource %s with %s='%s' already exists", resource, field, value),

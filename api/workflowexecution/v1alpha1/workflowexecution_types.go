@@ -21,483 +21,473 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// ═══════════════════════════════════════════════════════════════════════════
+// VERSION: v1alpha1-v1.0-executor
+// Last Updated: December 19, 2025
+// Status: ✅ WE "Pure Executor" Complete + BR-WE-013 (SOC2 Compliance)
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// CHANGELOG:
+//
+// ## V1.0 (IN PROGRESS - Started December 14, 2025)
+//
+// ### ✅ BR-WE-013: Audit-Tracked Execution Block Clearing (December 19, 2025)
+//
+// **Added**: BlockClearanceDetails type and WorkflowExecutionStatus.BlockClearance field
+// **Priority**: P0 (CRITICAL) - SOC2 Type II Compliance Requirement
+// **Rationale**: Current v1.0 workaround (deleting WFE CRDs) violates SOC2 audit trail requirements
+// **Compliance**: SOC2 CC7.3 (Immutability), CC7.4 (Completeness), CC8.1 (Attribution)
+//
+// **Fields Added**:
+// - BlockClearanceDetails.ClearedAt (timestamp)
+// - BlockClearanceDetails.ClearedBy (operator identity)
+// - BlockClearanceDetails.ClearReason (reason for clearing)
+// - BlockClearanceDetails.ClearMethod (Annotation|APIEndpoint|StatusField)
+// - WorkflowExecutionStatus.BlockClearance (*BlockClearanceDetails)
+//
+// ### ✅ Phase 1: API Foundation (Day 1) - COMPLETE
+//
+// **Removed from api/workflowexecution/v1alpha1 (API Package)**:
+// - SkipDetails type definition (moved to WE controller as temporary stubs)
+// - ConflictingWorkflowRef type definition (moved to WE controller as temporary stubs)
+// - RecentRemediationRef type definition (moved to WE controller as temporary stubs)
+// - Phase value "Skipped" from enum (WFE now: Pending, Running, Completed, Failed)
+// - Skip reason constants: ResourceBusy, RecentlyRemediated, ExhaustedRetries, PreviousExecutionFailed
+//
+// **Status**: Day 1 compatibility stubs created in WE controller (internal/controller/workflowexecution/v1_compat_stubs.go)
+// These stubs are TEMPORARY and marked for removal in Phase 2 (Days 6-7).
+//
+// ### 🔄 Phase 2: RO Routing Logic (Days 2-5) - IN PROGRESS
+//
+// **Status**: RO Team working in parallel (Dec 17-20)
+// **Planned Changes**:
+// - RO will implement routing decision logic BEFORE creating WFE
+// - 5 routing checks: resource lock, cooldown, exponential backoff, exhausted retries, previous execution failure
+// - Field index on WorkflowExecution.spec.targetResource for efficient queries
+// - Population of RemediationRequest.Status.skipMessage and blockingWorkflowExecution
+//
+// **Current State**: RO fixing integration tests (27/52 failing) + implementing routing logic
+//
+// ### ✅ Phase 3: WE Simplification (Days 6-7) - COMPLETE
+//
+// **Status**: WorkflowExecution controller is already in "pure executor" state
+// **Verified**: December 17, 2025
+// **Evidence**: docs/handoff/WE_PURE_EXECUTOR_VERIFICATION.md
+//
+// **Functions That DO NOT Exist** (Routing Removed):
+// - ❌ CheckCooldown() - Not found in codebase
+// - ❌ CheckResourceLock() - Not found in codebase
+// - ❌ MarkSkipped() - Not found in codebase
+// - ❌ FindMostRecentTerminalWFE() - Not found in codebase
+// - ❌ v1_compat_stubs.go - File does not exist
+//
+// **Functions That DO Exist** (Pure Execution):
+// - ✅ reconcilePending() - Create PipelineRun (no routing checks)
+// - ✅ reconcileRunning() - Sync PipelineRun status
+// - ✅ ReconcileTerminal() - Lock cleanup after cooldown
+// - ✅ HandleAlreadyExists() - Execution-time collision handling
+//
+// **Result**: WE controller is a "pure executor" - RO makes ALL routing decisions
+//
+// ### 🎯 Design Decision: DD-RO-002 - Centralized Routing Responsibility (TARGET)
+//
+// **Target Architecture** (NOT YET IMPLEMENTED):
+// - WorkflowExecution becomes a pure executor (no routing logic)
+// - RemediationOrchestrator makes ALL routing decisions before creating WFE
+// - If a workflow should be skipped, WFE is never created
+// - Single source of truth for skip reasons (RR.Status)
+//
+// **Current Architecture** (AS OF DAYS 6-7 COMPLETION):
+// - WorkflowExecution is a "pure executor" (NO routing logic)
+// - RemediationOrchestrator makes ALL routing decisions before creating WFE
+// - WFE has only 4 phases: Pending, Running, Completed, Failed (Skipped removed)
+// - Skip reasons tracked ONLY in RR.Status (single source of truth)
+//
+// ### 📋 Related Changes (Planned):
+// - RemediationRequest.Status gains skipMessage, blockingWorkflowExecution (fields added, not yet populated)
+// - RO controller gains routing logic (planned for Days 2-5, not implemented)
+//
+// ### 📚 References:
+// - Implementation Plan: docs/services/.../05-remediationorchestrator/implementation/V1.0_CENTRALIZED_ROUTING_IMPLEMENTATION_PLAN.md
+// - Design Decision: docs/architecture/decisions/DD-RO-002-centralized-routing-responsibility.md (planned)
+// - Proposal: docs/handoff/TRIAGE_RO_CENTRALIZED_ROUTING_PROPOSAL.md
+// - Implementation Status: docs/handoff/TRIAGE_V1.0_IMPLEMENTATION_STATUS.md
+// - Confidence Assessment: 98% (WE team validated PLAN, not implementation)
+//
+// ### ⏰ Timeline:
+// - Day 1 (Dec 14-15): ✅ API Foundation Complete
+// - Days 2-5: 🔄 RO Routing Logic (IN PROGRESS - RO Team Dec 17-20)
+// - Days 6-7: ✅ WE Simplification (COMPLETE - Already in "pure executor" state)
+// - Days 8-20: ⏳ Testing, Staging, Launch (PENDING)
+// - Target: January 11, 2026 (on track with parallel development)
+//
+// ═══════════════════════════════════════════════════════════════════════════
 
-// WorkflowExecutionSpec defines the desired state of WorkflowExecution.
+// ========================================
+// WorkflowExecution CRD Types
+// Version: 4.0 - Aligned with ADR-044, DD-CONTRACT-001 v1.4, ADR-043
+// See: docs/services/crd-controllers/03-workflowexecution/crd-schema.md
+// ========================================
+
+// WorkflowExecutionSpec defines the desired state of WorkflowExecution
+// Simplified per ADR-044 - Tekton handles step orchestration
 type WorkflowExecutionSpec struct {
 	// RemediationRequestRef references the parent RemediationRequest CRD
 	RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
 
-	// WorkflowDefinition contains the workflow to execute
-	WorkflowDefinition WorkflowDefinition `json:"workflowDefinition"`
+	// WorkflowRef contains the workflow catalog reference
+	// Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
+	WorkflowRef WorkflowRef `json:"workflowRef"`
 
-	// ExecutionStrategy specifies how to execute the workflow
-	ExecutionStrategy ExecutionStrategy `json:"executionStrategy"`
+	// TargetResource identifies the K8s resource being remediated
+	// Used for resource locking (DD-WE-001) - prevents parallel workflows on same target
+	// Format: "namespace/kind/name" for namespaced resources
+	//         "kind/name" for cluster-scoped resources
+	// Example: "payment/deployment/payment-api", "node/worker-node-1"
+	TargetResource string `json:"targetResource"`
 
-	// AdaptiveOrchestration enables runtime optimization
-	AdaptiveOrchestration AdaptiveOrchestrationConfig `json:"adaptiveOrchestration,omitempty"`
+	// Parameters from LLM selection (per DD-WORKFLOW-003)
+	// Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
+	// +optional
+	Parameters map[string]string `json:"parameters,omitempty"`
+
+	// Confidence score from LLM (for audit trail)
+	// +optional
+	Confidence float64 `json:"confidence,omitempty"`
+
+	// Rationale from LLM (for audit trail)
+	// +optional
+	Rationale string `json:"rationale,omitempty"`
+
+	// ExecutionConfig contains minimal execution settings
+	// +optional
+	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
 }
 
-// WorkflowDefinition represents the workflow to execute
-type WorkflowDefinition struct {
-	Name              string              `json:"name"`
-	Version           string              `json:"version"`
-	Steps             []WorkflowStep      `json:"steps"`
-	Dependencies      map[string][]string `json:"dependencies,omitempty"`
-	AIRecommendations *AIRecommendations  `json:"aiRecommendations,omitempty"`
+// WorkflowRef contains catalog-resolved workflow reference
+type WorkflowRef struct {
+	// WorkflowID is the catalog lookup key
+	WorkflowID string `json:"workflowId"`
+
+	// Version of the workflow
+	Version string `json:"version"`
+
+	// ContainerImage resolved from workflow catalog (Data Storage API)
+	// OCI bundle reference for Tekton PipelineRun
+	ContainerImage string `json:"containerImage"`
+
+	// ContainerDigest for audit trail and reproducibility
+	// +optional
+	ContainerDigest string `json:"containerDigest,omitempty"`
 }
 
-// WorkflowStep represents a single step in the workflow
-type WorkflowStep struct {
-	StepNumber    int             `json:"stepNumber"`
-	Name          string          `json:"name"`
-	Action        string          `json:"action"` // e.g., "scale-deployment", "restart-pod"
-	TargetCluster string          `json:"targetCluster"`
-	Parameters    *StepParameters `json:"parameters"`
-	CriticalStep  bool            `json:"criticalStep"` // Failure triggers rollback
-	MaxRetries    int             `json:"maxRetries,omitempty"`
-	Timeout       string          `json:"timeout,omitempty"`   // e.g., "5m"
-	DependsOn     []int           `json:"dependsOn,omitempty"` // Step numbers
-	RollbackSpec  *RollbackSpec   `json:"rollbackSpec,omitempty"`
+// ExecutionConfig contains minimal execution settings
+// Note: Most execution logic is delegated to Tekton (ADR-044)
+type ExecutionConfig struct {
+	// Timeout for the entire workflow (Tekton PipelineRun timeout)
+	// Default: use global timeout from RemediationRequest or 30m
+	// +optional
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+
+	// ServiceAccountName for the PipelineRun
+	// Default: "kubernaut-workflow-runner"
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 }
 
-// RollbackSpec defines how to rollback a step
-type RollbackSpec struct {
-	Action     string              `json:"action"` // e.g., "restore-previous-config"
-	Parameters *RollbackParameters `json:"parameters,omitempty"`
-	Timeout    string              `json:"timeout,omitempty"`
-}
-
-// ExecutionStrategy specifies execution behavior
-type ExecutionStrategy struct {
-	ApprovalRequired bool          `json:"approvalRequired"`
-	DryRunFirst      bool          `json:"dryRunFirst"`
-	RollbackStrategy string        `json:"rollbackStrategy"` // "automatic", "manual", "none"
-	MaxRetries       int           `json:"maxRetries,omitempty"`
-	SafetyChecks     []SafetyCheck `json:"safetyChecks,omitempty"`
-}
-
-// SafetyCheck represents a validation requirement
-type SafetyCheck struct {
-	Type        string `json:"type"` // "rbac", "capacity", "health", "network"
-	Description string `json:"description"`
-	Required    bool   `json:"required"`
-}
-
-// AdaptiveOrchestrationConfig enables runtime optimization
-type AdaptiveOrchestrationConfig struct {
-	OptimizationEnabled   bool `json:"optimizationEnabled"`
-	LearningFromHistory   bool `json:"learningFromHistory"`
-	DynamicStepAdjustment bool `json:"dynamicStepAdjustment"`
-}
+// WorkflowExecution phase constants
+const (
+	// PhasePending is the initial phase when WorkflowExecution is first created
+	PhasePending = "Pending"
+	// PhaseRunning indicates the PipelineRun is actively executing
+	PhaseRunning = "Running"
+	// PhaseCompleted indicates successful completion
+	PhaseCompleted = "Completed"
+	// PhaseFailed indicates a permanent failure
+	PhaseFailed = "Failed"
+)
 
 // WorkflowExecutionStatus defines the observed state
+// Simplified per ADR-044 - just tracks PipelineRun status
+// Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
+// Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
 type WorkflowExecutionStatus struct {
 	// Phase tracks current execution stage
-	// +kubebuilder:validation:Enum=planning;validating;executing;monitoring;completed;failed;paused
-	Phase string `json:"phase"` // "planning", "validating", "executing", "monitoring", "completed", "failed"
+	// V1.0: Skipped phase removed - RO makes routing decisions before WFE creation
+	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed
+	// +optional
+	Phase string `json:"phase,omitempty"`
 
-	// CurrentStep tracks progress
-	// +kubebuilder:validation:Minimum=0
-	CurrentStep int `json:"currentStep"`
-	// +kubebuilder:validation:Minimum=0
-	TotalSteps int `json:"totalSteps"`
+	// StartTime when execution started
+	// +optional
+	StartTime *metav1.Time `json:"startTime,omitempty"`
 
-	// ExecutionPlan generated during planning phase
-	ExecutionPlan *ExecutionPlan `json:"executionPlan,omitempty"`
+	// CompletionTime when execution completed (success or failure)
+	// +optional
+	CompletionTime *metav1.Time `json:"completionTime,omitempty"`
 
-	// ValidationResults from validation phase
-	ValidationResults *ValidationResults `json:"validationResults,omitempty"`
+	// Duration of the execution
+	// +optional
+	Duration string `json:"duration,omitempty"`
 
-	// StepStatuses tracks individual step execution
-	StepStatuses []StepStatus `json:"stepStatuses,omitempty"`
+	// PipelineRunRef references the created Tekton PipelineRun
+	// +optional
+	PipelineRunRef *corev1.LocalObjectReference `json:"pipelineRunRef,omitempty"`
 
-	// ExecutionMetrics tracks workflow performance
-	ExecutionMetrics *ExecutionMetrics `json:"executionMetrics,omitempty"`
+	// PipelineRunStatus mirrors key PipelineRun status fields
+	// +optional
+	PipelineRunStatus *PipelineRunStatusSummary `json:"pipelineRunStatus,omitempty"`
 
-	// AdaptiveAdjustments made during execution
-	AdaptiveAdjustments []AdaptiveAdjustment `json:"adaptiveAdjustments,omitempty"`
+	// FailureReason explains why execution failed (if applicable)
+	// DEPRECATED: Use FailureDetails for structured failure information
+	// +optional
+	FailureReason string `json:"failureReason,omitempty"`
 
-	// WorkflowResult final outcome
-	WorkflowResult *WorkflowResult `json:"workflowResult,omitempty"`
+	// ========================================
+	// ENHANCED FAILURE INFORMATION (v3.0)
+	// DD-CONTRACT-001 v1.3: Rich failure data for recovery flow
+	// Consumers: RO (for recovery AIAnalysis), Notification (for user alerts)
+	// ========================================
 
-	// Phase timestamps
-	PlanningStartTime   *metav1.Time `json:"planningStartTime,omitempty"`
-	ValidationStartTime *metav1.Time `json:"validationStartTime,omitempty"`
-	ExecutionStartTime  *metav1.Time `json:"executionStartTime,omitempty"`
-	MonitoringStartTime *metav1.Time `json:"monitoringStartTime,omitempty"`
-	CompletionTime      *metav1.Time `json:"completionTime,omitempty"`
+	// FailureDetails contains structured failure information
+	// Populated when Phase=Failed
+	// RO uses this to populate AIAnalysis.Spec.PreviousExecutions for recovery
+	// +optional
+	FailureDetails *FailureDetails `json:"failureDetails,omitempty"`
 
-	// Error handling
-	FailureReason  string `json:"failureReason,omitempty"`
-	RollbackReason string `json:"rollbackReason,omitempty"`
+	// ========================================
+	// V1.0: RESOURCE LOCKING MOVED TO RO
+	// DD-RO-002: RO makes routing decisions, SkipDetails removed from WFE
+	// Skip information now in RemediationRequest.Status
+	// ========================================
 
-	// Recovery tracking fields
-	FailedStep        *int               `json:"failedStep,omitempty"`
-	FailedAction      *string            `json:"failedAction,omitempty"`
-	ErrorType         *string            `json:"errorType,omitempty"`
-	ExecutionSnapshot *ExecutionSnapshot `json:"executionSnapshot,omitempty"`
+	// ========================================
+	// EXPONENTIAL BACKOFF (v4.1) - DEPRECATED V1.0
+	// DD-RO-002 Phase 3: Routing state moved to RemediationRequest.Status
+	// WE is now a pure executor - routing logic owned by RO
+	// ========================================
 
-	// Conditions for status tracking
+	// ConsecutiveFailures tracks pre-execution failures for this target resource
+	// DEPRECATED (V1.0): Routing state moved to RR.Status.ConsecutiveFailureCount per DD-RO-002 Phase 3
+	// This field is NO LONGER UPDATED by WE controller as of V1.0
+	// Use RR.Status.ConsecutiveFailureCount for routing decisions
+	// Will be REMOVED in V2.0
+	// +optional
+	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
+
+	// NextAllowedExecution is the timestamp when next execution is allowed
+	// DEPRECATED (V1.0): Routing state moved to RR.Status.NextAllowedExecution per DD-RO-002 Phase 3
+	// This field is NO LONGER UPDATED by WE controller as of V1.0
+	// Use RR.Status.NextAllowedExecution for routing decisions
+	// Will be REMOVED in V2.0
+	// +optional
+	NextAllowedExecution *metav1.Time `json:"nextAllowedExecution,omitempty"`
+
+	// ========================================
+	// AUDIT-TRACKED EXECUTION BLOCK CLEARING (v4.2)
+	// BR-WE-013: SOC2 Type II Compliance Requirement (v1.0)
+	// Tracks operator clearing of PreviousExecutionFailed blocks
+	// ========================================
+
+	// BlockClearance tracks the clearing of PreviousExecutionFailed blocks
+	// When set, allows new executions despite previous execution failure
+	// Preserves audit trail of WHO cleared the block and WHY
+	// +optional
+	BlockClearance *BlockClearanceDetails `json:"blockClearance,omitempty"`
+
+	// Conditions provide detailed status information
+	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// ExecutionSnapshot captures workflow state at failure for recovery context
-type ExecutionSnapshot struct {
-	CompletedSteps   []int             `json:"completedSteps"`   // Successfully completed step indices
-	CurrentStep      int               `json:"currentStep"`      // Step that failed
-	ClusterState     map[string]string `json:"clusterState"`     // Relevant resource states (string-encoded)
-	ResourceSnapshot map[string]string `json:"resourceSnapshot"` // Target resource state before failure (string-encoded)
+// ========================================
+// V1.0: SKIP DETAILS REMOVED
+// DD-RO-002: All skip information moved to RemediationRequest.Status
+// Struct types removed: SkipDetails, ConflictingWorkflowRef, RecentRemediationRef
+// ========================================
+
+// ========================================
+// FAILURE DETAILS (v3.0)
+// DD-CONTRACT-001 v1.3: Structured failure information for recovery
+// ========================================
+
+// FailureDetails contains structured failure information for recovery
+// Aligned with AIAnalysis.Spec.PreviousExecutions[].Failure
+// Provides both structured data (for deterministic recovery) and natural language (for LLM context)
+type FailureDetails struct {
+	// FailedTaskIndex is 0-indexed position of failed task in pipeline
+	// Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepIndex
+	FailedTaskIndex int `json:"failedTaskIndex"`
+
+	// FailedTaskName is the name of the failed Tekton Task
+	// Used by RO to populate AIAnalysis.Spec.PreviousExecutions[].Failure.FailedStepName
+	FailedTaskName string `json:"failedTaskName"`
+
+	// FailedStepName is the name of the failed step within the task (if available)
+	// Tekton tasks can have multiple steps; this identifies the specific step
+	// +optional
+	FailedStepName string `json:"failedStepName,omitempty"`
+
+	// Reason is a Kubernetes-style reason code
+	// Used for deterministic recovery decisions by RO
+	// +kubebuilder:validation:Enum=OOMKilled;DeadlineExceeded;Forbidden;ResourceExhausted;ConfigurationError;ImagePullBackOff;TaskFailed;Unknown
+	Reason string `json:"reason"`
+
+	// Message is human-readable error message (for logging/UI/notifications)
+	Message string `json:"message"`
+
+	// ExitCode from container (if applicable)
+	// Useful for script-based tasks that return specific exit codes
+	// +optional
+	ExitCode *int32 `json:"exitCode,omitempty"`
+
+	// FailedAt is the timestamp when the failure occurred
+	FailedAt metav1.Time `json:"failedAt"`
+
+	// ExecutionTimeBeforeFailure is how long the workflow ran before failing
+	// Format: Go duration string (e.g., "2m30s")
+	ExecutionTimeBeforeFailure string `json:"executionTimeBeforeFailure"`
+
+	// ========================================
+	// NATURAL LANGUAGE SUMMARY
+	// For LLM recovery context and user notifications
+	// ========================================
+
+	// NaturalLanguageSummary is a human/LLM-readable failure description
+	// Generated by WE controller from structured data above
+	// Used by:
+	//   - RO: Included in AIAnalysis.Spec.PreviousExecutions for LLM context
+	//   - Notification: Included in user-facing failure alerts
+	NaturalLanguageSummary string `json:"naturalLanguageSummary"`
+
+	// ========================================
+	// EXECUTION VS PRE-EXECUTION FAILURE (v4.1)
+	// DD-WE-004: Critical for retry/backoff decisions
+	// ========================================
+
+	// WasExecutionFailure indicates whether the failure occurred during workflow execution
+	// true = workflow RAN and failed (non-idempotent actions may have occurred)
+	// false = workflow failed BEFORE execution (validation, image pull, quota, etc.)
+	// CRITICAL: Execution failures (true) block ALL future retries for this target
+	//           Pre-execution failures (false) get exponential backoff
+	// +optional
+	WasExecutionFailure bool `json:"wasExecutionFailure,omitempty"`
 }
 
-// ExecutionPlan generated during planning phase
-type ExecutionPlan struct {
-	// +kubebuilder:validation:Enum=sequential;parallel;sequential-with-parallel
-	Strategy          string        `json:"strategy"` // "sequential", "parallel", "sequential-with-parallel"
-	EstimatedDuration string        `json:"estimatedDuration"`
-	RollbackStrategy  string        `json:"rollbackStrategy"`
-	SafetyChecks      []SafetyCheck `json:"safetyChecks"`
+// ========================================
+// BLOCK CLEARANCE DETAILS (v4.2)
+// BR-WE-013: Audit-Tracked Execution Block Clearing
+// SOC2 Type II Compliance Requirement (v1.0)
+// ========================================
+
+// BlockClearanceDetails tracks the clearing of PreviousExecutionFailed blocks
+// Required for SOC2 CC7.3 (Immutability), CC7.4 (Completeness), CC8.1 (Attribution)
+// Preserves audit trail when operators clear execution blocks after investigation
+type BlockClearanceDetails struct {
+	// ClearedAt is the timestamp when the block was cleared
+	// +optional
+	ClearedAt metav1.Time `json:"clearedAt"`
+
+	// ClearedBy is the Kubernetes user who cleared the block
+	// Extracted from request context (if available) or annotation value
+	// Format: username@domain or service-account:namespace:name
+	// Example: "admin@kubernaut.ai" or "service-account:kubernaut-system:operator"
+	ClearedBy string `json:"clearedBy"`
+
+	// ClearReason is the operator-provided reason for clearing
+	// Required for audit trail accountability
+	// Example: "manual investigation complete, cluster state verified"
+	ClearReason string `json:"clearReason"`
+
+	// ClearMethod indicates how the block was cleared
+	// Annotation: Via kubernaut.ai/clear-execution-block annotation
+	// APIEndpoint: Via dedicated clearing API endpoint (future)
+	// StatusField: Via direct status field update (future)
+	// +kubebuilder:validation:Enum=Annotation;APIEndpoint;StatusField
+	ClearMethod string `json:"clearMethod"`
 }
 
-// ValidationResults from validation phase
-type ValidationResults struct {
-	SafetyChecksPassed bool           `json:"safetyChecksPassed"`
-	DryRunPerformed    bool           `json:"dryRunPerformed"`
-	DryRunResults      *DryRunResults `json:"dryRunResults,omitempty"`
-	ApprovalReceived   bool           `json:"approvalReceived"`
-	ApprovalTimestamp  *metav1.Time   `json:"approvalTimestamp,omitempty"`
-	ValidationErrors   []string       `json:"validationErrors,omitempty"`
+// PipelineRunStatusSummary captures key PipelineRun status fields
+// Lightweight summary to avoid duplicating full Tekton status
+type PipelineRunStatusSummary struct {
+	// Status from PipelineRun (Unknown, True, False)
+	Status string `json:"status"`
+
+	// Reason from PipelineRun (e.g., "Succeeded", "Failed", "Running")
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message from PipelineRun
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// CompletedTasks count
+	// +optional
+	CompletedTasks int `json:"completedTasks,omitempty"`
+
+	// TotalTasks count (from pipeline spec)
+	// +optional
+	TotalTasks int `json:"totalTasks,omitempty"`
 }
 
-// StepStatus tracks individual step execution
-type StepStatus struct {
-	StepNumber int    `json:"stepNumber"`
-	Action     string `json:"action"`
-	// +kubebuilder:validation:Enum=pending;executing;completed;failed;rolled_back;skipped
-	Status       string               `json:"status"` // "pending", "executing", "completed", "failed", "rolled_back"
-	StartTime    *metav1.Time         `json:"startTime,omitempty"`
-	EndTime      *metav1.Time         `json:"endTime,omitempty"`
-	Result       *StepExecutionResult `json:"result,omitempty"`
-	ErrorMessage string               `json:"errorMessage,omitempty"`
-	// +kubebuilder:validation:Minimum=0
-	RetriesAttempted int                     `json:"retriesAttempted,omitempty"`
-	K8sExecutionRef  *corev1.ObjectReference `json:"k8sExecutionRef,omitempty"`
-}
+// ========================================
+// PHASE CONSTANTS
+// ========================================
 
-// ExecutionMetrics tracks workflow performance
-type ExecutionMetrics struct {
-	TotalDuration string `json:"totalDuration"`
-	// +kubebuilder:validation:Minimum=0.0
-	// +kubebuilder:validation:Maximum=1.0
-	StepSuccessRate    float64 `json:"stepSuccessRate"`
-	RollbacksPerformed int     `json:"rollbacksPerformed"`
-	ResourcesAffected  int     `json:"resourcesAffected"`
-}
+// Phase constants already defined above (lines 199-208) - duplicate removed
 
-// AdaptiveAdjustment records runtime optimization
-type AdaptiveAdjustment struct {
-	Timestamp  metav1.Time `json:"timestamp"`
-	Adjustment string      `json:"adjustment"` // Description of what was adjusted
-	Reason     string      `json:"reason"`
-}
+// ========================================
+// V1.0: SKIP REASON CONSTANTS REMOVED
+// DD-RO-002: All skip reasons moved to RemediationRequest.Status.SkipReason
+// Constants removed: SkipReasonResourceBusy, SkipReasonRecentlyRemediated,
+//                    SkipReasonExhaustedRetries, SkipReasonPreviousExecutionFailed
+// ========================================
 
-// WorkflowResult final outcome
-type WorkflowResult struct {
-	Outcome            string   `json:"outcome"`            // "success", "partial_success", "failed", "unknown"
-	EffectivenessScore float64  `json:"effectivenessScore"` // 0.0-1.0
-	ResourceHealth     string   `json:"resourceHealth"`     // "healthy", "degraded", "unhealthy"
-	NewAlertsTriggered bool     `json:"newAlertsTriggered"`
-	RecommendedActions []string `json:"recommendedActions,omitempty"` // For partial success or failure
-}
+// ========================================
+// FAILURE REASON CONSTANTS
+// ========================================
 
-// ===================================================================
-// STRUCTURED TYPES - Replacing map[string]interface{} anti-patterns
-// ===================================================================
+const (
+	// FailureReasonOOMKilled indicates container was killed due to memory limits
+	FailureReasonOOMKilled = "OOMKilled"
 
-// AIRecommendations contains AI-generated workflow optimization suggestions
-type AIRecommendations struct {
-	// Confidence and metadata
-	// +kubebuilder:validation:Minimum=0.0
-	// +kubebuilder:validation:Maximum=1.0
-	OverallConfidence    float64 `json:"overallConfidence"`    // 0.0-1.0
-	RecommendationSource string  `json:"recommendationSource"` // "holmesgpt", "history-based"
-	GeneratedAt          string  `json:"generatedAt"`          // ISO 8601 timestamp
+	// FailureReasonDeadlineExceeded indicates timeout was reached
+	FailureReasonDeadlineExceeded = "DeadlineExceeded"
 
-	// Step-level recommendations
-	StepOptimizations []StepOptimization `json:"stepOptimizations,omitempty"`
+	// FailureReasonForbidden indicates RBAC/permission failure
+	FailureReasonForbidden = "Forbidden"
 
-	// Workflow-level recommendations
-	ParallelExecutionSuggestions []ParallelExecutionGroup `json:"parallelExecutionSuggestions,omitempty"`
-	SafetyImprovements           []SafetyImprovement      `json:"safetyImprovements,omitempty"`
+	// FailureReasonResourceExhausted indicates cluster resource limits (quota, etc.)
+	FailureReasonResourceExhausted = "ResourceExhausted"
 
-	// Historical success data
-	SimilarWorkflowSuccessRate float64 `json:"similarWorkflowSuccessRate"` // 0.0-1.0
-	EstimatedDuration          string  `json:"estimatedDuration"`          // e.g., "5m30s"
+	// FailureReasonConfigurationError indicates invalid parameters or config
+	FailureReasonConfigurationError = "ConfigurationError"
 
-	// Risk assessment
-	RiskFactors []RiskFactor `json:"riskFactors,omitempty"`
-}
+	// FailureReasonImagePullBackOff indicates container image could not be pulled
+	FailureReasonImagePullBackOff = "ImagePullBackOff"
 
-// StepOptimization contains optimization suggestions for a step
-type StepOptimization struct {
-	StepNumber       int                    `json:"stepNumber"`
-	Recommendation   string                 `json:"recommendation"` // Human-readable suggestion
-	Confidence       float64                `json:"confidence"`     // 0.0-1.0
-	ImpactLevel      string                 `json:"impactLevel"`    // "low", "medium", "high"
-	ParameterChanges *ParameterOptimization `json:"parameterChanges,omitempty"`
-}
+	// FailureReasonTaskFailed indicates a Tekton task failed during execution
+	// This is an execution failure (wasExecutionFailure=true)
+	FailureReasonTaskFailed = "TaskFailed"
 
-// ParameterOptimization contains parameter change suggestions
-type ParameterOptimization struct {
-	SuggestedParameters map[string]string `json:"suggestedParameters"` // Key-value pairs
-	Reason              string            `json:"reason"`              // Why these parameters
-}
+	// FailureReasonUnknown for unclassified failures
+	FailureReasonUnknown = "Unknown"
+)
 
-// ParallelExecutionGroup identifies steps that can run in parallel
-type ParallelExecutionGroup struct {
-	GroupName   string  `json:"groupName"`
-	StepNumbers []int   `json:"stepNumbers"` // Steps that can run in parallel
-	Confidence  float64 `json:"confidence"`  // 0.0-1.0
-}
+// ========================================
+// CRD DEFINITIONS
+// ========================================
 
-// SafetyImprovement suggests safety check additions
-type SafetyImprovement struct {
-	Description string `json:"description"`
-	StepNumber  int    `json:"stepNumber,omitempty"` // 0 = workflow-level
-	SafetyCheck string `json:"safetyCheck"`          // Suggested safety check to add
-	Priority    string `json:"priority"`             // "low", "medium", "high"
-}
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=wfe
+//+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
+//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
+//+kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
+//+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
+//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
-// RiskFactor describes a potential risk
-type RiskFactor struct {
-	Factor      string  `json:"factor"`               // Description of risk
-	Severity    string  `json:"severity"`             // "low", "medium", "high"
-	Probability float64 `json:"probability"`          // 0.0-1.0
-	Mitigation  string  `json:"mitigation,omitempty"` // Suggested mitigation
-}
-
-// StepParameters is a discriminated union based on Action type
-// Only ONE of these should be populated based on the Action field
-type StepParameters struct {
-	// Deployment actions
-	ScaleDeployment   *ScaleDeploymentParams   `json:"scaleDeployment,omitempty"`
-	RestartDeployment *RestartDeploymentParams `json:"restartDeployment,omitempty"`
-	UpdateImage       *UpdateImageParams       `json:"updateImage,omitempty"`
-
-	// Pod actions
-	RestartPod *RestartPodParams `json:"restartPod,omitempty"`
-	DeletePod  *DeletePodParams  `json:"deletePod,omitempty"`
-
-	// ConfigMap/Secret actions
-	UpdateConfigMap *UpdateConfigMapParams `json:"updateConfigMap,omitempty"`
-	UpdateSecret    *UpdateSecretParams    `json:"updateSecret,omitempty"`
-
-	// Node actions
-	CordonNode *CordonNodeParams `json:"cordonNode,omitempty"`
-	DrainNode  *DrainNodeParams  `json:"drainNode,omitempty"`
-
-	// Custom actions (for extensibility)
-	Custom *CustomActionParams `json:"custom,omitempty"`
-}
-
-// Deployment action parameters
-type ScaleDeploymentParams struct {
-	Namespace  string `json:"namespace"`
-	Deployment string `json:"deployment"`
-	Replicas   int32  `json:"replicas"`
-}
-
-type RestartDeploymentParams struct {
-	Namespace   string `json:"namespace"`
-	Deployment  string `json:"deployment"`
-	GracePeriod string `json:"gracePeriod,omitempty"` // e.g., "30s"
-}
-
-type UpdateImageParams struct {
-	Namespace  string `json:"namespace"`
-	Deployment string `json:"deployment"`
-	Container  string `json:"container"`
-	NewImage   string `json:"newImage"`
-}
-
-// Pod action parameters
-type RestartPodParams struct {
-	Namespace   string `json:"namespace"`
-	PodName     string `json:"podName,omitempty"`  // Empty = all pods matching selector
-	Selector    string `json:"selector,omitempty"` // e.g., "app=web"
-	GracePeriod string `json:"gracePeriod,omitempty"`
-}
-
-type DeletePodParams struct {
-	Namespace   string `json:"namespace"`
-	PodName     string `json:"podName"`
-	GracePeriod string `json:"gracePeriod,omitempty"`
-}
-
-// ConfigMap/Secret parameters
-type UpdateConfigMapParams struct {
-	Namespace   string            `json:"namespace"`
-	Name        string            `json:"name"`
-	DataUpdates map[string]string `json:"dataUpdates"` // Key-value pairs to update
-}
-
-type UpdateSecretParams struct {
-	Namespace   string            `json:"namespace"`
-	Name        string            `json:"name"`
-	DataUpdates map[string]string `json:"dataUpdates"` // Base64 encoded values
-}
-
-// Node action parameters
-type CordonNodeParams struct {
-	NodeName string `json:"nodeName"`
-}
-
-type DrainNodeParams struct {
-	NodeName         string `json:"nodeName"`
-	GracePeriod      string `json:"gracePeriod,omitempty"`
-	IgnoreDaemonSets bool   `json:"ignoreDaemonSets"`
-	DeleteLocalData  bool   `json:"deleteLocalData"`
-}
-
-// Custom action for extensibility
-type CustomActionParams struct {
-	ActionType string            `json:"actionType"` // Custom action identifier
-	Config     map[string]string `json:"config"`     // String-only key-value pairs
-}
-
-// RollbackParameters is a discriminated union based on rollback action
-type RollbackParameters struct {
-	// Deployment rollbacks
-	RestorePreviousDeployment *RestorePreviousDeploymentParams `json:"restorePreviousDeployment,omitempty"`
-	ScaleToPrevious           *ScaleToPreviousParams           `json:"scaleToPrevious,omitempty"`
-
-	// Config rollbacks
-	RestorePreviousConfig *RestorePreviousConfigParams `json:"restorePreviousConfig,omitempty"`
-
-	// Node rollbacks
-	UncordonNode *UncordonNodeParams `json:"uncordonNode,omitempty"`
-
-	// Custom rollbacks
-	Custom *CustomRollbackParams `json:"custom,omitempty"`
-}
-
-type RestorePreviousDeploymentParams struct {
-	Namespace  string `json:"namespace"`
-	Deployment string `json:"deployment"`
-	Revision   int32  `json:"revision,omitempty"` // 0 = previous revision
-}
-
-type ScaleToPreviousParams struct {
-	Namespace        string `json:"namespace"`
-	Deployment       string `json:"deployment"`
-	PreviousReplicas int32  `json:"previousReplicas"` // Captured before change
-}
-
-type RestorePreviousConfigParams struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
-	Type      string `json:"type"`     // "ConfigMap" or "Secret"
-	Snapshot  string `json:"snapshot"` // Reference to saved snapshot
-}
-
-type UncordonNodeParams struct {
-	NodeName string `json:"nodeName"`
-}
-
-type CustomRollbackParams struct {
-	ActionType string            `json:"actionType"`
-	Config     map[string]string `json:"config"`
-}
-
-// DryRunResults contains structured dry-run execution results
-type DryRunResults struct {
-	OverallSuccess  bool               `json:"overallSuccess"`
-	ExecutionTime   string             `json:"executionTime"` // Duration
-	StepsSimulated  int                `json:"stepsSimulated"`
-	StepResults     []DryRunStepResult `json:"stepResults"`
-	ResourceChanges []ResourceChange   `json:"resourceChanges,omitempty"`
-	PotentialIssues []PotentialIssue   `json:"potentialIssues,omitempty"`
-}
-
-type DryRunStepResult struct {
-	StepNumber        int      `json:"stepNumber"`
-	Action            string   `json:"action"`
-	WouldSucceed      bool     `json:"wouldSucceed"`
-	SimulatedDuration string   `json:"simulatedDuration"`
-	ValidationErrors  []string `json:"validationErrors,omitempty"`
-}
-
-type ResourceChange struct {
-	ResourceType string            `json:"resourceType"` // "Deployment", "Pod", etc.
-	ResourceName string            `json:"resourceName"`
-	Namespace    string            `json:"namespace"`
-	ChangeType   string            `json:"changeType"`  // "scale", "update", "delete"
-	BeforeState  map[string]string `json:"beforeState"` // String key-value pairs only
-	AfterState   map[string]string `json:"afterState"`
-}
-
-type PotentialIssue struct {
-	Severity       string `json:"severity"` // "low", "medium", "high"
-	Description    string `json:"description"`
-	StepNumber     int    `json:"stepNumber,omitempty"`
-	Recommendation string `json:"recommendation,omitempty"`
-}
-
-// StepExecutionResult contains structured execution results
-type StepExecutionResult struct {
-	Success       bool   `json:"success"`
-	ExecutionTime string `json:"executionTime"` // Duration
-
-	// Action-specific results (discriminated union - only one populated)
-	ScaleResult   *ScaleExecutionResult   `json:"scaleResult,omitempty"`
-	RestartResult *RestartExecutionResult `json:"restartResult,omitempty"`
-	UpdateResult  *UpdateExecutionResult  `json:"updateResult,omitempty"`
-	CustomResult  *CustomExecutionResult  `json:"customResult,omitempty"`
-
-	// Common result metadata
-	ResourcesAffected []AffectedResource `json:"resourcesAffected,omitempty"`
-	Warnings          []string           `json:"warnings,omitempty"`
-}
-
-type ScaleExecutionResult struct {
-	PreviousReplicas int32  `json:"previousReplicas"`
-	NewReplicas      int32  `json:"newReplicas"`
-	ScaledNamespace  string `json:"scaledNamespace"`
-	ScaledDeployment string `json:"scaledDeployment"`
-}
-
-type RestartExecutionResult struct {
-	PodsRestarted int      `json:"podsRestarted"`
-	RestartedPods []string `json:"restartedPods"` // Pod names
-	Namespace     string   `json:"namespace"`
-}
-
-type UpdateExecutionResult struct {
-	ResourceType  string `json:"resourceType"` // "Deployment", "ConfigMap", etc.
-	ResourceName  string `json:"resourceName"`
-	Namespace     string `json:"namespace"`
-	UpdateType    string `json:"updateType"` // "image", "config", "spec"
-	PreviousValue string `json:"previousValue,omitempty"`
-	NewValue      string `json:"newValue,omitempty"`
-}
-
-type CustomExecutionResult struct {
-	ActionType string            `json:"actionType"`
-	Output     map[string]string `json:"output"` // String key-value pairs only
-}
-
-type AffectedResource struct {
-	ResourceType string `json:"resourceType"`
-	Name         string `json:"name"`
-	Namespace    string `json:"namespace"`
-	ChangeType   string `json:"changeType"` // "modified", "restarted", "scaled"
-}
-
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-
-// WorkflowExecution is the Schema for the workflowexecutions API.
+// WorkflowExecution is the Schema for the workflowexecutions API
 type WorkflowExecution struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -506,9 +496,9 @@ type WorkflowExecution struct {
 	Status WorkflowExecutionStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+//+kubebuilder:object:root=true
 
-// WorkflowExecutionList contains a list of WorkflowExecution.
+// WorkflowExecutionList contains a list of WorkflowExecution
 type WorkflowExecutionList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

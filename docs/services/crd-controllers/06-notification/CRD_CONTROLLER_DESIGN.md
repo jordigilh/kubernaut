@@ -27,7 +27,7 @@ Design a Kubernetes controller that reconciles NotificationRequest CRDs to deliv
 │  ┌──────────────────────────────────────────────────────────┐  │
 │  │             NotificationRequest CRD (etcd)                │  │
 │  │                                                            │  │
-│  │  apiVersion: notification.kubernaut.ai/v1alpha1           │  │
+│  │  apiVersion: kubernaut.ai/v1alpha1           │  │
 │  │  kind: NotificationRequest                                │  │
 │  │  metadata:                                                 │  │
 │  │    name: escalation-remediation-001                       │  │
@@ -135,7 +135,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
         now := metav1.Now()
         notification.Status.QueuedAt = &now
         notification.Status.ProcessingStartedAt = &now
-        
+
         if err := r.Status().Update(ctx, notification); err != nil {
             log.Error(err, "Failed to update status to Sending")
             return ctrl.Result{}, err
@@ -152,20 +152,20 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 // deliverToAllChannels delivers notification to all specified channels
 func (r *NotificationRequestReconciler) deliverToAllChannels(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) map[string]error {
     results := make(map[string]error)
-    
+
     // Deliver to each channel in parallel
     for _, channel := range notification.Spec.Channels {
         channelName := string(channel)
-        
+
         // Check if channel already succeeded (idempotent)
         if r.channelAlreadySucceeded(notification, channelName) {
             continue
         }
-        
+
         // Deliver to channel
         err := r.deliveryService.Deliver(ctx, notification, channel)
         results[channelName] = err
-        
+
         // Record delivery attempt
         attempt := notificationv1alpha1.DeliveryAttempt{
             Channel:   channelName,
@@ -173,16 +173,16 @@ func (r *NotificationRequestReconciler) deliverToAllChannels(ctx context.Context
             Timestamp: metav1.Now(),
             Status:    "success",
         }
-        
+
         if err != nil {
             attempt.Status = "failed"
             attempt.Error = err.Error()
         }
-        
+
         notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
         notification.Status.TotalAttempts++
     }
-    
+
     return results
 }
 
@@ -200,7 +200,7 @@ func (r *NotificationRequestReconciler) updateStatusAndRequeue(ctx context.Conte
             failureCount++
         }
     }
-    
+
     notification.Status.SuccessfulDeliveries += successCount
     notification.Status.FailedDeliveries += failureCount
 
@@ -211,13 +211,13 @@ func (r *NotificationRequestReconciler) updateStatusAndRequeue(ctx context.Conte
         now := metav1.Now()
         notification.Status.CompletionTime = &now
         notification.Status.Message = "Successfully delivered to all channels"
-        
+
         // Update status and stop reconciliation
         if err := r.Status().Update(ctx, notification); err != nil {
             log.Error(err, "Failed to update status to Sent")
             return ctrl.Result{}, err
         }
-        
+
         log.Info("Notification sent successfully", "name", notification.Name)
         return ctrl.Result{}, nil // No requeue
     }
@@ -226,7 +226,7 @@ func (r *NotificationRequestReconciler) updateStatusAndRequeue(ctx context.Conte
         // Some channels failed
         retryPolicy := r.getRetryPolicy(notification)
         currentAttempts := notification.Status.TotalAttempts / len(notification.Spec.Channels)
-        
+
         if currentAttempts >= retryPolicy.MaxAttempts {
             // Max retries exceeded
             notification.Status.Phase = notificationv1alpha1.NotificationPhaseFailed
@@ -234,34 +234,34 @@ func (r *NotificationRequestReconciler) updateStatusAndRequeue(ctx context.Conte
             notification.Status.CompletionTime = &now
             notification.Status.Reason = "MaxRetriesExceeded"
             notification.Status.Message = fmt.Sprintf("Failed after %d attempts", currentAttempts)
-            
+
             // Update status and stop reconciliation
             if err := r.Status().Update(ctx, notification); err != nil {
                 log.Error(err, "Failed to update status to Failed")
                 return ctrl.Result{}, err
             }
-            
+
             log.Info("Notification failed after max retries", "name", notification.Name, "attempts", currentAttempts)
             return ctrl.Result{}, nil // No requeue
         }
 
         // Calculate backoff for retry
         backoffDuration := r.calculateBackoff(retryPolicy, currentAttempts)
-        
+
         notification.Status.Phase = notificationv1alpha1.NotificationPhaseSending
         notification.Status.Message = fmt.Sprintf("Retrying failed channels in %s", backoffDuration)
-        
+
         // Update status
         if err := r.Status().Update(ctx, notification); err != nil {
             log.Error(err, "Failed to update status")
             return ctrl.Result{}, err
         }
-        
+
         log.Info("Requeuing notification for retry",
             "name", notification.Name,
             "backoff", backoffDuration,
             "attempt", currentAttempts+1)
-        
+
         // Requeue with backoff
         return ctrl.Result{RequeueAfter: backoffDuration}, nil
     }
@@ -269,12 +269,12 @@ func (r *NotificationRequestReconciler) updateStatusAndRequeue(ctx context.Conte
     // Partial success (some channels succeeded, others haven't been attempted yet)
     notification.Status.Phase = notificationv1alpha1.NotificationPhasePartiallySent
     notification.Status.Message = "Partial delivery, retrying failed channels"
-    
+
     if err := r.Status().Update(ctx, notification); err != nil {
         log.Error(err, "Failed to update status to PartiallySent")
         return ctrl.Result{}, err
     }
-    
+
     // Requeue immediately
     return ctrl.Result{Requeue: true}, nil
 }
@@ -283,14 +283,14 @@ func (r *NotificationRequestReconciler) updateStatusAndRequeue(ctx context.Conte
 func (r *NotificationRequestReconciler) calculateBackoff(retryPolicy *notificationv1alpha1.RetryPolicy, attemptCount int) time.Duration {
     initialBackoff := time.Duration(retryPolicy.InitialBackoffSeconds) * time.Second
     maxBackoff := time.Duration(retryPolicy.MaxBackoffSeconds) * time.Second
-    
+
     // Exponential backoff: initialBackoff * multiplier^attemptCount
     backoff := initialBackoff * time.Duration(math.Pow(float64(retryPolicy.BackoffMultiplier), float64(attemptCount)))
-    
+
     if backoff > maxBackoff {
         backoff = maxBackoff
     }
-    
+
     return backoff
 }
 
@@ -299,7 +299,7 @@ func (r *NotificationRequestReconciler) getRetryPolicy(notification *notificatio
     if notification.Spec.RetryPolicy != nil {
         return notification.Spec.RetryPolicy
     }
-    
+
     // Default retry policy
     return &notificationv1alpha1.RetryPolicy{
         MaxAttempts:           5,
@@ -394,7 +394,7 @@ func CreateNotificationRequest(ctx context.Context, escalation *Escalation) erro
     sanitizer := sanitization.NewSanitizer()
     sanitizedSubject := sanitizer.Sanitize(escalation.Subject)
     sanitizedBody := sanitizer.Sanitize(escalation.Body)
-    
+
     // 2. Create NotificationRequest with sanitized content only
     notification := &notificationv1alpha1.NotificationRequest{
         ObjectMeta: metav1.ObjectMeta{
@@ -409,7 +409,7 @@ func CreateNotificationRequest(ctx context.Context, escalation *Escalation) erro
             // ... rest of spec
         },
     }
-    
+
     // 3. Create CRD (sanitized content will be persisted in etcd)
     return r.Create(ctx, notification)
 }
@@ -483,7 +483,7 @@ var (
         },
         []string{"type", "priority", "phase"},
     )
-    
+
     notificationDeliveryTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "notification_delivery_total",
@@ -491,7 +491,7 @@ var (
         },
         []string{"channel", "status"},
     )
-    
+
     notificationDeliveryDuration = prometheus.NewHistogramVec(
         prometheus.HistogramOpts{
             Name:    "notification_delivery_duration_seconds",
@@ -500,7 +500,7 @@ var (
         },
         []string{"channel"},
     )
-    
+
     notificationRetryCount = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "notification_retry_count",
@@ -559,10 +559,10 @@ func TestReconcile_Pending_ToSending(t *testing.T) {
             Phase: NotificationPhasePending,
         },
     }
-    
+
     // WHEN: Reconcile is called
     result, err := reconciler.Reconcile(ctx, req)
-    
+
     // THEN: Phase transitions to Sending
     assert.NoError(t, err)
     assert.Equal(t, NotificationPhaseSending, notification.Status.Phase)
@@ -576,7 +576,7 @@ func TestCalculateBackoff(t *testing.T) {
         BackoffMultiplier:     2,
         MaxBackoffSeconds:     480,
     }
-    
+
     tests := []struct {
         attempt  int
         expected time.Duration
@@ -588,7 +588,7 @@ func TestCalculateBackoff(t *testing.T) {
         {4, 480 * time.Second},  // Capped at max
         {5, 480 * time.Second},  // Still capped
     }
-    
+
     for _, tt := range tests {
         actual := calculateBackoff(retryPolicy, tt.attempt)
         assert.Equal(t, tt.expected, actual)
@@ -602,16 +602,16 @@ func TestDeliverToAllChannels_ChannelIsolation(t *testing.T) {
         emailResult: nil,         // Success
         slackResult: errors.New("webhook timeout"),
     }
-    
+
     notification := &NotificationRequest{
         Spec: NotificationRequestSpec{
             Channels: []Channel{ChannelEmail, ChannelSlack},
         },
     }
-    
+
     // WHEN: Deliver to all channels
     results := reconciler.deliverToAllChannels(ctx, notification)
-    
+
     // THEN: Email succeeds, Slack fails, both attempts recorded
     assert.Nil(t, results["email"])
     assert.NotNil(t, results["slack"])
@@ -628,7 +628,7 @@ func TestDeliverToAllChannels_ChannelIsolation(t *testing.T) {
 func TestNotificationLifecycle_Success(t *testing.T) {
     suite := kind.Setup("notification-test")
     defer suite.Cleanup()
-    
+
     // GIVEN: NotificationRequest CRD created
     notification := &NotificationRequest{
         ObjectMeta: metav1.ObjectMeta{
@@ -647,21 +647,21 @@ func TestNotificationLifecycle_Success(t *testing.T) {
             Body:    "This is a test notification",
         },
     }
-    
+
     err := suite.KindClient.Create(ctx, notification)
     require.NoError(t, err)
-    
+
     // WHEN: Wait for delivery
     Eventually(func() string {
         n := &NotificationRequest{}
         suite.KindClient.Get(ctx, client.ObjectKeyFromObject(notification), n)
         return string(n.Status.Phase)
     }, 60*time.Second, 5*time.Second).Should(Equal("Sent"))
-    
+
     // THEN: Notification delivered successfully
     n := &NotificationRequest{}
     suite.KindClient.Get(ctx, client.ObjectKeyFromObject(notification), n)
-    
+
     assert.Equal(t, NotificationPhaseSent, n.Status.Phase)
     assert.Equal(t, 2, n.Status.SuccessfulDeliveries)
     assert.Equal(t, 0, n.Status.FailedDeliveries)
@@ -672,7 +672,7 @@ func TestNotificationLifecycle_Success(t *testing.T) {
 func TestNotificationLifecycle_RetryOnFailure(t *testing.T) {
     suite := kind.Setup("notification-test")
     defer suite.Cleanup()
-    
+
     // GIVEN: Slack webhook initially fails (503), then succeeds
     mockSlack := suite.MockSlackWebhook()
     mockSlack.SetResponses(
@@ -680,7 +680,7 @@ func TestNotificationLifecycle_RetryOnFailure(t *testing.T) {
         503, // Second attempt fails
         200, // Third attempt succeeds
     )
-    
+
     notification := &NotificationRequest{
         Spec: NotificationRequestSpec{
             Channels: []Channel{ChannelSlack},
@@ -691,21 +691,21 @@ func TestNotificationLifecycle_RetryOnFailure(t *testing.T) {
             },
         },
     }
-    
+
     err := suite.KindClient.Create(ctx, notification)
     require.NoError(t, err)
-    
+
     // WHEN: Wait for delivery (with retries)
     Eventually(func() string {
         n := &NotificationRequest{}
         suite.KindClient.Get(ctx, client.ObjectKeyFromObject(notification), n)
         return string(n.Status.Phase)
     }, 60*time.Second, 5*time.Second).Should(Equal("Sent"))
-    
+
     // THEN: Notification succeeded after 3 attempts
     n := &NotificationRequest{}
     suite.KindClient.Get(ctx, client.ObjectKeyFromObject(notification), n)
-    
+
     assert.Equal(t, NotificationPhaseSent, n.Status.Phase)
     assert.Equal(t, 3, n.Status.TotalAttempts)
     assert.Equal(t, 1, n.Status.SuccessfulDeliveries)
@@ -727,13 +727,13 @@ func TestE2E_EscalationNotification(t *testing.T) {
             Timeout: metav1.Duration{Duration: 5 * time.Minute},
         },
     }
-    
+
     err := k8sClient.Create(ctx, remediation)
     require.NoError(t, err)
-    
+
     // WHEN: Wait for timeout + escalation
     time.Sleep(6 * time.Minute)
-    
+
     // THEN: NotificationRequest created for escalation
     notificationList := &NotificationRequestList{}
     err = k8sClient.List(ctx, notificationList, client.MatchingLabels{
@@ -741,11 +741,11 @@ func TestE2E_EscalationNotification(t *testing.T) {
     })
     require.NoError(t, err)
     assert.Equal(t, 1, len(notificationList.Items))
-    
+
     notification := notificationList.Items[0]
     assert.Equal(t, NotificationTypeEscalation, notification.Spec.Type)
     assert.Equal(t, NotificationPriorityCritical, notification.Spec.Priority)
-    
+
     // Verify notification delivered
     Eventually(func() string {
         n := &NotificationRequest{}
@@ -767,7 +767,7 @@ func (r *RemediationReconciler) handleEscalation(ctx context.Context, remediatio
     // Build notification content
     subject := fmt.Sprintf("🚨 Remediation Escalation: %s", remediation.Name)
     body := buildEscalationBody(remediation)
-    
+
     // Create NotificationRequest CRD
     notification := &NotificationRequest{
         ObjectMeta: metav1.ObjectMeta{
@@ -794,7 +794,7 @@ func (r *RemediationReconciler) handleEscalation(ctx context.Context, remediatio
             },
         },
     }
-    
+
     return r.Create(ctx, notification)
 }
 ```
@@ -823,7 +823,7 @@ func (r *AIAnalysisReconciler) sendAnalysisComplete(ctx context.Context, analysi
             },
         },
     }
-    
+
     return r.Create(ctx, notification)
 }
 ```
@@ -857,8 +857,8 @@ func (r *AIAnalysisReconciler) sendAnalysisComplete(ctx context.Context, analysi
 
 ---
 
-**Status**: ✅ Controller Design Complete  
-**Confidence**: 95%  
-**Approval**: ✅ User Approved (CRD-based architecture)  
+**Status**: ✅ Controller Design Complete
+**Confidence**: 95%
+**Approval**: ✅ User Approved (CRD-based architecture)
 **Ready for**: Implementation Plan Creation
 

@@ -1,0 +1,385 @@
+# BR-HAPI-200: Handling Inconclusive Investigations
+
+**ID**: BR-HAPI-200
+**Title**: Handling Inconclusive LLM Investigations and Self-Resolved Signals
+**Category**: HAPI (HolmesGPT-API)
+**Priority**: 🔴 P0 (V1.0 BLOCKER)
+**Version**: V1.0
+**Status**: ⏳ IN PROGRESS
+**Date**: December 7, 2025
+
+---
+
+## Business Context
+
+### Problem Statement
+
+In production Kubernetes environments, signals (alerts/events) can **self-resolve** before or during LLM investigation:
+
+| Scenario | Example |
+|----------|---------|
+| **Pod Restart** | OOMKilled pod automatically restarts and becomes healthy |
+| **Transient Network** | Network partition resolves before investigation |
+| **Auto-scaling** | HPA scales up, resolving resource pressure |
+| **Self-Healing** | Application recovers from temporary failure |
+| **Race Condition** | Signal created, but issue resolves before HAPI processes it |
+
+**Current Gap**: When the LLM investigates and finds **no reproducible problem**, there is:
+1. No explicit `HumanReviewReason` for this case
+2. No prompt guidance telling the LLM how to respond
+3. No clear signal to downstream services (AIAnalysis, RO, Notification)
+
+### Business Impact
+
+| Impact | Description |
+|--------|-------------|
+| **Unnecessary Workflows** | LLM may recommend remediation for non-existent problems |
+| **Operator Confusion** | No clear indication that problem self-resolved |
+| **Audit Gap** | Cannot track "problem resolved before remediation" events |
+| **Resource Waste** | Executing workflows against healthy resources |
+
+### Business Value
+
+| Benefit | Impact |
+|---------|--------|
+| **Safety** | Prevents unnecessary remediation of healthy resources |
+| **Clarity** | Clear signal to operators: "Problem resolved, no action needed" |
+| **Audit Trail** | Track self-resolution events for operational insights |
+| **Efficiency** | Avoid wasting workflow execution resources |
+
+---
+
+## Requirements
+
+### BR-HAPI-200.1: New HumanReviewReason Value
+
+**MUST**: Add `INVESTIGATION_INCONCLUSIVE` to the `HumanReviewReason` enum.
+
+```python
+class HumanReviewReason(str, Enum):
+    # ... existing values ...
+    INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"
+```
+
+**Semantics**: LLM investigation did not yield conclusive results - could not determine root cause or current state.
+
+**Important Distinction**:
+- `INVESTIGATION_INCONCLUSIVE` = LLM **uncertain**, needs human judgment → `needs_human_review=true`
+- Problem **confirmed resolved** = LLM **confident** no action needed → `needs_human_review=false`, `selected_workflow=null`
+
+---
+
+### BR-HAPI-200.2: LLM Prompt Guidance
+
+**MUST**: The LLM investigation prompt SHALL include explicit guidance for this scenario:
+
+```
+IMPORTANT: If you cannot verify the reported problem exists (e.g., the resource
+is now healthy, events show a past issue but current state is normal, or the
+symptoms described in the signal cannot be reproduced), you MUST:
+
+1. Set "needs_human_review": true
+2. Set "human_review_reason": "investigation_inconclusive"
+3. Provide a detailed "investigation_summary" explaining:
+   - What you investigated
+   - What the current state is
+   - Why the problem could not be reproduced
+4. Set "selected_workflow": null (no workflow needed)
+5. Add a warning: "Problem could not be reproduced - resource appears healthy"
+
+This is a VALID outcome - not all signals require remediation.
+```
+
+---
+
+### BR-HAPI-200.3: Response Structure - Two Distinct Outcomes
+
+#### Outcome A: Problem Confirmed Resolved (No Human Review)
+
+**MUST**: When LLM **confidently** determines the problem is resolved, return:
+
+```json
+{
+  "incident_id": "inc-123",
+  "remediation_id": "rem-456",
+  "investigation_summary": "Investigated OOMKilled signal for pod 'myapp-abc123'. Current status: Running (healthy). Pod events show OOMKilled at 10:15:00 UTC, but pod successfully restarted at 10:15:03 UTC. Current memory usage: 45% of limit. No remediation required.",
+  "selected_workflow": null,
+  "confidence": 0.92,
+  "needs_human_review": false,
+  "human_review_reason": null,
+  "warnings": [
+    "Problem self-resolved - no remediation required",
+    "Pod automatically recovered from OOMKilled event"
+  ],
+  "target_in_owner_chain": true,
+  "timestamp": "2025-12-07T10:20:00Z"
+}
+```
+
+**Key**: `needs_human_review=false` because LLM is confident. This is a successful outcome.
+
+#### Outcome B: Investigation Inconclusive (Human Review Required)
+
+**MUST**: When LLM **cannot determine** root cause or current state, return:
+
+```json
+{
+  "incident_id": "inc-123",
+  "remediation_id": "rem-456",
+  "investigation_summary": "Unable to determine root cause for reported OOMKilled signal. Pod status is ambiguous - events show multiple restarts but current state unclear. Metrics unavailable.",
+  "selected_workflow": null,
+  "confidence": 0.35,
+  "needs_human_review": true,
+  "human_review_reason": "investigation_inconclusive",
+  "warnings": [
+    "Investigation inconclusive - human review recommended",
+    "Could not verify current resource state"
+  ],
+  "target_in_owner_chain": true,
+  "timestamp": "2025-12-07T10:20:00Z"
+}
+```
+
+**Key**: `needs_human_review=true` because LLM is uncertain. Requires human judgment.
+
+---
+
+### BR-HAPI-200.4: Confidence Semantics
+
+**SHOULD**: The `confidence` field SHALL reflect the LLM's confidence in its assessment (not confidence in a workflow selection).
+
+| Confidence | Meaning |
+|------------|---------|
+| 0.9-1.0 | Very confident problem is resolved |
+| 0.7-0.9 | Reasonably confident, may warrant monitoring |
+| < 0.7 | Uncertain - may need human verification |
+
+---
+
+### BR-HAPI-200.5: Audit Requirements
+
+**MUST**: For both investigation outcomes, the audit trail SHALL capture:
+
+| Field | Value |
+|-------|-------|
+| `event_type` | `llm_response` |
+| `outcome` | `resolved` or `inconclusive` |
+| `investigation_summary` | Full summary from LLM |
+| `original_signal_type` | From request |
+| `current_resource_state` | From LLM investigation |
+
+---
+
+## Consumer Behavior Requirements
+
+### BR-HAPI-200.6: AIAnalysis Handling
+
+**MUST**: AIAnalysis SHALL handle both outcomes:
+
+#### Outcome A: Problem Resolved (`needs_human_review=false`, `human_review_reason=null`)
+
+AIAnalysis detects this pattern: `needs_human_review=false` AND `selected_workflow=null` AND `confidence >= 0.7`
+
+1. **NOT** create a WorkflowExecution CRD
+2. Transition to `Completed` phase
+3. Set `reason: WorkflowNotNeeded`
+4. Set `subReason: ProblemResolved` (derived by AIAnalysis)
+
+```yaml
+status:
+  phase: Completed
+  reason: WorkflowNotNeeded
+  subReason: ProblemResolved
+  message: "Problem self-resolved. No remediation required."
+```
+
+#### Outcome B: Investigation Inconclusive (`needs_human_review=true`, `human_review_reason=investigation_inconclusive`)
+
+1. **NOT** create a WorkflowExecution CRD
+2. Transition to `Failed` phase
+3. Set `reason: WorkflowResolutionFailed`
+4. Set `subReason: InvestigationInconclusive` (from HAPI enum)
+
+```yaml
+status:
+  phase: Failed
+  reason: WorkflowResolutionFailed
+  subReason: InvestigationInconclusive
+  message: "Investigation inconclusive - human review recommended."
+```
+
+---
+
+### BR-HAPI-200.7: Remediation Orchestrator Handling
+
+**SHOULD**: When AIAnalysis completes with `reason: WorkflowNotNeeded`, RO SHALL:
+
+1. Update RemediationRequest status to reflect no action needed
+2. NOT create any workflow execution
+3. Emit `kubernaut_remediationorchestrator_no_action_needed_total{reason="problem_resolved|investigation_inconclusive"}` metric
+
+---
+
+### BR-HAPI-200.8: Notification Handling
+
+**SHOULD**: Operators MAY configure notification rules for self-resolved incidents:
+
+| Notification Type | Use Case |
+|-------------------|----------|
+| **Skip** | Most self-resolutions don't need notification |
+| **Informational** | "FYI: Incident auto-resolved" for audit |
+| **Warning** | Pattern of repeated self-resolutions (flapping) |
+
+---
+
+## Detection Criteria
+
+### BR-HAPI-200.9: When to Report Each Outcome
+
+#### Outcome A: Report "Resolved" (High Confidence)
+
+The LLM SHALL return `investigation_outcome: "resolved"` when **confident** (≥0.7):
+
+| Condition | Example |
+|-----------|---------|
+| **Resource Healthy** | Pod status is `Running`, no error conditions |
+| **Explicit Recovery** | Events show recovery after the issue |
+| **Metrics Normal** | CPU/memory/disk returned to normal range |
+
+#### Outcome B: Report "Inconclusive" (Low Confidence)
+
+The LLM SHALL return `investigation_outcome: "inconclusive"` when **uncertain** (<0.5):
+
+| Condition | Example |
+|-----------|---------|
+| **Ambiguous State** | Pod status unclear, conflicting events |
+| **Missing Data** | Metrics/events unavailable |
+| **Conflicting Signals** | Some indicators healthy, others not |
+
+---
+
+## Non-Requirements
+
+### What This BR Does NOT Cover
+
+1. **Flapping Detection** - Detecting patterns of repeated self-resolution (future BR)
+2. **Signal Staleness Check** - Checking signal age before investigation (different layer)
+3. **Automatic Suppression** - Auto-closing signals without investigation (not safe)
+
+---
+
+## Acceptance Criteria
+
+### AC-1: HumanReviewReason Includes INVESTIGATION_INCONCLUSIVE
+
+```gherkin
+Given the HumanReviewReason enum
+When I inspect the available values
+Then "investigation_inconclusive" SHALL be a valid option
+```
+
+### AC-2: Outcome A - Problem Confidently Resolved
+
+```gherkin
+Given a signal for pod "myapp" with status "OOMKilled"
+And the pod has since restarted and is now healthy
+And the LLM is confident (≥0.7) the problem is resolved
+When the LLM investigates via HolmesGPT-API
+Then "needs_human_review" SHALL be false
+And "human_review_reason" SHALL be null
+And "selected_workflow" SHALL be null
+And "investigation_summary" SHALL describe the current healthy state
+And "confidence" SHALL be ≥0.7
+```
+
+### AC-3: Outcome B - Investigation Inconclusive
+
+```gherkin
+Given a signal for pod "myapp" with status "OOMKilled"
+And the LLM cannot determine the current state
+When the LLM investigates via HolmesGPT-API
+Then "needs_human_review" SHALL be true
+And "human_review_reason" SHALL be "investigation_inconclusive"
+And "selected_workflow" SHALL be null
+And "investigation_summary" SHALL explain the uncertainty
+And "confidence" SHALL be <0.5
+```
+
+### AC-4: AIAnalysis Handles Resolved Outcome
+
+```gherkin
+Given HolmesGPT-API returns needs_human_review=false AND selected_workflow=null AND confidence≥0.7
+When AIAnalysis processes the response
+Then NO WorkflowExecution CRD SHALL be created
+And AIAnalysis status.phase SHALL be "Completed"
+And AIAnalysis status.reason SHALL be "WorkflowNotNeeded"
+And AIAnalysis status.subReason SHALL be "ProblemResolved"
+```
+
+### AC-5: AIAnalysis Handles Inconclusive Outcome
+
+```gherkin
+Given HolmesGPT-API returns needs_human_review=true with human_review_reason="investigation_inconclusive"
+When AIAnalysis processes the response
+Then NO WorkflowExecution CRD SHALL be created
+And AIAnalysis status.phase SHALL be "Failed"
+And AIAnalysis status.reason SHALL be "WorkflowResolutionFailed"
+And AIAnalysis status.subReason SHALL be "InvestigationInconclusive"
+```
+
+### AC-6: Audit Trail Captured
+
+```gherkin
+Given a signal investigation completes with either outcome
+When HolmesGPT-API returns the result
+Then an audit event SHALL be written with the investigation outcome
+And the event SHALL include the LLM's investigation_summary
+```
+
+---
+
+## Test Coverage
+
+| Test Category | Test Count | Coverage |
+|---------------|------------|----------|
+| Unit Tests (HolmesGPT-API) | 8 | Prompt, parsing, enum |
+| Integration Tests | 4 | Mock LLM scenarios |
+| E2E Tests | 2 | Full flow with mock LLM |
+
+---
+
+## Implementation Status
+
+| Component | Status | Owner |
+|-----------|--------|-------|
+| HumanReviewReason Enum (`INVESTIGATION_INCONCLUSIVE`) | ✅ Complete | HAPI Team |
+| LLM Prompt Update (investigation_outcome guidance) | ✅ Complete | HAPI Team |
+| Response Parsing (handle "resolved" and "inconclusive") | ✅ Complete | HAPI Team |
+| Unit Tests | ✅ Complete | HAPI Team |
+| AIAnalysis Handler | ⏳ Day 8 | AIAnalysis Team |
+| RO Handler | ⏳ Day 7 | RO Team |
+| Notification Rules | ⏳ Day 15 | Notification Team |
+
+---
+
+## Related Documents
+
+| Document | Relationship |
+|----------|-------------|
+| [BR-HAPI-197](BR-HAPI-197-needs-human-review-field.md) | Parent: needs_human_review field |
+| [DD-HAPI-002](../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md) | Design: Validation architecture |
+| [NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md](../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md) | Handoff: Team notification |
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-12-07 | Initial business requirement |
+| 1.1 | 2025-12-07 | Aligned with authoritative implementation: replaced `problem_not_reproducible` with `investigation_inconclusive`, clarified two distinct outcomes (Resolved vs Inconclusive) |
+
+---
+
+**Maintained By**: HolmesGPT-API Team
+

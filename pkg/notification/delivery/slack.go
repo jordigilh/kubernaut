@@ -13,6 +13,7 @@ import (
 	"time"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/slack-go/slack"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -39,12 +40,21 @@ func (s *SlackDeliveryService) SetHTTPClient(client *http.Client) {
 }
 
 // Deliver delivers a notification to Slack via webhook
+//
+// Per DD-AUDIT-004 and 02-go-coding-standards.mdc: Uses structured Slack SDK types instead of map[string]interface{}
 func (s *SlackDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	// Format payload for Slack Block Kit
-	payload := FormatSlackPayload(notification)
+	// Format payload using structured Block Kit types (DD-AUDIT-004)
+	blocks := FormatSlackBlocks(notification)
 
-	// Marshal to JSON
-	jsonPayload, err := json.Marshal(payload)
+	// Create webhook message with structured blocks
+	msg := slack.WebhookMessage{
+		Blocks: &slack.Blocks{
+			BlockSet: blocks,
+		},
+	}
+
+	// Marshal to JSON (SDK handles structure)
+	jsonPayload, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal Slack payload: %w", err)
 	}
@@ -111,78 +121,31 @@ func isRetryableStatusCode(statusCode int) bool {
 }
 
 // FormatSlackPayload formats a notification as Slack Block Kit JSON
+//
+// DEPRECATED: Use FormatSlackBlocks() instead for type-safe structured blocks per DD-AUDIT-004.
+//
+// This function is maintained for backward compatibility with existing tests,
+// but new code should use FormatSlackBlocks() which returns SDK structured types.
 func FormatSlackPayload(notification *notificationv1alpha1.NotificationRequest) map[string]interface{} {
-	// Priority emoji mapping
-	priorityEmoji := map[notificationv1alpha1.NotificationPriority]string{
-		notificationv1alpha1.NotificationPriorityCritical: "🚨",
-		notificationv1alpha1.NotificationPriorityHigh:     "⚠️",
-		notificationv1alpha1.NotificationPriorityMedium:   "ℹ️",
-		notificationv1alpha1.NotificationPriorityLow:      "💬",
+	// Use structured blocks and convert to map for backward compatibility
+	blocks := FormatSlackBlocks(notification)
+
+	// Convert SDK blocks to map[string]interface{} format
+	blockMaps := make([]interface{}, len(blocks))
+	for i, block := range blocks {
+		// Marshal block to JSON and back to map (maintains Block Kit format)
+		blockJSON, _ := json.Marshal(block)
+		var blockMap map[string]interface{}
+		_ = json.Unmarshal(blockJSON, &blockMap)
+		blockMaps[i] = blockMap
 	}
 
-	emoji := priorityEmoji[notification.Spec.Priority]
-	if emoji == "" {
-		emoji = "📢" // Default emoji
-	}
-
-	// Build Slack Block Kit payload
 	return map[string]interface{}{
-		"blocks": []interface{}{
-			// Header block with subject
-			map[string]interface{}{
-				"type": "header",
-				"text": map[string]interface{}{
-					"type": "plain_text",
-					"text": fmt.Sprintf("%s %s", emoji, notification.Spec.Subject),
-				},
-			},
-			// Section block with message body
-			map[string]interface{}{
-				"type": "section",
-				"text": map[string]interface{}{
-					"type": "mrkdwn",
-					"text": notification.Spec.Body,
-				},
-			},
-			// Context block with metadata
-			map[string]interface{}{
-				"type": "context",
-				"elements": []interface{}{
-					map[string]interface{}{
-						"type": "mrkdwn",
-						"text": fmt.Sprintf("*Priority:* %s | *Type:* %s", notification.Spec.Priority, notification.Spec.Type),
-					},
-				},
-			},
-		},
+		"blocks": blockMaps,
 	}
 }
 
-// RetryableError represents an error that should be retried
-type RetryableError struct {
-	err error
-}
-
-// NewRetryableError creates a new retryable error
-func NewRetryableError(err error) *RetryableError {
-	return &RetryableError{err: err}
-}
-
-// Error implements the error interface
-func (e *RetryableError) Error() string {
-	return e.err.Error()
-}
-
-// Unwrap implements error unwrapping for errors.Is/As
-func (e *RetryableError) Unwrap() error {
-	return e.err
-}
-
-// IsRetryableError checks if an error is retryable
-func IsRetryableError(err error) bool {
-	_, ok := err.(*RetryableError)
-	return ok
-}
+// Note: RetryableError and IsRetryableError moved to errors.go for shared use
 
 // isTLSError checks if an error is a TLS-related error
 // TLS errors indicate security issues and should NOT be retried (BR-NOT-058)

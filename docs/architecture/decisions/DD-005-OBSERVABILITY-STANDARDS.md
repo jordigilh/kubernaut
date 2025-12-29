@@ -2,7 +2,7 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: October 31, 2025
-**Last Reviewed**: October 31, 2025
+**Last Reviewed**: December 21, 2025
 **Confidence**: 95%
 **Based On**: Gateway Service Reference Implementation
 
@@ -11,7 +11,7 @@
 ## 🎯 **Overview**
 
 This design decision establishes **mandatory observability standards** for all Kubernaut services, covering:
-1. **Prometheus Metrics** - Naming conventions, labels, and metric types
+1. **Prometheus Metrics** - Naming conventions, constants (NEW), labels, and metric types
 2. **Structured Logging** - Format, fields, and sanitization
 3. **Request Tracing** - Request ID propagation and correlation
 
@@ -27,6 +27,10 @@ This design decision establishes **mandatory observability standards** for all K
 2. [Requirements](#requirements)
 3. [Decision](#decision)
 4. [Metrics Standards](#metrics-standards)
+   - 4.1. [Metric Naming Convention](#1-metric-naming-convention)
+   - 4.2. [Metric Name Constants (MANDATORY)](#11-metric-name-constants-mandatory)
+   - 4.3. [Metric Types](#2-metric-types)
+   - 4.4. [Label Standards](#3-label-standards)
 5. [Logging Standards](#logging-standards)
 6. [Request Tracing Standards](#request-tracing-standards)
 7. [Implementation](#implementation)
@@ -111,6 +115,223 @@ gateway_http_request_duration_seconds
 context_api_database_query_duration_seconds
 holmesgpt_api_llm_tokens_total
 ```
+
+---
+
+### **1.1. Metric Name Constants (MANDATORY)** ⚠️ **CRITICAL**
+
+**Problem**: Hardcoded metric name strings lead to typos, test/production mismatches, and maintenance burden.
+
+**Requirement**: All services MUST define exported constants for metric names and label values.
+
+#### **Why Constants Are Mandatory**
+
+**Without Constants** (❌ ANTI-PATTERN):
+```go
+// Production code
+m.ExecutionTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "workflowexecution_reconciler_total", // Hardcoded string
+	},
+	[]string{"outcome"},
+)
+
+// Test code
+count := extractMetricValue(body, "workflowexecution_total", "Completed") // TYPO! Missing "_reconciler"
+```
+
+**Result**: Tests pass with wrong metric names, fail at E2E/runtime. 27+ duplication sites.
+
+**With Constants** (✅ BEST PRACTICE):
+```go
+// Production code
+const (
+	MetricNameExecutionTotal = "workflowexecution_reconciler_total"
+	LabelOutcomeCompleted    = "Completed"
+)
+
+m.ExecutionTotal = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: MetricNameExecutionTotal, // Constant
+	},
+	[]string{"outcome"},
+)
+
+// Test code
+import wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
+
+count := extractMetricValue(body, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
+```
+
+**Result**: Type-safe, compiler-enforced, single source of truth.
+
+#### **Implementation Pattern**
+
+**File Structure**:
+```
+pkg/{service}/metrics/
+├── metrics.go           # Metrics struct + constants
+└── metrics_test.go      # Unit tests
+```
+
+**Constant Definition** (`metrics.go`):
+```go
+package metrics
+
+// Metric name constants - DRY principle for tests and production
+// These constants ensure tests use correct metric names and prevent typos.
+const (
+	// MetricNameReconciliationTotal is the name of the reconciliation counter metric
+	MetricNameReconciliationTotal = "signalprocessing_reconciler_reconciliations_total"
+
+	// MetricNameReconciliationDuration is the name of the reconciliation duration histogram metric
+	MetricNameReconciliationDuration = "signalprocessing_reconciler_reconciliation_duration_seconds"
+
+	// MetricNameEnrichmentDuration is the name of the enrichment duration histogram metric
+	MetricNameEnrichmentDuration = "signalprocessing_enricher_duration_seconds"
+
+	// Label value constants
+	LabelPhaseCompleted = "Completed"
+	LabelPhaseFailed    = "Failed"
+	LabelResultSuccess  = "success"
+	LabelResultError    = "error"
+)
+
+// Metrics holds all {Service} metrics.
+type Metrics struct {
+	ReconciliationTotal    *prometheus.CounterVec
+	ReconciliationDuration *prometheus.HistogramVec
+	EnrichmentDuration     *prometheus.HistogramVec
+}
+
+func NewMetrics() *Metrics {
+	m := &Metrics{
+		ReconciliationTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameReconciliationTotal, // Use constant
+				Help: "Total reconciliations by phase and result",
+			},
+			[]string{"phase", "result"},
+		),
+		// ... other metrics using constants
+	}
+
+	// Register with controller-runtime
+	ctrlmetrics.Registry.MustRegister(
+		m.ReconciliationTotal,
+		m.ReconciliationDuration,
+		m.EnrichmentDuration,
+	)
+
+	return m
+}
+
+// RecordReconciliation records a completed reconciliation.
+func (m *Metrics) RecordReconciliation(phase, result string, duration float64) {
+	m.ReconciliationTotal.WithLabelValues(phase, result).Inc()
+	m.ReconciliationDuration.WithLabelValues(phase).Observe(duration)
+}
+```
+
+**Test Usage** (`*_test.go`):
+```go
+import (
+	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
+)
+
+func TestMetricsIncrement(t *testing.T) {
+	// Use constants from production package
+	metricsURL := "http://localhost:30185/metrics"
+	body := fetchMetrics(metricsURL)
+
+	// Type-safe: compiler catches typos
+	count := extractMetricValue(body,
+		spmetrics.MetricNameReconciliationTotal,
+		spmetrics.LabelPhaseCompleted)
+
+	require.Greater(t, count, 0.0, "Expected reconciliation counter to increment")
+}
+```
+
+#### **Benefits**
+
+| Aspect | Without Constants | With Constants |
+|--------|------------------|----------------|
+| **Typo Prevention** | Runtime errors | Compile-time errors |
+| **Maintenance** | Update 20+ locations | Update 1 location |
+| **Test Safety** | Wrong names pass tests | Compiler enforces correctness |
+| **Refactoring** | Manual find/replace | IDE "Find Usages" + Rename |
+| **Documentation** | Implicit in strings | Explicit via Go doc comments |
+
+#### **Mandatory Checklist**
+
+All services MUST:
+- [ ] Define `MetricName*` constants for all metric names
+- [ ] Define `Label*` constants for common label values
+- [ ] Use constants in `prometheus.CounterOpts{Name: ...}`
+- [ ] Use constants in `WithLabelValues()` calls
+- [ ] Export constants (capitalize) for test access
+- [ ] Document constants with Go doc comments
+- [ ] Import constants in test files (never duplicate strings)
+
+#### **Compliance Status**
+
+| Service | Constants Defined | Status | Handoff Document |
+|---------|------------------|--------|------------------|
+| **WorkflowExecution** | ✅ Yes | ✅ Compliant | [WE_METRICS_DRY_REFACTOR_DEC_21_2025.md](../../handoff/WE_METRICS_DRY_REFACTOR_DEC_21_2025.md) |
+| **Notification** | ❌ No | 🔴 Non-compliant | TBD |
+| **SignalProcessing** | ❌ No | 🔴 Non-compliant | TBD |
+| **RemediationOrchestrator** | ❌ No | 🔴 Non-compliant | TBD |
+| **AIAnalysis** | ❌ No | 🔴 Non-compliant | TBD |
+| **Gateway** | ❓ Unknown | 🔄 Triage | TBD |
+| **DataStorage** | ❓ Unknown | 🔄 Triage | TBD |
+
+#### **Migration Guide**
+
+**Step 1: Define Constants**
+```go
+// pkg/{service}/metrics/metrics.go
+const (
+	MetricNameYourMetric = "service_component_metric_total"
+	LabelValueSuccess    = "success"
+)
+```
+
+**Step 2: Update Production Code**
+```go
+// Before
+Name: "service_component_metric_total",
+
+// After
+Name: MetricNameYourMetric,
+```
+
+**Step 3: Update Tests**
+```go
+// Before
+import "strings"
+if !strings.Contains(body, "service_component_metric_total") { ... }
+
+// After
+import svcmetrics "github.com/jordigilh/kubernaut/pkg/{service}/metrics"
+if !strings.Contains(body, svcmetrics.MetricNameYourMetric) { ... }
+```
+
+**Step 4: Verify**
+```bash
+# Compilation catches errors
+go build ./pkg/{service}/metrics/...
+go test -c ./test/e2e/{service}/... -o /dev/null
+```
+
+#### **Reference Implementation**
+
+- **Service**: WorkflowExecution
+- **File**: `pkg/workflowexecution/metrics/metrics.go` (lines 44-67)
+- **Tests**: `test/e2e/workflowexecution/02_observability_test.go`
+- **Documentation**: [WE_METRICS_DRY_REFACTOR_DEC_21_2025.md](../../handoff/WE_METRICS_DRY_REFACTOR_DEC_21_2025.md)
+- **Root Cause**: E2E tests failed due to typo (`workflowexecution_total` vs. `workflowexecution_reconciler_total`)
+- **Fix**: Extracted 5 constants, updated 27 locations, achieved 100% E2E pass rate
 
 ---
 
@@ -345,27 +566,129 @@ gateway_redis_outage_count_total
 
 ### **1. Structured Logging Library**
 
-**Mandatory**: Use `go.uber.org/zap` for all services
+**Mandatory Interface**: Use `github.com/go-logr/logr` as the **unified logging interface** across all services
+
+**Backend**: Use `go.uber.org/zap` as the **underlying implementation** (via `github.com/go-logr/zapr` adapter)
 
 **Rationale**:
-- High performance (zero-allocation)
-- Structured JSON output
-- Type-safe field API
-- Industry standard
+- ✅ **Unified interface**: Single `logr.Logger` type across stateless and CRD controller services
+- ✅ **controller-runtime native**: CRD controllers use `logr` natively
+- ✅ **zap performance**: High performance (zero-allocation) via `zapr` adapter
+- ✅ **Shared library consistency**: All `pkg/*` libraries accept `logr.Logger`
+- ✅ **Structured JSON output**: Consistent format across all services
+- ✅ **Industry standard**: `logr` is the Kubernetes ecosystem standard
+
+---
+
+### **1.1 Logging Framework Decision Matrix**
+
+| Service Type | Primary Logger | Shared Library Interface | How to Create |
+|--------------|----------------|--------------------------|---------------|
+| **Stateless HTTP Services** (Gateway, Data Storage, Context API) | `logr.Logger` | `logr.Logger` | `zapr.NewLogger(zapLogger)` |
+| **CRD Controllers** (Signal Processing, Notification, Workflow Execution) | `logr.Logger` | `logr.Logger` | `ctrl.Log.WithName("component")` |
+| **Shared Libraries** (`pkg/*`) | N/A (accepts) | `logr.Logger` | Passed by caller |
+
+---
+
+### **1.2 Implementation Patterns**
+
+#### **Stateless HTTP Services**
+
+```go
+import (
+    "github.com/go-logr/logr"
+    "github.com/go-logr/zapr"
+    "go.uber.org/zap"
+)
+
+func main() {
+    // Create zap logger (for performance)
+    zapLogger, _ := zap.NewProduction()
+    defer zapLogger.Sync()
+
+    // Convert to logr interface (for consistency)
+    logger := zapr.NewLogger(zapLogger)
+
+    // Pass to shared libraries
+    auditStore, _ := audit.NewBufferedStore(client, config, "gateway", logger.WithName("audit"))
+    server := gateway.NewServer(cfg, logger)
+}
+```
+
+#### **CRD Controllers**
+
+```go
+import (
+    "github.com/go-logr/logr"
+    ctrl "sigs.k8s.io/controller-runtime"
+)
+
+func main() {
+    // Use native logr from controller-runtime
+    logger := ctrl.Log.WithName("notification-controller")
+
+    // Pass to shared libraries (no adapter needed)
+    auditStore, _ := audit.NewBufferedStore(client, config, "notification", logger.WithName("audit"))
+}
+```
+
+#### **Shared Libraries**
+
+```go
+// pkg/audit/store.go
+import "github.com/go-logr/logr"
+
+type BufferedAuditStore struct {
+    logger logr.Logger  // Unified interface
+    // ...
+}
+
+func NewBufferedStore(client DataStorageClient, config Config, serviceName string, logger logr.Logger) (AuditStore, error) {
+    // Works with both stateless (via zapr) and CRD controllers (native logr)
+}
+```
+
+---
+
+### **1.3 Migration from `*zap.Logger` to `logr.Logger`**
+
+**Migration Priority**: V1.1 (Post-MVP)
+
+**Affected Files**: 34 files in `pkg/` with 76 `*zap.Logger` references
+
+| Package | Files | Priority | Effort |
+|---------|-------|----------|--------|
+| `pkg/audit` | 1 | P0 (shared library) | 1h |
+| `pkg/cache/redis` | 1 | P1 (shared library) | 1h |
+| `pkg/gateway` | 10 | P2 (stateless service) | 4h |
+| `pkg/datastorage` | 20 | P2 (stateless service) | 6h |
+| `pkg/toolset` | 1 | P3 (low usage) | 0.5h |
+| **Total** | **34** | | **~12.5h** |
+
+**Migration Steps**:
+1. Update shared libraries (`pkg/audit`, `pkg/cache/redis`) to accept `logr.Logger`
+2. Update stateless services to create `logr.Logger` via `zapr.NewLogger()`
+3. Update CRD controllers to pass native `logr.Logger` to shared libraries
+4. Remove duplicate logger creation in CRD controllers
 
 ---
 
 ### **2. Log Levels**
 
-| Level | Use Case | Example |
+| Level | Use Case | logr Example |
 |---|---|---|
-| **DEBUG** | Detailed debugging information | `logger.Debug("Parsing signal payload", zap.String("fingerprint", fp))` |
-| **INFO** | Normal operational events | `logger.Info("Signal received", zap.String("source", "prometheus"))` |
-| **WARN** | Warning conditions (recoverable) | `logger.Warn("Redis cache miss", zap.String("key", key))` |
-| **ERROR** | Error conditions (actionable) | `logger.Error("Failed to create CRD", zap.Error(err))` |
-| **FATAL** | Fatal errors (service exits) | `logger.Fatal("Cannot connect to database", zap.Error(err))` |
+| **DEBUG** (V=1) | Detailed debugging information | `logger.V(1).Info("Parsing signal payload", "fingerprint", fp)` |
+| **INFO** (V=0) | Normal operational events | `logger.Info("Signal received", "source", "prometheus")` |
+| **WARN** | Warning conditions (recoverable) | `logger.Info("Redis cache miss", "key", key, "warning", true)` |
+| **ERROR** | Error conditions (actionable) | `logger.Error(err, "Failed to create CRD")` |
+| **FATAL** | Fatal errors (service exits) | `logger.Error(err, "Cannot connect to database"); os.Exit(1)` |
 
-**Default Level**: `INFO` (production), `DEBUG` (development)
+**Note**: `logr` uses verbosity levels (`V(n)`) instead of named levels. Higher V = more verbose.
+- `V(0)` = INFO (default, always shown)
+- `V(1)` = DEBUG (shown when verbosity >= 1)
+- `V(2)` = TRACE (shown when verbosity >= 2)
+
+**Default Level**: `V(0)` (production), `V(1)` (development)
 
 ---
 
@@ -373,31 +696,43 @@ gateway_redis_outage_count_total
 
 **Mandatory Fields** (all log entries):
 ```go
+// logr uses key-value pairs (not zap.String, zap.Int, etc.)
 logger.Info("Message",
-    zap.String("request_id", requestID),      // Request tracing
-    zap.String("source_ip", sourceIP),        // Security auditing
-    zap.String("endpoint", r.URL.Path),       // HTTP endpoint
-    zap.String("method", r.Method),           // HTTP method
+    "request_id", requestID,      // Request tracing
+    "source_ip", sourceIP,        // Security auditing
+    "endpoint", r.URL.Path,       // HTTP endpoint
+    "method", r.Method,           // HTTP method
 )
 ```
 
 **Common Fields** (use consistently):
 ```go
-zap.String("service", "gateway")              // Service name
-zap.String("environment", "prod")             // Environment
-zap.String("namespace", "default")            // Kubernetes namespace
-zap.String("signal_name", "HighMemoryUsage")  // Signal name
-zap.String("fingerprint", fp)                 // Signal fingerprint
-zap.Float64("duration_ms", durationMs)        // Operation duration
-zap.Int("status_code", statusCode)            // HTTP status code
-zap.Error(err)                                // Error details
+// Key-value pairs for structured logging
+"service", "gateway"              // Service name
+"environment", "prod"             // Environment
+"namespace", "default"            // Kubernetes namespace
+"signal_name", "HighMemoryUsage"  // Signal name
+"fingerprint", fp                 // Signal fingerprint
+"duration_ms", durationMs         // Operation duration
+"status_code", statusCode         // HTTP status code
+```
+
+**Error Logging** (logr pattern):
+```go
+// logr.Error() takes error as first argument, message second
+logger.Error(err, "Failed to process request",
+    "request_id", requestID,
+    "operation", "create_signal",
+)
 ```
 
 **Performance Fields**:
 ```go
-zap.Float64("duration_ms", float64(duration.Milliseconds()))
-zap.Int64("bytes_processed", bytesProcessed)
-zap.Int("retry_count", retryCount)
+logger.Info("Request completed",
+    "duration_ms", float64(duration.Milliseconds()),
+    "bytes_processed", bytesProcessed,
+    "retry_count", retryCount,
+)
 ```
 
 ---
@@ -425,7 +760,7 @@ logger.Info("Processing webhook",
 
 **Implementation**:
 ```go
-// pkg/{service}/middleware/log_sanitization.go
+// pkg/shared/sanitization/sanitizer.go (SHARED LIBRARY - use this)
 func SanitizeForLog(data string) string {
     // Redact passwords
     data = regexp.MustCompile(`"password"\s*:\s*"[^"]*"`).ReplaceAllString(data, `"password":"[REDACTED]"`)
@@ -776,7 +1111,7 @@ func getSourceIP(r *http.Request) string {
 
 ### **Log Sanitization Middleware**
 
-**Pattern**: Create `pkg/{service}/middleware/log_sanitization.go`
+**Pattern**: Use shared library `pkg/shared/sanitization/sanitizer.go`
 
 ```go
 package middleware
@@ -942,10 +1277,10 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 2. Implement RequestIDMiddleware with zap logger
 3. Add GetLogger() and GetRequestID() helpers
 
-**Step 3: Add Log Sanitization** (1 hour)
+**Step 3: Add Log Sanitization** (15 minutes)
 
-1. Create `pkg/{service}/middleware/log_sanitization.go`
-2. Implement SanitizeForLog() function
+1. Import `pkg/shared/sanitization` in your service
+2. Use `sanitization.SanitizeForLog()` for sensitive data
 3. Apply sanitization to all log entries with sensitive data
 
 **Step 4: Update HTTP Server** (2 hours)
@@ -970,7 +1305,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 - [ ] Create `pkg/{service}/metrics/metrics.go` package
 - [ ] Define service-specific metrics with standard naming
 - [ ] Create `pkg/{service}/middleware/request_id.go`
-- [ ] Create `pkg/{service}/middleware/log_sanitization.go`
+- [ ] Import `pkg/shared/sanitization` (shared library)
 - [ ] Register RequestIDMiddleware in HTTP server
 - [ ] Update all handlers to use middleware.GetLogger(ctx)
 - [ ] Add performance logging middleware
@@ -991,7 +1326,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 **Evidence**:
 - ✅ `pkg/gateway/metrics/metrics.go` - 40+ metrics defined
 - ✅ `pkg/gateway/middleware/request_id.go` - Request ID middleware
-- ✅ `pkg/gateway/middleware/log_sanitization.go` - Log sanitization
+- ✅ `pkg/shared/sanitization/sanitizer.go` - Log sanitization (shared library)
 - ✅ All handlers use request-scoped logging
 - ✅ Integration tests passing (115 specs)
 
@@ -1033,7 +1368,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 1. **Reference Implementation**: `pkg/gateway/` (Gateway service)
 2. **Metrics Package**: `pkg/gateway/metrics/metrics.go`
 3. **Request ID Middleware**: `pkg/gateway/middleware/request_id.go`
-4. **Log Sanitization**: `pkg/gateway/middleware/log_sanitization.go`
+4. **Log Sanitization**: `pkg/shared/sanitization/sanitizer.go` (shared library)
 5. **Design Decision**: `DD-005-OBSERVABILITY-STANDARDS.md` (this document)
 
 ---
@@ -1109,11 +1444,11 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 
 **Breakdown**:
 - **Metrics Standards**: 95% ✅ (proven in Gateway, Prometheus best practices)
-- **Logging Standards**: 95% ✅ (proven in Gateway, zap is industry standard)
+- **Logging Standards**: 95% ✅ (unified `logr` interface, `zap` backend via `zapr`)
 - **Request Tracing**: 95% ✅ (proven in Gateway, W3C standard)
-- **Migration Effort**: 90% ✅ (straightforward, ~8 hours per service)
+- **Migration Effort**: 90% ✅ (~12.5 hours for `logr` migration across 34 files)
 
-**Why 95%**: Only minor risk is migration effort for existing services, but pattern is proven in Gateway.
+**Why 95%**: `logr` is the Kubernetes ecosystem standard, proven in controller-runtime. Migration is straightforward with `zapr` adapter for stateless services.
 
 ---
 
@@ -1123,17 +1458,36 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 
 **Evidence**:
 - ✅ Prometheus best practices followed
-- ✅ Industry-standard structured logging (zap)
+- ✅ Unified logging interface (`logr`) with high-performance backend (`zap` via `zapr`)
+- ✅ Consistent logging across stateless and CRD controller services
 - ✅ Proven in Gateway service (115 tests passing)
-- ✅ Clear migration path for other services
+- ✅ Native integration with controller-runtime for CRD controllers
+- ✅ Clear migration path (~12.5 hours for existing code)
 - ✅ Security compliance (log sanitization)
 
 **Recommendation**: ✅ **MANDATORY** for all services before production deployment
 
+**Migration Status**:
+- 🔄 **Pending**: 34 files in `pkg/` need migration from `*zap.Logger` to `logr.Logger`
+- ⏳ **Timeline**: V1.1 (Post-MVP)
+- 📋 **Tracking**: See Section 1.3 for detailed migration plan
+
 ---
 
-**Document Version**: 1.0
-**Last Updated**: October 31, 2025
+---
+
+## 📜 **Change Log**
+
+| Version | Date | Changes |
+|---------|------|---------|
+| **3.0** | December 21, 2025 | **MANDATORY**: Added Section 1.1 "Metric Name Constants" - All services MUST define exported constants for metric names and label values. Root cause: E2E test failures due to hardcoded string typos. WorkflowExecution reference implementation demonstrates DRY principle compliance. |
+| **2.0** | November 28, 2025 | **CRITICAL**: Unified logging interface - `logr.Logger` replaces `*zap.Logger` as the standard interface. `zap` remains the backend via `zapr` adapter. Added Logging Framework Decision Matrix, migration guide, and updated all examples to use `logr` syntax. |
+| **1.0** | October 31, 2025 | Initial release - Prometheus metrics, `zap` logging, request tracing standards |
+
+---
+
+**Document Version**: 3.0
+**Last Updated**: December 21, 2025
 **Status**: ✅ **APPROVED FOR PRODUCTION**
-**Next Review**: After all services implement observability standards
+**Next Review**: After metric constants migration is complete across all services
 

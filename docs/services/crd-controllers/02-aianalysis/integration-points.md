@@ -1,1304 +1,672 @@
-## Integration Points
+# AI Analysis Service - Integration Points
 
-**Updated**: October 16, 2025
-**Prompt Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
+**Version**: v2.2
+**Last Updated**: 2025-12-02
+**Status**: ✅ V1.0 Scope Defined
 
-### HolmesGPT Integration Architecture
+---
 
-**Architectural Principle**: AIAnalysis controller delegates HolmesGPT investigation to HolmesGPT-API service. Toolset configuration is managed by Dynamic Toolset Service (standalone service, like Context API).
+## Changelog
 
-**Structured Action Format Support**: AIAnalysis service MUST consume structured action responses from HolmesGPT API per BR-LLM-021 to BR-LLM-026. This eliminates natural language translation and enables type-safe action processing.
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| **v2.2** | 2025-12-02 | **SCHEMA UPDATE**: Added `failedDetections` to DetectedLabels data flow; HolmesGPT-API passes to Data Storage for filter skipping | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
+| v2.1 | 2025-12-02 | **CRITICAL FIXES**: Port 8090→8080; Endpoints corrected; MCP removed (toolkit-based); Request/response schemas updated; Added `target_in_owner_chain` and `warnings` | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
+| v2.0 | 2025-11-30 | **REGENERATED**: Fixed RemediationProcessing→SignalProcessing; Added DetectedLabels/CustomLabels/OwnerChain flow; Updated HolmesGPT-API integration; Removed legacy enrichment patterns | DD-WORKFLOW-001 v1.8 |
+| v1.1 | 2025-10-16 | Added structured action format | DD-CONTRACT-002 |
+| v1.0 | 2025-10-15 | Initial specification | - |
 
-**Prompt Optimization**: All investigation requests now use **Self-Documenting JSON format** (DD-HOLMESGPT-009) for:
-- ✅ **75% token reduction** (~730 → ~180 tokens)
-- ✅ **$1,650/year cost savings** on LLM API costs
-- ✅ **150ms latency improvement** per investigation
-- ✅ **98% parsing accuracy maintained**
+---
 
-#### Service Integration Flow
+## Integration Architecture (V1.0)
+
+### Data Flow Overview
 
 ```mermaid
 graph LR
-    AR[RemediationRequest<br/>Controller] -->|Create AIAnalysis CRD| AIA[AIAnalysis CRD]
-    AIC[AIAnalysis<br/>Controller] -->|Watch| AIA
-    AIC -->|Investigation Request<br/>POST /investigate| HAPI[HolmesGPT-API<br/>Service]
-    HAPI -->|Query Available Toolsets<br/>GET /toolsets| DTS[Dynamic Toolset<br/>Service]
-    DTS -->|Toolset Config| HAPI
-    HAPI -->|Initialize with Toolsets| HGPT[HolmesGPT<br/>SDK]
-    HGPT -->|Fetch Logs| K8S[Kubernetes<br/>Toolset]
-    HGPT -->|Fetch Metrics| PROM[Prometheus<br/>Toolset]
-    HAPI -->|Investigation Results| AIC
-    AIC -->|Update Status| AIA
+    subgraph "Upstream"
+        SP[SignalProcessing CRD]
+        RO[Remediation Orchestrator]
+    end
+
+    subgraph "AIAnalysis"
+        AIA[AIAnalysis CRD]
+        CTRL[AIAnalysis Controller]
+    end
+
+    subgraph "External Services"
+        HAPI[HolmesGPT-API<br/>Port 8080]
+        DS[Data Storage<br/>Port 8085]
+    end
+
+    subgraph "Downstream"
+        WE[WorkflowExecution]
+        NOT[Notification Service]
+    end
+
+    SP -->|"EnrichmentResults<br/>(DetectedLabels, CustomLabels, OwnerChain)"| RO
+    RO -->|"Creates AIAnalysis<br/>with copied enrichment"| AIA
+    CTRL -->|"POST /api/v1/incident/analyze"| HAPI
+    HAPI -->|"Internal toolkit:<br/>search_workflow_catalog"| DS
+    DS -->|"workflowId + containerImage"| HAPI
+    HAPI -->|"IncidentResponse"| CTRL
+    CTRL -->|"Update status"| AIA
+    AIA -->|"phase=Completed"| RO
+    RO -->|"If approved"| WE
+    RO -->|"If approvalRequired"| NOT
 ```
 
-#### Component Responsibilities
-
-| Component | Responsibility | Namespace |
-|-----------|---------------|-----------|
-| **AIAnalysis Controller** | Create investigation requests, process results, update CRD status | `kubernaut-system` |
-| **HolmesGPT-API Service** | REST API wrapper for HolmesGPT SDK, investigation orchestration | `kubernaut-system` |
-| **Dynamic Toolset Service** | Discover cluster services, generate toolset configurations, manage toolset lifecycle | `kubernaut-system` |
-| **Context API** | Provide historical patterns and organizational intelligence | `kubernaut-system` |
-
-#### HolmesGPT Toolset Management
-
-**Key Architectural Decision**: Toolsets are configured **per HolmesGPT instance** (system-wide), NOT per-investigation.
-
-**Why System-Wide Configuration?**
-- ✅ **Consistency**: All investigations use same toolset capabilities
-- ✅ **Performance**: No toolset discovery per-investigation
-- ✅ **Simplicity**: Single source of truth for available toolsets
-- ✅ **Dynamic Updates**: Toolsets automatically updated when cluster services change
-
-**Dynamic Toolset Service** (see `DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md`):
-- Discovers cluster services (Prometheus, Grafana, Jaeger, Elasticsearch, custom)
-- Generates HolmesGPT toolset configurations automatically
-- Provides toolset configuration via REST API
-- Updates toolset configuration when services added/removed
-
-**HolmesGPT-API Integration**:
-```python
-# HolmesGPT-API queries Dynamic Toolset Service on startup
-toolsets_response = requests.get("http://dynamic-toolset-service.kubernaut-system.svc.cluster.local:8095/toolsets")
-available_toolsets = toolsets_response.json()["toolsets"]  # ["kubernetes", "prometheus", "grafana"]
-
-# Initialize HolmesGPT SDK with dynamic toolsets
-holmes_client = Client(
-    api_key=llm_api_key,
-    toolsets=available_toolsets  # From Dynamic Toolset Service
-)
-```
-
-**AIAnalysis CRD Does NOT Configure Toolsets**:
-- ❌ No `holmesGPTConfig` field in AIAnalysis.spec
-- ❌ AIAnalysis controller does NOT manage toolset configuration
-- ✅ AIAnalysis provides targeting data only (namespace, resourceKind, resourceName, kubernetesContext)
-- ✅ HolmesGPT-API handles toolset initialization and configuration
-
-#### Investigation Request Flow (Self-Documenting JSON)
-
-**Format**: DD-HOLMESGPT-009
-**Token Efficiency**: ~180 tokens per investigation request
-
-**AIAnalysis Controller → HolmesGPT-API**:
-```go
-// In AIAnalysisReconciler.investigatePhase()
-// Build ultra-compact JSON context
-encoder := CompactEncoder{}
-compactContext, err := encoder.BuildCompactPrompt(aiAnalysis)
-if err != nil {
-    return r.handleEncodingError(ctx, aiAnalysis, err)
-}
-
-// Investigation request with ultra-compact context
-investigationRequest := HolmesGPTInvestigationRequest{
-    Context:      compactContext,  // Ultra-compact JSON string (~180 tokens)
-    LLMProvider:  aiAnalysis.Spec.LLMProvider,  // e.g., "openai"
-    LLMModel:     aiAnalysis.Spec.LLMModel,     // e.g., "gpt-4"
-    ResponseFormat: "v2-structured",
-    EnableValidation: true,
-}
-
-// POST to HolmesGPT-API
-response, err := r.holmesGPTClient.Investigate(ctx, investigationRequest)
-if err != nil {
-    return r.handleHolmesGPTError(ctx, aiAnalysis, err)
-}
-
-// Update AIAnalysis status with results
-aiAnalysis.Status.InvestigationResult = response.InvestigationResult
-```
-
-**Legacy Verbose Format** (Deprecated):
-```go
-// In AIAnalysisReconciler.investigatePhase() (DEPRECATED)
-investigationRequest := HolmesGPTInvestigationRequest{
-    AlertContext: AlertContext{
-        Fingerprint:  aiAnalysis.Spec.AnalysisRequest.SignalContext.Fingerprint,
-        Severity:     aiAnalysis.Spec.AnalysisRequest.SignalContext.Severity,
-        Environment:  aiAnalysis.Spec.AnalysisRequest.SignalContext.Environment,
-
-        // Targeting data for HolmesGPT toolsets
-        Namespace:    aiAnalysis.Spec.AnalysisRequest.SignalContext.Namespace,
-        ResourceKind: aiAnalysis.Spec.AnalysisRequest.SignalContext.ResourceKind,
-        ResourceName: aiAnalysis.Spec.AnalysisRequest.SignalContext.ResourceName,
-
-        // Kubernetes context (small metadata, <10KB)
-        KubernetesContext: aiAnalysis.Spec.AnalysisRequest.SignalContext.KubernetesContext,
-    },
-    AnalysisTypes: aiAnalysis.Spec.AnalysisRequest.AnalysisTypes,
-    InvestigationScope: aiAnalysis.Spec.AnalysisRequest.InvestigationScope,
-}
-```
-
-**HolmesGPT-API Investigation Handler**:
-```python
-# In HolmesGPT-API (Python)
-@app.post("/api/v1/investigate")
-async def investigate(request: InvestigationRequest):
-    # HolmesGPT SDK uses targeting data to fetch real-time logs/metrics
-    result = await holmes_client.investigate(
-        alert_name=request.alert_context.fingerprint,
-        namespace=request.alert_context.namespace,        # Where to look
-        resource_name=request.alert_context.resource_name,  # What to investigate
-        # HolmesGPT toolsets automatically:
-        # 1. kubectl logs -n {namespace} {resource_name} --tail 500
-        # 2. kubectl describe pod {resource_name} -n {namespace}
-        # 3. kubectl get events -n {namespace}
-        # 4. promql: container_memory_usage_bytes{pod="{resource_name}"}
-    )
-
-    return InvestigationResponse(investigation_result=result)
-```
-
-#### Error Handling for HolmesGPT-API Failures
-
-**AIAnalysis Controller Error Handling Strategy**:
-
-```go
-// In AIAnalysisReconciler
-func (r *AIAnalysisReconciler) handleHolmesGPTError(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-    err error,
-) error {
-
-    // Classify error type
-    switch {
-    case errors.Is(err, ErrHolmesGPTUnavailable):
-        // Service unavailable (network, pod down, etc.)
-        r.Log.Error(err, "HolmesGPT-API unavailable",
-            "aiAnalysis", aiAnalysis.Name,
-            "retryAttempt", aiAnalysis.Status.RetryCount,
-        )
-
-        // Retry with exponential backoff
-        if aiAnalysis.Status.RetryCount < maxRetries {
-            aiAnalysis.Status.RetryCount++
-            return fmt.Errorf("HolmesGPT-API unavailable, retry %d/%d: %w",
-                aiAnalysis.Status.RetryCount, maxRetries, err)
-        }
-
-        // Max retries exceeded - mark as failed
-        aiAnalysis.Status.Phase = "failed"
-        failureReason := fmt.Sprintf(
-            "HolmesGPT-API unavailable after %d retries: %v",
-            maxRetries, err,
-        )
-        aiAnalysis.Status.FailureReason = &failureReason
-
-    case errors.Is(err, ErrHolmesGPTTimeout):
-        // Investigation timeout
-        r.Log.Error(err, "HolmesGPT investigation timeout",
-            "aiAnalysis", aiAnalysis.Name,
-            "timeout", investigationTimeout,
-        )
-
-        // Timeout is non-retryable - mark as failed
-        aiAnalysis.Status.Phase = "failed"
-        failureReason := fmt.Sprintf("HolmesGPT investigation timeout: %v", err)
-        aiAnalysis.Status.FailureReason = &failureReason
-
-    case errors.Is(err, ErrHolmesGPTInvalidResponse):
-        // Invalid/malformed response (hallucination, schema mismatch)
-        r.Log.Error(err, "HolmesGPT invalid response",
-            "aiAnalysis", aiAnalysis.Name,
-        )
-
-        // Log for analysis, mark as failed
-        aiAnalysis.Status.Phase = "failed"
-        failureReason := fmt.Sprintf("HolmesGPT invalid response: %v", err)
-        aiAnalysis.Status.FailureReason = &failureReason
-
-    case errors.Is(err, ErrHolmesGPTRateLimited):
-        // Rate limited by LLM provider
-        r.Log.Warn("HolmesGPT rate limited, backing off",
-            "aiAnalysis", aiAnalysis.Name,
-        )
-
-        // Exponential backoff, requeue
-        return fmt.Errorf("HolmesGPT rate limited: %w", err)
-
-    default:
-        // Unknown error
-        r.Log.Error(err, "HolmesGPT unknown error",
-            "aiAnalysis", aiAnalysis.Name,
-        )
-
-        aiAnalysis.Status.Phase = "failed"
-        failureReason := fmt.Sprintf("HolmesGPT unknown error: %v", err)
-        aiAnalysis.Status.FailureReason = &failureReason
-    }
-
-    // Update status
-    if err := r.Status().Update(ctx, aiAnalysis); err != nil {
-        return err
-    }
-
-    return nil
-}
-```
-
-**Error Metrics**:
-```go
-var (
-    holmesGPTErrorTotal = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "kubernaut_holmesgpt_error_total",
-            Help: "Total HolmesGPT API errors by type",
-        },
-        []string{"error_type", "severity", "environment"},
-    )
-
-    holmesGPTRetryTotal = prometheus.NewCounter(
-        prometheus.CounterOpts{
-            Name: "kubernaut_holmesgpt_retry_total",
-            Help: "Total HolmesGPT retry attempts",
-        },
-    )
-)
-```
+> **⚠️ IMPORTANT CORRECTION (Dec 2025)**: HolmesGPT-API does **NOT** expose an MCP server. The MCP workflow catalog approach was replaced with a **toolkit-based architecture** where HolmesGPT-API uses internal tools to query Data Storage directly. AIAnalysis calls HolmesGPT-API via REST endpoints.
 
 ---
 
-### Structured Action Response Handling
+## Upstream Integration
 
-**Business Requirements**: BR-LLM-021 to BR-LLM-026, BR-AI-011
+### SignalProcessing → AIAnalysis (via RO)
 
-**Purpose**: AI Analysis service MUST consume and process structured action responses from HolmesGPT API, eliminating the need for natural language translation and enabling type-safe action processing.
+**Pattern**: Self-contained CRD - all data copied to AIAnalysis.spec at creation
 
-#### Structured Response Integration Flow
+**Source**: `SignalProcessing.status.enrichmentResults`
+**Target**: `AIAnalysis.spec.enrichmentResults`
 
-```mermaid
-graph TD
-    AIC[AIAnalysis<br/>Controller] -->|Investigation Request<br/>responseFormat=v2-structured| HAPI[HolmesGPT-API<br/>Service]
-    HAPI -->|Structured JSON Response| AIC
-    AIC -->|Parse Structured Actions| PARSER[Structured Action<br/>Parser]
-    PARSER -->|Validate Action Types| VALIDATOR[Action Type<br/>Validator]
-    VALIDATOR -->|Map to Internal Types| MAPPER[Action Recommendation<br/>Mapper]
-    MAPPER -->|Update AIAnalysis Status| STATUS[AIAnalysis.status.<br/>structuredRecommendations]
-
-    style PARSER fill:#ccffcc,stroke:#00ff00,stroke-width:2px
-    style VALIDATOR fill:#ccffcc,stroke:#00ff00,stroke-width:2px
-    style MAPPER fill:#ccffcc,stroke:#00ff00,stroke-width:2px
-```
-
-#### Go Type Definitions
-
-**File**: `pkg/ai/holmesgpt/types.go`
-
-```go
-package holmesgpt
-
-import "time"
-
-// StructuredInvestigateResponse represents v2-structured format
-// Business Requirement: BR-LLM-021, BR-LLM-026
-type StructuredInvestigateResponse struct {
-    InvestigationID   string                  `json:"investigation_id"`
-    Status            InvestigationStatus     `json:"status"`
-    StructuredActions []StructuredAction      `json:"structured_actions"`
-    Metadata          StructuredResponseMeta  `json:"metadata"`
-}
-
-// InvestigationStatus represents investigation completion status
-type InvestigationStatus string
-
-const (
-    InvestigationStatusCompleted InvestigationStatus = "completed"
-    InvestigationStatusPartial   InvestigationStatus = "partial"
-    InvestigationStatusFailed    InvestigationStatus = "failed"
-)
-
-// StructuredAction represents a single structured remediation action
-type StructuredAction struct {
-    ActionType  ActionType             `json:"action_type"`
-    Parameters  map[string]interface{} `json:"parameters"`
-    Priority    ActionPriority         `json:"priority"`
-    Confidence  float64                `json:"confidence"`
-    Reasoning   ActionReasoning        `json:"reasoning"`
-    Monitoring  *ActionMonitoring      `json:"monitoring,omitempty"`
-}
-
-// ActionType represents one of 29 canonical predefined action types
-// Source of Truth: docs/design/CANONICAL_ACTION_TYPES.md
-type ActionType string
-
-const (
-    // Core Actions (P0) - 5 actions
-    ActionScaleDeployment    ActionType = "scale_deployment"
-    ActionRestartPod         ActionType = "restart_pod"
-    ActionIncreaseResources  ActionType = "increase_resources"
-    ActionRollbackDeployment ActionType = "rollback_deployment"
-    ActionExpandPVC          ActionType = "expand_pvc"
-
-    // Infrastructure Actions (P1) - 6 actions
-    ActionDrainNode      ActionType = "drain_node"
-    ActionCordonNode     ActionType = "cordon_node"
-    ActionUncordonNode   ActionType = "uncordon_node"
-    ActionTaintNode      ActionType = "taint_node"
-    ActionUntaintNode    ActionType = "untaint_node"
-    ActionQuarantinePod  ActionType = "quarantine_pod"
-
-    // Storage & Persistence (P2) - 3 actions
-    ActionCleanupStorage ActionType = "cleanup_storage"
-    ActionBackupData     ActionType = "backup_data"
-    ActionCompactStorage ActionType = "compact_storage"
-
-    // Application Lifecycle (P1) - 3 actions
-    ActionUpdateHPA          ActionType = "update_hpa"
-    ActionRestartDaemonset   ActionType = "restart_daemonset"
-    ActionScaleStatefulSet   ActionType = "scale_statefulset"
-
-    // Security & Compliance (P2) - 3 actions
-    ActionRotateSecrets       ActionType = "rotate_secrets"
-    ActionAuditLogs           ActionType = "audit_logs"
-    ActionUpdateNetworkPolicy ActionType = "update_network_policy"
-
-    // Network & Connectivity (P2) - 2 actions
-    ActionRestartNetwork    ActionType = "restart_network"
-    ActionResetServiceMesh  ActionType = "reset_service_mesh"
-
-    // Database & Stateful (P2) - 2 actions
-    ActionFailoverDatabase ActionType = "failover_database"
-    ActionRepairDatabase   ActionType = "repair_database"
-
-    // Monitoring & Observability (P2) - 3 actions
-    ActionEnableDebugMode     ActionType = "enable_debug_mode"
-    ActionCreateHeapDump      ActionType = "create_heap_dump"
-    ActionCollectDiagnostics  ActionType = "collect_diagnostics"
-
-    // Resource Management (P1) - 2 actions
-    ActionOptimizeResources ActionType = "optimize_resources"
-    ActionMigrateWorkload   ActionType = "migrate_workload"
-
-    // Fallback (P3) - 1 action
-    ActionNotifyOnly ActionType = "notify_only"
-)
-
-// Total: 27 canonical action types
-
-// ActionPriority represents action execution priority
-type ActionPriority string
-
-const (
-    PriorityCritical ActionPriority = "critical"
-    PriorityHigh     ActionPriority = "high"
-    PriorityMedium   ActionPriority = "medium"
-    PriorityLow      ActionPriority = "low"
-)
-
-// ActionReasoning provides context for the recommended action
-type ActionReasoning struct {
-    PrimaryReason    string        `json:"primary_reason"`
-    RiskAssessment   RiskLevel     `json:"risk_assessment"`
-    BusinessImpact   string        `json:"business_impact,omitempty"`
-}
-
-// RiskLevel represents risk assessment for action execution
-type RiskLevel string
-
-const (
-    RiskLow    RiskLevel = "low"
-    RiskMedium RiskLevel = "medium"
-    RiskHigh   RiskLevel = "high"
-)
-
-// ActionMonitoring defines post-action monitoring criteria
-type ActionMonitoring struct {
-    SuccessCriteria    []string `json:"success_criteria"`
-    ValidationInterval string   `json:"validation_interval"`
-}
-
-// StructuredResponseMeta contains response metadata
-type StructuredResponseMeta struct {
-    GeneratedAt     time.Time `json:"generated_at"`
-    ModelVersion    string    `json:"model_version"`
-    FormatVersion   string    `json:"format_version"`
-    TokensUsed      int       `json:"tokens_used,omitempty"`
-    DurationSeconds float64   `json:"duration_seconds,omitempty"`
-}
-```
-
-#### HolmesGPT Client Update
-
-**File**: `pkg/ai/holmesgpt/client.go`
-
-```go
-// InvestigateWithStructuredResponse performs investigation with structured format
-// Business Requirement: BR-LLM-021, BR-LLM-026, BR-AI-011
-func (c *ClientImpl) InvestigateWithStructuredResponse(
-    ctx context.Context,
-    req *InvestigateRequest,
-) (*StructuredInvestigateResponse, error) {
-    c.logger.WithFields(logrus.Fields{
-        "signal_name": req.AlertName,
-        "namespace":  req.Namespace,
-    }).Info("Starting structured investigation")
-
-    // Prepare request with structured format flag
-    payload := map[string]interface{}{
-        "signal_name":        req.AlertName,
-        "namespace":         req.Namespace,
-        "labels":            req.Labels,
-        "annotations":       req.Annotations,
-        "priority":          req.Priority,
-        "response_format":   "v2-structured",          // Request structured format
-        "toolsets":          []string{"kubernetes", "prometheus"},
-        "enable_validation": true,
-    }
-
-    jsonPayload, err := json.Marshal(payload)
-    if err != nil {
-        return nil, fmt.Errorf("failed to marshal request: %w", err)
-    }
-
-    // Call HolmesGPT API
-    httpReq, err := http.NewRequestWithContext(
-        ctx,
-        "POST",
-        c.endpoint+"/api/v1/investigate",
-        bytes.NewBuffer(jsonPayload),
-    )
-    if err != nil {
-        return nil, fmt.Errorf("failed to create request: %w", err)
-    }
-
-    httpReq.Header.Set("Content-Type", "application/json")
-
-    resp, err := c.httpClient.Do(httpReq)
-    if err != nil {
-        c.logger.WithError(err).Warn("HolmesGPT call failed, using fallback")
-        return c.generateFallbackStructuredResponse(req), nil
-    }
-    defer resp.Body.Close()
-
-    // Parse structured response
-    var structuredResp StructuredInvestigateResponse
-    if err := json.NewDecoder(resp.Body).Decode(&structuredResp); err != nil {
-        c.logger.WithError(err).Warn("Failed to parse structured response, using fallback")
-        return c.generateFallbackStructuredResponse(req), nil
-    }
-
-    c.logger.WithFields(logrus.Fields{
-        "investigation_id": structuredResp.InvestigationID,
-        "actions_count":    len(structuredResp.StructuredActions),
-        "status":           structuredResp.Status,
-    }).Info("Structured investigation completed")
-
-    return &structuredResp, nil
-}
-
-// generateFallbackStructuredResponse creates fallback when HolmesGPT unavailable
-func (c *ClientImpl) generateFallbackStructuredResponse(
-    req *InvestigateRequest,
-) *StructuredInvestigateResponse {
-    return &StructuredInvestigateResponse{
-        InvestigationID: fmt.Sprintf("fallback-%d", time.Now().Unix()),
-        Status:          InvestigationStatusPartial,
-        StructuredActions: []StructuredAction{
-            {
-                ActionType: ActionNotifyOnly,
-                Parameters: map[string]interface{}{
-                    "namespace": req.Namespace,
-                    "message":   "HolmesGPT unavailable, manual review required",
-                },
-                Priority:   PriorityMedium,
-                Confidence: 0.5,
-                Reasoning: ActionReasoning{
-                    PrimaryReason:  "Investigation service unavailable",
-                    RiskAssessment: RiskLow,
-                },
-            },
-        },
-        Metadata: StructuredResponseMeta{
-            GeneratedAt:   time.Now(),
-            ModelVersion:  "fallback",
-            FormatVersion: "v2-structured-fallback",
-        },
-    }
-}
-```
-
-#### Action Type Validation
-
-**File**: `pkg/ai/holmesgpt/validation.go`
-
-```go
-package holmesgpt
-
-import (
-    "fmt"
-    "strings"
-)
-
-// ValidActionTypes is the complete set of 29 canonical action types
-// Source of Truth: docs/design/CANONICAL_ACTION_TYPES.md
-var ValidActionTypes = map[ActionType]bool{
-    // Core Actions (P0) - 5 actions
-    ActionScaleDeployment:     true,
-    ActionRestartPod:          true,
-    ActionIncreaseResources:   true,
-    ActionRollbackDeployment:  true,
-    ActionExpandPVC:           true,
-
-    // Infrastructure Actions (P1) - 6 actions
-    ActionDrainNode:      true,
-    ActionCordonNode:     true,
-    ActionUncordonNode:   true,
-    ActionTaintNode:      true,
-    ActionUntaintNode:    true,
-    ActionQuarantinePod:  true,
-
-    // Storage & Persistence (P2) - 3 actions
-    ActionCleanupStorage: true,
-    ActionBackupData:     true,
-    ActionCompactStorage: true,
-
-    // Application Lifecycle (P1) - 3 actions
-    ActionUpdateHPA:          true,
-    ActionRestartDaemonset:   true,
-    ActionScaleStatefulSet:   true,
-
-    // Security & Compliance (P2) - 3 actions
-    ActionRotateSecrets:       true,
-    ActionAuditLogs:           true,
-    ActionUpdateNetworkPolicy: true,
-
-    // Network & Connectivity (P2) - 2 actions
-    ActionRestartNetwork:    true,
-    ActionResetServiceMesh:  true,
-
-    // Database & Stateful (P2) - 2 actions
-    ActionFailoverDatabase: true,
-    ActionRepairDatabase:   true,
-
-    // Monitoring & Observability (P2) - 3 actions
-    ActionEnableDebugMode:     true,
-    ActionCreateHeapDump:      true,
-    ActionCollectDiagnostics:  true,
-
-    // Resource Management (P1) - 2 actions
-    ActionOptimizeResources: true,
-    ActionMigrateWorkload:   true,
-
-    // Fallback (P3) - 1 action
-    ActionNotifyOnly: true,
-}
-
-// Total: 27 canonical action types
-
-// IsValidActionType checks if action type is valid
-func IsValidActionType(actionType ActionType) bool {
-    return ValidActionTypes[actionType]
-}
-
-// ValidateStructuredResponse validates structured response
-// Business Requirement: BR-LLM-025
-func ValidateStructuredResponse(resp *StructuredInvestigateResponse) error {
-    if resp == nil {
-        return fmt.Errorf("nil response")
-    }
-
-    if resp.InvestigationID == "" {
-        return fmt.Errorf("missing investigation_id")
-    }
-
-    if len(resp.StructuredActions) == 0 {
-        return fmt.Errorf("no actions in structured response")
-    }
-
-    for i, action := range resp.StructuredActions {
-        if err := validateAction(action, i); err != nil {
-            return fmt.Errorf("action %d invalid: %w", i, err)
-        }
-    }
-
-    return nil
-}
-
-// validateAction validates individual action
-func validateAction(action StructuredAction, index int) error {
-    // Validate action type
-    if !IsValidActionType(action.ActionType) {
-        return fmt.Errorf("invalid action_type: %s", action.ActionType)
-    }
-
-    // Validate parameters
-    if action.Parameters == nil {
-        return fmt.Errorf("nil parameters")
-    }
-
-    namespace, ok := action.Parameters["namespace"].(string)
-    if !ok || namespace == "" {
-        return fmt.Errorf("missing or invalid namespace parameter")
-    }
-
-    // Validate confidence
-    if action.Confidence < 0.0 || action.Confidence > 1.0 {
-        return fmt.Errorf("confidence out of range [0.0, 1.0]: %f", action.Confidence)
-    }
-
-    // Validate priority
-    validPriorities := map[ActionPriority]bool{
-        PriorityCritical: true,
-        PriorityHigh:     true,
-        PriorityMedium:   true,
-        PriorityLow:      true,
-    }
-    if !validPriorities[action.Priority] {
-        return fmt.Errorf("invalid priority: %s", action.Priority)
-    }
-
-    // Validate reasoning
-    if action.Reasoning.PrimaryReason == "" {
-        return fmt.Errorf("missing primary_reason in reasoning")
-    }
-
-    return nil
-}
-```
-
-#### Configuration Requirements
-
-**File**: `internal/config/config.go`
-
-```go
-type AIConfig struct {
-    // Existing fields...
-
-    // Structured action format support (NEW)
-    UseStructuredHolmesGPT  bool   `yaml:"use_structured_holmesgpt" envconfig:"USE_STRUCTURED_HOLMESGPT"`
-    StructuredFormatVersion string `yaml:"structured_format_version" envconfig:"STRUCTURED_FORMAT_VERSION"`
-    EnableFuzzyMatching     bool   `yaml:"enable_fuzzy_matching" envconfig:"ENABLE_FUZZY_MATCHING"`
-    FallbackToLegacy        bool   `yaml:"fallback_to_legacy" envconfig:"FALLBACK_TO_LEGACY"`
-}
-```
-
-**Configuration File** (`config/development.yaml`):
+#### Data Copied
 
 ```yaml
-ai:
-  provider: "holmesgpt"
-  endpoint: "http://holmesgpt-api.kubernaut-system.svc.cluster.local:8090"
+# AIAnalysis.spec (created by RO from SignalProcessing)
+spec:
+  # Signal identification
+  signalContext:
+    signalType: "alert"
+    fingerprint: "abc123"
+    severity: "critical"
+    namespace: "production"
+    resourceKind: "Deployment"
+    resourceName: "payment-api"
 
-  # Structured action format configuration (NEW)
-  use_structured_holmesgpt: true
-  structured_format_version: "v2-structured"
-  enable_fuzzy_matching: true
-  fallback_to_legacy: true  # Enable during transition period
+  # Enrichment data (copied from SignalProcessing.status)
+  enrichmentResults:
+    kubernetesContext:
+      namespace: "production"
+      podDetails:
+        name: "payment-api-7d8f9c6b5-x2j4k"
+        phase: "Running"
+        containerStatuses:
+          - name: "api"
+            ready: true
+            restartCount: 5
+      deploymentDetails:
+        name: "payment-api"
+        replicas: 3
+        availableReplicas: 2
 
-  # Existing configuration...
-  investigation_timeout: "5m"
-  max_retries: 3
+    # Auto-detected labels (DD-WORKFLOW-001 v2.1)
+    detectedLabels:
+      # Detection failures (DD-WORKFLOW-001 v2.1)
+      # If a field is listed here, its value is unreliable (RBAC, timeout, etc.)
+      # If empty/nil, all detections succeeded
+      failedDetections: []  # or: ["pdbProtected"] if PDB query failed
+
+      gitOpsTool: "argocd"
+      pdbProtected: true
+      statefulWorkload: false
+      hpaEnabled: true
+      resourceQuotaConstrained: false
+
+    # Customer-defined labels (from SignalProcessing Rego)
+    customLabels:
+      constraint:
+        - "cost-constrained"
+        - "stateful-safe"
+      team:
+        - "name=payments"
+      region:
+        - "name=us-west-2"
+
+    # K8s ownership chain (DD-WORKFLOW-001 v1.7)
+    ownerChain:
+      - namespace: "production"
+        kind: "ReplicaSet"
+        name: "payment-api-7d8f9c6b5"
+      - namespace: "production"
+        kind: "Deployment"
+        name: "payment-api"
+
+    # NOTE: EnrichmentQuality REMOVED (Dec 2025)
+    # SignalProcessing uses boolean `degradedMode` flag instead
+    # RO checks phase completion, not quality scores
 ```
 
-#### Feature Flag Control
+#### Why Self-Contained CRD?
 
-**Environment Variables**:
-
-```bash
-# Enable structured format (feature flag)
-USE_STRUCTURED_HOLMESGPT=true
-
-# Structured format version
-STRUCTURED_FORMAT_VERSION=v2-structured
-
-# Enable fuzzy matching for unknown actions
-ENABLE_FUZZY_MATCHING=true
-
-# Fallback to legacy format if structured fails
-FALLBACK_TO_LEGACY=true
-```
-
-#### Testing Requirements
-
-**Unit Tests** (`pkg/ai/holmesgpt/validation_test.go`):
-
-```go
-var _ = Describe("Structured Action Validation", func() {
-    Context("Valid structured response", func() {
-        It("should validate successfully", func() {
-            resp := &StructuredInvestigateResponse{
-                InvestigationID: "inv-test-123",
-                Status:          InvestigationStatusCompleted,
-                StructuredActions: []StructuredAction{
-                    {
-                        ActionType: ActionRestartPod,
-                        Parameters: map[string]interface{}{
-                            "namespace":     "production",
-                            "resource_type": "pod",
-                            "resource_name": "app-xyz-123",
-                        },
-                        Priority:   PriorityHigh,
-                        Confidence: 0.9,
-                        Reasoning: ActionReasoning{
-                            PrimaryReason:  "Memory leak detected",
-                            RiskAssessment: RiskLow,
-                        },
-                    },
-                },
-            }
-
-            err := ValidateStructuredResponse(resp)
-            Expect(err).ToNot(HaveOccurred())
-        })
-    })
-
-    Context("Invalid action type", func() {
-        It("should return validation error", func() {
-            resp := &StructuredInvestigateResponse{
-                InvestigationID: "inv-test-456",
-                Status:          InvestigationStatusCompleted,
-                StructuredActions: []StructuredAction{
-                    {
-                        ActionType: ActionType("invalid_action"),
-                        Parameters: map[string]interface{}{"namespace": "default"},
-                    },
-                },
-            }
-
-            err := ValidateStructuredResponse(resp)
-            Expect(err).To(HaveOccurred())
-            Expect(err.Error()).To(ContainSubstring("invalid action_type"))
-        })
-    })
-})
-```
-
-**Integration Tests** (`test/integration/structured_actions/ai_analysis_test.go`):
-
-```go
-var _ = Describe("AIAnalysis Structured Action Integration", func() {
-    var (
-        holmesClient holmesgpt.Client
-        ctx          context.Context
-    )
-
-    BeforeEach(func() {
-        ctx = context.Background()
-        holmesClient = createTestHolmesClient()
-    })
-
-    Context("When HolmesGPT returns structured actions", func() {
-        It("should process without translation", func() {
-            req := &holmesgpt.InvestigateRequest{
-                AlertName: "HighMemoryUsage",
-                Namespace: "production",
-            }
-
-            resp, err := holmesClient.InvestigateWithStructuredResponse(ctx, req)
-            Expect(err).ToNot(HaveOccurred())
-            Expect(resp.StructuredActions).ToNot(BeEmpty())
-
-            // Verify all actions are valid
-            for _, action := range resp.StructuredActions {
-                Expect(holmesgpt.IsValidActionType(action.ActionType)).To(BeTrue())
-                Expect(action.Parameters).ToNot(BeEmpty())
-                Expect(action.Confidence).To(BeNumerically(">", 0.0))
-            }
-        })
-    })
-})
-```
-
-**Test Coverage Target**: >85%
-
-#### Backward Compatibility
-
-**BR-LLM-023**: MUST handle both structured and legacy formats
-
-**Implementation Strategy**:
-
-1. **Feature Flag Control**: Use `USE_STRUCTURED_HOLMESGPT` to enable/disable
-2. **Automatic Fallback**: If structured parsing fails, attempt legacy format
-3. **Gradual Migration**: Support both formats during transition period
-4. **Monitoring**: Track format usage via metrics
-
-**Compatibility Adapter**:
-
-```go
-func (c *ClientImpl) Investigate(
-    ctx context.Context,
-    req *InvestigateRequest,
-) (*InvestigationResult, error) {
-    // Check feature flag
-    if c.config.UseStructuredHolmesGPT {
-        structuredResp, err := c.InvestigateWithStructuredResponse(ctx, req)
-        if err != nil && !c.config.FallbackToLegacy {
-            return nil, err
-        }
-
-        if err == nil {
-            // Convert structured to legacy format for backward compatibility
-            return c.convertStructuredToLegacy(structuredResp), nil
-        }
-
-        // Fall through to legacy format if fallback enabled
-    }
-
-    // Legacy format investigation
-    return c.InvestigateLegacy(ctx, req)
-}
-```
+| Benefit | Explanation |
+|---------|-------------|
+| **No API calls during reconciliation** | All data in spec, no external reads |
+| **Resilient to upstream deletion** | Works even if SignalProcessing deleted |
+| **Clear audit trail** | Enrichment data immutably recorded |
+| **Decoupled architecture** | AIAnalysis doesn't depend on SignalProcessing availability |
 
 ---
 
-### **Alternative 2 Integration: RemediationProcessing as Primary Data Source**
+## HolmesGPT-API Integration
 
-> **📋 Design Decision: DD-001 - Alternative 2**
-> **Pattern**: AIAnalysis reads complete enrichment from spec (NO API calls)
-> **Status**: ✅ Approved Design | **Confidence**: 95%
-> **See**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2)
+### Endpoints (V1.0)
 
-**Reference**: [`PROPOSED_FAILURE_RECOVERY_SEQUENCE.md`](../../../architecture/PROPOSED_FAILURE_RECOVERY_SEQUENCE.md) (Version 1.2 - Alternative 2)
-**Business Requirement**: BR-WF-RECOVERY-011
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `http://holmesgpt-api:8080/api/v1/incident/analyze` | POST | Initial incident investigation |
+| `http://holmesgpt-api:8080/api/v1/recovery/analyze` | POST | Recovery attempt analysis |
+| `http://holmesgpt-api:8080/health` | GET | Health check for circuit breaker |
 
-#### Overview
+### Investigation Request (V1.0)
 
-AIAnalysis CRD receives **complete enrichment data** from SignalProcessing CRD, including:
-- **Monitoring Context** (FRESH current cluster state)
-- **Business Context** (FRESH ownership/runbooks)
-- **Recovery Context** (Historical failures from Context API - ONLY for recovery attempts)
+**Endpoint**: `POST http://holmesgpt-api:8080/api/v1/incident/analyze`
 
-This data is **copied** into `AIAnalysis.spec.enrichmentData` by Remediation Orchestrator after RemediationProcessing completes.
+> **IMPORTANT**: HolmesGPT-API uses a **flat structure** - NOT nested `signalContext`.
+>
+> **DECISION**: Storm context (`is_storm`, `storm_signal_count`) is **NOT exposed** to the LLM. Use `occurrence_count` instead to convey persistence information. See [DD-AIANALYSIS-004](../../../architecture/decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) for rationale.
 
-#### Data Flow (Alternative 2)
+#### Request Structure (Corrected Dec 2025)
 
-```
-RemediationProcessing Enrichment (4-7 seconds)
-   ↓ (monitoring + business + recovery contexts)
-RemediationProcessing.status.enrichmentResults
-   ↓ (watch completion)
-Remediation Orchestrator
-   ↓ (copy enrichment data)
-AIAnalysis.spec.enrichmentData
-   ↓ (NO API CALLS NEEDED!)
-AIAnalysis Controller reads from spec
-   ↓
-HolmesGPT receives ALL contexts in prompt
-```
-
-#### AIAnalysis Spec Structure (Alternative 2)
-
-```go
-// api/ai/v1/aianalysis_types.go
-type AIAnalysisSpec struct {
-    // Parent reference
-    RemediationRequestRef corev1.LocalObjectReference `json:"remediationRequestRef"`
-
-    // NEW: Reference to source SignalProcessing CRD
-    RemediationProcessingRef *corev1.LocalObjectReference `json:"remediationProcessingRef,omitempty"`
-
-    // Recovery-specific fields
-    IsRecoveryAttempt      bool                         `json:"isRecoveryAttempt,omitempty"`
-    RecoveryAttemptNumber  int                          `json:"recoveryAttemptNumber,omitempty"`
-    FailedWorkflowRef      *corev1.LocalObjectReference `json:"failedWorkflowRef,omitempty"`
-
-    // NEW: Complete enrichment data (Alternative 2)
-    // Copied from RemediationProcessing.status.enrichmentResults
-    EnrichmentData *EnrichmentData `json:"enrichmentData,omitempty"`
-}
-
-// EnrichmentData contains ALL contexts from RemediationProcessing
-type EnrichmentData struct {
-    // FRESH monitoring context
-    MonitoringContext *MonitoringContext `json:"monitoringContext,omitempty"`
-
-    // FRESH business context
-    BusinessContext *BusinessContext `json:"businessContext,omitempty"`
-
-    // Recovery context (ONLY for recovery attempts)
-    RecoveryContext *RecoveryContext `json:"recoveryContext,omitempty"`
-
-    // Metadata
-    EnrichedAt     metav1.Time `json:"enrichedAt"`
-    ContextQuality string      `json:"contextQuality"`  // "complete", "partial", "degraded"
+```json
+{
+  "incident_id": "alert-12345",
+  "remediation_id": "req-2025-12-02-abc123",
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "signal_source": "prometheus",
+  "resource_namespace": "default",
+  "resource_kind": "Deployment",
+  "resource_name": "nginx",
+  "error_message": "Container exceeded memory limit",
+  "environment": "production",
+  "priority": "P0",
+  "cluster_name": "prod-us-west-2",
+  "enrichment_results": {
+    "detectedLabels": {
+      "failedDetections": [],  // DD-WORKFLOW-001 v2.1: or ["pdbProtected"] if query failed
+      "gitOpsManaged": true,
+      "gitOpsTool": "argocd",
+      "pdbProtected": true,
+      "serviceMesh": "istio"
+    },
+    "ownerChain": [
+      {"namespace": "default", "kind": "ReplicaSet", "name": "nginx-7d8f9c6b5"},
+      {"namespace": "default", "kind": "Deployment", "name": "nginx"}
+    ],
+    "customLabels": {
+      "constraint": ["cost-constrained"],
+      "team": ["name=payments"]
+    }
+  }
 }
 ```
 
-#### Remediation Orchestrator Integration (Alternative 2)
+**Key Request Corrections**:
+| Field | Old Schema | Correct Schema |
+|-------|------------|----------------|
+| Structure | Nested `signalContext` | Flat fields |
+| `remediation_id` | Optional | **MANDATORY** (audit correlation) |
+| DetectedLabels | Wrong fields | Use `pkg/shared/types/enrichment.go` |
+| `failedDetections` | Not present | **Added (DD-WORKFLOW-001 v2.1)** - list of fields where detection failed |
 
-```go
-// In RemediationRequestReconciler (Remediation Orchestrator)
-func (r *RemediationRequestReconciler) createAIAnalysis(
-    ctx context.Context,
-    remediation *remediationv1.RemediationRequest,
-    completedRP *processingv1.RemediationProcessing,
-) error {
+#### Label Usage by HolmesGPT-API
 
-    log := ctrl.LoggerFrom(ctx)
+| Label Type | LLM Prompt | Workflow Filtering |
+|------------|------------|-------------------|
+| **DetectedLabels** | ✅ Always included | ✅ Only if OwnerChain validates (`target_in_owner_chain=true`) |
+| **CustomLabels** | ❌ NOT in LLM prompt | ✅ Always (auto-appended to search) |
+| **FailedDetections** | ✅ Mentioned as caveats | ⚠️ Skip filter for affected fields |
 
-    // Create AIAnalysis with enrichment data from RemediationProcessing
-    aiAnalysis := &aianalysisv1.AIAnalysis{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-analysis-%d", remediation.Name, remediation.Status.RecoveryAttempts + 1),
-            Namespace: remediation.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-            },
-        },
-        Spec: aianalysisv1.AIAnalysisSpec{
-            RemediationRequestRef:    corev1.LocalObjectReference{Name: remediation.Name},
-            RemediationProcessingRef: &corev1.LocalObjectReference{Name: completedRP.Name},
+> **CustomLabels are NOT visible to LLM** (per DD-HAPI-001): Labels are for filtering, not analysis. Prevents LLM forgetting to include them and reduces prompt size.
 
-            // Recovery fields (if applicable)
-            IsRecoveryAttempt:     completedRP.Spec.IsRecoveryAttempt,
-            RecoveryAttemptNumber: completedRP.Spec.RecoveryAttemptNumber,
-            FailedWorkflowRef:     completedRP.Spec.FailedWorkflowRef,
+#### FailedDetections Handling (DD-WORKFLOW-001 v2.1)
 
-            // COPY complete enrichment data from RemediationProcessing (Alternative 2)
-            EnrichmentData: convertToEnrichmentData(completedRP.Status.EnrichmentResults),
-        },
-    }
+When a detection query fails (RBAC, timeout, etc.), the field is added to `failedDetections`:
 
-    if completedRP.Spec.IsRecoveryAttempt {
-        log.Info("Creating AIAnalysis for recovery attempt with ALL contexts",
-            "aiAnalysis", aiAnalysis.Name,
-            "attemptNumber", completedRP.Spec.RecoveryAttemptNumber,
-            "contextQuality", completedRP.Status.EnrichmentResults.ContextQuality,
-            "hasRecoveryContext", completedRP.Status.EnrichmentResults.RecoveryContext != nil)
-    }
+| Scenario | Field Value | `failedDetections` | Workflow Filtering Behavior |
+|----------|-------------|-------------------|----------------------------|
+| PDB exists | `pdbProtected=true` | `[]` | ✅ Filter by `pdb_protected=true` |
+| No PDB | `pdbProtected=false` | `[]` | ✅ Filter by `pdb_protected=false` |
+| Query failed | `pdbProtected=false` | `["pdbProtected"]` | ⚠️ Skip `pdb_protected` filter entirely |
 
-    return r.Create(ctx, aiAnalysis)
-}
-
-// Convert RemediationProcessing enrichment to AIAnalysis enrichment data
-func convertToEnrichmentData(rpEnrichment *processingv1.EnrichmentResults) *aianalysisv1.EnrichmentData {
-    return &aianalysisv1.EnrichmentData{
-        MonitoringContext: convertMonitoringContext(rpEnrichment.KubernetesContext),
-        BusinessContext:   convertBusinessContext(rpEnrichment.BusinessContext),
-        RecoveryContext:   convertRecoveryContext(rpEnrichment.RecoveryContext),
-        EnrichedAt:        metav1.Now(),
-        ContextQuality:    rpEnrichment.ContextQuality,
-    }
-}
-```
-
-#### AIAnalysis Controller Usage (Alternative 2)
-
-```go
-// In AIAnalysisReconciler.investigatePhase()
-func (p *InvestigatingPhase) Handle(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) (ctrl.Result, error) {
-
-    log := ctrl.LoggerFrom(ctx)
-
-    // Build investigation request with enrichment data
-    req := buildInvestigationRequest(aiAnalysis)
-
-    // Read enrichment data from spec (NO API CALLS!)
-    if aiAnalysis.Spec.EnrichmentData != nil {
-        log.Info("Using enrichment data from RemediationProcessing",
-            "remediationProcessing", aiAnalysis.Spec.RemediationProcessingRef.Name,
-            "contextQuality", aiAnalysis.Spec.EnrichmentData.ContextQuality,
-            "isRecovery", aiAnalysis.Spec.IsRecoveryAttempt)
-
-        // Add ALL contexts to investigation request
-        req.MonitoringContext = aiAnalysis.Spec.EnrichmentData.MonitoringContext
-        req.BusinessContext = aiAnalysis.Spec.EnrichmentData.BusinessContext
-
-        // Recovery context only present for recovery attempts
-        if aiAnalysis.Spec.IsRecoveryAttempt && aiAnalysis.Spec.EnrichmentData.RecoveryContext != nil {
-            req.RecoveryContext = aiAnalysis.Spec.EnrichmentData.RecoveryContext
-            req.IsRecoveryAttempt = true
-        }
-    }
-
-    // Proceed with HolmesGPT investigation (with enriched prompt)
-    result, err := p.Analyzer.Investigate(ctx, req)
-    // ...
-}
-```
-
-#### Key Benefits (Alternative 2)
-
-| Aspect | Option B | Alternative 2 |
-|--------|----------|---------------|
-| **Monitoring Context** | From initial enrichment (stale) | **FRESH** from recovery enrichment ✅ |
-| **Business Context** | From initial enrichment (stale) | **FRESH** from recovery enrichment ✅ |
-| **Recovery Context** | Queried by RR | Queried by RP (temporal consistency) ✅ |
-| **Temporal Consistency** | Mixed timestamps | All contexts same timestamp ✅ |
-| **Audit Trail** | RR logic in recovery flow | Immutable RP CRDs ✅ |
-| **Graceful Degradation** | In RR | In RP (unified enrichment) ✅ |
-| **Architecture** | Split enrichment (RP + RR) | Unified enrichment (RP only) ✅ |
-
-#### Integration Pattern Summary
-
-1. **RemediationProcessing enriches** (monitoring + business + recovery)
-2. **Remediation Orchestrator copies** enrichment to AIAnalysis spec
-3. **AIAnalysis controller reads** from spec (NO API calls)
-4. **HolmesGPT receives** complete enrichment in prompt
-
-✅ **Result**: AIAnalysis has FRESH monitoring + business + recovery contexts, all captured at the same timestamp, with a clear audit trail.
-
----
-
-### Dependencies (Data Snapshot)
-
-#### RemediationRequest Creates AIAnalysis (No Watch Needed)
-**Pattern**: Data snapshot at creation time (self-contained CRD)
-**Trigger**: RemediationRequest watches RemediationProcessing completion → creates AIAnalysis with all data
-**Data Copied**: Complete enrichment data from RemediationProcessing.status (Alternative 2)
-
-**Why No Watch on RemediationProcessing?**
-- ✅ **Self-Contained**: All targeting data copied into AIAnalysis.spec at creation
-- ✅ **Performance**: No cross-CRD reads during reconciliation
-- ✅ **Resilience**: Works even if RemediationProcessing deleted (24h retention)
-- ✅ **Simplicity**: AIAnalysis doesn't depend on RemediationProcessing existence
-
-**RemediationRequest (Remediation Coordinator) Creates AIAnalysis**:
-```go
-// In RemediationRequestReconciler (Remediation Coordinator)
-func (r *RemediationRequestReconciler) reconcileRemediationProcessing(
-    ctx context.Context,
-    remediation *remediationv1.RemediationRequest,
-    alertProcessing *processingv1.RemediationProcessing,
-) error {
-
-    // When RemediationProcessing completes, create AIAnalysis with ALL data
-    if alertProcessing.Status.Phase == "completed" {
-        aiAnalysis := &aianalysisv1.AIAnalysis{
-            ObjectMeta: metav1.ObjectMeta{
-                Name:      fmt.Sprintf("%s-analysis", remediation.Name),
-                Namespace: remediation.Namespace,
-                OwnerReferences: []metav1.OwnerReference{
-                    *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-                },
-            },
-            Spec: aianalysisv1.AIAnalysisSpec{
-                RemediationRequestRef: aianalysisv1.RemediationRequestReference{
-                    Name:      remediation.Name,
-                    Namespace: remediation.Namespace,
-                },
-
-                // COPY all enriched data (data snapshot pattern)
-                AnalysisRequest: aianalysisv1.AnalysisRequest{
-                    AlertContext: aianalysisv1.SignalContext{
-                        Fingerprint:      alertProcessing.Status.EnrichedSignal.Fingerprint,
-                        Severity:         alertProcessing.Status.EnrichedSignal.Severity,
-                        Environment:      alertProcessing.Status.EnrichedSignal.Environment,
-                        BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
-
-                        // Complete enriched payload snapshot
-                        EnrichedPayload: alertProcessing.Status.EnrichedSignal.EnrichedPayload,
-                    },
-                    AnalysisTypes: []string{"investigation", "root-cause", "recovery-analysis"},
-
-                    // Derive investigation scope from enriched alert context
-                    InvestigationScope: aianalysisv1.InvestigationScope{
-                        TimeWindow: "24h",
-                        ResourceScope: []aianalysisv1.ResourceScopeItem{
-                            {
-                                Kind:      alertProcessing.Status.EnrichedSignal.ResourceKind,
-                                Namespace: alertProcessing.Status.EnrichedSignal.Namespace,
-                                Name:      alertProcessing.Status.EnrichedSignal.ResourceName,
-                            },
-                        },
-                        CorrelationDepth: "detailed",
-                        IncludeHistoricalPatterns: true,
-                    },
-                },
-
-            // Note: HolmesGPT toolset configuration is managed by Dynamic Toolset Service
-            // AIAnalysis CRD does NOT contain holmesGPTConfig field
-            // Toolsets are system-wide, not per-investigation
-            },
-        }
-
-        return r.Create(ctx, aiAnalysis)
-    }
-
-    return nil
-}
-```
-
-#### RemediationRequest CRD → Parent Reference
-**Purpose**: Lifecycle management and ownership
-**Owner Reference**: AIAnalysis is owned by RemediationRequest
-**Cleanup**: When RemediationRequest is deleted, AIAnalysis is cascaded
-
-**Finalizer Logic**:
-```go
-const aiAnalysisFinalizer = "aianalysis.kubernaut.io/aianalysis-cleanup"
-
-func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    var aiAnalysis aianalysisv1.AIAnalysis
-    if err := r.Get(ctx, req.NamespacedName, &aiAnalysis); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
-
-    // Handle deletion
-    if !aiAnalysis.ObjectMeta.DeletionTimestamp.IsZero() {
-        if controllerutil.ContainsFinalizer(&aiAnalysis, aiAnalysisFinalizer) {
-            // Perform cleanup
-            if err := r.cleanupAIAnalysisResources(ctx, &aiAnalysis); err != nil {
-                return ctrl.Result{}, err
-            }
-
-            // Remove finalizer
-            controllerutil.RemoveFinalizer(&aiAnalysis, aiAnalysisFinalizer)
-            if err := r.Update(ctx, &aiAnalysis); err != nil {
-                return ctrl.Result{}, err
-            }
-        }
-        return ctrl.Result{}, nil
-    }
-
-    // Add finalizer if not present
-    if !controllerutil.ContainsFinalizer(&aiAnalysis, aiAnalysisFinalizer) {
-        controllerutil.AddFinalizer(&aiAnalysis, aiAnalysisFinalizer)
-        if err := r.Update(ctx, &aiAnalysis); err != nil {
-            return ctrl.Result{}, err
-        }
-    }
-
-    // ... reconciliation logic
-}
-```
-
-### Creates (Owner References)
-
-#### WorkflowExecution CRD → Workflow Orchestration
-**Trigger**: When `AIAnalysis.status.phase = "completed"`
-**Purpose**: Execute top-ranked recommendation via workflow
-**Owner Reference**: WorkflowExecution owned by AIAnalysis
-
-**Creation Logic**:
-```go
-func (r *AIAnalysisReconciler) createWorkflowExecution(ctx context.Context, aiAnalysis *aianalysisv1.AIAnalysis) error {
-    if len(aiAnalysis.Status.Recommendations) == 0 {
-        return fmt.Errorf("no recommendations available")
-    }
-
-    topRecommendation := aiAnalysis.Status.Recommendations[0] // Highest ranked
-
-    workflow := &workflowv1.WorkflowExecution{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-workflow-%d", aiAnalysis.Name, time.Now().Unix()),
-            Namespace: aiAnalysis.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(aiAnalysis, aianalysisv1.GroupVersion.WithKind("AIAnalysis")),
-            },
-        },
-        Spec: workflowv1.WorkflowExecutionSpec{
-            AIAnalysisRef: workflowv1.AIAnalysisReference{
-                Name:      aiAnalysis.Name,
-                Namespace: aiAnalysis.Namespace,
-            },
-            RecommendedAction: topRecommendation,
-            // ... workflow configuration
-        },
-    }
-
-    if err := r.Create(ctx, workflow); err != nil {
-        return fmt.Errorf("failed to create WorkflowExecution: %w", err)
-    }
-
-    // Update AIAnalysis status with workflow reference
-    aiAnalysis.Status.WorkflowExecutionRef = &aianalysisv1.WorkflowExecutionReference{
-        Name:      workflow.Name,
-        Namespace: workflow.Namespace,
-    }
-
-    return r.Status().Update(ctx, aiAnalysis)
-}
-```
-
-### External Services (HTTP)
-
-#### HolmesGPT-API Service (Port 8080)
-**Purpose**: AI investigation, recovery analysis, safety analysis
-**Endpoints**:
-- `POST /api/v1/investigate` - Trigger investigation (BR-HAPI-INVESTIGATION-001)
-- `POST /api/v1/recover` - Get recovery recommendations (BR-HAPI-RECOVERY-001)
-- `POST /api/v1/safety-analysis` - Analyze action safety (BR-HAPI-SAFETY-001)
-- `POST /api/v1/post-execution` - Post-execution learning (BR-HAPI-POSTEXEC-001)
-
-**Client Integration**:
-```go
-// pkg/ai/analysis/integration/holmesgpt.go
-package integration
-
-import (
-    "github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
+**Data Storage SQL Pattern**:
+```sql
+-- If pdbProtected in failedDetections, skip the filter (treat as "no preference")
+WHERE (
+    'pdbProtected' = ANY($failedDetections)  -- Skip filter
+    OR pdb_protected = $pdbProtected         -- Apply filter
 )
+```
 
-type HolmesGPTClient struct {
-    client holmesgpt.Client
-}
+**Key Distinction**: "Resource doesn't exist" ≠ detection failure. A successful detection that finds no PDB returns `pdbProtected=false` with empty `failedDetections`.
 
-func NewHolmesGPTClient(config *Config) *HolmesGPTClient {
-    return &HolmesGPTClient{
-        client: holmesgpt.NewClient(holmesgpt.ClientConfig{
-            BaseURL: config.HolmesGPTURL, // http://holmesgpt-api:8080
-            Timeout: 5 * time.Minute,
-        }),
+#### OwnerChain Validation (DD-WORKFLOW-001 v1.7)
+
+HolmesGPT-API validates DetectedLabels applicability when RCA identifies a different resource than the signal source:
+
+```python
+def validate_target_in_owner_chain(rca_resource, owner_chain):
+    """
+    DetectedLabels describe the ORIGINAL signal's resource.
+    If RCA identifies a DIFFERENT resource, validate relationship.
+
+    Returns:
+        - True: RCA resource found in OwnerChain → DetectedLabels apply
+        - False: RCA resource NOT in chain → DetectedLabels may not apply
+    """
+    if not owner_chain:
+        return False  # No chain = orphan resource
+
+    for entry in owner_chain:
+        if (entry.namespace == rca_resource.namespace and
+            entry.kind == rca_resource.kind and
+            entry.name == rca_resource.name):
+            return True
+
+    return False
+```
+
+### Response Structure (Corrected Dec 2025)
+
+```json
+{
+  "incident_id": "alert-12345",
+  "analysis": "Natural language analysis from LLM...",
+  "root_cause_analysis": {
+    "summary": "Container exceeded memory limit due to memory leak",
+    "severity": "critical",
+    "contributing_factors": ["Memory leak", "Insufficient limits"]
+  },
+  "selected_workflow": {
+    "workflow_id": "wf-memory-increase-001",
+    "containerImage": "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0",
+    "containerDigest": "sha256:abc123def456...",
+    "confidence": 0.90,
+    "rationale": "Selected based on 90% semantic similarity for OOMKilled signal",
+    "parameters": {
+      "TARGET_NAMESPACE": "default",
+      "TARGET_DEPLOYMENT": "nginx",
+      "MEMORY_INCREASE_PERCENT": "50"
     }
-}
-
-func (h *HolmesGPTClient) Investigate(ctx context.Context, req InvestigationRequest) (*InvestigationResult, error) {
-    // Wrap existing HolmesGPT client (pkg/ai/holmesgpt/client.go)
-    result, err := h.client.Investigate(ctx, &holmesgpt.InvestigationRequest{
-        AlertContext:     req.AlertContext,
-        InvestigationScope: req.Scope,
-        Toolsets:        req.Toolsets,
-    })
-
-    if err != nil {
-        return nil, fmt.Errorf("holmesgpt investigation failed: %w", err)
-    }
-
-    return &InvestigationResult{
-        RootCauseHypotheses: result.RootCauses,
-        CorrelatedAlerts:    result.CorrelatedAlerts,
-        Evidence:            result.Evidence,
-    }, nil
+  },
+  "target_in_owner_chain": true,
+  "warnings": [],
+  "confidence": 0.90,
+  "timestamp": "2025-12-02T10:30:00Z"
 }
 ```
 
-#### Data Storage Service (Port 8085)
-**Purpose**: Historical pattern lookup, success rate retrieval
-**Endpoints**:
-- `POST /api/v1/vector/search` - Similarity search for historical patterns (BR-AI-011)
-- `GET /api/v1/audit/success-rate?action={action}` - Historical success rates (BR-AI-008)
+**Key Response Corrections**:
+| Field | Old Schema | Correct Schema |
+|-------|------------|----------------|
+| `recommendations[]` | Array of recommendations | ❌ **REMOVED** - Use `selected_workflow` |
+| `requiresApproval` | In response | ❌ **REMOVED** - AIAnalysis determines via Rego |
+| `containerImage` | Missing | ✅ **REQUIRED** - Immutable workflow reference |
+| `target_in_owner_chain` | Missing | ✅ **ADDED** - OwnerChain validation result |
+| `warnings[]` | Missing | ✅ **ADDED** - Non-fatal warnings |
 
-**Client Integration**:
-```go
-// pkg/ai/analysis/integration/storage.go
-package integration
+### Response Fields for AIAnalysis Status
 
-type StorageClient struct {
-    baseURL string
-    client  *http.Client
+| HAPI Field | AIAnalysis Status Field | Purpose |
+|------------|-------------------------|---------|
+| `selected_workflow` | `status.selectedWorkflow` | Workflow to execute |
+| `selected_workflow.confidence` | `status.selectedWorkflow.confidence` | Rego policy input |
+| `target_in_owner_chain` | `status.targetInOwnerChain` | Rego policy input, audit trail |
+| `warnings[]` | `status.warnings` | K8s events, metrics, operator notifications |
+
+### Error Handling
+
+| Error | Retry | Backoff | Action |
+|-------|-------|---------|--------|
+| HolmesGPT-API unavailable | 3 attempts | Exponential (1s, 2s, 4s) | Mark as Failed |
+| Timeout (30s recommended) | 3 attempts | Exponential | Mark as Failed |
+| 4xx errors (400, 404, 422) | No | - | Mark as Failed (validation error) |
+| 5xx errors (500, 502, 503, 504) | 3 attempts | Exponential | Mark as Failed if exhausted |
+
+**Health Endpoint** (`GET /health`):
+```json
+{
+  "status": "healthy",
+  "llm_connected": true,
+  "data_storage_connected": true,
+  "version": "v3.2.0"
 }
+```
 
-func (s *StorageClient) GetHistoricalPatterns(ctx context.Context, fingerprint string) ([]HistoricalPattern, error) {
-    req := VectorSearchRequest{
-        Query:     fingerprint,
-        TopK:      10,
-        Threshold: 0.75,
-    }
+**Error Format**: RFC 7807 (`application/problem+json`)
 
-    resp, err := s.client.Post(
-        fmt.Sprintf("%s/api/v1/vector/search", s.baseURL),
-        "application/json",
-        toJSON(req),
-    )
+---
 
-    // ... handle response
-}
+## Data Storage Integration
 
-func (s *StorageClient) GetSuccessRate(ctx context.Context, action string) (float64, error) {
-    resp, err := s.client.Get(
-        fmt.Sprintf("%s/api/v1/audit/success-rate?action=%s", s.baseURL, action),
-    )
+### Workflow Catalog Search (Internal Toolkit)
 
-    // ... handle response, return success rate (BR-AI-008)
+**Note**: AIAnalysis does **NOT** call Data Storage directly. HolmesGPT-API handles this via internal toolkit (NOT MCP).
+
+> **Architecture Clarification (Dec 2025)**: HolmesGPT-API uses a **toolkit-based architecture** where internal tools query Data Storage directly. There is no exposed MCP server.
+
+#### Internal Tool: `search_workflow_catalog`
+
+HolmesGPT-API internally calls Data Storage to search the workflow catalog. The tool:
+1. Receives signal context from the investigation request
+2. Queries Data Storage for matching workflows
+3. Ranks workflows by semantic similarity and constraint matching
+4. Returns the best match as `selected_workflow`
+
+**Workflow Matching Criteria**:
+| Criterion | Weight | Source |
+|-----------|--------|--------|
+| Signal type match | High | `signal_type` in request |
+| DetectedLabels constraints | Medium | Only if `target_in_owner_chain=true` |
+| CustomLabels constraints | Medium | Always applied |
+| Historical success rate | Low | Data Storage aggregation |
+
+#### Example Workflow Catalog Entry
+
+```json
+{
+  "workflow_id": "wf-memory-increase-v2",
+  "container_image": "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0",
+  "container_digest": "sha256:abc123...",
+  "title": "Memory Increase Workflow",
+  "description": "Safely increases memory limits for OOM pods",
+  "applicable_signals": ["OOMKilled", "MemoryPressure"],
+  "constraints": {
+    "requires": ["gitOpsManaged:true"],
+    "excludes": ["stateful:true"]
+  },
+  "parameters": {
+    "TARGET_NAMESPACE": {"required": true},
+    "TARGET_DEPLOYMENT": {"required": true},
+    "MEMORY_INCREASE_PERCENT": {"required": true, "default": "25"}
+  }
 }
 ```
 
 ---
 
+## Downstream Integration
+
+### AIAnalysis → Remediation Orchestrator
+
+**Pattern**: CRD status watch
+
+**Watch Trigger**: `AIAnalysis.status.phase == "Completed"`
+
+#### Status Fields for RO
+
+```yaml
+status:
+  phase: "Completed"
+  completionTime: "2025-11-30T10:00:45Z"
+
+  # Primary output - workflow to execute
+  selectedWorkflow:
+    workflowId: "wf-memory-increase-v2"
+    containerImage: "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0"
+    parameters:
+      targetDeployment: "payment-api"
+      memoryIncrease: "512Mi"
+      namespace: "production"
+    confidence: 0.87
+    reasoning: "Historical success rate 92% for similar OOM scenarios"
+
+  # Approval decision
+  approvalRequired: true
+  approvalReason: "Production environment requires manual approval"
+
+  # Operator context
+  investigationSummary: "OOMKilled due to memory leak in payment processing"
+```
+
+### RO Actions Based on Status
+
+| `approvalRequired` | RO Action |
+|--------------------|-----------|
+| `false` | Create `WorkflowExecution` CRD immediately |
+| `true` | Create notification via Notification Service, wait for approval |
+
+---
+
+## Recovery Flow Integration
+
+### RO Creates Recovery AIAnalysis
+
+When a `WorkflowExecution` fails, RO creates a new `AIAnalysis` with recovery context:
+
+```yaml
+apiVersion: kubernaut.ai/v1alpha1
+kind: AIAnalysis
+metadata:
+  name: "remediation-123-analysis-2"
+spec:
+  isRecoveryAttempt: true
+  recoveryAttemptNumber: 2
+
+  # Original enrichment data (reused, not re-enriched)
+  enrichmentResults:
+    # ... same as original ...
+
+  # Previous execution history (ALL attempts)
+  previousExecutions:
+    - workflowId: "wf-oom-restart-v1"
+      containerImage: "ghcr.io/kubernaut/workflows/oom-restart:v1.2.0"
+      failureReason: "Pod evicted during restart - node pressure"
+      failurePhase: "execution"
+      kubernetesReason: "Evicted"
+      attemptNumber: 1
+      executedAt: "2025-11-30T10:15:00Z"
+```
+
+### HolmesGPT-API Recovery Analysis
+
+**Endpoint**: `POST /api/v1/recovery/analyze`
+
+HolmesGPT-API:
+1. Analyzes previous failure patterns
+2. Avoids recommending same workflow if non-transient failure
+3. May escalate to `notify_only` if options exhausted
+
+---
+
+## Rego Policy Integration
+
+### Policy Loading
+
+**ConfigMap**: `ai-approval-policies` in `kubernaut-system`
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-approval-policies
+  namespace: kubernaut-system
+data:
+  approval.rego: |
+    package aianalysis.approval
+
+    default decision = "MANUAL_APPROVAL_REQUIRED"
+
+    # Auto-approve high confidence in non-production
+    decision = "AUTO_APPROVE" {
+        input.confidence >= 0.8
+        input.environment != "production"
+        input.target_in_owner_chain == true
+    }
+
+    # Require approval when labels may not match target
+    decision = "MANUAL_APPROVAL_REQUIRED" {
+        input.target_in_owner_chain == false
+    }
+
+    # Require approval if warnings present in production
+    decision = "MANUAL_APPROVAL_REQUIRED" {
+        input.environment == "production"
+        count(input.warnings) > 0
+    }
+```
+
+### Policy Input Schema (V1.0 - Updated Dec 2025)
+
+```go
+type ApprovalPolicyInput struct {
+    // ========================================
+    // INVESTIGATION RESULT
+    // ========================================
+    // Workflow confidence from HolmesGPT-API (0.0-1.0)
+    Confidence float64 `json:"confidence"`
+    // Selected action type (e.g., "scale", "restart", "patch")
+    ActionType string  `json:"action_type"`
+
+    // ========================================
+    // SIGNAL CONTEXT
+    // ========================================
+    // Environment (free-text, e.g., "production", "staging", "qa-eu")
+    Environment string `json:"environment"`
+    // Severity level
+    Severity    string `json:"severity"`
+
+    // ========================================
+    // LABELS (for advanced policies)
+    // ========================================
+    DetectedLabels *DetectedLabels       `json:"detected_labels,omitempty"`
+    CustomLabels   map[string][]string   `json:"custom_labels,omitempty"`
+
+    // ========================================
+    // HAPI RESPONSE METADATA (Dec 2025)
+    // ========================================
+    // Whether RCA-identified target was found in OwnerChain
+    // If false, DetectedLabels may not apply to the actual affected resource
+    TargetInOwnerChain bool     `json:"target_in_owner_chain"`
+    // Non-fatal warnings from investigation (e.g., low confidence, OwnerChain issues)
+    Warnings           []string `json:"warnings,omitempty"`
+
+    // ========================================
+    // RECOVERY CONTEXT
+    // ========================================
+    IsRecoveryAttempt     bool `json:"is_recovery_attempt"`
+    RecoveryAttemptNumber int  `json:"recovery_attempt_number"`
+}
+```
+
+### Example Rego Rules Using New Fields
+
+```rego
+# Require approval in production when labels might not match
+require_approval {
+    input.environment == "production"
+    not input.target_in_owner_chain
+}
+
+# Require approval if there are warnings + risky action
+require_approval {
+    count(input.warnings) > 0
+    input.action_type == "delete"
+}
+
+# Track as metric but don't block
+label_scope_warning {
+    not input.target_in_owner_chain
+}
+```
+
+---
+
+## Service Dependencies
+
+### Required Services
+
+| Service | Port | Purpose | Critical |
+|---------|------|---------|----------|
+| HolmesGPT-API | 8080 | AI investigation, workflow selection | ✅ Yes |
+| Data Storage | 8085 | Workflow catalog (via HAPI internal toolkit) | ✅ Yes (indirect) |
+
+### Optional Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| Notification | 8080 | Approval notifications (RO calls this) |
+
+### Go Client
+
+AIAnalysis uses a generated Go client for HolmesGPT-API:
+
+```go
+// Generated with ogen from OpenAPI 3.1.0 spec
+import "github.com/jordigilh/kubernaut/pkg/clients/holmesgpt"
+```
+
+**Client Location**: `pkg/clients/holmesgpt/` (18 files, ~12,600 lines)
+**Generation**: `ogen -package holmesgpt -target pkg/clients/holmesgpt holmesgpt-api/api/openapi.json`
+
+---
+
+## Kubernetes Integration
+
+### RBAC Requirements
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aianalysis-controller
+rules:
+  # AIAnalysis CRD management
+  - apiGroups: ["aianalysis.kubernaut.io"]
+    resources: ["aianalyses"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["aianalysis.kubernaut.io"]
+    resources: ["aianalyses/status"]
+    verbs: ["get", "update", "patch"]
+
+  # ConfigMap for Rego policies
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+  # Events for operational visibility
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+```
+
+### Network Policies
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  podSelector:
+    matchLabels:
+      app: aianalysis-controller
+  policyTypes:
+    - Egress
+  egress:
+    # HolmesGPT-API
+    - to:
+        - podSelector:
+            matchLabels:
+              app: holmesgpt-api
+      ports:
+        - port: 8090
+    # Kubernetes API
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 443
+```
+
+---
+
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [Overview](./overview.md) | Service architecture |
+| [CRD Schema](./crd-schema.md) | Type definitions |
+| [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema (authoritative) |
+| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow design |
+| [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](./HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md) | HolmesGPT-API team handoff |

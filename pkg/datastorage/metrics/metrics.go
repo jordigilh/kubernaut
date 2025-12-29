@@ -33,6 +33,44 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// ========================================
+// DD-005 V3.0: Metric Name Constants (Pattern B)
+// ========================================
+//
+// Per DD-005 V3.0 mandate, all metric names MUST be defined as constants
+// to prevent typos and ensure test/production parity.
+//
+// Pattern B: Full metric names (no Namespace/Subsystem in prometheus.Opts)
+// Reference: pkg/workflowexecution/metrics/metrics.go
+// ========================================
+
+const (
+	// Write operation metrics
+	MetricNameWriteTotal    = "datastorage_write_total"
+	MetricNameWriteDuration = "datastorage_write_duration_seconds"
+
+	// Dual-write coordination metrics
+	MetricNameDualWriteSuccess = "datastorage_dualwrite_success_total"
+	MetricNameDualWriteFailure = "datastorage_dualwrite_failure_total"
+	MetricNameFallbackMode     = "datastorage_fallback_mode_total"
+
+	// Audit write API metrics (GAP-10)
+	MetricNameAuditTracesTotal = "datastorage_audit_traces_total"
+	MetricNameAuditLagSeconds  = "datastorage_audit_lag_seconds"
+
+	// Embedding generation and caching metrics
+	MetricNameCacheHits                     = "datastorage_cache_hits_total"
+	MetricNameCacheMisses                   = "datastorage_cache_misses_total"
+	MetricNameEmbeddingGenerationDuration   = "datastorage_embedding_generation_duration_seconds"
+
+	// Validation metrics
+	MetricNameValidationFailures = "datastorage_validation_failures_total"
+
+	// Query operation metrics
+	MetricNameQueryDuration = "datastorage_query_duration_seconds"
+	MetricNameQueryTotal    = "datastorage_query_total"
+)
+
 // Write operation metrics
 // BR-STORAGE-001, BR-STORAGE-002, BR-STORAGE-014
 
@@ -47,7 +85,7 @@ var (
 	//   rate(datastorage_write_total{status="success"}[5m])
 	WriteTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "datastorage_write_total",
+			Name: MetricNameWriteTotal, // DD-005 V3.0: Pattern B (full name)
 			Help: "Total number of write operations by table and status",
 		},
 		[]string{"table", "status"},
@@ -62,7 +100,7 @@ var (
 	//   histogram_quantile(0.95, rate(datastorage_write_duration_seconds_bucket[5m]))
 	WriteDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "datastorage_write_duration_seconds",
+			Name: MetricNameWriteDuration, // DD-005 V3.0: Pattern B (full name),
 			Help: "Duration of write operations in seconds",
 			// Buckets: 1ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s
 			Buckets: prometheus.DefBuckets,
@@ -81,7 +119,7 @@ var (
 	//   rate(datastorage_dualwrite_success_total[5m])
 	DualWriteSuccess = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "datastorage_dualwrite_success_total",
+			Name: MetricNameDualWriteSuccess, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of successful dual-write operations",
 		},
 	)
@@ -95,7 +133,7 @@ var (
 	//   rate(datastorage_dualwrite_failure_total[5m]) by (reason)
 	DualWriteFailure = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "datastorage_dualwrite_failure_total",
+			Name: MetricNameDualWriteFailure, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of failed dual-write operations by reason",
 		},
 		[]string{"reason"},
@@ -109,7 +147,7 @@ var (
 	//   rate(datastorage_fallback_mode_total[5m])
 	FallbackModeTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "datastorage_fallback_mode_total",
+			Name: MetricNameFallbackMode, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of operations using PostgreSQL-only fallback mode",
 		},
 	)
@@ -129,7 +167,7 @@ var (
 	//   rate(datastorage_audit_traces_total{status="success"}[5m])
 	AuditTracesTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "datastorage_audit_traces_total",
+			Name: MetricNameAuditTracesTotal, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of audit traces written by service and status",
 		},
 		[]string{"service", "status"},
@@ -144,7 +182,7 @@ var (
 	//   histogram_quantile(0.95, rate(datastorage_audit_lag_seconds_bucket[5m]))
 	AuditLagSeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "datastorage_audit_lag_seconds",
+			Name: MetricNameAuditLagSeconds, // DD-005 V3.0: Pattern B (full name),
 			Help:    "Time lag between event occurrence and audit write in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
@@ -162,7 +200,7 @@ var (
 	//   rate(datastorage_cache_hits_total[5m])
 	CacheHits = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "datastorage_cache_hits_total",
+			Name: MetricNameCacheHits, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of embedding cache hits",
 		},
 	)
@@ -173,7 +211,7 @@ var (
 	//   rate(datastorage_cache_misses_total[5m])
 	CacheMisses = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "datastorage_cache_misses_total",
+			Name: MetricNameCacheMisses, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of embedding cache misses",
 		},
 	)
@@ -184,7 +222,7 @@ var (
 	//   histogram_quantile(0.95, rate(datastorage_embedding_generation_duration_seconds_bucket[5m]))
 	EmbeddingGenerationDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
-			Name: "datastorage_embedding_generation_duration_seconds",
+			Name: MetricNameEmbeddingGenerationDuration, // DD-005 V3.0: Pattern B (full name),
 			Help: "Duration of embedding generation in seconds",
 			// Buckets optimized for embedding generation (10ms to 5s)
 			Buckets: []float64{.01, .05, .1, .25, .5, 1, 2.5, 5},
@@ -206,7 +244,7 @@ var (
 	//   rate(datastorage_validation_failures_total[5m]) by (field)
 	ValidationFailures = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "datastorage_validation_failures_total",
+			Name: MetricNameValidationFailures, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of validation failures by field and reason",
 		},
 		[]string{"field", "reason"},
@@ -226,7 +264,7 @@ var (
 	//   histogram_quantile(0.95, rate(datastorage_query_duration_seconds_bucket{operation="semantic_search"}[5m]))
 	QueryDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "datastorage_query_duration_seconds",
+			Name: MetricNameQueryDuration, // DD-005 V3.0: Pattern B (full name),
 			Help: "Duration of query operations in seconds",
 			// Buckets optimized for query operations (1ms to 1s)
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
@@ -244,7 +282,7 @@ var (
 	//   rate(datastorage_query_total{operation="semantic_search",status="success"}[5m])
 	QueryTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "datastorage_query_total",
+			Name: MetricNameQueryTotal, // DD-005 V3.0: Pattern B (full name),
 			Help: "Total number of query operations by type and status",
 		},
 		[]string{"operation", "status"},
@@ -361,44 +399,37 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 		m.ValidationFailures = ValidationFailures // Reference global
 	} else {
 		// Testing: Create isolated metrics with custom registry
+		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
 		m.AuditTracesTotal = prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "audit_traces_total",
-				Help:      "Total number of audit traces written by service and status",
+				Name: MetricNameAuditTracesTotal, // DD-005 V3.0: Use constant
+				Help: "Total number of audit traces written by service and status",
 			},
 			[]string{"service", "status"},
 		)
 
 		m.AuditLagSeconds = prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "audit_lag_seconds",
-				Help:      "Time lag between event occurrence and audit write in seconds",
-				Buckets:   []float64{.1, .5, 1, 2, 5, 10, 30, 60},
+				Name:    MetricNameAuditLagSeconds, // DD-005 V3.0: Use constant
+				Help:    "Time lag between event occurrence and audit write in seconds",
+				Buckets: []float64{.1, .5, 1, 2, 5, 10, 30, 60},
 			},
 			[]string{"service"},
 		)
 
 		m.WriteDuration = prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "write_duration_seconds",
-				Help:      "Duration of write operations in seconds",
-				Buckets:   prometheus.DefBuckets,
+				Name:    MetricNameWriteDuration, // DD-005 V3.0: Use constant
+				Help:    "Duration of write operations in seconds",
+				Buckets: prometheus.DefBuckets,
 			},
 			[]string{"table"},
 		)
 
 		m.ValidationFailures = prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: namespace,
-				Subsystem: subsystem,
-				Name:      "validation_failures_total",
-				Help:      "Total number of validation failures by field and reason",
+				Name: MetricNameValidationFailures, // DD-005 V3.0: Use constant
+				Help: "Total number of validation failures by field and reason",
 			},
 			[]string{"field", "reason"},
 		)

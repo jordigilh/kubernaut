@@ -1,6 +1,7 @@
 # ADR-038: Asynchronous Buffered Audit Trace Ingestion
 
 **Date**: 2025-11-08
+**Last Updated**: 2025-12-17
 **Status**: ✅ Approved
 **Deciders**: Architecture Team
 **Consulted**: Gateway, Context API, AI Analysis, Workflow, Data Storage teams
@@ -306,7 +307,7 @@ func (g *Gateway) handleSignal(ctx context.Context, signal *Signal) error {
 - `BufferedAuditStore` implementation - Async buffered writes
 - `Config` struct - Configuration options
 - `AuditEvent` type - Event structure
-- `CommonEnvelope` helpers - Event data format
+- `audit.StructToMap()` helper - Event data conversion (see DD-AUDIT-004)
 
 **Usage Example**:
 
@@ -393,7 +394,20 @@ Service → pkg/audit/ → Data Storage Service REST API → PostgreSQL
 
 ---
 
+---
+
+## 📋 **Changelog**
+
+### Update (2025-12-17)
+- **UPDATED**: References to `CommonEnvelope` replaced with `audit.StructToMap()` (see DD-AUDIT-004)
+- **CLARIFIED**: Event data pattern now uses structured types exclusively
+
+### Original (2025-11-08)
+- **APPROVED**: Asynchronous buffered audit trace ingestion pattern
+
+---
+
 **Maintained By**: Kubernaut Architecture Team
-**Last Updated**: November 8, 2025
+**Last Updated**: December 17, 2025
 **Review Cycle**: Annually or when scale requirements change (>100,000 events/sec)
 

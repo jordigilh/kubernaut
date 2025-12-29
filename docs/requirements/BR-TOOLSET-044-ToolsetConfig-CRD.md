@@ -176,7 +176,7 @@ DD-TOOLSET-001 deprecated 6 REST API endpoints (0-10% business value) in V1, kee
 **Description**: The service SHALL provide a `ToolsetConfig` CRD for configuring discovery behavior
 
 **Acceptance Criteria**:
-- **AC-044.1.1**: CRD SHALL be defined in API group `toolset.kubernaut.io/v1alpha1`
+- **AC-044.1.1**: CRD SHALL be defined in API group `toolset.kubernaut.ai/v1alpha1`
 - **AC-044.1.2**: CRD SHALL be namespaced (deployed in `kubernaut-system`)
 - **AC-044.1.3**: CRD SHALL be a singleton (one instance per namespace)
 - **AC-044.1.4**: CRD SHALL support OpenAPI v3 schema validation
@@ -270,7 +270,7 @@ spec:
     custom:
       enabled: true
       annotations:
-        - kubernaut.io/toolset=true
+        - kubernaut.ai/toolset=true
 ```
 
 **Business Value**: Allows operators to customize discovery behavior per service type

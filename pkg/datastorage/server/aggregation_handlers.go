@@ -24,8 +24,6 @@ import (
 	"strconv"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
 )
@@ -46,7 +44,7 @@ import (
 //
 // Business Requirements:
 // - BR-STORAGE-031-01: Incident-Type Success Rate API
-// - BR-STORAGE-031-02: Playbook Success Rate API
+// - BR-STORAGE-031-02: Workflow Success Rate API
 //
 // ========================================
 
@@ -70,7 +68,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 	incidentType := r.URL.Query().Get("incident_type")
 	if incidentType == "" {
 		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Type:   "https://kubernaut.ai/problems/validation-error",
 			Title:  "Validation Error",
 			Status: http.StatusBadRequest,
 			Detail: "incident_type query parameter is required",
@@ -86,7 +84,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 	// Validate time range format
 	if _, err := parseTimeRange(timeRange); err != nil {
 		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Type:   "https://kubernaut.ai/problems/validation-error",
 			Title:  "Validation Error",
 			Status: http.StatusBadRequest,
 			Detail: fmt.Sprintf("invalid time_range format: %s (expected format: 1h, 24h, 7d, 30d)", timeRange),
@@ -100,7 +98,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 		parsed, err := strconv.Atoi(minSamplesStr)
 		if err != nil {
 			h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-				Type:   "https://api.kubernaut.io/problems/validation-error",
+				Type:   "https://kubernaut.ai/problems/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,
 				Detail: fmt.Sprintf("invalid min_samples: must be a positive integer, got %s", minSamplesStr),
@@ -109,7 +107,7 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 		}
 		if parsed <= 0 {
 			h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-				Type:   "https://api.kubernaut.io/problems/validation-error",
+				Type:   "https://kubernaut.ai/problems/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,
 				Detail: fmt.Sprintf("invalid min_samples: must be positive, got %d", parsed),
@@ -136,14 +134,12 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 		)
 		if err != nil {
 			h.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
-				Type:   "https://api.kubernaut.io/problems/internal-error",
+				Type:   "https://kubernaut.ai/problems/internal-error",
 				Title:  "Internal Server Error",
 				Status: http.StatusInternalServerError,
 				Detail: "Failed to retrieve success rate data",
 			})
-			h.logger.Error("repository error",
-				zap.String("incident_type", incidentType),
-				zap.Error(err))
+			h.logger.Error(err, "repository error", "incident_type", incidentType)
 			return
 		}
 	} else {
@@ -164,25 +160,24 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("failed to encode response",
-			zap.Error(err))
+		h.logger.Error(err, "failed to encode response")
 	}
 
 	// Log for observability
-	h.logger.Debug("incident-type success rate query",
-		zap.String("incident_type", incidentType),
-		zap.String("time_range", timeRange),
-		zap.Int("min_samples", minSamples),
-		zap.Float64("success_rate", response.SuccessRate),
-		zap.String("confidence", response.Confidence))
+	h.logger.V(1).Info("incident-type success rate query",
+		"incident_type", incidentType,
+		"time_range", timeRange,
+		"min_samples", minSamples,
+		"success_rate", response.SuccessRate,
+		"confidence", response.Confidence)
 }
 
 // HandleGetSuccessRateByWorkflow handles GET /api/v1/success-rate/workflow
-// BR-STORAGE-031-02: Calculate success rate by playbook
+// BR-STORAGE-031-02: Calculate success rate by workflow
 //
 // Query Parameters:
-//   - playbook_id (required): The playbook identifier to query (e.g., "restart-pod-v1")
-//   - playbook_version (optional): Specific playbook version (e.g., "1.2.3")
+//   - workflow_id (required): The workflow identifier to query (e.g., "restart-pod-v1")
+//   - workflow_version (optional): Specific workflow version (e.g., "1.2.3")
 //   - time_range (optional): Time window for analysis (default: "7d")
 //     Valid formats: "1h", "24h", "7d", "30d"
 //   - min_samples (optional): Minimum sample size for confidence (default: 5)
@@ -192,18 +187,18 @@ func (h *Handler) HandleGetSuccessRateByIncidentType(w http.ResponseWriter, r *h
 // Errors: 400 Bad Request (validation), 500 Internal Server Error (repository)
 func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.Request) {
 	// 1. Parse and validate query parameters
-	playbookID := r.URL.Query().Get("playbook_id")
-	if playbookID == "" {
+	workflowID := r.URL.Query().Get("workflow_id")
+	if workflowID == "" {
 		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Type:   "https://kubernaut.ai/problems/validation-error",
 			Title:  "Validation Error",
 			Status: http.StatusBadRequest,
-			Detail: "playbook_id query parameter is required",
+			Detail: "workflow_id query parameter is required",
 		})
 		return
 	}
 
-	playbookVersion := r.URL.Query().Get("playbook_version") // Optional
+	workflowVersion := r.URL.Query().Get("workflow_version") // Optional
 
 	timeRange := r.URL.Query().Get("time_range")
 	if timeRange == "" {
@@ -213,7 +208,7 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 	// Validate time range format
 	if _, err := parseTimeRange(timeRange); err != nil {
 		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-			Type:   "https://api.kubernaut.io/problems/validation-error",
+			Type:   "https://kubernaut.ai/problems/validation-error",
 			Title:  "Validation Error",
 			Status: http.StatusBadRequest,
 			Detail: fmt.Sprintf("invalid time_range format: %s (expected format: 1h, 24h, 7d, 30d)", timeRange),
@@ -227,7 +222,7 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 		parsed, err := strconv.Atoi(minSamplesStr)
 		if err != nil {
 			h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-				Type:   "https://api.kubernaut.io/problems/validation-error",
+				Type:   "https://kubernaut.ai/problems/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,
 				Detail: fmt.Sprintf("invalid min_samples: must be a positive integer, got %s", minSamplesStr),
@@ -236,7 +231,7 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 		}
 		if parsed <= 0 {
 			h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-				Type:   "https://api.kubernaut.io/problems/validation-error",
+				Type:   "https://kubernaut.ai/problems/validation-error",
 				Title:  "Validation Error",
 				Status: http.StatusBadRequest,
 				Detail: fmt.Sprintf("invalid min_samples: must be positive, got %d", parsed),
@@ -257,29 +252,28 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 		// Production: Use real repository
 		response, err = h.actionTraceRepository.GetSuccessRateByWorkflow(
 			r.Context(),
-			playbookID,
-			playbookVersion,
+			workflowID,
+			workflowVersion,
 			duration,
 			minSamples,
 		)
 		if err != nil {
 			h.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
-				Type:   "https://api.kubernaut.io/problems/internal-error",
+				Type:   "https://kubernaut.ai/problems/internal-error",
 				Title:  "Internal Server Error",
 				Status: http.StatusInternalServerError,
 				Detail: "Failed to retrieve success rate data",
 			})
-			h.logger.Error("repository error",
-				zap.String("playbook_id", playbookID),
-				zap.String("playbook_version", playbookVersion),
-				zap.Error(err))
+			h.logger.Error(err, "repository error",
+				"workflow_id", workflowID,
+				"workflow_version", workflowVersion)
 			return
 		}
 	} else {
 		// Test mode: Return minimal response (for unit tests without repository)
 		response = &models.WorkflowSuccessRateResponse{
-			PlaybookID:           playbookID,
-			PlaybookVersion:      playbookVersion,
+			WorkflowID:           workflowID,
+			WorkflowVersion:      workflowVersion,
 			TimeRange:            timeRange,
 			TotalExecutions:      0,
 			SuccessfulExecutions: 0,
@@ -294,18 +288,17 @@ func (h *Handler) HandleGetSuccessRateByWorkflow(w http.ResponseWriter, r *http.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("failed to encode response",
-			zap.Error(err))
+		h.logger.Error(err, "failed to encode response")
 	}
 
 	// Log for observability
-	h.logger.Debug("playbook success rate query",
-		zap.String("playbook_id", playbookID),
-		zap.String("playbook_version", playbookVersion),
-		zap.String("time_range", timeRange),
-		zap.Int("min_samples", minSamples),
-		zap.Float64("success_rate", response.SuccessRate),
-		zap.String("confidence", response.Confidence))
+	h.logger.V(1).Info("workflow success rate query",
+		"workflow_id", workflowID,
+		"workflow_version", workflowVersion,
+		"time_range", timeRange,
+		"min_samples", minSamples,
+		"success_rate", response.SuccessRate,
+		"confidence", response.Confidence)
 }
 
 // parseTimeRange converts time range string to time.Duration
@@ -343,7 +336,7 @@ func (h *Handler) respondWithRFC7807(w http.ResponseWriter, statusCode int, prob
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(problem); err != nil {
-		h.logger.Error("failed to encode RFC 7807 error response")
+		h.logger.Error(err, "failed to encode RFC 7807 error response")
 	}
 }
 
@@ -355,15 +348,15 @@ func (h *Handler) respondWithRFC7807(w http.ResponseWriter, statusCode int, prob
 // HandleGetSuccessRateMultiDimensional handles GET /api/v1/success-rate/multi-dimensional
 //
 // BR-STORAGE-031-05: Multi-Dimensional Success Rate API
-// ADR-033: Remediation Playbook Catalog - Cross-dimensional aggregation
+// ADR-033: Remediation Workflow Catalog - Cross-dimensional aggregation
 //
-// Supports any combination of: incident_type, playbook_id + playbook_version, action_type
+// Supports any combination of: incident_type, workflow_id + workflow_version, action_type
 func (h *Handler) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r *http.Request) {
 	// Parse and validate query parameters (REFACTOR: Extracted to helper)
 	params, err := h.parseMultiDimensionalParams(r)
 	if err != nil {
 		h.respondWithRFC7807(w, http.StatusBadRequest, validation.RFC7807Problem{
-			Type:     "https://api.kubernaut.io/problems/validation-error",
+			Type:     "https://kubernaut.ai/problems/validation-error",
 			Title:    "Invalid Query Parameter",
 			Status:   http.StatusBadRequest,
 			Detail:   err.Error(),
@@ -377,7 +370,7 @@ func (h *Handler) HandleGetSuccessRateMultiDimensional(w http.ResponseWriter, r 
 	if err != nil {
 		h.logMultiDimensionalError(params, err)
 		h.respondWithRFC7807(w, http.StatusInternalServerError, validation.RFC7807Problem{
-			Type:     "https://api.kubernaut.io/problems/internal-error",
+			Type:     "https://kubernaut.ai/problems/internal-error",
 			Title:    "Internal Server Error",
 			Status:   http.StatusInternalServerError,
 			Detail:   fmt.Sprintf("Failed to retrieve multi-dimensional success rate data: %v", err), // Include actual error for debugging
@@ -398,13 +391,13 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 
 	// Extract dimension filters
 	incidentType := query.Get("incident_type")
-	playbookID := query.Get("playbook_id")
-	playbookVersion := query.Get("playbook_version")
+	workflowID := query.Get("workflow_id")
+	workflowVersion := query.Get("workflow_version")
 	actionType := query.Get("action_type")
 
 	// Validate at least one dimension is provided
-	if incidentType == "" && playbookID == "" && actionType == "" {
-		return nil, fmt.Errorf("at least one dimension filter (incident_type, playbook_id, or action_type) must be specified")
+	if incidentType == "" && workflowID == "" && actionType == "" {
+		return nil, fmt.Errorf("at least one dimension filter (incident_type, workflow_id, or action_type) must be specified")
 	}
 
 	// Parse time_range with default
@@ -431,15 +424,15 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 		}
 	}
 
-	// Validate playbook_version requires playbook_id
-	if playbookVersion != "" && playbookID == "" {
-		return nil, fmt.Errorf("playbook_version requires playbook_id to be specified")
+	// Validate workflow_version requires workflow_id
+	if workflowVersion != "" && workflowID == "" {
+		return nil, fmt.Errorf("workflow_version requires workflow_id to be specified")
 	}
 
 	return &models.MultiDimensionalQuery{
 		IncidentType:    incidentType,
-		PlaybookID:      playbookID,
-		PlaybookVersion: playbookVersion,
+		WorkflowID:      workflowID,
+		WorkflowVersion: workflowVersion,
 		ActionType:      actionType,
 		TimeRange:       timeRangeStr,
 		MinSamples:      minSamples,
@@ -449,27 +442,26 @@ func (h *Handler) parseMultiDimensionalParams(r *http.Request) (*models.MultiDim
 // logMultiDimensionalError logs errors for multi-dimensional queries with full context
 // REFACTOR: Extracted for consistent error logging
 func (h *Handler) logMultiDimensionalError(params *models.MultiDimensionalQuery, err error) {
-	h.logger.Error("failed to get multi-dimensional success rate",
-		zap.String("incident_type", params.IncidentType),
-		zap.String("playbook_id", params.PlaybookID),
-		zap.String("playbook_version", params.PlaybookVersion),
-		zap.String("action_type", params.ActionType),
-		zap.String("time_range", params.TimeRange),
-		zap.Int("min_samples", params.MinSamples),
-		zap.Error(err))
+	h.logger.Error(err, "failed to get multi-dimensional success rate",
+		"incident_type", params.IncidentType,
+		"workflow_id", params.WorkflowID,
+		"workflow_version", params.WorkflowVersion,
+		"action_type", params.ActionType,
+		"time_range", params.TimeRange,
+		"min_samples", params.MinSamples)
 }
 
 // logMultiDimensionalSuccess logs successful multi-dimensional queries
 // REFACTOR: Extracted for consistent success logging
 func (h *Handler) logMultiDimensionalSuccess(params *models.MultiDimensionalQuery, result *models.MultiDimensionalSuccessRateResponse) {
-	h.logger.Debug("multi-dimensional success rate query completed",
-		zap.String("incident_type", params.IncidentType),
-		zap.String("playbook_id", params.PlaybookID),
-		zap.String("playbook_version", params.PlaybookVersion),
-		zap.String("action_type", params.ActionType),
-		zap.Int("total_executions", result.TotalExecutions),
-		zap.Float64("success_rate", result.SuccessRate),
-		zap.String("confidence", result.Confidence))
+	h.logger.V(1).Info("multi-dimensional success rate query completed",
+		"incident_type", params.IncidentType,
+		"workflow_id", params.WorkflowID,
+		"workflow_version", params.WorkflowVersion,
+		"action_type", params.ActionType,
+		"total_executions", result.TotalExecutions,
+		"success_rate", result.SuccessRate,
+		"confidence", result.Confidence)
 }
 
 // respondWithJSON is a helper to send JSON responses
@@ -478,7 +470,7 @@ func (h *Handler) respondWithJSON(w http.ResponseWriter, statusCode int, data in
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		h.logger.Error("failed to encode JSON response", zap.Error(err))
+		h.logger.Error(err, "failed to encode JSON response")
 	}
 }
 
@@ -494,6 +486,6 @@ func (h *Handler) respondWithJSON(w http.ResponseWriter, statusCode int, data in
 //
 // ✅ All 14 integration tests passing (Day 15 GREEN phase)
 // ✅ BR-STORAGE-031-01: Incident-Type Success Rate API
-// ✅ BR-STORAGE-031-02: Playbook Success Rate API
+// ✅ BR-STORAGE-031-02: Workflow Success Rate API
 //
 // ========================================

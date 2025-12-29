@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package datastorage
 
 import (
@@ -89,15 +105,15 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				By("Sending POST request with JSON body")
 				eventPayload := map[string]interface{}{
 					"version":            "1.0",
-					"service":            "gateway",
+					"event_category":     "gateway",
 					"event_type":         "gateway.signal.received",
 					"event_timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":     testCorrelationID,
 					"resource_type":      "pod",
 					"resource_id":        "api-server-xyz-123",
 					"resource_namespace": "production",
-					"outcome":            "success",
-					"operation":          "signal_received",
+					"event_outcome":      "success",
+					"event_action":       "signal_received",
 					"severity":           "critical",
 					"event_data":         eventData,
 				}
@@ -135,6 +151,46 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE event_id = $1", eventID).Scan(&count)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(count).To(Equal(1))
+
+				// ✅ CORRECTNESS TEST: Data in database matches input exactly (BR-STORAGE-033)
+				// Schema per ADR-034: event_type, event_category, event_action, event_outcome, actor_id, actor_type
+				By("Verifying audit event content matches sent payload (CORRECTNESS)")
+				var dbEventType, dbEventCategory, dbEventAction, dbEventOutcome string
+				var dbActorID, dbActorType, dbCorrelationID, dbResourceType, dbResourceID string
+				var dbEventData []byte
+
+				row := db.QueryRow(`
+					SELECT event_type, event_category, event_action, event_outcome,
+					       actor_id, actor_type, correlation_id, resource_type, resource_id, event_data
+					FROM audit_events
+					WHERE event_id = $1
+				`, eventID)
+
+				err = row.Scan(&dbEventType, &dbEventCategory, &dbEventAction, &dbEventOutcome,
+					&dbActorID, &dbActorType, &dbCorrelationID, &dbResourceType, &dbResourceID, &dbEventData)
+				Expect(err).ToNot(HaveOccurred(), "Should retrieve audit event from database")
+
+				// Verify each field matches what was sent (ADR-034 schema)
+				Expect(dbEventType).To(Equal("gateway.signal.received"), "event_type should match")
+				Expect(dbEventCategory).To(Equal("gateway"), "event_category should match service prefix")
+				Expect(dbEventAction).To(Equal("signal_received"), "event_action should match operation")
+				Expect(dbEventOutcome).To(Equal("success"), "event_outcome should match")
+				Expect(dbActorID).To(Equal("gateway-service"), "actor_id defaults to event_category + '-service'")
+				Expect(dbActorType).To(Equal("service"), "actor_type should be 'service'")
+				Expect(dbCorrelationID).To(Equal(testCorrelationID), "correlation_id should match")
+				Expect(dbResourceType).To(Equal("pod"), "resource_type should match")
+				Expect(dbResourceID).To(Equal("api-server-xyz-123"), "resource_id should match")
+
+				// Verify event_data JSONB content is non-empty and valid JSON
+				var storedEventData map[string]interface{}
+				err = json.Unmarshal(dbEventData, &storedEventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
+				Expect(storedEventData).ToNot(BeEmpty(), "event_data should not be empty")
+
+				// Verify signal_type is present somewhere in the event_data (nested or flat)
+				jsonBytes, _ := json.Marshal(storedEventData)
+				Expect(string(jsonBytes)).To(ContainSubstring("prometheus"), "event_data should contain prometheus signal_type")
+				Expect(string(jsonBytes)).To(ContainSubstring("PodOOMKilled"), "event_data should contain PodOOMKilled alert_name")
 			})
 		})
 
@@ -157,12 +213,12 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				By("Sending POST request with JSON body")
 				eventPayload := map[string]interface{}{
 					"version":         "1.0",
-					"service":         "aianalysis",
-					"event_type":      "aianalysis.analysis.completed",
+					"event_category":  "analysis",
+					"event_type":      "analysis.analysis.completed",
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  testCorrelationID,
-					"outcome":         "success",
-					"operation":       "analysis",
+					"event_outcome":   "success",
+					"event_action":    "analysis",
 					"event_data":      eventData,
 				}
 				body, _ := json.Marshal(eventPayload)
@@ -174,6 +230,49 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+
+				// Extract event_id from response for CORRECTNESS validation
+				var response map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+				eventID, ok := response["event_id"].(string)
+				Expect(ok).To(BeTrue())
+
+				// ✅ CORRECTNESS TEST: Verify AI Analysis event stored correctly (BR-STORAGE-033)
+				// Schema per ADR-034: event_type, event_category, event_action, event_outcome, actor_id
+				By("Verifying AI Analysis audit event content matches sent payload (CORRECTNESS)")
+				var dbEventType, dbEventCategory, dbEventAction, dbEventOutcome string
+				var dbActorID, dbCorrelationID string
+				var dbEventData []byte
+
+				row := db.QueryRow(`
+					SELECT event_type, event_category, event_action, event_outcome,
+					       actor_id, correlation_id, event_data
+					FROM audit_events
+					WHERE event_id = $1
+				`, eventID)
+
+				err = row.Scan(&dbEventType, &dbEventCategory, &dbEventAction, &dbEventOutcome,
+					&dbActorID, &dbCorrelationID, &dbEventData)
+				Expect(err).ToNot(HaveOccurred(), "Should retrieve AI Analysis audit event from database")
+
+				Expect(dbEventType).To(Equal("analysis.analysis.completed"), "event_type should match")
+				Expect(dbEventCategory).To(Equal("analysis"), "event_category should match service prefix")
+				Expect(dbEventAction).To(Equal("analysis"), "event_action should match operation")
+				Expect(dbEventOutcome).To(Equal("success"), "event_outcome should match")
+				Expect(dbActorID).To(Equal("analysis-service"), "actor_id defaults to event_category + '-service'")
+				Expect(dbCorrelationID).To(Equal(testCorrelationID), "correlation_id should match")
+
+				// Verify AI-specific event_data content is non-empty and valid JSON
+				var storedEventData map[string]interface{}
+				err = json.Unmarshal(dbEventData, &storedEventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
+				Expect(storedEventData).ToNot(BeEmpty(), "event_data should not be empty")
+
+				// Verify AI-specific fields are present somewhere in the event_data
+				jsonBytes, _ := json.Marshal(storedEventData)
+				Expect(string(jsonBytes)).To(ContainSubstring("analysis-2025-001"), "event_data should contain analysis_id")
+				Expect(string(jsonBytes)).To(ContainSubstring("anthropic"), "event_data should contain llm_provider")
 			})
 		})
 
@@ -196,12 +295,12 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				By("Sending POST request with JSON body")
 				eventPayload := map[string]interface{}{
 					"version":         "1.0",
-					"service":         "workflow",
+					"event_category":  "workflow",
 					"event_type":      "workflow.workflow.completed",
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  testCorrelationID,
-					"outcome":         "success",
-					"operation":       "workflow_execution",
+					"event_outcome":   "success",
+					"event_action":    "workflow_execution",
 					"event_data":      eventData,
 				}
 				body, _ := json.Marshal(eventPayload)
@@ -213,6 +312,49 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				defer resp.Body.Close()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+
+				// Extract event_id from response for CORRECTNESS validation
+				var response map[string]interface{}
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).ToNot(HaveOccurred())
+				eventID, ok := response["event_id"].(string)
+				Expect(ok).To(BeTrue())
+
+				// ✅ CORRECTNESS TEST: Verify Workflow event stored correctly (BR-STORAGE-033)
+				// Schema per ADR-034: event_type, event_category, event_action, event_outcome, actor_id
+				By("Verifying Workflow audit event content matches sent payload (CORRECTNESS)")
+				var dbEventType, dbEventCategory, dbEventAction, dbEventOutcome string
+				var dbActorID, dbCorrelationID string
+				var dbEventData []byte
+
+				row := db.QueryRow(`
+					SELECT event_type, event_category, event_action, event_outcome,
+					       actor_id, correlation_id, event_data
+					FROM audit_events
+					WHERE event_id = $1
+				`, eventID)
+
+				err = row.Scan(&dbEventType, &dbEventCategory, &dbEventAction, &dbEventOutcome,
+					&dbActorID, &dbCorrelationID, &dbEventData)
+				Expect(err).ToNot(HaveOccurred(), "Should retrieve Workflow audit event from database")
+
+				Expect(dbEventType).To(Equal("workflow.workflow.completed"), "event_type should match")
+				Expect(dbEventCategory).To(Equal("workflow"), "event_category should match service prefix")
+				Expect(dbEventAction).To(Equal("workflow_execution"), "event_action should match operation")
+				Expect(dbEventOutcome).To(Equal("success"), "event_outcome should match")
+				Expect(dbActorID).To(Equal("workflow-service"), "actor_id defaults to event_category + '-service'")
+				Expect(dbCorrelationID).To(Equal(testCorrelationID), "correlation_id should match")
+
+				// Verify Workflow-specific event_data content is non-empty and valid JSON
+				var storedEventData map[string]interface{}
+				err = json.Unmarshal(dbEventData, &storedEventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
+				Expect(storedEventData).ToNot(BeEmpty(), "event_data should not be empty")
+
+				// Verify Workflow-specific fields are present somewhere in the event_data
+				jsonBytes, _ := json.Marshal(storedEventData)
+				Expect(string(jsonBytes)).To(ContainSubstring("workflow-increase-memory"), "event_data should contain workflow_id")
+				Expect(string(jsonBytes)).To(ContainSubstring("exec-2025-001"), "event_data should contain execution_id")
 			})
 		})
 
@@ -221,13 +363,13 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				// TDD GREEN: Validation now checks JSON body fields
 
 				eventPayload := map[string]interface{}{
-					"version": "1.0",
-					"service": "gateway",
+					"version":        "1.0",
+					"event_category": "gateway",
 					// Missing "event_type" field
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  testCorrelationID,
-					"outcome":         "success",
-					"operation":       "test",
+					"event_outcome":   "success",
+					"event_action":    "test",
 					"event_data":      map[string]interface{}{},
 				}
 
@@ -279,12 +421,12 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				eventPayload := map[string]interface{}{
 					// Missing "version" field
-					"service":         "gateway",
+					"event_category":  "gateway",
 					"event_type":      "gateway.signal.received",
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  testCorrelationID,
-					"outcome":         "success",
-					"operation":       "test",
+					"event_outcome":   "success",
+					"event_action":    "test",
 					"event_data":      map[string]interface{}{},
 				}
 
@@ -324,12 +466,12 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				gatewayPayload := map[string]interface{}{
 					"version":         "1.0",
-					"service":         "gateway",
+					"event_category":  "gateway",
 					"event_type":      "gateway.signal.received",
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  correlationID,
-					"outcome":         "success",
-					"operation":       "signal_received",
+					"event_outcome":   "success",
+					"event_action":    "signal_received",
 					"event_data":      gatewayEventData,
 				}
 				body1, _ := json.Marshal(gatewayPayload)
@@ -349,12 +491,12 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				aiPayload := map[string]interface{}{
 					"version":         "1.0",
-					"service":         "aianalysis",
-					"event_type":      "aianalysis.analysis.completed",
+					"event_category":  "analysis",
+					"event_type":      "analysis.analysis.completed",
 					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":  correlationID,
-					"outcome":         "success",
-					"operation":       "analysis",
+					"event_outcome":   "success",
+					"event_action":    "analysis",
 					"event_data":      aiEventData,
 				}
 				body2, _ := json.Marshal(aiPayload)
@@ -393,7 +535,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				eventPayload := map[string]interface{}{
 					"version":            "1.0",
-					"service":            "gateway",
+					"event_category":     "gateway",
 					"event_type":         "gateway.signal.received",
 					"event_timestamp":    time.Now().UTC().Format(time.RFC3339Nano),
 					"correlation_id":     testCorrelationID,
@@ -402,8 +544,8 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 					"resource_type":      "pod",
 					"resource_id":        "child-pod-123",
 					"resource_namespace": "production",
-					"outcome":            "success",
-					"operation":          "signal_received",
+					"event_outcome":      "success",
+					"event_action":       "signal_received",
 					"severity":           "info",
 					"event_data":         eventData,
 				}

@@ -631,7 +631,7 @@ func (c *Client) ListRemediationRequestsByFingerprint(ctx context.Context, finge
     var list remediationv1alpha1.RemediationRequestList
 
     err := c.client.List(ctx, &list, client.MatchingLabels{
-        "kubernaut.io/signal-fingerprint": fingerprint,
+        "kubernaut.ai/signal-fingerprint": fingerprint,
     })
 
     return &list, err
@@ -656,9 +656,9 @@ func (c *CRDCreator) CreateRemediationRequest(ctx context.Context, signal *gatew
             Name:      crdName,
             Namespace: signal.Namespace,
             Labels: map[string]string{
-                "kubernaut.io/signal-type":        signal.SourceType,
-                "kubernaut.io/signal-fingerprint": signal.Fingerprint,
-                "kubernaut.io/severity":           signal.Severity,
+                "kubernaut.ai/signal-type":        signal.SourceType,
+                "kubernaut.ai/signal-fingerprint": signal.Fingerprint,
+                "kubernaut.ai/severity":           signal.Severity,
             },
         },
         Spec: remediationv1alpha1.RemediationRequestSpec{

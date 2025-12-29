@@ -1,8 +1,23 @@
 # DD-WORKFLOW-006: Schema Drift Prevention - REVISED
 
-**Date**: 2025-11-15  
-**Status**: Analysis - Addressing Runtime Drift Issue  
-**Related**: DD-WORKFLOW-005
+**Date**: 2025-11-15
+**Status**: Analysis - Addressing Runtime Drift Issue
+**Related**: DD-WORKFLOW-005, DD-WORKFLOW-012 (Workflow Immutability)
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: This DD requires workflow immutability to prevent schema drift.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- Workflows are immutable at the (workflow_id, version) level
+- Schema fields (description, content, labels, embedding) CANNOT be changed
+- To update schema, create a new version
+
+**Cross-Reference**: All schema extraction and validation logic assumes workflow immutability per DD-WORKFLOW-012.
+
+---
 
 ---
 
@@ -11,7 +26,7 @@
 **User Feedback**:
 > "Hybrid approach: schema drift is only discovered at runtime, that causes problems."
 
-**Problem**: 
+**Problem**:
 - Catalog has schema version A
 - Container has schema version B
 - Drift discovered when Tekton executes playbook
@@ -124,13 +139,13 @@ spec:
   tasks:
     - name: extract-schema
       # ... extract /playbook-schema.json
-    
+
     - name: validate-schema
       # ... validate format
-    
+
     - name: update-catalog
       # ... atomic update
-    
+
     - name: tag-validated
       taskRef:
         name: tag-container-validated
@@ -154,20 +169,20 @@ spec:
   params:
     - name: image
     - name: schema-version
-  
+
   steps:
     - name: tag
       image: gcr.io/go-containerregistry/crane:latest
       script: |
         #!/bin/sh
         set -e
-        
+
         # Add label to image indicating validated schema
         crane mutate $(params.image) \
           --label "io.kubernaut.playbook.schema-validated=true" \
           --label "io.kubernaut.playbook.schema-version=$(params.schema-version)" \
           --label "io.kubernaut.playbook.validated-at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        
+
         echo "Container validated and tagged"
 ```
 
@@ -182,28 +197,28 @@ spec:
   params:
     - name: playbook-image
     - name: catalog-schema-version
-  
+
   steps:
     - name: verify-validated
       image: gcr.io/go-containerregistry/crane:latest
       script: |
         #!/bin/sh
         set -e
-        
+
         # Check if container has validation label
         VALIDATED=$(crane config $(params.playbook-image) | \
           jq -r '.config.Labels["io.kubernaut.playbook.schema-validated"] // "false"')
-        
+
         if [ "$VALIDATED" != "true" ]; then
           echo "ERROR: Container not validated. Schema extraction may not have completed."
           echo "Wait for validation pipeline to complete or check pipeline logs."
           exit 1
         fi
-        
+
         # Check schema version matches catalog
         CONTAINER_VERSION=$(crane config $(params.playbook-image) | \
           jq -r '.config.Labels["io.kubernaut.playbook.schema-version"]')
-        
+
         if [ "$CONTAINER_VERSION" != "$(params.catalog-schema-version)" ]; then
           echo "ERROR: Schema version mismatch"
           echo "Container: $CONTAINER_VERSION"
@@ -211,9 +226,9 @@ spec:
           echo "This should never happen - catalog may be stale"
           exit 1
         fi
-        
+
         echo "Validation gate passed"
-    
+
     - name: execute-playbook
       image: $(params.playbook-image)
       # ... execute with parameters
@@ -228,7 +243,7 @@ def register_playbook():
     data = request.json
     workflow_id = data['workflow_id']
     version = data['version']
-    
+
     # Atomic operation: delete old + insert new
     with catalog_lock:
         # Remove old entry if exists
@@ -236,7 +251,7 @@ def register_playbook():
             old_version = PLAYBOOK_CATALOG[workflow_id]['version']
             logger.info(f"Replacing {workflow_id} v{old_version} with v{version}")
             del PLAYBOOK_CATALOG[workflow_id]
-        
+
         # Insert new entry with extracted schema
         PLAYBOOK_CATALOG[workflow_id] = {
             'workflow_id': workflow_id,
@@ -247,7 +262,7 @@ def register_playbook():
             'extracted_at': datetime.utcnow().isoformat(),
             'validated': True
         }
-    
+
     return jsonify({'status': 'registered', 'version': version}), 201
 ```
 
@@ -400,7 +415,7 @@ package admission
 import (
     "context"
     "fmt"
-    
+
     tektonv1beta1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
     kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/v1alpha1"
     "sigs.k8s.io/controller-runtime/pkg/client"
@@ -417,7 +432,7 @@ func (v *PlaybookExecutionValidator) Handle(ctx context.Context, req admission.R
     if err := v.Decoder.Decode(req, pipelineRun); err != nil {
         return admission.Errored(http.StatusBadRequest, err)
     }
-    
+
     // Extract workflow image from params
     var playbookImage string
     for _, param := range pipelineRun.Spec.Params {
@@ -426,18 +441,18 @@ func (v *PlaybookExecutionValidator) Handle(ctx context.Context, req admission.R
             break
         }
     }
-    
+
     if playbookImage == "" {
         return admission.Allowed("Not a workflow execution")
     }
-    
+
     // Check ValidationStatus CR
     validationStatus := &kubernautv1alpha1.ValidationStatus{}
     key := client.ObjectKey{
         Name:      generateValidationStatusName(playbookImage),
         Namespace: pipelineRun.Namespace,
     }
-    
+
     if err := v.Client.Get(ctx, key, validationStatus); err != nil {
         return admission.Denied(fmt.Sprintf(
             "Playbook container %s not validated. Schema extraction may not have completed. "+
@@ -445,14 +460,14 @@ func (v *PlaybookExecutionValidator) Handle(ctx context.Context, req admission.R
             playbookImage,
         ))
     }
-    
+
     if !validationStatus.Status.Validated {
         return admission.Denied(fmt.Sprintf(
             "Playbook container %s validation failed. Check extraction pipeline logs.",
             playbookImage,
         ))
     }
-    
+
     return admission.Allowed("Playbook validated")
 }
 ```
@@ -624,13 +639,13 @@ Catalog schema == Container schema → No drift possible ✅
 4. ✅ Validation gate prevents unvalidated execution
 5. ✅ Drift impossible (catalog == container)
 
-**Confidence**: 97% → 99% with mitigations  
-**Risk**: Very Low  
+**Confidence**: 97% → 99% with mitigations
+**Risk**: Very Low
 **Runtime Drift**: **Impossible** (by design)
 
 ---
 
-**Status**: Analysis Complete - Runtime Drift Eliminated  
-**Recommended**: Automated Extraction + Validation Gate  
-**Confidence**: 97% → 99%  
+**Status**: Analysis Complete - Runtime Drift Eliminated
+**Recommended**: Automated Extraction + Validation Gate
+**Confidence**: 97% → 99%
 **Drift Prevention**: 100% (impossible by design)

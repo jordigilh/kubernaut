@@ -28,16 +28,45 @@ func (g *GatewayService) HandleWebhook(ctx context.Context, payload []byte) erro
             Name:      fmt.Sprintf("remediation-%s", requestID),
             Namespace: "kubernaut-system",
             Labels: map[string]string{
-                "signal.fingerprint": alertFingerprint,
-                "alert.severity":    extractSeverity(payload),
-                "alert.environment": extractEnvironment(payload),
+                "signal.fingerprint": signalFingerprint,
+                "signal.severity":    extractSeverity(payload),
+                "signal.environment": extractEnvironment(payload),
             },
         },
         Spec: remediationv1.RemediationRequestSpec{
-            AlertFingerprint: alertFingerprint,
-            OriginalPayload:  payload, // Store complete alert payload
-            Severity:         extractSeverity(payload),
-            CreatedAt:        metav1.Now(),
+            // Core Signal Identification
+            SignalFingerprint: signalFingerprint,
+            SignalName:        extractSignalName(payload),
+            Severity:          extractSeverity(payload),
+            Environment:       extractEnvironment(payload),
+            Priority:          extractPriority(payload),
+            SignalType:        extractSignalType(payload),
+            SignalSource:      extractSignalSource(payload),
+            TargetType:        "kubernetes", // V1 only supports Kubernetes
+
+            // Target Resource (REQUIRED per Gateway contract)
+            TargetResource: remediationv1.ResourceIdentifier{
+                Kind:      extractResourceKind(payload),
+                Name:      extractResourceName(payload),
+                Namespace: extractResourceNamespace(payload), // Empty for cluster-scoped
+            },
+
+            // Temporal Data
+            FiringTime:   extractFiringTime(payload),
+            ReceivedTime: metav1.Now(),
+
+            // Deduplication (shared type with SignalProcessing)
+            Deduplication: sharedtypes.DeduplicationInfo{
+                IsDuplicate:       false,
+                FirstOccurrence:   metav1.Now(),
+                LastOccurrence:    metav1.Now(),
+                OccurrenceCount:   1,
+                CorrelationID:     extractCorrelationID(payload),
+            },
+
+            // Provider Data
+            ProviderData:    payload,
+            OriginalPayload: payload,
         },
     }
 
@@ -58,11 +87,11 @@ func (g *GatewayService) HandleWebhook(ctx context.Context, payload []byte) erro
 
 ```go
 // In RemediationRequestReconciler
-func (r *RemediationRequestReconciler) createRemediationProcessing(
+func (r *RemediationRequestReconciler) createSignalProcessing(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
 ) error {
-    alertProcessing := &processingv1.RemediationProcessing{
+    signalProcessing := &signalprocessingv1.SignalProcessing{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("%s-processing", remediation.Name),
             Namespace: remediation.Namespace,
@@ -70,28 +99,46 @@ func (r *RemediationRequestReconciler) createRemediationProcessing(
                 *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
             },
         },
-        Spec: processingv1.RemediationProcessingSpec{
-            RemediationRequestRef: processingv1.RemediationRequestReference{
+        Spec: signalprocessingv1.SignalProcessingSpec{
+            RemediationRequestRef: signalprocessingv1.RemediationRequestReference{
                 Name:      remediation.Name,
                 Namespace: remediation.Namespace,
             },
-            // DATA SNAPSHOT: Copy original alert data
-            Alert: processingv1.Alert{
-                Fingerprint: remediation.Spec.SignalFingerprint,
-                Payload:     remediation.Spec.OriginalPayload,
-                Severity:    remediation.Spec.Severity,
+            // DATA SNAPSHOT: Copy signal data from RemediationRequest
+            Signal: signalprocessingv1.Signal{
+                Fingerprint:  remediation.Spec.SignalFingerprint,
+                Name:         remediation.Spec.SignalName,
+                Severity:     remediation.Spec.Severity,
+                Environment:  remediation.Spec.Environment,
+                Priority:     remediation.Spec.Priority,
+                SignalType:   remediation.Spec.SignalType,
+                SignalSource: remediation.Spec.SignalSource,
+                TargetType:   remediation.Spec.TargetType,
             },
+            // Target Resource (REQUIRED)
+            TargetResource: signalprocessingv1.ResourceIdentifier{
+                Kind:      remediation.Spec.TargetResource.Kind,
+                Name:      remediation.Spec.TargetResource.Name,
+                Namespace: remediation.Spec.TargetResource.Namespace,
+            },
+            // Deduplication context (shared type)
+            DeduplicationContext: remediation.Spec.Deduplication,
+            // Storm detection
+            StormType:   remediation.Spec.StormType,
+            StormWindow: remediation.Spec.StormWindow,
         },
     }
 
-    if err := r.Create(ctx, alertProcessing); err != nil {
-        return fmt.Errorf("failed to create RemediationProcessing: %w", err)
+    if err := r.Create(ctx, signalProcessing); err != nil {
+        return fmt.Errorf("failed to create SignalProcessing: %w", err)
     }
 
-    // Update RemediationRequest with RemediationProcessing reference
-    remediation.Status.RemediationProcessingRef = &remediationv1.RemediationProcessingReference{
-        Name:      alertProcessing.Name,
-        Namespace: alertProcessing.Namespace,
+    // Update RemediationRequest with SignalProcessing reference
+    remediation.Status.RemediationProcessingRef = &corev1.ObjectReference{
+        Name:      signalProcessing.Name,
+        Namespace: signalProcessing.Namespace,
+        Kind:      "SignalProcessing",
+        APIVersion: signalprocessingv1.GroupVersion.String(),
     }
 
     return r.Status().Update(ctx, remediation)
@@ -183,53 +230,69 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
 
 ```go
 // In RemediationRequestReconciler
+// Per DD-CONTRACT-001/002: RO passes through workflow data from AIAnalysis
 func (r *RemediationRequestReconciler) createWorkflowExecution(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
-    aiAnalysis *aiv1.AIAnalysis,
+    aiAnalysis *aianalysisv1.AIAnalysis,
 ) error {
     // When AIAnalysis completes, create WorkflowExecution with recommendations
-    if aiAnalysis.Status.Phase == "completed" {
-        workflowExecution := &workflowv1.WorkflowExecution{
-            ObjectMeta: metav1.ObjectMeta{
-                Name:      fmt.Sprintf("%s-workflow", remediation.Name),
-                Namespace: remediation.Namespace,
-                OwnerReferences: []metav1.OwnerReference{
-                    *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-                },
-            },
-            Spec: workflowv1.WorkflowExecutionSpec{
-                RemediationRequestRef: workflowv1.RemediationRequestReference{
-                    Name:      remediation.Name,
-                    Namespace: remediation.Namespace,
-                },
-                // DATA SNAPSHOT: Copy AI recommendations
-                WorkflowDefinition: workflowv1.WorkflowDefinition{
-                    Steps: aiAnalysis.Status.Recommendations[0].WorkflowSteps, // Top recommendation
-                },
-                ExecutionConfig: workflowv1.ExecutionConfig{
-                    DryRun:           false,
-                    StepTimeout:      "5m",
-                    WorkflowTimeout:  "20m",
-                    ConcurrencyLimit: 1,
-                },
-            },
-        }
-
-        if err := r.Create(ctx, workflowExecution); err != nil {
-            return fmt.Errorf("failed to create WorkflowExecution: %w", err)
-        }
-
-        // Update RemediationRequest with WorkflowExecution reference
-        remediation.Status.WorkflowExecutionRef = &remediationv1.WorkflowExecutionReference{
-            Name:      workflowExecution.Name,
-            Namespace: workflowExecution.Namespace,
-        }
-
-        return r.Status().Update(ctx, remediation)
+    if aiAnalysis.Status.Phase != "Completed" {
+        return nil
     }
 
-    return nil
+    // Get selected workflow from AIAnalysis (resolved by HolmesGPT-API)
+    selectedWorkflow := aiAnalysis.Status.SelectedWorkflow
+
+    workflowExecution := &workflowexecutionv1.WorkflowExecution{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:      fmt.Sprintf("%s-workflow", remediation.Name),
+            Namespace: remediation.Namespace,
+            OwnerReferences: []metav1.OwnerReference{
+                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
+            },
+        },
+        Spec: workflowexecutionv1.WorkflowExecutionSpec{
+            RemediationRequestRef: workflowexecutionv1.RemediationRequestReference{
+                Name:      remediation.Name,
+                Namespace: remediation.Namespace,
+            },
+            // Target Resource (REQUIRED per DD-RO-001)
+            TargetResource: buildTargetResource(remediation),
+
+            // WorkflowRef: Pass-through from AIAnalysis.status.selectedWorkflow
+            // DD-CONTRACT-001: RO does NOT perform catalog lookups
+            // HolmesGPT-API resolves workflow_id to container_image
+            WorkflowRef: workflowexecutionv1.WorkflowRef{
+                WorkflowID:      selectedWorkflow.WorkflowID,
+                ContainerImage:  selectedWorkflow.ContainerImage,   // From HolmesGPT-API
+                ContainerDigest: selectedWorkflow.ContainerDigest,  // From HolmesGPT-API
+            },
+
+            // Parameters: Pass-through from AIAnalysis
+            Parameters: selectedWorkflow.Parameters,
+
+            // Execution Config
+            ExecutionConfig: workflowexecutionv1.ExecutionConfig{
+                Timeout:            "20m",
+                ServiceAccountName: "kubernaut-workflow-runner",
+            },
+        },
+    }
+
+    if err := r.Create(ctx, workflowExecution); err != nil {
+        return fmt.Errorf("failed to create WorkflowExecution: %w", err)
+    }
+
+    // Update RemediationRequest with WorkflowExecution reference
+    remediation.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+        Name:       workflowExecution.Name,
+        Namespace:  workflowExecution.Namespace,
+        Kind:       "WorkflowExecution",
+        APIVersion: workflowexecutionv1.GroupVersion.String(),
+    }
+
+    return r.Status().Update(ctx, remediation)
 }
 ```
 
@@ -351,7 +414,72 @@ func (r *RemediationRequestReconciler) aiAnalysisToRemediation(obj client.Object
     }
 }
 
-// Similar mapping functions for WorkflowExecution and KubernetesExecution...
+// Map WorkflowExecution to parent RemediationRequest
+func (r *RemediationRequestReconciler) workflowExecutionToRemediation(obj client.Object) []ctrl.Request {
+    we := obj.(*workflowexecutionv1.WorkflowExecution)
+    return []ctrl.Request{
+        {
+            NamespacedName: types.NamespacedName{
+                Name:      we.Spec.RemediationRequestRef.Name,
+                Namespace: we.Spec.RemediationRequestRef.Namespace,
+            },
+        },
+    }
+}
+```
+
+---
+
+### 3.5. WorkflowExecution Skipped Phase Integration (DD-RO-001)
+
+**Design Decision Reference**: DD-RO-001 (Resource Lock Deduplication Handling)
+**Business Requirements**: BR-ORCH-032, BR-ORCH-033, BR-ORCH-034
+
+**Integration Pattern**: Watch WE status for Skipped phase
+
+When WorkflowExecution returns `Skipped` phase (due to resource locking), RO handles it as follows:
+
+**WE → RO Contract** (from DD-WE-001):
+
+| Field | Direction | Description |
+|-------|-----------|-------------|
+| `status.phase` | WE → RO | Includes `Skipped` phase |
+| `status.skipDetails.reason` | WE → RO | `ResourceBusy` or `RecentlyRemediated` |
+| `status.skipDetails.conflictingWorkflow.remediationRequestRef` | WE → RO | Parent RR name (ResourceBusy) |
+| `status.skipDetails.recentRemediation.remediationRequestRef` | WE → RO | Parent RR name (RecentlyRemediated) |
+
+**Handler Implementation**:
+```go
+// In orchestratePhase for "executing" case
+if workflowExecution.Status.Phase == "Skipped" {
+    // DD-RO-001: Handle resource lock deduplication
+    return r.handleWorkflowExecutionSkipped(ctx, remediation, &workflowExecution)
+}
+```
+
+**Bulk Notification Contract** (RO → Notification):
+When parent RR completes with duplicates, RO creates a single NotificationRequest:
+
+```yaml
+kind: NotificationRequest
+spec:
+  eventType: "RemediationCompleted"
+  priority: "{mapped from parent RR}"
+  subject: "Remediation Completed: {workflowId}"
+  body: |
+    Target: {targetResource}
+    Result: ✅ Successful / ❌ Failed
+    Duration: {duration}
+
+    Duplicates Suppressed: {duplicateCount}
+    ├─ ResourceBusy: {count}
+    └─ RecentlyRemediated: {count}
+  metadata:
+    remediationRequestRef: "{parentRR.name}"
+    workflowId: "{we.spec.workflowRef.workflowId}"
+    targetResource: "{namespace/kind/name}"
+    duplicateCount: "{N}"
+    duplicateRefs: ["rr-002", "rr-003", ...]
 ```
 
 ---

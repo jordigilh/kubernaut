@@ -1,12 +1,27 @@
 # DD-WORKFLOW-001: Mandatory Workflow Label Schema
 
 **Date**: November 14, 2025
-**Status**: ✅ **APPROVED** (V1.0 - 7 Mandatory Labels with Wildcards)
+**Status**: ✅ **APPROVED** (V2.3 - Detection Methods Documented)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
 **Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
-**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract)
-**Version**: 1.2
+**Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability)
+**Version**: 2.3
+
+---
+
+## 🔗 **Workflow Immutability Reference**
+
+**CRITICAL**: Workflow labels are immutable once created.
+
+**Authority**: **DD-WORKFLOW-012: Workflow Immutability Constraints**
+- Labels are immutable (cannot change after workflow creation)
+- Labels are used for semantic search embeddings
+- To change labels, create a new workflow version
+
+**Cross-Reference**: All label schema definitions in this DD are subject to DD-WORKFLOW-012 immutability constraints.
+
+---
 
 ---
 
@@ -20,20 +35,92 @@
 
 ## 📝 **Changelog**
 
-### Version 1.2 (2025-11-16)
-**Changes**:
-- ✅ Clarified that `signal_type` and `severity` are used for MCP workflow search filtering (exact label matching)
-- ✅ Added requirement for workflow descriptions to include signal_type and severity keywords
-- ✅ Updated label matching rules to specify search vs storage usage
-- ✅ Added cross-references to DD-LLM-001 (MCP Search Taxonomy) and ADR-041 (LLM Prompt Contract)
-- ✅ Documented workflow description format: `"<signal_type> <severity>: <description>"`
+### Version 2.3 (2025-12-06)
+- **NEW**: Added **Detailed Detection Methods** section documenting specific annotations/labels for each detection type
+- **CLARIFICATION**: `stateful` detection uses owner chain (no K8s API call), not direct StatefulSet lookup
+- **CLARIFICATION**: `serviceMesh` detection uses pod annotations:
+  - Istio: `sidecar.istio.io/status` (present after sidecar injection)
+  - Linkerd: `linkerd.io/proxy-version` (present after proxy injection)
+- **DOCUMENTATION**: Each detection field now has documented source, specific check, and API call requirements
+- **RATIONALE**: Standardized detection methods for consistent implementation across services
 
-**Rationale**: DD-LLM-001 defines how LLM constructs MCP search queries using signal_type and severity. This update clarifies that these labels are used for BOTH exact filtering in search AND semantic matching via description keywords, optimizing confidence scores from 60-70% to 90-95%.
+### Version 2.2 (2025-12-03)
+- **REMOVED**: `podSecurityLevel` field from DetectedLabels
+- **RATIONALE**: PodSecurityPolicy (PSP) is deprecated since K8s 1.21, removed in 1.25. Pod Security Standards (PSS) are namespace-level, not pod-level, making detection inconsistent and unreliable.
+- **IMPACT**: Field count reduced from 9 to 8 detected labels
+- **MIGRATION**: Services should remove any references to `podSecurityLevel` in DetectedLabels
+- **NOTIFICATION**: See `docs/handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md`
 
-**Related**: DD-LLM-001 v1.0, ADR-041 v2.7
+### Version 2.1 (2025-12-02)
+- **NEW**: Added **Detection Failure Handling** section documenting the December 2025 inter-team agreement
+- **DESIGN**: Plain `bool` fields + `FailedDetections []string` array (avoids `*bool` anti-pattern)
+- **VALIDATION**: Added `go-playground/validator` enum validation for `FailedDetections`
+- **SCHEMA**: `FailedDetections` only accepts known field names (validated enum)
+- **AUTHORITATIVE**: Go type definition with validation tags
 
-### Version 1.1 (2025-11-14)
-**Changes**: Initial approved version with 7 mandatory labels
+### Version 2.0 (2025-12-02)
+- **NEW**: Added **DetectedLabels End-to-End Architecture** section clarifying:
+  - **Incident DetectedLabels** (SignalProcessing auto-detects from live K8s) vs
+  - **Workflow Catalog detected_labels** (workflow author-defined metadata)
+- **CLARIFICATION**: Data Storage does NOT auto-populate workflow detected_labels (they are author-defined)
+- **NEW**: End-to-end flow diagram showing label flow from SignalProcessing → HolmesGPT-API → Data Storage
+- **CLARIFICATION**: SignalProcessing V1.0 ✅ IMPLEMENTED for incident DetectedLabels auto-detection
+
+### Version 1.9 (2025-12-02)
+- **NEW**: Added **CustomLabels Validation Limits** section (max 10 keys, 5 values/key, 63 char keys, 100 char values)
+- **NEW**: Added **Security Measures** section for Sandboxed OPA Runtime (no network, no filesystem, 5s timeout, 128MB memory)
+- **NEW**: Added **Mandatory Label Protection** via Rego security wrapper (blocks 5 system labels)
+- **FORMALIZED**: Validation limits previously discussed in handoff documents now authoritative
+
+### Version 1.8 (2025-11-30)
+- **NEW**: Added **authoritative `OwnerChainEntry` Go schema** with explicit field definitions
+- **CLARIFICATION**: `OwnerChainEntry` requires ONLY: `namespace`, `kind`, `name`
+- **CLARIFICATION**: Do NOT include `apiVersion` or `uid` - not used by HolmesGPT-API validation
+- **NEW**: Added **traversal algorithm** (Go pseudocode) for SignalProcessing implementation
+- **FIX**: Corrected SignalProcessing spec misinterpretation (was using K8s native ownerReference format)
+
+### Version 1.7 (2025-11-30)
+- **NEW**: 100% Safe DetectedLabels validation using owner chain from SignalProcessing
+- **NEW**: `ownerChain` field in EnrichmentResults (K8s ownerReferences traversal)
+- **NEW**: `rca_resource` required parameter in `search_workflow_catalog` tool
+- **NEW**: Dual-use DetectedLabels architecture:
+  - **LLM Prompt Context**: ALWAYS included (helps LLM understand environment)
+  - **Workflow Filtering**: CONDITIONAL (only when relationship is PROVEN)
+- **PRINCIPLE**: Default to EXCLUDE if relationship cannot be proven (100% safe)
+- **PRINCIPLE**: Owner chain enables deterministic validation (no heuristics)
+- Pod ↔ Deployment/StatefulSet/DaemonSet ownership relationships supported
+- ReplicaSet ↔ Deployment ownership relationships supported
+- Cluster-scoped (Node) vs namespaced resource validation
+- Same namespace + same kind fallback when owner_chain provided but empty
+
+### Version 1.6 (2025-11-30)
+- **BREAKING**: Standardized all API/database field names to **snake_case**
+- Changed filter parameters: `signal-type` → `signal_type`, `risk-tolerance` → `risk_tolerance`
+- **Clarification**: Kubernetes annotation keys (`kubernaut.io/signal-type`) vs API field names (`signal_type`)
+- K8s annotations use kebab-case per K8s convention; API/DB use snake_case per JSON convention
+- Updated Implementation section to align with v1.4 (5 mandatory labels, not 7)
+- Removed `risk_tolerance` and `business_category` from mandatory (now customer-derived via Rego)
+- Updated Go struct JSON tags from `json:"kubernaut.io/signal-type"` to `json:"signal_type"`
+- **NEW**: Added authoritative **DetectedLabels** section (8 auto-detected fields)
+- **NEW**: Added **Wildcard Support for DetectedLabels** string fields (`gitOpsTool`, `serviceMesh`)
+- **NEW**: Documented matching semantics: `"*"` = "requires SOME value", *(absent)* = "no requirement"
+- **NEW**: Added complete examples showing all three label types (mandatory + detected + custom)
+- **Documented**: Boolean Normalization Rule - booleans only included when `true`, omitted when `false`
+- **Impact**: Data Storage must update Go struct JSON tags to snake_case and implement DetectedLabels wildcard matching
+- **Cross-reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001, DD-WORKFLOW-004 v2.2
+
+### Version 1.5 (2025-11-30)
+- **Custom Labels**: Subdomain-based extraction design finalized
+- **Format**: `<subdomain>.kubernaut.io/<key>[:<value>]` → `map[string][]string`
+- **Pass-Through**: Kubernaut is a conduit, not transformer (labels flow unchanged)
+- **Boolean Normalization**: Empty/true → key only; false → omitted
+- **Industry Alignment**: Follows Kubernetes label propagation pattern
+- **Reference**: HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md
+
+### Version 1.4 (2025-11-30)
+- 5 mandatory labels: `signal_type`, `severity`, `component`, `environment`, `priority`
+- Customer-derived labels via Rego: `risk_tolerance`, `business_category`, `team`, `region`, etc.
+- Rationale: Customers define environment meaning for risk (e.g., "uat" = high risk for one team, low for another)
 
 ---
 
@@ -41,60 +128,872 @@
 
 **This document is the single source of truth for workflow label schema.** All services MUST reference this document for label definitions.
 
-### **7 Mandatory Labels (V1.0)**
+### **Naming Convention Clarification (v1.6)**
+
+There are TWO different naming contexts - do NOT confuse them:
+
+| Context | Convention | Example | Used In |
+|---------|------------|---------|---------|
+| **Kubernetes annotations/labels** | kebab-case with prefix | `kubernaut.io/signal-type` | CRD metadata, K8s resources |
+| **API/Database field names** | snake_case | `signal_type` | REST APIs, Go structs, SQL columns |
+
+**Example**:
+```yaml
+# Kubernetes CRD annotation (kebab-case)
+metadata:
+  annotations:
+    kubernaut.io/signal-type: "OOMKilled"
+
+# API request body (snake_case)
+{
+  "filters": {
+    "signal_type": "OOMKilled"
+  }
+}
+```
+
+**Rule**: When writing API code, always use `snake_case`. The K8s annotation format is only for CRD metadata.
+
+### **5 Mandatory Labels (V1.4)**
+
+Labels are grouped by how they are populated:
+
+#### **Group A: Auto-Populated Labels** (Signal Processing derives automatically from K8s/Prometheus)
 
 | # | Label | Type | Source | Wildcard | Description |
 |---|---|---|---|---|---|
-| 1 | `signal_type` | TEXT | Signal Processing | ❌ NO | What happened (pod-oomkilled, node-notready) |
-| 2 | `severity` | ENUM | Signal Processing | ❌ NO | How bad (critical, high, medium, low) |
-| 3 | `component` | TEXT | Signal Processing | ❌ NO | What resource (pod, deployment, node) |
-| 4 | `environment` | ENUM | Signal Processing | ✅ YES | Where (production, staging, development, test, '*') |
-| 5 | `priority` | ENUM | Signal Processing | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
-| 6 | `risk_tolerance` | ENUM | Signal Processing | ❌ NO | Remediation policy (low, medium, high) |
-| 7 | `business_category` | TEXT | Signal Processing | ✅ YES | Business domain (payment-service, analytics, '*') |
+| 1 | `signal_type` | TEXT | K8s Event Reason | ❌ NO | What happened (OOMKilled, CrashLoopBackOff, NodeNotReady) |
+| 2 | `severity` | ENUM | Alert/Event | ❌ NO | How bad (critical, high, medium, low) |
+| 3 | `component` | TEXT | K8s Resource | ❌ NO | What resource (pod, deployment, node) |
+
+**Derivation**: These labels are extracted directly from Kubernetes events, Prometheus alerts, or signal metadata. **No user configuration required.**
+
+#### **Group B: System-Classified Labels** (Signal Processing derives with configurable defaults)
+
+| # | Label | Type | Source | Wildcard | Description |
+|---|---|---|---|---|---|
+| 4 | `environment` | ENUM | Namespace Labels | ✅ YES | Where (production, staging, development, test, '*') |
+| 5 | `priority` | ENUM | Derived | ✅ YES | Business priority (P0, P1, P2, P3, '*') |
+
+**Derivation**: Signal Processing applies Rego policies to derive these labels from K8s context (namespace labels, annotations, resource metadata). Users can customize derivation logic via Rego policy ConfigMaps.
+
+**Default Logic** (if no custom Rego):
+- `environment`: From namespace label `kubernaut.ai/environment` (single authoritative source)
+- `priority`: Derived from `severity` + `environment` (critical + production → P0)
+
+**Rationale**: Using only `kubernaut.ai/` prefixed labels prevents accidentally capturing labels from other systems.
+
+---
+
+### **Custom Labels (V1.5 - Subdomain-Based)**
+
+Operators define custom labels via Rego policies. Kubernaut extracts and passes them through unchanged.
+
+#### **Label Format**
+
+```
+<subdomain>.kubernaut.io/<key>[:<value>]
+```
+
+| Component | Description | Example |
+|-----------|-------------|---------|
+| `subdomain` | Category/dimension (becomes filter key) | `constraint`, `team`, `region` |
+| `.kubernaut.io/` | Namespace (hidden from downstream) | *(internal)* |
+| `key` | Label identifier | `cost-constrained`, `name` |
+| `value` | Optional (empty = boolean true) | `payments`, `us-east-1` |
+
+#### **Extraction Rules**
+
+| Input Value | Output | Example |
+|-------------|--------|---------|
+| Empty `""` | `key` only | `cost-constrained` |
+| `"true"` | `key` only (normalized) | `stateful-safe` |
+| `"false"` | *(omitted)* | — |
+| Other value | `key=value` | `name=payments` |
+
+#### **Storage Structure**
+
+```go
+// map[subdomain][]string
+CustomLabels map[string][]string
+
+// Example:
+{
+  "constraint": ["cost-constrained", "stateful-safe"],
+  "team": ["name=payments"],
+  "region": ["zone=us-east-1"]
+}
+```
+
+#### **Query Behavior**
+
+Each subdomain becomes a **hard filter** in Data Storage:
+
+```sql
+WHERE custom_labels->'constraint' ? 'cost-constrained'
+  AND custom_labels->'team' ? 'name=payments'
+```
+
+#### **Operator Freedom**
+
+Operators define their own subdomains. Kubernaut does NOT validate subdomain names.
+
+**Recommended Conventions** (documentation only):
+
+| Subdomain | Use Case | Example Values |
+|-----------|----------|----------------|
+| `constraint` | Workflow constraints | `cost-constrained`, `stateful-safe` |
+| `team` | Ownership | `name=payments`, `name=platform` |
+| `region` | Geographic | `zone=us-east-1` |
+| `compliance` | Regulatory | `pci`, `hipaa` |
+
+**Key Principle**: Kubernaut is a **conduit, not a transformer**. Custom labels flow unchanged from Rego → SignalProcessing → HolmesGPT-API → Data Storage.
+
+#### **Validation Limits (V1.9)**
+
+SignalProcessing enforces validation limits on CustomLabels output:
+
+| Constraint | Limit | Rationale |
+|------------|-------|-----------|
+| Max keys (subdomains) | 10 | Prevent prompt bloat, reasonable filtering dimensions |
+| Max values per key | 5 | Reasonable multi-value, prevent unbounded arrays |
+| Max key length | 63 chars | K8s label key compatibility |
+| Max value length | 100 chars | Prompt efficiency, reasonable constraint values |
+| Allowed key chars | `[a-zA-Z0-9._-]` | K8s label key compatible |
+| Allowed value chars | UTF-8 printable | Prompt safety, no control characters |
+| Reserved key prefixes | `kubernaut.ai/`, `system/` | Prevent collision with system labels |
+
+**Total max size**: 10 keys × 5 values × 100 chars ≈ **5KB** (well within HolmesGPT-API's 64k token limit)
+
+**Validation Behavior**:
+- Keys exceeding limits → **truncated** with warning log
+- Values exceeding limits → **truncated** with warning log
+- Reserved prefixes → **stripped** (security enforcement)
+- Invalid characters → **rejected** with error log
+
+#### **Security Measures (V1.9 - Sandboxed OPA Runtime)**
+
+CustomLabels are extracted via Rego policies in a **sandboxed OPA runtime**:
+
+| Measure | Setting | Rationale |
+|---------|---------|-----------|
+| Network access | ❌ Disabled | Prevent data exfiltration |
+| Filesystem access | ❌ Disabled | Prevent local file access |
+| Evaluation timeout | 5 seconds | Prevent infinite loops |
+| Memory limit | 128 MB | Prevent memory exhaustion |
+| External data | ❌ Disabled (V1.0) | Inline tables only, no `http.send()` |
+
+**Mandatory Label Protection (Security Wrapper)**:
+
+SignalProcessing wraps customer Rego policies with a security policy that **strips** attempts to override the 5 mandatory labels:
+
+```rego
+# Security wrapper - strips system labels from customer output
+system_labels := {
+    "kubernaut.io/signal_type",
+    "kubernaut.io/severity",
+    "kubernaut.io/component",
+    "kubernaut.io/environment",
+    "kubernaut.io/priority"
+}
+
+# Customer labels with system labels removed
+final_labels[key] = value {
+    customer_labels[key] = value
+    not startswith(key, "kubernaut.io/signal")
+    not startswith(key, "kubernaut.io/sever")
+    not startswith(key, "kubernaut.io/compon")
+    not startswith(key, "kubernaut.io/environ")
+    not startswith(key, "kubernaut.io/prior")
+}
+```
+
+**Defense in Depth**: Even if Rego policy attempts to set mandatory labels, they are stripped before output.
+
+**Reference**: [HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md](../../services/crd-controllers/01-signalprocessing/HANDOFF_CUSTOM_LABELS_EXTRACTION_V1.md)
+
+---
+
+### **DetectedLabels (V1.0 - Auto-Detected from K8s)**
+
+SignalProcessing auto-detects these labels from Kubernetes resources **without any customer configuration**.
+
+#### **DetectedLabels Fields (8 Fields)**
+
+| Field | Type | Wildcard | Detection Method | Used For |
+|-------|------|----------|------------------|----------|
+| `gitOpsManaged` | bool | ❌ No | ArgoCD/Flux annotations present | LLM context |
+| `gitOpsTool` | string | ✅ `"*"` | `"argocd"`, `"flux"`, or omitted | Workflow selection |
+| `pdbProtected` | bool | ❌ No | PodDisruptionBudget exists | Risk assessment |
+| `hpaEnabled` | bool | ❌ No | HorizontalPodAutoscaler targets workload | Scaling context |
+| `stateful` | bool | ❌ No | StatefulSet in owner chain | State handling |
+| `helmManaged` | bool | ❌ No | `helm.sh/chart` label present | Deployment method |
+| `networkIsolated` | bool | ❌ No | NetworkPolicy exists in namespace | Security context |
+| `serviceMesh` | string | ✅ `"*"` | `"istio"`, `"linkerd"`, or omitted | Traffic management |
+
+**Note**: Only **string fields** support wildcards. Boolean fields use absence semantics (see Boolean Normalization Rule below).
+
+#### **Detailed Detection Methods (v2.3)**
+
+> **Added**: 2025-12-06 - Specific annotations and labels for each detection type
+
+| Field | Detection Source | Specific Check | API Call Required |
+|-------|------------------|----------------|-------------------|
+| `gitOpsManaged` | Deployment/Namespace annotations | ArgoCD: `argocd.argoproj.io/instance`<br>Flux: `fluxcd.io/sync-gc-mark` label | No (existing data) |
+| `gitOpsTool` | Same as above | `"argocd"` or `"flux"` based on which is present | No (existing data) |
+| `pdbProtected` | K8s API: PodDisruptionBudgets | List PDBs in namespace, check if selector matches pod labels | Yes |
+| `hpaEnabled` | K8s API: HorizontalPodAutoscalers | List HPAs in namespace, check if `scaleTargetRef` matches deployment | Yes |
+| `stateful` | Owner chain (from Day 7) | Check if any `OwnerChainEntry.Kind == "StatefulSet"` | No (owner chain param) |
+| `helmManaged` | Deployment labels | `app.kubernetes.io/managed-by: Helm` or `helm.sh/chart` annotation | No (existing data) |
+| `networkIsolated` | K8s API: NetworkPolicies | List NetworkPolicies in namespace (existence = isolated) | Yes |
+| `serviceMesh` | Pod annotations | Istio: `sidecar.istio.io/status` (present after injection)<br>Linkerd: `linkerd.io/proxy-version` (present after injection) | No (existing data) |
+
+**ServiceMesh Detection Rationale** (2025-12-06):
+- Both Istio and Linkerd inject sidecars into pods, adding specific annotations post-injection
+- Istio adds `sidecar.istio.io/status` with sidecar configuration JSON
+- Linkerd adds `linkerd.io/proxy-version` with the proxy version string
+- These annotations are reliable indicators that the pod is mesh-enabled (injection complete)
+
+#### **Boolean Normalization Rule (V1.5)**
+
+**CRITICAL**: Boolean fields are **only included when `true`**. Omit when `false`.
+
+| Condition | Field Included? | Example |
+|-----------|-----------------|---------|
+| `gitOpsManaged = true` | ✅ Yes | `"gitOpsManaged": true` |
+| `gitOpsManaged = false` | ❌ Omitted | *(field absent)* |
+| `gitOpsTool = "argocd"` | ✅ Yes (non-empty) | `"gitOpsTool": "argocd"` |
+| `gitOpsTool = ""` | ❌ Omitted | *(field absent)* |
+
+**Rationale**:
+1. **Payload cleanliness**: No misleading `false` values cluttering the data
+2. **Rego simplicity**: Checking `input.detected_labels.gitOpsManaged` implicitly means `true`
+3. **Data consistency**: `gitOpsTool` only makes sense when `gitOpsManaged` is `true`
+
+#### **Go Implementation Pattern**
+
+```go
+func buildDetectedLabelsForRego(dl *v1alpha1.DetectedLabels) map[string]interface{} {
+    result := make(map[string]interface{})
+
+    // Only include booleans when true
+    if dl.GitOpsManaged {
+        result["gitOpsManaged"] = true
+        result["gitOpsTool"] = dl.GitOpsTool
+    }
+    if dl.PDBProtected {
+        result["pdbProtected"] = true
+    }
+    if dl.HPAEnabled {
+        result["hpaEnabled"] = true
+    }
+    if dl.Stateful {
+        result["stateful"] = true
+    }
+    if dl.HelmManaged {
+        result["helmManaged"] = true
+    }
+    if dl.NetworkIsolated {
+        result["networkIsolated"] = true
+    }
+
+    // Always include non-empty strings
+    if dl.ServiceMesh != "" {
+        result["serviceMesh"] = dl.ServiceMesh
+    }
+
+    return result
+}
+```
+
+**Reference**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](../../services/crd-controllers/01-signalprocessing/HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md)
+
+#### **Detection Failure Handling (V2.1 - December 2025)**
+
+**CRITICAL**: DetectedLabels uses plain `bool` fields with a separate `FailedDetections` array to track which detections failed. This avoids the `*bool` anti-pattern while providing explicit failure tracking.
+
+| Scenario | `FailedDetections` | Field Value | Meaning |
+|----------|-------------------|-------------|---------|
+| Detection succeeds (found) | Field NOT in array | `true` | Feature confirmed present |
+| Detection succeeds (not found) | Field NOT in array | `false` | Feature confirmed absent |
+| Detection fails (RBAC, timeout) | Field IN array | `false` (ignore) | Unknown - detection failed |
+
+**Concrete Example** (`pdbProtected` field):
+
+| Scenario | `pdbProtected` | `FailedDetections` | Interpretation |
+|----------|----------------|-------------------|----------------|
+| PDB exists for pod | `true` | `[]` | ✅ Has PDB protection |
+| No PDB for pod | `false` | `[]` | ✅ No PDB protection |
+| RBAC denied querying PDBs | `false` | `["pdbProtected"]` | ⚠️ Unknown - skip filter |
+
+**Key Distinction**: "Resource doesn't exist" is NOT a failure - it's a successful detection with result `false`.
+
+**Design Decision (December 2025 - Inter-Team Agreement)**:
+
+1. **Plain `bool` fields** - No `*bool` pointers (anti-pattern)
+2. **`FailedDetections []string`** - Lists field names where detection failed
+3. **Explicit failure tracking** - Consumers know exactly which detections failed
+4. **Error logging** - Detection failures also emit error logs for observability
+
+**Rationale**:
+
+- **Avoids `*bool` anti-pattern**: `*bool` causes JSON ambiguity (`null` vs absent vs `false`)
+- **Explicit about failures**: `FailedDetections` array clearly shows what couldn't be detected
+- **Auditable**: Post-incident analysis can see exactly which detections failed
+- **Cleaner Rego**: No need to handle `null` values, just check array membership
+- **Smaller payload**: When all detections succeed, `FailedDetections` is omitted
+
+**Consumer Handling**:
+
+```go
+// Check if detection succeeded before trusting the value
+if !slices.Contains(labels.FailedDetections, "pdbProtected") {
+    // labels.PDBProtected is reliable
+    if labels.PDBProtected {
+        // Has PDB protection
+    }
+} else {
+    // Detection failed - don't trust the value
+}
+```
+
+**Rego Policy Example**:
+```rego
+# Trust value only if detection succeeded
+pdb_protected {
+    not "pdbProtected" in input.detected_labels.failedDetections
+    input.detected_labels.pdbProtected
+}
+
+# Require approval if critical detections failed
+require_approval {
+    "gitOpsManaged" in input.detected_labels.failedDetections
+    input.environment == "production"
+}
+```
+
+**Go Type Definition** (authoritative - `pkg/shared/types/enrichment.go`):
+```go
+// ValidDetectedLabelFields defines the allowed values for FailedDetections
+// Used by go-playground/validator for enum validation
+var ValidDetectedLabelFields = []string{
+    "gitOpsManaged",
+    "pdbProtected",
+    "hpaEnabled",
+    "stateful",
+    "helmManaged",
+    "networkIsolated",
+    "serviceMesh",
+}
+
+type DetectedLabels struct {
+    // Detection metadata - lists fields where detection failed (RBAC, timeout, etc.)
+    // If a field name is in this array, its value should be ignored
+    // If empty/nil, all detections succeeded
+    // Validated: only accepts values from ValidDetectedLabelFields
+    FailedDetections []string `json:"failedDetections,omitempty" validate:"omitempty,dive,oneof=gitOpsManaged pdbProtected hpaEnabled stateful helmManaged networkIsolated serviceMesh"`
+
+    // GitOps Management
+    GitOpsManaged bool   `json:"gitOpsManaged"`
+    GitOpsTool    string `json:"gitOpsTool,omitempty" validate:"omitempty,oneof=argocd flux"`
+
+    // Workload Protection
+    PDBProtected bool `json:"pdbProtected"`
+    HPAEnabled   bool `json:"hpaEnabled"`
+
+    // Workload Characteristics
+    Stateful    bool `json:"stateful"`
+    HelmManaged bool `json:"helmManaged"`
+
+    // Security Posture
+    NetworkIsolated bool   `json:"networkIsolated"`
+    ServiceMesh     string `json:"serviceMesh,omitempty" validate:"omitempty,oneof=istio linkerd"`
+}
+```
+
+**Validation Setup** (in `pkg/shared/types/validation.go`):
+```go
+package types
+
+import (
+    "github.com/go-playground/validator/v10"
+)
+
+var validate *validator.Validate
+
+func init() {
+    validate = validator.New()
+}
+
+// ValidateDetectedLabels validates the DetectedLabels struct
+func ValidateDetectedLabels(dl *DetectedLabels) error {
+    return validate.Struct(dl)
+}
+```
+
+**Validation Behavior**:
+- `FailedDetections` only accepts known field names (enum validation)
+- `GitOpsTool` only accepts `"argocd"` or `"flux"` (or empty)
+- `ServiceMesh` only accepts `"istio"` or `"linkerd"` (or empty)
+
+**Example Validation Error**:
+```go
+labels := &DetectedLabels{
+    FailedDetections: []string{"unknownField"}, // Invalid!
+}
+err := ValidateDetectedLabels(labels)
+// err: "FailedDetections[0]" failed on "oneof" tag
+```
+
+**SignalProcessing Implementation**:
+```go
+func (d *LabelDetector) DetectLabels(ctx context.Context, k8sCtx *KubernetesContext) *DetectedLabels {
+    labels := &DetectedLabels{}
+    var failedDetections []string
+
+    // PDB detection
+    hasPDB, err := d.detectPDB(ctx, k8sCtx)
+    if err != nil {
+        log.Error(err, "Failed to detect PDB (RBAC?)")
+        failedDetections = append(failedDetections, "pdbProtected")
+        // labels.PDBProtected remains false (but ignored due to failedDetections)
+    } else {
+        labels.PDBProtected = hasPDB
+    }
+
+    // GitOps detection
+    managed, tool, err := d.detectGitOps(ctx, k8sCtx)
+    if err != nil {
+        log.Error(err, "Failed to detect GitOps")
+        failedDetections = append(failedDetections, "gitOpsManaged")
+    } else {
+        labels.GitOpsManaged = managed
+        labels.GitOpsTool = tool
+    }
+
+    // ... other detections ...
+
+    if len(failedDetections) > 0 {
+        labels.FailedDetections = failedDetections
+    }
+    return labels
+}
+```
+
+**JSON Examples**:
+
+*All detections succeeded:*
+```json
+{
+  "gitOpsManaged": true,
+  "gitOpsTool": "argocd",
+  "pdbProtected": true,
+  "hpaEnabled": false,
+  "stateful": false,
+  "helmManaged": true,
+  "networkIsolated": false
+}
+```
+
+*Some detections failed (RBAC issues):*
+```json
+{
+  "failedDetections": ["pdbProtected", "hpaEnabled"],
+  "gitOpsManaged": true,
+  "gitOpsTool": "argocd",
+  "pdbProtected": false,
+  "hpaEnabled": false,
+  "stateful": false,
+  "helmManaged": true,
+  "networkIsolated": false
+}
+```
+Note: `pdbProtected` and `hpaEnabled` values should be ignored because they're in `failedDetections`.
+
+---
+
+#### **Wildcard Support for DetectedLabels String Fields (V1.6)**
+
+**String fields** in DetectedLabels support wildcard matching (`"*"`) in workflow blueprints:
+
+| Field | Wildcard Support | Values |
+|-------|------------------|--------|
+| `gitOpsTool` | ✅ `"*"` | `"argocd"`, `"flux"`, `"*"` |
+| `serviceMesh` | ✅ `"*"` | `"istio"`, `"linkerd"`, `"*"` |
+
+**Boolean fields do NOT support wildcards** - absence means "no requirement".
+
+#### **Matching Semantics**
+
+**Key Principle**:
+- **Signal** describes what the workload **IS** (auto-detected facts)
+- **Workflow** describes what the workflow **SUPPORTS/REQUIRES**
+
+| Workflow Specifies | Signal Has Value | Signal Absent | Meaning |
+|--------------------|------------------|---------------|---------|
+| `"argocd"` | ✅ if `argocd` | ❌ No | "I only support ArgoCD" |
+| `"*"` | ✅ Any value | ❌ No | "I support any GitOps tool (but require one)" |
+| *(absent)* | ✅ Any value | ✅ Yes | "I have no GitOps requirement" (generic) |
+
+**Complete Matching Matrix for `gitOpsTool`**:
+
+| Workflow Has | Signal: `argocd` | Signal: `flux` | Signal: *(absent)* |
+|--------------|------------------|----------------|---------------------|
+| `"argocd"` | ✅ Match | ❌ No | ❌ No |
+| `"flux"` | ❌ No | ✅ Match | ❌ No |
+| `"*"` | ✅ Match | ✅ Match | ❌ No |
+| *(absent)* | ✅ Match | ✅ Match | ✅ Match |
+
+**Important Distinction**:
+- `"*"` = "I require SOME value" (any GitOps tool, but must have one)
+- *(absent)* = "I have NO requirement" (matches anything including absent)
+
+#### **SQL Implementation Pattern**
+
+```sql
+-- Workflow requires ArgoCD specifically
+WHERE signal.detected_labels->>'gitOpsTool' = 'argocd'
+
+-- Workflow requires ANY GitOps tool (wildcard "*")
+WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
+  AND (workflow.detected_labels->>'gitOpsTool' = '*'
+       OR workflow.detected_labels->>'gitOpsTool' = signal.detected_labels->>'gitOpsTool')
+
+-- Workflow has no requirement (field absent in workflow) - no filter applied
+-- Generic workflows match any signal
+```
+
+#### **Workflow Blueprint Examples**
+
+**GitOps-specific workflow** (ArgoCD only):
+```json
+{
+  "detected_labels": {
+    "gitOpsTool": "argocd"
+  }
+}
+```
+
+**Any-GitOps workflow** (requires GitOps, any tool):
+```json
+{
+  "detected_labels": {
+    "gitOpsTool": "*"
+  }
+}
+```
+
+---
+
+### **⭐ DetectedLabels End-to-End Architecture (V2.0)**
+
+> ⚠️ **CRITICAL DISTINCTION**: There are TWO different contexts for "detected_labels" - do NOT confuse them.
+
+#### **Two Different Contexts**
+
+| Context | Owner | When Populated | Data Type | Purpose |
+|---------|-------|----------------|-----------|---------|
+| **Incident DetectedLabels** | SignalProcessing | At runtime (incident detection) | Auto-detected facts | Describes what the affected workload **IS** |
+| **Workflow Catalog detected_labels** | Workflow Author | At workflow creation | Metadata constraints | Describes what environments the workflow **SUPPORTS** |
+
+#### **End-to-End Flow Diagram**
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                              INCIDENT OCCURS                                     │
+│                     (OOMKilled in production namespace)                          │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         SIGNAL PROCESSING (V1.0)                                 │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │ AUTO-DETECT from LIVE Kubernetes cluster:                                │   │
+│  │   - Check ArgoCD/Flux annotations → gitOpsManaged: true, gitOpsTool: argocd │
+│  │   - Query PodDisruptionBudget → pdbProtected: true                       │   │
+│  │   - Query HorizontalPodAutoscaler → hpaEnabled: false (omitted)          │   │
+│  │   - Check helm.sh/chart label → helmManaged: true                        │   │
+│  │   - Check NetworkPolicy → networkIsolated: false (omitted)               │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  OUTPUT: EnrichmentResults.DetectedLabels = {                                    │
+│    "gitOpsManaged": true,                                                        │
+│    "gitOpsTool": "argocd",                                                       │
+│    "pdbProtected": true,                                                         │
+│    "helmManaged": true                                                           │
+│  }                                                                               │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                            HOLMESGPT-API                                         │
+│  - Receives incident with DetectedLabels from SignalProcessing                   │
+│  - Passes DetectedLabels as FILTERS to workflow catalog search                   │
+│  - LLM also sees DetectedLabels for context understanding                        │
+└─────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                         DATA STORAGE (Workflow Catalog)                          │
+│  ┌─────────────────────────────────────────────────────────────────────────┐   │
+│  │ WORKFLOW METADATA (author-defined at creation time):                     │   │
+│  │                                                                          │   │
+│  │ Workflow A: "scale-horizontal-argocd"                                    │   │
+│  │   detected_labels: { "gitOpsTool": "argocd" }  ← "I only support ArgoCD" │   │
+│  │                                                                          │   │
+│  │ Workflow B: "restart-pod-generic"                                        │   │
+│  │   detected_labels: {}  ← "I have no requirements, generic workflow"      │   │
+│  │                                                                          │   │
+│  │ Workflow C: "scale-horizontal-gitops"                                    │   │
+│  │   detected_labels: { "gitOpsTool": "*" }  ← "I support any GitOps tool"  │   │
+│  └─────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                  │
+│  MATCHING: Incident's gitOpsTool="argocd" matches:                               │
+│    ✅ Workflow A (exact match)                                                   │
+│    ✅ Workflow B (no requirement = matches anything)                             │
+│    ✅ Workflow C (wildcard = matches any value)                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### **Key Principles**
+
+1. **SignalProcessing AUTO-POPULATES** incident DetectedLabels from live K8s ✅ IMPLEMENTED (V1.0)
+2. **Workflow authors MANUALLY DEFINE** workflow catalog detected_labels at creation time
+3. **Data Storage does NOT auto-populate** workflow detected_labels - they are workflow metadata
+4. **HolmesGPT-API passes incident DetectedLabels** as filters to Data Storage search
+5. **Matching logic** is in Data Storage: incident labels match workflow metadata
+
+#### **Common Misconception**
+
+> ❌ "Data Storage should auto-populate detected_labels"
+
+**Clarification**: Data Storage **receives** incident DetectedLabels as search filters. It does NOT populate them. The workflow catalog's `detected_labels` field is **workflow metadata** (author-defined), not auto-detected.
+
+| Service | Populates | Consumes |
+|---------|-----------|----------|
+| SignalProcessing | Incident DetectedLabels (auto-detect from K8s) | — |
+| HolmesGPT-API | — | Incident DetectedLabels (from SP), passes to DS as filters |
+| Data Storage | — | Incident DetectedLabels (as filters), Workflow detected_labels (as metadata) |
+| Workflow Author | Workflow detected_labels (manual, at creation) | — |
+
+---
+```
+
+**Generic workflow** (no GitOps requirement):
+```json
+{
+  "detected_labels": {}
+}
+```
+
+---
+
+### **DetectedLabels Validation Architecture (V1.7 - 100% Safe)**
+
+**Problem**: DetectedLabels describe the **original signal's resource** (e.g., Pod). If RCA identifies a **different resource** (e.g., Node), those labels are **invalid** and could cause query failures.
+
+**Solution**: 100% safe validation using owner chain from SignalProcessing.
+
+#### **Dual-Use Architecture**
+
+DetectedLabels serve **two distinct purposes** with different requirements:
+
+| Use Case | When Included | Accuracy Requirement |
+|----------|---------------|---------------------|
+| **LLM Prompt Context** | ALWAYS | Good enough (LLM can reason) |
+| **Workflow Filtering** | CONDITIONAL (proven relationship) | 100% (query fails otherwise) |
+
+**For LLM Prompt**: DetectedLabels are **always included** in the prompt to help the LLM understand the environment (GitOps, PDB, service mesh, etc.), even if RCA identifies a different resource.
+
+**For Workflow Filtering**: DetectedLabels are **only included** when the relationship between source resource and RCA resource is **proven**.
+
+#### **Owner Chain from SignalProcessing**
+
+SignalProcessing traverses K8s `ownerReferences` to build the ownership chain.
+
+##### **OwnerChainEntry Schema (AUTHORITATIVE)**
+
+```go
+// OwnerChainEntry represents a single entry in the K8s ownership chain
+// SignalProcessing traverses ownerReferences to build this chain
+// HolmesGPT-API uses for DetectedLabels validation
+type OwnerChainEntry struct {
+    // Namespace of the owner resource
+    // Empty for cluster-scoped resources (e.g., Node)
+    // REQUIRED for namespaced resources
+    Namespace string `json:"namespace,omitempty"`
+
+    // Kind of the owner resource
+    // Examples: "ReplicaSet", "Deployment", "StatefulSet", "DaemonSet"
+    // REQUIRED
+    Kind string `json:"kind"`
+
+    // Name of the owner resource
+    // REQUIRED
+    Name string `json:"name"`
+}
+```
+
+**⚠️ IMPORTANT**: Do NOT include `apiVersion` or `uid` - they are NOT used by HolmesGPT-API validation.
+
+##### **Example**
+
+```json
+{
+  "source_resource": {
+    "namespace": "production",
+    "kind": "Pod",
+    "name": "payment-api-7d8f9c6b5-x2k4m"
+  },
+  "enrichment_results": {
+    "detectedLabels": {"gitOpsManaged": true, "gitOpsTool": "argocd"},
+    "ownerChain": [
+      {"namespace": "production", "kind": "ReplicaSet", "name": "payment-api-7d8f9c6b5"},
+      {"namespace": "production", "kind": "Deployment", "name": "payment-api"}
+    ]
+  }
+}
+```
+
+##### **Traversal Algorithm**
+
+```go
+func buildOwnerChain(ctx context.Context, client client.Client, resource metav1.Object) []OwnerChainEntry {
+    var chain []OwnerChainEntry
+    current := resource
+
+    for {
+        owners := current.GetOwnerReferences()
+        if len(owners) == 0 {
+            break // No more owners - chain complete
+        }
+
+        // Use first controller owner (typical K8s pattern)
+        var controllerOwner *metav1.OwnerReference
+        for _, ref := range owners {
+            if ref.Controller != nil && *ref.Controller {
+                controllerOwner = &ref
+                break
+            }
+        }
+        if controllerOwner == nil {
+            break // No controller owner
+        }
+
+        // Add to chain (namespace inherited from current resource for namespaced owners)
+        entry := OwnerChainEntry{
+            Namespace: current.GetNamespace(), // Empty for cluster-scoped
+            Kind:      controllerOwner.Kind,
+            Name:      controllerOwner.Name,
+        }
+        chain = append(chain, entry)
+
+        // Fetch owner to continue traversal
+        owner, err := getResource(ctx, client, controllerOwner.APIVersion, controllerOwner.Kind,
+                                   current.GetNamespace(), controllerOwner.Name)
+        if err != nil {
+            break // Owner not found - chain ends here
+        }
+        current = owner
+    }
+
+    return chain
+}
+```
+
+#### **Validation Logic (100% Safe)**
+
+```python
+def should_include_detected_labels(source_resource, rca_resource, owner_chain):
+    """Include ONLY when relationship is PROVEN. Default: EXCLUDE."""
+
+    # Gate 1: Required data
+    if not source_resource or not rca_resource:
+        return False  # Safe default
+
+    # Gate 2: Exact match
+    if resources_match(source_resource, rca_resource):
+        return True
+
+    # Gate 3: Owner chain match (PROVEN relationship)
+    for owner in (owner_chain or []):
+        if resources_match(owner, rca_resource):
+            return True
+
+    # Gate 4: Same namespace + kind (fallback when owner_chain provided)
+    if owner_chain is not None:
+        if same_namespace_and_kind(source_resource, rca_resource):
+            return True
+
+    # Default: Cannot prove → EXCLUDE (100% safe)
+    return False
+```
+
+#### **Supported Relationships**
+
+| Source | RCA | Include DetectedLabels? | Reason |
+|--------|-----|-------------------------|--------|
+| Pod/prod/api-xyz | Pod/prod/api-xyz | ✅ YES | Exact match |
+| Pod/prod/api-xyz | Deployment/prod/api | ✅ YES | Owner chain match |
+| Pod/prod/api-xyz | StatefulSet/prod/api | ✅ YES | Owner chain match |
+| Pod/prod/api-xyz | ReplicaSet/prod/api-abc | ✅ YES | Owner chain match |
+| Pod/prod/api-xyz | Node/worker-3 | ❌ NO | Different scope |
+| Pod/prod/api-xyz | Pod/staging/api-xyz | ❌ NO | Different namespace |
+| Pod/prod/api-xyz | Deployment/prod/other | ❌ NO | Not in owner chain |
+
+#### **LLM Tool Parameter**
+
+The `search_workflow_catalog` tool includes `rca_resource` for validation:
+
+```json
+{
+  "query": "DiskPressure critical",
+  "rca_resource": {
+    "signal_type": "DiskPressure",
+    "kind": "Node",
+    "name": "worker-3"
+  },
+  "top_k": 3
+}
+```
+
+#### **Safety Guarantee**
+
+| Scenario | Result | Why Safe |
+|----------|--------|----------|
+| source_resource missing | EXCLUDE | Can't compare |
+| rca_resource missing | EXCLUDE | LLM didn't provide |
+| owner_chain missing | EXCLUDE | Can't verify |
+| owner_chain empty (orphan) | Same ns/kind check | Conservative fallback |
+| owner_chain has match | INCLUDE | **PROVEN** |
+| No match found | EXCLUDE | Can't prove |
+
+**Result**: 100% safety - we **never include wrong labels** that could cause query failures.
+
+---
 
 ### **Label Matching Rules**
 
 **For MCP Workflow Search** (DD-LLM-001):
-1. **Exact Match Filtering**: `signal_type`, `severity`, `environment`, `priority`, `risk_tolerance`, `business_category` are used as exact label filters in SQL WHERE clause
-2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) is used for semantic similarity ranking via pgvector embeddings
-3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic, not resource-specific)
-4. **Wildcard Support**: `environment`, `priority`, `business_category` support `'*'` (matches any value)
-5. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
+1. **Mandatory Label Filtering**: `signal_type`, `severity`, `environment`, `priority` used as SQL WHERE filters
+2. **Semantic Ranking**: Query string (`<signal_type> <severity>`) for pgvector semantic similarity
+3. **Component Storage Only**: `component` is stored but NOT used as search filter (workflows are generic)
+4. **Wildcard Support (Mandatory Labels)**: `environment`, `priority` support `'*'` (matches any value)
+5. **Wildcard Support (DetectedLabels)**: `gitOpsTool`, `serviceMesh` support `'*'` (matches any non-empty value)
+6. **Custom Label Filtering**: Each subdomain becomes a separate WHERE clause (see V1.5 format above)
+7. **Match Scoring**: Exact label matches + semantic similarity = final confidence score
 
 **For Workflow Registration**:
-1. **All 7 Labels Required**: Every workflow must have all 7 mandatory labels
-2. **Description Format**: Must follow `"<signal_type> <severity>: <description>"` for optimal semantic matching
-3. **Validation**: Labels are validated against authoritative values in this document
+1. **5 Mandatory Labels Required**: Every workflow must have all 5 mandatory labels (v1.4)
+2. **Custom Labels Optional**: Workflows can include custom labels for more specific matching
+3. **Description Format**: Must follow `"<signal_type> <severity>: <description>"` for optimal semantic matching
+4. **Validation**: Labels are validated against authoritative values in this document
 
 ### **Valid Values (Authoritative)**
 
+#### **Group A: Auto-Populated Labels**
+
 ```yaml
-severity:
-  - critical
-  - high
-  - medium
-  - low
-
-environment:
-  - production
-  - staging
-  - development
-  - test
-  - '*'  # Wildcard: matches any environment
-
-priority:
-  - P0
-  - P1
-  - P2
-  - P3
-  - '*'  # Wildcard: matches any priority
-
-risk_tolerance:
-  - low      # Conservative remediation (e.g., 10% resource increase, no restart)
-  - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
-  - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
-
 signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   # CRITICAL PRINCIPLE: Use exact event reason strings from Kubernetes/Prometheus
   # WHY: LLM uses signal_type to query the same source system during investigation
@@ -115,22 +1014,15 @@ signal_type:  # Domain-specific values from source systems (NO TRANSFORMATION)
   - Completed              # Container completed successfully
   #
   # RULE: Signal Processing MUST pass through domain-specific values unchanged
-  # RULE: NO normalization, NO kebab-case conversion, NO transformationAPI - kubectl describe pod → State.Reason field
-  # SOURCE: Prometheus - kube_pod_container_status_terminated_reason{reason="..."}
-  #
-  # Examples (exact K8s event reason strings):
-  - OOMKilled              # Container killed due to out-of-memory
-  - CrashLoopBackOff       # Container repeatedly crashing
-  - ImagePullBackOff       # Failed to pull container image
-  - ErrImagePull           # Image pull error
-  - NodeNotReady           # Node is not ready
-  - Evicted                # Pod evicted due to resource pressure
-  - Error                  # Generic container error
-  - Completed              # Container completed successfully
-  #
   # RULE: NO normalization, NO kebab-case conversion, NO transformation
 
-component:  # Kubernetes resource types
+severity:  # From alert/event metadata
+  - critical
+  - high
+  - medium
+  - low
+
+component:  # Kubernetes resource types (auto-detected from signal)
   - pod
   - deployment
   - statefulset
@@ -140,8 +1032,38 @@ component:  # Kubernetes resource types
   - pvc
   - configmap
   - secret
+```
 
-business_category:  # User-defined (examples)
+#### **Group B: Rego-Configurable Labels**
+
+```yaml
+environment:  # Derived from namespace labels/annotations
+  - production
+  - staging
+  - development
+  - test
+  - '*'  # Wildcard: matches any environment
+
+priority:  # Derived from severity + environment via Rego
+  - P0   # Critical production issue (immediate response)
+  - P1   # High-priority issue (response within 1 hour)
+  - P2   # Medium-priority issue (response within 4 hours)
+  - P3   # Low-priority issue (response within 24 hours)
+  - '*'  # Wildcard: matches any priority
+
+risk_tolerance:  # Derived from priority + environment via Rego
+  - low      # Conservative remediation (e.g., 10% resource increase, no restart)
+  - medium   # Balanced remediation (e.g., 25% resource increase, rolling restart)
+  - high     # Aggressive remediation (e.g., 50% resource increase, immediate restart)
+```
+
+#### **Optional Custom Labels (User-Defined)**
+
+```yaml
+# These are EXAMPLES - users define their own custom labels via Rego policies
+# Custom labels are stored in JSONB and matched if present
+
+business_category:  # OPTIONAL - Business domain categorization
   - payment-service
   - analytics
   - api-gateway
@@ -149,6 +1071,22 @@ business_category:  # User-defined (examples)
   - infrastructure
   - general
   - '*'  # Wildcard: matches any category
+
+gitops_tool:  # OPTIONAL - GitOps tooling preference
+  - argocd
+  - flux
+  - helm
+
+region:  # OPTIONAL - Geographic targeting
+  - us-east-1
+  - eu-west-1
+  - ap-southeast-1
+
+team:  # OPTIONAL - Team ownership
+  - platform
+  - sre
+  - payments
+  - infrastructure
 ```
 
 ---
@@ -210,7 +1148,7 @@ Define the **mandatory label schema for V1.0** that:
 
 ---
 
-### **Alternative 2: Structured Columns (7 Fields - 1:1 Signal Matching)** ⭐ **RECOMMENDED**
+### **Alternative 2: Structured Columns (5 Fields - 1:1 Signal Matching)** ⭐ **RECOMMENDED**
 
 **Approach**: Use structured database columns for mandatory labels that **exactly match** Signal Processing Rego output. Playbooks are filtered by exact 1:1 label matching before semantic search.
 
@@ -220,7 +1158,6 @@ Define the **mandatory label schema for V1.0** that:
 CREATE TYPE severity_enum AS ENUM ('critical', 'high', 'medium', 'low');
 CREATE TYPE environment_enum AS ENUM ('production', 'staging', 'development', 'test', '*');
 CREATE TYPE priority_enum AS ENUM ('P0', 'P1', 'P2', 'P3', '*');
-CREATE TYPE risk_tolerance_enum AS ENUM ('low', 'medium', 'high');
 
 CREATE TABLE workflow_catalog (
     workflow_id       TEXT NOT NULL,
@@ -228,21 +1165,22 @@ CREATE TABLE workflow_catalog (
     title             TEXT NOT NULL,
     description       TEXT,
 
-    -- Mandatory structured labels (V1.0) - 1:1 matching with wildcard support
-    signal_type       TEXT NOT NULL,              -- pod-oomkilled, pod-crashloop, etc.
+    -- 5 Mandatory structured labels (V1.4) - 1:1 matching with wildcard support
+    -- Group A: Auto-populated from K8s/Prometheus
+    signal_type       TEXT NOT NULL,              -- OOMKilled, CrashLoopBackOff, NodeNotReady
     severity          severity_enum NOT NULL,     -- critical, high, medium, low
     component         TEXT NOT NULL,              -- pod, deployment, node, service, pvc
+    -- Group B: Rego-configurable
     environment       environment_enum NOT NULL,  -- production, staging, development, test, '*'
     priority          priority_enum NOT NULL,     -- P0, P1, P2, P3, '*'
-    risk_tolerance    risk_tolerance_enum NOT NULL,  -- low, medium, high
-    business_category TEXT NOT NULL,              -- payment-service, analytics, infrastructure, '*'
 
     -- Validation constraints
-    CHECK (signal_type ~ '^[a-z0-9-]+$'),
+    CHECK (signal_type ~ '^[A-Za-z0-9-]+$'),  -- Exact K8s event reason (no transformation)
     CHECK (component ~ '^[a-z0-9-]+$'),
-    CHECK (business_category ~ '^[a-z0-9-]+$' OR business_category = '*'),
 
-    -- Optional custom labels (V1.1)
+    -- Custom labels (user-defined via Rego, stored in JSONB)
+    -- Format: map[subdomain][]string per V1.5
+    -- Examples: risk_tolerance, business_category, team, region
     custom_labels     JSONB,
 
     embedding         vector(384),
@@ -251,67 +1189,68 @@ CREATE TABLE workflow_catalog (
     PRIMARY KEY (workflow_id, version)
 );
 
--- Composite index for efficient label filtering
-CREATE INDEX idx_playbook_labels ON workflow_catalog (
-    signal_type, severity, component, environment, priority, risk_tolerance, business_category
+-- Composite index for efficient label filtering (5 mandatory labels per v1.4)
+CREATE INDEX idx_workflow_labels ON workflow_catalog (
+    signal_type, severity, component, environment, priority
 );
+
+-- GIN index for custom label queries
+CREATE INDEX idx_workflow_custom_labels ON workflow_catalog USING GIN (custom_labels);
 ```
 
-**Rationale for 7 Fields (1:1 Matching with Wildcards)**:
-- ✅ **1:1 Label Matching**: ALL 7 fields must match between signal and workflow for successful filtering
-- ✅ **Wildcard Support**: Playbooks can use `'*'` for `environment`, `priority`, `business_category` to match any value
-- ✅ **Signal Processing Outputs All 7**: Rego policies populate all 7 labels before reaching LLM
-- ✅ **Playbook Authors Define All 7**: Workflow declares which signals it can remediate
-- ✅ **Deterministic Pre-Filtering**: Exact match on all 7 fields before semantic search
+**Rationale for 5 Mandatory Fields (V1.4)**:
+- ✅ **1:1 Label Matching**: ALL 5 mandatory fields must match between signal and workflow
+- ✅ **Wildcard Support**: Workflows can use `'*'` for `environment`, `priority` to match any value
+- ✅ **Auto-Populated Labels**: Group A labels require no user configuration
+- ✅ **Rego-Configurable Labels**: Group B labels can be customized via Rego policies
+- ✅ **Custom Labels Optional**: Additional labels stored in JSONB (no enforcement)
+- ✅ **Zero-Friction Default**: Works out-of-the-box without namespace→category mapping
 - ✅ **Type Safety**: PostgreSQL enums prevent invalid values
-- ✅ **Validation Constraints**: CHECK constraints ensure data integrity
-- ✅ **Dual-Source Semantics**:
-  - **Signal**: `risk_tolerance: "low"` = "I require a low-risk remediation"
-  - **Playbook**: `risk_tolerance: "low"` = "I provide a low-risk remediation"
+- ✅ **Dual-Source Semantics** (via custom labels):
+  - **Signal**: `custom_labels.risk_tolerance: ["low"]` = "I require a low-risk remediation"
+  - **Workflow**: `custom_labels.risk_tolerance: ["low"]` = "I provide a low-risk remediation"
   - **Match**: Only when both agree (low matches low, high matches high)
 
 **Wildcard Matching Logic**:
 ```sql
--- Signal: {environment: "production", priority: "P0", business_category: "payment-service"}
--- Matches playbooks with:
---   1. Exact match: {environment: "production", priority: "P0", business_category: "payment-service"}
---   2. Wildcard match: {environment: "*", priority: "P0", business_category: "payment-service"}
---   3. Wildcard match: {environment: "production", priority: "*", business_category: "*"}
+-- Signal: {environment: "production", priority: "P0"}
+-- Matches workflows with:
+--   1. Exact match: {environment: "production", priority: "P0"}
+--   2. Wildcard match: {environment: "*", priority: "P0"}
+--   3. Wildcard match: {environment: "production", priority: "*"}
 
 WHERE signal_type = $1
   AND severity = $2
   AND component = $3
   AND (environment = $4 OR environment = '*')  -- Wildcard support
   AND (priority = $5 OR priority = '*')
-  AND risk_tolerance = $6
-  AND (business_category = $7 OR business_category = '*')
+  -- Custom label matching via JSONB containment (includes risk_tolerance, business_category, etc.)
+  AND (custom_labels @> $6 OR $6 IS NULL)
 ```
 
 **Match Scoring (for LLM ranking)**:
-- **Score 7**: All exact matches (most specific)
-- **Score 6**: 6 exact + 1 wildcard
-- **Score 5**: 5 exact + 2 wildcards
-- **Score 4**: 4 exact + 3 wildcards (least specific)
+- **Score 5**: All 5 mandatory labels exact match (most specific, per v1.4)
+- **Score 5**: 5 exact + 1 wildcard
+- **Score 4**: 4 exact + 2 wildcards (least specific)
+- **Bonus**: +1 for each custom label match (if custom labels used)
 
-Playbooks are ranked by: `(match_score * 10) + semantic_similarity_score`
+Workflows are ranked by: `(match_score * 10) + semantic_similarity_score`
 
 **Pros**:
 - ✅ **Type safety**: Database enforces NOT NULL constraints
-- ✅ **Query performance**: Direct column access (no JSONB extraction)
-- ✅ **Index efficiency**: Standard B-tree indexes on columns
-- ✅ **Schema clarity**: Explicit columns make schema self-documenting
-- ✅ **Validation simplicity**: Database-level constraints
-- ✅ **No prefix overhead**: Clean field names (signal_type vs kubernaut.io/signal-type)
-- ✅ **Comprehensive filtering**: Supports environment-specific playbooks
-- ✅ **Risk-aware**: Risk tolerance enables safe vs. aggressive playbooks
-- ✅ **Business context**: Business category enables domain-specific playbooks
+- ✅ **Query performance**: Direct column access for mandatory labels
+- ✅ **Index efficiency**: B-tree index on 5 mandatory labels (v1.4)
+- ✅ **Flexible custom labels**: JSONB with GIN index for user-defined labels
+- ✅ **Zero-friction adoption**: No mandatory business_category configuration
+- ✅ **Schema clarity**: Explicit columns for mandatory, JSONB for optional
+- ✅ **Risk-aware**: Risk tolerance enables safe vs. aggressive workflows
 - ✅ **Priority-based**: Priority enables P0 vs. P1 workflow selection
 - ✅ **Strong "Filter Before LLM"**: Fine-grained pre-filtering reduces LLM context
 
 **Cons**:
 - ⚠️ **Schema migration**: Adding new mandatory fields requires ALTER TABLE
   - **Mitigation**: V1.1 custom labels use JSONB (no schema changes)
-- ⚠️ **More columns**: 7 columns vs 1 JSONB column
+- ⚠️ **More columns**: 5 columns vs 1 JSONB column
   - **Mitigation**: Clearer schema, better performance
 
 **Confidence**: 95% (approved - structured data is superior for mandatory fields)
@@ -347,7 +1286,7 @@ Playbooks are ranked by: `(match_score * 10) + semantic_similarity_score`
 
 ## ✅ **Decision**
 
-**APPROVED: Alternative 2** - Structured Columns (7 Mandatory Fields)
+**APPROVED: Alternative 2** - Structured Columns (5 Mandatory + DetectedLabels + CustomLabels)
 
 **Rationale**:
 
@@ -396,175 +1335,220 @@ Playbooks are ranked by: `(match_score * 10) + semantic_similarity_score`
 
 ### **Mandatory Label Schema (V1.0)**
 
-#### **Label Definitions**
+#### **Label Definitions (v1.6 - snake_case API fields)**
 
-| Label Key | Type | Required | Values | Description |
-|---|---|---|---|---|
-| `kubernaut.io/signal-type` | string | ✅ YES | `pod-oomkilled`, `pod-crashloop`, `deployment-failed`, `node-notready`, etc. | Signal type from Signal Processing categorization |
-| `kubernaut.io/severity` | string | ✅ YES | `critical`, `high`, `medium`, `low` | Signal severity level |
-| `kubernaut.io/component` | string | ✅ YES | `pod`, `deployment`, `node`, `service`, `pvc`, etc. | Kubernetes resource type |
-| `kubernaut.io/environment` | string | ✅ YES | `production`, `staging`, `development`, `test` | Deployment environment |
-| `kubernaut.io/priority` | string | ✅ YES | `P0`, `P1`, `P2`, `P3` | Business priority level |
-| `kubernaut.io/risk-tolerance` | string | ✅ YES | `low`, `medium`, `high` | Risk tolerance for remediation actions |
-| `kubernaut.io/business-category` | string | ✅ YES | `payment-service`, `analytics`, `api-gateway`, `database`, etc. | Business domain or service category |
+**5 Mandatory Labels** (per v1.4):
 
-#### **Example Workflow Labels**
+| API Field Name | K8s Annotation | Type | Required | Values | Description |
+|---|---|---|---|---|---|
+| `signal_type` | `kubernaut.io/signal-type` | string | ✅ YES | `OOMKilled`, `CrashLoopBackOff`, `NodeNotReady`, etc. | Signal type (exact K8s event reason) |
+| `severity` | `kubernaut.io/severity` | string | ✅ YES | `critical`, `high`, `medium`, `low` | Signal severity level |
+| `component` | `kubernaut.io/component` | string | ✅ YES | `pod`, `deployment`, `node`, `service`, `pvc`, etc. | Kubernetes resource type |
+| `environment` | `kubernaut.io/environment` | string | ✅ YES | `production`, `staging`, `development`, `test`, `*` | Deployment environment |
+| `priority` | `kubernaut.io/priority` | string | ✅ YES | `P0`, `P1`, `P2`, `P3`, `*` | Business priority level |
 
-**Example 1: Conservative OOMKilled Playbook**
+**Custom Labels** (customer-defined via Rego - stored in `custom_labels` JSONB):
+
+| Example Subdomain | Example Values | Description |
+|---|---|---|
+| `constraint` | `["cost-constrained", "stateful-safe"]` | Workflow constraints |
+| `team` | `["name=payments"]` | Team ownership |
+| `risk_tolerance` | `["low"]`, `["medium"]`, `["high"]` | Risk tolerance (customer-derived) |
+| `business_category` | `["payment-service"]` | Business domain (customer-derived) |
+
+#### **Example Workflow Labels (v1.6 - Two Formats)**
+
+**Example 1: Conservative OOMKilled Playbook (GitOps-managed, PDB-protected)**
+
+*K8s CRD Metadata (annotations use kebab-case):*
+```yaml
+metadata:
+  annotations:
+    kubernaut.io/signal-type: "OOMKilled"
+    kubernaut.io/severity: "critical"
+    kubernaut.io/component: "pod"
+    kubernaut.io/environment: "production"
+    kubernaut.io/priority: "P0"
+```
+
+*Complete API Search Request (snake_case, all three label types):*
 ```json
 {
-  "kubernaut.io/signal-type": "pod-oomkilled",
-  "kubernaut.io/severity": "critical",
-  "kubernaut.io/component": "pod",
-  "kubernaut.io/environment": "production",
-  "kubernaut.io/priority": "P0",
-  "kubernaut.io/risk-tolerance": "low",
-  "kubernaut.io/business-category": "payment-service"
+  "signal_type": "OOMKilled",
+  "severity": "critical",
+  "component": "pod",
+  "environment": "production",
+  "priority": "P0",
+  "detected_labels": {
+    "gitOpsManaged": true,
+    "gitOpsTool": "argocd",
+    "pdbProtected": true,
+    "helmManaged": true,
+    "networkIsolated": true,
+    "serviceMesh": "istio"
+  },
+  "custom_labels": {
+    "risk_tolerance": ["low"],
+    "constraint": ["cost-constrained"],
+    "team": ["name=payments"]
+  }
 }
 ```
-**Use Case**: Payment service pods in production with low risk tolerance → Conservative memory increase (10% bump, no restart)
+
+**Note**: `detected_labels` only includes booleans when `true` and strings when non-empty (per v1.5 Boolean Normalization rule). Fields like `hpaEnabled: false` and `stateful: false` are **omitted**.
+
+**Use Case**: Payment service pods in production managed by ArgoCD with PDB protection and cost constraints → Conservative memory increase (10% bump, no restart)
 
 ---
 
-**Example 2: Aggressive OOMKilled Playbook**
+**Example 2: Aggressive OOMKilled Playbook (Non-GitOps, no PDB)**
+
+*API Search Request (snake_case):*
 ```json
 {
-  "kubernaut.io/signal-type": "pod-oomkilled",
-  "kubernaut.io/severity": "high",
-  "kubernaut.io/component": "pod",
-  "kubernaut.io/environment": "staging",
-  "kubernaut.io/priority": "P2",
-  "kubernaut.io/risk-tolerance": "high",
-  "kubernaut.io/business-category": "analytics"
+  "signal_type": "OOMKilled",
+  "severity": "high",
+  "component": "pod",
+  "environment": "staging",
+  "priority": "P2",
+  "detected_labels": {
+    "hpaEnabled": true
+  },
+  "custom_labels": {
+    "risk_tolerance": ["high"],
+    "team": ["name=analytics"]
+  }
 }
 ```
-**Use Case**: Analytics pods in staging with high risk tolerance → Aggressive memory increase (50% bump, immediate restart)
+
+**Note**: Only `hpaEnabled: true` appears in `detected_labels`. Fields like `gitOpsManaged`, `pdbProtected`, `stateful` are **omitted** because they are `false`.
+
+**Use Case**: Analytics pods in staging with HPA (auto-scaling) but no GitOps or PDB protection → Aggressive memory increase (50% bump, immediate restart)
 
 ---
 
-**Example 3: Node NotReady Playbook**
+**Example 3: Node NotReady Playbook (Service mesh enabled)**
+
+*API Search Request (snake_case):*
 ```json
 {
-  "kubernaut.io/signal-type": "node-notready",
-  "kubernaut.io/severity": "critical",
-  "kubernaut.io/component": "node",
-  "kubernaut.io/environment": "production",
-  "kubernaut.io/priority": "P0",
-  "kubernaut.io/risk-tolerance": "medium",
-  "kubernaut.io/business-category": "infrastructure"
+  "signal_type": "NodeNotReady",
+  "severity": "critical",
+  "component": "node",
+  "environment": "production",
+  "priority": "P0",
+  "detected_labels": {
+    "serviceMesh": "istio"
+  },
+  "custom_labels": {
+    "risk_tolerance": ["low"],
+    "team": ["name=infrastructure"],
+    "region": ["zone=us-east-1"]
+  }
 }
 ```
-**Use Case**: Node failures in production → Cordon node, drain pods, investigate
+
+**Note**: Only `serviceMesh: "istio"` appears because it's a non-empty string. Boolean fields for nodes (like `gitOpsManaged`) are typically `false` and thus omitted.
+
+**Use Case**: Node failures in production with Istio service mesh → Cordon node, drain pods with Istio awareness, investigate
 
 ---
 
 ### **Validation Rules**
 
-#### **Schema Validation (Data Storage Service)**
+#### **Schema Validation (Data Storage Service) - v1.6 snake_case**
 
 ```go
-// pkg/datastorage/validation/playbook_labels.go
+// pkg/datastorage/validation/workflow_labels.go
 
-type PlaybookLabels struct {
-    SignalType       string `json:"kubernaut.io/signal-type"`
-    Severity         string `json:"kubernaut.io/severity"`
-    Component        string `json:"kubernaut.io/component"`
-    Environment      string `json:"kubernaut.io/environment"`
-    Priority         string `json:"kubernaut.io/priority"`
-    RiskTolerance    string `json:"kubernaut.io/risk-tolerance"`
-    BusinessCategory string `json:"kubernaut.io/business-category"`
+// WorkflowSearchFilters - API request filters (v1.6: snake_case)
+type WorkflowSearchFilters struct {
+    // 5 Mandatory labels (v1.4)
+    SignalType  string `json:"signal_type" validate:"required"`
+    Severity    string `json:"severity" validate:"required,oneof=critical high medium low"`
+    Component   string `json:"component" validate:"required"`
+    Environment string `json:"environment" validate:"required"`
+    Priority    string `json:"priority" validate:"required"`
+
+    // Custom labels (customer-defined via Rego, stored in JSONB)
+    // Format: map[subdomain][]string
+    CustomLabels map[string][]string `json:"custom_labels,omitempty"`
 }
 
-// ValidateMandatoryLabels validates that all mandatory labels are present and valid
-func ValidateMandatoryLabels(labels map[string]string) error {
-    // Check all mandatory fields are present
-    requiredFields := []string{
-        "kubernaut.io/signal-type",
-        "kubernaut.io/severity",
-        "kubernaut.io/component",
-        "kubernaut.io/environment",
-        "kubernaut.io/priority",
-        "kubernaut.io/risk-tolerance",
-        "kubernaut.io/business-category",
-    }
-
-    for _, field := range requiredFields {
-        if _, exists := labels[field]; !exists {
-            return fmt.Errorf("missing mandatory label: %s", field)
-        }
-    }
-
+// ValidateMandatoryLabels validates that all 5 mandatory labels are present and valid (v1.4)
+func ValidateMandatoryLabels(filters WorkflowSearchFilters) error {
     // Validate severity
     validSeverities := []string{"critical", "high", "medium", "low"}
-    if !contains(validSeverities, labels["kubernaut.io/severity"]) {
+    if !contains(validSeverities, filters.Severity) {
         return fmt.Errorf("invalid severity: %s (must be one of: %v)",
-            labels["kubernaut.io/severity"], validSeverities)
+            filters.Severity, validSeverities)
     }
 
-    // Validate environment
-    validEnvironments := []string{"production", "staging", "development", "test"}
-    if !contains(validEnvironments, labels["kubernaut.io/environment"]) {
+    // Validate environment (supports wildcard)
+    validEnvironments := []string{"production", "staging", "development", "test", "*"}
+    if !contains(validEnvironments, filters.Environment) {
         return fmt.Errorf("invalid environment: %s (must be one of: %v)",
-            labels["kubernaut.io/environment"], validEnvironments)
+            filters.Environment, validEnvironments)
     }
 
-    // Validate priority
-    validPriorities := []string{"P0", "P1", "P2", "P3"}
-    if !contains(validPriorities, labels["kubernaut.io/priority"]) {
+    // Validate priority (supports wildcard)
+    validPriorities := []string{"P0", "P1", "P2", "P3", "*"}
+    if !contains(validPriorities, filters.Priority) {
         return fmt.Errorf("invalid priority: %s (must be one of: %v)",
-            labels["kubernaut.io/priority"], validPriorities)
+            filters.Priority, validPriorities)
     }
 
-    // Validate risk tolerance
-    validRiskTolerances := []string{"low", "medium", "high"}
-    if !contains(validRiskTolerances, labels["kubernaut.io/risk-tolerance"]) {
-        return fmt.Errorf("invalid risk-tolerance: %s (must be one of: %v)",
-            labels["kubernaut.io/risk-tolerance"], validRiskTolerances)
-    }
+    // Note: risk_tolerance and business_category are now custom labels (v1.4)
+    // They are NOT validated by Kubernaut - customers define their own values via Rego
 
     return nil
 }
 ```
 
-#### **SQL Filtering Pattern**
+#### **SQL Filtering Pattern (v1.6 - 5 Mandatory + Custom Labels)**
 
 ```sql
--- Filter playbooks by mandatory labels
+-- Filter workflows by 5 mandatory labels (v1.4) + optional custom labels
 SELECT
     workflow_id,
     version,
     title,
     description,
-    labels,
     embedding
 FROM workflow_catalog
 WHERE status = 'active'
-  AND labels->>'kubernaut.io/signal-type' = $1        -- pod-oomkilled
-  AND labels->>'kubernaut.io/severity' = $2           -- critical
-  AND labels->>'kubernaut.io/component' = $3          -- pod
-  AND labels->>'kubernaut.io/environment' = $4        -- production
-  AND labels->>'kubernaut.io/priority' = $5           -- P0
-  AND labels->>'kubernaut.io/risk-tolerance' = $6     -- low
-  AND labels->>'kubernaut.io/business-category' = $7  -- payment-service
-ORDER BY embedding <=> $8  -- semantic similarity
+  -- 5 Mandatory labels (structured columns, snake_case)
+  AND signal_type = $1                                -- OOMKilled
+  AND severity = $2                                   -- critical
+  AND component = $3                                  -- pod
+  AND (environment = $4 OR environment = '*')         -- production (with wildcard)
+  AND (priority = $5 OR priority = '*')               -- P0 (with wildcard)
+  -- Custom labels (JSONB containment - customer-defined)
+  AND (custom_labels @> $6 OR $6 IS NULL)             -- {"constraint": ["cost-constrained"]}
+ORDER BY embedding <=> $7  -- semantic similarity
 LIMIT 10;
 ```
 
+**Note**: `risk_tolerance` and `business_category` are now custom labels (v1.4), not mandatory columns.
+
 ---
 
-### **Data Flow**
+### **Data Flow (v1.6)**
 
 1. **Signal Processing categorizes signal**
-   - Output: Signal with labels (signal-type, severity, component, environment, priority, risk-tolerance, business-category)
+   - Output: Signal with 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `priority`)
+   - Output: Optional custom labels (customer-defined via Rego, stored in `custom_labels`)
 
 2. **HolmesGPT API receives signal**
-   - Extracts labels from signal
+   - Extracts labels from signal (snake_case format)
+   - Auto-appends `custom_labels` to workflow search request (per DD-HAPI-001)
    - Calls Data Storage workflow search API
 
-3. **Data Storage filters playbooks**
-   - **Step 1**: SQL filter by mandatory labels (deterministic)
-   - **Step 2**: Semantic search on pre-filtered subset (similarity-based)
-   - **Step 3**: Return top-k matching playbooks
+3. **Data Storage filters workflows**
+   - **Step 1**: SQL filter by 5 mandatory labels (structured columns)
+   - **Step 2**: JSONB containment filter by custom labels (if present)
+   - **Step 3**: Semantic search on pre-filtered subset (similarity-based)
+   - **Step 4**: Return top-k matching workflows
 
 4. **HolmesGPT API selects playbook**
    - LLM reviews top-k playbooks
@@ -575,43 +1559,37 @@ LIMIT 10;
 
 ### **V1.1 Extension: Custom Labels**
 
-**V1.1 will add support for custom labels (optional) in the `custom_labels` JSONB column**:
+**V1.4 Schema**: 5 mandatory structured columns + optional custom labels in JSONB:
 
 **Database Schema**:
 ```sql
--- V1.0: Structured columns for mandatory fields
-signal_type       TEXT NOT NULL,
-severity          TEXT NOT NULL,
-component         TEXT NOT NULL,
-environment       TEXT NOT NULL,
-priority          TEXT NOT NULL,
-risk_tolerance    TEXT NOT NULL,
-business_category TEXT NOT NULL,
+-- V1.4: 5 Mandatory structured columns
+signal_type       TEXT NOT NULL,      -- Group A: Auto-populated
+severity          TEXT NOT NULL,      -- Group A: Auto-populated
+component         TEXT NOT NULL,      -- Group A: Auto-populated
+environment       TEXT NOT NULL,      -- Group B: Rego-configurable
+priority          TEXT NOT NULL,      -- Group B: Rego-configurable
 
--- V1.1: JSONB for optional custom labels
-custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
+-- V1.5: JSONB for custom labels (user-defined via Rego)
+-- Format: map[subdomain][]string
+custom_labels     JSONB
 ```
 
-**Example Custom Labels (V1.1)**:
+**Example Custom Labels** (V1.5 subdomain format):
 ```json
 {
-  "kubernaut.io/namespace": "cost-management",
-  "kubernaut.io/team": "platform-engineering",
-  "kubernaut.io/cost-center": "engineering-ops",
-  "kubernaut.io/region": "us-east-1",
-  "kubernaut.io/compliance": "pci-dss"
+  "risk_tolerance": ["low"],
+  "constraint": ["cost-constrained", "stateful-safe"],
+  "team": ["name=payments"],
+  "region": ["zone=us-east-1"]
 }
 ```
 
-**Why `kubernaut.io/` prefix for custom labels?**
-- ✅ **Namespace isolation**: Prevents conflicts with user-defined labels
-- ✅ **Clear ownership**: Distinguishes Kubernaut labels from external labels
-- ✅ **Kubernetes alignment**: Follows Kubernetes label convention
-- ✅ **Extensibility**: Users can add `custom.company.com/` labels
+**Custom Label Keys**: Subdomain-based (e.g., `risk_tolerance`, `constraint`, `team`)
 
-**V1.1 Filtering Strategy**: See DD-STORAGE-012 (Multi-Stage Filtering)
-- **Step 1**: Filter by mandatory structured columns (fast, deterministic)
-- **Step 2**: Filter by custom labels in JSONB (flexible, slower)
+**V1.5 Filtering Strategy**:
+- **Step 1**: Filter by 5 mandatory structured columns (fast, deterministic, per v1.4)
+- **Step 2**: Filter by custom labels in JSONB if provided (subdomain-based, per v1.5)
 - **Step 3**: Semantic search on pre-filtered subset
 
 ---
@@ -629,11 +1607,11 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 
 ### **Negative**
 
-- ⚠️ **Validation Complexity**: 7 mandatory fields require comprehensive validation logic
+- ⚠️ **Validation Complexity**: 5 mandatory fields require validation logic
   - **Mitigation**: Centralized validation function, comprehensive unit tests
 - ⚠️ **Cognitive Load**: More fields to understand and maintain
   - **Mitigation**: Clear documentation, examples, validation error messages
-- ⚠️ **Signal Processing Dependency**: Signal Processing must output all 7 labels
+- ⚠️ **Signal Processing Dependency**: Signal Processing must output all 5 mandatory labels
   - **Mitigation**: Signal Processing already categorizes signals; labels are natural output
 
 ### **Neutral**
@@ -702,13 +1680,14 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 #### **BR-STORAGE-013: Mandatory Workflow Label Validation**
 - **Category**: STORAGE
 - **Priority**: P0 (blocking for Data Storage V1.0)
-- **Description**: MUST validate that all playbooks have 7 mandatory labels with valid values per DD-WORKFLOW-001
+- **Description**: MUST validate that all workflows have 5 mandatory labels with valid values per DD-WORKFLOW-001 v1.6
 - **Acceptance Criteria**:
   - Workflow creation fails if any mandatory label is missing
   - Workflow creation fails if any label has invalid value (not in authoritative list)
-  - Wildcard validation: `environment`, `priority`, `business_category` accept `'*'`
-  - PostgreSQL enums enforce `severity`, `environment`, `priority`, `risk_tolerance` values
-  - CHECK constraints enforce `signal_type`, `component`, `business_category` format
+  - Wildcard validation: `environment`, `priority` accept `'*'`
+  - PostgreSQL enums enforce `severity`, `environment`, `priority` values
+  - CHECK constraints enforce `signal_type`, `component` format
+  - Custom labels stored in JSONB (subdomain format per v1.5)
   - Validation errors include descriptive error messages
   - Unit tests cover all validation scenarios
 
@@ -717,9 +1696,10 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 - **Priority**: P0 (blocking for Data Storage V1.0)
 - **Description**: MUST support SQL-based filtering by mandatory labels with wildcard matching before semantic search
 - **Acceptance Criteria**:
-  - GET /api/v1/playbooks/search accepts 7 label filter parameters
+  - GET /api/v1/playbooks/search accepts 5 mandatory label filter parameters + custom_labels JSONB
   - SQL query supports wildcard matching: `(environment = $1 OR environment = '*')`
-  - Composite index on all 7 labels for efficient filtering
+  - Composite index on all 5 mandatory labels for efficient filtering
+  - JSONB containment filter for custom labels (includes risk_tolerance, business_category, etc.)
   - p95 filtering latency < 5ms
   - Returns playbooks ranked by match score (exact > wildcard)
 
@@ -728,117 +1708,162 @@ custom_labels     JSONB  -- {"kubernaut.io/namespace": "cost-management", ...}
 - **Priority**: P0 (blocking for Data Storage V1.0)
 - **Description**: MUST rank playbooks by match specificity before semantic search
 - **Acceptance Criteria**:
-  - Calculate match score: 7 (all exact) → 4 (3 wildcards)
+  - Calculate match score: 5 (all mandatory exact) + bonus for custom label matches
   - Rank playbooks by: `(match_score * 10) + semantic_similarity`
   - Return match score in API response for LLM decision-making
   - Unit tests validate scoring logic
 
-#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (7 Mandatory Labels)**
+#### **BR-SIGNAL-PROCESSING-001: Signal Label Enrichment (5 Mandatory Labels per v1.6)**
 - **Category**: SIGNAL-PROCESSING
 - **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST enrich signals with ALL 7 mandatory labels during categorization per DD-WORKFLOW-001
-- **Authority**: DD-WORKFLOW-001 (authoritative label definitions)
+- **Description**: MUST enrich signals with ALL 5 mandatory labels during categorization per DD-WORKFLOW-001 v1.6
+- **Authority**: DD-WORKFLOW-001 v1.6 (authoritative label definitions)
+- **Label Groups**:
+  - **Auto-Populated** (Group A): `signal_type`, `severity`, `component`
+  - **Rego-Configurable** (Group B): `environment`, `priority`
 - **Acceptance Criteria**:
-  - Signal categorization outputs: `signal_type`, `severity`, `component`, `environment`, `priority`, `risk_tolerance`, `business_category`
-  - Labels match DD-WORKFLOW-001 authoritative values
+  - Signal categorization outputs all 5 mandatory labels (v1.6)
+  - Group A labels extracted from K8s events/Prometheus alerts (no user config needed)
+  - Group B labels derived via Rego policies (customizable by user)
+  - Labels match DD-WORKFLOW-001 v1.6 authoritative values (snake_case API fields)
   - Labels are stored in RemediationRequest CRD spec
   - Labels are passed to HolmesGPT API for workflow matching
-  - Rego policies have default/fallback values for all 7 labels
+  - Custom labels (if any) are stored in `custom_labels` JSONB for optional matching
 
-#### **BR-SIGNAL-PROCESSING-002: risk_tolerance Categorization**
+#### **BR-SIGNAL-PROCESSING-002: Custom Label Derivation (risk_tolerance, business_category, etc.)**
 - **Category**: SIGNAL-PROCESSING
-- **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST output `risk_tolerance` (low, medium, high) based on priority and environment
-- **Authority**: DD-WORKFLOW-001 (authoritative label definitions)
-- **Rego Policy Logic**:
+- **Priority**: P1 (optional enhancement)
+- **Description**: MAY output custom labels (e.g., `risk_tolerance`, `business_category`) based on Rego policies
+- **Authority**: DD-WORKFLOW-001 v1.6 (custom labels section)
+- **Note**: `risk_tolerance` and `business_category` are now **custom labels**, not mandatory fields
+- **Rego Policy Logic** (example for `risk_tolerance`):
   ```rego
-  risk_tolerance = "low" {
+  # risk_tolerance is a CUSTOM LABEL derived via Rego
+  custom_labels["risk_tolerance"] = ["low"] {
       input.priority == "P0"
       input.environment == "production"
   }
 
-  risk_tolerance = "medium" {
+  custom_labels["risk_tolerance"] = ["medium"] {
       input.priority == "P1"
       input.environment == "production"
   }
 
-  risk_tolerance = "high" {
+  custom_labels["risk_tolerance"] = ["high"] {
       input.priority in ["P2", "P3"]
   }
 
-  risk_tolerance = "high" {
+  custom_labels["risk_tolerance"] = ["high"] {
       input.environment in ["staging", "development", "test"]
   }
 
-  risk_tolerance = "medium" {  # Fallback
+  custom_labels["risk_tolerance"] = ["medium"] {  # Fallback
       true
   }
   ```
 - **Acceptance Criteria**:
-  - P0 + production → `risk_tolerance: "low"`
-  - P1 + production → `risk_tolerance: "medium"`
-  - P2/P3 or non-production → `risk_tolerance: "high"`
-  - Unit tests cover all combinations
+  - Custom labels stored in `custom_labels` JSONB (subdomain format per v1.5)
+  - Example: `{"risk_tolerance": ["low"], "business_category": ["payment-service"]}`
+  - Unit tests cover derivation logic
 
-#### **BR-SIGNAL-PROCESSING-003: business_category Categorization**
+#### **BR-SIGNAL-PROCESSING-003: Custom Label Support (OPTIONAL)**
 - **Category**: SIGNAL-PROCESSING
-- **Priority**: P0 (blocking for Signal Processing V1.0)
-- **Description**: MUST output `business_category` based on namespace mapping
-- **Authority**: DD-WORKFLOW-001 (authoritative label definitions)
-- **Configuration**: ConfigMap with namespace → category mapping
-- **Rego Policy Logic**:
+- **Priority**: P2 (optional enhancement)
+- **Description**: MAY support custom labels defined by users via Rego policies
+- **Authority**: DD-WORKFLOW-001 v1.6 (customer-derived labels section)
+- **Status**: ✅ **OPTIONAL** - Users configure if needed, no default required
+- **Example Custom Labels**: `business_category`, `gitops_tool`, `region`, `team`
+- **Rego Policy Logic** (user-defined):
   ```rego
-  business_category = data.namespace_categories[input.namespace]
+  # EXAMPLE: User-defined business_category (OPTIONAL)
+  custom_labels["business_category"] = data.namespace_categories[input.namespace] {
+      data.namespace_categories[input.namespace]
+  }
 
-  business_category = "infrastructure" {
+  custom_labels["business_category"] = "infrastructure" {
       input.resource.kind in ["Node", "PersistentVolume", "PersistentVolumeClaim"]
   }
 
-  business_category = "general" {  # Fallback
-      true
+  # EXAMPLE: User-defined gitops_tool (OPTIONAL)
+  custom_labels["gitops_tool"] = annotation {
+      annotation := input.deployment.annotations["argocd.argoproj.io/sync-wave"]
+      annotation != ""
   }
   ```
 - **Acceptance Criteria**:
-  - Namespace mapping loaded from ConfigMap
-  - Infrastructure resources (Node, PV, PVC) → `business_category: "infrastructure"`
-  - Unmapped namespaces → `business_category: "general"`
-  - ConfigMap updates reload Rego policies
-  - Unit tests cover mapped, unmapped, and infrastructure cases
+  - Custom labels stored in JSONB column
+  - Custom labels matched against workflow custom labels if present
+  - No mandatory configuration required (zero-friction default)
 
 ---
 
 ## 🚀 **Next Steps**
 
-1. ✅ **DD-WORKFLOW-001 Approved** (this document - authoritative label schema)
-2. 🚧 **Update DD-STORAGE-008**: Reference DD-WORKFLOW-001 for label schema
-3. 🚧 **Implement Label Validation**: `pkg/datastorage/validation/playbook_labels.go`
-4. 🚧 **Update Workflow Schema Migration**: Add enums, CHECK constraints, composite index
-5. 🚧 **Update Signal Processing Rego**: Add `risk_tolerance` and `business_category` policies
-6. 🚧 **Create Signal Processing ConfigMap**: Namespace → business_category mapping
-7. 🚧 **Integration Tests**: Validate label filtering, wildcard matching, and scoring
+1. ✅ **DD-WORKFLOW-001 v1.6 Approved** (this document - authoritative label schema)
+2. ✅ **Simplified to 5 Mandatory Labels (v1.4)**: Removed `risk_tolerance` and `business_category` from mandatory (now custom labels via Rego)
+3. ✅ **Standardized API Fields to snake_case (v1.6)**: All API/DB fields use snake_case
+4. 🚧 **Update DD-STORAGE-008**: Reference DD-WORKFLOW-001 v1.6 for label schema
+5. 🚧 **Implement Label Validation**: `pkg/datastorage/validation/workflow_labels.go` (5 mandatory per v1.6)
+6. 🚧 **Update Workflow Schema Migration**: Add enums, CHECK constraints for 5 labels
+7. 🚧 **Update Signal Processing Rego**: Implement Group A (auto-populate) + Group B (configurable)
+8. 🚧 **Custom Label Support**: JSONB storage with subdomain format (per v1.5)
+9. 🚧 **Integration Tests**: Validate label filtering, wildcard matching, and custom label matching
 
 ---
 
 ## 📋 **Changelog**
 
+### **v1.6** (2025-11-30) - CURRENT
+- ✅ **BREAKING**: Standardized all API/database field names to **snake_case**
+- ✅ **Changed filter parameters**: `signal-type` → `signal_type`, etc.
+- ✅ **Clarified naming convention**: K8s annotations (kebab-case) vs API fields (snake_case)
+- ✅ **Updated Go struct JSON tags**: From `json:"kubernaut.io/signal-type"` to `json:"signal_type"`
+- ✅ **Updated Business Requirements**: All BRs now reference v1.6
+- ✅ **Cross-reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001
+
+### **v1.5** (2025-11-30)
+- ✅ **Custom Labels Subdomain Format**: `<subdomain>.kubernaut.io/<key>[:<value>]` → `map[string][]string`
+- ✅ **Pass-Through Design**: Kubernaut is a conduit, not transformer
+- ✅ **Boolean Normalization**: Empty/true → key only; false → omitted
+- ✅ **Industry Alignment**: Follows Kubernetes label propagation pattern
+
+### **v1.4** (2025-11-30)
+- ✅ **BREAKING**: Reduced to 5 mandatory labels: `signal_type`, `severity`, `component`, `environment`, `priority`
+- ✅ **Moved to custom labels**: `risk_tolerance`, `business_category`, `team`, `region`, etc.
+- ✅ **Rationale**: Customers define environment meaning for risk via Rego policies
+
+### **v1.3** (2025-11-30)
+- ✅ **BREAKING**: Reduced from 7 to 6 mandatory labels
+- ✅ **Removed `business_category` from mandatory**: Moved to optional custom labels
+- ✅ **Added Label Grouping**: Auto-populated (Group A) vs Rego-configurable (Group B)
+- ✅ **Added Custom Labels Section**: User-defined labels for organization-specific needs
+- ✅ **Simplified Adoption**: No namespace→category mapping required by default
+
+### **v1.2** (2025-11-16)
+- ✅ **Clarified MCP Search Usage**: signal_type and severity for filtering + semantic ranking
+- ✅ **Added Description Format**: `"<signal_type> <severity>: <description>"`
+- ✅ **Cross-References**: DD-LLM-001, ADR-041
+
 ### **v1.1** (2025-11-14)
-- ✅ **Added Wildcard Support**: `environment`, `priority`, `business_category` support `'*'`
-- ✅ **Added Match Scoring**: Rank playbooks by match specificity (exact > wildcard)
+- ✅ **Added Wildcard Support**: `environment`, `priority` support `'*'`
+- ✅ **Added Match Scoring**: Rank workflows by match specificity (exact > wildcard)
 - ✅ **Added Type Safety**: PostgreSQL enums for `severity`, `environment`, `priority`, `risk_tolerance`
-- ✅ **Added Validation Constraints**: CHECK constraints for `signal_type`, `component`, `business_category`
+- ✅ **Added Validation Constraints**: CHECK constraints for `signal_type`, `component`
 - ✅ **Added Authoritative Definitions**: Single source of truth for all label values
-- ✅ **Added Signal Processing BRs**: BR-SIGNAL-PROCESSING-001, 002, 003 with Rego policy logic
+- ✅ **Added Signal Processing BRs**: BR-SIGNAL-PROCESSING-001, 002 with Rego policy logic
 - ✅ **Added Data Storage BRs**: BR-STORAGE-013, 014, 015 for validation and filtering
 
-- Initial 7-field mandatory label schema
-- 1:1 signal-to-playbook matching
+- Initial mandatory label schema
+- 1:1 signal-to-workflow matching
 - Structured columns for mandatory labels
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: November 14, 2025
-**Status**: ✅ **APPROVED** (95% confidence, production-ready with wildcards and scoring)
+**Document Version**: 1.6
+**Last Updated**: November 30, 2025
+**Status**: ✅ **APPROVED** (95% confidence, snake_case API standardization)
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow label schema
-**Next Review**: After Signal Processing Rego implementation (validate label output)
+**Breaking Change**: API field names use snake_case; Data Storage must update Go struct JSON tags
+**Cross-Reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001
+**Next Review**: After Data Storage implements snake_case API fields
 

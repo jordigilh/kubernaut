@@ -1,0 +1,641 @@
+name: Defense-in-Depth (Optimized)
+
+# 3-Stage Pipeline with Smart Path Detection
+# Stage 1: Build & Unit (Single job, all services)
+# Stage 2: Integration (8 parallel jobs, smart path detection)
+# Stage 3: E2E (8 parallel jobs, smart path detection)
+#
+# Smart Path Detection:
+# - Data Storage changes → ALL services (DS impacts everyone)
+# - Other service changes → ONLY that service
+# - Push to main → ALL services (full validation)
+#
+# Authority: docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - '**.py'
+      - 'go.mod'
+      - 'go.sum'
+      - 'test/**'
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'internal/**'
+      - 'api/**'
+      - 'migrations/**'
+      - 'Makefile'
+      - 'holmesgpt-api/**'
+      - '.github/workflows/**'
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # ========================================
+  # STAGE 1: BUILD & UNIT TESTS
+  # Single job, all 8 services (<2 min)
+  # ========================================
+
+  build-and-unit:
+    name: Build & Unit Tests (All Services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+
+      - name: Install Python dependencies
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Build all Go services
+        run: |
+          echo "🔨 Building all Go services..."
+          make build
+
+      - name: Run all unit tests
+        run: |
+          echo "🧪 Running unit tests for all services..."
+          make test
+
+          echo "🧪 Running HolmesGPT API unit tests..."
+          cd holmesgpt-api && make test-unit
+        env:
+          MOCK_LLM: 'true'
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-coverage
+          path: |
+            coverage.out
+            holmesgpt-api/htmlcov/
+          retention-days: 7
+
+  # ========================================
+  # STAGE 2: INTEGRATION TESTS
+  # 8 parallel jobs, smart path detection
+  # Only start if Stage 1 passes
+  # ========================================
+
+  integration-signalprocessing:
+    name: Integration (SignalProcessing)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Run if: push to main, OR DS changed, OR SP changed
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'pkg/signalprocessing/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/signalprocessing/') ||
+      contains(github.event.pull_request.changed_files, 'internal/controller/signalprocessing/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+      - name: Run SignalProcessing integration tests
+        run: make test-integration-signalprocessing
+      - name: Cleanup
+        if: always()
+        run: podman ps -a --filter "name=signalprocessing-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  integration-aianalysis:
+    name: Integration (AIAnalysis)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'pkg/aianalysis/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/aianalysis/') ||
+      contains(github.event.pull_request.changed_files, 'internal/controller/aianalysis/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+      - name: Run AIAnalysis integration tests
+        run: make test-integration-aianalysis
+      - name: Cleanup
+        if: always()
+        run: podman ps -a --filter "name=aianalysis-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  integration-workflowexecution:
+    name: Integration (WorkflowExecution)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'pkg/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/workflowexecution/') ||
+      contains(github.event.pull_request.changed_files, 'internal/controller/workflowexecution/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Run WorkflowExecution integration tests
+        run: make test-integration-workflowexecution
+
+  integration-remediationorchestrator:
+    name: Integration (RemediationOrchestrator)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'pkg/remediationorchestrator/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/remediationorchestrator/') ||
+      contains(github.event.pull_request.changed_files, 'internal/controller/remediationorchestrator/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Run RemediationOrchestrator integration tests
+        run: make test-integration-remediationorchestrator
+
+  integration-gateway:
+    name: Integration (Gateway)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'pkg/gateway/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/gateway/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+      - name: Run Gateway integration tests
+        run: make test-integration-gateway-service
+      - name: Cleanup
+        if: always()
+        run: kind delete cluster --name gateway-test 2>/dev/null || true
+
+  integration-datastorage:
+    name: Integration (Data Storage)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # DS always runs (it's the shared dependency)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+      - name: Run Data Storage integration tests
+        run: make test-integration-datastorage
+      - name: Cleanup
+        if: always()
+        run: podman ps -a --filter "name=datastorage-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  integration-notification:
+    name: Integration (Notification)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'pkg/notification/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/notification/') ||
+      contains(github.event.pull_request.changed_files, 'internal/controller/notification/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Run Notification integration tests
+        run: make test-integration-notification
+
+  integration-holmesgpt:
+    name: Integration (HolmesGPT API)
+    needs: [build-and-unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: |
+      github.event_name == 'push' ||
+      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
+      contains(github.event.pull_request.changed_files, 'migrations/') ||
+      contains(github.event.pull_request.changed_files, 'holmesgpt-api/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+      - name: Install Python dependencies
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run HolmesGPT API integration tests
+        working-directory: holmesgpt-api
+        run: make test-integration
+        env:
+          MOCK_LLM: 'true'
+
+  # ========================================
+  # STAGE 3: E2E TESTS
+  # 8 parallel jobs, smart path detection
+  # Only start if ALL integration tests pass
+  # ========================================
+
+  e2e-signalprocessing:
+    name: E2E (SignalProcessing)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Run if: integration ran AND passed, AND (push to main OR DS changed OR SP changed), AND not draft PR
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-signalprocessing.result == 'success' || needs.integration-signalprocessing.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'pkg/signalprocessing/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run SignalProcessing E2E tests
+        run: make test-e2e-signalprocessing
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name signalprocessing-e2e 2>/dev/null || true
+          podman ps -a --filter "name=signalprocessing-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-aianalysis:
+    name: E2E (AIAnalysis)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-aianalysis.result == 'success' || needs.integration-aianalysis.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'pkg/aianalysis/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run AIAnalysis E2E tests
+        run: make test-e2e-aianalysis
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name aianalysis-e2e 2>/dev/null || true
+          podman ps -a --filter "name=aianalysis-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-workflowexecution:
+    name: E2E (WorkflowExecution)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-workflowexecution.result == 'success' || needs.integration-workflowexecution.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'pkg/workflowexecution/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run WorkflowExecution E2E tests
+        run: make test-e2e-workflowexecution
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name workflowexecution-e2e 2>/dev/null || true
+          podman ps -a --filter "name=workflowexecution-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-remediationorchestrator:
+    name: E2E (RemediationOrchestrator)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-remediationorchestrator.result == 'success' || needs.integration-remediationorchestrator.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'pkg/remediationorchestrator/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run RemediationOrchestrator E2E tests
+        run: make test-e2e-remediationorchestrator
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name remediationorchestrator-e2e 2>/dev/null || true
+          podman ps -a --filter "name=remediationorchestrator-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-gateway:
+    name: E2E (Gateway)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-gateway.result == 'success' || needs.integration-gateway.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'pkg/gateway/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run Gateway E2E tests
+        run: make test-e2e-gateway
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name gateway-e2e 2>/dev/null || true
+          podman ps -a --filter "name=gateway-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-datastorage:
+    name: E2E (Data Storage)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # DS always runs E2E (it's the shared dependency)
+    if: |
+      github.event.pull_request.draft == false ||
+      github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run Data Storage E2E tests
+        run: make test-e2e-datastorage
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name datastorage-e2e 2>/dev/null || true
+          podman ps -a --filter "name=datastorage-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-notification:
+    name: E2E (Notification)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-notification.result == 'success' || needs.integration-notification.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'pkg/notification/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - name: Install Kind & Podman
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+          sudo apt-get update && sudo apt-get install -y podman
+      - name: Run Notification E2E tests
+        run: make test-e2e-notification
+      - name: Cleanup
+        if: always()
+        run: |
+          kind delete cluster --name notification-e2e 2>/dev/null || true
+          podman ps -a --filter "name=notification-" --format "{{.Names}}" | xargs -r podman rm -f
+
+  e2e-holmesgpt:
+    name: E2E (HolmesGPT API)
+    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
+      (needs.integration-holmesgpt.result == 'success' || needs.integration-holmesgpt.result == 'skipped') &&
+      (github.event_name == 'push' ||
+       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
+       contains(github.event.pull_request.changed_files, 'migrations/') ||
+       contains(github.event.pull_request.changed_files, 'holmesgpt-api/'))
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+      - name: Install Kind
+        run: |
+          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
+          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+      - name: Install Python dependencies
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run HolmesGPT API E2E tests
+        run: make test-e2e-holmesgpt
+        env:
+          MOCK_LLM: 'true'
+      - name: Cleanup
+        if: always()
+        run: kind delete cluster --name datastorage-e2e 2>/dev/null || true
+
+  # ========================================
+  # SUMMARY
+  # ========================================
+  summary:
+    name: Test Suite Summary
+    needs: [
+      build-and-unit,
+      integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt,
+      e2e-signalprocessing, e2e-aianalysis, e2e-workflowexecution, e2e-remediationorchestrator, e2e-gateway, e2e-datastorage, e2e-notification, e2e-holmesgpt
+    ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Suite Summary
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Defense-in-Depth Test Suite Summary (Optimized)"
+          echo "═══════════════════════════════════════════════════════════"
+          echo ""
+          echo "STAGE 1 - Build & Unit Tests:"
+          echo "  All Services: ${{ needs.build-and-unit.result }}"
+          echo ""
+          echo "STAGE 2 - Integration Tests (Smart Path Detection):"
+          echo "  SignalProcessing:          ${{ needs.integration-signalprocessing.result }}"
+          echo "  AIAnalysis:                ${{ needs.integration-aianalysis.result }}"
+          echo "  WorkflowExecution:         ${{ needs.integration-workflowexecution.result }}"
+          echo "  RemediationOrchestrator:   ${{ needs.integration-remediationorchestrator.result }}"
+          echo "  Gateway:                   ${{ needs.integration-gateway.result }}"
+          echo "  Data Storage:              ${{ needs.integration-datastorage.result }}"
+          echo "  Notification:              ${{ needs.integration-notification.result }}"
+          echo "  HolmesGPT API:             ${{ needs.integration-holmesgpt.result }}"
+          echo ""
+          echo "STAGE 3 - E2E Tests (Smart Path Detection):"
+          echo "  SignalProcessing:          ${{ needs.e2e-signalprocessing.result }}"
+          echo "  AIAnalysis:                ${{ needs.e2e-aianalysis.result }}"
+          echo "  WorkflowExecution:         ${{ needs.e2e-workflowexecution.result }}"
+          echo "  RemediationOrchestrator:   ${{ needs.e2e-remediationorchestrator.result }}"
+          echo "  Gateway:                   ${{ needs.e2e-gateway.result }}"
+          echo "  Data Storage:              ${{ needs.e2e-datastorage.result }}"
+          echo "  Notification:              ${{ needs.e2e-notification.result }}"
+          echo "  HolmesGPT API:             ${{ needs.e2e-holmesgpt.result }}"
+          echo ""
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Smart Path Detection:"
+          echo "  ✅ Data Storage changes → ALL services tested"
+          echo "  ✅ Isolated service changes → ONLY that service tested"
+          echo "  ✅ Push to main → ALL services tested (full validation)"
+          echo ""
+          echo "Optimizations:"
+          echo "  ✅ Single build & unit job (fast feedback)"
+          echo "  ✅ Parallel integration tests"
+          echo "  ✅ Parallel E2E tests"
+          echo "  ✅ E2E runs only after ALL integration tests pass"
+          echo "═══════════════════════════════════════════════════════════"
+
+          # Check for build & unit failure (critical)
+          if [ "${{ needs.build-and-unit.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Build & Unit tests failed - all other tests skipped"
+            exit 1
+          fi
+
+          # Check for any integration/E2E failures
+          FAILED=0
+          for job in signalprocessing aianalysis workflowexecution remediationorchestrator gateway datastorage notification holmesgpt; do
+            integration_result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${job}\".result")
+            e2e_result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"e2e-${job}\".result")
+
+            if [ "$integration_result" == "failure" ]; then
+              echo "❌ Integration tests failed for ${job}"
+              FAILED=1
+            fi
+
+            if [ "$e2e_result" == "failure" ]; then
+              echo "❌ E2E tests failed for ${job}"
+              FAILED=1
+            fi
+          done
+
+          if [ $FAILED -eq 0 ]; then
+            echo ""
+            echo "✅ All tests passed!"
+            exit 0
+          else
+            echo ""
+            echo "❌ Some tests failed - check individual job logs"
+            exit 1
+          fi

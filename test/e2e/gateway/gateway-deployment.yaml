@@ -30,24 +30,13 @@ data:
         pool_size: 10
         min_idle_conns: 5
 
+      # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
+      # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
+      data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+
     processing:
       deduplication:
-        ttl: 5s  # Fast TTL for E2E tests (production: 5m)
-
-      storm:
-        # Threshold semantics: count > threshold (exclusive)
-        # threshold: 0 means storm triggers when count > 0 (i.e., at count=1, first alert)
-        # Production should use explicit values (e.g., rate: 10, pattern: 5)
-        rate_threshold: 0          # Trigger storm on first alert (count > 0 = true at count=1)
-        pattern_threshold: 0       # Trigger storm on first alert (count > 0 = true at count=1)
-        aggregation_window: 5s     # Fast window for E2E tests (production: 1m)
-
-        # DD-GATEWAY-008: Buffered first-alert aggregation with sliding window
-        # NOTE: Storm detection must trigger FIRST (rate/pattern_threshold: 0 = storm on first alert)
-        # THEN buffering begins (buffer_threshold: 2)
-        buffer_threshold: 2        # Buffer 2 alerts before creating window (production: 5)
-        inactivity_timeout: 5s     # Sliding window timeout - fast for E2E (production: 60s)
-        max_window_duration: 30s   # Maximum window duration - short for E2E (production: 5m)
+        ttl: 10s  # Minimum allowed TTL (production: 5m)
 
       environment:
         cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
@@ -123,7 +112,6 @@ spec:
           imagePullPolicy: Never  # Use local image loaded into Kind
           args:
             - "--config=/etc/gateway/config.yaml"
-            - "--redis=redis-master.kubernaut-system.svc.cluster.local:6379"
           ports:
             - name: http
               containerPort: 8080
@@ -131,9 +119,7 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
-          env:
-            - name: KUBECONFIG
-              value: ""  # Use in-cluster config
+          # Note: KUBECONFIG env var not set - uses in-cluster config automatically
           volumeMounts:
             - name: config
               mountPath: /etc/gateway
@@ -153,10 +139,10 @@ spec:
             httpGet:
               path: /ready
               port: 8080
-            initialDelaySeconds: 5
+            initialDelaySeconds: 30
             periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: 5
+            failureThreshold: 6
           resources:
             requests:
               memory: "256Mi"
@@ -212,10 +198,16 @@ kind: ClusterRole
 metadata:
   name: gateway-role
 rules:
-  # RemediationRequest CRD access
-  - apiGroups: ["remediation.kubernaut.io"]
+  # RemediationRequest CRD access (updated to kubernaut.ai API group)
+  - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["create", "get", "list", "watch", "update", "patch"]
+
+  # RemediationRequest status subresource access (DD-GATEWAY-011)
+  # Required for Gateway StatusUpdater to update Status.Deduplication
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["update", "patch"]
 
   # Namespace access (for environment classification)
   - apiGroups: [""]

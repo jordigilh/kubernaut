@@ -1,0 +1,678 @@
+package infrastructure
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
+)
+
+// SetupROInfrastructureHybridWithCoverage implements hybrid parallel strategy
+// per DD-TEST-002: Parallel Test Execution Standard (validated Dec 25, 2025)
+//
+// Strategy (AUTHORITATIVE):
+// 1. Build images in PARALLEL (FASTEST - both build simultaneously)
+// 2. Create Kind cluster AFTER builds complete (NO IDLE TIMEOUT)
+// 3. Load images immediately into fresh cluster (RELIABLE)
+// 4. Deploy services (parallel)
+//
+// This combines the best of sequential (no timeouts) and parallel (speed):
+// - Images build in parallel: ~2-3 minutes (not 7 sequential minutes)
+// - Cluster created when ready: No idle time, no timeout risk
+// - Total time: ~5-6 minutes (faster than sequential, more reliable than old parallel)
+//
+// Per DD-TEST-007: E2E Coverage Capture Standard
+func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "🚀 RemediationOrchestrator E2E Infrastructure (HYBRID PARALLEL + COVERAGE)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
+	fmt.Fprintln(writer, "  Benefits: Fast builds + No cluster timeout + Reliable")
+	fmt.Fprintln(writer, "  Per DD-TEST-007: Coverage instrumentation enabled")
+	fmt.Fprintln(writer, "  Per DD-TEST-001: Port 30083 (API), 30183 (Metrics)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	namespace := "kubernaut-system"
+
+	// DD-TEST-007: Create coverdata directory BEFORE everything
+	projectRoot := getProjectRoot()
+	coverdataPath := filepath.Join(projectRoot, "coverdata")
+	fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 0: Generate dynamic image tags (BEFORE building)
+	// ═══════════════════════════════════════════════════════════════════════
+	// Generate DataStorage image tag ONCE (non-idempotent, timestamp-based)
+	// This ensures each service builds its OWN DataStorage with LATEST code
+	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
+	dataStorageImageName := GenerateInfraImageName("datastorage", "remediationorchestrator")
+	fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
+	fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 1: Build images IN PARALLEL (before cluster creation)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	fmt.Fprintln(writer, "  ├── RemediationOrchestrator controller (WITH COVERAGE)")
+	fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
+	fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
+
+	type buildResult struct {
+		name string
+		err  error
+	}
+
+	buildResults := make(chan buildResult, 2)
+
+	// Build RemediationOrchestrator with coverage in parallel
+	go func() {
+		err := BuildROImageWithCoverage(writer)
+		buildResults <- buildResult{name: "RemediationOrchestrator (coverage)", err: err}
+	}()
+
+	// Build DataStorage with dynamic tag in parallel
+	go func() {
+		err := buildDataStorageImageWithTag(dataStorageImageName, writer)
+		buildResults <- buildResult{name: "DataStorage", err: err}
+	}()
+
+	// Wait for both builds to complete
+	fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	var buildErrors []error
+	for i := 0; i < 2; i++ {
+		result := <-buildResults
+		if result.err != nil {
+			fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
+			buildErrors = append(buildErrors, result.err)
+		} else {
+			fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+		}
+	}
+
+	if len(buildErrors) > 0 {
+		return fmt.Errorf("image builds failed: %v", buildErrors)
+	}
+
+	fmt.Fprintln(writer, "\n✅ All images built successfully!")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Create Kind cluster (now that images are ready)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
+
+	// Use Kind config with extraPortMappings for metrics access (DD-TEST-001)
+	kindConfigPath := filepath.Join(projectRoot, "test", "infrastructure", "kind-remediationorchestrator-config.yaml")
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", clusterName,
+		"--config", kindConfigPath,
+		"--kubeconfig", kubeconfigPath,
+	)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	cmd.Dir = projectRoot // Set working dir so ./coverdata in config resolves correctly
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	// Install ALL CRDs required for RO orchestration
+	fmt.Fprintln(writer, "📋 Installing CRDs...")
+	if err := installROCRDs(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install CRDs: %w", err)
+	}
+
+	// Create kubernaut-system namespace
+	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	if err := roCreateNamespace(kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 3: Load images into fresh cluster (parallel)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
+	fmt.Fprintln(writer, "  ├── RemediationOrchestrator coverage image")
+	fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
+	fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
+
+	loadResults := make(chan buildResult, 2)
+
+	// Load RemediationOrchestrator coverage image
+	go func() {
+		err := LoadROCoverageImage(clusterName, writer)
+		loadResults <- buildResult{name: "RemediationOrchestrator coverage", err: err}
+	}()
+
+	// Load DataStorage image with dynamic tag
+	go func() {
+		err := loadDataStorageImageWithTag(clusterName, dataStorageImageName, writer)
+		loadResults <- buildResult{name: "DataStorage", err: err}
+	}()
+
+	// Wait for both loads to complete
+	fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
+	var loadErrors []error
+	for i := 0; i < 2; i++ {
+		result := <-loadResults
+		if result.err != nil {
+			fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
+			loadErrors = append(loadErrors, result.err)
+		} else {
+			fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
+		}
+	}
+
+	if len(loadErrors) > 0 {
+		return fmt.Errorf("image loads failed: %v", loadErrors)
+	}
+
+	fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
+	// ═══════════════════════════════════════════════════════════════════════
+	// NOTE: Using dataStorageImageName from Phase 0 (generated BEFORE build)
+	// This ensures we deploy the SAME image we just built with latest code
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+
+	type deployResult struct {
+		name string
+		err  error
+	}
+	deployResults := make(chan deployResult, 5)
+
+	// Launch ALL kubectl apply commands concurrently
+	go func() {
+		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"PostgreSQL", err}
+	}()
+	go func() {
+		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"Redis", err}
+	}()
+	go func() {
+		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
+		deployResults <- deployResult{"Migrations", err}
+	}()
+	go func() {
+		// CRITICAL: Use the tag generated in Phase 0 (UUID-based, non-idempotent)
+		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
+		// This ensures we deploy the SAME fresh-built image with latest DataStorage code
+		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer)
+		deployResults <- deployResult{"DataStorage", err}
+	}()
+	go func() {
+		err := DeployROCoverageManifest(kubeconfigPath, writer)
+		deployResults <- deployResult{"RemediationOrchestrator", err}
+	}()
+
+	// Collect ALL results before proceeding (MANDATORY)
+	var deployErrors []error
+	for i := 0; i < 5; i++ {
+		result := <-deployResults
+		if result.err != nil {
+			fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			deployErrors = append(deployErrors, result.err)
+		} else {
+			fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+		}
+	}
+
+	if len(deployErrors) > 0 {
+		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
+	}
+	fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+
+	// Single wait for ALL services ready (Kubernetes handles dependencies)
+	fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	if err := waitForROServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("services not ready: %w", err)
+	}
+
+	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "✅ RemediationOrchestrator E2E Infrastructure Ready!")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
+	fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
+	fmt.Fprintln(writer, "  🎯 RO Metrics: http://localhost:30183")
+	fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	return nil
+}
+
+// ============================================================================
+// Build Functions (with coverage support per DD-TEST-007)
+// ============================================================================
+
+// BuildROImageWithCoverage builds the RemediationOrchestrator controller image with coverage instrumentation
+// Per DD-TEST-007: E2E Coverage Capture Standard
+func BuildROImageWithCoverage(writer io.Writer) error {
+	fmt.Fprintln(writer, "🏗️  Building RemediationOrchestrator controller image (WITH COVERAGE)...")
+
+	projectRoot := getProjectRoot()
+	dockerfilePath := filepath.Join(projectRoot, "docker", "remediationorchestrator-controller.Dockerfile")
+
+	// Build with coverage instrumentation
+	// Use localhost/ prefix to match Podman's default tagging
+	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
+	cmd := exec.Command("podman", "build",
+		"--no-cache", // Force fresh build to include latest code changes
+		"--build-arg", "GOFLAGS=-cover",
+		"-t", "localhost/remediationorchestrator-controller:e2e-coverage",
+		"-f", dockerfilePath,
+		projectRoot,
+	)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to build RemediationOrchestrator image with coverage: %w", err)
+	}
+
+	fmt.Fprintln(writer, "  ✅ RemediationOrchestrator controller image built (WITH COVERAGE)")
+	return nil
+}
+
+// tagDataStorageImageInKind is now OBSOLETE - removed per Phase 0 tag generation pattern
+// Each service builds DataStorage with dynamic tag directly (no re-tagging needed)
+// Shared helper functions buildDataStorageImageWithTag() and loadDataStorageImageWithTag()
+// are defined in datastorage.go
+
+// LoadROCoverageImage loads the RemediationOrchestrator coverage-instrumented image into Kind cluster
+// Uses podman save + kind load image-archive pattern to work around Kind+Podman localhost/ prefix issue
+func LoadROCoverageImage(clusterName string, writer io.Writer) error {
+	fmt.Fprintln(writer, "📦 Loading RemediationOrchestrator coverage image into Kind cluster...")
+
+	// Save image to tar (following Gateway/DataStorage pattern for Kind+Podman compatibility)
+	saveCmd := exec.Command("podman", "save", "localhost/remediationorchestrator-controller:e2e-coverage", "-o", "/tmp/remediationorchestrator-e2e-coverage.tar")
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
+	}
+
+	// Load tar into Kind cluster
+	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/remediationorchestrator-e2e-coverage.tar", "--name", clusterName)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+
+	if err := loadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to load image archive into Kind: %w", err)
+	}
+
+	fmt.Fprintln(writer, "  ✅ RemediationOrchestrator coverage image loaded")
+	return nil
+}
+
+// ============================================================================
+// Deploy Functions
+// ============================================================================
+
+// DeployROCoverageManifest deploys the RemediationOrchestrator controller with coverage enabled
+// Per DD-TEST-007: Mounts coverdata directory as hostPath volume
+// Per ADR-030: Mounts audit config file for E2E audit testing
+func DeployROCoverageManifest(kubeconfigPath string, writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	coverdataPath := filepath.Join(projectRoot, "coverdata")
+
+	// Create manifest with coverage volume mount + audit config
+	manifest := fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: remediationorchestrator-config
+  namespace: kubernaut-system
+data:
+  remediationorchestrator.yaml: |
+    # RemediationOrchestrator E2E Configuration
+    # Per ADR-030: YAML-based service configuration
+    audit:
+      datastorage_url: http://datastorage:8080
+      timeout: 10s
+      buffer:
+        buffer_size: 10000
+        batch_size: 100
+        flush_interval: 1s
+        max_retries: 3
+    controller:
+      metrics_addr: :9093
+      health_probe_addr: :8084
+      leader_election: false
+      leader_election_id: remediationorchestrator.kubernaut.ai
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: remediationorchestrator-controller
+  template:
+    metadata:
+      labels:
+        app: remediationorchestrator-controller
+    spec:
+      serviceAccountName: remediationorchestrator-controller
+      containers:
+      - name: controller
+        image: localhost/remediationorchestrator-controller:e2e-coverage
+        imagePullPolicy: Never
+        args:
+        - --config=/etc/config/remediationorchestrator.yaml
+        ports:
+        - containerPort: 8084
+          name: health
+          protocol: TCP
+        - containerPort: 9093
+          name: metrics
+          protocol: TCP
+        env:
+        - name: GOCOVERDIR
+          value: /coverdata
+        volumeMounts:
+        - name: coverdata
+          mountPath: /coverdata
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: coverdata
+        hostPath:
+          path: %s
+          type: DirectoryOrCreate
+      - name: config
+        configMap:
+          name: remediationorchestrator-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  ports:
+  - port: 9093
+    targetPort: 9093
+    nodePort: 30183
+    protocol: TCP
+    name: metrics
+  selector:
+    app: remediationorchestrator-controller
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: remediationorchestrator-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationrequests", "remediationapprovalrequests"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationrequests/status", "remediationapprovalrequests/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["signalprocessings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["signalprocessings/status"]
+  verbs: ["get"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses/status"]
+  verbs: ["get"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["workflowexecutions"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["workflowexecutions/status"]
+  verbs: ["get"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["notificationrequests"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["notificationrequests/status"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: remediationorchestrator-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: remediationorchestrator-controller
+subjects:
+- kind: ServiceAccount
+  name: remediationorchestrator-controller
+  namespace: kubernaut-system
+`, coverdataPath)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = roBytesReader([]byte(manifest))
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy RemediationOrchestrator: %w", err)
+	}
+
+	// Wait for RemediationOrchestrator to be ready with retry loop (matches PostgreSQL pattern)
+	// Give Kubernetes time to schedule the pod, pull the image, and start the controller
+	fmt.Fprintln(writer, "   ⏳ Waiting for RemediationOrchestrator to be ready...")
+	deadline := time.Now().Add(3 * time.Minute) // Longer timeout for controller startup
+	for time.Now().Before(deadline) {
+		waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+			"wait", "--for=condition=ready", "pod", "-l", "app=remediationorchestrator-controller",
+			"--timeout=10s")
+		if err := waitCmd.Run(); err == nil {
+			fmt.Fprintln(writer, "   ✅ RemediationOrchestrator ready")
+			return nil
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	// Capture diagnostics before failing
+	fmt.Fprintln(writer, "")
+	fmt.Fprintln(writer, "   ❌ RemediationOrchestrator not ready - capturing diagnostics...")
+	fmt.Fprintln(writer, "")
+
+	// 1. Pod status
+	fmt.Fprintln(writer, "   📋 Pod Status:")
+	statusCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+		"get", "pods", "-l", "app=remediationorchestrator-controller", "-o", "wide")
+	statusCmd.Stdout = writer
+	statusCmd.Stderr = writer
+	_ = statusCmd.Run()
+	fmt.Fprintln(writer, "")
+
+	// 2. Pod describe (events, image status, readiness probe)
+	fmt.Fprintln(writer, "   📋 Pod Details & Events:")
+	describeCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+		"describe", "pod", "-l", "app=remediationorchestrator-controller")
+	describeCmd.Stdout = writer
+	describeCmd.Stderr = writer
+	_ = describeCmd.Run()
+	fmt.Fprintln(writer, "")
+
+	// 3. Pod logs (startup errors)
+	fmt.Fprintln(writer, "   📋 Pod Logs (last 50 lines):")
+	logsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+		"logs", "-l", "app=remediationorchestrator-controller", "--tail=50", "--all-containers")
+	logsCmd.Stdout = writer
+	logsCmd.Stderr = writer
+	_ = logsCmd.Run()
+	fmt.Fprintln(writer, "")
+
+	return fmt.Errorf("RemediationOrchestrator not ready within timeout")
+}
+
+// deployRORedis deploys Redis for DataStorage caching
+func deployRORedis(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error {
+	fmt.Fprintln(writer, "   Deploying Redis...")
+
+	manifest := `
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  ports:
+    - port: 6379
+  selector:
+    app: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "apply", "-f", "-")
+	cmd.Stdin = roBytesReader([]byte(manifest))
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Redis: %w", err)
+	}
+
+	// Wait for Redis to be ready with retry loop (matches PostgreSQL pattern)
+	// Give Kubernetes time to schedule the pod and pull the image
+	fmt.Fprintln(writer, "   Waiting for Redis to be ready...")
+	deadline := time.Now().Add(2 * time.Minute)
+	for time.Now().Before(deadline) {
+		waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace,
+			"wait", "--for=condition=ready", "pod", "-l", "app=redis", "--timeout=10s")
+		if err := waitCmd.Run(); err == nil {
+			fmt.Fprintln(writer, "   ✅ Redis ready")
+			return nil
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	return fmt.Errorf("Redis not ready within timeout")
+}
+
+// waitForROServicesReady waits for DataStorage and RemediationOrchestrator pods to be ready
+// Per DD-TEST-002: Single readiness check after parallel deployment
+func waitForROServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// Build Kubernetes clientset
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to build kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	// Wait for DataStorage pod to be ready
+	fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=datastorage",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
+	fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+
+	// Wait for RemediationOrchestrator pod to be ready (coverage-enabled may take longer)
+	fmt.Fprintf(writer, "   ⏳ Waiting for RemediationOrchestrator pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=remediationorchestrator-controller",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "RemediationOrchestrator pod should become ready")
+	fmt.Fprintf(writer, "   ✅ RemediationOrchestrator ready\n")
+
+	return nil
+}

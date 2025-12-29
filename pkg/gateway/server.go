@@ -28,21 +28,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	goredis "github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
-	"golang.org/x/sync/singleflight"
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
-	// "k8s.io/client-go/kubernetes" // DD-GATEWAY-004: No longer needed (authentication removed)
+	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	rediscache "github.com/jordigilh/kubernaut/pkg/cache/redis" // DD-CACHE-001: Shared Redis Library
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
@@ -50,6 +49,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware" // BR-109: Request ID middleware
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
+	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
 )
 
 // Server is the main Gateway HTTP server
@@ -62,15 +63,14 @@ import (
 //   - Extract metadata (labels, annotations, timestamps)
 //
 // 2. Processing pipeline:
-//   - Deduplication: Check if signal was seen before (Redis lookup)
+//   - Deduplication: Check if signal was seen before (K8s status-based per DD-GATEWAY-011)
 //   - Storm detection: Identify alert storms (rate-based, pattern-based)
-//   - Classification: Determine environment (prod/staging/dev)
-//   - Priority assignment: Calculate priority (P0/P1/P2)
+//   - Note: Classification and priority removed (2025-12-06) - now owned by Signal Processing
 //
 // 3. CRD creation:
 //   - Build RemediationRequest CRD from normalized signal
 //   - Create CRD in Kubernetes
-//   - Record deduplication metadata in Redis
+//   - Update status.deduplication for tracking (DD-GATEWAY-011)
 //
 // 4. HTTP response:
 //   - 201 Created: New RemediationRequest CRD created
@@ -95,30 +95,33 @@ type Server struct {
 
 	// Core processing components
 	adapterRegistry *adapters.AdapterRegistry
-	deduplicator    *processing.DeduplicationService
-	crdUpdater      *processing.CRDUpdater // DD-GATEWAY-009: CRD updater for state-based deduplication
-	stormDetector   *processing.StormDetector
-	stormAggregator *processing.StormAggregator
-	classifier      *processing.EnvironmentClassifier
-	priorityEngine  *processing.PriorityEngine
-	pathDecider     *processing.RemediationPathDecider
-	crdCreator      *processing.CRDCreator
+	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
+	// Old: crdUpdater updated Spec.Deduplication (WRONG!)
+	// New: statusUpdater updates Status.Deduplication (CORRECT!)
+	// DD-GATEWAY-011 + DD-GATEWAY-012: Status-based deduplication and storm aggregation
+	// Redis DEPRECATED - all state now in K8s RR status
+	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
+	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
+	crdCreator    *processing.CRDCreator
 
 	// Infrastructure clients
-	redisClient *rediscache.Client // DD-CACHE-001: Shared Redis Library
-	k8sClient   *k8s.Client
-	ctrlClient  client.Client
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
+	k8sClient  *k8s.Client
+	ctrlClient client.Client
 
-	// Middleware
-	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
-	// authMiddleware *middleware.AuthMiddleware // REMOVED
-	// rateLimiter    *middleware.RateLimiter    // REMOVED
+	// DD-AUDIT-003: Audit store for async buffered audit event emission
+	// Gateway is P0 service - MUST emit audit events per DD-AUDIT-003
+	auditStore audit.AuditStore // nil if Data Storage URL not configured (graceful degradation)
 
 	// Metrics
 	metricsInstance *metrics.Metrics
 
-	// Logger
-	logger *zap.Logger
+	// Logger (DD-005: Unified logr.Logger interface)
+	logger logr.Logger
+
+	// BR-GATEWAY-185 v1.1: Cache for field-indexed queries on spec.signalFingerprint
+	k8sCache    cache.Cache        // Kubernetes cache with field index (nil for test clients)
+	cacheCancel context.CancelFunc // Cancel function to stop cache on shutdown
 
 	// Graceful shutdown flag
 	// When true, readiness probe returns 503 (not ready)
@@ -130,12 +133,6 @@ type Server struct {
 	//
 	// Industry best practice: Google SRE, Netflix, Kubernetes community
 	isShuttingDown atomic.Bool
-
-	// Storm aggregation concurrency control using singleflight pattern
-	// Prevents race condition where multiple goroutines attempt to create
-	// the same aggregated CRD simultaneously when window expires
-	// Uses golang.org/x/sync/singleflight - industry standard for deduplicating work
-	aggregationGroup singleflight.Group
 }
 
 // Configuration types have been moved to pkg/gateway/config/config.go
@@ -146,7 +143,7 @@ type Server struct {
 // This initializes:
 // - Redis client with connection pooling
 // - Kubernetes client (controller-runtime)
-// - Processing pipeline components (deduplication, storm, classification, priority, CRD)
+// - Processing pipeline components (deduplication, storm, CRD creation)
 // - Middleware (authentication, rate limiting)
 // - HTTP routes (adapters, health, metrics)
 //
@@ -157,7 +154,7 @@ type Server struct {
 // 4. Graceful shutdown on signal: server.Stop(ctx)
 //
 // For testing with isolated metrics, use NewServerWithMetrics() instead.
-func NewServer(cfg *config.ServerConfig, logger *zap.Logger) (*Server, error) {
+func NewServer(cfg *config.ServerConfig, logger logr.Logger) (*Server, error) {
 	return NewServerWithMetrics(cfg, logger, nil)
 }
 
@@ -173,43 +170,24 @@ func NewServer(cfg *config.ServerConfig, logger *zap.Logger) (*Server, error) {
 //	metricsInstance := metrics.NewMetricsWithRegistry(registry)
 //	server, err := gateway.NewServerWithMetrics(cfg, logger, metricsInstance)
 //
-// If metricsInstance is nil, creates a new metrics instance with the default registry.
+// If metricsInstance is nil, automatically creates a new metrics instance with
+// the default Prometheus registry (production mode).
+//
 // NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
-func NewServerWithK8sClient(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
-	// 1. Initialize Redis client (DD-CACHE-001: Shared Redis Library)
-	redisClient := rediscache.NewClient(&goredis.Options{
-		Addr:         cfg.Infrastructure.Redis.Addr,
-		DB:           cfg.Infrastructure.Redis.DB,
-		Password:     cfg.Infrastructure.Redis.Password,
-		DialTimeout:  cfg.Infrastructure.Redis.DialTimeout,
-		ReadTimeout:  cfg.Infrastructure.Redis.ReadTimeout,
-		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
-		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
-		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
-	}, logger)
-
-	// 2. Use provided Kubernetes client (shared with test)
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
+	// Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// 3. Initialize processing pipeline components
-	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
+	// Initialize processing pipeline components (no Redis)
+	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
 }
 
-func NewServerWithMetrics(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
-	// 1. Initialize Redis client (DD-CACHE-001: Shared Redis Library)
-	redisClient := rediscache.NewClient(&goredis.Options{
-		Addr:         cfg.Infrastructure.Redis.Addr,
-		DB:           cfg.Infrastructure.Redis.DB,
-		Password:     cfg.Infrastructure.Redis.Password,
-		DialTimeout:  cfg.Infrastructure.Redis.DialTimeout,
-		ReadTimeout:  cfg.Infrastructure.Redis.ReadTimeout,
-		WriteTimeout: cfg.Infrastructure.Redis.WriteTimeout,
-		PoolSize:     cfg.Infrastructure.Redis.PoolSize,
-		MinIdleConns: cfg.Infrastructure.Redis.MinIdleConns,
-	}, logger)
+func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
+	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 
-	// 2. Initialize Kubernetes clients
+	// Initialize Kubernetes clients
 	// Get kubeconfig with standard Kubernetes precedence:
 	// 1. --kubeconfig flag
 	// 2. KUBECONFIG environment variable (used in tests: ~/.kube/kind-config)
@@ -226,128 +204,139 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger *zap.Logger, metricsI
 	_ = remediationv1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
 
-	// controller-runtime client (for environment classification and CRD creation)
-	ctrlClient, err := client.New(kubeConfig, client.Options{Scheme: scheme})
+	// ========================================
+	// BR-GATEWAY-185 v1.1: Create cached client with field index
+	// Use spec.signalFingerprint (immutable, 64-char SHA256) instead of truncated labels
+	// ========================================
+
+	// Create cache for efficient queries
+	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme})
 	if err != nil {
+		return nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)
+	}
+
+	// Add field index for spec.signalFingerprint (BR-GATEWAY-185 v1.1)
+	// This enables O(1) lookup by fingerprint without label truncation
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := k8sCache.IndexField(ctx, &remediationv1alpha1.RemediationRequest{},
+		"spec.signalFingerprint",
+		func(obj client.Object) []string {
+			rr := obj.(*remediationv1alpha1.RemediationRequest)
+			return []string{rr.Spec.SignalFingerprint}
+		}); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
+	}
+
+	// Start cache in background
+	go func() {
+		if err := k8sCache.Start(ctx); err != nil {
+			logger.Error(err, "BR-GATEWAY-185: Cache stopped unexpectedly")
+		}
+	}()
+
+	// Wait for cache sync (timeout after 30s)
+	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer syncCancel()
+	if !k8sCache.WaitForCacheSync(syncCtx) {
+		cancel()
+		return nil, fmt.Errorf("failed to sync Kubernetes cache (timeout)")
+	}
+	logger.Info("BR-GATEWAY-185: Kubernetes cache synced with spec.signalFingerprint index")
+
+	// Create client backed by cache (reads go through cache, writes go to API)
+	ctrlClient, err := client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		Cache: &client.CacheOptions{
+			Reader: k8sCache,
+		},
+	})
+	if err != nil {
+		cancel()
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
 	}
 
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	return createServerWithClients(cfg, logger, metricsInstance, redisClient, ctrlClient, k8sClient)
+	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+
+	// Store cache and cancel function for cleanup
+	server.k8sCache = k8sCache
+	server.cacheCancel = cancel
+
+	return server, nil
 }
 
 // createServerWithClients is the common server creation logic
-func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metricsInstance *metrics.Metrics, redisClient *rediscache.Client, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
-	// DD-GATEWAY-004: kubernetes clientset removed (no longer needed for authentication)
-	// clientset, err := kubernetes.NewForConfig(kubeConfig) // REMOVED
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to create Kubernetes clientset: %w", err)
-	// } // REMOVED
-
-	// Initialize processing pipeline components
-	adapterRegistry := adapters.NewAdapterRegistry(logger)
-
-	// Use provided metrics instance or create new one with default registry
+// DD-005: Uses logr.Logger for unified logging interface
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+// DD-AUDIT-003: Audit store initialization for P0 service compliance
+func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
+	// Metrics are mandatory for observability
+	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {
 		metricsInstance = metrics.NewMetrics()
 	}
 
-	// DD-GATEWAY-009: Initialize deduplicator with K8s client for state-based deduplication
-	var deduplicator *processing.DeduplicationService
-	if cfg.Processing.Deduplication.TTL > 0 {
-		deduplicator = processing.NewDeduplicationServiceWithTTL(redisClient, k8sClient, cfg.Processing.Deduplication.TTL, logger, metricsInstance)
-		logger.Info("Using custom deduplication TTL", zap.Duration("ttl", cfg.Processing.Deduplication.TTL))
-	} else {
-		deduplicator = processing.NewDeduplicationService(redisClient, k8sClient, logger, metricsInstance)
-	}
+	// Initialize processing pipeline components
+	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
-	// DD-GATEWAY-009: Initialize CRD updater for duplicate alert handling
-	crdUpdater := processing.NewCRDUpdater(k8sClient, logger)
+	// DD-GATEWAY-011: CRDUpdater REMOVED - replaced by StatusUpdater
+	// Old CRDUpdater updated Spec.Deduplication (incorrect per DD-GATEWAY-011)
+	// StatusUpdater now handles status updates (status.deduplication)
 
-	stormDetector := processing.NewStormDetector(redisClient.GetClient(), cfg.Processing.Storm.RateThreshold, cfg.Processing.Storm.PatternThreshold, metricsInstance)
-	if cfg.Processing.Storm.RateThreshold > 0 || cfg.Processing.Storm.PatternThreshold > 0 {
-		logger.Info("Using custom storm detection thresholds",
-			zap.Int("rate_threshold", cfg.Processing.Storm.RateThreshold),
-			zap.Int("pattern_threshold", cfg.Processing.Storm.PatternThreshold),
-		)
-	}
-
-	// DD-GATEWAY-008: Use NewStormAggregatorWithConfig for full feature support
-	// This enables buffered first-alert aggregation, sliding windows, and multi-tenant isolation
-	stormAggregator := processing.NewStormAggregatorWithConfig(
-		redisClient.GetClient(),
-		cfg.Processing.Storm.BufferThreshold,   // BR-GATEWAY-016: Buffer N alerts before creating window
-		cfg.Processing.Storm.InactivityTimeout, // BR-GATEWAY-008: Sliding window timeout
-		cfg.Processing.Storm.MaxWindowDuration, // BR-GATEWAY-008: Maximum window duration
-		1000,                                   // defaultMaxSize: Default namespace buffer size
-		5000,                                   // globalMaxSize: Global buffer limit
-		nil,                                    // perNamespaceLimits: Per-namespace overrides (future)
-		0.95,                                   // samplingThreshold: Utilization to trigger sampling
-		0.5,                                    // samplingRate: Sample rate when threshold reached
-	)
-	if cfg.Processing.Storm.BufferThreshold > 0 || cfg.Processing.Storm.InactivityTimeout > 0 {
-		logger.Info("Using custom storm buffering configuration",
-			zap.Int("buffer_threshold", cfg.Processing.Storm.BufferThreshold),
-			zap.Duration("inactivity_timeout", cfg.Processing.Storm.InactivityTimeout),
-			zap.Duration("max_window_duration", cfg.Processing.Storm.MaxWindowDuration),
-			zap.Duration("aggregation_window", cfg.Processing.Storm.AggregationWindow))
-	}
-
-	// Create environment classifier with configurable cache TTL
-	var classifier *processing.EnvironmentClassifier
-	if cfg.Processing.Environment.CacheTTL > 0 {
-		classifier = processing.NewEnvironmentClassifierWithTTL(ctrlClient, logger, cfg.Processing.Environment.CacheTTL)
-		logger.Info("Using custom environment cache TTL", zap.Duration("cache_ttl", cfg.Processing.Environment.CacheTTL))
-	} else {
-		classifier = processing.NewEnvironmentClassifier(ctrlClient, logger)
-	}
-
-	// Create priority engine with Rego policy (REQUIRED)
-	// Architecture Decision: Priority assignment MUST use Rego policies
-	// Gateway fails to start if policy cannot be loaded
-	if cfg.Processing.Priority.PolicyPath == "" {
-		return nil, fmt.Errorf("priority policy path is required (cfg.Processing.Priority.PolicyPath)")
-	}
-
-	priorityEngine, err := processing.NewPriorityEngineWithRego(cfg.Processing.Priority.PolicyPath, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load priority Rego policy (fail-fast): %w", err)
-	}
-
-	logger.Info("Loaded Rego policy for priority assignment",
-		zap.String("policy_path", cfg.Processing.Priority.PolicyPath),
-	)
-
-	pathDecider := processing.NewRemediationPathDecider(logger)
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
 
-	// 4. Initialize middleware
-	// DD-GATEWAY-004: Authentication middleware removed (network-level security)
-	// authMiddleware := middleware.NewAuthMiddleware(clientset, logger) // REMOVED
-	// rateLimiter := middleware.NewRateLimiter(cfg.Middleware.RateLimit.RequestsPerMinute, cfg.Middleware.RateLimit.Burst, logger) // REMOVED
+	// DD-GATEWAY-011: Status-based deduplication
+	// All state in K8s RR status - Redis fully deprecated
+	statusUpdater := processing.NewStatusUpdater(ctrlClient)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 
-	// 5. Create server
+	// DD-AUDIT-003: Initialize audit store for P0 service compliance
+	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
+	// ADR-032 §1.5: "Every alert/signal processed (SignalProcessing, Gateway)"
+	// ADR-032 §3: Gateway is P0 (Business-Critical) - MUST crash if audit unavailable
+	var auditStore audit.AuditStore
+	if cfg.Infrastructure.DataStorageURL != "" {
+		// DD-API-001: Use OpenAPI generated client (not direct HTTP)
+		dsClient, err := audit.NewOpenAPIClientAdapter(cfg.Infrastructure.DataStorageURL, 5*time.Second)
+		if err != nil {
+			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
+			return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
+		}
+		auditConfig := audit.RecommendedConfig("gateway") // 2x buffer for high-volume service
+
+		auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "gateway", logger)
+		if err != nil {
+			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
+			return nil, fmt.Errorf("FATAL: failed to create audit store - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
+		}
+		logger.Info("DD-AUDIT-003: Audit store initialized for P0 compliance (ADR-032 §1.5)",
+			"data_storage_url", cfg.Infrastructure.DataStorageURL,
+			"buffer_size", auditConfig.BufferSize)
+	} else {
+		// ADR-032 §1.5: Data Storage URL is MANDATORY for P0 services (Gateway processes alerts/signals)
+		// ADR-032 §3: Gateway is P0 (Business-Critical) - MUST crash if audit unavailable
+		return nil, fmt.Errorf("FATAL: Data Storage URL not configured - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service)")
+	}
+
+	// Create server (Redis-free)
 	server := &Server{
 		adapterRegistry: adapterRegistry,
-		deduplicator:    deduplicator,
-		crdUpdater:      crdUpdater, // DD-GATEWAY-009: CRD updater for state-based deduplication
-		stormDetector:   stormDetector,
-		stormAggregator: stormAggregator,
-		classifier:      classifier,
-		priorityEngine:  priorityEngine,
-		pathDecider:     pathDecider,
+		// DD-GATEWAY-011: crdUpdater field removed (replaced by statusUpdater)
+		statusUpdater:   statusUpdater,
+		phaseChecker:    phaseChecker,
 		crdCreator:      crdCreator,
-		redisClient:     redisClient,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
-		// DD-GATEWAY-004: Authentication middleware removed
-		// authMiddleware:  authMiddleware, // REMOVED
-		// rateLimiter:     rateLimiter,    // REMOVED
+		auditStore:      auditStore,
 		metricsInstance: metricsInstance,
 		logger:          logger,
-		// aggregationGroup is zero-initialized (ready to use)
 	}
 
 	// 6. Setup HTTP server with routes
@@ -387,9 +376,39 @@ func createServerWithClients(cfg *config.ServerConfig, logger *zap.Logger, metri
 func (s *Server) setupRoutes() chi.Router {
 	r := chi.NewRouter()
 
+	// BR-HTTP-015: CORS configuration using shared library
+	// Configuration is read from environment variables:
+	// - CORS_ALLOWED_ORIGINS: Comma-separated list of allowed origins (default: "*" for dev)
+	// - CORS_ALLOWED_METHODS: Comma-separated list of allowed methods
+	// - CORS_ALLOWED_HEADERS: Comma-separated list of allowed headers
+	// - CORS_ALLOW_CREDENTIALS: "true" or "false"
+	// - CORS_MAX_AGE: Preflight cache duration in seconds
+	corsOpts := kubecors.FromEnvironment()
+	if !corsOpts.IsProduction() {
+		s.logger.Info("CORS configuration allows all origins - not recommended for production",
+			"allowed_origins", corsOpts.AllowedOrigins)
+	}
+	r.Use(kubecors.Handler(corsOpts))
+
 	// Global middleware
 	r.Use(chimiddleware.RequestID) // Chi's built-in request ID
 	r.Use(chimiddleware.RealIP)    // Extract real IP from X-Forwarded-For
+
+	// BR-GATEWAY-074, BR-GATEWAY-075: Security middleware
+	// Timestamp validation prevents replay attacks by rejecting old/future timestamps
+	r.Use(middleware.TimestampValidator(5 * time.Minute))
+
+	// Security headers middleware (OWASP best practices)
+	// Prevents: MIME sniffing, clickjacking, XSS attacks, enforces HTTPS
+	r.Use(middleware.SecurityHeaders())
+
+	// Request ID middleware for distributed tracing
+	// Ensures X-Request-ID is present for correlation across services
+	r.Use(middleware.RequestIDMiddleware(s.logger))
+
+	// HTTP metrics middleware for observability
+	// Records request counts and duration metrics
+	r.Use(middleware.HTTPMetrics(s.metricsInstance))
 
 	// Health endpoints
 	r.Get("/health", s.healthHandler)
@@ -457,15 +476,15 @@ func (s *Server) performanceLoggingMiddleware(next http.Handler) http.Handler {
 			fmt.Sprintf("%d", ww.Status()), // status
 		).Observe(duration.Seconds())
 
-		// Log request completion with duration (debug level for health/readiness checks to reduce noise)
+		// Log request completion with duration (V(1) for health/readiness checks to reduce noise)
 		logger := middleware.GetLogger(r.Context())
 		if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/ready" {
-			logger.Debug("Request completed",
-				zap.Float64("duration_ms", float64(duration.Milliseconds())),
+			logger.V(1).Info("Request completed",
+				"duration_ms", float64(duration.Milliseconds()),
 			)
 		} else {
 			logger.Info("Request completed",
-				zap.Float64("duration_ms", float64(duration.Milliseconds())),
+				"duration_ms", float64(duration.Milliseconds()),
 			)
 		}
 	})
@@ -519,8 +538,8 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 	s.router.Post(adapter.GetRoute(), wrappedHandler.ServeHTTP)
 
 	s.logger.Info("Registered adapter route",
-		zap.String("adapter", adapter.Name()),
-		zap.String("route", adapter.GetRoute()))
+		"adapter", adapter.Name(),
+		"route", adapter.GetRoute())
 
 	return nil
 }
@@ -533,108 +552,137 @@ func (s *Server) RegisterAdapter(adapter adapters.RoutableAdapter) error {
 // 3. Validates signal using adapter.Validate()
 // 4. Calls ProcessSignal() to run full pipeline
 // 5. Returns HTTP response (201/202/400/500)
+//
+// REFACTORED: Reduced cyclomatic complexity by extracting helper methods
 func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only accept POST requests
 		if r.Method != http.MethodPost {
-			s.writeJSONError(w, r, "Method not allowed", http.StatusMethodNotAllowed) // TDD REFACTOR: Keep as-is (405 is not common enough for helper)
+			s.writeJSONError(w, r, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
 		start := time.Now()
 		ctx := r.Context()
-
-		// BR-109: Get request-scoped logger from context (includes request_id, source_ip, endpoint)
 		logger := middleware.GetLogger(ctx)
 
-		// Read request body
-		body, err := io.ReadAll(r.Body)
+		// Read, parse, and validate signal
+		signal, err := s.readParseValidateSignal(ctx, w, r, adapter, logger)
 		if err != nil {
-			logger.Error("Failed to read request body", zap.Error(err))
-			s.writeValidationError(w, r, "Failed to read request body") // TDD REFACTOR: Use typed helper, BR-109: Added request
-			return
-		}
-
-		// Parse signal using adapter
-		signal, err := adapter.Parse(ctx, body)
-		if err != nil {
-			logger.Warn("Failed to parse signal",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err),
-			)
-
-			// TDD REFACTOR: Parse errors are validation errors (400 Bad Request)
-			// Note: Payload size errors (413) are handled by adapter-specific logic
-			s.writeValidationError(w, r, fmt.Sprintf("Failed to parse signal: %v", err)) // BR-109: Added request
-			return
-		}
-
-		// Validate signal
-		if err := adapter.Validate(signal); err != nil {
-			logger.Warn("Signal validation failed",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err))
-			s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", err)) // TDD REFACTOR: Use typed helper, BR-109: Added request
-			return
+			return // Error response already sent
 		}
 
 		// Process signal through pipeline
 		response, err := s.ProcessSignal(ctx, signal)
 		if err != nil {
-			logger.Error("Signal processing failed",
-				zap.String("adapter", adapter.Name()),
-				zap.Error(err))
-
-			// BR-GATEWAY-008, BR-GATEWAY-009: Return 503 when Redis unavailable (per DD-GATEWAY-003)
-			// BR-002: Return 500 when Kubernetes API unavailable
-			// Check error type and return appropriate HTTP status
-			errMsg := err.Error()
-
-			// Redis unavailability → HTTP 503 Service Unavailable
-			if strings.Contains(errMsg, "redis unavailable") || strings.Contains(errMsg, "deduplication check failed") {
-				s.writeServiceUnavailableError(w, r, "Deduplication service unavailable - Redis connection failed. Please retry after 30 seconds.", 30)
-				return
-			}
-
-			// Kubernetes API errors → HTTP 500 Internal Server Error with details
-			if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
-				strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
-				strings.Contains(errMsg, "namespaces") {
-				s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
-				return
-			}
-
-			// Generic error → HTTP 500
-			s.writeInternalError(w, r, "Internal server error")
+			s.handleProcessingError(w, r, err, adapter.Name(), logger)
 			return
 		}
 
-		// Determine HTTP status code based on response status
-		// BR-GATEWAY-016: Storm aggregation returns 202 Accepted
-		// BR-GATEWAY-003: Deduplication returns 202 Accepted
-		statusCode := http.StatusCreated
-		if response.Status == StatusAccepted || response.Duplicate {
-			statusCode = http.StatusAccepted
-		}
+		// Send success response
+		s.sendSuccessResponse(w, r, response, adapter, start)
+	}
+}
 
-		// Record metrics
-		duration := time.Since(start)
-		route := "/unknown"
-		if routableAdapter, ok := adapter.(adapters.RoutableAdapter); ok {
-			route = routableAdapter.GetRoute()
-		}
-		s.metricsInstance.HTTPRequestDuration.WithLabelValues(
-			route,
-			r.Method,
-			fmt.Sprintf("%d", statusCode),
-		).Observe(duration.Seconds())
+// readParseValidateSignal reads, parses, and validates the signal from the request
+// Returns nil signal and writes error response if any step fails
+func (s *Server) readParseValidateSignal(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	adapter adapters.SignalAdapter,
+	logger logr.Logger,
+) (*types.NormalizedSignal, error) {
+	// Read request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		logger.Error(err, "Failed to read request body")
+		s.writeValidationError(w, r, "Failed to read request body")
+		return nil, err
+	}
 
-		// Send response
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(statusCode)
-		if err := json.NewEncoder(w).Encode(response); err != nil {
-			logger.Error("Failed to encode JSON response", zap.Error(err))
-		}
+	// Parse signal using adapter
+	signal, err := adapter.Parse(ctx, body)
+	if err != nil {
+		logger.Info("Failed to parse signal",
+			"adapter", adapter.Name(),
+			"error", err)
+		s.writeValidationError(w, r, fmt.Sprintf("Failed to parse signal: %v", err))
+		return nil, err
+	}
+
+	// Validate signal
+	if err := adapter.Validate(signal); err != nil {
+		logger.Info("Signal validation failed",
+			"adapter", adapter.Name(),
+			"error", err)
+		s.writeValidationError(w, r, fmt.Sprintf("Signal validation failed: %v", err))
+		return nil, err
+	}
+
+	return signal, nil
+}
+
+// handleProcessingError handles errors from signal processing and sends appropriate HTTP response
+func (s *Server) handleProcessingError(
+	w http.ResponseWriter,
+	r *http.Request,
+	err error,
+	adapterName string,
+	logger logr.Logger,
+) {
+	logger.Error(err, "Signal processing failed",
+		"adapter", adapterName)
+
+	errMsg := err.Error()
+
+	// DD-GATEWAY-012: Redis error handling REMOVED - Gateway is now Redis-free
+	// Deduplication check failures are now K8s API errors (phaseChecker uses K8s client)
+
+	// Kubernetes API errors → HTTP 500 Internal Server Error with details
+	if strings.Contains(errMsg, "kubernetes") || strings.Contains(errMsg, "k8s") ||
+		strings.Contains(errMsg, "failed to create RemediationRequest CRD") ||
+		strings.Contains(errMsg, "deduplication check failed") || // DD-GATEWAY-012: Now a K8s API error
+		strings.Contains(errMsg, "namespaces") {
+		s.writeInternalError(w, r, fmt.Sprintf("Kubernetes API error: %v", err))
+		return
+	}
+
+	// Generic error → HTTP 500
+	s.writeInternalError(w, r, "Internal server error")
+}
+
+// sendSuccessResponse sends the success HTTP response with metrics recording
+func (s *Server) sendSuccessResponse(
+	w http.ResponseWriter,
+	r *http.Request,
+	response *ProcessingResponse,
+	adapter adapters.SignalAdapter,
+	start time.Time,
+) {
+	// Determine HTTP status code based on response status
+	statusCode := http.StatusCreated
+	if response.Status == StatusAccepted || response.Duplicate {
+		statusCode = http.StatusAccepted
+	}
+
+	// Record metrics
+	duration := time.Since(start)
+	route := "/unknown"
+	if routableAdapter, ok := adapter.(adapters.RoutableAdapter); ok {
+		route = routableAdapter.GetRoute()
+	}
+	s.metricsInstance.HTTPRequestDuration.WithLabelValues(
+		route,
+		r.Method,
+		fmt.Sprintf("%d", statusCode),
+	).Observe(duration.Seconds())
+
+	// Send response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		s.logger.Error(err, "Failed to encode JSON response")
 	}
 }
 
@@ -654,65 +702,9 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 //	    }
 //	}()
 func (s *Server) Start(ctx context.Context) error {
-	// Start Redis health check goroutine (BR-106: Redis availability monitoring)
-	go s.monitorRedisHealth(ctx)
-
-	s.logger.Info("Starting Gateway server", zap.String("addr", s.httpServer.Addr))
+	// DD-GATEWAY-012: Redis health monitor REMOVED - Gateway is Redis-free
+	s.logger.Info("Starting Gateway server", "addr", s.httpServer.Addr)
 	return s.httpServer.ListenAndServe()
-}
-
-// monitorRedisHealth periodically checks Redis availability and updates metrics
-//
-// BUSINESS OUTCOME: Enable operators to track Redis SLO (BR-106)
-// This goroutine runs every 5 seconds and:
-// 1. Pings Redis to check availability
-// 2. Updates gateway_redis_available gauge (1=available, 0=unavailable)
-// 3. Tracks outage duration and count
-//
-// The health check runs independently of request processing to provide
-// continuous visibility into Redis health even during low traffic periods.
-func (s *Server) monitorRedisHealth(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	wasAvailable := true // Assume available at start
-	outageStart := time.Time{}
-
-	for {
-		select {
-		case <-ctx.Done():
-			s.logger.Info("Redis health monitor stopped")
-			return
-		case <-ticker.C:
-			// Check Redis availability
-			err := s.redisClient.EnsureConnection(ctx)
-			isAvailable := (err == nil)
-
-			// Update availability gauge
-			if isAvailable {
-				s.metricsInstance.RedisAvailable.Set(1)
-
-				// If recovering from outage, record outage duration
-				if !wasAvailable && !outageStart.IsZero() {
-					outageDuration := time.Since(outageStart).Seconds()
-					s.metricsInstance.RedisOutageDuration.Add(outageDuration)
-					s.logger.Info("Redis recovered from outage",
-						zap.Duration("outage_duration", time.Since(outageStart)))
-				}
-			} else {
-				s.metricsInstance.RedisAvailable.Set(0)
-
-				// If this is start of new outage, record it
-				if wasAvailable {
-					outageStart = time.Now()
-					s.metricsInstance.RedisOutageCount.Inc()
-					s.logger.Warn("Redis outage detected", zap.Error(err))
-				}
-			}
-
-			wasAvailable = isAvailable
-		}
-	}
 }
 
 // Stop gracefully stops the HTTP server
@@ -721,8 +713,9 @@ func (s *Server) monitorRedisHealth(ctx context.Context) {
 // 1. Set shutdown flag (readiness probe returns 503)
 // 2. Wait 5 seconds for Kubernetes endpoint removal propagation
 // 3. Shutdown HTTP server (waits for in-flight requests)
-// 4. Close Redis connections
-// 5. Return error if shutdown fails
+// 4. Return error if shutdown fails
+//
+// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
 //
 // Shutdown timeout is controlled by the provided context:
 //
@@ -767,16 +760,23 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Now that pod is removed from endpoints, we can safely shutdown
 	// This will complete any in-flight requests that arrived before endpoint removal
 	if err := s.httpServer.Shutdown(ctx); err != nil {
-		s.logger.Error("Failed to gracefully shutdown HTTP server", zap.Error(err))
+		s.logger.Error(err, "Failed to gracefully shutdown HTTP server")
 		return err
 	}
 
-	// STEP 4: Close Redis connections
-	if s.redisClient != nil {
-		if err := s.redisClient.Close(); err != nil {
-			s.logger.Error("Failed to close Redis client", zap.Error(err))
-			return err
+	// DD-GATEWAY-012: Redis close REMOVED - Gateway is now Redis-free
+	// DD-AUDIT-003: Close audit store to flush remaining events
+	if s.auditStore != nil {
+		if err := s.auditStore.Close(); err != nil {
+			s.logger.Error(err, "DD-AUDIT-003: Failed to close audit store (potential audit data loss)")
+			// Non-fatal: don't fail shutdown for audit store errors
 		}
+	}
+
+	// BR-GATEWAY-185 v1.1: Stop K8s cache
+	if s.cacheCancel != nil {
+		s.cacheCancel()
+		s.logger.Info("BR-GATEWAY-185: Kubernetes cache stopped")
 	}
 
 	s.logger.Info("Gateway server stopped")
@@ -791,18 +791,17 @@ func (s *Server) Stop(ctx context.Context) error {
 // 1. Deduplication check (Redis lookup)
 // 2. If duplicate: Update Redis metadata, return HTTP 202
 // 3. Storm detection (rate-based + pattern-based)
-// 4. Environment classification (namespace labels + ConfigMap)
-// 5. Priority assignment (Rego policy or fallback table)
-// 6. CRD creation (Kubernetes API)
-// 7. Store deduplication metadata (Redis)
-// 8. Return HTTP 201 with CRD details
+// 4. CRD creation (Kubernetes API)
+// 5. Store deduplication metadata (Redis)
+// 6. Return HTTP 201 with CRD details
+//
+// Note: Environment classification and Priority assignment removed (2025-12-06)
+// These are now owned by Signal Processing service per DD-CATEGORIZATION-001
 //
 // Performance:
-// - Typical latency (new signal): p95 ~80ms, p99 ~120ms
+// - Typical latency (new signal): p95 ~50ms, p99 ~80ms
 //   - Deduplication check: ~3ms
 //   - Storm detection: ~3ms
-//   - Environment classification: ~15ms (namespace label lookup)
-//   - Priority assignment: ~1ms
 //   - CRD creation: ~30ms (Kubernetes API)
 //   - Redis store: ~3ms
 //
@@ -824,47 +823,52 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	start := time.Now()
 	logger := middleware.GetLogger(ctx)
 
-	// Record ingestion metric
-	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity, "unknown").Inc()
+	// Record ingestion metric (environment label removed - SP owns classification)
+	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
 
-	// 1. Deduplication check
-	isDuplicate, metadata, err := s.deduplicator.Check(ctx, signal)
+	// 1. Deduplication check (DD-GATEWAY-011: K8s status-based, NOT Redis)
+	// BR-GATEWAY-185: Redis deprecation - use PhaseBasedDeduplicationChecker
+	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
 	if err != nil {
-		logger.Error("Deduplication check failed",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
+		logger.Error(err, "Deduplication check failed",
+			"fingerprint", signal.Fingerprint)
 		return nil, fmt.Errorf("deduplication check failed: %w", err)
 	}
 
-	if isDuplicate {
-		// TDD REFACTOR: Extracted duplicate handling
-		return s.processDuplicateSignal(ctx, signal, metadata), nil
-	}
-
-	// 2. Storm detection
-	isStorm, stormMetadata, err := s.stormDetector.Check(ctx, signal)
-	if err != nil {
-		// Non-critical error: log warning but continue processing
-		logger.Warn("Storm detection failed",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
-	} else if isStorm && stormMetadata != nil {
-		// TDD REFACTOR: Extracted storm aggregation logic
-		shouldContinue, response := s.processStormAggregation(ctx, signal, stormMetadata)
-		if !shouldContinue {
-			// Storm was aggregated, return response immediately
-			return response, nil
+	if shouldDeduplicate && existingRR != nil {
+		// Update status.deduplication (DD-GATEWAY-011)
+		// Must be synchronous - HTTP response includes occurrence count
+		if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, existingRR); err != nil {
+			logger.Info("Failed to update deduplication status (DD-GATEWAY-011)",
+				"error", err,
+				"fingerprint", signal.Fingerprint,
+				"rr", existingRR.Name)
 		}
 
-		// Aggregation failed, enrich signal for individual CRD creation
-		signal.IsStorm = true
-		signal.StormType = stormMetadata.StormType
-		signal.StormWindow = stormMetadata.Window
-		signal.AlertCount = stormMetadata.AlertCount
+		// Get occurrence count for metrics and logging
+		occurrenceCount := int32(1)
+		if existingRR.Status.Deduplication != nil {
+			occurrenceCount = existingRR.Status.Deduplication.OccurrenceCount
+		}
+
+		// Record metrics
+		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+
+		logger.V(1).Info("Duplicate signal detected (K8s status-based)",
+			"fingerprint", signal.Fingerprint,
+			"existingRR", existingRR.Name,
+			"phase", existingRR.Status.OverallPhase,
+			"occurrenceCount", occurrenceCount)
+
+		// DD-AUDIT-003: Emit audit event (BR-GATEWAY-191)
+		// Fire-and-forget: audit failures don't affect business logic
+		s.emitSignalDeduplicatedAudit(ctx, signal, existingRR.Name, existingRR.Namespace, occurrenceCount)
+
+		// Return duplicate response with data from existing RR
+		return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 	}
 
-	// 3. CRD creation pipeline
-	// TDD REFACTOR: Extracted CRD creation logic
+	// 2. CRD creation pipeline (DD-GATEWAY-012: No storm buffering - create RR immediately)
 	return s.createRemediationRequestCRD(ctx, signal, start)
 }
 
@@ -882,7 +886,7 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 		"status":    "healthy",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}); err != nil {
-		s.logger.Error("Failed to encode health response", zap.Error(err))
+		s.logger.Error(err, "Failed to encode health response")
 	}
 }
 
@@ -934,58 +938,60 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if encErr := json.NewEncoder(w).Encode(errorResponse); encErr != nil {
-			s.logger.Error("Failed to encode readiness error response", zap.Error(encErr))
+			s.logger.Error(encErr, "Failed to encode readiness error response")
 		}
 		return
 	}
 
+	// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+	// Only check Kubernetes API connectivity
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	// Check Redis connectivity
-	if err := s.redisClient.EnsureConnection(ctx); err != nil {
-		s.logger.Warn("Readiness check failed: Redis not reachable", zap.Error(err))
+	// Check Kubernetes API connectivity by listing namespaces
+	namespaceList := &corev1.NamespaceList{}
+	if err := s.ctrlClient.List(ctx, namespaceList, client.Limit(1)); err != nil {
+		s.logger.Info("Readiness check failed: Kubernetes API not reachable", "error", err)
 
-		// Use RFC 7807 Problem Details format for structured error response
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 
 		errorResponse := gwerrors.RFC7807Error{
 			Type:     gwerrors.ErrorTypeServiceUnavailable,
 			Title:    gwerrors.TitleServiceUnavailable,
-			Detail:   "Redis is not reachable",
+			Detail:   "Kubernetes API is not reachable",
 			Status:   http.StatusServiceUnavailable,
 			Instance: r.URL.Path,
 		}
 
 		if encErr := json.NewEncoder(w).Encode(errorResponse); encErr != nil {
-			s.logger.Error("Failed to encode readiness error response", zap.Error(encErr))
+			s.logger.Error(encErr, "Failed to encode readiness error response")
 		}
 		return
 	}
 
-	// Check Kubernetes API connectivity
-	// Note: This is a placeholder - actual implementation would use k8sClient
-	// to perform a simple API call (e.g. list namespaces with limit=1)
-
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ready"}); err != nil {
-		s.logger.Error("Failed to encode readiness response", zap.Error(err))
+		s.logger.Error(err, "Failed to encode readiness response")
 	}
 }
 
 // ProcessingResponse represents the result of signal processing
+//
+// Note: Environment and Priority fields removed from response (2025-12-06)
+// These classifications are now owned by Signal Processing service per DD-CATEGORIZATION-001.
+// AlertManager/webhook callers don't need this information - they only need to know
+// if the alert was accepted (HTTP status code).
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 type ProcessingResponse struct {
-	Status                      string                            `json:"status"` // "created", "duplicate", or "accepted"
-	Message                     string                            `json:"message"`
-	Fingerprint                 string                            `json:"fingerprint"`
-	Duplicate                   bool                              `json:"duplicate"`
-	RemediationRequestName      string                            `json:"remediationRequestName,omitempty"`
-	RemediationRequestNamespace string                            `json:"remediationRequestNamespace,omitempty"`
-	Environment                 string                            `json:"environment,omitempty"` // TDD FIX: Top-level per API spec
-	Priority                    string                            `json:"priority,omitempty"`    // TDD FIX: Top-level per API spec
-	RemediationPath             string                            `json:"remediationPath,omitempty"`
-	Metadata                    *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
+	Status                      string `json:"status"` // "created", "duplicate", or "accepted"
+	Message                     string `json:"message"`
+	Fingerprint                 string `json:"fingerprint"`
+	Duplicate                   bool   `json:"duplicate"`
+	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
+	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
+	// Note: RemediationPath removed (2025-12-06) - SP derives risk_tolerance via Rego per DD-WORKFLOW-001
+	Metadata *processing.DeduplicationMetadata `json:"metadata,omitempty"` // Deduplication info only
 	// Storm aggregation fields (BR-GATEWAY-016)
 	IsStorm   bool   `json:"isStorm,omitempty"`   // true if alert is part of a storm
 	StormType string `json:"stormType,omitempty"` // "rate" or "pattern"
@@ -1002,6 +1008,10 @@ const (
 // NewDuplicateResponse creates a ProcessingResponse for duplicate signals
 // TDD REFACTOR: Extracted factory function for duplicate response pattern
 // Business Outcome: Consistent duplicate signal handling (BR-005)
+// DEPRECATED: Use NewDuplicateResponseFromRR for DD-GATEWAY-011 status-based deduplication
+// NewDuplicateResponse is DEPRECATED - use NewDuplicateResponseFromRR instead
+// DD-GATEWAY-011: Redis metadata replaced with K8s status-based tracking
+// Kept for backward compatibility with any external code that might use it
 func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
 	return &ProcessingResponse{
 		Status:      StatusDuplicate,
@@ -1009,6 +1019,40 @@ func NewDuplicateResponse(fingerprint string, metadata *processing.Deduplication
 		Fingerprint: fingerprint,
 		Duplicate:   true,
 		Metadata:    metadata,
+	}
+}
+
+// NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
+// DD-GATEWAY-011: Status-based deduplication (Redis deprecation)
+// BR-GATEWAY-185: All dedup state from K8s status, not Redis
+func NewDuplicateResponseFromRR(fingerprint string, rr *remediationv1alpha1.RemediationRequest) *ProcessingResponse {
+	// Build metadata from RR status (DD-GATEWAY-011: status-based tracking)
+	var occurrenceCount int
+	var firstOccurrence, lastOccurrence string
+
+	if rr.Status.Deduplication != nil {
+		occurrenceCount = int(rr.Status.Deduplication.OccurrenceCount)
+		if rr.Status.Deduplication.FirstSeenAt != nil {
+			firstOccurrence = rr.Status.Deduplication.FirstSeenAt.Format(time.RFC3339)
+		}
+		if rr.Status.Deduplication.LastSeenAt != nil {
+			lastOccurrence = rr.Status.Deduplication.LastSeenAt.Format(time.RFC3339)
+		}
+	}
+
+	return &ProcessingResponse{
+		Status:                      StatusDuplicate,
+		Message:                     "Duplicate signal (K8s status-based deduplication)",
+		Fingerprint:                 fingerprint,
+		Duplicate:                   true,
+		RemediationRequestName:      rr.Name,
+		RemediationRequestNamespace: rr.Namespace,
+		Metadata: &processing.DeduplicationMetadata{
+			Count:                 occurrenceCount,
+			FirstOccurrence:       firstOccurrence,
+			LastOccurrence:        lastOccurrence,
+			RemediationRequestRef: fmt.Sprintf("%s/%s", rr.Namespace, rr.Name),
+		},
 	}
 }
 
@@ -1037,7 +1081,11 @@ func NewStormAggregationResponse(fingerprint, windowID, stormType string, resour
 // NewCRDCreatedResponse creates a ProcessingResponse for successful CRD creation
 // TDD REFACTOR: Extracted factory function for CRD creation response pattern
 // Business Outcome: Consistent CRD creation handling (BR-004)
-func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, environment, priority, remediationPath string) *ProcessingResponse {
+//
+// Note: Environment, Priority, and RemediationPath parameters removed (2025-12-06)
+// Classification and path decision now owned by Signal Processing service
+// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
+func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *ProcessingResponse {
 	return &ProcessingResponse{
 		Status:                      StatusCreated,
 		Message:                     "RemediationRequest CRD created successfully",
@@ -1045,58 +1093,27 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace, environment, prio
 		Duplicate:                   false,
 		RemediationRequestName:      crdName,
 		RemediationRequestNamespace: crdNamespace,
-		Environment:                 environment,
-		Priority:                    priority,
-		RemediationPath:             remediationPath,
 	}
 }
 
 // processDuplicateSignal handles the duplicate signal fast path
-// TDD REFACTOR: Extracted from ProcessSignal for clarity
-// Business Outcome: Consistent duplicate handling (BR-005)
-func (s *Server) processDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
-	logger := middleware.GetLogger(ctx)
+// processDuplicateSignal is DEPRECATED and removed
+// DD-GATEWAY-011: Replaced by inline logic in ProcessSignal using PhaseBasedDeduplicationChecker
+// BR-GATEWAY-185: Redis deprecation complete for deduplication path
 
-	// DD-GATEWAY-009: Update CRD occurrence count for duplicate alerts
-	// Parse CRD namespace/name from RemediationRequestRef (format: "namespace/name")
-	namespace, name := s.parseCRDReference(metadata.RemediationRequestRef)
-	if namespace == "" || name == "" {
-		// Fallback: generate CRD name from fingerprint (same as deduplication service)
-		namespace = signal.Namespace
-		name = s.deduplicator.GetCRDNameFromFingerprint(signal.Fingerprint)
-	}
-
-	// Update CRD occurrence count in Kubernetes
-	if err := s.crdUpdater.IncrementOccurrenceCount(ctx, namespace, name); err != nil {
-		// Log error but don't fail the request
-		// The duplicate response is still valid even if CRD update fails
-		logger.Warn("Failed to increment CRD occurrence count (duplicate alert still processed)",
-			zap.Error(err),
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("namespace", namespace),
-			zap.String("name", name))
-	}
-
-	// Fast path: duplicate signal, no CRD creation needed
-	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName, "unknown").Inc()
-
-	logger.Debug("Duplicate signal detected",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.Int("count", metadata.Count),
-		zap.String("firstSeen", metadata.FirstSeen),
-	)
-
-	return NewDuplicateResponse(signal.Fingerprint, metadata)
-}
-
-// parseCRDReference parses a CRD reference string into namespace and name
+// parseCRDReference is DEPRECATED - no longer needed after DD-GATEWAY-011
+// DD-GATEWAY-011: PhaseChecker returns the actual RR, no need to parse references
+// Kept for backward compatibility with any external code
 //
 // DD-GATEWAY-009: Helper for parsing RemediationRequestRef
 // Format: "namespace/name" (e.g., "production/rr-abc123")
 //
 // Returns:
 // - namespace: The namespace part (empty if invalid format)
+//
 // - name: The name part (empty if invalid format)
+//
+//nolint:unused // Deprecated but kept for compatibility
 func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 	if ref == "" {
 		return "", ""
@@ -1110,478 +1127,248 @@ func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 	return parts[0], parts[1]
 }
 
-// processStormAggregation handles storm detection and aggregation logic
-// TDD REFACTOR: Extracted from ProcessSignal for clarity
-// DD-GATEWAY-008: Enhanced with buffered first-alert aggregation
-// Business Outcome: Consistent storm aggregation (BR-GATEWAY-016, BR-GATEWAY-008)
-// Returns: (shouldContinue bool, response *ProcessingResponse)
-//   - shouldContinue=false means storm was aggregated/buffered, return response immediately
-//   - shouldContinue=true means fall through to individual CRD creation
-func (s *Server) processStormAggregation(ctx context.Context, signal *types.NormalizedSignal, stormMetadata *processing.StormMetadata) (bool, *ProcessingResponse) {
-	logger := middleware.GetLogger(ctx)
+// DD-GATEWAY-012: processStormAggregation REMOVED - Redis-based storm buffering deprecated
+// Storm detection now uses status.stormAggregation via StatusUpdater (async pattern)
+// Per DD-GATEWAY-008 supersession: Create RR immediately, track storm in status
 
-	s.metricsInstance.AlertStormsDetectedTotal.WithLabelValues(stormMetadata.StormType, signal.AlertName).Inc()
+// =============================================================================
+// DD-AUDIT-003: Audit Event Emission (P0 Compliance)
+// =============================================================================
 
-	logger.Warn("Alert storm detected",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("stormType", stormMetadata.StormType),
-		zap.String("stormWindow", stormMetadata.Window),
-		zap.Int("alertCount", stormMetadata.AlertCount))
-
-	// DD-GATEWAY-008: Check if aggregation window exists
-	shouldAggregate, windowID, err := s.stormAggregator.ShouldAggregate(ctx, signal)
-	if err != nil {
-		logger.Warn("Storm aggregation check failed, falling back to individual CRD creation",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
-		return true, nil // Continue to individual CRD creation
+// emitSignalReceivedAudit emits 'gateway.signal.received' audit event (BR-GATEWAY-190)
+// This is called when a NEW signal is received and RR is created
+func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string) {
+	if s.auditStore == nil {
+		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
+		s.logger.Error(fmt.Errorf("AuditStore is nil"), "CRITICAL: Cannot record audit event (ADR-032 §1.5 violation)")
+		return
 	}
 
-	if shouldAggregate {
-		// DD-GATEWAY-008: Add to existing aggregation window (sliding window behavior)
-		if err := s.stormAggregator.AddResource(ctx, windowID, signal); err != nil {
-			logger.Warn("Failed to add resource to storm aggregation, falling back to individual CRD creation",
-				zap.String("fingerprint", signal.Fingerprint),
-				zap.String("windowID", windowID),
-				zap.Error(err))
-			return true, nil // Continue to individual CRD creation
-		}
+	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "gateway.signal.received")
+	audit.SetEventCategory(event, "gateway")
+	audit.SetEventAction(event, "received")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "external", signal.SourceType) // e.g., "prometheus", "kubernetes"
+	audit.SetResource(event, "Signal", signal.Fingerprint)
+	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
+	audit.SetNamespace(event, signal.Namespace)
 
-		// Successfully added to aggregation window
-		resourceCount, _ := s.stormAggregator.GetResourceCount(ctx, windowID)
+	// Event data with Gateway-specific fields
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"signal_type":          signal.SourceType,
+			"alert_name":           signal.AlertName,
+			"namespace":            signal.Namespace,
+			"fingerprint":          signal.Fingerprint,
+			"severity":             signal.Severity,
+			"resource_kind":        signal.Resource.Kind,
+			"resource_name":        signal.Resource.Name,
+			"remediation_request":  fmt.Sprintf("%s/%s", rrNamespace, rrName),
+			"deduplication_status": "new",
+		},
+	}
+	audit.SetEventData(event, eventData)
 
-		logger.Info("Alert added to storm aggregation window",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("windowID", windowID),
-			zap.Int("resourceCount", resourceCount))
+	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit signal.received audit event",
+			"error", err, "fingerprint", signal.Fingerprint)
+	}
+}
 
-		return false, NewStormAggregationResponse(signal.Fingerprint, windowID, stormMetadata.StormType, resourceCount, false)
+// emitSignalDeduplicatedAudit emits 'gateway.signal.deduplicated' audit event (BR-GATEWAY-191)
+// This is called when a DUPLICATE signal is detected
+func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string, occurrenceCount int32) {
+	if s.auditStore == nil {
+		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
+		s.logger.Error(fmt.Errorf("AuditStore is nil"), "CRITICAL: Cannot record audit event (ADR-032 §1.5 violation)")
+		return
 	}
 
-	// DD-GATEWAY-008: No window exists, call StartAggregation
-	// StartAggregation will:
-	// - Buffer first N alerts (default: 5)
-	// - Return empty windowID if buffering (threshold not reached)
-	// - Return windowID if threshold reached (window created)
-	windowID, err = s.stormAggregator.StartAggregation(ctx, signal, stormMetadata)
-	if err != nil {
-		logger.Warn("Failed to start storm aggregation, falling back to individual CRD creation",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
+	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "gateway.signal.deduplicated")
+	audit.SetEventCategory(event, "gateway")
+	audit.SetEventAction(event, "deduplicated")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "external", signal.SourceType)
+	audit.SetResource(event, "Signal", signal.Fingerprint)
+	audit.SetCorrelationID(event, rrName)
+	audit.SetNamespace(event, signal.Namespace)
 
-		// DD-GATEWAY-008: Record buffer overflow/blocking metrics (BR-GATEWAY-011)
-		// Check if error is due to capacity issues
-		if strings.Contains(err.Error(), "over capacity") {
-			s.metricsInstance.NamespaceBufferBlocking.WithLabelValues(signal.Namespace).Inc()
-			s.metricsInstance.StormBufferOverflow.WithLabelValues(signal.Namespace).Inc()
-		}
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"signal_type":          signal.SourceType,
+			"alert_name":           signal.AlertName,
+			"namespace":            signal.Namespace,
+			"fingerprint":          signal.Fingerprint,
+			"remediation_request":  fmt.Sprintf("%s/%s", rrNamespace, rrName),
+			"deduplication_status": "duplicate",
+			"occurrence_count":     occurrenceCount,
+		},
+	}
+	audit.SetEventData(event, eventData)
 
-		return true, nil // Continue to individual CRD creation
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit signal.deduplicated audit event",
+			"error", err, "fingerprint", signal.Fingerprint)
+	}
+}
+
+// emitCRDCreatedAudit emits 'gateway.crd.created' audit event (DD-AUDIT-003)
+// This is called when a RemediationRequest CRD is successfully created
+func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string) {
+	if s.auditStore == nil {
+		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
+		s.logger.Error(fmt.Errorf("AuditStore is nil"), "CRITICAL: Cannot record audit event (ADR-032 §1.5 violation)")
+		return
 	}
 
-	// DD-GATEWAY-008: Check if window was created or alert was buffered
-	if windowID == "" {
-		// Alert buffered, threshold not reached yet
-		logger.Info("Alert buffered for storm aggregation",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("alertName", signal.AlertName),
-			zap.String("namespace", signal.Namespace))
+	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "gateway.crd.created")
+	audit.SetEventCategory(event, "gateway")
+	audit.SetEventAction(event, "created")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "gateway", "crd-creator") // Gateway's CRD creator component
+	audit.SetResource(event, "RemediationRequest", fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
+	audit.SetNamespace(event, signal.Namespace)
 
-		// DD-GATEWAY-008: Record namespace buffer utilization (BR-GATEWAY-011)
-		if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, signal.Namespace); err == nil {
-			s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(signal.Namespace).Set(utilization)
-		}
+	// Event data with Gateway-specific fields
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"signal_fingerprint":  signal.Fingerprint,
+			"signal_type":         signal.SourceType,
+			"alert_name":          signal.AlertName,
+			"namespace":           signal.Namespace,
+			"remediation_request": fmt.Sprintf("%s/%s", rrNamespace, rrName),
+			"resource_kind":       signal.Resource.Kind,
+			"resource_name":       signal.Resource.Name,
+			"severity":            signal.Severity,
+		},
+	}
+	audit.SetEventData(event, eventData)
 
-		// Return HTTP 202 Accepted (buffered, waiting for more alerts)
-		return false, &ProcessingResponse{
-			Status:      StatusAccepted,
-			Message:     "Alert buffered for storm aggregation (threshold not reached)",
-			Fingerprint: signal.Fingerprint,
-		}
+	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
+	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit crd.created audit event",
+			"error", err, "rrName", rrName)
+	}
+}
+
+// emitCRDCreationFailedAudit emits 'gateway.crd.creation_failed' audit event (DD-AUDIT-003)
+// This is called when RemediationRequest CRD creation fails
+func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.NormalizedSignal, err error) {
+	if s.auditStore == nil {
+		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
+		s.logger.Error(fmt.Errorf("AuditStore is nil"), "CRITICAL: Cannot record audit event (ADR-032 §1.5 violation)")
+		return
 	}
 
-	// DD-GATEWAY-008: Threshold reached - create CRD IMMEDIATELY with ALL buffered alerts
-	// Per DD-GATEWAY-008 lines 99-146: "When threshold reached, create aggregated CRD with ALL buffered alerts"
-	logger.Info("Storm aggregation threshold reached - creating CRD immediately",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("windowID", windowID),
-		zap.String("alertName", signal.AlertName),
-		zap.String("namespace", signal.Namespace))
+	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "gateway.crd.creation_failed")
+	audit.SetEventCategory(event, "gateway")
+	audit.SetEventAction(event, "created")
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "gateway", "crd-creator")
+	audit.SetResource(event, "RemediationRequest", signal.Fingerprint) // Use fingerprint as resource ID
+	audit.SetCorrelationID(event, signal.Fingerprint)                  // Use fingerprint as correlation (no RR name yet)
+	audit.SetNamespace(event, signal.Namespace)
 
-	// Create aggregated CRD synchronously
-	crdName, err := s.createAggregatedCRD(ctx, windowID, signal, stormMetadata)
-	if err != nil {
-		logger.Warn("Failed to create aggregated CRD, falling back to individual CRD creation",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		return true, nil // Fall back to individual CRD creation
+	// Event data with Gateway-specific fields + error details
+	eventData := map[string]interface{}{
+		"gateway": map[string]interface{}{
+			"signal_fingerprint": signal.Fingerprint,
+			"signal_type":        signal.SourceType,
+			"alert_name":         signal.AlertName,
+			"namespace":          signal.Namespace,
+			"resource_kind":      signal.Resource.Kind,
+			"resource_name":      signal.Resource.Name,
+			"severity":           signal.Severity,
+			"error_message":      err.Error(),
+		},
 	}
+	audit.SetEventData(event, eventData)
 
-	// Monitor window expiration for cleanup (window continues accepting alerts)
-	go s.monitorWindowExpiration(context.Background(), windowID)
-
-	logger.Info("Storm aggregated CRD created",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("windowID", windowID),
-		zap.String("crdName", crdName))
-
-	// Return HTTP 201 Created with CRD name
-	return false, &ProcessingResponse{
-		Status:                 StatusCreated,
-		Message:                "Storm aggregated CRD created",
-		Fingerprint:            signal.Fingerprint,
-		RemediationRequestName: crdName,
+	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
+	if storeErr := s.auditStore.StoreAudit(ctx, event); storeErr != nil {
+		s.logger.Info("DD-AUDIT-003: Failed to emit crd.creation_failed audit event",
+			"error", storeErr, "fingerprint", signal.Fingerprint)
 	}
 }
 
 // createRemediationRequestCRD handles the CRD creation pipeline
 // TDD REFACTOR: Extracted from ProcessSignal for clarity
 // Business Outcome: Consistent CRD creation (BR-004)
+//
+// Note: Environment, Priority, and RemediationPath removed from Gateway (2025-12-06)
+// Signal Processing service now owns classification and path decision
+// per DD-CATEGORIZATION-001 and DD-WORKFLOW-001 (risk_tolerance in CustomLabels)
+// See: docs/handoff/NOTICE_GATEWAY_CLASSIFICATION_REMOVAL.md
 func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.NormalizedSignal, start time.Time) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 
-	// 3. Environment classification
-	environment := s.classifier.Classify(ctx, signal.Namespace)
-
-	// 4. Priority assignment
-	priority := s.priorityEngine.Assign(ctx, signal.Severity, environment)
-
-	// 5. Remediation path decision
-	signalCtx := &processing.SignalContext{
-		Signal:      signal,
-		Environment: environment,
-		Priority:    priority,
-	}
-	remediationPath := s.pathDecider.DeterminePath(ctx, signalCtx)
-
-	logger.Debug("Remediation path decided",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("remediationPath", remediationPath))
-
-	// 6. Create RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal, priority, environment)
+	// Create RemediationRequest CRD (classification and path moved to SP)
+	rr, err := s.crdCreator.CreateRemediationRequest(ctx, signal)
 	if err != nil {
-		logger.Error("Failed to create RemediationRequest CRD",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.Error(err))
+		logger.Error(err, "Failed to create RemediationRequest CRD",
+			"fingerprint", signal.Fingerprint)
+
+		// DD-AUDIT-003: Emit crd.creation_failed audit event (DD-AUDIT-003)
+		// Fire-and-forget: audit failures don't affect business logic
+		s.emitCRDCreationFailedAudit(ctx, signal, err)
+
 		return nil, fmt.Errorf("failed to create RemediationRequest CRD: %w", err)
 	}
 
-	// 7. Store deduplication metadata in Redis (BR-003, BR-005, BR-077)
-	// This enables duplicate detection across Gateway restarts and provides
-	// persistent state for deduplication even when CRDs are deleted
-	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, signal, crdRef); err != nil {
-		// Graceful degradation: log error but don't fail the request
-		// The CRD is already created, so the alert is being processed
-		logger.Warn("Failed to store deduplication metadata in Redis",
-			zap.String("fingerprint", signal.Fingerprint),
-			zap.String("crd_ref", crdRef),
-			zap.Error(err))
+	// DD-GATEWAY-011: Initialize status.deduplication for NEW CRD
+	// Gateway owns status.deduplication per DD-GATEWAY-011
+	// Must initialize immediately after creation (OccurrenceCount=1, FirstSeenAt=now)
+	if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, rr); err != nil {
+		logger.Info("Failed to initialize deduplication status (DD-GATEWAY-011)",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"rr", rr.Name)
+		// Non-fatal: CRD exists, status update can be retried by RO or next duplicate
 	}
+
+	// DD-GATEWAY-011: Redis deduplication storage DEPRECATED
+	// Deduplication now uses K8s status-based lookup (phaseChecker.ShouldDeduplicate)
+	// and status updates (statusUpdater.UpdateDeduplicationStatus)
+	// Redis is no longer used for deduplication state
+
+	// DD-AUDIT-003: Emit signal.received audit event (BR-GATEWAY-190)
+	// Fire-and-forget: audit failures don't affect business logic
+	s.emitSignalReceivedAudit(ctx, signal, rr.Name, rr.Namespace)
+
+	// DD-AUDIT-003: Emit crd.created audit event (DD-AUDIT-003)
+	// Fire-and-forget: audit failures don't affect business logic
+	s.emitCRDCreatedAudit(ctx, signal, rr.Name, rr.Namespace)
 
 	// Record processing duration
 	duration := time.Since(start)
 	logger.Info("Signal processed successfully",
-		zap.String("fingerprint", signal.Fingerprint),
-		zap.String("crdName", rr.Name),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("remediationPath", remediationPath),
-		zap.Int64("duration_ms", duration.Milliseconds()))
+		"fingerprint", signal.Fingerprint,
+		"crdName", rr.Name,
+		"duration_ms", duration.Milliseconds())
 
-	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace, environment, priority, remediationPath), nil
+	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace), nil
 }
 
-// createAggregatedCRDAfterWindow creates a single aggregated RemediationRequest CRD
-// after the storm aggregation window expires
-//
-// Business Requirement: BR-GATEWAY-016 - Storm aggregation
-//
-// This method is called in a goroutine when a storm aggregation window is started.
-// It waits for the window duration (1 minute), then:
-// 1. Retrieves all aggregated resources from Redis
-// 2. Retrieves the original signal metadata
-// 3. Creates a single RemediationRequest CRD with all resources
-// 4. Stores deduplication metadata
-//
-// Benefits:
-// - Reduces CRD count by 10-50x during storms
-// - AI service receives single aggregated analysis request
-// - Coordinated remediation instead of 50 parallel workflows
-//
-// Example:
-// - Storm: 50 pod crashes in 1 minute
-// - Without aggregation: 50 CRDs created
-// - With aggregation: 1 CRD created with 50 resources listed
-// createAggregatedCRD creates aggregated CRD immediately when threshold reached (DD-GATEWAY-008)
-//
-// DD-GATEWAY-008 Design Decision: Create CRD synchronously when buffer threshold reached
-// Source: docs/architecture/decisions/DD-GATEWAY-008-storm-aggregation-first-alert-handling.md lines 99-146
-//
-// Returns:
-// - string: CRD name
-// - error: CRD creation errors
-func (s *Server) createAggregatedCRD(
-	ctx context.Context,
-	windowID string,
-	firstSignal *types.NormalizedSignal,
-	stormMetadata *processing.StormMetadata,
-) (string, error) {
-	logger := middleware.GetLogger(ctx)
+// DD-GATEWAY-012: createAggregatedCRD REMOVED - Redis-based storm aggregation deprecated
+// Storm tracking now uses status.stormAggregation via StatusUpdater (async pattern)
+// RRs are created immediately on first alert, storm status updated on subsequent alerts
 
-	// Retrieve all aggregated resources (includes buffered alerts moved to window)
-	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
-	if err != nil {
-		logger.Error("Failed to retrieve aggregated resources",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		return "", fmt.Errorf("failed to retrieve aggregated resources: %w", err)
-	}
-
-	// Retrieve signal metadata
-	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
-	if err != nil {
-		logger.Warn("Failed to retrieve signal metadata, using first signal",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		// Fall back to using the first signal passed as parameter
-		signal = firstSignal
-	} else {
-		// Use stored storm metadata if available
-		if storedStormMetadata != nil {
-			stormMetadata = storedStormMetadata
-		}
-	}
-
-	// Update alert count with actual aggregated count
-	resourceCount := len(resources)
-
-	logger.Info("Creating aggregated RemediationRequest CRD (DD-GATEWAY-008)",
-		zap.String("windowID", windowID),
-		zap.String("alertName", signal.AlertName),
-		zap.Int("resourceCount", resourceCount),
-		zap.String("stormType", stormMetadata.StormType))
-
-	// Create aggregated signal with all resources
-	aggregatedSignal := *signal
-	aggregatedSignal.IsStorm = true
-	aggregatedSignal.StormType = stormMetadata.StormType
-	aggregatedSignal.StormWindow = stormMetadata.Window
-	aggregatedSignal.AlertCount = resourceCount
-	aggregatedSignal.AffectedResources = resources
-
-	// Environment classification
-	environment := s.classifier.Classify(ctx, aggregatedSignal.Namespace)
-
-	// Priority assignment
-	priority := s.priorityEngine.Assign(ctx, aggregatedSignal.Severity, environment)
-
-	// Create single aggregated RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
-	if err != nil {
-		logger.Error("Failed to create aggregated RemediationRequest CRD",
-			zap.String("windowID", windowID),
-			zap.Int("resourceCount", resourceCount),
-			zap.Error(err))
-
-		// Record metric for failed aggregation
-		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
-		return "", fmt.Errorf("failed to create aggregated CRD: %w", err)
-	}
-
-	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
-	if err := s.deduplicator.Store(ctx, &aggregatedSignal, rr.Name); err != nil {
-		logger.Warn("Failed to store deduplication metadata",
-			zap.String("fingerprint", aggregatedSignal.Fingerprint),
-			zap.Error(err))
-	}
-
-	// Record metrics
-	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(aggregatedSignal.SourceType, "storm_aggregated").Inc()
-
-	logger.Info("Aggregated RemediationRequest CRD created successfully (DD-GATEWAY-008)",
-		zap.String("crdName", rr.Name),
-		zap.String("windowID", windowID),
-		zap.Int("resourceCount", resourceCount))
-
-	return rr.Name, nil
-}
-
-// monitorWindowExpiration monitors window expiration for cleanup (DD-GATEWAY-008)
-//
-// DD-GATEWAY-008: Window continues accepting alerts after CRD creation (sliding window)
-// This goroutine monitors the window and cleans up Redis keys after expiration
-func (s *Server) monitorWindowExpiration(ctx context.Context, windowID string) {
-	// Wait for window to expire
-	windowDuration := s.stormAggregator.GetWindowDuration()
-	time.Sleep(windowDuration)
-
-	s.logger.Info("Storm aggregation window expired, cleaning up",
-		zap.String("windowID", windowID))
-
-	// Cleanup: Window resources are already in CRD, just remove Redis keys
-	// Note: Resources have 2x TTL for retrieval, will auto-expire
-}
-
-// createAggregatedCRDAfterWindow is DEPRECATED - kept for backward compatibility
-// DD-GATEWAY-008: Use createAggregatedCRD() instead (creates CRD immediately when threshold reached)
-func (s *Server) createAggregatedCRDAfterWindow(
-	ctx context.Context,
-	windowID string,
-	firstSignal *types.NormalizedSignal,
-	stormMetadata *processing.StormMetadata,
-) {
-	// Wait for aggregation window to expire (configurable: 5s for tests, 1m for production)
-	windowDuration := s.stormAggregator.GetWindowDuration()
-	time.Sleep(windowDuration)
-
-	// Use singleflight to ensure only ONE goroutine creates the CRD for this windowID
-	// All other goroutines will wait and get the same result
-	// This is the idiomatic Go pattern for preventing duplicate work
-	_, err, _ := s.aggregationGroup.Do(windowID, func() (interface{}, error) {
-		s.logger.Info("Storm aggregation window expired, creating aggregated CRD",
-			zap.String("windowID", windowID),
-			zap.String("alertName", firstSignal.AlertName),
-			zap.Duration("duration", windowDuration))
-
-		return nil, s.doCreateAggregatedCRD(ctx, windowID, firstSignal, stormMetadata, windowDuration)
-	})
-
-	if err != nil {
-		s.logger.Error("Failed to create aggregated CRD via singleflight",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-	}
-}
-
-// doCreateAggregatedCRD performs the actual CRD creation
-// Separated from createAggregatedCRDAfterWindow to work with singleflight pattern
-func (s *Server) doCreateAggregatedCRD(
-	ctx context.Context,
-	windowID string,
-	firstSignal *types.NormalizedSignal,
-	stormMetadata *processing.StormMetadata,
-	windowDuration time.Duration,
-) error {
-
-	// Retrieve all aggregated resources
-	resources, err := s.stormAggregator.GetAggregatedResources(ctx, windowID)
-	if err != nil {
-		s.logger.Error("Failed to retrieve aggregated resources",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		return fmt.Errorf("failed to retrieve aggregated resources: %w", err)
-	}
-
-	// Retrieve signal metadata
-	signal, storedStormMetadata, err := s.stormAggregator.GetSignalMetadata(ctx, windowID)
-	if err != nil {
-		s.logger.Warn("Failed to retrieve signal metadata, using first signal",
-			zap.String("windowID", windowID),
-			zap.Error(err))
-		// Fall back to using the first signal passed as parameter
-		signal = firstSignal
-	} else {
-		// Use stored storm metadata if available
-		if storedStormMetadata != nil {
-			stormMetadata = storedStormMetadata
-		}
-	}
-
-	// Update alert count with actual aggregated count
-	resourceCount := len(resources)
-
-	s.logger.Info("Creating aggregated RemediationRequest CRD",
-		zap.String("windowID", windowID),
-		zap.String("alertName", signal.AlertName),
-		zap.Int("resourceCount", resourceCount),
-		zap.String("stormType", stormMetadata.StormType))
-
-	// Create aggregated signal with all resources
-	aggregatedSignal := *signal
-	aggregatedSignal.IsStorm = true
-	aggregatedSignal.StormType = stormMetadata.StormType
-	aggregatedSignal.StormWindow = stormMetadata.Window
-	aggregatedSignal.AlertCount = resourceCount
-	aggregatedSignal.AffectedResources = resources
-
-	// Environment classification
-	environment := s.classifier.Classify(ctx, aggregatedSignal.Namespace)
-
-	// Priority assignment
-	priority := s.priorityEngine.Assign(ctx, aggregatedSignal.Severity, environment)
-
-	// Create single aggregated RemediationRequest CRD
-	rr, err := s.crdCreator.CreateRemediationRequest(ctx, &aggregatedSignal, priority, environment)
-	if err != nil {
-		s.logger.Error("Failed to create aggregated RemediationRequest CRD",
-			zap.String("windowID", windowID),
-			zap.Int("resourceCount", resourceCount),
-			zap.Error(err))
-
-		// Record metric for failed aggregation
-		s.metricsInstance.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
-		return fmt.Errorf("failed to create aggregated CRD: %w", err)
-	}
-
-	// Store deduplication metadata in Redis for storm aggregation (BR-GATEWAY-016)
-	// This enables storm detection across Gateway restarts
-	crdRef := fmt.Sprintf("%s/%s", rr.Namespace, rr.Name)
-	if err := s.deduplicator.Store(ctx, &aggregatedSignal, crdRef); err != nil {
-		// Graceful degradation: log error but don't fail
-		s.logger.Warn("Failed to store storm aggregation metadata in Redis",
-			zap.String("windowID", windowID),
-			zap.String("crd_ref", crdRef),
-			zap.Error(err))
-	}
-
-	s.logger.Info("Aggregated RemediationRequest CRD created successfully",
-		zap.String("windowID", windowID),
-		zap.String("crdName", rr.Name),
-		zap.String("crdNamespace", rr.Namespace),
-		zap.Int("resourceCount", resourceCount),
-		zap.String("environment", environment),
-		zap.String("priority", priority),
-		zap.String("stormType", stormMetadata.StormType))
-
-	// Record metrics for successful aggregation
-	s.metricsInstance.CRDsCreatedTotal.WithLabelValues(environment, priority).Inc()
-
-	// DD-GATEWAY-008: Record storm aggregation metrics (BR-GATEWAY-016, BR-GATEWAY-008, BR-GATEWAY-011)
-
-	// 1. Storm Window Duration (BR-GATEWAY-008)
-	windowDurationSeconds := windowDuration.Seconds()
-	s.metricsInstance.StormWindowDuration.WithLabelValues(
-		aggregatedSignal.Namespace,
-		aggregatedSignal.AlertName,
-	).Observe(windowDurationSeconds)
-
-	// 2. Storm Aggregation Ratio (BR-GATEWAY-008)
-	// Ratio = alerts aggregated / total alerts received (higher = better)
-	// Example: 50 alerts → 1 CRD = 50/50 = 1.0 (perfect aggregation)
-	if resourceCount > 0 {
-		aggregationRatio := float64(resourceCount) / float64(resourceCount) // All alerts in window were aggregated
-		s.metricsInstance.StormAggregationRatio.Set(aggregationRatio)
-	}
-
-	// 3. Storm Cost Savings Percent (BR-GATEWAY-016)
-	// Cost savings = (alerts - CRDs) / alerts * 100
-	// Example: 50 alerts → 1 CRD = (50-1)/50 * 100 = 98% savings
-	if resourceCount > 1 {
-		costSavingsPercent := float64(resourceCount-1) / float64(resourceCount) * 100
-		s.metricsInstance.StormCostSavingsPercent.Set(costSavingsPercent)
-	}
-
-	// 4. Namespace Buffer Utilization (BR-GATEWAY-011)
-	if utilization, err := s.stormAggregator.GetNamespaceUtilization(ctx, aggregatedSignal.Namespace); err == nil {
-		s.metricsInstance.NamespaceBufferUtilization.WithLabelValues(aggregatedSignal.Namespace).Set(utilization)
-	}
-
-	return nil // Success
-}
+// DD-GATEWAY-012: monitorWindowExpiration REMOVED - No Redis windows to monitor
+// Storm detection threshold now based on status.deduplication.occurrenceCount
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
 
@@ -1599,7 +1386,8 @@ func (s *Server) writeJSONError(w http.ResponseWriter, r *http.Request, message 
 	requestID := middleware.GetRequestID(r.Context())
 
 	// BR-GATEWAY-078: Sanitize error message to prevent sensitive data exposure
-	sanitizedMessage := middleware.SanitizeForLog(message)
+	// DD-005: Use shared sanitization library directly
+	sanitizedMessage := sanitization.SanitizeForLog(message)
 
 	// Determine error type and title based on status code
 	errorType, title := getErrorTypeAndTitle(statusCode)
@@ -1651,13 +1439,4 @@ func (s *Server) writeValidationError(w http.ResponseWriter, r *http.Request, me
 // Business Outcome: Consistent internal error handling (BR-001)
 func (s *Server) writeInternalError(w http.ResponseWriter, r *http.Request, message string) {
 	s.writeJSONError(w, r, message, http.StatusInternalServerError)
-}
-
-// writeServiceUnavailableError writes a 503 Service Unavailable error response
-// TDD REFACTOR: Extracted common service unavailable pattern
-// BR-109: Added request parameter for request ID tracing
-// Business Outcome: Consistent service unavailability handling (BR-003)
-func (s *Server) writeServiceUnavailableError(w http.ResponseWriter, r *http.Request, message string, retryAfter int) {
-	w.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
-	s.writeJSONError(w, r, message, http.StatusServiceUnavailable)
 }

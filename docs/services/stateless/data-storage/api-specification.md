@@ -184,7 +184,7 @@ All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/ht
 
 ```json
 {
-  "type": "https://kubernaut.io/errors/validation",
+  "type": "https://kubernaut.ai/problems/validation-error",
   "title": "Invalid Request Parameters",
   "status": 400,
   "detail": "Invalid severity value: 'super-critical'. Must be one of: critical, high, medium, low",
@@ -196,7 +196,7 @@ All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/ht
 
 ```json
 {
-  "type": "https://kubernaut.io/errors/not-found",
+  "type": "https://kubernaut.ai/problems/not-found",
   "title": "Incident Not Found",
   "status": 404,
   "detail": "Incident with ID 99999 does not exist",
@@ -208,7 +208,7 @@ All errors follow [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/ht
 
 ```json
 {
-  "type": "https://kubernaut.io/errors/internal",
+  "type": "https://kubernaut.ai/problems/internal-error",
   "title": "Internal Server Error",
   "status": 500,
   "detail": "Database query failed",
@@ -343,7 +343,7 @@ curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/incident-typ
 
 ```json
 {
-  "type": "https://api.kubernaut.io/problems/validation-error",
+  "type": "https://kubernaut.ai/problems/validation-error",
   "title": "Validation Error",
   "status": 400,
   "detail": "incident_type query parameter is required",
@@ -355,7 +355,7 @@ curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/incident-typ
 
 ```json
 {
-  "type": "https://api.kubernaut.io/problems/internal-error",
+  "type": "https://kubernaut.ai/problems/internal-error",
   "title": "Internal Server Error",
   "status": 500,
   "detail": "Failed to retrieve success rate data",
@@ -562,7 +562,7 @@ curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimens
 **400 Bad Request** - Invalid parameters:
 ```json
 {
-  "type": "https://api.kubernaut.io/problems/validation-error",
+  "type": "https://kubernaut.ai/problems/validation-error",
   "title": "Invalid Query Parameter",
   "status": 400,
   "detail": "playbook_version requires playbook_id to be specified",
@@ -573,7 +573,7 @@ curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimens
 **400 Bad Request** - Invalid time_range:
 ```json
 {
-  "type": "https://api.kubernaut.io/problems/validation-error",
+  "type": "https://kubernaut.ai/problems/validation-error",
   "title": "Invalid Query Parameter",
   "status": 400,
   "detail": "invalid time_range: invalid (expected: 1h, 1d, 7d, 30d, 90d)",
@@ -584,7 +584,7 @@ curl "http://data-storage.kubernaut-system:8080/api/v1/success-rate/multi-dimens
 **500 Internal Server Error** - Database failure:
 ```json
 {
-  "type": "https://api.kubernaut.io/problems/internal-error",
+  "type": "https://kubernaut.ai/problems/internal-error",
   "title": "Internal Server Error",
   "status": 500,
   "detail": "Failed to retrieve multi-dimensional success rate data",

@@ -16,20 +16,29 @@ limitations under the License.
 
 package mocks
 
+import (
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+)
+
 // MockDB is a simple mock database for unit testing REST handlers
-// This is a minimal implementation for GREEN phase - will be enhanced in REFACTOR
+// V1.0: Uses structured types for type safety
 type MockDB struct {
 	recordCount     int
-	incidents       []map[string]interface{}
-	aggregationData map[string]map[string]interface{} // For aggregation endpoint mocking
+	auditEvents     []*repository.AuditEvent // V1.0: Structured types
+	aggregationData map[string]interface{}   // For aggregation endpoint mocking (structured types)
 }
 
 // NewMockDB creates a new mock database
 func NewMockDB() *MockDB {
 	return &MockDB{
 		recordCount:     0,
-		incidents:       make([]map[string]interface{}, 0),
-		aggregationData: make(map[string]map[string]interface{}),
+		auditEvents:     make([]*repository.AuditEvent, 0),
+		aggregationData: make(map[string]interface{}),
 	}
 }
 
@@ -38,47 +47,78 @@ func NewMockDB() *MockDB {
 func (m *MockDB) SetRecordCount(count int) {
 	m.recordCount = count
 
-	// Generate mock incidents
-	m.incidents = make([]map[string]interface{}, count)
+	// Generate mock audit events
+	m.auditEvents = make([]*repository.AuditEvent, count)
 	for i := 0; i < count; i++ {
-		m.incidents[i] = map[string]interface{}{
-			"id":          i + 1,
-			"namespace":   "test-namespace",
-			"action_type": "scale_deployment",
-			"severity":    "high",
+		now := time.Now()
+		m.auditEvents[i] = &repository.AuditEvent{
+			EventID:           uuid.New(),
+			EventTimestamp:    now,
+			EventDate:         repository.DateOnly(now.Truncate(24 * time.Hour)),
+			EventType:         "test.event",
+			Version:           "1.0",
+			EventCategory:     "test",
+			EventAction:       "test_action",
+			EventOutcome:      "success",
+			ResourceNamespace: "test-namespace",
+			Severity:          "high",
 		}
 	}
 }
 
 // Query simulates a database query
-// Returns incidents based on configured recordCount
-func (m *MockDB) Query(filters map[string]string, limit, offset int) ([]map[string]interface{}, error) {
+// V1.0: Returns structured audit events
+func (m *MockDB) Query(filters map[string]string, limit, offset int) ([]*repository.AuditEvent, error) {
 	// BR-STORAGE-025: Return empty array for nonexistent namespaces
 	if ns, ok := filters["namespace"]; ok && ns == "nonexistent" {
-		return []map[string]interface{}{}, nil
+		return []*repository.AuditEvent{}, nil
 	}
 
-	// Simple mock: return configured incidents
-	if len(m.incidents) == 0 {
-		// Default: return 3 mock incidents
-		return []map[string]interface{}{
+	// Simple mock: return configured audit events
+	if len(m.auditEvents) == 0 {
+		// Default: return 3 mock audit events
+		namespace := filters["namespace"]
+		if namespace == "" {
+			namespace = "test-namespace"
+		}
+
+		now := time.Now()
+		return []*repository.AuditEvent{
 			{
-				"id":          1,
-				"namespace":   filters["namespace"],
-				"action_type": "scale_deployment",
-				"severity":    "high",
+				EventID:           uuid.New(),
+				EventTimestamp:    now,
+				EventDate:         repository.DateOnly(now.Truncate(24 * time.Hour)),
+				EventType:         "test.event.1",
+				Version:           "1.0",
+				EventCategory:     "test",
+				EventAction:       "scale_deployment",
+				EventOutcome:      "success",
+				ResourceNamespace: namespace,
+				Severity:          "high",
 			},
 			{
-				"id":          2,
-				"namespace":   filters["namespace"],
-				"action_type": "restart_pod",
-				"severity":    "critical",
+				EventID:           uuid.New(),
+				EventTimestamp:    now,
+				EventDate:         repository.DateOnly(now.Truncate(24 * time.Hour)),
+				EventType:         "test.event.2",
+				Version:           "1.0",
+				EventCategory:     "test",
+				EventAction:       "restart_pod",
+				EventOutcome:      "success",
+				ResourceNamespace: namespace,
+				Severity:          "critical",
 			},
 			{
-				"id":          3,
-				"namespace":   filters["namespace"],
-				"action_type": "rollback_deployment",
-				"severity":    "medium",
+				EventID:           uuid.New(),
+				EventTimestamp:    now,
+				EventDate:         repository.DateOnly(now.Truncate(24 * time.Hour)),
+				EventType:         "test.event.3",
+				Version:           "1.0",
+				EventCategory:     "test",
+				EventAction:       "rollback_deployment",
+				EventOutcome:      "success",
+				ResourceNamespace: namespace,
+				Severity:          "medium",
 			},
 		}, nil
 	}
@@ -86,28 +126,37 @@ func (m *MockDB) Query(filters map[string]string, limit, offset int) ([]map[stri
 	// Return paginated results
 	start := offset
 	end := offset + limit
-	if start >= len(m.incidents) {
-		return []map[string]interface{}{}, nil
+	if start >= len(m.auditEvents) {
+		return []*repository.AuditEvent{}, nil
 	}
-	if end > len(m.incidents) {
-		end = len(m.incidents)
+	if end > len(m.auditEvents) {
+		end = len(m.auditEvents)
 	}
 
-	return m.incidents[start:end], nil
+	return m.auditEvents[start:end], nil
 }
 
-// Get simulates retrieving a single incident by ID
-func (m *MockDB) Get(id int) (map[string]interface{}, error) {
+// Get simulates retrieving a single audit event by ID
+// V1.0: Returns structured audit event
+func (m *MockDB) Get(id int) (*repository.AuditEvent, error) {
 	if id == 999999 {
 		// Not found case for testing
 		return nil, nil
 	}
 
-	return map[string]interface{}{
-		"id":          id,
-		"namespace":   "test-namespace",
-		"action_type": "scale_deployment",
-		"severity":    "high",
+	// Return mock audit event
+	now := time.Now()
+	return &repository.AuditEvent{
+		EventID:           uuid.New(),
+		EventTimestamp:    now,
+		EventDate:         repository.DateOnly(now.Truncate(24 * time.Hour)),
+		EventType:         "test.event",
+		Version:           "1.0",
+		EventCategory:     "test",
+		EventAction:       "scale_deployment",
+		EventOutcome:      "success",
+		ResourceNamespace: "test-namespace",
+		Severity:          "high",
 	}, nil
 }
 
@@ -120,91 +169,105 @@ func (m *MockDB) CountTotal(filters map[string]string) (int64, error) {
 		return 0, nil
 	}
 
-	// Simple mock: return total count based on configured incidents
-	if len(m.incidents) == 0 {
-		// Default: 3 mock incidents (same as Query default)
+	// Simple mock: return total count based on configured audit events
+	if len(m.auditEvents) == 0 {
+		// Default: 3 mock audit events (same as Query default)
 		return 3, nil
 	}
 
-	// Return total count of all incidents (not filtered by limit/offset)
-	return int64(len(m.incidents)), nil
+	// Return total count of all audit events (not filtered by limit/offset)
+	return int64(len(m.auditEvents)), nil
 }
 
-// SetAggregationData configures mock aggregation responses
-// Used for testing aggregation endpoints in unit tests
-func (m *MockDB) SetAggregationData(aggregationType string, data map[string]interface{}) {
-	m.aggregationData[aggregationType] = data
+// SetSuccessRateData configures mock success rate aggregation
+func (m *MockDB) SetSuccessRateData(data *models.SuccessRateAggregationResponse) {
+	m.aggregationData["success_rate"] = data
 }
 
-// GetAggregationData retrieves mock aggregation data
-// Returns nil if no data configured for this aggregation type
-func (m *MockDB) GetAggregationData(aggregationType string) map[string]interface{} {
-	return m.aggregationData[aggregationType]
+// SetNamespaceAggregationData configures mock namespace aggregation
+func (m *MockDB) SetNamespaceAggregationData(data *models.NamespaceAggregationResponse) {
+	m.aggregationData["by_namespace"] = data
+}
+
+// SetSeverityAggregationData configures mock severity aggregation
+func (m *MockDB) SetSeverityAggregationData(data *models.SeverityAggregationResponse) {
+	m.aggregationData["by_severity"] = data
+}
+
+// SetTrendAggregationData configures mock trend aggregation
+func (m *MockDB) SetTrendAggregationData(data *models.TrendAggregationResponse) {
+	m.aggregationData["incident_trend"] = data
 }
 
 // AggregateSuccessRate calculates success rate for a workflow
 // BR-STORAGE-031: Success rate aggregation
-func (m *MockDB) AggregateSuccessRate(workflowID string) (map[string]interface{}, error) {
+// V1.0: Returns structured type
+func (m *MockDB) AggregateSuccessRate(workflowID string) (*models.SuccessRateAggregationResponse, error) {
 	if data, ok := m.aggregationData["success_rate"]; ok {
-		result := make(map[string]interface{})
-		for k, v := range data {
-			result[k] = v
+		if response, ok := data.(*models.SuccessRateAggregationResponse); ok {
+			// Override workflow_id with the requested one
+			response.WorkflowID = workflowID
+			return response, nil
 		}
-		result["workflow_id"] = workflowID
-		return result, nil
 	}
 
 	// Default: no data
-	return map[string]interface{}{
-		"workflow_id":   workflowID,
-		"total_count":   0,
-		"success_count": 0,
-		"failure_count": 0,
-		"success_rate":  0.0,
+	return &models.SuccessRateAggregationResponse{
+		WorkflowID:   workflowID,
+		TotalCount:   0,
+		SuccessCount: 0,
+		FailureCount: 0,
+		SuccessRate:  0.0,
 	}, nil
 }
 
 // AggregateByNamespace groups incidents by namespace
 // BR-STORAGE-032: Namespace grouping aggregation
-func (m *MockDB) AggregateByNamespace() (map[string]interface{}, error) {
+// V1.0: Returns structured type
+func (m *MockDB) AggregateByNamespace() (*models.NamespaceAggregationResponse, error) {
 	if data, ok := m.aggregationData["by_namespace"]; ok {
-		return data, nil
+		if response, ok := data.(*models.NamespaceAggregationResponse); ok {
+			return response, nil
+		}
 	}
 
 	// Default: empty aggregations
-	return map[string]interface{}{
-		"aggregations": []map[string]interface{}{},
+	return &models.NamespaceAggregationResponse{
+		Aggregations: []models.NamespaceAggregationItem{},
 	}, nil
 }
 
 // AggregateBySeverity groups incidents by severity
 // BR-STORAGE-033: Severity distribution aggregation
-func (m *MockDB) AggregateBySeverity() (map[string]interface{}, error) {
+// V1.0: Returns structured type
+func (m *MockDB) AggregateBySeverity() (*models.SeverityAggregationResponse, error) {
 	if data, ok := m.aggregationData["by_severity"]; ok {
-		return data, nil
+		if response, ok := data.(*models.SeverityAggregationResponse); ok {
+			return response, nil
+		}
 	}
 
 	// Default: empty aggregations
-	return map[string]interface{}{
-		"aggregations": []map[string]interface{}{},
+	return &models.SeverityAggregationResponse{
+		Aggregations: []models.SeverityAggregationItem{},
 	}, nil
 }
 
 // AggregateIncidentTrend returns incident counts over time
 // BR-STORAGE-034: Incident trend aggregation
-func (m *MockDB) AggregateIncidentTrend(period string) (map[string]interface{}, error) {
+// V1.0: Returns structured type
+func (m *MockDB) AggregateIncidentTrend(period string) (*models.TrendAggregationResponse, error) {
 	if data, ok := m.aggregationData["incident_trend"]; ok {
-		result := make(map[string]interface{})
-		for k, v := range data {
-			result[k] = v
+		if response, ok := data.(*models.TrendAggregationResponse); ok {
+			// Override period with the requested one
+			response.Period = period
+			return response, nil
 		}
-		result["period"] = period
-		return result, nil
 	}
 
 	// Default: empty data points
-	return map[string]interface{}{
-		"period":      period,
-		"data_points": []map[string]interface{}{},
+	return &models.TrendAggregationResponse{
+		Period:     period,
+		DataPoints: []models.TrendDataPoint{},
 	}, nil
 }

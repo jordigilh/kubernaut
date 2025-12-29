@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package processing_test
+package processing
 
 import (
 	"fmt"
@@ -24,6 +24,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 )
 
 // BR-GATEWAY-015: CRD Name Generation
@@ -37,15 +39,23 @@ var _ = Describe("CRD Name Generation", func() {
 	// - Max length: 253 characters
 	dns1123Regex := regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
 
+	// MockClock for deterministic testing
+	var mockClock *processing.MockClock
+
+	BeforeEach(func() {
+		// Initialize MockClock with a fixed time
+		mockClock = processing.NewMockClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+	})
+
 	Describe("generateCRDName", func() {
 		// Helper function that mimics the production logic
 		// From: pkg/gateway/processing/crd_creator.go:293-302
-		generateCRDName := func(fingerprint string) string {
+		generateCRDName := func(fingerprint string, clock processing.Clock) string {
 			fingerprintPrefix := fingerprint
 			if len(fingerprintPrefix) > 12 {
 				fingerprintPrefix = fingerprintPrefix[:12]
 			}
-			timestamp := time.Now().Unix()
+			timestamp := clock.Now().Unix()
 			return fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
 		}
 
@@ -53,7 +63,7 @@ var _ = Describe("CRD Name Generation", func() {
 			It("should generate valid DNS-1123 compliant name", func() {
 				// BR-GATEWAY-015: Normal fingerprint length (32-64 chars)
 				fingerprint := "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
-				crdName := generateCRDName(fingerprint)
+				crdName := generateCRDName(fingerprint, mockClock)
 
 				// VALIDATION 1: DNS-1123 compliance
 				Expect(dns1123Regex.MatchString(crdName)).To(BeTrue(),
@@ -77,7 +87,7 @@ var _ = Describe("CRD Name Generation", func() {
 			It("should use full fingerprint without truncation", func() {
 				// BR-GATEWAY-015: Short fingerprint (edge case)
 				fingerprint := "abc123"
-				crdName := generateCRDName(fingerprint)
+				crdName := generateCRDName(fingerprint, mockClock)
 
 				// VALIDATION 1: DNS-1123 compliance
 				Expect(dns1123Regex.MatchString(crdName)).To(BeTrue())
@@ -96,7 +106,7 @@ var _ = Describe("CRD Name Generation", func() {
 				// BR-GATEWAY-015: Very long fingerprint (external alert sources)
 				// BUSINESS SCENARIO: Alert names from external sources may be very long
 				longFingerprint := strings.Repeat("a", 200) // 200 chars
-				crdName := generateCRDName(longFingerprint)
+				crdName := generateCRDName(longFingerprint, mockClock)
 
 				// VALIDATION 1: DNS-1123 compliance
 				Expect(dns1123Regex.MatchString(crdName)).To(BeTrue(),
@@ -126,7 +136,7 @@ var _ = Describe("CRD Name Generation", func() {
 
 				// Production code should lowercase before generating name
 				lowercaseFingerprint := strings.ToLower(fingerprint)
-				crdName := generateCRDName(lowercaseFingerprint)
+				crdName := generateCRDName(lowercaseFingerprint, mockClock)
 
 				// VALIDATION 1: DNS-1123 compliance (lowercase only)
 				Expect(dns1123Regex.MatchString(crdName)).To(BeTrue())
@@ -143,12 +153,12 @@ var _ = Describe("CRD Name Generation", func() {
 				// BUSINESS SCENARIO: Multiple alerts with same fingerprint
 				fingerprint := "a1b2c3d4e5f6"
 
-				// Generate 3 CRD names with 1-second delays to ensure different timestamps
-				name1 := generateCRDName(fingerprint)
-				time.Sleep(1 * time.Second) // Ensure different Unix timestamp
-				name2 := generateCRDName(fingerprint)
-				time.Sleep(1 * time.Second)
-				name3 := generateCRDName(fingerprint)
+				// Generate 3 CRD names with time advancement for deterministic testing
+				name1 := generateCRDName(fingerprint, mockClock)
+				mockClock.Advance(1 * time.Second) // Advance time deterministically
+				name2 := generateCRDName(fingerprint, mockClock)
+				mockClock.Advance(1 * time.Second)
+				name3 := generateCRDName(fingerprint, mockClock)
 
 				// VALIDATION: All names should be unique (different timestamps)
 				Expect(name1).NotTo(Equal(name2), "Names should be unique")
@@ -175,7 +185,7 @@ var _ = Describe("CRD Name Generation", func() {
 				// For this test, we assume sanitization happens before name generation
 				sanitizedFingerprint := strings.ReplaceAll(fingerprint, "_", "")
 				sanitizedFingerprint = strings.ReplaceAll(sanitizedFingerprint, ".", "")
-				crdName := generateCRDName(sanitizedFingerprint)
+				crdName := generateCRDName(sanitizedFingerprint, mockClock)
 
 				// VALIDATION 1: DNS-1123 compliance
 				Expect(dns1123Regex.MatchString(crdName)).To(BeTrue(),
@@ -217,4 +227,3 @@ var _ = Describe("CRD Name Generation", func() {
 		})
 	})
 })
-

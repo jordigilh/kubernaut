@@ -107,20 +107,20 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
-		eventPayload := map[string]interface{}{
-			"version":          "1.0",
-			"service":          "gateway",
-			"event_type":       "gateway.signal.received",
-			"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-			"correlation_id":   fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
-			"outcome":          "success",
-			"operation":        "metrics_test",
-			"actor_type":       "service",          // ADR-034 required
-			"actor_id":         "gateway-service",  // ADR-034 required
-			"resource_type":    "signal",           // ADR-034 required
-			"resource_id":      "metrics-test-001", // ADR-034 required
-			"event_data":       eventData,
-		}
+			eventPayload := map[string]interface{}{
+				"version":         "1.0",
+				"event_category":  "gateway",
+				"event_type":      "gateway.signal.received",
+				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+				"correlation_id":  fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
+				"event_outcome":   "success",
+				"event_action":    "metrics_test",
+				"actor_type":      "service",          // ADR-034 required
+				"actor_id":        "gateway-service",  // ADR-034 required
+				"resource_type":   "signal",           // ADR-034 required
+				"resource_id":     "metrics-test-001", // ADR-034 required
+				"event_data":      eventData,
+			}
 
 			payload, _ := json.Marshal(eventPayload)
 			resp, err := http.Post(
@@ -179,14 +179,14 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 
 			eventPayload := map[string]interface{}{
-				"version":          "1.0",
-				"service":          "gateway",
-				"event_type":       "gateway.signal.received",
-				"event_timestamp":  pastTimestamp.Format(time.RFC3339Nano),
-				"correlation_id":   fmt.Sprintf("lag-test-%d", time.Now().UnixNano()),
-				"outcome":          "success",
-				"operation":        "lag_test",
-				"event_data":       eventData,
+				"version":         "1.0",
+				"event_category":  "gateway",
+				"event_type":      "gateway.signal.received",
+				"event_timestamp": pastTimestamp.Format(time.RFC3339Nano),
+				"correlation_id":  fmt.Sprintf("lag-test-%d", time.Now().UnixNano()),
+				"event_outcome":   "success",
+				"event_action":    "lag_test",
+				"event_data":      eventData,
 			}
 
 			payload, _ := json.Marshal(eventPayload)
@@ -237,8 +237,8 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// Invalid audit (missing required fields)
 			// ADR-034: Test validation using unified endpoint
 			invalidPayload := map[string]interface{}{
-				"version": "1.0",
-				"service": "gateway",
+				"version":        "1.0",
+				"event_category": "gateway",
 				// Missing: event_type, event_timestamp, correlation_id, outcome, operation, event_data
 			}
 
@@ -297,14 +297,14 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 
 			eventPayload := map[string]interface{}{
-				"version":          "1.0",
-				"service":          "gateway",
-				"event_type":       "gateway.signal.received",
-				"event_timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
-				"correlation_id":   fmt.Sprintf("duration-test-%d", time.Now().UnixNano()),
-				"outcome":          "success",
-				"operation":        "duration_test",
-				"event_data":       eventData,
+				"version":         "1.0",
+				"event_category":  "gateway",
+				"event_type":      "gateway.signal.received",
+				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+				"correlation_id":  fmt.Sprintf("duration-test-%d", time.Now().UnixNano()),
+				"event_outcome":   "success",
+				"event_action":    "duration_test",
+				"event_data":      eventData,
 			}
 
 			payload, _ := json.Marshal(eventPayload)

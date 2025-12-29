@@ -1,0 +1,23 @@
+database:
+  host: host.containers.internal
+  port: 15441
+  user: slm_user
+  name: action_history
+  ssl_mode: disable
+  secretsFile: /etc/datastorage/db-secrets.yaml
+  usernameKey: username
+  passwordKey: password
+
+redis:
+  addr: host.containers.internal:16388
+  db: 0
+  secretsFile: /etc/datastorage/redis-secrets.yaml
+  passwordKey: password
+
+server:
+  port: 8080
+  metrics_port: 9090
+
+service:
+  name: data-storage
+  logLevel: debug

@@ -1,0 +1,109 @@
+version: '3.8'
+
+# Notification Integration Test Infrastructure
+# NT-specific ports to avoid conflicts with other services
+# Reference: Each service manages its own infrastructure
+
+services:
+  # PostgreSQL for NT integration tests
+  # Port: 15453 (NT-specific, +20 from DS baseline 15433)
+  postgres:
+    image: postgres:16-alpine
+    container_name: notification_postgres_1
+    environment:
+      POSTGRES_DB: action_history
+      POSTGRES_USER: slm_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "15453:5432"
+    networks:
+      - nt-test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U slm_user -d action_history"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Redis for NT integration tests
+  # Port: 16399 (NT-specific, +20 from DS baseline 16379)
+  redis:
+    image: quay.io/jordigilh/redis:7-alpine
+    container_name: notification_redis_1
+    ports:
+      - "16399:6379"
+    networks:
+      - nt-test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Database migrations (runs once and exits)
+  # Pattern: Gateway reference implementation (see test/integration/gateway/podman-compose.gateway.test.yml)
+  # Uses postgres image with psql (avoids goose image pull issues)
+  # Extracts only "Up" section from goose-formatted migrations
+  migrate:
+    image: postgres:16-alpine
+    container_name: notification_migrations
+    volumes:
+      - ../../../migrations:/migrations:ro
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: slm_user
+      PGPASSWORD: test_password
+      PGDATABASE: action_history
+    # Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        echo "Waiting for PostgreSQL..."
+        until pg_isready -h postgres -U slm_user; do sleep 1; done
+        echo "Applying migrations (Up sections only)..."
+        find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+          echo "Applying $$f..."
+          sed -n '1,/^-- +goose Down/p' "$$f" | grep -v '^-- +goose Down' | psql 2>&1 | grep -E "(CREATE|ALTER|ERROR)" || true
+        done
+        echo "Migrations complete!"
+    networks:
+      - nt-test-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Data Storage Service for NT integration tests
+  # Port: 18110 (NT-specific, +20 from DS baseline 18090)
+  datastorage:
+    build:
+      context: ../../..
+      dockerfile: docker/data-storage.Dockerfile
+    container_name: notification_datastorage_1
+    environment:
+      - CONFIG_PATH=/etc/datastorage/config.yaml
+    ports:
+      - "18110:8080"
+      - "19110:9090"  # Metrics
+    volumes:
+      - ./config:/etc/datastorage:ro
+    networks:
+      - nt-test-network
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+networks:
+  nt-test-network:
+    driver: bridge

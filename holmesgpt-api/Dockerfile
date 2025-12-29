@@ -8,10 +8,10 @@ FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
 # Switch to root for package installation
 USER root
 
-# Install build dependencies
-RUN dnf update -y && \
-	dnf install -y gcc gcc-c++ git ca-certificates tzdata && \
-	dnf clean all
+# Install only essential build dependencies (skip dnf update to speed up build)
+RUN dnf install -y --setopt=install_weak_deps=False gcc gcc-c++ git ca-certificates tzdata && \
+	dnf clean all && \
+	rm -rf /var/cache/dnf /var/cache/yum
 
 # Switch back to default user for security
 USER 1001
@@ -26,21 +26,22 @@ COPY --chown=1001:0 dependencies/ ../dependencies/
 COPY --chown=1001:0 holmesgpt-api/requirements.txt ./
 
 # Upgrade pip and install Python dependencies
+# Remove unnecessary files after installation to reduce layer size
 RUN pip install --no-cache-dir --upgrade pip && \
-	pip install --no-cache-dir -r requirements.txt
+	pip install --no-cache-dir -r requirements.txt && \
+	find /opt/app-root/lib/python3.12/site-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+	find /opt/app-root/lib/python3.12/site-packages -name "*.pyc" -delete && \
+	find /opt/app-root/lib/python3.12/site-packages -name "*.pyo" -delete
 
 # Runtime stage - Red Hat UBI9 Python 3.12
 FROM registry.access.redhat.com/ubi9/python-312:latest
 
-# Install runtime dependencies including kubectl for HolmesGPT SDK
+# Install only essential runtime dependencies (skip dnf update to reduce size)
 USER root
-RUN dnf update -y && \
-	dnf install -y ca-certificates tzdata && \
+RUN dnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
 	dnf clean all && \
-	# Install kubectl for HolmesGPT SDK kubernetes toolsets
-	curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
-	chmod +x kubectl && \
-	mv kubectl /usr/local/bin/kubectl
+	rm -rf /var/cache/dnf /var/cache/yum
 
 # Set working directory (UBI9 Python already has UID 1001 user)
 WORKDIR /opt/app-root/src
@@ -52,11 +53,17 @@ COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 # Copy application code
 COPY --chown=1001:0 holmesgpt-api/src/ ./src/
 COPY --chown=1001:0 holmesgpt-api/requirements.txt ./
+COPY --chown=1001:0 holmesgpt-api/entrypoint.sh ./
 
-# Create necessary directories with correct permissions
+# Create necessary directories with correct permissions and clean up
 RUN mkdir -p /tmp /opt/app-root/.cache && \
 	chown -R 1001:0 /opt/app-root /tmp && \
-	chmod -R g=u /opt/app-root /tmp
+	chmod -R g=u /opt/app-root /tmp && \
+	chmod +x ./entrypoint.sh && \
+	# Additional cleanup to reduce image size
+	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+	find /opt/app-root/lib/python3.12/site-packages -name "*.pyc" -delete 2>/dev/null || true && \
+	find /opt/app-root/lib/python3.12/site-packages -name "*.pyo" -delete 2>/dev/null || true
 
 # Switch to non-root user for security
 USER 1001
@@ -74,8 +81,9 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 	CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
-# Run FastAPI with uvicorn
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
+# Use entrypoint script to handle --config flag (ADR-030 - matches Go services)
+ENTRYPOINT ["./entrypoint.sh"]
+CMD []
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api" \

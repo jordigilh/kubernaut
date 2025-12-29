@@ -1,13 +1,40 @@
+# Kind cluster configuration for Gateway E2E tests
+# Reference: DD-TEST-001 Port Allocation Strategy
+#
+# Port Allocation (from DD-TEST-001):
+#   Gateway Host Port: 8080 (maps to NodePort 30080)
+#   Gateway Metrics Host Port: 9090 (maps to NodePort 30090)
+#   Data Storage Host Port: 18091 (maps to NodePort 30081)
+#
+# Dependencies:
+#   - PostgreSQL (in-cluster) - Data Storage persistence
+#   - Redis (in-cluster) - Data Storage caching
+#   - Data Storage (port 18091) - Audit events
+#   - Gateway (port 8080) - Signal ingestion
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
-  # Expose Gateway NodePort to host machine
+  # DD-TEST-007: Mount coverage directory on control-plane node
+  # Gateway pods run on control-plane due to nodeSelector
+  extraMounts:
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
+  # Expose Gateway and Data Storage NodePorts to host machine
   # This eliminates kubectl port-forward instability
   extraPortMappings:
+  # Gateway service ports
   - containerPort: 30080  # Gateway NodePort in cluster
     hostPort: 8080        # Port on host machine (localhost:8080)
     protocol: TCP
+  - containerPort: 30090  # Gateway Metrics NodePort
+    hostPort: 9090        # Port on host machine (localhost:9090/metrics)
+    protocol: TCP
+  # Data Storage dependency (for audit events - BR-GATEWAY-190)
+  - containerPort: 30081  # Data Storage NodePort in cluster
+    hostPort: 18091       # Port on host machine (localhost:18091)
+    protocol: TCP         # Note: 18091 avoids conflicts with Gateway metrics (9090)
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
@@ -28,4 +55,11 @@ nodes:
         kube-api-qps: "100"
         kube-api-burst: "200"
 - role: worker
+  extraMounts:
+  # Mount coverage directory from host to Kind node for E2E coverage collection
+  # Per DD-TEST-007: E2E Coverage Capture Standard
+  # Path must be consistent: Kind config, K8s volumes, GOCOVERDIR, extraction
+  - hostPath: ./coverdata
+    containerPath: /coverdata
+    readOnly: false
 

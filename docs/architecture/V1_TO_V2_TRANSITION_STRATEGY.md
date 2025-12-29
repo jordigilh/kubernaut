@@ -85,7 +85,7 @@ Kubernaut's execution architecture follows a **strategic two-phase approach**:
 
 #### **Type 1: Single Action (90% of workflows)**
 ```yaml
-apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 spec:
   steps:
@@ -110,7 +110,7 @@ spec:
 
 #### **Type 2: Multi-Step with Dependencies (10% of workflows)**
 ```yaml
-apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 spec:
   steps:
@@ -287,7 +287,7 @@ spec:
 
 ```yaml
 # WorkflowExecution (same as V1!)
-apiVersion: workflowexecution.kubernaut.ai/v1alpha1
+apiVersion: kubernaut.ai/v1alpha1
 kind: WorkflowExecution
 spec:
   steps:
