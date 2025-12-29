@@ -156,7 +156,6 @@ def make_recovery_request(unique_test_id: str = None) -> Dict[str, Any]:
 # FLOW-BASED METRICS INTEGRATION TESTS
 # ========================================
 
-@pytest.mark.serial  # Stateful: shared metrics counters
 class TestHTTPRequestMetrics:
     """
     Flow-based tests for HTTP request metrics.
@@ -276,7 +275,6 @@ class TestHTTPRequestMetrics:
             "Health endpoint should record metrics"
 
 
-@pytest.mark.serial  # Stateful: shared metrics counters
 class TestLLMMetrics:
     """
     Flow-based tests for LLM-specific metrics.
@@ -349,7 +347,6 @@ class TestLLMMetrics:
             "Recovery endpoint should record LLM metrics"
 
 
-@pytest.mark.serial  # Stateful: shared metrics counters
 class TestMetricsAggregation:
     """
     Flow-based tests for metrics aggregation over multiple requests.
@@ -432,7 +429,6 @@ class TestMetricsAggregation:
             "HAPI should record request duration histograms."
 
 
-@pytest.mark.serial  # Stateful: shared metrics counters
 class TestMetricsEndpointAvailability:
     """
     Flow-based tests for /metrics endpoint availability.
@@ -481,7 +477,6 @@ class TestMetricsEndpointAvailability:
             f"/metrics should return text/plain, got {content_type}"
 
 
-@pytest.mark.serial  # Stateful: shared metrics counters
 class TestBusinessMetrics:
     """
     Flow-based tests for business-specific metrics.

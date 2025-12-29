@@ -40,16 +40,63 @@ import (
 //
 // Infrastructure Components:
 // - PostgreSQL (port 15441): DataStorage backend
-// - Redis (port 16387): DataStorage cache
+// - Redis (port 16388): DataStorage cache
 // - DataStorage (port 18097): Audit event persistence
 // - Metrics (port 19097): DataStorage metrics endpoint
 //
 // Related:
-// - workflowexecution_integration.go: Port and container name constants
 // - gateway.go: Reference implementation of DD-TEST-002
 // - datastorage_bootstrap.go: Shared DataStorage bootstrap utilities
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// WorkflowExecution Integration Test Ports (per DD-TEST-001 v1.7 - December 2025)
+// Sequential allocation after AIAnalysis (15438/16384/18095/19095)
+const (
+	// PostgreSQL port for WorkflowExecution integration tests
+	// Changed from 15443 (ad-hoc "+10") to 15441 (DD-TEST-001 sequential) on Dec 22, 2025
+	WEIntegrationPostgresPort = 15441
+
+	// Redis port for WorkflowExecution integration tests
+	// Changed from 16389 (ad-hoc "+10") to 16387 (DD-TEST-001 sequential) on Dec 22, 2025
+	// Changed from 16387 (conflicted with HAPI) to 16388 (unique) on Dec 25, 2025 per DD-TEST-001 v1.9
+	WEIntegrationRedisPort = 16388
+
+	// DataStorage HTTP API port for WorkflowExecution integration tests
+	// Changed from 18100 (conflicted with EffectivenessMonitor) to 18097 (DD-TEST-001 sequential) on Dec 22, 2025
+	WEIntegrationDataStoragePort = 18097
+
+	// DataStorage Metrics port for WorkflowExecution integration tests
+	// Changed from 19100 (ad-hoc "+10") to 19097 (DD-TEST-001 metrics pattern) on Dec 22, 2025
+	WEIntegrationMetricsPort = 19097
+)
+
+// WorkflowExecution Integration Test Container Names
+const (
+	// PostgreSQL container name
+	WEIntegrationPostgresContainer = "workflowexecution_postgres_1"
+
+	// Redis container name
+	WEIntegrationRedisContainer = "workflowexecution_redis_1"
+
+	// DataStorage container name
+	WEIntegrationDataStorageContainer = "workflowexecution_datastorage_1"
+
+	// Migrations container name
+	WEIntegrationMigrationsContainer = "workflowexecution_migrations"
+)
+
+// WorkflowExecution Integration Test Database Configuration
+const (
+	// Database name for audit events
+	WEIntegrationDBName = "action_history"
+
+	// Database user
+	WEIntegrationDBUser = "slm_user"
+
+	// Database password
+	WEIntegrationDBPassword = "test_password"
+)
 
 // StartWEIntegrationInfrastructure starts the WorkflowExecution integration test infrastructure
 // using sequential podman run commands per DD-TEST-002.

@@ -55,6 +55,7 @@ import (
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -223,21 +224,25 @@ var _ = BeforeSuite(func() {
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
 
+	// Start integration infrastructure programmatically (DD-TEST-002 mandate)
+	By("Starting Notification integration infrastructure")
+	err = infrastructure.StartNotificationIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
+	GinkgoWriter.Println("✅ Notification integration infrastructure started")
+
 	// Create audit helpers for controller audit emission (BR-NOT-062)
 	auditHelpers := notification.NewAuditHelpers("notification-controller")
 
 	// Create REAL audit store using Data Storage service (DD-AUDIT-003 mandate)
 	// Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)
-	// Requires infrastructure: test/integration/notification/podman-compose.notification.test.yml
 	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
 	if dataStorageURL == "" {
 		dataStorageURL = "http://localhost:18110" // NT integration port
 	}
 
-	// Check if Data Storage is available (MANDATORY for integration tests)
-	// DS TEAM PATTERN: Use Eventually() with 30s timeout instead of immediate check
+	// Verify Data Storage is healthy (infrastructure should have started it)
+	// DS TEAM PATTERN: Use Eventually() with 30s timeout for health check
 	// Rationale: Cold start on macOS Podman can take 15-20s (per DS team testing)
-	// Reference: docs/handoff/SHARED_RO_DS_INTEGRATION_DEBUG_DEC_20_2025.md:392-412
 	Eventually(func() int {
 		// Use 127.0.0.1 instead of localhost (DS team recommendation)
 		resp, err := http.Get(dataStorageURL + "/health")
@@ -248,14 +253,9 @@ var _ = BeforeSuite(func() {
 		defer resp.Body.Close()
 		return resp.StatusCode
 	}, "30s", "1s").Should(Equal(http.StatusOK),
-		"❌ REQUIRED: Data Storage not available at %s\n"+
+		"❌ DataStorage failed to become healthy after infrastructure startup at %s\n"+
 			"Per DD-AUDIT-003: Audit infrastructure is MANDATORY\n"+
-			"Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)\n\n"+
-			"To run these tests, start infrastructure:\n"+
-			"  cd test/integration/notification\n"+
-			"  ./setup-infrastructure.sh\n\n"+
-			"Verify with: curl %s/health\n\n"+
-			"DS Team Note: 30s timeout needed for macOS Podman cold start (15-20s)", dataStorageURL, dataStorageURL)
+			"Per DD-TEST-002: Infrastructure should be started programmatically by Go code", dataStorageURL)
 
 	// Create Data Storage client with OpenAPI generated client (DD-API-001)
 	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)

@@ -1,7 +1,7 @@
 # Data Storage Test Isolation Pattern - Cross-Service Analysis
 
-**Date**: December 29, 2025  
-**Purpose**: Document how Go services handle shared Data Storage in parallel tests  
+**Date**: December 29, 2025
+**Purpose**: Document how Go services handle shared Data Storage in parallel tests
 **Pattern Authority**: Gateway, SignalProcessing, AIAnalysis, Notification integration tests
 
 ---
@@ -22,7 +22,7 @@ All Kubernaut services **share the same Data Storage instance** during parallel 
 
 ```go
 // Gateway Pattern (test/integration/gateway/audit_integration_test.go:102)
-sharedNamespace := fmt.Sprintf("test-audit-%d-%s", 
+sharedNamespace := fmt.Sprintf("test-audit-%d-%s",
     GinkgoParallelProcess(),  // Worker ID (1-4)
     uuid.New().String()[:8])   // Unique UUID fragment
 
@@ -53,7 +53,7 @@ Eventually(func() int {
     resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
     Expect(err).ToNot(HaveOccurred())
     Expect(resp.StatusCode()).To(Equal(200))
-    
+
     // Parse response
     auditEvents = resp.JSON200.Events
     return len(auditEvents)
@@ -142,7 +142,7 @@ events = query_audit_events(
 ### **Sequential Execution** (24/41 passing, 58%)
 ```
 PASSED: 24 tests
-FAILED: 16 tests  
+FAILED: 16 tests
 ERROR: 1 test
 ```
 
@@ -212,7 +212,7 @@ def hapi_client(unique_test_id):
     """Create isolated HAPI instance per test"""
     from src.main import app
     from fastapi.testclient import TestClient
-    
+
     # Each test gets its own app instance
     return TestClient(app)
 ```
@@ -280,7 +280,7 @@ Parallel execution is working when:
 
 ---
 
-**Document Status**: ✅ **ANALYSIS COMPLETE**  
-**Recommendation**: **Option B** (mark stateful tests as serial) for quickest fix  
+**Document Status**: ✅ **ANALYSIS COMPLETE**
+**Recommendation**: **Option B** (mark stateful tests as serial) for quickest fix
 **Confidence**: 90% that service bottleneck is the root cause
 

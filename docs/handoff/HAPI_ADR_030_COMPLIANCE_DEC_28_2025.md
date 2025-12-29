@@ -1,8 +1,8 @@
 # HAPI ADR-030 Configuration Management Compliance
 
-**Date**: December 28-29, 2025  
-**Team**: HolmesGPT-API (HAPI) Team  
-**Status**: ✅ **COMPLETE**  
+**Date**: December 28-29, 2025
+**Team**: HolmesGPT-API (HAPI) Team
+**Status**: ✅ **COMPLETE**
 **Related**: ADR-030 Configuration Management Standard
 
 ---

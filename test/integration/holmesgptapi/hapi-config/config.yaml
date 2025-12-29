@@ -1,0 +1,15 @@
+# HolmesGPT-API Integration Test Configuration
+# Per ADR-030: Configuration Management Standard
+# Only business-critical settings exposed
+
+logging:
+  level: "DEBUG"
+
+llm:
+  provider: "mock"
+  model: "mock/test-model"
+  endpoint: "http://localhost:11434"
+  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
+
+data_storage:
+  url: "http://holmesgptapi_datastorage_1:8080"
