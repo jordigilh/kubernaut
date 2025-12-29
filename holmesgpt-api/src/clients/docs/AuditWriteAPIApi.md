@@ -248,7 +248,7 @@ No authorization required
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **query_audit_events**
-> AuditEventsQueryResponse query_audit_events(event_type=event_type, correlation_id=correlation_id, limit=limit, offset=offset)
+> AuditEventsQueryResponse query_audit_events(event_type=event_type, event_category=event_category, event_outcome=event_outcome, severity=severity, correlation_id=correlation_id, since=since, until=until, limit=limit, offset=offset)
 
 Query audit events
 
@@ -274,14 +274,19 @@ configuration = datastorage.Configuration(
 with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = datastorage.AuditWriteAPIApi(api_client)
-    event_type = 'event_type_example' # str |  (optional)
-    correlation_id = 'correlation_id_example' # str |  (optional)
-    limit = 50 # int |  (optional) (default to 50)
-    offset = 0 # int |  (optional) (default to 0)
+    event_type = 'notification.message.sent' # str | Filter by event type (ADR-034) (optional)
+    event_category = 'notification' # str | Filter by event category (ADR-034) (optional)
+    event_outcome = 'success' # str | Filter by event outcome (ADR-034) (optional)
+    severity = 'critical' # str | Filter by severity level (optional)
+    correlation_id = 'rr-2025-001' # str | Filter by correlation ID (optional)
+    since = '24h' # str | Start time (relative like \"24h\" or absolute RFC3339) (optional)
+    until = '2025-12-18T23:59:59Z' # str | End time (absolute RFC3339) (optional)
+    limit = 50 # int | Page size (1-1000, default 50) (optional) (default to 50)
+    offset = 0 # int | Page offset (default 0) (optional) (default to 0)
 
     try:
         # Query audit events
-        api_response = api_instance.query_audit_events(event_type=event_type, correlation_id=correlation_id, limit=limit, offset=offset)
+        api_response = api_instance.query_audit_events(event_type=event_type, event_category=event_category, event_outcome=event_outcome, severity=severity, correlation_id=correlation_id, since=since, until=until, limit=limit, offset=offset)
         print("The response of AuditWriteAPIApi->query_audit_events:\n")
         pprint(api_response)
     except Exception as e:
@@ -295,10 +300,15 @@ with datastorage.ApiClient(configuration) as api_client:
 
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
- **event_type** | **str**|  | [optional] 
- **correlation_id** | **str**|  | [optional] 
- **limit** | **int**|  | [optional] [default to 50]
- **offset** | **int**|  | [optional] [default to 0]
+ **event_type** | **str**| Filter by event type (ADR-034) | [optional] 
+ **event_category** | **str**| Filter by event category (ADR-034) | [optional] 
+ **event_outcome** | **str**| Filter by event outcome (ADR-034) | [optional] 
+ **severity** | **str**| Filter by severity level | [optional] 
+ **correlation_id** | **str**| Filter by correlation ID | [optional] 
+ **since** | **str**| Start time (relative like \&quot;24h\&quot; or absolute RFC3339) | [optional] 
+ **until** | **str**| End time (absolute RFC3339) | [optional] 
+ **limit** | **int**| Page size (1-1000, default 50) | [optional] [default to 50]
+ **offset** | **int**| Page offset (default 0) | [optional] [default to 0]
 
 ### Return type
 

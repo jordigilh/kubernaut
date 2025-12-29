@@ -8,7 +8,7 @@ Name | Type | Description | Notes
 **version** | **str** | Schema version (e.g., \&quot;1.0\&quot;) | 
 **event_type** | **str** | Event type identifier (e.g., gateway.signal.received) | 
 **event_timestamp** | **datetime** | ISO 8601 timestamp when the event occurred | 
-**event_category** | **str** | Event category (ADR-034) | 
+**event_category** | **str** | Service-level event category (ADR-034 v1.2). Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - execution: Remediation Execution Service - orchestration: Remediation Orchestrator Service  | 
 **event_action** | **str** | Action performed (ADR-034) | 
 **event_outcome** | **str** | Result of the event | 
 **actor_type** | **str** |  | [optional] 

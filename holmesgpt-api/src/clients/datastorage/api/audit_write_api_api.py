@@ -16,8 +16,9 @@ from pydantic import validate_call, Field, StrictFloat, StrictStr, StrictInt
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing_extensions import Annotated
 
-from pydantic import StrictInt, StrictStr
+from pydantic import Field, StrictStr, field_validator
 from typing import List, Optional
+from typing_extensions import Annotated
 from ..models.audit_event_request import AuditEventRequest
 from ..models.audit_event_response import AuditEventResponse
 from ..models.audit_events_query_response import AuditEventsQueryResponse
@@ -889,10 +890,15 @@ class AuditWriteAPIApi:
     @validate_call
     def query_audit_events(
         self,
-        event_type: Optional[StrictStr] = None,
-        correlation_id: Optional[StrictStr] = None,
-        limit: Optional[StrictInt] = None,
-        offset: Optional[StrictInt] = None,
+        event_type: Annotated[Optional[StrictStr], Field(description="Filter by event type (ADR-034)")] = None,
+        event_category: Annotated[Optional[StrictStr], Field(description="Filter by event category (ADR-034)")] = None,
+        event_outcome: Annotated[Optional[StrictStr], Field(description="Filter by event outcome (ADR-034)")] = None,
+        severity: Annotated[Optional[StrictStr], Field(description="Filter by severity level")] = None,
+        correlation_id: Annotated[Optional[StrictStr], Field(description="Filter by correlation ID")] = None,
+        since: Annotated[Optional[StrictStr], Field(description="Start time (relative like \"24h\" or absolute RFC3339)")] = None,
+        until: Annotated[Optional[StrictStr], Field(description="End time (absolute RFC3339)")] = None,
+        limit: Annotated[Optional[Annotated[int, Field(le=1000, strict=True, ge=1)]], Field(description="Page size (1-1000, default 50)")] = None,
+        offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Page offset (default 0)")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -910,13 +916,23 @@ class AuditWriteAPIApi:
 
         Query audit events with filters and pagination
 
-        :param event_type:
+        :param event_type: Filter by event type (ADR-034)
         :type event_type: str
-        :param correlation_id:
+        :param event_category: Filter by event category (ADR-034)
+        :type event_category: str
+        :param event_outcome: Filter by event outcome (ADR-034)
+        :type event_outcome: str
+        :param severity: Filter by severity level
+        :type severity: str
+        :param correlation_id: Filter by correlation ID
         :type correlation_id: str
-        :param limit:
+        :param since: Start time (relative like \"24h\" or absolute RFC3339)
+        :type since: str
+        :param until: End time (absolute RFC3339)
+        :type until: str
+        :param limit: Page size (1-1000, default 50)
         :type limit: int
-        :param offset:
+        :param offset: Page offset (default 0)
         :type offset: int
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -942,7 +958,12 @@ class AuditWriteAPIApi:
 
         _param = self._query_audit_events_serialize(
             event_type=event_type,
+            event_category=event_category,
+            event_outcome=event_outcome,
+            severity=severity,
             correlation_id=correlation_id,
+            since=since,
+            until=until,
             limit=limit,
             offset=offset,
             _request_auth=_request_auth,
@@ -968,10 +989,15 @@ class AuditWriteAPIApi:
     @validate_call
     def query_audit_events_with_http_info(
         self,
-        event_type: Optional[StrictStr] = None,
-        correlation_id: Optional[StrictStr] = None,
-        limit: Optional[StrictInt] = None,
-        offset: Optional[StrictInt] = None,
+        event_type: Annotated[Optional[StrictStr], Field(description="Filter by event type (ADR-034)")] = None,
+        event_category: Annotated[Optional[StrictStr], Field(description="Filter by event category (ADR-034)")] = None,
+        event_outcome: Annotated[Optional[StrictStr], Field(description="Filter by event outcome (ADR-034)")] = None,
+        severity: Annotated[Optional[StrictStr], Field(description="Filter by severity level")] = None,
+        correlation_id: Annotated[Optional[StrictStr], Field(description="Filter by correlation ID")] = None,
+        since: Annotated[Optional[StrictStr], Field(description="Start time (relative like \"24h\" or absolute RFC3339)")] = None,
+        until: Annotated[Optional[StrictStr], Field(description="End time (absolute RFC3339)")] = None,
+        limit: Annotated[Optional[Annotated[int, Field(le=1000, strict=True, ge=1)]], Field(description="Page size (1-1000, default 50)")] = None,
+        offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Page offset (default 0)")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -989,13 +1015,23 @@ class AuditWriteAPIApi:
 
         Query audit events with filters and pagination
 
-        :param event_type:
+        :param event_type: Filter by event type (ADR-034)
         :type event_type: str
-        :param correlation_id:
+        :param event_category: Filter by event category (ADR-034)
+        :type event_category: str
+        :param event_outcome: Filter by event outcome (ADR-034)
+        :type event_outcome: str
+        :param severity: Filter by severity level
+        :type severity: str
+        :param correlation_id: Filter by correlation ID
         :type correlation_id: str
-        :param limit:
+        :param since: Start time (relative like \"24h\" or absolute RFC3339)
+        :type since: str
+        :param until: End time (absolute RFC3339)
+        :type until: str
+        :param limit: Page size (1-1000, default 50)
         :type limit: int
-        :param offset:
+        :param offset: Page offset (default 0)
         :type offset: int
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -1021,7 +1057,12 @@ class AuditWriteAPIApi:
 
         _param = self._query_audit_events_serialize(
             event_type=event_type,
+            event_category=event_category,
+            event_outcome=event_outcome,
+            severity=severity,
             correlation_id=correlation_id,
+            since=since,
+            until=until,
             limit=limit,
             offset=offset,
             _request_auth=_request_auth,
@@ -1047,10 +1088,15 @@ class AuditWriteAPIApi:
     @validate_call
     def query_audit_events_without_preload_content(
         self,
-        event_type: Optional[StrictStr] = None,
-        correlation_id: Optional[StrictStr] = None,
-        limit: Optional[StrictInt] = None,
-        offset: Optional[StrictInt] = None,
+        event_type: Annotated[Optional[StrictStr], Field(description="Filter by event type (ADR-034)")] = None,
+        event_category: Annotated[Optional[StrictStr], Field(description="Filter by event category (ADR-034)")] = None,
+        event_outcome: Annotated[Optional[StrictStr], Field(description="Filter by event outcome (ADR-034)")] = None,
+        severity: Annotated[Optional[StrictStr], Field(description="Filter by severity level")] = None,
+        correlation_id: Annotated[Optional[StrictStr], Field(description="Filter by correlation ID")] = None,
+        since: Annotated[Optional[StrictStr], Field(description="Start time (relative like \"24h\" or absolute RFC3339)")] = None,
+        until: Annotated[Optional[StrictStr], Field(description="End time (absolute RFC3339)")] = None,
+        limit: Annotated[Optional[Annotated[int, Field(le=1000, strict=True, ge=1)]], Field(description="Page size (1-1000, default 50)")] = None,
+        offset: Annotated[Optional[Annotated[int, Field(strict=True, ge=0)]], Field(description="Page offset (default 0)")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -1068,13 +1114,23 @@ class AuditWriteAPIApi:
 
         Query audit events with filters and pagination
 
-        :param event_type:
+        :param event_type: Filter by event type (ADR-034)
         :type event_type: str
-        :param correlation_id:
+        :param event_category: Filter by event category (ADR-034)
+        :type event_category: str
+        :param event_outcome: Filter by event outcome (ADR-034)
+        :type event_outcome: str
+        :param severity: Filter by severity level
+        :type severity: str
+        :param correlation_id: Filter by correlation ID
         :type correlation_id: str
-        :param limit:
+        :param since: Start time (relative like \"24h\" or absolute RFC3339)
+        :type since: str
+        :param until: End time (absolute RFC3339)
+        :type until: str
+        :param limit: Page size (1-1000, default 50)
         :type limit: int
-        :param offset:
+        :param offset: Page offset (default 0)
         :type offset: int
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -1100,7 +1156,12 @@ class AuditWriteAPIApi:
 
         _param = self._query_audit_events_serialize(
             event_type=event_type,
+            event_category=event_category,
+            event_outcome=event_outcome,
+            severity=severity,
             correlation_id=correlation_id,
+            since=since,
+            until=until,
             limit=limit,
             offset=offset,
             _request_auth=_request_auth,
@@ -1122,7 +1183,12 @@ class AuditWriteAPIApi:
     def _query_audit_events_serialize(
         self,
         event_type,
+        event_category,
+        event_outcome,
+        severity,
         correlation_id,
+        since,
+        until,
         limit,
         offset,
         _request_auth,
@@ -1151,9 +1217,29 @@ class AuditWriteAPIApi:
             
             _query_params.append(('event_type', event_type))
             
+        if event_category is not None:
+            
+            _query_params.append(('event_category', event_category))
+            
+        if event_outcome is not None:
+            
+            _query_params.append(('event_outcome', event_outcome))
+            
+        if severity is not None:
+            
+            _query_params.append(('severity', severity))
+            
         if correlation_id is not None:
             
             _query_params.append(('correlation_id', correlation_id))
+            
+        if since is not None:
+            
+            _query_params.append(('since', since))
+            
+        if until is not None:
+            
+            _query_params.append(('until', until))
             
         if limit is not None:
             

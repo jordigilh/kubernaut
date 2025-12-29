@@ -146,7 +146,7 @@ class TestIncidentPromptCreation:
     BR: BR-AI-001 (LLM Context Optimization)
     """
 
-    def test_incident_prompt_includes_required_sections(self, workflow_catalog_toolset_with_infra):
+    def test_incident_prompt_includes_required_sections(self):
         """
         Given: Incident analysis request with complete context
         When: Creating incident investigation prompt

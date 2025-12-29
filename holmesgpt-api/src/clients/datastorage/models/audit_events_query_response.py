@@ -17,7 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict
 from typing import Any, ClassVar, Dict, List, Optional
 from .audit_event import AuditEvent
 from .audit_events_query_response_pagination import AuditEventsQueryResponsePagination
@@ -29,9 +29,8 @@ class AuditEventsQueryResponse(BaseModel):
     AuditEventsQueryResponse
     """ # noqa: E501
     data: Optional[List[AuditEvent]] = None
-    total_count: Optional[StrictInt] = None
     pagination: Optional[AuditEventsQueryResponsePagination] = None
-    __properties: ClassVar[List[str]] = ["data", "total_count", "pagination"]
+    __properties: ClassVar[List[str]] = ["data", "pagination"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -95,7 +94,6 @@ class AuditEventsQueryResponse(BaseModel):
 
         _obj = cls.model_validate({
             "data": [AuditEvent.from_dict(_item) for _item in obj["data"]] if obj.get("data") is not None else None,
-            "total_count": obj.get("total_count"),
             "pagination": AuditEventsQueryResponsePagination.from_dict(obj["pagination"]) if obj.get("pagination") is not None else None
         })
         return _obj

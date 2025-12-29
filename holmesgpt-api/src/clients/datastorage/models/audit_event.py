@@ -32,7 +32,7 @@ class AuditEvent(BaseModel):
     version: Annotated[str, Field(min_length=1, strict=True, max_length=20)] = Field(description="Schema version (e.g., \"1.0\")")
     event_type: Annotated[str, Field(min_length=1, strict=True, max_length=100)] = Field(description="Event type identifier (e.g., gateway.signal.received)")
     event_timestamp: datetime = Field(description="ISO 8601 timestamp when the event occurred")
-    event_category: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Event category (ADR-034)")
+    event_category: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Service-level event category (ADR-034 v1.2). Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - execution: Remediation Execution Service - orchestration: Remediation Orchestrator Service ")
     event_action: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Action performed (ADR-034)")
     event_outcome: StrictStr = Field(description="Result of the event")
     actor_type: Optional[StrictStr] = None
@@ -49,6 +49,13 @@ class AuditEvent(BaseModel):
     event_id: Optional[UUID] = None
     event_date: Optional[date] = Field(default=None, description="Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage.")
     __properties: ClassVar[List[str]] = ["version", "event_type", "event_timestamp", "event_category", "event_action", "event_outcome", "actor_type", "actor_id", "resource_type", "resource_id", "correlation_id", "parent_event_id", "namespace", "cluster_name", "severity", "duration_ms", "event_data", "event_id", "event_date"]
+
+    @field_validator('event_category')
+    def event_category_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in set(['gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'execution', 'orchestration']):
+            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'execution', 'orchestration')")
+        return value
 
     @field_validator('event_outcome')
     def event_outcome_validate_enum(cls, value):
