@@ -118,11 +118,11 @@ def parse_metric_value(metrics_text: str, metric_name: str, labels: Dict[str, st
     return 0.0
 
 
-def make_incident_request() -> Dict[str, Any]:
+def make_incident_request(unique_test_id: str = None) -> Dict[str, Any]:
     """Create a valid incident request for testing."""
     return {
-        "incident_id": f"inc-metrics-test-{int(time.time())}",
-        "remediation_id": f"rem-metrics-test-{int(time.time())}",
+        "incident_id": f"inc-metrics-test-{unique_test_id or int(time.time())}",
+        "remediation_id": f"rem-metrics-test-{unique_test_id or int(time.time())}",
         "signal_type": "OOMKilled",
         "severity": "critical",
         "signal_source": "prometheus",
@@ -138,7 +138,7 @@ def make_incident_request() -> Dict[str, Any]:
     }
 
 
-def make_recovery_request() -> Dict[str, Any]:
+def make_recovery_request(unique_test_id: str = None) -> Dict[str, Any]:
     """Create a valid recovery request for testing."""
     return {
         "incident_id": f"inc-metrics-recovery-{int(time.time())}",
@@ -165,7 +165,7 @@ class TestHTTPRequestMetrics:
     BR-MONITORING-001: HAPI MUST record HTTP request metrics
     """
 
-    def test_incident_analysis_records_http_request_metrics(self, hapi_base_url):
+    def test_incident_analysis_records_http_request_metrics(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Incident analysis MUST record HTTP request metrics.
 
@@ -183,7 +183,7 @@ class TestHTTPRequestMetrics:
         )
 
         # ACT: Trigger business operation (incident analysis)
-        incident_request = make_incident_request()
+        incident_request = make_incident_request(unique_test_id)
         response = requests.post(
             f"{hapi_base_url}/api/v1/incident/analyze",
             json=incident_request,
@@ -210,7 +210,7 @@ class TestHTTPRequestMetrics:
         assert "http_request_duration_seconds" in metrics_after, \
             "http_request_duration_seconds metric not found"
 
-    def test_recovery_analysis_records_http_request_metrics(self, hapi_base_url):
+    def test_recovery_analysis_records_http_request_metrics(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Recovery analysis MUST record HTTP request metrics.
 
@@ -225,7 +225,7 @@ class TestHTTPRequestMetrics:
         )
 
         # ACT: Trigger recovery analysis
-        recovery_request = make_recovery_request()
+        recovery_request = make_recovery_request(unique_test_id)
         response = requests.post(
             f"{hapi_base_url}/api/v1/recovery/analyze",
             json=recovery_request,
@@ -245,7 +245,7 @@ class TestHTTPRequestMetrics:
         assert requests_after > requests_before, \
             "Recovery endpoint should record http_requests_total"
 
-    def test_health_endpoint_records_metrics(self, hapi_base_url):
+    def test_health_endpoint_records_metrics(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Health endpoint MUST record HTTP request metrics.
 
@@ -284,7 +284,7 @@ class TestLLMMetrics:
     BR-MONITORING-001: HAPI MUST record LLM request metrics
     """
 
-    def test_incident_analysis_records_llm_request_duration(self, hapi_base_url):
+    def test_incident_analysis_records_llm_request_duration(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Incident analysis MUST record LLM request duration.
 
@@ -295,7 +295,7 @@ class TestLLMMetrics:
         metrics_before = get_metrics(hapi_base_url)
 
         # ACT: Trigger incident analysis (uses LLM)
-        incident_request = make_incident_request()
+        incident_request = make_incident_request(unique_test_id)
         response = requests.post(
             f"{hapi_base_url}/api/v1/incident/analyze",
             json=incident_request,
@@ -318,14 +318,14 @@ class TestLLMMetrics:
             "LLM request duration metric not found in /metrics. " \
             "Check if HAPI is recording LLM performance metrics."
 
-    def test_recovery_analysis_records_llm_request_duration(self, hapi_base_url):
+    def test_recovery_analysis_records_llm_request_duration(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Recovery analysis MUST record LLM request duration.
 
         This test validates that LLM metrics are recorded for recovery endpoint.
         """
         # ACT
-        recovery_request = make_recovery_request()
+        recovery_request = make_recovery_request(unique_test_id)
         response = requests.post(
             f"{hapi_base_url}/api/v1/recovery/analyze",
             json=recovery_request,
@@ -356,7 +356,7 @@ class TestMetricsAggregation:
     BR-MONITORING-001: Metrics MUST aggregate correctly over time
     """
 
-    def test_multiple_requests_increment_counter(self, hapi_base_url):
+    def test_multiple_requests_increment_counter(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Multiple requests MUST increment counter metrics.
 
@@ -374,7 +374,7 @@ class TestMetricsAggregation:
         # ACT: Make multiple requests
         num_requests = 3
         for i in range(num_requests):
-            incident_request = make_incident_request()
+            incident_request = make_incident_request(unique_test_id)
             response = requests.post(
                 f"{hapi_base_url}/api/v1/incident/analyze",
                 json=incident_request,
@@ -397,7 +397,7 @@ class TestMetricsAggregation:
             f"Expected at least {expected_increment} requests recorded, " \
             f"got {actual_increment} (before: {requests_before}, after: {requests_after})"
 
-    def test_histogram_metrics_record_multiple_samples(self, hapi_base_url):
+    def test_histogram_metrics_record_multiple_samples(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Histogram metrics MUST record multiple samples.
 
@@ -406,7 +406,7 @@ class TestMetricsAggregation:
         """
         # ACT: Make multiple requests with different characteristics
         for i in range(3):
-            incident_request = make_incident_request()
+            incident_request = make_incident_request(unique_test_id)
             # Vary the request slightly to potentially get different durations
             incident_request["signal_type"] = ["OOMKilled", "CrashLoopBackOff", "ImagePullBackOff"][i]
 
@@ -438,7 +438,7 @@ class TestMetricsEndpointAvailability:
     BR-MONITORING-001: /metrics endpoint MUST be available
     """
 
-    def test_metrics_endpoint_is_accessible(self, hapi_base_url):
+    def test_metrics_endpoint_is_accessible(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: /metrics endpoint MUST be accessible.
 
@@ -460,7 +460,7 @@ class TestMetricsEndpointAvailability:
         assert "# TYPE" in metrics_text, \
             "/metrics should include # TYPE comments (Prometheus format)"
 
-    def test_metrics_endpoint_returns_content_type_text_plain(self, hapi_base_url):
+    def test_metrics_endpoint_returns_content_type_text_plain(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: /metrics endpoint MUST return text/plain content type.
 
@@ -486,7 +486,7 @@ class TestBusinessMetrics:
     BR-MONITORING-001: HAPI SHOULD record business-specific metrics
     """
 
-    def test_workflow_selection_metrics_recorded(self, hapi_base_url):
+    def test_workflow_selection_metrics_recorded(self, hapi_base_url, unique_test_id):
         """
         BR-MONITORING-001: Workflow selection SHOULD be metered.
 
@@ -494,7 +494,7 @@ class TestBusinessMetrics:
         selection during incident analysis (if implemented).
         """
         # ACT: Trigger incident analysis
-        incident_request = make_incident_request()
+        incident_request = make_incident_request(unique_test_id)
         response = requests.post(
             f"{hapi_base_url}/api/v1/incident/analyze",
             json=incident_request,

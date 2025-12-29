@@ -210,8 +210,7 @@ class TestIncidentAnalysisAuditFlow:
     def test_incident_analysis_emits_llm_request_and_response_events(
         self,
         hapi_base_url,
-        data_storage_url
-    ):
+        data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_request and llm_response audit events.
 
@@ -222,9 +221,9 @@ class TestIncidentAnalysisAuditFlow:
         ❌ WRONG: Would manually create events and call DS API
         """
         # ARRANGE: Create valid incident request
-        remediation_id = f"rem-int-audit-1-{int(time.time())}"
+        remediation_id = f"rem-int-audit-1-{unique_test_id}"
         incident_request = {
-            "incident_id": f"inc-int-audit-1-{int(time.time())}",
+            "incident_id": f"inc-int-audit-1-{unique_test_id}",
             "remediation_id": remediation_id,
             "signal_type": "OOMKilled",
             "severity": "critical",
@@ -275,8 +274,7 @@ class TestIncidentAnalysisAuditFlow:
     def test_incident_analysis_emits_llm_tool_call_events(
         self,
         hapi_base_url,
-        data_storage_url
-    ):
+        data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_tool_call events for workflow searches.
 
@@ -286,9 +284,9 @@ class TestIncidentAnalysisAuditFlow:
         ✅ CORRECT: Verifies HAPI emits tool call audits during business operation
         """
         # ARRANGE
-        remediation_id = f"rem-int-audit-2-{int(time.time())}"
+        remediation_id = f"rem-int-audit-2-{unique_test_id}"
         incident_request = {
-            "incident_id": f"inc-int-audit-2-{int(time.time())}",
+            "incident_id": f"inc-int-audit-2-{unique_test_id}",
             "remediation_id": remediation_id,
             "signal_type": "CrashLoopBackOff",
             "severity": "high",
@@ -322,8 +320,7 @@ class TestIncidentAnalysisAuditFlow:
     def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
         self,
         hapi_base_url,
-        data_storage_url
-    ):
+        data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Workflow validation MUST emit workflow_validation_attempt events.
 
@@ -333,9 +330,9 @@ class TestIncidentAnalysisAuditFlow:
         ✅ CORRECT: Verifies HAPI emits validation audits during business operation
         """
         # ARRANGE
-        remediation_id = f"rem-int-audit-3-{int(time.time())}"
+        remediation_id = f"rem-int-audit-3-{unique_test_id}"
         incident_request = {
-            "incident_id": f"inc-int-audit-3-{int(time.time())}",
+            "incident_id": f"inc-int-audit-3-{unique_test_id}",
             "remediation_id": remediation_id,
             "signal_type": "OOMKilled",
             "severity": "critical",
@@ -379,8 +376,7 @@ class TestRecoveryAnalysisAuditFlow:
     def test_recovery_analysis_emits_llm_request_and_response_events(
         self,
         hapi_base_url,
-        data_storage_url
-    ):
+        data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Recovery analysis MUST emit llm_request and llm_response audit events.
 
@@ -389,9 +385,9 @@ class TestRecoveryAnalysisAuditFlow:
         ✅ CORRECT: Tests HAPI behavior (emits audits during business operation)
         """
         # ARRANGE
-        remediation_id = f"rem-int-audit-rec-1-{int(time.time())}"
+        remediation_id = f"rem-int-audit-rec-1-{unique_test_id}"
         recovery_request = {
-            "incident_id": f"inc-int-audit-rec-1-{int(time.time())}",
+            "incident_id": f"inc-int-audit-rec-1-{unique_test_id}",
             "remediation_id": remediation_id,
             "signal_type": "OOMKilled",
             "previous_workflow_id": "oomkill-increase-memory-v1",
@@ -429,8 +425,7 @@ class TestAuditEventSchemaValidation:
     def test_audit_events_have_required_adr034_fields(
         self,
         hapi_base_url,
-        data_storage_url
-    ):
+        data_storage_url, unique_test_id):
         """
         ADR-034: Audit events MUST include required fields per ADR-034 spec.
 
@@ -440,9 +435,9 @@ class TestAuditEventSchemaValidation:
         ✅ CORRECT: Validates HAPI-emitted events have required schema
         """
         # ARRANGE
-        remediation_id = f"rem-int-audit-schema-{int(time.time())}"
+        remediation_id = f"rem-int-audit-schema-{unique_test_id}"
         incident_request = {
-            "incident_id": f"inc-int-audit-schema-{int(time.time())}",
+            "incident_id": f"inc-int-audit-schema-{unique_test_id}",
             "remediation_id": remediation_id,
             "signal_type": "OOMKilled",
             "severity": "critical",
@@ -511,8 +506,7 @@ class TestErrorScenarioAuditFlow:
     def test_invalid_request_still_emits_audit_events(
         self,
         hapi_base_url,
-        data_storage_url
-    ):
+        data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: HAPI MUST emit audit events even when requests fail validation.
 
@@ -521,7 +515,7 @@ class TestErrorScenarioAuditFlow:
         ✅ CORRECT: Validates audit emission during error conditions
         """
         # ARRANGE: Create intentionally invalid request (missing required fields)
-        remediation_id = f"rem-int-audit-error-{int(time.time())}"
+        remediation_id = f"rem-int-audit-error-{unique_test_id}"
 
         # ACT: Send invalid request (should fail but still generate audits)
         try:
@@ -529,7 +523,7 @@ class TestErrorScenarioAuditFlow:
             response = requests.post(
                 f"{hapi_base_url}/api/v1/incident/analyze",
                 json={
-                    "incident_id": f"inc-int-audit-error-{int(time.time())}",
+                    "incident_id": f"inc-int-audit-error-{unique_test_id}",
                     "remediation_id": remediation_id,
                     # Missing required fields intentionally
                 },
