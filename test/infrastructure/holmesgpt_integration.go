@@ -24,8 +24,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -94,8 +92,9 @@ const (
 // - error: Any errors during infrastructure startup
 //
 // Migration Note:
-//   Replaces holmesgpt-api/tests/integration/conftest.py start_infrastructure()
-//   which used subprocess.run() to call docker-compose.
+//
+//	Replaces holmesgpt-api/tests/integration/conftest.py start_infrastructure()
+//	which used subprocess.run() to call docker-compose.
 func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	fmt.Fprintf(writer, "Starting HolmesGPT API Integration Test Infrastructure\n")
@@ -213,7 +212,7 @@ echo "Migrations complete!"`)
 	fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
 
 	// Use composite image tag per DD-INTEGRATION-001 v2.0 (collision avoidance)
-	dsImageTag := fmt.Sprintf("datastorage-holmesgptapi-%s", uuid.New().String())
+	dsImageTag := GenerateInfraImageName("datastorage", "holmesgptapi")
 	fmt.Fprintf(writer, "   Image tag: %s (composite per DD-INTEGRATION-001 v2.0)\n", dsImageTag)
 
 	buildCmd := exec.Command("podman", "build",
@@ -263,7 +262,7 @@ echo "Migrations complete!"`)
 	fmt.Fprintf(writer, "🏗️  Building HAPI (HolmesGPT-API) image...\n")
 
 	// Use composite image tag per DD-INTEGRATION-001 v2.0 (collision avoidance)
-	hapiImageTag := fmt.Sprintf("holmesgpt-api-holmesgptapi-%s", uuid.New().String())
+	hapiImageTag := GenerateInfraImageName("holmesgpt-api", "holmesgptapi")
 	fmt.Fprintf(writer, "   Image tag: %s (composite per DD-INTEGRATION-001 v2.0)\n", hapiImageTag)
 
 	buildHapiCmd := exec.Command("podman", "build",
@@ -282,12 +281,9 @@ echo "Migrations complete!"`)
 	hapiConfigDir := filepath.Join(projectRoot, "test", "integration", "holmesgptapi", "hapi-config")
 	os.MkdirAll(hapiConfigDir, 0755)
 
-	hapiConfig := `service_name: "holmesgpt-api"
-version: "1.0.0"
-dev_mode: true
-auth_enabled: false
-api_host: "0.0.0.0"
-api_port: 8080
+	hapiConfig := `# HolmesGPT-API Integration Test Configuration
+# Per ADR-030: Configuration Management Standard
+# Only business-critical settings exposed
 
 logging:
   level: "DEBUG"
@@ -296,35 +292,20 @@ llm:
   provider: "mock"
   model: "mock/test-model"
   endpoint: "http://localhost:11434"
-  max_retries: 3
-  timeout_seconds: 60
-  max_tokens_per_request: 4096
-  temperature: 0.7
+  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
 
 data_storage:
   url: "http://` + HAPIIntegrationDataStorageContainer + `:8080"
-
-context_api:
-  url: "http://localhost:8091"
-  timeout_seconds: 10
-  max_retries: 2
-
-kubernetes:
-  service_host: "kubernetes.default.svc"
-  service_port: 443
-  token_reviewer_enabled: false
-
-public_endpoints:
-  - "/health"
-  - "/ready"
-  - "/metrics"
-
-metrics:
-  enabled: true
-  endpoint: "/metrics"
-  scrape_interval: "30s"
 `
 	os.WriteFile(filepath.Join(hapiConfigDir, "config.yaml"), []byte(hapiConfig), 0644)
+
+	// Create secrets directory and llm-credentials.yaml (ADR-030: secrets in separate file)
+	hapiSecretsDir := filepath.Join(hapiConfigDir, "secrets")
+	os.MkdirAll(hapiSecretsDir, 0755)
+	hapiSecrets := `# LLM Provider Credentials (Integration Tests)
+api_key: "mock-api-key"
+`
+	os.WriteFile(filepath.Join(hapiSecretsDir, "llm-credentials.yaml"), []byte(hapiSecrets), 0644)
 
 	fmt.Fprintf(writer, "🚀 Starting HAPI (HolmesGPT-API) container...\n")
 	hapiCmd := exec.Command("podman", "run", "-d",
@@ -374,8 +355,9 @@ metrics:
 // - Prunes infrastructure images (composite tags)
 //
 // Migration Note:
-//   Replaces holmesgpt-api/tests/integration/conftest.py cleanup_infrastructure_after_tests()
-//   which used subprocess.run() to call docker-compose down.
+//
+//	Replaces holmesgpt-api/tests/integration/conftest.py cleanup_infrastructure_after_tests()
+//	which used subprocess.run() to call docker-compose down.
 func StopHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "\n🛑 Stopping HolmesGPT API Integration Infrastructure...\n")
 
@@ -402,6 +384,3 @@ func StopHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "✅ Infrastructure cleaned up\n\n")
 	return nil
 }
-
-
-
