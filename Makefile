@@ -89,24 +89,40 @@ test-integration-notification-cleanup: ## Clean up Notification Service integrat
 ##@ Service-Specific Integration Tests
 
 .PHONY: test-integration-holmesgpt
-test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API integration tests (Go infrastructure + Python tests, ~2 min)
+test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API integration tests (Go infrastructure + Python tests, ~15 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API Integration Tests (Go Infrastructure + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped infrastructure)"
 	@echo "🐍 Test Logic: Python (native for HAPI service)"
+	@echo "⏱️  Expected Duration: ~15 minutes (first run with image builds)"
 	@echo ""
-	@echo "🚀 Starting Go infrastructure..."
-	@echo "   Services: PostgreSQL (15439), Redis (16387), Data Storage (18098), HAPI (18120)"
-	@cd test/integration/holmesgptapi && ./setup-infrastructure.sh & \
-	INFRA_PID=$$!; \
-	echo "   Infrastructure PID: $$INFRA_PID"; \
-	echo "   Waiting for services to be ready..."; \
-	sleep 35; \
-	echo "   ✅ Infrastructure ready"; \
+	@echo "🏗️  Infrastructure Phase (Go Ginkgo)..."
+	@echo "   • Building Data Storage image (~3 min)"
+	@echo "   • Building HAPI image (~7 min)"
+	@echo "   • Starting services (~2 min)"
+	@echo "   • Total: ~12 minutes infrastructure setup"
+	@echo ""
+	@cd test/integration/holmesgptapi && ginkgo --keep-going --timeout=20m & \
+	GINKGO_PID=$$!; \
+	echo "🚀 Go infrastructure starting (PID: $$GINKGO_PID)..."; \
+	echo "⏳ Waiting for services to be ready (checking every 5 seconds)..."; \
+	for i in {1..180}; do \
+		if curl -sf http://localhost:18120/health > /dev/null 2>&1 && \
+		   curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
+			echo "✅ All services healthy (took $$((i*5)) seconds)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 180 ]; then \
+			echo "❌ Timeout waiting for services (15 minutes)"; \
+			kill $$GINKGO_PID 2>/dev/null || true; \
+			exit 1; \
+		fi; \
+		sleep 5; \
+	done; \
 	echo ""; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🐍 Running Python integration tests..."; \
+	echo "🐍 Python Test Phase (DD-HAPI-005 client auto-regeneration)..."; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	cd holmesgpt-api && \
 	export HAPI_INTEGRATION_PORT=18120 && \
@@ -115,18 +131,18 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 	export REDIS_INTEGRATION_PORT=16387 && \
 	export HAPI_URL="http://localhost:18120" && \
 	export DATA_STORAGE_URL="http://localhost:18098" && \
-	python3 -m pip install -q -r requirements.txt 2>/dev/null || true && \
-	python3 -m pip install -q -r requirements-test.txt 2>/dev/null || true && \
+	export MOCK_LLM_MODE=true && \
 	python3 -m pytest tests/integration/ -v --tb=short; \
 	TEST_RESULT=$$?; \
 	echo ""; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🧹 Cleaning up infrastructure..."; \
+	echo "🧹 Cleanup Phase..."; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
-	kill $$INFRA_PID 2>/dev/null || true; \
-	sleep 2; \
-	podman stop hapi-integration-postgres hapi-integration-redis hapi-integration-datastorage hapi-integration-hapi 2>/dev/null || true; \
-	podman rm hapi-integration-postgres hapi-integration-redis hapi-integration-datastorage hapi-integration-hapi 2>/dev/null || true; \
+	kill $$GINKGO_PID 2>/dev/null || true; \
+	sleep 3; \
+	podman stop holmesgptapi_postgres_1 holmesgptapi_redis_1 holmesgptapi_datastorage_1 holmesgptapi_hapi_1 2>/dev/null || true; \
+	podman rm holmesgptapi_postgres_1 holmesgptapi_redis_1 holmesgptapi_datastorage_1 holmesgptapi_hapi_1 2>/dev/null || true; \
+	podman network rm holmesgptapi_test-network 2>/dev/null || true; \
 	echo "✅ Cleanup complete"; \
 	echo ""; \
 	if [ $$TEST_RESULT -eq 0 ]; then \
@@ -138,16 +154,18 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
-	@echo "🧹 Cleaning up HAPI integration test ports..."
-	@podman stop hapi-integration-postgres hapi-integration-redis hapi-integration-datastorage hapi-integration-hapi 2>/dev/null || true
-	@podman rm hapi-integration-postgres hapi-integration-redis hapi-integration-datastorage hapi-integration-hapi 2>/dev/null || true
-	@echo "✅ Port cleanup complete"
+	@echo "🧹 Cleaning up HAPI integration test containers..."
+	@echo "   Container names: holmesgptapi_* (per DD-INTEGRATION-001 v2.0)"
+	@podman stop holmesgptapi_postgres_1 holmesgptapi_redis_1 holmesgptapi_datastorage_1 holmesgptapi_hapi_1 2>/dev/null || true
+	@podman rm holmesgptapi_postgres_1 holmesgptapi_redis_1 holmesgptapi_datastorage_1 holmesgptapi_hapi_1 holmesgptapi_migrations 2>/dev/null || true
+	@podman network rm holmesgptapi_test-network 2>/dev/null || true
+	@echo "✅ Container cleanup complete"
 
 .PHONY: test-integration-holmesgpt-cleanup
 test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete cleanup of HAPI integration infrastructure
 	@echo "🧹 Complete HAPI integration infrastructure cleanup..."
-	@podman network rm holmesgpt-test-network 2>/dev/null || true
-	@echo "✅ Complete cleanup done"
+	@podman image prune -f --filter "label=test=holmesgptapi" 2>/dev/null || true
+	@echo "✅ Complete cleanup done (containers + images)"
 
 ##@ HolmesGPT API E2E Tests (V1.0 Critical Service)
 

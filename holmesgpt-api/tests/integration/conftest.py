@@ -44,8 +44,56 @@ See: holmesgpt-api/tests/integration/PYTHON_TESTS_WITH_GO_INFRASTRUCTURE.md
 """
 
 import os
+import subprocess
+import sys
+from pathlib import Path
 import pytest
 import requests
+
+
+# ========================================
+# DD-HAPI-005: Auto-Regenerate OpenAPI Client
+# ========================================
+# Regenerate Python OpenAPI client before tests to prevent urllib3 version conflicts.
+# This matches Go's `go generate` pattern: regenerate on-demand, never commit.
+# ========================================
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_openapi_client():
+    """
+    Auto-regenerate HAPI OpenAPI client before tests (DD-HAPI-005).
+
+    Pattern: Same as Go's `go generate ./pkg/holmesgpt/client/`
+    - Client regenerated from api/openapi.json
+    - Never committed to git (in .gitignore)
+    - Always compatible with current dependencies
+
+    This prevents recurring urllib3 version conflicts.
+    """
+    client_path = Path(__file__).parent.parent / "clients" / "holmesgpt_api_client"
+
+    # Always regenerate to ensure compatibility with current dependencies
+    print("\n🔧 DD-HAPI-005: Regenerating Python OpenAPI client...")
+    print(f"   Pattern: Auto-regenerate (like Go's `go generate`)")
+    print(f"   Target: {client_path}")
+
+    generate_script = Path(__file__).parent / "generate-client.sh"
+
+    try:
+        result = subprocess.run(
+            [str(generate_script)],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=120  # 2 minutes max for docker pull + generation
+        )
+        print(result.stdout)
+        print("✅ Client regeneration complete")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Client generation failed: {e.stderr}", file=sys.stderr)
+        pytest.fail(f"DD-HAPI-005: Failed to regenerate OpenAPI client: {e.stderr}")
+    except subprocess.TimeoutExpired:
+        pytest.fail("DD-HAPI-005: Client generation timed out (>2 minutes)")
 
 
 # ========================================
