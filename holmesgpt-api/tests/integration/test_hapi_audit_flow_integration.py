@@ -77,17 +77,8 @@ def hapi_base_url():
     return os.environ.get("HAPI_URL", "http://localhost:18120")
 
 
-@pytest.fixture
-def data_storage_url():
-    """
-    Data Storage service URL for integration tests.
-
-    Integration tests assume Data Storage is running via Go-managed infrastructure.
-    Default: http://localhost:18098 (DD-TEST-001 v1.8: HAPI integration port)
-
-    Override via DATA_STORAGE_URL environment variable if needed.
-    """
-    return os.environ.get("DATA_STORAGE_URL", "http://localhost:18098")
+# Note: data_storage_url fixture is provided by conftest.py (session-scoped)
+# This allows workflow seeding to work correctly
 
 
 # ========================================
