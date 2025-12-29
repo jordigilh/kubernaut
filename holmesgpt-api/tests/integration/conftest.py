@@ -73,7 +73,7 @@ def ensure_openapi_client(request):
     - Always compatible with current dependencies
 
     This prevents recurring urllib3 version conflicts.
-    
+
     **Parallel Execution Safety**:
     - Makefile generates client ONCE before pytest starts
     - All workers (gw0-gw3) share the same generated client
@@ -170,6 +170,41 @@ def integration_infrastructure():
         "hapi_url": HAPI_URL,
         "data_storage_url": DATA_STORAGE_URL,
     }
+
+
+@pytest.fixture(scope="session", autouse=True)
+def bootstrap_test_workflows(data_storage_url):
+    """
+    Bootstrap test workflows into Data Storage for integration tests.
+
+    This fixture runs once per test session and seeds the workflow catalog
+    with test workflows needed by label integration, container image, and
+    workflow catalog tests.
+
+    Workflows Seeded:
+    - OOMKilled workflows (2)
+    - CrashLoopBackOff workflows (1)
+    - NodeNotReady workflows (1)
+    - ImagePullBackOff workflows (1)
+
+    Returns:
+        dict: Bootstrap results with 'created', 'existing', 'failed' counts
+    """
+    # Import here to avoid circular dependencies
+    sys.path.insert(0, str(Path(__file__).parent.parent / "fixtures"))
+    from workflow_fixtures import bootstrap_workflows
+
+    print(f"\n🌱 Bootstrapping test workflows into Data Storage ({data_storage_url})...")
+    results = bootstrap_workflows(data_storage_url)
+
+    print(f"   ✅ Workflows created: {len(results['created'])}")
+    print(f"   ♻️  Workflows existing: {len(results['existing'])}")
+    if results['failed']:
+        print(f"   ❌ Workflows failed: {len(results['failed'])}")
+        for failure in results['failed']:
+            print(f"      - {failure['workflow']}: {failure['error']}")
+
+    return results
 
 
 @pytest.fixture(scope="function")

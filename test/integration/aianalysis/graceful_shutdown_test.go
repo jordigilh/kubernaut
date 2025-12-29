@@ -62,9 +62,9 @@ import (
 
 var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 	var (
-		uniqueSuffix       string
-		testNamespace      = "default"
-		dataStorageURL     = "http://localhost:18095" // From suite infrastructure
+		uniqueSuffix   string
+		testNamespace  = "default"
+		dataStorageURL = "http://localhost:18095" // From suite infrastructure
 	)
 
 	BeforeEach(func() {
@@ -153,7 +153,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 			), "Should complete analysis before shutdown")
 
 			// CORRECTNESS VALIDATION: Analysis fully recorded
-			Expect(analysis.Status.CompletionTime).ToNot(BeNil(),
+			Expect(analysis.Status.CompletedAt).ToNot(BeNil(),
 				"Should have completion timestamp")
 
 			GinkgoWriter.Printf("✅ In-flight analysis completed gracefully: %s\n", analysis.Status.Phase)
@@ -270,7 +270,6 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 							EnrichmentResults: sharedtypes.EnrichmentResults{
 								KubernetesContext: &sharedtypes.KubernetesContext{
 									Namespace: testNamespace,
-									Labels:    map[string]string{"audit": "test"},
 								},
 							},
 						},
@@ -282,7 +281,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Wait for analysis to complete (generates audit events)
-			Eventually(func() aianalysisv1alpha1.AIAnalysisPhase {
+			Eventually(func() string {
 				err := k8sClient.Get(context.Background(), types.NamespacedName{
 					Name:      analysisName,
 					Namespace: testNamespace,
@@ -304,17 +303,18 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 			dsClient, err := dsgen.NewClientWithResponses(dataStorageURL)
 			Expect(err).NotTo(HaveOccurred())
 
-			resourceType := "AIAnalysis"
+			eventCategory := "analysis"
 			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				ResourceType: &resourceType,
-				ResourceName: &analysisName,
+				CorrelationId: &analysisName,
+				EventCategory: &eventCategory,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(len(resp.JSON200.Data)).To(BeNumerically(">=", 1),
+			Expect(resp.JSON200.Data).ToNot(BeNil(), "Response should have data array")
+			Expect(len(*resp.JSON200.Data)).To(BeNumerically(">=", 1),
 				"Audit events must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
 
-			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(resp.JSON200.Data))
+			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(*resp.JSON200.Data))
 
 			// Cleanup
 			err = k8sClient.Delete(context.Background(), analysis)
@@ -360,4 +360,3 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 		})
 	})
 })
-

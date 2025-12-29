@@ -5,8 +5,10 @@
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**limit** | **int** |  | [optional] 
-**offset** | **int** |  | [optional] 
+**limit** | **int** | Maximum number of events per page | [optional] 
+**offset** | **int** | Number of events to skip | [optional] 
+**total** | **int** | Total number of events matching the query | [optional] 
+**has_more** | **bool** | Whether more results are available beyond current page | [optional] 
 
 ## Example
 

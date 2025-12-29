@@ -6,7 +6,6 @@
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **data** | [**List[AuditEvent]**](AuditEvent.md) |  | [optional] 
-**total_count** | **int** |  | [optional] 
 **pagination** | [**AuditEventsQueryResponsePagination**](AuditEventsQueryResponsePagination.md) |  | [optional] 
 
 ## Example

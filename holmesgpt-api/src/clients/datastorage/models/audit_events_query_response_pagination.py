@@ -17,7 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
@@ -26,9 +26,11 @@ class AuditEventsQueryResponsePagination(BaseModel):
     """
     AuditEventsQueryResponsePagination
     """ # noqa: E501
-    limit: Optional[StrictInt] = None
-    offset: Optional[StrictInt] = None
-    __properties: ClassVar[List[str]] = ["limit", "offset"]
+    limit: Optional[StrictInt] = Field(default=None, description="Maximum number of events per page")
+    offset: Optional[StrictInt] = Field(default=None, description="Number of events to skip")
+    total: Optional[StrictInt] = Field(default=None, description="Total number of events matching the query")
+    has_more: Optional[StrictBool] = Field(default=None, description="Whether more results are available beyond current page")
+    __properties: ClassVar[List[str]] = ["limit", "offset", "total", "has_more"]
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -82,7 +84,9 @@ class AuditEventsQueryResponsePagination(BaseModel):
 
         _obj = cls.model_validate({
             "limit": obj.get("limit"),
-            "offset": obj.get("offset")
+            "offset": obj.get("offset"),
+            "total": obj.get("total"),
+            "has_more": obj.get("has_more")
         })
         return _obj
 
