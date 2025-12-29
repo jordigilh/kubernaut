@@ -87,23 +87,23 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest")
 
-			By("Waiting for controller to process and deliver notification")
-			// Wait for controller to reconcile and update status to Sent
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for controller to process and deliver notification")
+		// Wait for controller to reconcile and update status to Sent
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			err := k8sClient.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			if err != nil {
+				return ""
+			}
+			return notification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Validating file was created with notification content")
-			// Find the notification file (has timestamp in name)
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-complete-message-*.json"))
+		By("Validating file was created with notification content")
+		// Find the notification file (has timestamp in name)
+		// Note: Controller may reconcile multiple times, creating multiple files (expected)
+		files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-complete-message-*.json"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file for notification")
 
@@ -173,19 +173,19 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest")
 
-			By("Waiting for controller to process and sanitize notification")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for controller to process and sanitize notification")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			err := k8sClient.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			if err != nil {
+				return ""
+			}
+			return notification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Validating sanitized file content")
+		By("Validating sanitized file content")
 			// Note: Controller may reconcile multiple times, creating multiple files (expected)
 			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-sanitization-test-*.json"))
 			Expect(err).ToNot(HaveOccurred())
@@ -258,19 +258,19 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Waiting for successful delivery")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		By("Waiting for successful delivery")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			err := k8sClient.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			if err != nil {
+				return ""
+			}
+			return notification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Validating priority field in file (BR-NOT-056)")
+		By("Validating priority field in file (BR-NOT-056)")
 			// Note: Controller may reconcile multiple times, creating multiple files (expected)
 			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-validation-*.json"))
 			Expect(err).ToNot(HaveOccurred())
@@ -330,22 +330,22 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			By("Waiting for all notifications to be delivered")
-			for _, name := range notificationNames {
-				Eventually(func() notificationv1alpha1.NotificationPhase {
-					notification := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, client.ObjectKey{
-						Name:      name,
-						Namespace: "default",
-					}, notification)
-					if err != nil {
-						return ""
-					}
-					return notification.Status.Phase
-				}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
-			}
+		By("Waiting for all notifications to be delivered")
+		for _, name := range notificationNames {
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				notification := &notificationv1alpha1.NotificationRequest{}
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      name,
+					Namespace: "default",
+				}, notification)
+				if err != nil {
+					return ""
+				}
+				return notification.Status.Phase
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
+		}
 
-			By("Validating distinct files created for each notification")
+		By("Validating distinct files created for each notification")
 			for _, name := range notificationNames {
 				files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+name+"-*.json"))
 				Expect(err).ToNot(HaveOccurred())
@@ -408,20 +408,20 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying notification STILL succeeds (non-blocking behavior)")
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-				"CRITICAL: Production delivery must succeed even if FileService fails (V3.0 Safety Guarantee)")
+		By("Verifying notification STILL succeeds (non-blocking behavior)")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			err := k8sClient.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			if err != nil {
+				return ""
+			}
+			return notification.Status.Phase
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+			"CRITICAL: Production delivery must succeed even if FileService fails (V3.0 Safety Guarantee)")
 
-			By("Validating FileService created file when available")
+		By("Validating FileService created file when available")
 			// Since FileService is working in this test, file should be created
 			// Note: Controller may reconcile multiple times, creating multiple files (expected)
 			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-error-handling-*.json"))

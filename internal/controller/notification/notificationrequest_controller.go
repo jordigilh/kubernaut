@@ -271,6 +271,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 				"elapsedSinceLastAttempt", now.Sub(lastFailedAttempt.Timestamp.Time),
 				"expectedBackoff", nextBackoff)
 		}
+		// Otherwise, allow retry
 	}
 
 	// Phase 3: Transition from Pending to Sending

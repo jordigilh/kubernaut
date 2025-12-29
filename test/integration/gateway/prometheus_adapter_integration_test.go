@@ -26,9 +26,9 @@ import (
 	"net/http/httptest"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -66,7 +66,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		logger = zap.NewNop()
+		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
+		_ = logger              // Suppress unused variable warning
 
 		// Generate unique namespace names to avoid parallel test interference
 		// Use timestamp to ensure uniqueness per test (GinkgoRandomSeed is same for all tests in a run)

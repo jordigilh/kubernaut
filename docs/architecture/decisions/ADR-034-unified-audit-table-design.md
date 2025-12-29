@@ -20,6 +20,15 @@
 
 ---
 
+## 📋 **Version History**
+
+| Version | Date | Changes | Author |
+|---------|------|---------|--------|
+| **v1.0** | 2025-11-08 | Initial ADR: Unified audit table design with event sourcing pattern, 7 service audit requirements | Architecture Team |
+| **v1.1** | 2025-11-27 | Added Workflow Catalog Service (Phase 3, Item 4): `workflow.catalog.search_completed` event type with scoring breakdown for debugging workflow selection. Added DD-WORKFLOW-014 cross-reference. | Architecture Team |
+
+---
+
 ## Context
 
 Kubernaut currently lacks a unified audit trail system for tracking business operations across all services. Each service needs to record audit traces for:

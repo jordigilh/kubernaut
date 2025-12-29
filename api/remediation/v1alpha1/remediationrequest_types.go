@@ -369,6 +369,22 @@ func (r ResourceIdentifier) String() string {
 	return fmt.Sprintf("%s/%s", kind, r.Name)
 }
 
+// ResourceIdentifier uniquely identifies a Kubernetes resource.
+// Used for target resource identification across CRDs.
+// Per Gateway Team response (RESPONSE_TARGET_RESOURCE_SCHEMA.md), this is populated
+// by Gateway from NormalizedSignal.Resource and passed through to SignalProcessing.
+type ResourceIdentifier struct {
+	// Kind of the Kubernetes resource (e.g., "Pod", "Deployment", "Node", "StatefulSet")
+	Kind string `json:"kind"`
+
+	// Name of the Kubernetes resource instance
+	Name string `json:"name"`
+
+	// Namespace of the Kubernetes resource (empty for cluster-scoped resources like Node)
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+}
+
 // RemediationRequestStatus defines the observed state of RemediationRequest.
 type RemediationRequestStatus struct {
 	// ╔════════════════════════════════════════════════════════════════╗

@@ -188,6 +188,28 @@ spec:
               stormWindow:
                 description: Time window for storm detection (e.g., "5m")
                 type: string
+              targetResource:
+                description: |-
+                  TargetResource identifies the Kubernetes resource that triggered this signal.
+                  Populated by Gateway from NormalizedSignal.Resource - REQUIRED.
+                  Used by SignalProcessing for context enrichment and RO for workflow routing.
+                  For Kubernetes signals, this contains Kind, Name, Namespace of the affected resource.
+                properties:
+                  kind:
+                    description: Kind of the Kubernetes resource (e.g., "Pod", "Deployment",
+                      "Node", "StatefulSet")
+                    type: string
+                  name:
+                    description: Name of the Kubernetes resource instance
+                    type: string
+                  namespace:
+                    description: Namespace of the Kubernetes resource (empty for cluster-scoped
+                      resources like Node)
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
               targetType:
                 description: |-
                   Target system type: "kubernetes", "aws", "azure", "gcp", "datadog"
@@ -226,6 +248,7 @@ spec:
             - signalFingerprint
             - signalName
             - signalType
+            - targetResource
             - targetType
             type: object
           status:

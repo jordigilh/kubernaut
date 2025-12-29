@@ -104,6 +104,14 @@ func WithAuditStore(store audit.AuditStore) HandlerOption {
 	}
 }
 
+// WithAuditStore sets the audit store for workflow search audit events
+// BR-AUDIT-023: Workflow search audit event generation
+func WithAuditStore(store audit.AuditStore) HandlerOption {
+	return func(h *Handler) {
+		h.auditStore = store
+	}
+}
+
 // NewHandler creates a new REST API handler
 // REFACTOR: Supports optional logger for production observability
 // Accepts DBInterface to work with both MockDB (tests) and real database (production)
