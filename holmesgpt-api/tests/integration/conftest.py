@@ -254,6 +254,10 @@ def pytest_configure(config):
         "markers",
         "requires_hapi: mark test as requiring HAPI service"
     )
+    config.addinivalue_line(
+        "markers",
+        "serial: mark test as requiring sequential execution (not parallel-safe)"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
