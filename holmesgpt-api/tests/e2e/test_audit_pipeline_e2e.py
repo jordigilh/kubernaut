@@ -229,18 +229,18 @@ def query_audit_events_with_retry(
     while time.time() - start_time < timeout_seconds:
         attempts += 1
         events = query_audit_events(data_storage_url, correlation_id, timeout=5)
-        
+
         if len(events) >= min_expected_events:
             elapsed = time.time() - start_time
             print(f"✅ Found {len(events)} audit events after {elapsed:.2f}s ({attempts} attempts)")
             return events
-        
+
         if attempts % 5 == 0:  # Log every 5 attempts
             elapsed = time.time() - start_time
             print(f"⏳ Waiting for audit events... {len(events)}/{min_expected_events} found after {elapsed:.2f}s")
-        
+
         time.sleep(poll_interval)
-    
+
     # Timeout - fail with diagnostic info
     elapsed = time.time() - start_time
     final_events = query_audit_events(data_storage_url, correlation_id, timeout=5)
@@ -556,7 +556,4 @@ class TestAuditPipelineE2E:
             event_data = event.event_data if hasattr(event, 'event_data') else {}
             assert event_data.get("incident_id") == unique_incident_id, f"Inconsistent incident_id in {event.event_type}"
 
-    # test_validation_retry_events_persisted REMOVED:
-    # DD-HAPI-002 v1.2 validation retry testing belongs in integration tier,
-    # not E2E tier. E2E uses MOCK_LLM_MODE which always returns valid workflows.
-    # For controlled mocking and retry logic testing, see integration tests.
+

@@ -30,7 +30,8 @@ httpx<0.28,>=0.24   # Supabase stack requires <0.28
 
 # NOTE: urllib3 version is constrained by prometrix (from HolmesGPT SDK)
 # prometrix 0.2.5 requires urllib3<2.0.0, so we cannot use urllib3 2.x
-# If OpenAPI clients need urllib3 2.x, we'll need to address this separately
+# OpenAPI clients must be compatible with urllib3 1.26.x
+urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
 
 # HolmesGPT SDK (from local copy) - Install AFTER supabase constraint
 # Using local copy from ../dependencies/holmesgpt/ for faster installation

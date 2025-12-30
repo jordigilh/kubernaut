@@ -25,7 +25,7 @@ if [ -d "$CLIENT_DIR" ]; then
 fi
 
 # Generate client using podman
-echo "📦 Generating client with openapi-generator-cli..."
+echo "📦 Generating client with openapi-generator-cli (urllib3 1.26.x compatible)..."
 podman run --rm \
     -v "${PROJECT_ROOT}:/local:z" \
     openapitools/openapi-generator-cli generate \
@@ -33,7 +33,7 @@ podman run --rm \
     -g python \
     -o /local/holmesgpt-api/src/clients \
     --package-name datastorage \
-    --additional-properties=packageVersion=1.0.0 \
+    --additional-properties=packageVersion=1.0.0,library=urllib3 \
     > /dev/null 2>&1
 
 echo "✅ Client generated"
