@@ -25,7 +25,8 @@ if [ -d "$CLIENT_DIR" ]; then
 fi
 
 # Generate client using podman
-echo "📦 Generating client with openapi-generator-cli (urllib3 1.26.x compatible)..."
+# Generate with latest generator
+echo "📦 Generating client with openapi-generator-cli..."
 podman run --rm \
     -v "${PROJECT_ROOT}:/local:z" \
     openapitools/openapi-generator-cli generate \
@@ -33,8 +34,18 @@ podman run --rm \
     -g python \
     -o /local/holmesgpt-api/src/clients \
     --package-name datastorage \
-    --additional-properties=packageVersion=1.0.0,library=urllib3 \
+    --additional-properties=packageVersion=1.0.0 \
     > /dev/null 2>&1
+
+echo "🔧 Patching for urllib3 1.x compatibility..."
+
+# Patch rest.py to remove urllib3 2.x specific parameters
+cd "$CLIENT_DIR"
+if [ -f "rest.py" ]; then
+    # Remove ca_cert_data parameter which only exists in urllib3 2.x
+    sed -i '' '/"ca_cert_data": configuration.ca_cert_data,/d' rest.py
+    echo "   ✅ Removed ca_cert_data parameter (urllib3 2.x only)"
+fi
 
 echo "✅ Client generated"
 
