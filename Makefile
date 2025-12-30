@@ -309,7 +309,7 @@ test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (Kind cluster + Python tests,
 	@echo "✅ Client generated successfully"
 	@echo ""
 	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
-	@cd test/e2e/holmesgptapi && ginkgo -v --timeout=15m
+	@cd test/e2e/holmesgpt-api && ginkgo -v --timeout=15m
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
