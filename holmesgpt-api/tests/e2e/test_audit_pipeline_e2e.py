@@ -195,8 +195,67 @@ def query_audit_events(
         return response.data if hasattr(response, 'data') and response.data else []
 
 
+def query_audit_events_with_retry(
+    data_storage_url: str,
+    correlation_id: str,
+    min_expected_events: int = 1,
+    timeout_seconds: int = 15,
+    poll_interval: float = 0.5
+) -> List[Dict[str, Any]]:
+    """
+    Query Data Storage for audit events with retry logic (Eventually pattern).
+
+    ADR-038: Buffered audit store flushes asynchronously (flush_interval_seconds).
+    Tests must poll for events rather than assuming immediate availability.
+
+    Pattern: Similar to Ginkgo's Eventually() - poll with timeout until events appear
+
+    Args:
+        data_storage_url: Data Storage service URL
+        correlation_id: Remediation ID for audit correlation
+        min_expected_events: Minimum number of events expected (default 1)
+        timeout_seconds: Maximum time to wait for events (default 15s for E2E)
+        poll_interval: Time between polling attempts (default 0.5s)
+
+    Returns:
+        List of audit events
+
+    Raises:
+        AssertionError: If events don't appear within timeout
+    """
+    start_time = time.time()
+    attempts = 0
+
+    while time.time() - start_time < timeout_seconds:
+        attempts += 1
+        events = query_audit_events(data_storage_url, correlation_id, timeout=5)
+        
+        if len(events) >= min_expected_events:
+            elapsed = time.time() - start_time
+            print(f"✅ Found {len(events)} audit events after {elapsed:.2f}s ({attempts} attempts)")
+            return events
+        
+        if attempts % 5 == 0:  # Log every 5 attempts
+            elapsed = time.time() - start_time
+            print(f"⏳ Waiting for audit events... {len(events)}/{min_expected_events} found after {elapsed:.2f}s")
+        
+        time.sleep(poll_interval)
+    
+    # Timeout - fail with diagnostic info
+    elapsed = time.time() - start_time
+    final_events = query_audit_events(data_storage_url, correlation_id, timeout=5)
+    raise AssertionError(
+        f"Timeout waiting for audit events: expected >={min_expected_events}, "
+        f"got {len(final_events)} after {elapsed:.2f}s ({attempts} attempts). "
+        f"ADR-038: Buffered audit flush may be delayed. "
+        f"correlation_id={correlation_id}"
+    )
+
+
 def wait_for_audit_flush(seconds: float = 6.0):
     """
+    DEPRECATED: Use query_audit_events_with_retry() instead.
+
     Wait for audit buffer to flush to Data Storage.
 
     BufferedAuditStore has flush_interval_seconds=5.0 by default.
@@ -303,11 +362,13 @@ class TestAuditPipelineE2E:
         assert "root_cause_analysis" in result or "selected_workflow" in result, \
             "HAPI response missing analysis fields"
 
-        # Wait for audit buffer flush to Data Storage
-        wait_for_audit_flush()
-
-        # Query Data Storage for persisted events by correlation_id (remediation_id)
-        events = query_audit_events(data_storage_url, unique_remediation_id)
+        # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            unique_remediation_id,
+            min_expected_events=1,  # At least llm_request
+            timeout_seconds=15  # E2E may be slower
+        )
 
         # Verify llm_request event exists (Pydantic model attribute access)
         llm_requests = [e for e in events if e.event_type == "llm_request"]
@@ -355,10 +416,13 @@ class TestAuditPipelineE2E:
         # DD-API-001: Call HAPI using OpenAPI generated client
         result = call_hapi_incident_analyze(hapi_url, request_data)
 
-        wait_for_audit_flush()
-
-        # Query by correlation_id (remediation_id)
-        events = query_audit_events(data_storage_url, unique_remediation_id)
+        # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            unique_remediation_id,
+            min_expected_events=1,  # At least llm_response
+            timeout_seconds=15
+        )
 
         # Verify llm_response event exists (Pydantic model attribute access)
         llm_responses = [e for e in events if e.event_type == "llm_response"]
@@ -407,10 +471,13 @@ class TestAuditPipelineE2E:
         # DD-API-001: Call HAPI using OpenAPI generated client
         result = call_hapi_incident_analyze(hapi_url, request_data)
 
-        wait_for_audit_flush()
-
-        # Query by correlation_id (remediation_id)
-        events = query_audit_events(data_storage_url, unique_remediation_id)
+        # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            unique_remediation_id,
+            min_expected_events=1,  # At least workflow_validation_attempt
+            timeout_seconds=15
+        )
 
         # Verify validation attempt event exists (Pydantic model attribute access)
         validation_events = [e for e in events if e.event_type == "workflow_validation_attempt"]
@@ -465,10 +532,13 @@ class TestAuditPipelineE2E:
         # DD-API-001: Call HAPI using OpenAPI generated client
         result = call_hapi_incident_analyze(hapi_url, request_data)
 
-        wait_for_audit_flush()
-
-        # Query by correlation_id (remediation_id)
-        events = query_audit_events(data_storage_url, unique_remediation_id)
+        # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            unique_remediation_id,
+            min_expected_events=2,  # llm_request + llm_response minimum
+            timeout_seconds=15
+        )
 
         # Filter out Data Storage self-audit events (datastorage.audit.written)
         # These are created by Data Storage when it writes our events (Pydantic model attribute access)
@@ -486,21 +556,7 @@ class TestAuditPipelineE2E:
             event_data = event.event_data if hasattr(event, 'event_data') else {}
             assert event_data.get("incident_id") == unique_incident_id, f"Inconsistent incident_id in {event.event_type}"
 
-    def test_validation_retry_events_persisted(
-        self,
-        data_storage_url,
-        mock_llm_response_invalid_workflow,
-        mock_config,
-        unique_incident_id,
-        unique_remediation_id
-    ):
-        """
-        DD-HAPI-002 v1.2: Multiple validation attempts persisted during retry loop.
-
-        When LLM returns invalid workflow, HAPI retries up to 3 times.
-        Each attempt should be audited.
-
-        NOTE: This test is SKIPPED in E2E because MOCK_LLM_MODE always returns valid workflows.
-        Validation retry logic can only be tested in unit/integration tests with controlled mocks.
-        """
-        pytest.skip("Validation retry testing requires controlled LLM mocking not available in E2E")
+    # test_validation_retry_events_persisted REMOVED:
+    # DD-HAPI-002 v1.2 validation retry testing belongs in integration tier,
+    # not E2E tier. E2E uses MOCK_LLM_MODE which always returns valid workflows.
+    # For controlled mocking and retry logic testing, see integration tests.
