@@ -239,25 +239,6 @@ validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesg
 		echo "⚠️  No committed spec found. Copying current as baseline..."; \
 		cp api/openapi.json api/openapi.json.committed; \
 	fi
-
-.PHONY: generate-models-holmesgpt-api
-generate-models-holmesgpt-api: ## Generate holmesgpt-api Data Storage client models from OpenAPI spec (DD-WORKFLOW-002)
-	@echo "📦 Installing datamodel-code-generator..."
-	@pip3 install datamodel-code-generator --index-url https://pypi.org/simple/ --quiet
-	@echo "🔄 Generating models from OpenAPI spec: docs/services/stateless/data-storage/openapi/v3.yaml"
-	@python3 -m datamodel_code_generator \
-		--input docs/services/stateless/data-storage/openapi/v3.yaml \
-		--output holmesgpt-api/src/clients/datastorage/models.py \
-		--output-model-type pydantic_v2.BaseModel \
-		--use-double-quotes \
-		--use-annotated \
-		--field-constraints \
-		--use-standard-collections \
-		--target-python-version 3.11 \
-		--encoding utf-8
-	@echo "✅ Models generated: holmesgpt-api/src/clients/datastorage/models.py"
-	@echo "⚠️  Note: DataStorageError class is in client.py (not auto-generated)"
-
 .PHONY: lint-holmesgpt-api
 lint-holmesgpt-api: ## Run ruff linter on holmesgpt-api Python code
 	@echo "🔍 Running ruff linter on holmesgpt-api..."
