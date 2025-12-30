@@ -152,6 +152,47 @@ def data_storage_url():
 
 
 @pytest.fixture(scope="session")
+def hapi_client():
+    """
+    FastAPI TestClient for HAPI service (in-process).
+
+    Architecture Decision (Dec 29, 2025):
+    - Integration tests: TestClient (in-process HAPI) ✅
+    - E2E tests: External HAPI in Kind cluster ✅
+
+    Benefits:
+    - ✅ Faster (~3 min vs ~7 min, no Docker build)
+    - ✅ Reliable audit persistence (in-process config)
+    - ✅ Easier debugging (direct app access)
+    - ✅ Consistent with FastAPI best practices
+
+    Configuration:
+    - config.yaml: holmesgpt-api/config.yaml
+    - Data Storage: http://localhost:18098 (Go-started)
+    - Mock LLM: enabled
+
+    See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
+    """
+    import os
+    from fastapi.testclient import TestClient
+
+    # Set configuration environment variables
+    os.environ["CONFIG_FILE"] = "config.yaml"
+    os.environ["MOCK_LLM_MODE"] = "true"
+
+    # Import app AFTER setting environment variables
+    from src.main import app
+
+    client = TestClient(app)
+    print(f"\n✅ HAPI TestClient initialized (in-process)")
+    print(f"   Data Storage URL: {DATA_STORAGE_URL}")
+    print(f"   Config: config.yaml")
+    print(f"   Mode: Mock LLM")
+
+    return client
+
+
+@pytest.fixture(scope="session")
 def integration_infrastructure():
     """
     Integration infrastructure URLs (services started by Go infrastructure).

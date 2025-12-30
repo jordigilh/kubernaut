@@ -19,7 +19,6 @@ package infrastructure
 import (
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -257,78 +256,30 @@ echo "Migrations complete!"`)
 	fmt.Fprintf(writer, "   ✅ DataStorage ready at %s\n\n", dataStorageURL)
 
 	// ============================================================================
-	// STEP 7: Build and start HAPI service
+	// INTEGRATION TEST PATTERN: HAPI uses FastAPI TestClient (in-process)
 	// ============================================================================
-	fmt.Fprintf(writer, "🏗️  Building HAPI (HolmesGPT-API) image...\n")
-
-	// Use composite image tag per DD-INTEGRATION-001 v2.0 (collision avoidance)
-	hapiImageTag := GenerateInfraImageName("holmesgpt-api", "holmesgptapi")
-	fmt.Fprintf(writer, "   Image tag: %s (composite per DD-INTEGRATION-001 v2.0)\n", hapiImageTag)
-
-	buildHapiCmd := exec.Command("podman", "build",
-		"-t", hapiImageTag,
-		"-f", filepath.Join(projectRoot, "holmesgpt-api/Dockerfile"),
-		projectRoot,
-	)
-	buildHapiCmd.Stdout = writer
-	buildHapiCmd.Stderr = writer
-	if err := buildHapiCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build HAPI image: %w", err)
-	}
-	fmt.Fprintf(writer, "   ✅ HAPI image built: %s\n\n", hapiImageTag)
-
-	// ADR-030: Create minimal HAPI config file for integration tests
-	hapiConfigDir := filepath.Join(projectRoot, "test", "integration", "holmesgptapi", "hapi-config")
-	os.MkdirAll(hapiConfigDir, 0755)
-
-	hapiConfig := `# HolmesGPT-API Integration Test Configuration
-# Per ADR-030: Configuration Management Standard
-# Only business-critical settings exposed
-
-logging:
-  level: "DEBUG"
-
-llm:
-  provider: "mock"
-  model: "mock/test-model"
-  endpoint: "http://localhost:11434"
-  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
-
-data_storage:
-  url: "http://` + HAPIIntegrationDataStorageContainer + `:8080"
-`
-	os.WriteFile(filepath.Join(hapiConfigDir, "config.yaml"), []byte(hapiConfig), 0644)
-
-	// Create secrets directory and llm-credentials.yaml (ADR-030: secrets in separate file)
-	hapiSecretsDir := filepath.Join(hapiConfigDir, "secrets")
-	os.MkdirAll(hapiSecretsDir, 0755)
-	hapiSecrets := `# LLM Provider Credentials (Integration Tests)
-api_key: "mock-api-key"
-`
-	os.WriteFile(filepath.Join(hapiSecretsDir, "llm-credentials.yaml"), []byte(hapiSecrets), 0644)
-
-	fmt.Fprintf(writer, "🚀 Starting HAPI (HolmesGPT-API) container...\n")
-	hapiCmd := exec.Command("podman", "run", "-d",
-		"--name", HAPIIntegrationHAPIContainer,
-		"--network", HAPIIntegrationNetwork,
-		"-p", fmt.Sprintf("%d:8080", HAPIIntegrationServicePort),
-		"-v", fmt.Sprintf("%s:/etc/holmesgpt:ro", hapiConfigDir),
-		"-e", "MOCK_LLM_MODE=true", // Use mock LLM for integration tests
-		hapiImageTag,
-		"-config", "/etc/holmesgpt/config.yaml", // ADR-030: Use -config flag (like Go services)
-	)
-	hapiCmd.Stdout = writer
-	hapiCmd.Stderr = writer
-	if err := hapiCmd.Run(); err != nil {
-		return fmt.Errorf("failed to start HAPI: %w", err)
-	}
-
-	// CRITICAL: Wait for HAPI HTTP health endpoint
-	hapiURL := fmt.Sprintf("http://localhost:%d/health", HAPIIntegrationServicePort)
-	if err := WaitForHTTPHealth(hapiURL, 60*time.Second, writer); err != nil {
-		return fmt.Errorf("HAPI failed to become healthy: %w", err)
-	}
-	fmt.Fprintf(writer, "   ✅ HAPI ready at %s\n\n", hapiURL)
+	// Architecture Decision (Dec 29, 2025):
+	// - Integration tests: HAPI runs via FastAPI TestClient (in-process)
+	// - E2E tests: HAPI runs in Kind cluster (external container)
+	//
+	// Why TestClient for Integration Tests?
+	// ✅ Faster (~3 min vs ~7 min, no Docker builds)
+	// ✅ Reliable audit persistence (in-process config)
+	// ✅ Consistent with Python/FastAPI best practices
+	// ✅ Easier debugging (in-process, direct access to app state)
+	//
+	// External dependencies for integration tests:
+	// - PostgreSQL (for Data Storage persistence)
+	// - Redis (for Data Storage caching)
+	// - Data Storage (for audit event validation)
+	//
+	// See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
+	// ============================================================================
+	fmt.Fprintf(writer, "ℹ️  HAPI Integration Test Pattern:\n")
+	fmt.Fprintf(writer, "   • HAPI runs via FastAPI TestClient (in-process, no container)\n")
+	fmt.Fprintf(writer, "   • Python tests import src.main:app directly\n")
+	fmt.Fprintf(writer, "   • External dependencies: PostgreSQL, Redis, Data Storage only\n")
+	fmt.Fprintf(writer, "   • See: holmesgpt-api/tests/integration/conftest.py\n\n")
 
 	// ============================================================================
 	// Success Summary
@@ -339,8 +290,8 @@ api_key: "mock-api-key"
 	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (ready)\n", HAPIIntegrationPostgresPort)
 	fmt.Fprintf(writer, "  Redis:          localhost:%d (ready)\n", HAPIIntegrationRedisPort)
 	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d (healthy)\n", HAPIIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  HAPI:           http://localhost:%d (healthy)\n", HAPIIntegrationServicePort)
-	fmt.Fprintf(writer, "  Duration:       ~3-4 minutes\n")
+	fmt.Fprintf(writer, "  HAPI:           FastAPI TestClient (in-process, no container)\n")
+	fmt.Fprintf(writer, "  Duration:       ~2-3 minutes (no HAPI Docker build)\n")
 	fmt.Fprintf(writer, "  Pattern:        DD-INTEGRATION-001 v2.0 (Go programmatic)\n")
 	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
@@ -361,9 +312,9 @@ api_key: "mock-api-key"
 func StopHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "\n🛑 Stopping HolmesGPT API Integration Infrastructure...\n")
 
-	// Stop containers (reverse order: HAPI first, then dependencies)
+	// Stop containers (no HAPI container for integration tests - uses TestClient)
+	// Note: HAPI container only exists for E2E tests in Kind
 	containers := []string{
-		HAPIIntegrationHAPIContainer,
 		HAPIIntegrationDataStorageContainer,
 		HAPIIntegrationRedisContainer,
 		HAPIIntegrationPostgresContainer,

@@ -708,6 +708,10 @@ data:
       url: "http://datastorage:8080"
     logging:
       level: "INFO"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -972,6 +976,10 @@ data:
       url: "http://datastorage:8080"
     logging:
       level: "INFO"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
 ---
 apiVersion: apps/v1
 kind: Deployment

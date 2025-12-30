@@ -150,3 +150,4 @@ If HAPI team wants to clarify the HTTP status code choice or update the OpenAPI 
 **Action Required**: None - issue resolved
 **Next Steps**: None - teams aligned on HTTP 400 usage
 
+

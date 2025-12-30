@@ -58,6 +58,13 @@ LLM_TEMPERATURE_DEFAULT = 0.7
 # AUDIT CONFIGURATION (BR-AUDIT-005, ADR-038)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# AUDIT CONFIGURATION DEFAULTS (BR-AUDIT-005, ADR-038)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Per ADR-030: These are fallback defaults only.
+# Actual values come from config.yaml (audit section).
+# Integration tests: Set audit.flush_interval_seconds=0.1 in config.yaml
+
 # Audit buffer size (number of events before forced flush)
 # Design Decision: ADR-038 (Async Buffered Audit Ingestion)
 AUDIT_BUFFER_SIZE = 10000
@@ -66,6 +73,8 @@ AUDIT_BUFFER_SIZE = 10000
 AUDIT_BATCH_SIZE = 50
 
 # Audit flush interval (seconds between automatic flushes)
+# Default: 5.0 seconds (production)
+# Integration tests override via config.yaml
 AUDIT_FLUSH_INTERVAL_SECONDS = 5.0
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

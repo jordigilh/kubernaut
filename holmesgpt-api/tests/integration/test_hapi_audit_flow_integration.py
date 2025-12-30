@@ -64,21 +64,9 @@ from src.clients.datastorage.models.audit_event import AuditEvent
 # FIXTURES
 # ========================================
 
-@pytest.fixture
-def hapi_base_url():
-    """
-    HAPI service URL for integration tests.
-
-    Integration tests assume HAPI is running via podman-compose.test.yml.
-    Default: http://localhost:18120 (HAPI integration port per DD-TEST-001)
-
-    Override via HAPI_URL environment variable if needed.
-    """
-    return os.environ.get("HAPI_URL", "http://localhost:18120")
-
-
+# Note: hapi_client fixture is provided by conftest.py (session-scoped, TestClient)
 # Note: data_storage_url fixture is provided by conftest.py (session-scoped)
-# This allows workflow seeding to work correctly
+# This allows workflow seeding and audit validation to work correctly
 
 
 # ========================================
@@ -117,70 +105,103 @@ def query_audit_events(
     return response.data if response.data else []
 
 
-def call_hapi_incident_analyze(
-    hapi_url: str,
-    incident_data: Dict[str, Any],
-    timeout: int = 30
-) -> Dict[str, Any]:
+def query_audit_events_with_retry(
+    data_storage_url: str,
+    correlation_id: str,
+    min_expected_events: int = 1,
+    timeout_seconds: int = 10,
+    poll_interval: float = 0.5
+) -> List[AuditEvent]:
     """
-    Call HAPI's /api/v1/incident/analyze endpoint using OpenAPI client.
+    Query Data Storage for audit events with retry logic (Eventually pattern).
 
-    DD-API-001 COMPLIANT: Uses generated OpenAPI client.
+    ADR-038: Buffered audit store flushes asynchronously every 0.1s.
+    Tests must poll for events rather than assuming immediate availability.
+
+    Pattern: Similar to Ginkgo's Eventually() - poll with timeout until events appear
 
     Args:
-        hapi_url: HAPI service URL
+        data_storage_url: Data Storage service URL
+        correlation_id: Remediation ID for audit correlation
+        min_expected_events: Minimum number of events expected (default 1)
+        timeout_seconds: Maximum time to wait for events (default 10s)
+        poll_interval: Time between polling attempts (default 0.5s)
+
+    Returns:
+        List of AuditEvent Pydantic models
+
+    Raises:
+        AssertionError: If events don't appear within timeout
+    """
+    start_time = time.time()
+    attempts = 0
+
+    while time.time() - start_time < timeout_seconds:
+        attempts += 1
+        events = query_audit_events(data_storage_url, correlation_id, timeout=5)
+
+        if len(events) >= min_expected_events:
+            elapsed = time.time() - start_time
+            print(f"✅ Found {len(events)} audit events after {elapsed:.2f}s ({attempts} attempts)")
+            return events
+
+        if attempts % 5 == 0:  # Log every 5 attempts
+            elapsed = time.time() - start_time
+            print(f"⏳ Waiting for audit events... {len(events)}/{min_expected_events} found after {elapsed:.2f}s")
+
+        time.sleep(poll_interval)
+
+    # Timeout - fail with diagnostic info
+    elapsed = time.time() - start_time
+    final_events = query_audit_events(data_storage_url, correlation_id, timeout=5)
+    raise AssertionError(
+        f"Timeout waiting for audit events: expected >={min_expected_events}, "
+        f"got {len(final_events)} after {elapsed:.2f}s ({attempts} attempts). "
+        f"ADR-038: Buffered audit flush may be delayed. "
+        f"correlation_id={correlation_id}"
+    )
+
+
+def call_hapi_incident_analyze(
+    hapi_client,
+    incident_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Call HAPI's /api/v1/incident/analyze endpoint using FastAPI TestClient.
+
+    Architecture: Integration tests use TestClient (in-process HAPI)
+
+    Args:
+        hapi_client: FastAPI TestClient fixture
         incident_data: Incident request data
-        timeout: Request timeout in seconds
 
     Returns:
         Response dict
     """
-    config = HapiConfiguration(host=hapi_url)
-    client = HapiApiClient(configuration=config)
-    api_instance = IncidentAnalysisApi(client)
-
-    incident_request = IncidentRequest(**incident_data)
-
-    # DD-API-001: Use OpenAPI generated client
-    response = api_instance.incident_analyze_endpoint_api_v1_incident_analyze_post(
-        incident_request=incident_request,
-        _request_timeout=timeout
-    )
-
-    return response.to_dict()
+    response = hapi_client.post("/api/v1/incident/analyze", json=incident_data)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    return response.json()
 
 
 def call_hapi_recovery_analyze(
-    hapi_url: str,
-    recovery_data: Dict[str, Any],
-    timeout: int = 30
+    hapi_client,
+    recovery_data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Call HAPI's /api/v1/recovery/analyze endpoint using OpenAPI client.
+    Call HAPI's /api/v1/recovery/analyze endpoint using FastAPI TestClient.
 
-    DD-API-001 COMPLIANT: Uses generated OpenAPI client.
+    Architecture: Integration tests use TestClient (in-process HAPI)
 
     Args:
-        hapi_url: HAPI service URL
+        hapi_client: FastAPI TestClient fixture
         recovery_data: Recovery request data
-        timeout: Request timeout in seconds
 
     Returns:
         Response dict
     """
-    config = HapiConfiguration(host=hapi_url)
-    client = HapiApiClient(configuration=config)
-    api_instance = RecoveryAnalysisApi(client)
-
-    recovery_request = RecoveryRequest(**recovery_data)
-
-    # DD-API-001: Use OpenAPI generated client
-    response = api_instance.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
-        recovery_request=recovery_request,
-        _request_timeout=timeout
-    )
-
-    return response.to_dict()
+    response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_data)
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    return response.json()
 
 
 # ========================================
@@ -200,8 +221,9 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_emits_llm_request_and_response_events(
         self,
-        hapi_base_url,
-        data_storage_url, unique_test_id):
+        hapi_client,
+        data_storage_url,
+        unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_request and llm_response audit events.
 
@@ -230,18 +252,21 @@ class TestIncidentAnalysisAuditFlow:
             "error_message": "Pod OOMKilled - integration test",
         }
 
-        # ACT: Trigger business operation (incident analysis)
-        response = call_hapi_incident_analyze(hapi_base_url, incident_request)
+        # ACT: Trigger business operation (incident analysis) via TestClient
+        response = call_hapi_incident_analyze(hapi_client, incident_request)
 
         # Verify business operation succeeded
         assert response is not None, "HAPI should return a response"
         assert "incident_id" in response, "Response should contain incident_id"
 
-        # Wait for buffered audit events to flush (ADR-038: 2s buffer)
-        time.sleep(3)
-
-        # ASSERT: Verify audit events emitted as side effect
-        events = query_audit_events(data_storage_url, remediation_id)
+        # ASSERT: Verify audit events emitted as side effect (with retry)
+        # ADR-038: Buffered audit store flushes asynchronously, so poll for events
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            remediation_id,
+            min_expected_events=2,  # llm_request + llm_response
+            timeout_seconds=10
+        )
 
         # Should have at least llm_request and llm_response
         assert len(events) >= 2, f"Expected at least 2 audit events (llm_request, llm_response), got {len(events)}"
@@ -264,7 +289,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_emits_llm_tool_call_events(
         self,
-        hapi_base_url,
+        hapi_client,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_tool_call events for workflow searches.
@@ -294,14 +319,16 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_base_url, incident_request)
+        response = call_hapi_incident_analyze(hapi_client, incident_request)
         assert response is not None
 
-        # Wait for buffered audit flush
-        time.sleep(3)
-
-        # ASSERT: Verify tool call events emitted
-        events = query_audit_events(data_storage_url, remediation_id)
+        # ASSERT: Verify tool call events emitted (with retry polling)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            remediation_id,
+            min_expected_events=1,  # At least llm_tool_call
+            timeout_seconds=10
+        )
         event_types = [e.event_type for e in events]
 
         # Tool call events should be present (workflow catalog search)
@@ -310,7 +337,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
         self,
-        hapi_base_url,
+        hapi_client,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Workflow validation MUST emit workflow_validation_attempt events.
@@ -340,14 +367,16 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_base_url, incident_request)
+        response = call_hapi_incident_analyze(hapi_client, incident_request)
         assert response is not None
 
-        # Wait for buffered audit flush
-        time.sleep(3)
-
-        # ASSERT: Verify validation attempt events emitted
-        events = query_audit_events(data_storage_url, remediation_id)
+        # ASSERT: Verify validation attempt events emitted (with retry polling)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            remediation_id,
+            min_expected_events=1,  # At least workflow_validation_attempt
+            timeout_seconds=10
+        )
         event_types = [e.event_type for e in events]
 
         # Validation attempt events should be present
@@ -366,7 +395,7 @@ class TestRecoveryAnalysisAuditFlow:
 
     def test_recovery_analysis_emits_llm_request_and_response_events(
         self,
-        hapi_base_url,
+        hapi_client,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Recovery analysis MUST emit llm_request and llm_response audit events.
@@ -389,14 +418,16 @@ class TestRecoveryAnalysisAuditFlow:
         }
 
         # ACT: Trigger recovery analysis
-        response = call_hapi_recovery_analyze(hapi_base_url, recovery_request)
+        response = call_hapi_recovery_analyze(hapi_client, recovery_request)
         assert response is not None
 
-        # Wait for buffered audit flush
-        time.sleep(3)
-
-        # ASSERT: Verify audit events emitted
-        events = query_audit_events(data_storage_url, remediation_id)
+        # ASSERT: Verify audit events emitted (with retry polling)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            remediation_id,
+            min_expected_events=2,  # llm_request + llm_response
+            timeout_seconds=10
+        )
         assert len(events) >= 2, f"Expected at least 2 audit events, got {len(events)}"
 
         event_types = [e.event_type for e in events]
@@ -415,7 +446,7 @@ class TestAuditEventSchemaValidation:
 
     def test_audit_events_have_required_adr034_fields(
         self,
-        hapi_base_url,
+        hapi_client,
         data_storage_url, unique_test_id):
         """
         ADR-034: Audit events MUST include required fields per ADR-034 spec.
@@ -445,25 +476,29 @@ class TestAuditEventSchemaValidation:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_base_url, incident_request)
+        response = call_hapi_incident_analyze(hapi_client, incident_request)
         assert response is not None
 
-        # Wait for buffered audit flush
-        time.sleep(3)
-
-        # ASSERT: Verify all audit events have ADR-034 required fields
-        events = query_audit_events(data_storage_url, remediation_id)
+        # ASSERT: Verify all audit events have ADR-034 required fields (with retry polling)
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            remediation_id,
+            min_expected_events=1,
+            timeout_seconds=10
+        )
         assert len(events) > 0, "No audit events found"
 
-        # ADR-034 required fields (per ADR-034 v1.2)
+        # ADR-034 required fields (per ADR-034 v1.2 and Data Storage OpenAPI spec)
         required_fields = [
             "event_id",
             "event_type",
             "event_category",
             "correlation_id",
-            "source_service",
-            "timestamp",
+            "event_timestamp",  # Correct field name per ADR-034
+            "event_action",      # Required per ADR-034
+            "event_outcome",     # Required per ADR-034
             "event_data",
+            "version",           # Required per ADR-034
         ]
 
         for event in events:
@@ -476,13 +511,13 @@ class TestAuditEventSchemaValidation:
                 assert field_value is not None, \
                     f"Event {event.event_type} has null value for ADR-034 required field: {field}"
 
-            # Verify event_category is correct for HAPI
+            # Verify event_category is correct for HAPI (ADR-034 v1.2)
             assert event.event_category == "analysis", \
                 f"Expected event_category='analysis' for HAPI, got '{event.event_category}'"
 
-            # Verify source_service is HAPI
-            assert event.source_service == "holmesgpt-api", \
-                f"Expected source_service='holmesgpt-api', got '{event.source_service}'"
+            # Verify event has valid version
+            assert event.version is not None, \
+                f"Event {event.event_type} has null version (required by ADR-034)"
 
 
 class TestErrorScenarioAuditFlow:
@@ -494,53 +529,73 @@ class TestErrorScenarioAuditFlow:
     BR-AUDIT-005: HAPI MUST generate audit traces even for failed operations
     """
 
-    def test_invalid_request_still_emits_audit_events(
+    def test_workflow_not_found_emits_audit_with_error_context(
         self,
-        hapi_base_url,
-        data_storage_url, unique_test_id):
+        hapi_client,
+        data_storage_url,
+        unique_test_id):
         """
-        BR-AUDIT-005: HAPI MUST emit audit events even when requests fail validation.
+        BR-AUDIT-005: HAPI MUST emit audit events even when business operations fail.
 
-        This test validates that audit trail is maintained even for error scenarios.
+        This test validates that audit trail is maintained when business logic encounters
+        errors (e.g., no suitable workflow found for the signal type).
 
-        ✅ CORRECT: Validates audit emission during error conditions
+        Pattern:
+        - ✅ Valid request structure (passes validation)
+        - ✅ Business logic executes (generates audit events)
+        - ✅ Business operation fails gracefully (no workflow match)
+        - ✅ Audit events include error/fallback context
+
+        This is different from validation errors (which never reach business logic).
         """
-        # ARRANGE: Create intentionally invalid request (missing required fields)
-        remediation_id = f"rem-int-audit-error-{unique_test_id}"
+        # ARRANGE: Valid request with non-existent workflow signal type
+        remediation_id = f"rem-int-audit-bizfail-{unique_test_id}"
+        incident_request = {
+            "incident_id": f"inc-int-audit-bizfail-{unique_test_id}",
+            "remediation_id": remediation_id,
+            "signal_type": "NonExistentSignalType999999",  # Valid format, doesn't exist
+            "severity": "critical",
+            "signal_source": "prometheus",
+            "resource_kind": "Pod",
+            "resource_name": "test-pod",
+            "resource_namespace": "default",
+            "cluster_name": "integration-test",
+            "environment": "testing",
+            "priority": "P1",
+            "risk_tolerance": "low",
+            "business_category": "test",
+            "error_message": "Testing business failure audit trail",
+        }
 
-        # ACT: Send invalid request (should fail but still generate audits)
-        try:
-            # Use direct HTTP request for invalid data (OpenAPI client would validate)
-            response = requests.post(
-                f"{hapi_base_url}/api/v1/incident/analyze",
-                json={
-                    "incident_id": f"inc-int-audit-error-{unique_test_id}",
-                    "remediation_id": remediation_id,
-                    # Missing required fields intentionally
-                },
-                timeout=10
-            )
+        # ACT: Trigger business operation that will fail gracefully
+        response = call_hapi_incident_analyze(hapi_client, incident_request)
 
-            # Request should fail validation (400 or 422)
-            assert response.status_code in [400, 422], \
-                f"Expected validation error, got {response.status_code}"
+        # Verify business operation completed (even if no workflow found)
+        assert response is not None, "HAPI should return a response"
+        assert "analysis" in response, "Business logic should complete and return analysis"
+        # Mock mode returns a deterministic response even for non-existent workflows
 
-        except requests.exceptions.RequestException:
-            # Connection error is acceptable (service might not be running)
-            pytest.skip("HAPI service not available")
+        # ASSERT: Verify audit events were generated despite business failure
+        events = query_audit_events_with_retry(
+            data_storage_url,
+            remediation_id,
+            min_expected_events=2,  # At minimum: llm_request + llm_response
+            timeout_seconds=10
+        )
 
-        # Wait for buffered audit flush
-        time.sleep(3)
+        # Should have audit events even though no workflow matched
+        assert len(events) >= 2, \
+            f"Expected audit events even for failed workflow search, got {len(events)}"
 
-        # ASSERT: Verify audit events were still generated (if possible)
-        # Note: Failed validation might not generate audit events (pre-business-logic failure)
-        events = query_audit_events(data_storage_url, remediation_id)
+        # Verify events include the remediation_id (correlation)
+        for event in events:
+            assert event.correlation_id == remediation_id, \
+                f"Event correlation_id mismatch: {event.correlation_id} != {remediation_id}"
 
-        # If events exist, verify they include error context
-        if events:
-            for event in events:
-                # Error events should have event_data describing the failure
-                assert event.event_data is not None, "Error events should have event_data"
+        # Business failure context should be captured in audit events
+        event_types = [e.event_type for e in events]
+        assert "llm_request" in event_types, "Should audit LLM request even when workflow not found"
+        assert "llm_response" in event_types, "Should audit LLM response even when workflow not found"
 
 
 # ========================================

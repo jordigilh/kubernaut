@@ -355,7 +355,7 @@ class BufferedAuditStore:
 
                 logger.debug(
                     f"✅ Audit event written via OpenAPI - "
-                    f"status={response.status}, "
+                    f"event_id={response.event_id}, "
                     f"event_type={event.get('event_type')}, "
                     f"correlation_id={event.get('correlation_id')}"
                 )

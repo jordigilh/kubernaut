@@ -46,6 +46,17 @@ class MetricsConfig(TypedDict, total=False):
     path: str
 
 
+class AuditConfig(TypedDict, total=False):
+    """
+    Audit configuration (BR-AUDIT-005, ADR-038).
+
+    Controls buffered audit event persistence to Data Storage.
+    """
+    flush_interval_seconds: float
+    buffer_size: int
+    batch_size: int
+
+
 class AppConfig(TypedDict, total=False):
     """
     Main application configuration structure.
@@ -61,6 +72,11 @@ class AppConfig(TypedDict, total=False):
             "llm": {
                 "model": "gpt-4",
                 "provider": "openai"
+            },
+            "audit": {
+                "flush_interval_seconds": 5.0,
+                "buffer_size": 10000,
+                "batch_size": 50
             }
         }
     """
@@ -73,6 +89,7 @@ class AppConfig(TypedDict, total=False):
     context_api: ContextAPIConfig
     kubernetes: KubernetesConfig
     metrics: MetricsConfig
+    audit: AuditConfig
 
 
 
