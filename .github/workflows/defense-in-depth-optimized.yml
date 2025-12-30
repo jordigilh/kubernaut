@@ -78,7 +78,7 @@ jobs:
           make test
 
           echo "🧪 Running HolmesGPT API unit tests..."
-          cd holmesgpt-api && make test-unit
+          make test-unit-holmesgpt-api
         env:
           MOCK_LLM: 'true'
 

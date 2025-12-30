@@ -71,8 +71,8 @@ The **HolmesGPT-API service is nearly V1.0 complete**. All business requirements
 | GitHub Actions Workflow | ✅ `.github/workflows/holmesgpt-api-ci.yml` |
 | Makefile Test Tiers | ✅ `make test-unit`, `make test-integration`, `make test-e2e` |
 | E2E Infrastructure | ✅ Uses Go infrastructure (`make test-e2e-holmesgpt`) |
-| OpenAPI Export | ✅ `make export-openapi` |
-| Lint Validation | ✅ `make lint` |
+| OpenAPI Export | ✅ `make export-openapi-holmesgpt-api` |
+| Lint Validation | ✅ `make lint-holmesgpt-api` |
 
 ---
 

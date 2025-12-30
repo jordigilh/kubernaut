@@ -493,7 +493,7 @@ ProblemDetails:
 | Add `warnings[]` field to response | HAPI Team | ✅ Done (v1.1) |
 | Implement OwnerChain validation logic | HAPI Team | ✅ Done (11 tests) |
 | Add `alternativeWorkflows[]` for audit/context | HAPI Team | ✅ Done (v1.2) |
-| Add export script to Makefile | HAPI Team | ✅ Done (`make export-openapi`) |
+| Add export script to Makefile | HAPI Team | ✅ Done (`make export-openapi-holmesgpt-api`) |
 | Generate Go client for AIAnalysis | AIAnalysis Team | ⏳ Ready (OpenAPI available, 19 schemas) |
 | Add OpenAPI spec to CI validation | HAPI Team | ✅ Done (`.github/workflows/holmesgpt-api-ci.yml`) |
 

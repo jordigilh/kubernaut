@@ -219,6 +219,59 @@ build-holmesgpt-api: ## Build holmesgpt-api (Python service)
 	@echo "🐍 Building holmesgpt-api..."
 	@cd holmesgpt-api && pip install -e .
 
+.PHONY: export-openapi-holmesgpt-api
+export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI (ADR-045)
+	@echo "📄 Exporting OpenAPI spec from FastAPI app..."
+	@cd holmesgpt-api && mkdir -p api
+	@cd holmesgpt-api && python3 -c "from src.main import app; import json; print(json.dumps(app.openapi(), indent=2))" > api/openapi.json
+	@echo "✅ OpenAPI spec exported: holmesgpt-api/api/openapi.json"
+	@cd holmesgpt-api && echo "📊 Schema count: $$(python3 -c \"import json; spec=json.load(open('api/openapi.json')); print(len(spec.get('components', {}).get('schemas', {})))\")"
+
+.PHONY: validate-openapi-holmesgpt-api
+validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec consistency (CI - ADR-045)
+	@echo "🔍 Validating OpenAPI spec consistency..."
+	@cd holmesgpt-api && \
+	if [ -f "api/openapi.json.committed" ]; then \
+		diff -q api/openapi.json api/openapi.json.committed > /dev/null 2>&1 || \
+		(echo "❌ OpenAPI spec drift detected! Run 'make export-openapi-holmesgpt-api' and commit changes." && exit 1); \
+		echo "✅ OpenAPI spec is consistent"; \
+	else \
+		echo "⚠️  No committed spec found. Copying current as baseline..."; \
+		cp api/openapi.json api/openapi.json.committed; \
+	fi
+
+.PHONY: generate-models-holmesgpt-api
+generate-models-holmesgpt-api: ## Generate holmesgpt-api Data Storage client models from OpenAPI spec (DD-WORKFLOW-002)
+	@echo "📦 Installing datamodel-code-generator..."
+	@pip3 install datamodel-code-generator --index-url https://pypi.org/simple/ --quiet
+	@echo "🔄 Generating models from OpenAPI spec: docs/services/stateless/data-storage/openapi/v3.yaml"
+	@python3 -m datamodel_code_generator \
+		--input docs/services/stateless/data-storage/openapi/v3.yaml \
+		--output holmesgpt-api/src/clients/datastorage/models.py \
+		--output-model-type pydantic_v2.BaseModel \
+		--use-double-quotes \
+		--use-annotated \
+		--field-constraints \
+		--use-standard-collections \
+		--target-python-version 3.11 \
+		--encoding utf-8
+	@echo "✅ Models generated: holmesgpt-api/src/clients/datastorage/models.py"
+	@echo "⚠️  Note: DataStorageError class is in client.py (not auto-generated)"
+
+.PHONY: lint-holmesgpt-api
+lint-holmesgpt-api: ## Run ruff linter on holmesgpt-api Python code
+	@echo "🔍 Running ruff linter on holmesgpt-api..."
+	@cd holmesgpt-api && ruff check src/ tests/
+	@echo "✅ Linting complete"
+
+.PHONY: clean-holmesgpt-api
+clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
+	@echo "🧹 Cleaning holmesgpt-api Python artifacts..."
+	@cd holmesgpt-api && rm -rf htmlcov/ .pytest_cache/ __pycache__/
+	@cd holmesgpt-api && find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@cd holmesgpt-api && find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@echo "✅ Cleaned holmesgpt-api artifacts"
+
 .PHONY: test-integration-holmesgpt-api
 test-integration-holmesgpt-api: clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (Go infrastructure + Python tests, ~8 min)
 	@echo "════════════════════════════════════════════════════════════════════════"

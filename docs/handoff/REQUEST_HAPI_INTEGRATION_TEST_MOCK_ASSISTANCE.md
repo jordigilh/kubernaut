@@ -259,8 +259,8 @@ mockClient.WithHumanReviewReasonEnum("investigation_inconclusive", warnings)
 | **Go Client Types** | `pkg/aianalysis/client/` | Client interface + types |
 
 **Contract validation approach**:
-1. HAPI exports OpenAPI spec via `make export-openapi`
-2. CI validates spec hasn't broken (`make test-openapi`)
+1. HAPI exports OpenAPI spec via `make export-openapi-holmesgpt-api`
+2. CI validates spec hasn't broken (`make validate-openapi-holmesgpt-api`)
 3. AIAnalysis uses `client.IncidentRequest` / `client.IncidentResponse` types
 4. Mock client implements same interface guaranteeing type compatibility
 
