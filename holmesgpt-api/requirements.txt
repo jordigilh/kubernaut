@@ -28,10 +28,10 @@ supabase>=2.5,<2.8  # Compatible with postgrest 0.16.8 (HolmesGPT requirement)
 postgrest==0.16.8   # Match HolmesGPT's pin exactly
 httpx<0.28,>=0.24   # Supabase stack requires <0.28
 
-# NOTE: urllib3 version is constrained by prometrix (from HolmesGPT SDK)
-# prometrix 0.2.5 requires urllib3<2.0.0, so we cannot use urllib3 2.x
-# OpenAPI clients must be compatible with urllib3 1.26.x
-urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
+# NOTE: urllib3 2.x is now supported (prometrix removed from HolmesGPT SDK)
+# We don't use HolmesGPT's Prometheus toolset (only thing that needed prometrix)
+# OpenAPI clients can use urllib3 2.x features
+urllib3>=2.0.0  # Use urllib3 2.x for modern features and security updates
 
 # HolmesGPT SDK (from local copy) - Install AFTER supabase constraint
 # Using local copy from ../dependencies/holmesgpt/ for faster installation
