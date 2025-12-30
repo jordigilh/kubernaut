@@ -227,6 +227,21 @@ async def analyze_incident(
         # Generate mock response
         result = generate_mock_incident_response(request_data)
 
+        # Extract workflow ID for audit events
+        workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
+
+        # AUDIT: MOCK TOOL CALL (simulate workflow catalog search for integration tests)
+        # BR-AUDIT-005: Tool call events are required for complete audit trail
+        if workflow_id:
+            audit_store.store_audit(create_tool_call_event(
+                incident_id=incident_id,
+                remediation_id=remediation_id,
+                tool_call_index=0,
+                tool_name="search_workflow_catalog",
+                tool_arguments={"signal_type": request_data.get("signal_type", "unknown")},
+                tool_result={"workflow_id": workflow_id, "found": True}
+            ))
+
         # AUDIT: LLM RESPONSE
         analysis = result.get("analysis", "")
         audit_store.store_audit(create_llm_response_event(
@@ -235,11 +250,10 @@ async def analyze_incident(
             has_analysis=True,
             analysis_length=len(analysis),
             analysis_preview=analysis[:500] if analysis else "",
-            tool_call_count=0
+            tool_call_count=1 if workflow_id else 0  # Reflect mock tool call count
         ))
 
         # AUDIT: VALIDATION ATTEMPT (mock always validates successfully)
-        workflow_id = result.get("selected_workflow", {}).get("workflow_id") if result.get("selected_workflow") else None
         audit_store.store_audit(create_validation_attempt_event(
             incident_id=incident_id,
             remediation_id=remediation_id,
@@ -254,7 +268,7 @@ async def analyze_incident(
             "event": "mock_mode_audit_complete",
             "incident_id": incident_id,
             "remediation_id": remediation_id,
-            "audit_events_generated": 3
+            "audit_events_generated": 4 if workflow_id else 3  # llm_request, llm_tool_call (if workflow), llm_response, workflow_validation_attempt
         })
 
         return result

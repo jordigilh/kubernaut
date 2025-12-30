@@ -194,7 +194,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 // createHAPIKindCluster creates a Kind cluster with HAPI-specific port mappings
 // Per DD-TEST-001 v1.8
 func createHAPIKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	kindConfig := fmt.Sprintf(`kind: Cluster
+	kindConfig := `kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 - role: control-plane
@@ -216,7 +216,7 @@ nodes:
     hostPort: 30387
     protocol: TCP
 - role: worker
-`)
+`
 
 	// Write kind config to temp file
 	tmpfile, err := os.CreateTemp("", "kind-hapi-e2e-*.yaml")
@@ -264,6 +264,10 @@ data:
       endpoint: "http://localhost:11434"
     data_storage:
       url: "http://datastorage:8080"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
 ---
 apiVersion: apps/v1
 kind: Deployment

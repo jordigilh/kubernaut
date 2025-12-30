@@ -178,10 +178,15 @@ def load_config() -> AppConfig:
                 "endpoint": "/metrics",
                 "scrape_interval": "30s",
             },
+            "audit": {
+                "flush_interval_seconds": 5.0,  # Default: 5 seconds (production)
+                "buffer_size": 10000,           # BR-AUDIT-005, ADR-038
+                "batch_size": 50,               # Events per HTTP batch
+            },
         }
 
         # Merge YAML config with defaults (YAML takes precedence)
-        for key in ["llm", "logging", "data_storage"]:
+        for key in ["llm", "logging", "data_storage", "audit"]:
             if key in config:
                 if key in defaults and isinstance(defaults[key], dict):
                     defaults[key].update(config[key])
@@ -342,12 +347,26 @@ async def startup_event():
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     from src.audit.factory import get_audit_store
     try:
-        audit_store = get_audit_store()  # Will crash (sys.exit(1)) if init fails
+        # Get audit config from loaded YAML config (ADR-030)
+        audit_config = config.get("audit", {})
+        data_storage_url = config.get("data_storage", {}).get("url", "http://data-storage:8080")
+
+        audit_store = get_audit_store(
+            data_storage_url=data_storage_url,
+            flush_interval_seconds=audit_config.get("flush_interval_seconds"),
+            buffer_size=audit_config.get("buffer_size"),
+            batch_size=audit_config.get("batch_size")
+        )  # Will crash (sys.exit(1)) if init fails
         logger.info({
             "event": "audit_store_initialized",
             "status": "mandatory_per_adr_032",
             "classification": "P0",
             "adr": "ADR-032 §2",
+            "audit_config": {
+                "flush_interval_seconds": audit_config.get("flush_interval_seconds", 5.0),
+                "buffer_size": audit_config.get("buffer_size", 10000),
+                "batch_size": audit_config.get("batch_size", 50),
+            }
         })
     except Exception as e:
         # This should never be reached (get_audit_store calls sys.exit(1))

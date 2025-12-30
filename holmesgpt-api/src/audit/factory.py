@@ -33,6 +33,7 @@ import os
 import sys
 import logging
 
+from typing import Optional
 from . import BufferedAuditStore, AuditConfig
 from src.config.constants import (
     AUDIT_BUFFER_SIZE,
@@ -46,7 +47,12 @@ logger = logging.getLogger(__name__)
 _audit_store: BufferedAuditStore = None
 
 
-def get_audit_store() -> BufferedAuditStore:
+def get_audit_store(
+    data_storage_url: Optional[str] = None,
+    flush_interval_seconds: Optional[float] = None,
+    buffer_size: Optional[int] = None,
+    batch_size: Optional[int] = None
+) -> BufferedAuditStore:
     """
     Get or initialize the audit store singleton.
 
@@ -58,6 +64,12 @@ def get_audit_store() -> BufferedAuditStore:
 
     Per ADR-032 §3: HAPI is P0 service - audit is MANDATORY for LLM interactions.
 
+    Args:
+        data_storage_url: Data Storage service URL (defaults to DATA_STORAGE_URL env var)
+        flush_interval_seconds: Seconds between flushes (defaults to constants.AUDIT_FLUSH_INTERVAL_SECONDS)
+        buffer_size: Max events to buffer (defaults to constants.AUDIT_BUFFER_SIZE)
+        batch_size: Events per batch (defaults to constants.AUDIT_BATCH_SIZE)
+
     Returns:
         BufferedAuditStore singleton
 
@@ -66,14 +78,14 @@ def get_audit_store() -> BufferedAuditStore:
     """
     global _audit_store
     if _audit_store is None:
-        data_storage_url = os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
+        data_storage_url = data_storage_url or os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
         try:
             _audit_store = BufferedAuditStore(
                 data_storage_url=data_storage_url,
                 config=AuditConfig(
-                    buffer_size=AUDIT_BUFFER_SIZE,
-                    batch_size=AUDIT_BATCH_SIZE,
-                    flush_interval_seconds=AUDIT_FLUSH_INTERVAL_SECONDS
+                    buffer_size=buffer_size or AUDIT_BUFFER_SIZE,
+                    batch_size=batch_size or AUDIT_BATCH_SIZE,
+                    flush_interval_seconds=flush_interval_seconds or AUDIT_FLUSH_INTERVAL_SECONDS
                 )
             )
             logger.info(f"BR-AUDIT-005: Initialized audit store - url={data_storage_url}")
