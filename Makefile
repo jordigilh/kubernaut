@@ -335,11 +335,6 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 	@podman image prune -f --filter "label=test=holmesgptapi" 2>/dev/null || true
 	@echo "✅ Complete cleanup done (containers + images)"
 
-.PHONY: run-holmesgpt-api
-run-holmesgpt-api: ## Run holmesgpt-api locally (Python FastAPI dev server)
-	@echo "🚀 Starting holmesgpt-api..."
-	@cd holmesgpt-api && python3 -m uvicorn app.main:app --reload
-
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway
