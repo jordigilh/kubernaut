@@ -215,17 +215,12 @@ test-coverage-%: ## Run unit tests with coverage for service
 ##@ Special Cases - HolmesGPT (Python Service)
 
 .PHONY: build-holmesgpt-api
-build-holmesgpt-api: ## Build HolmesGPT API (Python service)
-	@echo "🐍 Building HolmesGPT API..."
+build-holmesgpt-api: ## Build holmesgpt-api (Python service)
+	@echo "🐍 Building holmesgpt-api..."
 	@cd holmesgpt-api && pip install -e .
 
-.PHONY: test-holmesgpt-api
-test-holmesgpt-api: ## Run HolmesGPT API tests (Python)
-	@echo "🐍 Running HolmesGPT API tests..."
-	@cd holmesgpt-api && python3 -m pytest tests/ -v
-
-.PHONY: test-integration-holmesgpt
-test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API integration tests (Go infrastructure + Python tests, ~8 min)
+.PHONY: test-integration-holmesgpt-api
+test-integration-holmesgpt-api: clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (Go infrastructure + Python tests, ~8 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API Integration Tests (Go Infrastructure + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -295,8 +290,8 @@ test-integration-holmesgpt: clean-holmesgpt-test-ports ## Run HolmesGPT API inte
 		exit $$TEST_RESULT; \
 	fi
 
-.PHONY: test-e2e-holmesgpt
-test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (Kind cluster + Python tests, ~10 min)
+.PHONY: test-e2e-holmesgpt-api
+test-e2e-holmesgpt-api: ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -313,15 +308,15 @@ test-e2e-holmesgpt: ## Run HolmesGPT API E2E tests (Kind cluster + Python tests,
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
-.PHONY: test-all-holmesgpt
-test-all-holmesgpt: test-unit-holmesgpt test-integration-holmesgpt test-e2e-holmesgpt ## Run all HAPI test tiers (Unit + Integration + E2E)
+.PHONY: test-all-holmesgpt-api
+test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api test-e2e-holmesgpt-api ## Run all holmesgpt-api test tiers (Unit + Integration + E2E)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "✅ All HAPI test tiers completed successfully!"
+	@echo "✅ All holmesgpt-api test tiers completed successfully!"
 	@echo "════════════════════════════════════════════════════════════════════════"
 
-.PHONY: test-unit-holmesgpt
-test-unit-holmesgpt: ## Run HolmesGPT API unit tests (Python pytest)
-	@echo "🧪 Running HAPI unit tests..."
+.PHONY: test-unit-holmesgpt-api
+test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (Python pytest)
+	@echo "🧪 Running holmesgpt-api unit tests..."
 	@cd holmesgpt-api && python3 -m pytest tests/unit/ -v
 
 .PHONY: clean-holmesgpt-test-ports
@@ -341,8 +336,8 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 	@echo "✅ Complete cleanup done (containers + images)"
 
 .PHONY: run-holmesgpt-api
-run-holmesgpt-api: ## Run HolmesGPT API locally
-	@echo "🚀 Starting HolmesGPT API..."
+run-holmesgpt-api: ## Run holmesgpt-api locally (Python FastAPI dev server)
+	@echo "🚀 Starting holmesgpt-api..."
 	@cd holmesgpt-api && python3 -m uvicorn app.main:app --reload
 
 ##@ Legacy Aliases (Backward Compatibility)
