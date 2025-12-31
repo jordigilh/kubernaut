@@ -84,24 +84,26 @@ jobs:
       - name: Lint Go code
         run: |
           echo "🔍 Linting Go code..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
           timeout 3m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
       - name: Lint Python code (HAPI)
         run: |
           echo "🔍 Linting Python code..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
           make lint-holmesgpt-api
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
       - name: Run all unit tests
         run: |
           echo "🧪 Running unit tests for all services..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
           make test
 
           echo "🧪 Running HolmesGPT API unit tests..."
           make test-unit-holmesgpt-api
         env:
-          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
           MOCK_LLM: 'true'
 
       - name: Upload coverage
