@@ -293,3 +293,27 @@ def crashloop_workflows():
 def all_test_workflows():
     """Get all test workflow fixtures"""
     return get_test_workflows()
+
+
+@pytest.fixture
+def ensure_test_workflows(test_workflows_bootstrapped, data_storage_stack):
+    """
+    Verify test workflows are available in Data Storage.
+
+    This is a compatibility fixture for tests that expect `ensure_test_workflows`.
+    In E2E, workflows are bootstrapped by `test_workflows_bootstrapped` fixture.
+
+    Returns:
+        Bootstrap results from test_workflows_bootstrapped
+    """
+    # test_workflows_bootstrapped already created the workflows
+    # This fixture just verifies they're available
+    results = test_workflows_bootstrapped
+
+    if results and results.get('failed'):
+        pytest.fail(f"Some test workflows failed to bootstrap: {results['failed']}")
+
+    total_available = len(results.get('created', [])) + len(results.get('existing', []))
+    print(f"✅ Test workflows available: {total_available}")
+
+    return results
