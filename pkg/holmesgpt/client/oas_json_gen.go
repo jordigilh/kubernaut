@@ -3764,18 +3764,32 @@ func (s *RecoveryResponse) encodeFields(e *jx.Encoder) {
 			s.RecoveryAnalysis.Encode(e)
 		}
 	}
+	{
+		if s.NeedsHumanReview.Set {
+			e.FieldStart("needs_human_review")
+			s.NeedsHumanReview.Encode(e)
+		}
+	}
+	{
+		if s.HumanReviewReason.Set {
+			e.FieldStart("human_review_reason")
+			s.HumanReviewReason.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRecoveryResponse = [9]string{
-	0: "incident_id",
-	1: "can_recover",
-	2: "strategies",
-	3: "primary_recommendation",
-	4: "analysis_confidence",
-	5: "warnings",
-	6: "metadata",
-	7: "selected_workflow",
-	8: "recovery_analysis",
+var jsonFieldsNameOfRecoveryResponse = [11]string{
+	0:  "incident_id",
+	1:  "can_recover",
+	2:  "strategies",
+	3:  "primary_recommendation",
+	4:  "analysis_confidence",
+	5:  "warnings",
+	6:  "metadata",
+	7:  "selected_workflow",
+	8:  "recovery_analysis",
+	9:  "needs_human_review",
+	10: "human_review_reason",
 }
 
 // Decode decodes RecoveryResponse from json.
@@ -3784,6 +3798,7 @@ func (s *RecoveryResponse) Decode(d *jx.Decoder) error {
 		return errors.New("invalid: unable to decode RecoveryResponse to nil")
 	}
 	var requiredBitSet [2]uint8
+	s.setDefaults()
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -3898,6 +3913,26 @@ func (s *RecoveryResponse) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"recovery_analysis\"")
+			}
+		case "needs_human_review":
+			if err := func() error {
+				s.NeedsHumanReview.Reset()
+				if err := s.NeedsHumanReview.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"needs_human_review\"")
+			}
+		case "human_review_reason":
+			if err := func() error {
+				s.HumanReviewReason.Reset()
+				if err := s.HumanReviewReason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"human_review_reason\"")
 			}
 		default:
 			return d.Skip()
