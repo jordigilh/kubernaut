@@ -1,6 +1,6 @@
 database:
-  host: notification_postgres_1
-  port: 5432
+  host: host.containers.internal
+  port: 15439
   user: slm_user
   name: action_history
   sslmode: disable
@@ -9,7 +9,7 @@ database:
   passwordKey: password
 
 redis:
-  addr: notification_redis_1:6379
+  addr: host.containers.internal:16385
   secretsFile: /etc/datastorage/redis-secrets.yaml
   passwordKey: password
 
