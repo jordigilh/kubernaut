@@ -101,6 +101,7 @@ jobs:
           echo "🧪 Running HolmesGPT API unit tests..."
           make test-unit-holmesgpt-api
         env:
+          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
           MOCK_LLM: 'true'
 
       - name: Upload coverage

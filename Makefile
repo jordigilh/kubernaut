@@ -104,27 +104,27 @@ clean: ## Clean build artifacts
 
 # Unit Tests
 .PHONY: test-unit-%
-test-unit-%: ## Run unit tests for specified service (e.g., make test-unit-gateway)
+test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-unit-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@ginkgo -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@ginkgo -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) ./test/integration/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) ./test/integration/$*/...
 
 # E2E Tests
 .PHONY: test-e2e-%
-test-e2e-%: ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: ginkgo ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@ginkgo -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
 
 # All Tests for Service
 .PHONY: test-all-%
@@ -269,7 +269,7 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (Go infrastructure + Python tests, ~8 min)
+test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (Go infrastructure + Python tests, ~8 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API Integration Tests (Go Infrastructure + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -283,7 +283,7 @@ test-integration-holmesgpt-api: clean-holmesgpt-test-ports ## Run holmesgpt-api 
 	@echo "   • HAPI runs in-process (FastAPI TestClient)"
 	@echo "   • Total: ~5 minutes infrastructure setup"
 	@echo ""
-	@cd test/integration/holmesgptapi && ginkgo --keep-going --timeout=20m & \
+	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m & \
 	GINKGO_PID=$$!; \
 	echo "🚀 Go infrastructure starting (PID: $$GINKGO_PID)..."; \
 	echo "   • PostgreSQL, Redis, Data Storage (HAPI is in-process TestClient)"; \
@@ -340,7 +340,7 @@ test-integration-holmesgpt-api: clean-holmesgpt-test-ports ## Run holmesgpt-api 
 	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -353,7 +353,7 @@ test-e2e-holmesgpt-api: ## Run holmesgpt-api E2E tests (Kind cluster + Python te
 	@echo "✅ Client generated successfully"
 	@echo ""
 	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
-	@cd test/e2e/holmesgpt-api && ginkgo -v --timeout=15m
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
@@ -405,6 +405,7 @@ CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 OGEN ?= $(LOCALBIN)/ogen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GINKGO ?= $(LOCALBIN)/ginkgo
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -413,6 +414,7 @@ OGEN_VERSION ?= v1.18.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0
+GINKGO_VERSION ?= v2.27.2
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary
@@ -444,6 +446,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: ginkgo
+ginkgo: $(GINKGO) ## Download ginkgo locally if necessary
+$(GINKGO): $(LOCALBIN)
+	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
