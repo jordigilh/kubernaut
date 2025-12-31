@@ -332,7 +332,7 @@ holmesgpt-api/                       # Python service at root level (repo-ready)
 ├── .gitignore
 ├── Dockerfile
 ├── requirements.txt
-├── requirements-dev.txt
+├── requirements-test.txt
 ├── pyproject.toml
 ├── pytest.ini
 └── README.md

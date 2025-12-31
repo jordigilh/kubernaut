@@ -382,7 +382,7 @@ jobs:
           python-version: '3.11'
       - working-directory: holmesgpt-api
         run: |
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements.txt -r requirements-test.txt
           make test-unit
 
   # ========================================
