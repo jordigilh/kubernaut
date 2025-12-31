@@ -146,6 +146,13 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-test.txt
 
+      - name: Generate Go code
+        if: matrix.service != 'holmesgpt-api'
+        run: |
+          echo "🔄 Generating Go code for tests..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
       - name: Run unit tests (Go)
         if: matrix.service != 'holmesgpt-api'
         run: |
@@ -702,7 +709,7 @@ jobs:
             echo "❌ Build & Lint failed - all other tests skipped"
             exit 1
           fi
-          
+
           # Check for unit tests failure (critical)
           if [ "${{ needs.unit-tests.result }}" != "success" ]; then
             echo ""
