@@ -36,6 +36,11 @@ mcp-server
 /*.out
 /*.html
 /run_*.sh
+/*-unit.json
+/*-integration.json
+/*-e2e.json
+/test-results.json
+/report.json
 
 # Root ephemeral directories
 /TODO/
@@ -222,4 +227,3 @@ coverage-e2e/
 
 # Generated integration test configs (ADR-030)
 test/infrastructure/.generated-configs/
-report.json
