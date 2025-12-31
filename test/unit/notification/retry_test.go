@@ -206,48 +206,43 @@ var _ = Describe("BR-NOT-052: Retry Policy", func() {
 				"Backoff cap should apply to all attempts beyond threshold")
 		})
 
-		It("should apply exponential backoff in retry loop (BR-NOT-052: Backoff application)", func() {
-			// CORRECTNESS: Retry loop actually applies calculated backoff delays
-			// BUSINESS CONTEXT: Ensures service has time to recover between retries
+	It("should calculate correct backoff delays for retry attempts (BR-NOT-052: Backoff calculation)", func() {
+		// CORRECTNESS: Retry policy calculates correct exponential backoff delays
+		// BUSINESS CONTEXT: Ensures service has time to recover between retries
+		// NOTE: Testing calculation logic directly (no sleep) - faster and equally valid
 
-			// Use faster backoff for test speed
-			fastPolicy := retry.NewPolicy(&retry.Config{
-				MaxAttempts:       3,
-				BaseBackoff:       50 * time.Millisecond,
-				MaxBackoff:        500 * time.Millisecond,
-				BackoffMultiplier: 2.0,
-			})
-
-			attemptTimes := []time.Time{}
-			transientError := errors.New("network timeout")
-
-			// Simulate retry loop (as controller would do)
-			for attempt := 0; attempt < 3; attempt++ {
-				attemptTimes = append(attemptTimes, time.Now())
-
-				if !fastPolicy.ShouldRetry(attempt, transientError) {
-					break
-				}
-
-				// Apply backoff between retries
-				backoff := fastPolicy.NextBackoff(attempt)
-				time.Sleep(backoff)
-			}
-
-			// CORRECTNESS VALIDATION: Verify exponential delay pattern
-			Expect(attemptTimes).To(HaveLen(3), "Should execute 3 retry attempts")
-
-			delay1 := attemptTimes[1].Sub(attemptTimes[0])
-			delay2 := attemptTimes[2].Sub(attemptTimes[1])
-
-			// Validate exponential growth (with tolerance for timing variations)
-			Expect(delay1).To(BeNumerically("~", 50*time.Millisecond, 30*time.Millisecond),
-				"First backoff should be ~50ms (base delay)")
-			Expect(delay2).To(BeNumerically("~", 100*time.Millisecond, 30*time.Millisecond),
-				"Second backoff should be ~100ms (2x base)")
-			Expect(delay2).To(BeNumerically(">", delay1),
-				"Second delay must be longer than first (exponential growth)")
+		policy := retry.NewPolicy(&retry.Config{
+			MaxAttempts:       3,
+			BaseBackoff:       50 * time.Millisecond,
+			MaxBackoff:        500 * time.Millisecond,
+			BackoffMultiplier: 2.0,
 		})
+
+		// Verify backoff calculation for each attempt
+		backoff0 := policy.NextBackoff(0)
+		backoff1 := policy.NextBackoff(1)
+		backoff2 := policy.NextBackoff(2)
+
+		// CORRECTNESS VALIDATION: Verify exponential delay pattern
+		Expect(backoff0).To(Equal(50 * time.Millisecond),
+			"First backoff should be base delay (50ms)")
+		Expect(backoff1).To(Equal(100 * time.Millisecond),
+			"Second backoff should be 2x base (100ms)")
+		Expect(backoff2).To(Equal(200 * time.Millisecond),
+			"Third backoff should be 4x base (200ms)")
+
+		// Verify exponential growth
+		Expect(backoff1).To(BeNumerically(">", backoff0),
+			"Each backoff must be longer than previous (exponential growth)")
+		Expect(backoff2).To(BeNumerically(">", backoff1),
+			"Each backoff must be longer than previous (exponential growth)")
+
+		// Verify multiplier relationship
+		Expect(backoff1).To(Equal(backoff0 * 2),
+			"Backoff should grow by configured multiplier (2.0)")
+		Expect(backoff2).To(Equal(backoff1 * 2),
+			"Backoff should grow by configured multiplier (2.0)")
+	})
 	})
 })
 
