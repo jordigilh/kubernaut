@@ -420,8 +420,8 @@ class TestAuditPipelineE2E:
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=1,  # At least llm_response
-            timeout_seconds=15
+            min_expected_events=2,  # llm_request + llm_response
+            timeout_seconds=30  # Increased for E2E with real LLM mock delays
         )
 
         # Verify llm_response event exists (Pydantic model attribute access)
@@ -472,11 +472,12 @@ class TestAuditPipelineE2E:
         result = call_hapi_incident_analyze(hapi_url, request_data)
 
         # Query Data Storage for persisted events with retry (ADR-038: buffered async flush)
+        # Complete flow: llm_request + llm_response + workflow_validation_attempt
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=1,  # At least workflow_validation_attempt
-            timeout_seconds=15
+            min_expected_events=3,  # llm_request + llm_response + workflow_validation_attempt
+            timeout_seconds=30  # Increased for E2E with real LLM mock delays
         )
 
         # Verify validation attempt event exists (Pydantic model attribute access)

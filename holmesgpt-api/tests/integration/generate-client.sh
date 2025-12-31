@@ -72,6 +72,17 @@ fi
 # Fix permissions (docker may create files as root)
 if [ -d "${CLIENT_OUTPUT}" ]; then
     chmod -R u+w "${CLIENT_OUTPUT}"
+
+    # Patch for urllib3 1.x compatibility (E2E environment constraint)
+    # OpenAPI generator assumes urllib3 2.x, but prometrix (from HolmesGPT SDK) requires <2.0.0
+    # Remove the ca_cert_data parameter which is urllib3 2.x specific
+    echo "   Patching rest.py for urllib3 1.x compatibility..."
+    if [ -f "${CLIENT_OUTPUT}/rest.py" ]; then
+        sed -i.bak '/"ca_cert_data": configuration.ca_cert_data,/d' "${CLIENT_OUTPUT}/rest.py"
+        rm -f "${CLIENT_OUTPUT}/rest.py.bak"
+        echo "   ✅ Patched rest.py (removed ca_cert_data for urllib3 1.x)"
+    fi
+
     echo "✅ Client generated successfully"
 else
     echo "❌ Error: Client generation failed"
