@@ -49,7 +49,9 @@ from src.models.config_models import AppConfig
 logger = logging.getLogger(__name__)
 
 # Import extensions
-from src.extensions import recovery, incident, postexec, health
+from src.extensions import recovery, incident, health
+# DD-017: PostExec extension deferred to V1.1 - Effectiveness Monitor not in V1.0
+# from src.extensions import postexec
 from src.middleware.auth import AuthenticationMiddleware
 from src.middleware.metrics import PrometheusMetricsMiddleware, metrics_endpoint
 from src.middleware.rfc7807 import add_rfc7807_exception_handlers
