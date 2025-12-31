@@ -283,7 +283,7 @@ jobs:
 
   e2e-signalprocessing:
     name: E2E (Signal Processing)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Run if: integration ran AND passed, AND (push to main OR DS changed OR SP changed), AND not draft PR
@@ -316,7 +316,7 @@ jobs:
 
   e2e-aianalysis:
     name: E2E (AI Analysis)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -348,7 +348,7 @@ jobs:
 
   e2e-workflowexecution:
     name: E2E (Workflow Execution)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -380,7 +380,7 @@ jobs:
 
   e2e-remediationorchestrator:
     name: E2E (Remediation Orchestrator)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -412,7 +412,7 @@ jobs:
 
   e2e-gateway:
     name: E2E (Gateway)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -444,7 +444,7 @@ jobs:
 
   e2e-datastorage:
     name: E2E (Data Storage)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # DS always runs E2E (it's the shared dependency)
@@ -473,7 +473,7 @@ jobs:
 
   e2e-notification:
     name: E2E (Notification)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -505,7 +505,7 @@ jobs:
 
   e2e-holmesgpt:
     name: E2E (HolmesGPT API)
-    needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
+    needs: [integration-tests, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
