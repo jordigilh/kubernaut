@@ -192,7 +192,7 @@ jobs:
   # ========================================
 
   integration-tests:
-    name: Integration (${{ matrix.service-name }})
+    name: Integration (${{ matrix.service_name }})
     needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
@@ -202,25 +202,25 @@ jobs:
         service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage]
         include:
           - service: signalprocessing
-            service-name: "Signal Processing"
+            service_name: "Signal Processing"
             timeout: 10
           - service: aianalysis
-            service-name: "AI Analysis"
+            service_name: "AI Analysis"
             timeout: 15
           - service: workflowexecution
-            service-name: "Workflow Execution"
+            service_name: "Workflow Execution"
             timeout: 15
           - service: remediationorchestrator
-            service-name: "Remediation Orchestrator"
+            service_name: "Remediation Orchestrator"
             timeout: 15
           - service: notification
-            service-name: "Notification"
+            service_name: "Notification"
             timeout: 10
           - service: gateway
-            service-name: "Gateway"
+            service_name: "Gateway"
             timeout: 20
           - service: datastorage
-            service-name: "Data Storage"
+            service_name: "Data Storage"
             timeout: 10
     steps:
       - uses: actions/checkout@v4
@@ -233,7 +233,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      - name: Run ${{ matrix.service-name }} integration tests
+      - name: Run ${{ matrix.service_name }} integration tests
         run: make test-integration-${{ matrix.service }}
       - name: Validate Data Storage OpenAPI spec (ADR-031)
         if: matrix.service == 'datastorage'
