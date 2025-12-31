@@ -293,7 +293,7 @@ class TestFileWatcherMetrics:
         finally:
             os.unlink(config_path)
 
-    def test_file_watcher_error_count(self):
+    def test_file_watcher_error_count(self, wait_for):
         """
         BR-HAPI-199: Metrics exposed for reload count and errors.
 
@@ -317,13 +317,12 @@ class TestFileWatcherMetrics:
             # Initial load should succeed
             assert watcher.error_count == 0
 
-            # Trigger reload that will fail in callback - wait for poll interval
-            time.sleep(1.5)
+            # Trigger reload that will fail in callback
             with open(config_path, 'w') as f:
                 f.write("value: 2\n")
-            time.sleep(1.5)  # Wait for poll + debounce
 
-            assert watcher.error_count >= 1
+            # Wait for error to be detected (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: watcher.error_count >= 1, timeout=2.0, error_msg="Expected error_count to increment")
 
             watcher.stop()
         finally:
@@ -333,7 +332,7 @@ class TestFileWatcherMetrics:
 class TestFileWatcherGracefulDegradation:
     """Test FileWatcher graceful degradation on errors."""
 
-    def test_file_watcher_graceful_on_callback_error(self):
+    def test_file_watcher_graceful_on_callback_error(self, wait_for):
         """
         BR-HAPI-199: Service SHALL gracefully degrade on invalid configuration.
 
@@ -357,11 +356,10 @@ class TestFileWatcherGracefulDegradation:
             watcher = FileWatcher(config_path, sometimes_failing_callback, logger)
             watcher.start()
 
-            # First reload - wait for poll interval
-            time.sleep(1.5)
+            # First reload
             with open(config_path, 'w') as f:
                 f.write("value: 2\n")
-            time.sleep(1.5)
+            wait_for(lambda: call_count[0] >= 2, timeout=2.0)
 
             # Second reload (will fail, but watcher should continue)
             # This is the callback that raises
@@ -369,12 +367,11 @@ class TestFileWatcherGracefulDegradation:
             # Third reload (should still work after error)
             with open(config_path, 'w') as f:
                 f.write("value: 3\n")
-            time.sleep(1.5)
+
+            # Wait for all 3 callbacks (typically <200ms instead of 4.5s with 3× sleep(1.5))
+            wait_for(lambda: call_count[0] >= 3, timeout=2.0, error_msg="Watcher should continue after callback error")
 
             watcher.stop()
-
-            # Watcher should have continued after error
-            assert call_count[0] >= 3, f"Watcher should continue after callback error, got {call_count[0]} calls"
         finally:
             os.unlink(config_path)
 
