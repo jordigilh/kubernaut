@@ -49,8 +49,32 @@ async def recovery_analyze_endpoint(request: RecoveryRequest) -> RecoveryRespons
 
     Called by: AIAnalysis Controller (for recovery attempts after workflow failure)
     """
+    # DEBUG: Log what we receive (BR-HAPI-197 investigation)
+    logger.info(f"🔍 DEBUG: Recovery request received - signal_type={request.signal_type!r}")
+    
     request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
-    result = await analyze_recovery(request_data)
+    
+    # DEBUG: Log request_data dict
+    logger.info(f"🔍 DEBUG: Request dict - signal_type={request_data.get('signal_type')!r}, "
+                f"is_recovery_attempt={request_data.get('is_recovery_attempt')}, "
+                f"recovery_attempt_number={request_data.get('recovery_attempt_number')}")
+    
+    # Get result from analyze_recovery (returns dict)
+    result_dict = await analyze_recovery(request_data)
+    
+    # Convert dict to Pydantic model for type safety and validation
+    # This ensures all fields are validated per BR-HAPI-002 schema
+    if isinstance(result_dict, dict):
+        result = RecoveryResponse(**result_dict)
+    else:
+        result = result_dict  # Already a model (defensive programming)
+    
+    # DEBUG: Log response (now can use attribute access)
+    logger.info(f"🔍 DEBUG: Response - needs_human_review={result.needs_human_review}, "
+                f"human_review_reason={result.human_review_reason!r}, "
+                f"can_recover={result.can_recover}, "
+                f"has_selected_workflow={result.selected_workflow is not None}")
+    
     return result
 
 
