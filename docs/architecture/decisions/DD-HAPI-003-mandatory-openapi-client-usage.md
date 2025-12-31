@@ -126,7 +126,7 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
     if err != nil {
         return nil, fmt.Errorf("failed to marshal request: %w", err)
     }
-    
+
     url := fmt.Sprintf("%s/api/v1/incident/analyze", c.baseURL)
     httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
     // ... manual HTTP handling
@@ -142,13 +142,13 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
     if err != nil {
         return nil, fmt.Errorf("HolmesGPT-API call failed: %w", err)
     }
-    
+
     // Type-assert response interface to concrete type
     response, ok := res.(*IncidentResponse)
     if !ok {
         return nil, fmt.Errorf("unexpected response type: %T", res)
     }
-    
+
     return response, nil
 }
 ```
