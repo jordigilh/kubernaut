@@ -38,7 +38,13 @@ Edge cases are triggered by special signal_type values:
 
 import os
 import pytest
-import requests
+
+# HAPI OpenAPI Client imports (DD-API-001)
+from holmesgpt_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
+from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
+from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
+from holmesgpt_api_client.models.incident_request import IncidentRequest
+from holmesgpt_api_client.models.recovery_request import RecoveryRequest
 
 # Skip entire module if not in mock mode
 pytestmark = [
@@ -54,6 +60,22 @@ pytestmark = [
 # Port 30120 for Kind E2E, 18120 for local integration (DD-TEST-001)
 # Prefer HAPI_BASE_URL (set by E2E suite) over HAPI_URL (local tests)
 HAPI_URL = os.getenv("HAPI_BASE_URL", os.getenv("HAPI_URL", "http://localhost:18120"))
+
+
+@pytest.fixture(scope="module")
+def hapi_incident_api():
+    """HAPI Incident Analysis API client for E2E tests (DD-API-001)."""
+    config = HAPIConfiguration(host=HAPI_URL)
+    api_client = HAPIApiClient(configuration=config)
+    return IncidentAnalysisApi(api_client=api_client)
+
+
+@pytest.fixture(scope="module")
+def hapi_recovery_api():
+    """HAPI Recovery Analysis API client for E2E tests (DD-API-001)."""
+    config = HAPIConfiguration(host=HAPI_URL)
+    api_client = HAPIApiClient(configuration=config)
+    return RecoveryAnalysisApi(api_client=api_client)
 
 
 def make_incident_request(signal_type: str) -> dict:
@@ -93,7 +115,7 @@ def make_recovery_request(signal_type: str) -> dict:
 class TestIncidentEdgeCases:
     """E2E tests for incident analysis edge cases."""
 
-    def test_no_workflow_found_returns_needs_human_review(self):
+    def test_no_workflow_found_returns_needs_human_review(self, hapi_incident_api):
         """
         BR-HAPI-197: When no matching workflow is found, HAPI should:
         - Set needs_human_review=true
@@ -103,14 +125,16 @@ class TestIncidentEdgeCases:
         This tests the AIAnalysis consumer's ability to handle the
         "no automation possible" scenario.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/incident/analyze",
-            json=make_incident_request("MOCK_NO_WORKFLOW_FOUND"),
-            timeout=30
+        request_data = make_incident_request("MOCK_NO_WORKFLOW_FOUND")
+        incident_request = IncidentRequest(**request_data)
+
+        response = hapi_incident_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=incident_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Verify edge case response
         assert data["needs_human_review"] is True, "needs_human_review should be True"
@@ -123,7 +147,7 @@ class TestIncidentEdgeCases:
         assert any("MOCK_MODE" in w for w in data.get("warnings", [])), \
             "Response should include MOCK_MODE warning"
 
-    def test_low_confidence_returns_needs_human_review(self):
+    def test_low_confidence_returns_needs_human_review(self, hapi_incident_api):
         """
         BR-HAPI-197: When analysis confidence is below threshold, HAPI should:
         - Set needs_human_review=true
@@ -134,14 +158,16 @@ class TestIncidentEdgeCases:
         This tests the AIAnalysis consumer's ability to handle
         "uncertain" recommendations.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/incident/analyze",
-            json=make_incident_request("MOCK_LOW_CONFIDENCE"),
-            timeout=30
+        request_data = make_incident_request("MOCK_LOW_CONFIDENCE")
+        incident_request = IncidentRequest(**request_data)
+
+        response = hapi_incident_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=incident_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Verify edge case response
         assert data["needs_human_review"] is True, "needs_human_review should be True"
@@ -157,7 +183,7 @@ class TestIncidentEdgeCases:
         assert len(data.get("alternative_workflows", [])) > 0, \
             "Should include alternatives for human selection"
 
-    def test_max_retries_exhausted_returns_validation_history(self):
+    def test_max_retries_exhausted_returns_validation_history(self, hapi_incident_api):
         """
         BR-HAPI-197: When LLM self-correction exhausts max retries, HAPI should:
         - Set needs_human_review=true
@@ -168,14 +194,16 @@ class TestIncidentEdgeCases:
         This tests the AIAnalysis consumer's ability to handle
         "AI gave up" scenarios with audit trail.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/incident/analyze",
-            json=make_incident_request("MOCK_MAX_RETRIES_EXHAUSTED"),
-            timeout=30
+        request_data = make_incident_request("MOCK_MAX_RETRIES_EXHAUSTED")
+        incident_request = IncidentRequest(**request_data)
+
+        response = hapi_incident_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=incident_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Verify edge case response
         assert data["needs_human_review"] is True, "needs_human_review should be True"
@@ -200,7 +228,7 @@ class TestIncidentEdgeCases:
 class TestRecoveryEdgeCases:
     """E2E tests for recovery analysis edge cases."""
 
-    def test_signal_not_reproducible_returns_no_recovery(self):
+    def test_signal_not_reproducible_returns_no_recovery(self, hapi_recovery_api):
         """
         BR-HAPI-212: When signal is not reproducible (issue self-resolved):
         - Set can_recover=false (no action needed)
@@ -211,14 +239,16 @@ class TestRecoveryEdgeCases:
         This tests the AIAnalysis consumer's ability to handle
         "nothing to do" scenarios gracefully.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/recovery/analyze",
-            json=make_recovery_request("MOCK_NOT_REPRODUCIBLE"),
-            timeout=30
+        request_data = make_recovery_request("MOCK_NOT_REPRODUCIBLE")
+        recovery_request = RecoveryRequest(**request_data)
+
+        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=recovery_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Key assertion: can_recover=false means no action needed
         assert data["can_recover"] is False, "can_recover should be False for self-resolved issues"
@@ -235,7 +265,7 @@ class TestRecoveryEdgeCases:
         assert prev_assessment.get("state_changed") is True, \
             "state_changed should be True (resource is now healthy)"
 
-    def test_no_recovery_workflow_returns_human_review(self):
+    def test_no_recovery_workflow_returns_human_review(self, hapi_recovery_api):
         """
         BR-HAPI-197: When no recovery workflow is available:
         - Set can_recover=true (recovery might be possible)
@@ -245,14 +275,16 @@ class TestRecoveryEdgeCases:
 
         This tests handling of "we can't help automatically" scenarios.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/recovery/analyze",
-            json=make_recovery_request("MOCK_NO_WORKFLOW_FOUND"),
-            timeout=30
+        request_data = make_recovery_request("MOCK_NO_WORKFLOW_FOUND")
+        recovery_request = RecoveryRequest(**request_data)
+
+        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=recovery_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Recovery might be possible but we don't have a workflow
         assert data["can_recover"] is True, "can_recover=true (manual intervention possible)"
@@ -260,7 +292,7 @@ class TestRecoveryEdgeCases:
         assert data["human_review_reason"] == "no_matching_workflows"
         assert data["selected_workflow"] is None
 
-    def test_low_confidence_recovery_returns_human_review(self):
+    def test_low_confidence_recovery_returns_human_review(self, hapi_recovery_api):
         """
         BR-HAPI-197: When recovery confidence is low:
         - Set can_recover=true
@@ -270,14 +302,16 @@ class TestRecoveryEdgeCases:
 
         This tests handling of uncertain recovery scenarios.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/recovery/analyze",
-            json=make_recovery_request("MOCK_LOW_CONFIDENCE"),
-            timeout=30
+        request_data = make_recovery_request("MOCK_LOW_CONFIDENCE")
+        recovery_request = RecoveryRequest(**request_data)
+
+        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=recovery_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         assert data["can_recover"] is True
         assert data["needs_human_review"] is True
@@ -292,19 +326,21 @@ class TestRecoveryEdgeCases:
 class TestHappyPathComparison:
     """Verify happy path still works with mock mode."""
 
-    def test_normal_incident_analysis_succeeds(self):
+    def test_normal_incident_analysis_succeeds(self, hapi_incident_api):
         """
         Verify that normal signal types still produce happy-path responses
         even when edge case support is enabled.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/incident/analyze",
-            json=make_incident_request("OOMKilled"),
-            timeout=30
+        request_data = make_incident_request("OOMKilled")
+        incident_request = IncidentRequest(**request_data)
+
+        response = hapi_incident_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=incident_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Happy path assertions
         assert data["needs_human_review"] is False
@@ -312,18 +348,20 @@ class TestHappyPathComparison:
         assert data["confidence"] > 0.8
         assert "mock-oomkill" in data["selected_workflow"]["workflow_id"]
 
-    def test_normal_recovery_analysis_succeeds(self):
+    def test_normal_recovery_analysis_succeeds(self, hapi_recovery_api):
         """
         Verify that normal signal types still produce happy-path recovery responses.
         """
-        response = requests.post(
-            f"{HAPI_URL}/api/v1/recovery/analyze",
-            json=make_recovery_request("CrashLoopBackOff"),
-            timeout=30
+        request_data = make_recovery_request("CrashLoopBackOff")
+        recovery_request = RecoveryRequest(**request_data)
+
+        response = hapi_recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=recovery_request,
+            _request_timeout=30
         )
 
-        assert response.status_code == 200
-        data = response.json()
+        # Convert response model to dict for assertions
+        data = response.model_dump()
 
         # Happy path assertions
         assert data["can_recover"] is True

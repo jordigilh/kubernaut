@@ -32,6 +32,13 @@ import requests
 import json
 import os
 
+# DD-API-001: OpenAPI client imports for Data Storage API
+from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+from src.clients.datastorage.models.workflow_search_request import WorkflowSearchRequest
+from src.clients.datastorage.models.workflow_search_filters import WorkflowSearchFilters
+from src.clients.datastorage.api_client import ApiClient
+from src.clients.datastorage.configuration import Configuration
+
 # Note: Uses fixtures from tests/e2e/conftest.py (V1.0 Go infrastructure)
 # DATA_STORAGE_URL is provided via data_storage_stack fixture
 
@@ -342,33 +349,40 @@ class TestWorkflowCatalogContainerImageDirectAPI:
 
         This validates the Data Storage API directly, independent of
         the HolmesGPT tool transformation.
+
+        DD-API-001 COMPLIANCE: Uses OpenAPI client for type safety and contract validation.
         """
         data_storage_url = data_storage_stack
 
-        # ACT: Direct API call to Data Storage
-        response = requests.post(
-            f"{data_storage_url}/api/v1/workflows/search",
-            json={
-                "query": "OOMKilled critical",
-                "filters": {
-                    "signal_type": "OOMKilled",  # Fixed: was "signal-type" (typo)
-                    "severity": "critical",
-                    "component": "pod",  # Required field
-                    "environment": "production",  # Required field
-                    "priority": "P1"  # Required field
-                },
-                "top_k": 3,
-                "min_similarity": 0.0  # Lower threshold to ensure results
-            },
-            timeout=10
+        # DD-API-001: Direct API call using OpenAPI client (not raw requests)
+        config = Configuration(host=data_storage_url)
+        api_client = ApiClient(configuration=config)
+        search_api = WorkflowCatalogAPIApi(api_client)
+
+        # DD-STORAGE-011 v2.0: All 5 mandatory filter fields required
+        # Matches oomkill-increase-memory-limits fixture
+        filters = WorkflowSearchFilters(
+            signal_type="OOMKilled",
+            severity="critical",
+            component="pod",
+            environment="production",
+            priority="P0"  # Matches test fixture in tests/fixtures/workflow_fixtures.py
         )
 
-        # ASSERT: API success
-        assert response.status_code == 200, \
-            f"BR-AI-075: Data Storage API failed: {response.status_code} - {response.text}"
+        request = WorkflowSearchRequest(
+            filters=filters,
+            top_k=3
+        )
 
-        data = response.json()
-        workflows = data.get("workflows", [])
+        # ACT: Search using OpenAPI client
+        try:
+            response = search_api.search_workflows(
+                workflow_search_request=request,
+                _request_timeout=10
+            )
+            workflows = response.workflows or []
+        except Exception as e:
+            pytest.fail(f"BR-AI-075: Data Storage API call failed: {e}")
 
         # Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip
         if len(workflows) == 0:
@@ -380,19 +394,20 @@ class TestWorkflowCatalogContainerImageDirectAPI:
             )
 
         # ASSERT: container_image in API response (DD-WORKFLOW-002 v3.0 flat format)
+        # DD-API-001: Pydantic models from OpenAPI client (attribute access, not dict)
         for wf in workflows:
             # DD-WORKFLOW-002 v3.0: Flat structure - fields directly on workflow object
-            workflow_id = wf.get("workflow_id", "unknown")
+            workflow_id = wf.workflow_id if hasattr(wf, 'workflow_id') else "unknown"
 
             # DD-WORKFLOW-002 v3.0: container_image directly on workflow
-            assert "container_image" in wf, \
+            assert hasattr(wf, 'container_image'), \
                 f"BR-AI-075: API response missing container_image for {workflow_id}"
-            assert "container_digest" in wf, \
+            assert hasattr(wf, 'container_digest'), \
                 f"BR-AI-075: API response missing container_digest for {workflow_id}"
 
             # Validate format if present
-            container_image = wf.get("container_image")
-            container_digest = wf.get("container_digest")
+            container_image = wf.container_image
+            container_digest = wf.container_digest
             if container_image:
                 assert "/" in container_image, \
                     f"BR-AI-075: container_image must be OCI reference for {workflow_id}"
