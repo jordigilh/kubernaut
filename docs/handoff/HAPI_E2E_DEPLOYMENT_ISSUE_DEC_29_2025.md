@@ -1,17 +1,17 @@
 # HolmesGPT-API E2E Deployment Failure - Root Cause Analysis
 
-**Date**: December 29, 2025  
-**Priority**: P0 - Blocking AIAnalysis E2E Tests  
-**Status**: ❌ Root Cause Identified - Solution Required  
+**Date**: December 29, 2025
+**Priority**: P0 - Blocking AIAnalysis E2E Tests
+**Status**: ❌ Root Cause Identified - Solution Required
 **Affected**: E2E test infrastructure, Kind cluster deployments
 
 ---
 
 ## 🎯 Executive Summary
 
-**Problem**: HolmesGPT-API pod crash-looping in Kind cluster with exit code 2  
-**Root Cause**: Kubernetes `args` field overriding container CMD incorrectly  
-**Impact**: All 39 AIAnalysis E2E tests blocked (0% pass rate)  
+**Problem**: HolmesGPT-API pod crash-looping in Kind cluster with exit code 2
+**Root Cause**: Kubernetes `args` field overriding container CMD incorrectly
+**Impact**: All 39 AIAnalysis E2E tests blocked (0% pass rate)
 **Solution**: Use `CONFIG_FILE` environment variable instead of `--config` args
 
 ---
@@ -195,7 +195,7 @@ spec:
 def load_config() -> AppConfig:
     """
     Load configuration from YAML file
-    
+
     Configuration Priority (ADR-030):
     1. CONFIG_FILE environment variable (highest priority)
     2. --config command line flag
@@ -203,12 +203,12 @@ def load_config() -> AppConfig:
     """
     # Priority 1: Environment variable
     config_file = os.getenv("CONFIG_FILE")
-    
+
     # Priority 2: Command-line flag
     if not config_file:
         import sys
         config_file = "/etc/holmesgpt/config.yaml"  # Default
-        
+
         for i, arg in enumerate(sys.argv):
             if arg == "--config" and i + 1 < len(sys.argv):
                 config_file = sys.argv[i + 1]
@@ -216,7 +216,7 @@ def load_config() -> AppConfig:
             elif arg.startswith("--config="):
                 config_file = arg.split("=", 1)[1]
                 break
-    
+
     config_path = Path(config_file)
     # ... rest of existing code
 ```
@@ -340,22 +340,22 @@ kubectl logs -n kubernaut-system -l app=holmesgpt-api
 def load_config() -> AppConfig:
     """
     Load configuration from YAML file
-    
+
     Configuration Priority (ADR-030):
 +   1. CONFIG_FILE environment variable (highest priority)
 -   1. --config command line flag
-+   2. --config command line flag  
++   2. --config command line flag
 -   2. Default path: /etc/holmesgpt/config.yaml
 +   3. Default path: /etc/holmesgpt/config.yaml
     """
 +   # Priority 1: Environment variable (ADR-030: Kubernetes-first)
 +   config_file = os.getenv("CONFIG_FILE")
-+   
++
 +   # Priority 2: Command-line flag (for local dev)
 +   if not config_file:
 -   config_file = "/etc/holmesgpt/config.yaml"  # Default
 +       config_file = "/etc/holmesgpt/config.yaml"  # Default
-        
+
 -   # Simple argument parsing for --config flag
 -   import sys
 -   for i, arg in enumerate(sys.argv):
@@ -374,7 +374,7 @@ def load_config() -> AppConfig:
 +           elif arg.startswith("--config="):
 +               config_file = arg.split("=", 1)[1]
 +               break
-    
+
     config_path = Path(config_file)
 ```
 
@@ -408,7 +408,7 @@ test/infrastructure/aianalysis.go
 ```
 holmesgpt-api/src/main.py
   - Line ~121-131: Add CONFIG_FILE env var priority in load_config()
-  
+
 docs/architecture/decisions/ADR-030-*.md (if exists)
   - Update to document CONFIG_FILE priority
 ```
@@ -515,18 +515,18 @@ Comprehensive diagnostics for HAPI in Kind cluster.
 ## 🎓 Lessons Learned
 
 ### 1. Kubernetes Args Override Behavior
-**Issue**: Misunderstanding how `args` field works in Kubernetes  
-**Lesson**: `args` completely replaces CMD - must pass full command if overriding  
+**Issue**: Misunderstanding how `args` field works in Kubernetes
+**Lesson**: `args` completely replaces CMD - must pass full command if overriding
 **Prevention**: Use environment variables for configuration when possible
 
 ### 2. Container Entrypoint Design
-**Issue**: Simple `exec "$@"` entrypoint expects full command  
-**Lesson**: Entrypoint should handle partial commands or use smarter logic  
+**Issue**: Simple `exec "$@"` entrypoint expects full command
+**Lesson**: Entrypoint should handle partial commands or use smarter logic
 **Prevention**: Test container args behavior early in development
 
 ### 3. 12-Factor App Principles
-**Issue**: Relying on command-line flags in containerized environments  
-**Lesson**: Environment variables are more Kubernetes-friendly  
+**Issue**: Relying on command-line flags in containerized environments
+**Lesson**: Environment variables are more Kubernetes-friendly
 **Prevention**: Design apps to support both methods with env var priority
 
 ---
@@ -545,10 +545,10 @@ Comprehensive diagnostics for HAPI in Kind cluster.
 
 ---
 
-**Document Status**: ✅ Ready for Implementation  
-**Priority**: P0 - Blocking 39 E2E Tests  
-**Estimated Resolution Time**: 30 minutes (Option 2) or 2 hours (Option 3)  
-**Author**: AI Assistant (AIAnalysis Testing Session)  
+**Document Status**: ✅ Ready for Implementation
+**Priority**: P0 - Blocking 39 E2E Tests
+**Estimated Resolution Time**: 30 minutes (Option 2) or 2 hours (Option 3)
+**Author**: AI Assistant (AIAnalysis Testing Session)
 **Date**: December 29, 2025
 
 
