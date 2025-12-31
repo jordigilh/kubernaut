@@ -18,10 +18,12 @@ limitations under the License.
 FastAPI extension routers for HolmesGPT API
 """
 
-from . import recovery, postexec, health
+from . import recovery, health
+# DD-017: PostExec extension deferred to V1.1 - Effectiveness Monitor not in V1.0
+# from . import postexec
 
 __all__ = [
     "recovery",
-    "postexec",
+    # "postexec",  # DD-017: Deferred to V1.1
     "health",
 ]
