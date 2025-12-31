@@ -145,9 +145,6 @@ test-all-%: ## Run all test tiers for specified service (e.g., make test-all-gat
 .PHONY: build-%
 build-%: ## Build specified service binary (e.g., make build-gateway)
 	@echo "🔨 Building $* service..."
-	@if [ "$*" = "datastorage" ]; then \
-		$(MAKE) generate; \
-	fi
 	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/$* ./cmd/$*
 	@echo "✅ Built: bin/$*"
 
