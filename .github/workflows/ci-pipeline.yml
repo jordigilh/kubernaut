@@ -7,14 +7,20 @@ name: CI Pipeline
 # Stage 3: E2E Tests (parallel jobs: 8 services)
 #
 # Smart Path Detection:
-#   - Data Storage changes → ALL services (DS is shared dependency)
-#   - Individual service changes → ONLY that service + DS
-#   - Push to main → ALL services (full validation)
+#   - Unit Tests: Matrix runs ALL services always (~10 min total)
+#   - Integration Tests: Matrix runs ALL services always (~15 min total)
+#     * Design Decision: No path filtering at integration level
+#     * Rationale: Fast enough + better cross-service issue detection
+#   - E2E Tests: Smart path detection per service (30 min each)
+#     * Data Storage changes → ALL services (DS is shared dependency)
+#     * Individual service changes → ONLY that service
+#     * Push to main → ALL services (full validation)
 #
 # Optimization Strategy:
 #   - Matrix parallelization for homogeneous jobs (unit, integration)
 #   - Individual jobs for heterogeneous jobs (E2E with different infra)
 #   - Fail-fast disabled for comprehensive feedback
+#   - Path detection where it matters most (E2E tests)
 #
 # Authority: [TODO] Create ADR-CI-001 from docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
 
@@ -189,6 +195,13 @@ jobs:
   # Matrix strategy: 7 Go services (all use envtest + Podman)
   # 1 Python service (HolmesGPT - separate job)
   # Only start if Stage 1 passes
+  #
+  # DESIGN DECISION: No smart path detection at this level
+  # - All integration tests run for ANY change (after unit tests pass)
+  # - Rationale: Integration tests are fast (~15 min total, parallel)
+  # - Benefit: Better cross-service issue detection
+  # - Trade-off: Uses more CI minutes, but comprehensive coverage worth it
+  # - Smart path detection reserved for E2E tests (slower, 30 min each)
   # ========================================
 
   integration-tests:
