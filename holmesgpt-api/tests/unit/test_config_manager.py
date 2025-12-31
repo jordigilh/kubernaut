@@ -119,7 +119,7 @@ class TestConfigManagerGetters:
 
     @pytest.fixture
     def config_manager(self):
-        """Create a ConfigManager with full config for testing."""
+        """Create a ConfigManager with full config for testing (hot-reload disabled for speed)."""
         from src.config.hot_reload import ConfigManager
 
         config_content = """
@@ -143,7 +143,8 @@ log_level: DEBUG
             config_path = f.name
 
         logger = logging.getLogger("test")
-        manager = ConfigManager(config_path, logger)
+        # Disable hot-reload for getter tests - no need for FileWatcher thread
+        manager = ConfigManager(config_path, logger, enable_hot_reload=False)
         manager.start()
 
         yield manager
