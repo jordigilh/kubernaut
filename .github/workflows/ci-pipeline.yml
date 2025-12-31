@@ -552,7 +552,7 @@ jobs:
     name: Test Suite Summary
     needs: [
       build-and-lint, unit-tests,
-      integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt,
+      integration-tests, integration-holmesgpt,
       e2e-signalprocessing, e2e-aianalysis, e2e-workflowexecution, e2e-remediationorchestrator, e2e-gateway, e2e-datastorage, e2e-notification, e2e-holmesgpt
     ]
     if: always()
