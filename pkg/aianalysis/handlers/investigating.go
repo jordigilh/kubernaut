@@ -70,7 +70,7 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 		auditClient:     auditClient,
 		log:             handlerLog,
 		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor
-		builder:         NewRequestBuilder(),          // P1.2: Initialize request builder
+		builder:         NewRequestBuilder(log),       // P1.2: Initialize request builder
 		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
 }

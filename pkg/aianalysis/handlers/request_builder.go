@@ -21,6 +21,10 @@ limitations under the License.
 package handlers
 
 import (
+	"fmt"
+
+	"github.com/go-logr/logr"
+
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -34,12 +38,14 @@ import (
 // - Handle optional field population with generated opt types
 // - Provide consistent request enrichment patterns
 type RequestBuilder struct {
-	// Currently stateless, but struct allows future state (e.g., default configs)
+	log logr.Logger
 }
 
 // NewRequestBuilder creates a new RequestBuilder instance.
-func NewRequestBuilder() *RequestBuilder {
-	return &RequestBuilder{}
+func NewRequestBuilder(log logr.Logger) *RequestBuilder {
+	return &RequestBuilder{
+		log: log.WithName("request-builder"),
+	}
 }
 
 // ========================================
@@ -126,6 +132,14 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	req.ResourceNamespace.SetTo(spec.TargetResource.Namespace)
 	req.ResourceKind.SetTo(spec.TargetResource.Kind)
 	req.ResourceName.SetTo(spec.TargetResource.Name)
+
+	// DEBUG: Log signal type being sent to HAPI (BR-HAPI-197 investigation)
+	b.log.Info("🔍 DEBUG: Building recovery request",
+		"signalType", spec.SignalType,
+		"signalTypeQuoted", fmt.Sprintf("%q", spec.SignalType),
+		"isRecoveryAttempt", true,
+		"recoveryAttemptNumber", analysis.Spec.RecoveryAttemptNumber,
+	)
 
 	// Map previous execution context (most recent only - API supports single execution)
 	if len(analysis.Spec.PreviousExecutions) > 0 {

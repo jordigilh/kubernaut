@@ -161,18 +161,38 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 
 // ProcessRecoveryResponse processes the RecoveryResponse from generated client
 // BR-AI-082: Handle recovery flow responses
+// BR-HAPI-197: Check needs_human_review before proceeding
 func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.RecoveryResponse) (ctrl.Result, error) {
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.ConsecutiveFailures = 0
 
+	// Check if NeedsHumanReview is set (BR-HAPI-197)
+	needsHumanReview := GetOptBoolValue(resp.NeedsHumanReview)
 	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
+
+	// DEBUG: Log raw field values for BR-HAPI-197 investigation
+	p.log.Info("🔍 DEBUG: Recovery response received from HAPI",
+		"NeedsHumanReview.Set", resp.NeedsHumanReview.Set,
+		"NeedsHumanReview.Value", resp.NeedsHumanReview.Value,
+		"HumanReviewReason.Set", resp.HumanReviewReason.Set,
+		"HumanReviewReason.Null", resp.HumanReviewReason.Null,
+		"HumanReviewReason.Value", resp.HumanReviewReason.Value,
+		"needsHumanReview_computed", needsHumanReview,
+	)
 
 	p.log.Info("Processing successful recovery response",
 		"canRecover", resp.CanRecover,
 		"confidence", resp.AnalysisConfidence,
 		"warningsCount", len(resp.Warnings),
 		"hasSelectedWorkflow", hasSelectedWorkflow,
+		"needsHumanReview", needsHumanReview,
 	)
+
+	// BR-HAPI-197: Check if recovery requires human review
+	// This takes precedence over other checks as HAPI has determined it cannot provide reliable recommendations
+	if needsHumanReview {
+		return p.handleWorkflowResolutionFailureFromRecovery(ctx, analysis, resp)
+	}
 
 	// Check if recovery is not possible
 	if !resp.CanRecover {
@@ -397,6 +417,65 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 			}
 		}
 	}
+
+	return ctrl.Result{}, nil
+}
+
+// handleWorkflowResolutionFailureFromRecovery handles workflow resolution failure from RecoveryResponse
+// BR-HAPI-197: Recovery workflow resolution failed, human must intervene
+func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *client.RecoveryResponse) (ctrl.Result, error) {
+	hasSelectedWorkflow := resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null
+	humanReviewReason := ""
+	if resp.HumanReviewReason.Set && !resp.HumanReviewReason.Null {
+		humanReviewReason = resp.HumanReviewReason.Value
+	}
+
+	p.log.Info("Recovery workflow resolution failed, requires human review",
+		"warnings", resp.Warnings,
+		"humanReviewReason", humanReviewReason,
+		"hasPartialWorkflow", hasSelectedWorkflow,
+		"canRecover", resp.CanRecover,
+		"confidence", resp.AnalysisConfidence,
+	)
+
+	// Set structured failure with timestamp
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = "WorkflowResolutionFailed"
+	analysis.Status.InvestigationID = resp.IncidentID
+
+	// BR-HAPI-197: Track failure metrics
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Inc()
+
+	// Record failure metric
+	subReason := "HumanReviewRequired"
+	if humanReviewReason != "" {
+		subReason = humanReviewReason
+	}
+	p.metrics.RecordFailure("WorkflowResolutionFailed", subReason)
+
+	// Map HumanReviewReason to SubReason
+	if humanReviewReason != "" {
+		analysis.Status.SubReason = p.mapEnumToSubReason(humanReviewReason)
+	} else {
+		analysis.Status.SubReason = mapWarningsToSubReason(resp.Warnings)
+	}
+
+	// Build comprehensive message
+	var messageParts []string
+	messageParts = append(messageParts, "HolmesGPT-API could not provide reliable recovery workflow recommendation")
+
+	if humanReviewReason != "" {
+		messageParts = append(messageParts, fmt.Sprintf("(reason: %s)", humanReviewReason))
+	}
+
+	if len(resp.Warnings) > 0 {
+		messageParts = append(messageParts, fmt.Sprintf("Warnings: %s", strings.Join(resp.Warnings, "; ")))
+	}
+
+	analysis.Status.Message = strings.Join(messageParts, " ")
+	analysis.Status.Warnings = resp.Warnings
 
 	return ctrl.Result{}, nil
 }
