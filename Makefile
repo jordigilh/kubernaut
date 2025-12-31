@@ -71,7 +71,7 @@ generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto
 	@go generate ./pkg/datastorage/server/middleware/...
 	@go generate ./pkg/audit/...
 	@echo "📋 Generating HolmesGPT-API client (ogen)..."
-	@go generate ./pkg/holmesgpt/client/...
+	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ Generation complete"
 
 .PHONY: generate-holmesgpt-client
@@ -257,7 +257,7 @@ validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI -
 .PHONY: lint-holmesgpt-api
 lint-holmesgpt-api: ## Run ruff linter on holmesgpt-api Python code
 	@echo "🔍 Running ruff linter on holmesgpt-api..."
-	@cd holmesgpt-api && (ruff check src/ tests/ 2>/dev/null || echo "⚠️  ruff not installed, skipping Python linting")
+	@cd holmesgpt-api && ruff check src/ tests/
 	@echo "✅ Linting complete"
 
 .PHONY: clean-holmesgpt-api
