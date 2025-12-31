@@ -101,3 +101,11 @@ func (s *RecoveryRequest) setDefaults() {
 		s.BusinessCategory.SetTo(val)
 	}
 }
+
+// setDefaults set default value of fields.
+func (s *RecoveryResponse) setDefaults() {
+	{
+		val := bool(false)
+		s.NeedsHumanReview.SetTo(val)
+	}
+}

@@ -2607,6 +2607,10 @@ type RecoveryResponse struct {
 	SelectedWorkflow OptNilRecoveryResponseSelectedWorkflow `json:"selected_workflow"`
 	// Recovery-specific analysis including previous attempt assessment (BR-AI-081).
 	RecoveryAnalysis OptNilRecoveryResponseRecoveryAnalysis `json:"recovery_analysis"`
+	// Whether human review is needed (BR-HAPI-197).
+	NeedsHumanReview OptBool `json:"needs_human_review"`
+	// Reason why human review is needed (BR-HAPI-197).
+	HumanReviewReason OptNilString `json:"human_review_reason"`
 }
 
 // GetIncidentID returns the value of IncidentID.
@@ -2654,6 +2658,16 @@ func (s *RecoveryResponse) GetRecoveryAnalysis() OptNilRecoveryResponseRecoveryA
 	return s.RecoveryAnalysis
 }
 
+// GetNeedsHumanReview returns the value of NeedsHumanReview.
+func (s *RecoveryResponse) GetNeedsHumanReview() OptBool {
+	return s.NeedsHumanReview
+}
+
+// GetHumanReviewReason returns the value of HumanReviewReason.
+func (s *RecoveryResponse) GetHumanReviewReason() OptNilString {
+	return s.HumanReviewReason
+}
+
 // SetIncidentID sets the value of IncidentID.
 func (s *RecoveryResponse) SetIncidentID(val string) {
 	s.IncidentID = val
@@ -2697,6 +2711,16 @@ func (s *RecoveryResponse) SetSelectedWorkflow(val OptNilRecoveryResponseSelecte
 // SetRecoveryAnalysis sets the value of RecoveryAnalysis.
 func (s *RecoveryResponse) SetRecoveryAnalysis(val OptNilRecoveryResponseRecoveryAnalysis) {
 	s.RecoveryAnalysis = val
+}
+
+// SetNeedsHumanReview sets the value of NeedsHumanReview.
+func (s *RecoveryResponse) SetNeedsHumanReview(val OptBool) {
+	s.NeedsHumanReview = val
+}
+
+// SetHumanReviewReason sets the value of HumanReviewReason.
+func (s *RecoveryResponse) SetHumanReviewReason(val OptNilString) {
+	s.HumanReviewReason = val
 }
 
 func (*RecoveryResponse) recoveryAnalyzeEndpointAPIV1RecoveryAnalyzePostRes() {}
