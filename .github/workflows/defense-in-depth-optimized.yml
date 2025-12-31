@@ -72,7 +72,7 @@ jobs:
       - name: Build all Go services
         run: |
           echo "🔨 Building all Go services..."
-          make build
+          make build-all
 
       - name: Run all unit tests
         run: |
