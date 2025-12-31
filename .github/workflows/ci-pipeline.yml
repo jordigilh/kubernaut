@@ -496,7 +496,7 @@ jobs:
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-holmesgpt.result == 'success' || needs.integration-holmesgpt.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
