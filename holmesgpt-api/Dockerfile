@@ -69,17 +69,19 @@ RUN mkdir -p /tmp /opt/app-root/.cache && \
 USER 1001
 
 # Environment variables
+# CRITICAL: PYTHONPATH ensures Python 3.12 finds packages in /opt/app-root/lib/python3.12/site-packages
 ENV PYTHONUNBUFFERED=1 \
 	PYTHONDONTWRITEBYTECODE=1 \
 	PATH="/opt/app-root/bin:${PATH}" \
+	PYTHONPATH="/opt/app-root/lib/python3.12/site-packages:${PYTHONPATH}" \
 	HOME=/opt/app-root
 
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Health check (use python3.12 explicitly - UBI9 python-312 image defaults to python3.9)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-	CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
+	CMD python3.12 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
 # Use entrypoint script to handle --config flag (ADR-030 - matches Go services)
 ENTRYPOINT ["./entrypoint.sh"]
