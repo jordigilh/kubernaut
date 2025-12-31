@@ -72,13 +72,16 @@ jobs:
       - name: Generate Go code
         run: |
           echo "🔄 Generating Go code (tools auto-installed via Makefile)..."
-          export PATH="$(pwd)/bin:$PATH"
           make generate
+        env:
+          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
 
       - name: Build all Go services
         run: |
           echo "🔨 Building all Go services..."
           make build-all
+        env:
+          PATH: ${{ github.workspace }}/bin:${{ env.PATH }}
 
       - name: Lint Go code
         run: |
