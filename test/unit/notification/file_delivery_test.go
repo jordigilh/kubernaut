@@ -129,26 +129,21 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				}
 			}
 
-			// BEHAVIOR: Concurrent deliveries should create distinct files
-			var wg sync.WaitGroup
-			errChan := make(chan error, 3)
+		// BEHAVIOR: Concurrent deliveries should create distinct files
+		var wg sync.WaitGroup
+		errChan := make(chan error, 3)
 
-			for i, notification := range notifications {
-				// Deliver sequentially with delay to ensure unique timestamps
-				// macOS filesystems can have millisecond-level timestamp precision
-				// Using 50ms to guarantee unique filenames even on fastest machines
-				if i > 0 {
-					time.Sleep(50 * time.Millisecond)
+		for _, notification := range notifications {
+			// Launch concurrent deliveries
+			// Note: Filename uniqueness is ensured by notification name + timestamp in filename
+			wg.Add(1)
+			go func(n *notificationv1alpha1.NotificationRequest) {
+				defer wg.Done()
+				if err := fileService.Deliver(ctx, n); err != nil {
+					errChan <- err
 				}
-
-				wg.Add(1)
-				go func(n *notificationv1alpha1.NotificationRequest) {
-					defer wg.Done()
-					if err := fileService.Deliver(ctx, n); err != nil {
-						errChan <- err
-					}
-				}(notification)
-			}
+			}(notification)
+		}
 
 			wg.Wait()
 			close(errChan)
