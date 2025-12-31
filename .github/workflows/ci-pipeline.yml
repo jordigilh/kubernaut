@@ -289,7 +289,7 @@ jobs:
     # Run if: integration ran AND passed, AND (push to main OR DS changed OR SP changed), AND not draft PR
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-signalprocessing.result == 'success' || needs.integration-signalprocessing.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -321,7 +321,7 @@ jobs:
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-aianalysis.result == 'success' || needs.integration-aianalysis.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -353,7 +353,7 @@ jobs:
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-workflowexecution.result == 'success' || needs.integration-workflowexecution.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -385,7 +385,7 @@ jobs:
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-remediationorchestrator.result == 'success' || needs.integration-remediationorchestrator.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -417,7 +417,7 @@ jobs:
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-gateway.result == 'success' || needs.integration-gateway.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
