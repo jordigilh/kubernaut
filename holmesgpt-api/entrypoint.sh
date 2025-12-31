@@ -43,4 +43,5 @@ export CONFIG_FILE="$CONFIG_PATH"
 echo "Starting HolmesGPT-API with config: $CONFIG_PATH"
 
 # Start uvicorn server (cannot pass custom flags - uses CONFIG_FILE env var)
-exec uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 4
+# CRITICAL: Use python3.12 explicitly (UBI9 python-312 image defaults to python3.9)
+exec python3.12 -m uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 4

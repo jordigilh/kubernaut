@@ -32,7 +32,9 @@ from dataclasses import dataclass
 
 # DD-API-001: Use OpenAPI generated client
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'clients'))
+# Add holmesgpt-api root to path so src.clients.datastorage can be imported
+hapi_root = os.path.join(os.path.dirname(__file__), '..', '..')
+sys.path.insert(0, hapi_root)
 from src.clients.datastorage import ApiClient, Configuration
 from src.clients.datastorage.api import WorkflowCatalogAPIApi
 from src.clients.datastorage.models import RemediationWorkflow, MandatoryLabels

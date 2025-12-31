@@ -138,7 +138,14 @@ var _ = SynchronizedBeforeSuite(
 		hapiURL = "http://localhost:30120"
 		dataStorageURL = "http://localhost:30098"
 
+	// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
+	// Pods may be ready but NodePort routing needs time to propagate with podman provider
+	logger.Info("⏳ Waiting 5 seconds for Kind NodePort mapping to stabilize...")
+	time.Sleep(5 * time.Second)
+
 	// Wait for Data Storage HTTP endpoint to be responsive via NodePort
+	// Reduced timeout from 180s to 90s (per notification E2E pattern)
+	// With stabilization wait, this should be sufficient
 	logger.Info("⏳ Waiting for Data Storage service to be ready...")
 	Eventually(func() error {
 		resp, err := http.Get(dataStorageURL + "/health/ready")
@@ -150,7 +157,7 @@ var _ = SynchronizedBeforeSuite(
 			return fmt.Errorf("health check returned %d", resp.StatusCode)
 		}
 		return nil
-	}, 180*time.Second, 5*time.Second).Should(Succeed(), "Data Storage health check should succeed")
+	}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
 
 	// Wait for HAPI HTTP endpoint to be responsive via NodePort
 	logger.Info("⏳ Waiting for HAPI service to be ready...")
@@ -164,7 +171,7 @@ var _ = SynchronizedBeforeSuite(
 			return fmt.Errorf("health check returned %d", resp.StatusCode)
 		}
 		return nil
-	}, 180*time.Second, 5*time.Second).Should(Succeed(), "HAPI health check should succeed")
+	}, 90*time.Second, 2*time.Second).Should(Succeed(), "HAPI health check should succeed")
 
 	logger.Info("✅ HAPI E2E infrastructure ready")
 	logger.Info("   HAPI URL: " + hapiURL)
