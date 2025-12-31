@@ -34,7 +34,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/recovery/analyze", status_code=status.HTTP_200_OK, response_model=RecoveryResponse)
+@router.post(
+    "/recovery/analyze",
+    status_code=status.HTTP_200_OK,
+    response_model=RecoveryResponse,
+    response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+)
 async def recovery_analyze_endpoint(request: RecoveryRequest) -> RecoveryResponse:
     """
     Analyze failed action and provide recovery strategies

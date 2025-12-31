@@ -1173,6 +1173,24 @@
             ],
             "title": "Recovery Analysis",
             "description": "Recovery-specific analysis including previous attempt assessment (BR-AI-081)"
+          },
+          "needs_human_review": {
+            "type": "boolean",
+            "title": "Needs Human Review",
+            "description": "Whether human review is needed (BR-HAPI-197)",
+            "default": false
+          },
+          "human_review_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Human Review Reason",
+            "description": "Reason why human review is needed (BR-HAPI-197)"
           }
         },
         "type": "object",

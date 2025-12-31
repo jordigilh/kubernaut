@@ -31,7 +31,12 @@ from .llm_integration import analyze_incident
 router = APIRouter()
 
 
-@router.post("/incident/analyze", status_code=status.HTTP_200_OK, response_model=IncidentResponse)
+@router.post(
+    "/incident/analyze",
+    status_code=status.HTTP_200_OK,
+    response_model=IncidentResponse,
+    response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
+)
 async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentResponse:
     """
     Analyze initial incident and provide RCA + workflow selection
