@@ -210,8 +210,9 @@ Result: 2 WorkflowExecutions created for same resource ❌
    - RO: Before resource lock check? Or before WFE creation?
 
 3. **How long should lock be held?**
-   - Gateway: During signal processing (~50ms)
-   - RO: During reconciliation (~100ms?)
+   - Gateway: 30 seconds lease duration
+   - RO: 30 seconds lease duration (same - confirmed sufficient)
+   - Note: Lease duration != processing time (lease is safety timeout)
 
 **Potential RO Locking Pattern**:
 
@@ -305,20 +306,30 @@ Describe("RO Multi-Replica Routing", func() {
 
 **Implementation Approach**:
 
-1. **Reuse Gateway's DistributedLockManager**
-   - Move to shared package: `pkg/shared/locking/`
-   - Parameterize lock duration, namespace
+1. **Implement Independently (Not Shared Package)**
+   - Gateway: `pkg/gateway/processing/distributed_lock.go`
+   - RO: `pkg/remediationorchestrator/processing/distributed_lock.go`
+   - **Rationale**: Avoid premature abstraction complexity
+   - **Future**: Refactor to shared package if pattern stabilizes
 
-2. **Integrate in RO Reconciliation**
+2. **Copy Gateway's Pattern**
+   - Use same K8s Lease-based approach
+   - Lock duration: **30 seconds** (same as Gateway)
+   - Lock identifier: Target resource (not fingerprint)
+   - Error handling: Check `apierrors.IsNotFound` explicitly
+
+3. **Integrate in RO Reconciliation**
    - Acquire lock on target resource before routing decision
    - Release lock after WFE creation
+   - Note: Once WFE CRD created, RO can trace it to prevent duplicates
 
-3. **Add RBAC for RO**
+4. **Add RBAC for RO**
    - RO needs Lease resource permissions
    - Update `deployments/remediationorchestrator/rbac.yaml`
 
-4. **Add Metrics**
-   - `ro_lock_acquisition_failures_total`
+5. **Add Metrics**
+   - `ro_lock_acquisition_failures_total` (service-specific)
+   - Each service owns its own metrics (no shared metrics complexity)
 
 **Reference Implementation**:
 - Gateway: `pkg/gateway/processing/distributed_lock.go`
@@ -371,19 +382,27 @@ prName := fmt.Sprintf("wfe-%s", hash(wfe.Spec.TargetResource)[:16])
 
 ---
 
-### Option 2: Implement Distributed Locking (if vulnerable)
+### Option 2: Implement Distributed Locking (if vulnerable) ✅ **SELECTED**
 
 **Choose if**:
 - ❌ RO runs with multiple replicas
 - ❌ Duplicate WFE CRDs are unacceptable
 - ❌ Race condition confirmed via integration test
 
-**Effort**: 2 days (reuse Gateway's pattern)
+**Effort**: 2 days (copy Gateway's pattern)
+
+**Implementation**:
+- ✅ **Independent implementation** (not shared package)
+- ✅ Copy Gateway's code to `pkg/remediationorchestrator/processing/`
+- ✅ Lock duration: 30 seconds (same as Gateway)
+- ✅ Each service owns its own metrics
+- ✅ Future: Refactor to shared package if needed (3+ services)
 
 **Benefits**:
 - ✅ Prevents duplicate WFE creation at source
 - ✅ Consistent with Gateway's approach
 - ✅ Proven pattern (K8s Lease-based)
+- ✅ No premature abstraction complexity
 
 ---
 
@@ -398,6 +417,35 @@ prName := fmt.Sprintf("wfe-%s", hash(wfe.Spec.TargetResource)[:16])
 - Document single-replica deployment constraint
 - OR document acceptable duplicate WFE behavior
 - Add monitoring for duplicate WFEs
+
+---
+
+## Implementation Decision: Independent vs. Shared
+
+### Decision Rationale (Dec 30, 2025)
+
+**Decision**: Each service implements distributed locking independently
+
+**Reasons**:
+1. **Avoid Premature Abstraction** (YAGNI principle)
+   - Only 2 services need pattern currently
+   - Metrics complexity (passing metrics as parameters is overkill)
+   - Lock duration is same (30s) but may diverge later
+
+2. **Simplicity Over Reuse**
+   - Copy proven pattern → faster implementation
+   - No shared package coordination overhead
+   - Each service can evolve independently
+
+3. **Future Flexibility**
+   - If 3+ services need pattern → refactor to shared package
+   - If pattern stabilizes → consider abstraction
+   - For now: Prefer duplication over wrong abstraction
+
+**Implementation**:
+- Gateway: `pkg/gateway/processing/distributed_lock.go`
+- RO: `pkg/remediationorchestrator/processing/distributed_lock.go`
+- Both use: 30-second lease, K8s Lease resources, same error handling
 
 ---
 
@@ -509,15 +557,36 @@ if err != nil {
 ## Next Steps
 
 **For RO Team**:
-1. Schedule 30-minute discussion with Gateway team (optional)
-2. Review Gateway's DD-GATEWAY-013 for technical details
-3. Run Priority 3 integration test to validate current behavior
-4. Make go/no-go decision on distributed locking
+1. ✅ Schedule 30-minute discussion with Gateway team (optional)
+2. ✅ Review Gateway's DD-GATEWAY-013 for technical details
+3. ✅ Run Priority 3 integration test to validate current behavior
+4. ✅ Make go/no-go decision on distributed locking → **APPROVED: Implementing in next branch**
+5. ✅ **Implementation approach decided**: Independent implementation (not shared package)
 
 **For Gateway Team**:
-- Available for consultation if RO team proceeds with distributed locking
+- ✅ **No refactoring needed**: RO will copy pattern, not share code
+- ✅ **Lock duration confirmed**: 30 seconds works for both services
+- ✅ **Metrics approach confirmed**: Each service owns its own metrics
+- Available for consultation if RO team has questions during implementation
 - Can share code/patterns/lessons learned
-- Can help review implementation approach
+- Can help review RO's implementation approach
+
+**For RO Team Implementation**:
+- Copy Gateway's `distributed_lock.go` pattern to `pkg/remediationorchestrator/processing/`
+- Lock identifier: Target resource (not fingerprint)
+- Lock duration: 30 seconds (hardcoded constant)
+- Metric: `ro_lock_acquisition_failures_total`
+- RBAC: Add Lease permissions to RO's ClusterRole
+
+**For Both Teams**:
+- ✅ **ADR-052 Created**: Distributed Locking Pattern documented
+  - [ADR-052: Kubernetes Lease-Based Distributed Locking Pattern](../architecture/decisions/ADR-052-distributed-locking-pattern.md)
+  - Documents the **pattern** (not shared code mandate)
+  - Explains when to use distributed locking in Kubernaut
+  - Independent implementation approach (copy and adapt)
+- 📋 **Future Refactoring**: If pattern stabilizes, consider shared package later
+  - **Not now**: Avoid premature abstraction (only 2 services)
+  - **Later**: If 3+ services use pattern, refactor to `pkg/shared/locking/`
 
 ---
 
@@ -529,9 +598,16 @@ if err != nil {
 
 ---
 
-**Status**: 📋 **RECOMMENDATION SHARED** - Awaiting RO Team Review
+**Status**: ✅ **DECISIONS MADE** - Ready for Independent Implementation
 
-**Priority**: P2 - Medium (Preventive measure, no immediate production issue)
+**Decisions**:
+- ✅ RO Team: Implementing distributed locking (Option 2 selected)
+- ✅ Implementation: Independent (not shared package) - copy Gateway's pattern
+- ✅ Lock Duration: 30 seconds (hardcoded for both services)
+- ✅ Metrics: Each service owns its own metrics
+- ✅ Future: Refactor to shared package if 3+ services need pattern
 
-**Confidence**: 85% - Gateway's race condition is confirmed; RO's race condition is theoretical until tested
+**Priority**: P1 - High (RO implementing in next branch alongside Gateway)
+
+**Confidence**: 90% - Gateway's pattern validated; RO will copy proven approach
 

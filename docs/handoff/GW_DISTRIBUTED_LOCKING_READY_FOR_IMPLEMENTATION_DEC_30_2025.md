@@ -300,6 +300,15 @@ if err != nil {
 - HolmesGPT API team to complete test issues
 - Next branch creation for implementation
 
+**Cross-Team Update** (Dec 30, 2025):
+- 🔔 RO team is also implementing distributed locking in next branch
+- ✅ **Decision**: Independent implementations (not shared package)
+  - Gateway: `pkg/gateway/processing/distributed_lock.go`
+  - RO: `pkg/remediationorchestrator/processing/distributed_lock.go`
+- ✅ Both use 30-second lease duration
+- ✅ Each service owns its own metrics
+- 📋 Future: Consider shared package if 3+ services need pattern
+
 ---
 
 ## Session Summary
