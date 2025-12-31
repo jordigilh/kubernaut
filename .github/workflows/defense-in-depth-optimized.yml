@@ -35,14 +35,14 @@ on:
 
 jobs:
   # ========================================
-  # STAGE 1: BUILD & UNIT TESTS
-  # Single job, all 8 services (<2 min)
+  # STAGE 1A: BUILD & LINT
+  # Single job (~3 min)
   # ========================================
 
-  build-and-unit:
-    name: Build & Unit Tests (All Services)
+  build-and-lint:
+    name: Build & Lint (All Services)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -95,12 +95,67 @@ jobs:
           make lint-holmesgpt-api
         continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
-      - name: Run all unit tests
-        run: |
-          echo "🧪 Running unit tests for all services..."
-          export PATH="${{ github.workspace }}/bin:$PATH"
-          make test
+  # ========================================
+  # STAGE 1B: UNIT TESTS (PARALLEL)
+  # Matrix job, 8 services in parallel (~2 min)
+  # ========================================
 
+  unit-tests:
+    name: Unit Tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    needs: build-and-lint
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - aianalysis
+          - datastorage
+          - gateway
+          - notification
+          - remediationorchestrator
+          - signalprocessing
+          - workflowexecution
+          - holmesgpt-api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Go
+        if: matrix.service != 'holmesgpt-api'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Set up Python
+        if: matrix.service == 'holmesgpt-api'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+
+      - name: Install Python dependencies
+        if: matrix.service == 'holmesgpt-api'
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Run unit tests (Go)
+        if: matrix.service != 'holmesgpt-api'
+        run: |
+          echo "🧪 Running unit tests for ${{ matrix.service }}..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make test-unit-${{ matrix.service }}
+
+      - name: Run unit tests (Python)
+        if: matrix.service == 'holmesgpt-api'
+        run: |
           echo "🧪 Running HolmesGPT API unit tests..."
           make test-unit-holmesgpt-api
         env:
@@ -110,7 +165,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-test-coverage
+          name: unit-test-coverage-${{ matrix.service }}
           path: |
             coverage.out
             holmesgpt-api/htmlcov/
@@ -124,7 +179,7 @@ jobs:
 
   integration-signalprocessing:
     name: Integration (SignalProcessing)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Run if: push to main, OR DS changed, OR SP changed
@@ -153,7 +208,7 @@ jobs:
 
   integration-aianalysis:
     name: Integration (AIAnalysis)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: |
@@ -181,7 +236,7 @@ jobs:
 
   integration-workflowexecution:
     name: Integration (WorkflowExecution)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: |
@@ -202,7 +257,7 @@ jobs:
 
   integration-remediationorchestrator:
     name: Integration (RemediationOrchestrator)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: |
@@ -223,7 +278,7 @@ jobs:
 
   integration-gateway:
     name: Integration (Gateway)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: |
@@ -251,7 +306,7 @@ jobs:
 
   integration-datastorage:
     name: Integration (Data Storage)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # DS always runs (it's the shared dependency)
@@ -276,7 +331,7 @@ jobs:
 
   integration-notification:
     name: Integration (Notification)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: |
@@ -297,7 +352,7 @@ jobs:
 
   integration-holmesgpt:
     name: Integration (HolmesGPT API)
-    needs: [build-and-unit]
+    needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: |
@@ -588,7 +643,7 @@ jobs:
   summary:
     name: Test Suite Summary
     needs: [
-      build-and-unit,
+      build-and-lint, unit-tests,
       integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt,
       e2e-signalprocessing, e2e-aianalysis, e2e-workflowexecution, e2e-remediationorchestrator, e2e-gateway, e2e-datastorage, e2e-notification, e2e-holmesgpt
     ]
@@ -598,11 +653,14 @@ jobs:
       - name: Test Suite Summary
         run: |
           echo "═══════════════════════════════════════════════════════════"
-          echo "Defense-in-Depth Test Suite Summary (Optimized)"
+          echo "Defense-in-Depth Test Suite Summary (Optimized + Parallel)"
           echo "═══════════════════════════════════════════════════════════"
           echo ""
-          echo "STAGE 1 - Build & Unit Tests:"
-          echo "  All Services: ${{ needs.build-and-unit.result }}"
+          echo "STAGE 1A - Build & Lint:"
+          echo "  Build & Lint: ${{ needs.build-and-lint.result }}"
+          echo ""
+          echo "STAGE 1B - Unit Tests (Parallel Matrix):"
+          echo "  Unit Tests: ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Integration Tests (Smart Path Detection):"
           echo "  SignalProcessing:          ${{ needs.integration-signalprocessing.result }}"
@@ -631,16 +689,24 @@ jobs:
           echo "  ✅ Push to main → ALL services tested (full validation)"
           echo ""
           echo "Optimizations:"
-          echo "  ✅ Single build & unit job (fast feedback)"
+          echo "  ✅ Build & lint separated from tests"
+          echo "  ✅ Parallel unit tests (8 services in parallel)"
           echo "  ✅ Parallel integration tests"
           echo "  ✅ Parallel E2E tests"
           echo "  ✅ E2E runs only after ALL integration tests pass"
           echo "═══════════════════════════════════════════════════════════"
 
-          # Check for build & unit failure (critical)
-          if [ "${{ needs.build-and-unit.result }}" != "success" ]; then
+          # Check for build & lint failure (critical)
+          if [ "${{ needs.build-and-lint.result }}" != "success" ]; then
             echo ""
-            echo "❌ Build & Unit tests failed - all other tests skipped"
+            echo "❌ Build & Lint failed - all other tests skipped"
+            exit 1
+          fi
+          
+          # Check for unit tests failure (critical)
+          if [ "${{ needs.unit-tests.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Unit tests failed - integration/E2E tests skipped"
             exit 1
           fi
 
