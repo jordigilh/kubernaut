@@ -370,7 +370,7 @@ test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI
 		-v $(CURDIR):/workspace:z \
 		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
-		sh -c "pip install -q -r requirements.txt -r requirements-test.txt && pytest tests/unit/ -v --durations=20"
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20"
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
