@@ -7,7 +7,6 @@ test-slm
 bin/
 mcp-server
 *.log
-dependencies/
 *.bak
 *.bak2
 
@@ -25,6 +24,21 @@ dependencies/
 /*.md
 !/README.md
 !/CHANGELOG*.md
+
+# Root ephemeral files (test artifacts, build metadata)
+/watch_*
+/.last-image-tag-*.env
+/.perf-baseline.json
+/coverprofile.out
+/*-coverage.out
+
+# Root ephemeral directories
+/TODO/
+/.hypothesis/
+/.preserved/
+/.pytest_cache/
+/htmlcov/
+/coverdata/
 # Python artifacts
 *.pyc
 __pycache__/
