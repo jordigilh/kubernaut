@@ -65,6 +65,12 @@ from src.toolsets.workflow_catalog import (
 )
 from holmes.core.tools import StructuredToolResultStatus
 
+# Data Storage OpenAPI Client imports (DD-API-001)
+from src.clients.datastorage import ApiClient as DSApiClient, Configuration as DSConfiguration
+from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+from src.clients.datastorage.models.workflow_search_request import WorkflowSearchRequest
+from src.clients.datastorage.models.workflow_search_filters import WorkflowSearchFilters
+
 # Note: Uses fixtures from tests/e2e/conftest.py (V1.0 Go infrastructure)
 # DATA_STORAGE_URL is provided via data_storage_stack fixture
 
@@ -473,30 +479,36 @@ def verify_test_data_exists():
     Verify test data is bootstrapped in Data Storage Service
 
     This function can be called manually to check if test data exists.
+    Uses Data Storage OpenAPI client per DD-API-001.
     """
     try:
-        response = requests.post(
-            f"{DATA_STORAGE_URL}/api/v1/workflows/search",
-            json={
-                "query": "OOMKilled critical",
-                "filters": {
-                    "signal-type": "OOMKilled",
-                    "severity": "critical"
-                },
-                "top_k": 10,
-                "min_similarity": 0.0
-            },
-            timeout=HTTP_REQUEST_TIMEOUT
+        # Configure Data Storage OpenAPI client
+        config = DSConfiguration(host=DATA_STORAGE_URL)
+        api_client = DSApiClient(configuration=config)
+        search_api = WorkflowCatalogAPIApi(api_client=api_client)
+
+        # Construct search request using OpenAPI models
+        filters = WorkflowSearchFilters(**{
+            "signal-type": "OOMKilled",
+            "severity": "critical"
+        })
+        search_request = WorkflowSearchRequest(
+            query="OOMKilled critical",
+            filters=filters,
+            top_k=10,
+            min_similarity=0.0
         )
 
-        if response.status_code == 200:
-            data = response.json()
-            workflow_count = len(data.get("workflows", []))
-            print(f"✅ Test data verified: {workflow_count} workflows found")
-            return True
-        else:
-            print(f"❌ Test data verification failed: HTTP {response.status_code}")
-            return False
+        # Execute search using OpenAPI client
+        response = search_api.search_workflows(
+            workflow_search_request=search_request
+        )
+
+        # Response is a model object, access workflows directly
+        workflow_count = len(response.workflows)
+        print(f"✅ Test data verified: {workflow_count} workflows found")
+        return True
+
     except Exception as e:
         print(f"❌ Test data verification failed: {e}")
         return False
