@@ -108,6 +108,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 								},
 							},
 						},
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}
@@ -200,6 +201,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 								},
 							},
 						},
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}
@@ -258,7 +260,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("audit-test-%s", uniqueSuffix),
-							Severity:         "high",
+							Severity:         "critical",
 							SignalType:       "AuditTest",
 							Environment:      "test",
 							BusinessPriority: "P2",
@@ -273,6 +275,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 								},
 							},
 						},
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}
@@ -299,15 +302,16 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 			// Allow time for async audit writes (100ms batch interval)
 			time.Sleep(500 * time.Millisecond)
 
-			// Query audit events via Data Storage API
-			dsClient, err := dsgen.NewClientWithResponses(dataStorageURL)
-			Expect(err).NotTo(HaveOccurred())
+		// Query audit events via Data Storage API
+		dsClient, err := dsgen.NewClientWithResponses(dataStorageURL)
+		Expect(err).NotTo(HaveOccurred())
 
-			eventCategory := "analysis"
-			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				CorrelationId: &analysisName,
-				EventCategory: &eventCategory,
-			})
+		correlationID := analysis.Spec.RemediationID
+		eventCategory := "analysis"
+		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventCategory: &eventCategory,
+		})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
 			Expect(resp.JSON200.Data).ToNot(BeNil(), "Response should have data array")

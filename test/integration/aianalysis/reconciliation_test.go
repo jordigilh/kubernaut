@@ -107,11 +107,11 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
-			// Staging environment should auto-approve per Rego policy
-			Expect(analysis.Status.ApprovalRequired).To(BeFalse())
-			// Should have a selected workflow from HolmesGPT mock
-			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
-			Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("wf-restart-pod"))
+		// Staging environment should auto-approve per Rego policy
+		Expect(analysis.Status.ApprovalRequired).To(BeFalse())
+		// Should have a selected workflow from HolmesGPT mock
+		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
+		Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("mock-crashloop-config-fix-v1"))
 		})
 
 	It("should require approval for production environment - BR-AI-013", func() {

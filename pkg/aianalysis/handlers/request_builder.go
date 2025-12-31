@@ -108,6 +108,18 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	spec := analysis.Spec.AnalysisRequest.SignalContext
 	enrichment := spec.EnrichmentResults
 
+	// DEBUG: Log what we're reading from the CRD
+	b.log.Info("🔍 DEBUG: Reading from CRD",
+		"crdName", analysis.Name,
+		"spec.SignalType", spec.SignalType,
+		"previousExecutionsCount", len(analysis.Spec.PreviousExecutions),
+	)
+	if len(analysis.Spec.PreviousExecutions) > 0 {
+		b.log.Info("🔍 DEBUG: Previous execution signal type",
+			"previousSignalType", analysis.Spec.PreviousExecutions[0].OriginalRCA.SignalType,
+		)
+	}
+
 	req := &client.RecoveryRequest{
 		// REQUIRED fields
 		IncidentID:    analysis.Name,
@@ -127,7 +139,23 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 	req.BusinessCategory.SetTo(getOrDefault(enrichment.CustomLabels, "business_category", "standard"))
 
 	// Optional signal context (may have changed since initial)
+	// DEBUG: Log BEFORE SetTo
+	b.log.Info("🔍 DEBUG: BEFORE SetTo",
+		"spec.SignalType", spec.SignalType,
+		"isEmpty", spec.SignalType == "",
+		"req.SignalType.Set", req.SignalType.Set,
+	)
+	
 	req.SignalType.SetTo(spec.SignalType)
+	
+	// DEBUG: Log AFTER SetTo
+	b.log.Info("🔍 DEBUG: AFTER SetTo",
+		"crdName", analysis.Name,
+		"req.SignalType.Set", req.SignalType.Set,
+		"req.SignalType.Value", req.SignalType.Value,
+		"requestPointer", fmt.Sprintf("%p", req),
+	)
+	
 	req.Severity.SetTo(spec.Severity)
 	req.ResourceNamespace.SetTo(spec.TargetResource.Namespace)
 	req.ResourceKind.SetTo(spec.TargetResource.Kind)
@@ -262,5 +290,3 @@ func getOrDefault(labels map[string][]string, key, defaultVal string) string {
 func strPtr(s string) *string {
 	return &s
 }
-
-

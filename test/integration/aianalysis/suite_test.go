@@ -70,7 +70,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -83,8 +83,9 @@ var (
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore // Audit store for DD-AUDIT-003
 
-	// Mock dependencies for integration tests
-	mockHGClient *testutil.MockHolmesGPTClient
+	// Real HAPI client for integration tests (with MOCK_LLM_MODE=true inside HAPI)
+	// Per testing strategy: Only LLM is mocked (inside HAPI), all other services are real
+	realHGClient *hgclient.HolmesGPTClient
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -163,23 +164,18 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	GinkgoWriter.Println("✅ Namespaces created: kubernaut-system, default")
 
-	By("Setting up mock dependencies")
-	// Create mock HolmesGPT client with default success response including workflow
-	// (Without workflow + high confidence triggers "Problem Resolved" path per BR-HAPI-200)
-	mockHGClient = testutil.NewMockHolmesGPTClient()
-	mockHGClient.WithFullResponse(
-		"Integration test: Issue identified and workflow selected",
-		0.85,
-		[]string{},
-		"",                                    // rcaSummary
-		"",                                    // rcaSeverity
-		"wf-restart-pod",                      // workflowID
-		"kubernaut/workflow-restart-pod:v1.0", // containerImage
-		0.85,                                  // workflowConfidence
-		true,                                  // targetInOwnerChain
-		"",                                    // workflowRationale
-		false,                                 // includeAlternatives
-	)
+	By("Setting up REAL HolmesGPT-API client")
+	// Integration tests use REAL HAPI service (http://localhost:18120)
+	// HAPI runs with MOCK_LLM_MODE=true to avoid LLM costs (only mock allowed)
+	// The HAPI service has deterministic mock responses for special SignalType values:
+	// - MOCK_NO_WORKFLOW_FOUND → needs_human_review=true, reason="no_matching_workflows"
+	// - MOCK_LOW_CONFIDENCE → needs_human_review=true, reason="low_confidence"
+	// - Other signal types → normal successful responses
+	realHGClient, err = hgclient.NewHolmesGPTClient(hgclient.Config{
+		BaseURL: "http://localhost:18120",
+		Timeout: 30 * time.Second,
+	})
+	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
 	// Create mock Rego evaluator that auto-approves staging, requires approval for production
 	mockRegoEvaluator := &MockRegoEvaluator{}
@@ -219,10 +215,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-METRICS-001: Create metrics instance for integration testing
 	testMetrics := metrics.NewMetrics()
 
-	// Create handlers with mock dependencies, metrics, and REAL audit client
+	// Create handlers with REAL HAPI client, metrics, and REAL audit client
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
-	// This enables flow-based audit integration tests in audit_flow_integration_test.go
-	investigatingHandler := handlers.NewInvestigatingHandler(mockHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient)
+	// Integration tests use REAL services (only LLM inside HAPI is mocked for cost)
+	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient)
 	analyzingHandler := handlers.NewAnalyzingHandler(mockRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
 
 	// Create controller with wired handlers and audit client
@@ -328,21 +324,16 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ctx, cancel = context.WithCancel(context.Background())
 	}
 
-	// Create per-process mock client (each process gets its own mock)
-	mockHGClient = testutil.NewMockHolmesGPTClient()
-	mockHGClient.WithFullResponse(
-		"Integration test: Issue identified and workflow selected",
-		0.85,
-		[]string{},
-		"",                                    // rcaSummary
-		"",                                    // rcaSeverity
-		"wf-restart-pod",                      // workflowID
-		"kubernaut/workflow-restart-pod:v1.0", // containerImage
-		0.85,                                  // workflowConfidence
-		true,                                  // targetInOwnerChain
-		"",                                    // workflowRationale
-		false,                                 // includeAlternatives
-	)
+	// Create per-process REAL HAPI client (each process gets its own client)
+	// Integration tests use REAL HAPI service with MOCK_LLM_MODE=true (only mock allowed)
+	realHGClient, err = hgclient.NewHolmesGPTClient(hgclient.Config{
+		BaseURL: "http://localhost:18120",
+		Timeout: 30 * time.Second,
+	})
+	if err != nil {
+		// Don't fail here - let tests fail if HAPI is not available
+		GinkgoWriter.Printf("⚠️ Warning: failed to create real HAPI client: %v\n", err)
+	}
 })
 
 // SynchronizedAfterSuite ensures proper cleanup in parallel execution
@@ -374,22 +365,40 @@ var _ = SynchronizedAfterSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
-	By("Stopping AIAnalysis integration infrastructure")
-	err := infrastructure.StopAIAnalysisIntegrationInfrastructure(GinkgoWriter)
-	if err != nil {
-		GinkgoWriter.Printf("⚠️  Warning: Error stopping infrastructure: %v\n", err)
-	}
+	// Check if containers should be preserved for debugging
+	// Set PRESERVE_CONTAINERS=true to keep containers running after tests
+	// This is useful for inspecting logs when tests fail
+	preserveContainers := os.Getenv("PRESERVE_CONTAINERS") == "true"
 
-	By("Cleaning up infrastructure images to prevent disk space issues")
-	// Prune ONLY infrastructure images for this service
-	// Per DD-TEST-001 v1.1: Use label-based filtering for AIAnalysis integration compose project
-	pruneCmd := exec.Command("podman", "image", "prune", "-f",
-		"--filter", "label=io.podman.compose.project=aianalysis-integration")
-	pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-	if pruneErr != nil {
-		GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n%s\n", pruneErr, pruneOutput)
+	if preserveContainers {
+		GinkgoWriter.Println("⚠️  Tests may have failed - preserving containers for debugging")
+		GinkgoWriter.Println("📋 To inspect container logs:")
+		GinkgoWriter.Println("   podman logs aianalysis_hapi_1")
+		GinkgoWriter.Println("   podman logs aianalysis_datastorage_1")
+		GinkgoWriter.Println("   podman logs aianalysis_postgres_1")
+		GinkgoWriter.Println("   podman logs aianalysis_redis_1")
+		GinkgoWriter.Println("📋 To manually clean up:")
+		GinkgoWriter.Println("   podman stop aianalysis_hapi_1 aianalysis_datastorage_1 aianalysis_redis_1 aianalysis_postgres_1")
+		GinkgoWriter.Println("   podman rm aianalysis_hapi_1 aianalysis_datastorage_1 aianalysis_redis_1 aianalysis_postgres_1")
+		GinkgoWriter.Println("   podman network rm aianalysis_test-network")
 	} else {
-		GinkgoWriter.Println("✅ Infrastructure images pruned")
+		By("Stopping AIAnalysis integration infrastructure")
+		err := infrastructure.StopAIAnalysisIntegrationInfrastructure(GinkgoWriter)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Error stopping infrastructure: %v\n", err)
+		}
+
+		By("Cleaning up infrastructure images to prevent disk space issues")
+		// Prune ONLY infrastructure images for this service
+		// Per DD-TEST-001 v1.1: Use label-based filtering for AIAnalysis integration compose project
+		pruneCmd := exec.Command("podman", "image", "prune", "-f",
+			"--filter", "label=io.podman.compose.project=aianalysis-integration")
+		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+		if pruneErr != nil {
+			GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n%s\n", pruneErr, pruneOutput)
+		} else {
+			GinkgoWriter.Println("✅ Infrastructure images pruned")
+		}
 	}
 
 	GinkgoWriter.Println("✅ Cleanup complete")
