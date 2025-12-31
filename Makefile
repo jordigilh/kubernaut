@@ -366,7 +366,11 @@ test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api t
 .PHONY: test-unit-holmesgpt-api
 test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (Python pytest)
 	@echo "🧪 Running holmesgpt-api unit tests..."
-	@cd holmesgpt-api && python3 -m pip install -q -r requirements-test.txt
+	@if [ "$$(uname)" = "Darwin" ]; then \
+		cd holmesgpt-api && python3 -m pip install --break-system-packages -q -r requirements-test.txt; \
+	else \
+		cd holmesgpt-api && python3 -m pip install -q -r requirements-test.txt; \
+	fi
 	@cd holmesgpt-api && python3 -m pytest tests/unit/ -v --durations=20
 
 .PHONY: clean-holmesgpt-test-ports
