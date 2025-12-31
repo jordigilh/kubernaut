@@ -204,38 +204,24 @@ jobs:
           - service: signalprocessing
             service-name: "Signal Processing"
             timeout: 10
-            path-filter: "pkg/signalprocessing/|cmd/signalprocessing/|internal/controller/signalprocessing/"
           - service: aianalysis
             service-name: "AI Analysis"
             timeout: 15
-            path-filter: "pkg/aianalysis/|cmd/aianalysis/|internal/controller/aianalysis/"
           - service: workflowexecution
             service-name: "Workflow Execution"
             timeout: 15
-            path-filter: "pkg/workflowexecution/|cmd/workflowexecution/|internal/controller/workflowexecution/"
           - service: remediationorchestrator
             service-name: "Remediation Orchestrator"
             timeout: 15
-            path-filter: "pkg/remediationorchestrator/|cmd/remediationorchestrator/|internal/controller/remediationorchestrator/"
           - service: notification
             service-name: "Notification"
             timeout: 10
-            path-filter: "pkg/notification/|cmd/notification/|internal/controller/notification/"
           - service: gateway
             service-name: "Gateway"
             timeout: 20
-            path-filter: "pkg/gateway/|cmd/gateway/"
           - service: datastorage
             service-name: "Data Storage"
             timeout: 10
-            path-filter: ""  # DS always runs (shared dependency)
-    # Run if: push to main, OR DS changed, OR this service changed
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      (matrix.path-filter != '' && contains(github.event.pull_request.changed_files, matrix.path-filter))
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
