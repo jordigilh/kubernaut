@@ -367,8 +367,8 @@ test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api t
 test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI)
 	@echo "🧪 Running holmesgpt-api unit tests (containerized with Red Hat UBI)..."
 	@podman run --rm \
-		-v $(CURDIR)/holmesgpt-api:/app:z \
-		-w /app \
+		-v $(CURDIR):/workspace:z \
+		-w /workspace/holmesgpt-api \
 		registry.access.redhat.com/ubi9/python-312:latest \
 		sh -c "pip install -q -r requirements.txt -r requirements-test.txt && pytest tests/unit/ -v --durations=20"
 
