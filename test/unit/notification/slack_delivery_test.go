@@ -231,18 +231,19 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 		It("should classify webhook timeout as retryable error (BR-NOT-052: Retry on Timeout)", func() {
 			// TDD RED: Test that timeout is classified as retryable
 
-			// Create mock server that blocks on request context (times out when client timeout expires)
+			// Create mock server that simulates slow external service
+			// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Block on request context - when client timeout expires, this returns immediately
-				<-r.Context().Done()
-				// Don't write response - context is cancelled
+				// Simulate slow webhook (longer than client timeout)
+				time.Sleep(100 * time.Millisecond)
+				w.WriteHeader(http.StatusOK)
 			}))
 			defer server.Close()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
-				// Create context with short timeout (1 second)
-				ctxWithTimeout, cancel := context.WithTimeout(ctx, 1*time.Second)
+				// Create context with very short timeout (triggers before server responds)
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 				defer cancel()
 
 				notification := &notificationv1alpha1.NotificationRequest{
@@ -278,18 +279,19 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 		It("should handle webhook timeout and preserve error details for audit trail (BR-NOT-051: Audit Trail)", func() {
 			// TDD RED: Test that timeout errors include actionable details
 
-			// Create mock server that blocks on request context (times out when client timeout expires)
+			// Create mock server that simulates slow external service
+			// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Block on request context - when client timeout expires, this returns immediately
-				<-r.Context().Done()
-				// Don't write response - context is cancelled
+				// Simulate slow webhook (longer than client timeout)
+				time.Sleep(100 * time.Millisecond)
+				w.WriteHeader(http.StatusOK)
 			}))
 			defer server.Close()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
-				// Create context with 500ms timeout
-				ctxWithTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+				// Create context with very short timeout (triggers before server responds)
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 				defer cancel()
 
 				notification := &notificationv1alpha1.NotificationRequest{
