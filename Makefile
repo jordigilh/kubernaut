@@ -228,17 +228,35 @@ export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI 
 	@cd holmesgpt-api && echo "📊 Schema count: $$(python3 -c \"import json; spec=json.load(open('api/openapi.json')); print(len(spec.get('components', {}).get('schemas', {})))\")"
 
 .PHONY: validate-openapi-holmesgpt-api
-validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec consistency (CI - ADR-045)
-	@echo "🔍 Validating OpenAPI spec consistency..."
+validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec is committed (CI - ADR-045)
+	@echo "🔍 Validating OpenAPI spec is up-to-date..."
 	@cd holmesgpt-api && \
-	if [ -f "api/openapi.json.committed" ]; then \
-		diff -q api/openapi.json api/openapi.json.committed > /dev/null 2>&1 || \
-		(echo "❌ OpenAPI spec drift detected! Run 'make export-openapi-holmesgpt-api' and commit changes." && exit 1); \
-		echo "✅ OpenAPI spec is consistent"; \
-	else \
-		echo "⚠️  No committed spec found. Copying current as baseline..."; \
-		cp api/openapi.json api/openapi.json.committed; \
+	if ! git diff --quiet api/openapi.json; then \
+		echo ""; \
+		echo "❌ OpenAPI spec drift detected!"; \
+		echo ""; \
+		echo "The generated OpenAPI spec differs from the committed version."; \
+		echo ""; \
+		echo "📋 Changes:"; \
+		git diff api/openapi.json | head -50; \
+		echo ""; \
+		echo "🔧 To fix:"; \
+		echo "  1. Run: make export-openapi-holmesgpt-api"; \
+		echo "  2. Review: git diff holmesgpt-api/api/openapi.json"; \
+		echo "  3. Commit: git add holmesgpt-api/api/openapi.json"; \
+		echo ""; \
+		exit 1; \
 	fi
+	@echo "✅ OpenAPI spec is up-to-date and committed"
+
+.PHONY: validate-openapi-datastorage
+validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI - ADR-031)
+	@echo "🔍 Validating Data Storage OpenAPI spec..."
+	@docker run --rm -v "$(PWD):/local" openapitools/openapi-generator-cli:v7.2.0 validate \
+		-i /local/api/openapi/data-storage-v1.yaml || \
+		(echo "❌ OpenAPI spec validation failed!" && exit 1)
+	@echo "✅ Data Storage OpenAPI spec is valid"
+
 .PHONY: lint-holmesgpt-api
 lint-holmesgpt-api: ## Run ruff linter on holmesgpt-api Python code
 	@echo "🔍 Running ruff linter on holmesgpt-api..."

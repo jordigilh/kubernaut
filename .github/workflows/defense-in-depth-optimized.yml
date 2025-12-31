@@ -46,6 +46,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -81,6 +83,10 @@ jobs:
           make test-unit-holmesgpt-api
         env:
           MOCK_LLM: 'true'
+
+      - name: Run HolmesGPT API linting
+        run: make lint-holmesgpt-api
+        continue-on-error: true  # Don't block CI for lint warnings in V1.0
 
       - name: Upload coverage
         if: always()
@@ -242,6 +248,10 @@ jobs:
           sudo apt-get install -y podman
       - name: Run Data Storage integration tests
         run: make test-integration-datastorage
+
+      - name: Validate Data Storage OpenAPI spec (ADR-031)
+        run: make validate-openapi-datastorage
+
       - name: Cleanup
         if: always()
         run: podman ps -a --filter "name=datastorage-" --format "{{.Names}}" | xargs -r podman rm -f
@@ -296,6 +306,9 @@ jobs:
         run: make test-integration
         env:
           MOCK_LLM: 'true'
+
+      - name: Validate OpenAPI spec is committed (ADR-045)
+        run: make validate-openapi-holmesgpt-api
 
   # ========================================
   # STAGE 3: E2E TESTS
