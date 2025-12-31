@@ -1,16 +1,22 @@
-name: Defense-in-Depth (Optimized)
+name: CI Pipeline
 
-# 3-Stage Pipeline with Smart Path Detection
-# Stage 1: Build & Unit (Single job, all services)
-# Stage 2: Integration (8 parallel jobs, smart path detection)
-# Stage 3: E2E (8 parallel jobs, smart path detection)
+# 3-Stage CI Pipeline with Smart Path Detection and Parallel Execution
+#
+# Stage 1: Build & Lint + Unit Tests (parallel matrix: 8 services)
+# Stage 2: Integration Tests (parallel matrix: 7 Go + 1 Python service)
+# Stage 3: E2E Tests (parallel jobs: 8 services)
 #
 # Smart Path Detection:
-# - Data Storage changes → ALL services (DS impacts everyone)
-# - Other service changes → ONLY that service
-# - Push to main → ALL services (full validation)
+#   - Data Storage changes → ALL services (DS is shared dependency)
+#   - Individual service changes → ONLY that service + DS
+#   - Push to main → ALL services (full validation)
 #
-# Authority: docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
+# Optimization Strategy:
+#   - Matrix parallelization for homogeneous jobs (unit, integration)
+#   - Individual jobs for heterogeneous jobs (E2E with different infra)
+#   - Fail-fast disabled for comprehensive feedback
+#
+# Authority: [TODO] Create ADR-CI-001 from docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
 
 on:
   pull_request:
@@ -180,24 +186,56 @@ jobs:
 
   # ========================================
   # STAGE 2: INTEGRATION TESTS
-  # 8 parallel jobs, smart path detection
+  # Matrix strategy: 7 Go services (all use envtest + Podman)
+  # 1 Python service (HolmesGPT - separate job)
   # Only start if Stage 1 passes
   # ========================================
 
-  integration-signalprocessing:
-    name: Integration (Signal Processing)
+  integration-tests:
+    name: Integration (${{ matrix.service-name }})
     needs: [unit-tests]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Run if: push to main, OR DS changed, OR SP changed
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage]
+        include:
+          - service: signalprocessing
+            service-name: "Signal Processing"
+            timeout: 10
+            path-filter: "pkg/signalprocessing/|cmd/signalprocessing/|internal/controller/signalprocessing/"
+          - service: aianalysis
+            service-name: "AI Analysis"
+            timeout: 15
+            path-filter: "pkg/aianalysis/|cmd/aianalysis/|internal/controller/aianalysis/"
+          - service: workflowexecution
+            service-name: "Workflow Execution"
+            timeout: 15
+            path-filter: "pkg/workflowexecution/|cmd/workflowexecution/|internal/controller/workflowexecution/"
+          - service: remediationorchestrator
+            service-name: "Remediation Orchestrator"
+            timeout: 15
+            path-filter: "pkg/remediationorchestrator/|cmd/remediationorchestrator/|internal/controller/remediationorchestrator/"
+          - service: notification
+            service-name: "Notification"
+            timeout: 10
+            path-filter: "pkg/notification/|cmd/notification/|internal/controller/notification/"
+          - service: gateway
+            service-name: "Gateway"
+            timeout: 20
+            path-filter: "pkg/gateway/|cmd/gateway/"
+          - service: datastorage
+            service-name: "Data Storage"
+            timeout: 10
+            path-filter: ""  # DS always runs (shared dependency)
+    # Run if: push to main, OR DS changed, OR this service changed
     if: |
       github.event_name == 'push' ||
       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
       contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
       contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'pkg/signalprocessing/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/signalprocessing/') ||
-      contains(github.event.pull_request.changed_files, 'internal/controller/signalprocessing/')
+      (matrix.path-filter != '' && contains(github.event.pull_request.changed_files, matrix.path-filter))
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -209,167 +247,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      - name: Run Signal Processing integration tests
-        run: make test-integration-signalprocessing
-      - name: Cleanup
-        if: always()
-        run: podman ps -a --filter "name=signalprocessing-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  integration-aianalysis:
-    name: Integration (AI Analysis)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'pkg/aianalysis/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/aianalysis/') ||
-      contains(github.event.pull_request.changed_files, 'internal/controller/aianalysis/')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-      - name: Run AI Analysis integration tests
-        run: make test-integration-aianalysis
-      - name: Cleanup
-        if: always()
-        run: podman ps -a --filter "name=aianalysis-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  integration-workflowexecution:
-    name: Integration (Workflow Execution)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'pkg/workflowexecution/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/workflowexecution/') ||
-      contains(github.event.pull_request.changed_files, 'internal/controller/workflowexecution/')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Run Workflow Execution integration tests
-        run: make test-integration-workflowexecution
-
-  integration-remediationorchestrator:
-    name: Integration (RemediationOrchestrator)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'pkg/remediationorchestrator/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/remediationorchestrator/') ||
-      contains(github.event.pull_request.changed_files, 'internal/controller/remediationorchestrator/')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Run RemediationOrchestrator integration tests
-        run: make test-integration-remediationorchestrator
-
-  integration-gateway:
-    name: Integration (Gateway)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'pkg/gateway/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/gateway/')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind
-          sudo mv ./kind /usr/local/bin/kind
-      - name: Run Gateway integration tests
-        run: make test-integration-gateway-service
-      - name: Cleanup
-        if: always()
-        run: kind delete cluster --name gateway-test 2>/dev/null || true
-
-  integration-datastorage:
-    name: Integration (Data Storage)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # DS always runs (it's the shared dependency)
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-      - name: Run Data Storage integration tests
-        run: make test-integration-datastorage
-
+      - name: Run ${{ matrix.service-name }} integration tests
+        run: make test-integration-${{ matrix.service }}
       - name: Validate Data Storage OpenAPI spec (ADR-031)
+        if: matrix.service == 'datastorage'
         run: make validate-openapi-datastorage
-
       - name: Cleanup
         if: always()
-        run: podman ps -a --filter "name=datastorage-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  integration-notification:
-    name: Integration (Notification)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'pkg/notification/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/notification/') ||
-      contains(github.event.pull_request.changed_files, 'internal/controller/notification/')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Run Notification integration tests
-        run: make test-integration-notification
+        run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
 
   integration-holmesgpt:
     name: Integration (HolmesGPT API)
@@ -607,7 +492,7 @@ jobs:
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-notification.result == 'success' || needs.integration-notification.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') && (needs.integration-holmesgpt.result == 'success' || needs.integration-holmesgpt.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -699,15 +584,9 @@ jobs:
           echo "STAGE 1B - Unit Tests (Parallel Matrix):"
           echo "  Unit Tests: ${{ needs.unit-tests.result }}"
           echo ""
-          echo "STAGE 2 - Integration Tests (Smart Path Detection):"
-          echo "  Signal Processing:          ${{ needs.integration-signalprocessing.result }}"
-          echo "  AI Analysis:                ${{ needs.integration-aianalysis.result }}"
-          echo "  Workflow Execution:         ${{ needs.integration-workflowexecution.result }}"
-          echo "  Remediation Orchestrator:   ${{ needs.integration-remediationorchestrator.result }}"
-          echo "  Gateway:                   ${{ needs.integration-gateway.result }}"
-          echo "  Data Storage:              ${{ needs.integration-datastorage.result }}"
-          echo "  Notification:              ${{ needs.integration-notification.result }}"
-          echo "  HolmesGPT API:             ${{ needs.integration-holmesgpt.result }}"
+          echo "STAGE 2 - Integration Tests (Parallel Matrix + Smart Path Detection):"
+          echo "  Go Services (7 services):   ${{ needs.integration-tests.result }}"
+          echo "  HolmesGPT API (Python):     ${{ needs.integration-holmesgpt.result }}"
           echo ""
           echo "STAGE 3 - E2E Tests (Smart Path Detection):"
           echo "  Signal Processing:          ${{ needs.e2e-signalprocessing.result }}"
@@ -727,9 +606,10 @@ jobs:
           echo ""
           echo "Optimizations:"
           echo "  ✅ Build & lint separated from tests"
-          echo "  ✅ Parallel unit tests (8 services in parallel)"
-          echo "  ✅ Parallel integration tests"
-          echo "  ✅ Parallel E2E tests"
+          echo "  ✅ Parallel unit tests (matrix: 8 services)"
+          echo "  ✅ Parallel integration tests (matrix: 7 Go + 1 Python)"
+          echo "  ✅ Parallel E2E tests (8 services)"
+          echo "  ✅ Matrix strategy for homogeneous jobs (unit, integration)"
           echo "  ✅ E2E runs only after ALL integration tests pass"
           echo "═══════════════════════════════════════════════════════════"
 
