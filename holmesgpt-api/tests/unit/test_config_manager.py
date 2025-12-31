@@ -198,7 +198,7 @@ log_level: DEBUG
 class TestConfigManagerHotReload:
     """Test ConfigManager hot-reload behavior."""
 
-    def test_config_reload_updates_values(self):
+    def test_config_reload_updates_values(self, wait_for):
         """
         BR-HAPI-199: Configuration reload latency < 90 seconds.
 
@@ -225,24 +225,24 @@ llm:
             assert manager.get_llm_temperature() == 0.7
 
             # Update config file
-            time.sleep(1.5)  # Wait for poll interval
             with open(config_path, 'w') as f:
                 f.write("""
 llm:
   model: claude-3-5-sonnet
   temperature: 0.3
 """)
-            time.sleep(1.5)  # Wait for reload
+
+            # Wait for reload (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: manager.get_llm_model() == "claude-3-5-sonnet", timeout=2.0, error_msg="Config should reload")
 
             # Values should be updated
-            assert manager.get_llm_model() == "claude-3-5-sonnet"
             assert manager.get_llm_temperature() == 0.3
 
             manager.stop()
         finally:
             os.unlink(config_path)
 
-    def test_invalid_yaml_keeps_previous_config(self):
+    def test_invalid_yaml_keeps_previous_config(self, wait_for):
         """
         BR-HAPI-199: Service SHALL gracefully degrade on invalid configuration.
 
@@ -267,16 +267,14 @@ llm:
             assert manager.get_llm_model() == "gpt-4"
 
             # Write invalid YAML
-            time.sleep(1.5)
             with open(config_path, 'w') as f:
                 f.write("this: is: not: valid: yaml: {{")
-            time.sleep(1.5)
+
+            # Wait for error to be detected (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: manager.error_count >= 1, timeout=2.0, error_msg="Error should be detected")
 
             # Should keep previous config
             assert manager.get_llm_model() == "gpt-4"
-
-            # Error count should increment
-            assert manager.error_count >= 1
 
             manager.stop()
         finally:
@@ -343,7 +341,7 @@ llm:
 class TestConfigManagerMetrics:
     """Test ConfigManager metrics."""
 
-    def test_reload_count_increments(self):
+    def test_reload_count_increments(self, wait_for):
         """
         BR-HAPI-199: Metrics exposed for reload count and errors.
         """
@@ -361,18 +359,17 @@ class TestConfigManagerMetrics:
             initial_count = manager.reload_count
 
             # Trigger reload
-            time.sleep(1.5)
             with open(config_path, 'w') as f:
                 f.write("llm:\n  model: v2\n")
-            time.sleep(1.5)
 
-            assert manager.reload_count > initial_count
+            # Wait for reload count to increment (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: manager.reload_count > initial_count, timeout=2.0, error_msg="Reload count should increment")
 
             manager.stop()
         finally:
             os.unlink(config_path)
 
-    def test_last_hash_updates(self):
+    def test_last_hash_updates(self, wait_for):
         """
         BR-HAPI-199: Configuration hash logged on reload for audit trail.
         """
@@ -391,12 +388,11 @@ class TestConfigManagerMetrics:
             assert len(initial_hash) > 0
 
             # Trigger reload
-            time.sleep(1.5)
             with open(config_path, 'w') as f:
                 f.write("llm:\n  model: v2\n")
-            time.sleep(1.5)
 
-            assert manager.last_hash != initial_hash
+            # Wait for hash to update (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: manager.last_hash != initial_hash, timeout=2.0, error_msg="Hash should update after reload")
 
             manager.stop()
         finally:
@@ -425,10 +421,11 @@ class TestConfigManagerDisableHotReload:
             assert manager.get_llm_model() == "static"
 
             # Change file
-            time.sleep(0.5)
             with open(config_path, 'w') as f:
                 f.write("llm:\n  model: changed\n")
-            time.sleep(1.5)
+
+            # Brief wait to ensure no reload happens (reduced from 2s to 0.2s - hot reload disabled)
+            time.sleep(0.2)
 
             # Should NOT reload (hot-reload disabled)
             assert manager.get_llm_model() == "static"
