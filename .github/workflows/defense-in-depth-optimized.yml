@@ -69,15 +69,9 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-test.txt
 
-      - name: Install Go tools
-        run: |
-          echo "🔧 Installing Go code generation tools..."
-          go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest
-          go install github.com/ogen-go/ogen/cmd/ogen@latest
-
       - name: Generate Go code
         run: |
-          echo "🔄 Generating Go code..."
+          echo "🔄 Generating Go code (tools auto-installed via Makefile)..."
           make generate
 
       - name: Build all Go services
