@@ -308,7 +308,11 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1; \
 	echo "✅ Client generated successfully"; \
 	echo ""; \
-	echo "🧪 Step 2: Run integration tests with 4 parallel workers..."; \
+	echo "🧪 Step 2: Install Python dependencies..."; \
+	cd holmesgpt-api && pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && cd .. || exit 1; \
+	echo "✅ Python dependencies installed"; \
+	echo ""; \
+	echo "🧪 Step 3: Run integration tests with 4 parallel workers..."; \
 	export HAPI_INTEGRATION_PORT=18120 && \
 	export DS_INTEGRATION_PORT=18098 && \
 	export PG_INTEGRATION_PORT=15439 && \

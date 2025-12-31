@@ -3,7 +3,7 @@ name: CI Pipeline
 # 3-Stage CI Pipeline with Smart Path Detection and Parallel Execution
 #
 # Stage 1: Build & Lint + Unit Tests (parallel matrix: 8 services)
-# Stage 2: Integration Tests (parallel matrix: 7 Go + 1 Python service)
+# Stage 2: Integration Tests (parallel matrix: 8 services)
 # Stage 3: E2E Tests (parallel jobs: 8 services)
 #
 # Smart Path Detection:
@@ -192,8 +192,10 @@ jobs:
 
   # ========================================
   # STAGE 2: INTEGRATION TESTS
-  # Matrix strategy: 7 Go services (all use envtest + Podman)
-  # 1 Python service (HolmesGPT - separate job)
+  # Matrix strategy: 8 services (all use same pattern: envtest + Podman)
+  #   - 7 Go services: signalprocessing, aianalysis, workflowexecution,
+  #     remediationorchestrator, notification, gateway, datastorage
+  #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
   # Only start if Stage 1 passes
   #
   # DESIGN DECISION: No smart path detection at this level
@@ -212,7 +214,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage]
+        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -235,6 +237,9 @@ jobs:
           - service: datastorage
             service_name: "Data Storage"
             timeout: 10
+          - service: holmesgpt-api
+            service_name: "HolmesGPT API"
+            timeout: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -255,37 +260,6 @@ jobs:
         if: always()
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
 
-  integration-holmesgpt:
-    name: Integration (HolmesGPT API)
-    needs: [unit-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    if: |
-      github.event_name == 'push' ||
-      contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'cmd/datastorage/') ||
-      contains(github.event.pull_request.changed_files, 'migrations/') ||
-      contains(github.event.pull_request.changed_files, 'holmesgpt-api/')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-      - name: Run HolmesGPT API integration tests
-        run: make test-integration-holmesgpt-api
-        env:
-          MOCK_LLM: 'true'
-      - name: Validate OpenAPI spec is committed (ADR-045)
-        run: make validate-openapi-holmesgpt-api
-      - name: Cleanup
-        if: always()
-        run: podman ps -a --filter "name=holmesgpt-" --format "{{.Names}}" | xargs -r podman rm -f
 
   # ========================================
   # STAGE 3: E2E TESTS
@@ -295,7 +269,7 @@ jobs:
 
   e2e-signalprocessing:
     name: E2E (Signal Processing)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Run if: integration ran AND passed, AND (push to main OR DS changed OR SP changed), AND not draft PR
@@ -328,7 +302,7 @@ jobs:
 
   e2e-aianalysis:
     name: E2E (AI Analysis)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -360,7 +334,7 @@ jobs:
 
   e2e-workflowexecution:
     name: E2E (Workflow Execution)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -392,7 +366,7 @@ jobs:
 
   e2e-remediationorchestrator:
     name: E2E (Remediation Orchestrator)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -424,7 +398,7 @@ jobs:
 
   e2e-gateway:
     name: E2E (Gateway)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -456,7 +430,7 @@ jobs:
 
   e2e-datastorage:
     name: E2E (Data Storage)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # DS always runs E2E (it's the shared dependency)
@@ -485,12 +459,12 @@ jobs:
 
   e2e-notification:
     name: E2E (Notification)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') && (needs.integration-holmesgpt.result == 'success' || needs.integration-holmesgpt.result == 'skipped') &&
+      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -517,7 +491,7 @@ jobs:
 
   e2e-holmesgpt:
     name: E2E (HolmesGPT API)
-    needs: [integration-tests, integration-holmesgpt]
+    needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: |
@@ -564,7 +538,7 @@ jobs:
     name: Test Suite Summary
     needs: [
       build-and-lint, unit-tests,
-      integration-tests, integration-holmesgpt,
+      integration-tests,
       e2e-signalprocessing, e2e-aianalysis, e2e-workflowexecution, e2e-remediationorchestrator, e2e-gateway, e2e-datastorage, e2e-notification, e2e-holmesgpt
     ]
     if: always()
@@ -582,9 +556,8 @@ jobs:
           echo "STAGE 1B - Unit Tests (Parallel Matrix):"
           echo "  Unit Tests: ${{ needs.unit-tests.result }}"
           echo ""
-          echo "STAGE 2 - Integration Tests (Parallel Matrix + Smart Path Detection):"
-          echo "  Go Services (7 services):   ${{ needs.integration-tests.result }}"
-          echo "  HolmesGPT API (Python):     ${{ needs.integration-holmesgpt.result }}"
+          echo "STAGE 2 - Integration Tests (Parallel Matrix):"
+          echo "  All Services (8 services):  ${{ needs.integration-tests.result }}"
           echo ""
           echo "STAGE 3 - E2E Tests (Smart Path Detection):"
           echo "  Signal Processing:          ${{ needs.e2e-signalprocessing.result }}"
