@@ -129,21 +129,21 @@ var _ = Describe("FileDeliveryService Unit Tests", func() {
 				}
 			}
 
-		// BEHAVIOR: Concurrent deliveries should create distinct files
-		var wg sync.WaitGroup
-		errChan := make(chan error, 3)
+			// BEHAVIOR: Concurrent deliveries should create distinct files
+			var wg sync.WaitGroup
+			errChan := make(chan error, 3)
 
-		for _, notification := range notifications {
-			// Launch concurrent deliveries
-			// Note: Filename uniqueness is ensured by notification name + timestamp in filename
-			wg.Add(1)
-			go func(n *notificationv1alpha1.NotificationRequest) {
-				defer wg.Done()
-				if err := fileService.Deliver(ctx, n); err != nil {
-					errChan <- err
-				}
-			}(notification)
-		}
+			for _, notification := range notifications {
+				// Launch concurrent deliveries
+				// Note: Filename uniqueness is ensured by notification name + timestamp in filename
+				wg.Add(1)
+				go func(n *notificationv1alpha1.NotificationRequest) {
+					defer wg.Done()
+					if err := fileService.Deliver(ctx, n); err != nil {
+						errChan <- err
+					}
+				}(notification)
+			}
 
 			wg.Wait()
 			close(errChan)
