@@ -185,7 +185,7 @@ jobs:
   # ========================================
 
   integration-signalprocessing:
-    name: Integration (SignalProcessing)
+    name: Integration (Signal Processing)
     needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -203,18 +203,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Podman
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      - name: Run SignalProcessing integration tests
+      - name: Run Signal Processing integration tests
         run: make test-integration-signalprocessing
       - name: Cleanup
         if: always()
         run: podman ps -a --filter "name=signalprocessing-" --format "{{.Names}}" | xargs -r podman rm -f
 
   integration-aianalysis:
-    name: Integration (AIAnalysis)
+    name: Integration (AI Analysis)
     needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -231,18 +233,20 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Podman
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      - name: Run AIAnalysis integration tests
+      - name: Run AI Analysis integration tests
         run: make test-integration-aianalysis
       - name: Cleanup
         if: always()
         run: podman ps -a --filter "name=aianalysis-" --format "{{.Names}}" | xargs -r podman rm -f
 
   integration-workflowexecution:
-    name: Integration (WorkflowExecution)
+    name: Integration (Workflow Execution)
     needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -259,7 +263,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - name: Run WorkflowExecution integration tests
+      - name: Generate OpenAPI specs
+        run: make generate
+      - name: Run Workflow Execution integration tests
         run: make test-integration-workflowexecution
 
   integration-remediationorchestrator:
@@ -280,6 +286,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Run RemediationOrchestrator integration tests
         run: make test-integration-remediationorchestrator
 
@@ -300,6 +308,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
@@ -322,6 +332,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Podman
         run: |
           sudo apt-get update
@@ -354,6 +366,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Run Notification integration tests
         run: make test-integration-notification
 
@@ -397,7 +411,7 @@ jobs:
   # ========================================
 
   e2e-signalprocessing:
-    name: E2E (SignalProcessing)
+    name: E2E (Signal Processing)
     needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -414,12 +428,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
           sudo apt-get update && sudo apt-get install -y podman
-      - name: Run SignalProcessing E2E tests
+      - name: Run Signal Processing E2E tests
         run: make test-e2e-signalprocessing
       - name: Cleanup
         if: always()
@@ -428,7 +444,7 @@ jobs:
           podman ps -a --filter "name=signalprocessing-" --format "{{.Names}}" | xargs -r podman rm -f
 
   e2e-aianalysis:
-    name: E2E (AIAnalysis)
+    name: E2E (AI Analysis)
     needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -444,12 +460,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
           sudo apt-get update && sudo apt-get install -y podman
-      - name: Run AIAnalysis E2E tests
+      - name: Run AI Analysis E2E tests
         run: make test-e2e-aianalysis
       - name: Cleanup
         if: always()
@@ -458,7 +476,7 @@ jobs:
           podman ps -a --filter "name=aianalysis-" --format "{{.Names}}" | xargs -r podman rm -f
 
   e2e-workflowexecution:
-    name: E2E (WorkflowExecution)
+    name: E2E (Workflow Execution)
     needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -474,12 +492,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
           sudo apt-get update && sudo apt-get install -y podman
-      - name: Run WorkflowExecution E2E tests
+      - name: Run Workflow Execution E2E tests
         run: make test-e2e-workflowexecution
       - name: Cleanup
         if: always()
@@ -488,7 +508,7 @@ jobs:
           podman ps -a --filter "name=workflowexecution-" --format "{{.Names}}" | xargs -r podman rm -f
 
   e2e-remediationorchestrator:
-    name: E2E (RemediationOrchestrator)
+    name: E2E (Remediation Orchestrator)
     needs: [integration-signalprocessing, integration-aianalysis, integration-workflowexecution, integration-remediationorchestrator, integration-gateway, integration-datastorage, integration-notification, integration-holmesgpt]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -504,12 +524,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
           sudo apt-get update && sudo apt-get install -y podman
-      - name: Run RemediationOrchestrator E2E tests
+      - name: Run Remediation Orchestrator E2E tests
         run: make test-e2e-remediationorchestrator
       - name: Cleanup
         if: always()
@@ -534,6 +556,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
@@ -561,6 +585,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
@@ -591,6 +617,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - name: Install Kind & Podman
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
@@ -621,6 +649,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -670,20 +700,20 @@ jobs:
           echo "  Unit Tests: ${{ needs.unit-tests.result }}"
           echo ""
           echo "STAGE 2 - Integration Tests (Smart Path Detection):"
-          echo "  SignalProcessing:          ${{ needs.integration-signalprocessing.result }}"
-          echo "  AIAnalysis:                ${{ needs.integration-aianalysis.result }}"
-          echo "  WorkflowExecution:         ${{ needs.integration-workflowexecution.result }}"
-          echo "  RemediationOrchestrator:   ${{ needs.integration-remediationorchestrator.result }}"
+          echo "  Signal Processing:          ${{ needs.integration-signalprocessing.result }}"
+          echo "  AI Analysis:                ${{ needs.integration-aianalysis.result }}"
+          echo "  Workflow Execution:         ${{ needs.integration-workflowexecution.result }}"
+          echo "  Remediation Orchestrator:   ${{ needs.integration-remediationorchestrator.result }}"
           echo "  Gateway:                   ${{ needs.integration-gateway.result }}"
           echo "  Data Storage:              ${{ needs.integration-datastorage.result }}"
           echo "  Notification:              ${{ needs.integration-notification.result }}"
           echo "  HolmesGPT API:             ${{ needs.integration-holmesgpt.result }}"
           echo ""
           echo "STAGE 3 - E2E Tests (Smart Path Detection):"
-          echo "  SignalProcessing:          ${{ needs.e2e-signalprocessing.result }}"
-          echo "  AIAnalysis:                ${{ needs.e2e-aianalysis.result }}"
-          echo "  WorkflowExecution:         ${{ needs.e2e-workflowexecution.result }}"
-          echo "  RemediationOrchestrator:   ${{ needs.e2e-remediationorchestrator.result }}"
+          echo "  Signal Processing:          ${{ needs.e2e-signalprocessing.result }}"
+          echo "  AI Analysis:                ${{ needs.e2e-aianalysis.result }}"
+          echo "  Workflow Execution:         ${{ needs.e2e-workflowexecution.result }}"
+          echo "  Remediation Orchestrator:   ${{ needs.e2e-remediationorchestrator.result }}"
           echo "  Gateway:                   ${{ needs.e2e-gateway.result }}"
           echo "  Data Storage:              ${{ needs.e2e-datastorage.result }}"
           echo "  Notification:              ${{ needs.e2e-notification.result }}"
