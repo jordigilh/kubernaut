@@ -49,17 +49,17 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("recovery-basic")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-basic-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-rr-recovery-basic",
+			namespace := createTestNamespace("recovery-basic")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-basic-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-rr-recovery-basic",
+						Namespace: namespace,
+					},
 					RemediationID:         "e2e-recovery-rem-001",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
@@ -89,16 +89,16 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should complete recovery analysis using recovery endpoint", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should complete recovery analysis using recovery endpoint", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating recovery AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating recovery AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -127,17 +127,17 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 			// Create analysis with full previous execution context
 			failedAt := metav1.Now()
 
-		namespace := createTestNamespace("recovery-history")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-with-history-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-rr-recovery-history",
+			namespace := createTestNamespace("recovery-history")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-with-history-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-rr-recovery-history",
+						Namespace: namespace,
+					},
 					RemediationID:         "e2e-recovery-rem-002",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 2, // Second attempt
@@ -190,16 +190,16 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should consider previous execution failures in analysis", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should consider previous execution failures in analysis", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating recovery AIAnalysis with previous execution context")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating recovery AIAnalysis with previous execution context")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -226,17 +226,17 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("recovery-routing")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-routing-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-rr-recovery-routing",
+			namespace := createTestNamespace("recovery-routing")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-routing-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-rr-recovery-routing",
+						Namespace: namespace,
+					},
 					RemediationID:         "e2e-recovery-rem-003",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
@@ -262,16 +262,16 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should use recovery endpoint for IsRecoveryAttempt=true", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should use recovery endpoint for IsRecoveryAttempt=true", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating recovery AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating recovery AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for investigation phase to complete")
 			Eventually(func() string {
@@ -306,17 +306,17 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 		BeforeEach(func() {
 			failedAt := metav1.Now()
 
-		namespace := createTestNamespace("recovery-multi")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-multi-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-rr-recovery-multi",
+			namespace := createTestNamespace("recovery-multi")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-multi-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-rr-recovery-multi",
+						Namespace: namespace,
+					},
 					RemediationID:         "e2e-recovery-rem-004",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 3, // Third attempt = escalation
@@ -390,16 +390,16 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should require approval for third recovery attempt", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should require approval for third recovery attempt", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating third recovery attempt AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating third recovery attempt AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -425,17 +425,17 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("recovery-conditions")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-conditions-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-rr-recovery-conditions",
+			namespace := createTestNamespace("recovery-conditions")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-conditions-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-rr-recovery-conditions",
+						Namespace: namespace,
+					},
 					RemediationID:         "e2e-recovery-rem-005",
 					IsRecoveryAttempt:     true,
 					RecoveryAttemptNumber: 1,
@@ -457,16 +457,16 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should populate all conditions during recovery flow", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should populate all conditions during recovery flow", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating recovery AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating recovery AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -493,6 +493,130 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 
 			Expect(hasInvestigationComplete).To(BeTrue(), "InvestigationComplete condition should be True")
 			Expect(hasAnalysisComplete).To(BeTrue(), "AnalysisComplete condition should be True")
+		})
+	})
+
+	// ========================================
+	// BR-HAPI-197: Recovery Human Review Support
+	// ========================================
+	Context("BR-HAPI-197: Recovery human review when workflow resolution fails", func() {
+		var analysis *aianalysisv1alpha1.AIAnalysis
+
+		BeforeEach(func() {
+			namespace := createTestNamespace("recovery-human-review")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-human-review-" + randomSuffix(),
+					Namespace: namespace,
+				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-rr-recovery-hr",
+						Namespace: namespace,
+					},
+					RemediationID:         "e2e-recovery-hr-rem-001",
+					IsRecoveryAttempt:     true,
+					RecoveryAttemptNumber: 1,
+					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
+						SignalContext: aianalysisv1alpha1.SignalContextInput{
+							Fingerprint: "e2e-recovery-hr-fp-001",
+							Severity:    "critical",
+							// MOCK_NO_WORKFLOW_FOUND triggers HAPI mock edge case:
+							// - needs_human_review=true
+							// - human_review_reason="no_matching_workflows"
+							SignalType:       "MOCK_NO_WORKFLOW_FOUND",
+							Environment:      "staging",
+							BusinessPriority: "P1",
+							TargetResource: aianalysisv1alpha1.TargetResource{
+								Kind:      "Pod",
+								Name:      "failing-pod-hr",
+								Namespace: "staging",
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{
+								DetectedLabels: &sharedtypes.DetectedLabels{
+									GitOpsManaged: true,
+								},
+							},
+						},
+						AnalysisTypes: []string{"recovery-analysis", "workflow-selection"},
+					},
+					PreviousExecutions: []aianalysisv1alpha1.PreviousExecution{
+						{
+							WorkflowExecutionRef: "workflow-exec-hr-001",
+							OriginalRCA: aianalysisv1alpha1.OriginalRCA{
+								Summary:    "Previous workflow failed",
+								SignalType: "CrashLoopBackOff",
+								Severity:   "critical",
+							},
+							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
+								WorkflowID:     "failed-workflow-v1",
+								ContainerImage: "quay.io/kubernaut/workflow-failed:v1.0.0",
+							},
+							Failure: aianalysisv1alpha1.ExecutionFailure{
+								Reason:        "WorkflowFailed",
+								Message:       "Previous workflow execution failed",
+								FailedAt:      metav1.Now(),
+								ExecutionTime: "60s",
+							},
+						},
+					},
+				},
+			}
+		})
+
+		AfterEach(func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			if analysis != nil {
+				_ = k8sClient.Delete(ctx, analysis)
+			}
+		})
+
+		It("should transition to Failed when HAPI returns needs_human_review=true", func() {
+			// BR-HAPI-197: When HAPI cannot provide reliable recovery workflow recommendation,
+			// it returns needs_human_review=true with structured reason.
+			// AIAnalysis should transition to PhaseFailed and NOT create WorkflowExecution.
+			//
+			// Test Strategy: Use HAPI mock mode edge case signal type to trigger human review
+			// Signal: MOCK_NO_WORKFLOW_FOUND → needs_human_review=true, reason=no_matching_workflows
+
+			// Act: Create the AIAnalysis
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+			// Assert: Verify transitions to Failed phase (not AwaitingApproval)
+			// This is the key E2E validation: full CRD lifecycle shows user-visible Failed state
+			Eventually(func() string {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				if err != nil {
+					return ""
+				}
+				return string(analysis.Status.Phase)
+			}, timeout, interval).Should(Equal("Failed"),
+				"AIAnalysis should transition to Failed when HAPI returns needs_human_review=true")
+
+			// Assert: Verify human review details are populated in status
+			Expect(analysis.Status.Reason).To(Equal("WorkflowResolutionFailed"),
+				"Status.Reason should indicate workflow resolution failed")
+
+			Expect(string(analysis.Status.SubReason)).To(Equal("NoMatchingWorkflows"),
+				"Status.SubReason should map human_review_reason enum to SubReason")
+
+			Expect(analysis.Status.CompletedAt).ToNot(BeNil(),
+				"Status.CompletedAt should be set when analysis completes with human review required")
+
+			Expect(analysis.Status.Message).To(ContainSubstring("could not provide reliable"),
+				"Status.Message should explain human review is required")
+
+			Expect(analysis.Status.Message).To(ContainSubstring("no_matching_workflows"),
+				"Status.Message should include human_review_reason for debugging")
+
+			// E2E Success: Full CRD lifecycle validated
+			// - Controller reconciled AIAnalysis
+			// - Called HAPI /recovery/analyze
+			// - Detected needs_human_review=true
+			// - Transitioned to PhaseFailed (not AwaitingApproval)
+			// - Set CompletedAt timestamp
+			// - Populated Reason, SubReason, Message
+			// - User observes correct status via kubectl
 		})
 	})
 })
