@@ -67,7 +67,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -r requirements-test.txt
 
       - name: Build all Go services
         run: |
@@ -300,7 +300,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -r requirements-test.txt
       - name: Run HolmesGPT API integration tests
         working-directory: holmesgpt-api
         run: make test-integration
@@ -555,7 +555,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -r requirements-test.txt
       - name: Run HolmesGPT API E2E tests
         run: make test-e2e-holmesgpt
         env:
