@@ -42,6 +42,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 )
@@ -172,6 +173,10 @@ func (c *HolmesGPTClient) Investigate(ctx context.Context, req *IncidentRequest)
 //   - *RecoveryResponse: Successful response with recovery strategies
 //   - *APIError: HTTP error (4xx, 5xx)
 func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *RecoveryRequest) (*RecoveryResponse, error) {
+	// DEBUG: Log what we're sending (BR-HAPI-197 investigation)
+	log.Printf("🔍 DEBUG: Sending recovery request to HAPI - IncidentID=%s, SignalType.Set=%v, SignalType.Value=%s, IsRecoveryAttempt=%v, requestPointer=%p",
+		req.IncidentID, req.SignalType.Set, req.SignalType.Value, req.IsRecoveryAttempt.Value, req)
+	
 	// DD-HAPI-003: Use generated client method for compile-time type safety
 	res, err := c.client.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
 	if err != nil {

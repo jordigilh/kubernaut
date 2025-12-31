@@ -67,7 +67,9 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 	Context("Recovery human review when no workflows match", func() {
 		It("should transition AIAnalysis to Failed with WorkflowResolutionFailed reason", func() {
 			// Given: AIAnalysis with recovery attempt and special signal type
-			// that triggers HAPI mock edge case (needs_human_review=true)
+			// The REAL HAPI service (http://localhost:18120) has mock logic that responds
+			// to MOCK_NO_WORKFLOW_FOUND with needs_human_review=true
+			// (No need to configure mock - we're using the real service!)
 			analysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testutil.UniqueTestName("recovery-hr-no-wf"),
@@ -213,7 +215,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							OriginalRCA: aianalysisv1alpha1.OriginalRCA{
 								Summary:    "Intermittent failure",
 								SignalType: "ImagePullBackOff",
-								Severity:   "high",
+								Severity:   "critical",
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "recovery-workflow-v1",
@@ -287,7 +289,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint: testutil.UniqueTestName("fp-recovery-normal"),
-							Severity:    "high",
+							Severity:    "critical",
 							// Normal signal type (not an edge case)
 							// HAPI returns needs_human_review=false and provides workflow
 							SignalType:       "CrashLoopBackOff",
@@ -308,7 +310,7 @@ var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integr
 							OriginalRCA: aianalysisv1alpha1.OriginalRCA{
 								Summary:    "Pod crashed",
 								SignalType: "OOMKilled",
-								Severity:   "high",
+								Severity:   "critical",
 							},
 							SelectedWorkflow: aianalysisv1alpha1.SelectedWorkflowSummary{
 								WorkflowID:     "memory-increase-v1",

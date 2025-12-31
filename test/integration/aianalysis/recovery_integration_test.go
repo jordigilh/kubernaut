@@ -265,7 +265,7 @@ var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery
 					OriginalRca: client.OriginalRCA{
 						Summary:    "Memory leak detected",
 						SignalType: "OOMKilled",
-						Severity:   "high",
+						Severity:   "critical",
 					},
 					SelectedWorkflow: client.SelectedWorkflowSummary{
 						WorkflowID:     "restart-pod-v1",
