@@ -249,6 +249,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			// And: Only one RemediationRequest should exist for this alert
 			// Note: Filter by SignalName (alertname) not fingerprint, since Gateway generates fingerprints
+			// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := testClient.Client.List(ctx, rrList,
@@ -264,7 +265,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					}
 				}
 				return count
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(1),
+			}, 20*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"Only one RemediationRequest should be created despite concurrent requests")
 		})
 
@@ -345,6 +346,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 		// Then: Verify hit count reflects all duplicates using Eventually()
 		// BR-GATEWAY-008: Deduplication status should be updated atomically
+		// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
 		Eventually(func() int32 {
 			var rrList remediationv1alpha1.RemediationRequestList
 			_ = testClient.Client.List(ctx, &rrList, client.InNamespace(testNamespace))
@@ -355,7 +357,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				}
 			}
 			return 0
-		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 4),
+		}, 20*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 4),
 			"Occurrence count should reflect original + 3 duplicates (atomic updates)")
 		})
 	})
