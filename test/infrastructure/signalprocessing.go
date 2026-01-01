@@ -1583,7 +1583,7 @@ func startSPDataStorage(projectRoot string, writer io.Writer) error {
 	fmt.Fprintf(writer, "   Building DataStorage image: %s\n", dsImage)
 	buildCmd := exec.Command("podman", "build",
 		"-t", dsImage,
-		"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
 		projectRoot,
 	)
 	buildCmd.Stdout = writer
