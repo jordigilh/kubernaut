@@ -237,22 +237,13 @@ func runGatewayMigrations(projectRoot string, writer io.Writer) error {
 func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 	configDir := filepath.Join(projectRoot, "test", "integration", "gateway", "config")
 
-	// Check if DataStorage image exists, build if not
-	checkCmd := exec.Command("podman", "image", "exists", "kubernaut/datastorage:latest")
-	if checkCmd.Run() != nil {
-		fmt.Fprintf(writer, "   Building DataStorage image...\n")
-		buildCmd := exec.Command("podman", "build",
-			"-t", "kubernaut/datastorage:latest",
-			"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-			projectRoot,
-		)
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			return fmt.Errorf("failed to build DataStorage image: %w", err)
-		}
-		fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	// Build DataStorage image using shared utility with GenerateInfraImageName
+	dsImageTag := GenerateInfraImageName("datastorage", "gateway")
+	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", dsImageTag)
+	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
+		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// Use port mapping (not --network host) for macOS compatibility
 	// macOS Podman runs in VM, so host network doesn't expose ports to Mac host
@@ -262,7 +253,7 @@ func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 		"-p", fmt.Sprintf("%d:18091", GatewayIntegrationDataStoragePort),
 		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"kubernaut/datastorage:latest",
+		dsImageTag,
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
