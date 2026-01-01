@@ -206,6 +206,8 @@ func runGatewayMigrations(projectRoot string, writer io.Writer) error {
 	// The pgvector-dependent migrations (005,007,008) were removed in V1.0 and no longer exist
 	migrationScript := `
 		set -e
+		echo "Creating slm_user role (required by migrations)..."
+		psql -c "CREATE ROLE slm_user LOGIN PASSWORD 'slm_user';" || echo "Role slm_user already exists"
 		echo "Applying migrations (Up sections only)..."
 		find /migrations -maxdepth 1 -name "*.sql" -type f | sort | while read f; do
 			echo "Applying $f..."
