@@ -553,3 +553,4 @@ crdName := fmt.Sprintf("rr-%s", signal.Fingerprint[:63])
 
 **Thank you for catching this gap!** Your question revealed a subtle vulnerability in the race condition analysis. 🎯
 
+
