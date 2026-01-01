@@ -1727,7 +1727,7 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 		DBName:         AIAnalysisIntegrationDBName,
 		DBUser:         AIAnalysisIntegrationDBUser,
 		DBPassword:     AIAnalysisIntegrationDBPassword,
-		Network:        AIAnalysisIntegrationNetwork,
+		Network:        "", // Use port mapping instead of custom network
 		MaxConnections: 200,
 	}
 	if err := StartPostgreSQL(pgConfig, writer); err != nil {
@@ -1773,7 +1773,7 @@ echo "Migrations complete!"`)
 	redisConfig := RedisConfig{
 		ContainerName: AIAnalysisIntegrationRedisContainer,
 		Port:          AIAnalysisIntegrationRedisPort,
-		Network:       AIAnalysisIntegrationNetwork,
+		Network:       "", // Use port mapping instead of custom network
 	}
 	if err := StartRedis(redisConfig, writer); err != nil {
 		return fmt.Errorf("failed to start Redis: %w", err)
@@ -1798,14 +1798,14 @@ echo "Migrations complete!"`)
 	if err := StartDataStorage(IntegrationDataStorageConfig{
 		ContainerName: AIAnalysisIntegrationDataStorageContainer,
 		Port:          AIAnalysisIntegrationDataStoragePort,
-		Network:       AIAnalysisIntegrationNetwork,
-		PostgresHost:  AIAnalysisIntegrationPostgresContainer, // Use container name for internal network
-		PostgresPort:  5432,                                   // Internal port
+		Network:       "", // Use port mapping instead of custom network
+		PostgresHost:  "host.containers.internal",         // Use host.containers.internal for port-mapped PostgreSQL
+		PostgresPort:  AIAnalysisIntegrationPostgresPort,  // External mapped port
 		DBName:        AIAnalysisIntegrationDBName,
 		DBUser:        AIAnalysisIntegrationDBUser,
 		DBPassword:    AIAnalysisIntegrationDBPassword,
-		RedisHost:     AIAnalysisIntegrationRedisContainer, // Use container name for internal network
-		RedisPort:     6379,                                // Internal port
+		RedisHost:     "host.containers.internal",       // Use host.containers.internal for port-mapped Redis
+		RedisPort:     AIAnalysisIntegrationRedisPort,   // External mapped port
 		LogLevel:      "info",
 		ImageTag:      dsImageTag, // DD-INTEGRATION-001 v2.0: Composite tag for collision avoidance
 	}, writer); err != nil {
@@ -1849,7 +1849,7 @@ echo "Migrations complete!"`)
 	os.MkdirAll(hapiConfigDir, 0755)
 
 	hapiConfig := GetMinimalHAPIConfig(
-		"http://"+AIAnalysisIntegrationDataStorageContainer+":8080",
+		fmt.Sprintf("http://host.containers.internal:%d", AIAnalysisIntegrationDataStoragePort),
 		"INFO",
 	)
 	os.WriteFile(filepath.Join(hapiConfigDir, "config.yaml"), []byte(hapiConfig), 0644)
