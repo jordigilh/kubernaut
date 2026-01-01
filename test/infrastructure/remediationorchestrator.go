@@ -699,21 +699,12 @@ password: test_password
 
 	fmt.Fprintf(writer, "✅ Config files created\n")
 
-	// Step 9: Build DataStorage image (DataStorage team pattern)
+	// Step 9: Build DataStorage image (using shared utility)
 	fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
-	exec.Command("podman", "rmi", "-f", "data-storage:ro-integration-test").Run()
-	buildCmd := exec.Command("podman", "build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-
-		"--build-arg", "GOARCH=arm64", // Match DataStorage team's build
-		"-t", "data-storage:ro-integration-test",
-		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-		projectRoot)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
+	if err := buildDataStorageImageWithTag("data-storage:ro-integration-test", writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// Step 10: Start DataStorage LAST (DD-TEST-002 Sequential Pattern)
 	fmt.Fprintf(writer, "🔵 Starting DataStorage...\n")
