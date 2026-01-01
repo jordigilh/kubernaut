@@ -150,7 +150,21 @@ func TestNotificationIntegration(t *testing.T) {
 	RunSpecs(t, "Notification Controller Integration Suite (Envtest)")
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// Phase 1: Runs ONCE on parallel process #1
+	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
+	// This runs once to avoid container name collisions when TEST_PROCS > 1
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	By("Starting Notification integration infrastructure (Process #1 only)")
+	err := infrastructure.StartNotificationIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
+	GinkgoWriter.Println("✅ Notification integration infrastructure started (shared across all processes)")
+
+	return []byte{} // No data to share between processes
+}, func(data []byte) {
+	// Phase 2: Runs on ALL parallel processes (receives data from phase 1)
+	// Set up envtest, K8s client, and controller manager per process
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
@@ -224,12 +238,6 @@ var _ = BeforeSuite(func() {
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
 
-	// Start integration infrastructure programmatically (DD-TEST-002 mandate)
-	By("Starting Notification integration infrastructure")
-	err = infrastructure.StartNotificationIntegrationInfrastructure(GinkgoWriter)
-	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
-	GinkgoWriter.Println("✅ Notification integration infrastructure started")
-
 	// Create audit helpers for controller audit emission (BR-NOT-062)
 	auditHelpers := notification.NewAuditHelpers("notification-controller")
 
@@ -237,7 +245,7 @@ var _ = BeforeSuite(func() {
 	// Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)
 	dataStorageURL := os.Getenv("DATA_STORAGE_URL")
 	if dataStorageURL == "" {
-		dataStorageURL = "http://localhost:18110" // NT integration port
+		dataStorageURL = "http://localhost:18096" // NT integration port (DD-TEST-001 v1.1)
 	}
 
 	// Verify Data Storage is healthy (infrastructure should have started it)

@@ -287,7 +287,6 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 	return cmd.Run()
 }
 
-
 func startWEDataStorage(projectRoot string, writer io.Writer) error {
 	// DD-TEST-001 v1.3: Use infrastructure image format for parallel test isolation
 	// Format: localhost/{infrastructure}:{consumer}-{uuid}
@@ -338,5 +337,3 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 	cmd.Stderr = writer
 	return cmd.Run()
 }
-
-

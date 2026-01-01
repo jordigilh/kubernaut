@@ -1,3 +1,0 @@
-[38;5;9m[1mRan 41 of 44 Specs in 152.733 seconds[0m
-[38;5;9m[1mFAIL![0m -- [38;5;10m[1m40 Passed[0m | [38;5;9m[1m1 Failed[0m | [38;5;11m[1m2 Pending[0m | [38;5;14m[1m1 Skipped[0m
-

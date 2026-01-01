@@ -228,17 +228,17 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 
 		// 🆕 OPTION A - PHASE 1: Network Timeout Tests (BR-NOT-052, BR-NOT-058)
 		Context("Network Timeout Handling", func() {
-		It("should classify webhook timeout as retryable error (BR-NOT-052: Retry on Timeout)", func() {
-			// TDD RED: Test that timeout is classified as retryable
+			It("should classify webhook timeout as retryable error (BR-NOT-052: Retry on Timeout)", func() {
+				// TDD RED: Test that timeout is classified as retryable
 
-			// Create mock server that simulates slow external service
-			// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Simulate slow webhook (longer than client timeout)
-				time.Sleep(100 * time.Millisecond)
-				w.WriteHeader(http.StatusOK)
-			}))
-			defer server.Close()
+				// Create mock server that simulates slow external service
+				// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Simulate slow webhook (longer than client timeout)
+					time.Sleep(100 * time.Millisecond)
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer server.Close()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
@@ -276,17 +276,17 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				), "Error message should indicate timeout")
 			})
 
-		It("should handle webhook timeout and preserve error details for audit trail (BR-NOT-051: Audit Trail)", func() {
-			// TDD RED: Test that timeout errors include actionable details
+			It("should handle webhook timeout and preserve error details for audit trail (BR-NOT-051: Audit Trail)", func() {
+				// TDD RED: Test that timeout errors include actionable details
 
-			// Create mock server that simulates slow external service
-			// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Simulate slow webhook (longer than client timeout)
-				time.Sleep(100 * time.Millisecond)
-				w.WriteHeader(http.StatusOK)
-			}))
-			defer server.Close()
+				// Create mock server that simulates slow external service
+				// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					// Simulate slow webhook (longer than client timeout)
+					time.Sleep(100 * time.Millisecond)
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer server.Close()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
