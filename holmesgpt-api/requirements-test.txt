@@ -12,3 +12,6 @@ httpx==0.25.2
 # Test utilities
 faker==20.1.0
 
+# Linting
+ruff==0.8.4
+

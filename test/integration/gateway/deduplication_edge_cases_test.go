@@ -320,45 +320,45 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"Initial RemediationRequest should be created")
 
-		// Send concurrent duplicate alerts with proper synchronization
-		duplicateCount := 3
-		var wg sync.WaitGroup
-		wg.Add(duplicateCount)
+			// Send concurrent duplicate alerts with proper synchronization
+			duplicateCount := 3
+			var wg sync.WaitGroup
+			wg.Add(duplicateCount)
 
-		for i := 0; i < duplicateCount; i++ {
-			go func() {
-				defer wg.Done()
-				req, _ := http.NewRequest("POST",
-					fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
-					bytes.NewBuffer(payload))
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+			for i := 0; i < duplicateCount; i++ {
+				go func() {
+					defer wg.Done()
+					req, _ := http.NewRequest("POST",
+						fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
+						bytes.NewBuffer(payload))
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
-				resp, _ := http.DefaultClient.Do(req)
-				if resp != nil {
-					resp.Body.Close()
-				}
-			}()
-		}
-
-		// Wait for all HTTP requests to complete
-		wg.Wait()
-
-		// Then: Verify hit count reflects all duplicates using Eventually()
-		// BR-GATEWAY-008: Deduplication status should be updated atomically
-		// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
-		Eventually(func() int32 {
-			var rrList remediationv1alpha1.RemediationRequestList
-			_ = testClient.Client.List(ctx, &rrList, client.InNamespace(testNamespace))
-
-			for _, rr := range rrList.Items {
-				if rr.Spec.SignalName == "TestAtomicHitCount" && rr.Status.Deduplication != nil {
-					return rr.Status.Deduplication.OccurrenceCount
-				}
+					resp, _ := http.DefaultClient.Do(req)
+					if resp != nil {
+						resp.Body.Close()
+					}
+				}()
 			}
-			return 0
-		}, 20*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 4),
-			"Occurrence count should reflect original + 3 duplicates (atomic updates)")
+
+			// Wait for all HTTP requests to complete
+			wg.Wait()
+
+			// Then: Verify hit count reflects all duplicates using Eventually()
+			// BR-GATEWAY-008: Deduplication status should be updated atomically
+			// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
+			Eventually(func() int32 {
+				var rrList remediationv1alpha1.RemediationRequestList
+				_ = testClient.Client.List(ctx, &rrList, client.InNamespace(testNamespace))
+
+				for _, rr := range rrList.Items {
+					if rr.Spec.SignalName == "TestAtomicHitCount" && rr.Status.Deduplication != nil {
+						return rr.Status.Deduplication.OccurrenceCount
+					}
+				}
+				return 0
+			}, 20*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 4),
+				"Occurrence count should reflect original + 3 duplicates (atomic updates)")
 		})
 	})
 
@@ -412,4 +412,3 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		})
 	})
 })
-

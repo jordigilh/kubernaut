@@ -1,11 +1,11 @@
 # ADR-CI-001: CI/CD Pipeline Testing Strategy
 
-**Status**: ✅ Approved  
-**Date**: 2025-12-31  
-**Last Updated**: 2025-12-31  
-**Version**: 1.0  
-**Author**: AI Assistant  
-**Reviewers**: TBD  
+**Status**: ✅ Approved
+**Date**: 2025-12-31
+**Last Updated**: 2025-12-31
+**Version**: 1.0
+**Author**: AI Assistant
+**Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc), [DD-TEST-001](DD-TEST-001-port-allocation-strategy.md)
 
 ---
@@ -133,7 +133,7 @@ redis:
 
 **Critical Dependency**: All integration and E2E jobs must run `make generate` before tests.
 
-**Reason**: 
+**Reason**:
 - Go services depend on embedded OpenAPI specs (`openapi_spec_data.yaml`)
 - `ogen` tool generates HolmesGPT-API client from OpenAPI specs
 - Without generation: `openapi_spec_data.yaml: no matching files found`
@@ -306,8 +306,8 @@ redis:
 
 ---
 
-**Authority**: This design decision is **AUTHORITATIVE** for CI/CD pipeline strategy.  
-**Scope**: All GitHub Actions workflows for kubernaut testing.  
-**Enforcement**: CI pipeline configuration MUST follow this strategy.  
+**Authority**: This design decision is **AUTHORITATIVE** for CI/CD pipeline strategy.
+**Scope**: All GitHub Actions workflows for kubernaut testing.
+**Enforcement**: CI pipeline configuration MUST follow this strategy.
 **Review Cadence**: Quarterly review of E2E path filters and integration test duration.
 

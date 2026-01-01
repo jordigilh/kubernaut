@@ -542,9 +542,10 @@ func StartROIntegrationInfrastructure(writer io.Writer) error {
 		ROIntegrationDataStorageContainer,
 	}, writer)
 
-	// Step 2: Create network
-	fmt.Fprintf(writer, "🌐 Creating network...\n")
-	exec.Command("podman", "network", "create", ROIntegrationNetwork).Run()
+	// Step 2: Network strategy
+	// Note: Using port mapping (-p) instead of custom podman network to avoid DNS resolution issues
+	// All services connect via host.containers.internal:PORT (same pattern as Gateway/Notification/WE)
+	fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
 
 	// Step 3: Start PostgreSQL FIRST (using shared utility)
 	fmt.Fprintf(writer, "🔵 Starting PostgreSQL...\n")
@@ -586,27 +587,11 @@ func StartROIntegrationInfrastructure(writer io.Writer) error {
 		}
 	}
 
-	// Step 5: Get PostgreSQL IP (workaround for Podman DNS issues on macOS)
-	fmt.Fprintf(writer, "🔍 Getting PostgreSQL IP for migrations and DataStorage config...\n")
-	pgIPCmd := exec.Command("podman", "inspect", ROIntegrationPostgresContainer,
-		"--format", `{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}`)
-	pgIPOutput, err := pgIPCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get PostgreSQL container IP: %w", err)
-	}
-	pgHost := strings.TrimSpace(string(pgIPOutput))
-	if pgHost == "" {
-		return fmt.Errorf("failed to get PostgreSQL container IP: empty result")
-	}
-	fmt.Fprintf(writer, "   PostgreSQL IP: %s\n", pgHost)
-
-	// Step 6: Run migrations (DataStorage team pattern)
-	// Using container IP instead of hostname to workaround Podman DNS issues on macOS
+	// Step 5: Run migrations (using host.containers.internal for port mapping)
 	fmt.Fprintf(writer, "🔄 Running migrations...\n")
 	migrationsCmd := exec.Command("podman", "run", "--rm",
-		"--network", ROIntegrationNetwork,
-		"-e", "PGHOST="+pgHost, // Use IP address instead of container name
-		"-e", "PGPORT=5432",
+		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
+		"-e", fmt.Sprintf("PGPORT=%d", ROIntegrationPostgresPort),
 		"-e", "PGUSER=slm_user",
 		"-e", "PGPASSWORD=test_password",
 		"-e", "PGDATABASE=action_history",
@@ -750,7 +735,6 @@ password: test_password
 
 	datastorageCmd := exec.Command("podman", "run", "-d",
 		"--name", ROIntegrationDataStorageContainer,
-		"--network", ROIntegrationNetwork,
 		"-p", fmt.Sprintf("%d:8080", ROIntegrationDataStoragePort),
 		"-p", fmt.Sprintf("%d:9090", ROIntegrationDataStorageMetricsPort),
 		"-v", configMount,

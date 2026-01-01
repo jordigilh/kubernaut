@@ -2,10 +2,10 @@
 
 ## 📋 **Executive Summary**
 
-**Issue**: GitHub Actions CI failing with "ERROR: Invalid requirement: '../dependencies/holmesgpt/'"  
-**Root Cause**: Git submodule directory existed locally but was not registered in git index  
-**Impact**: ALL workflow runs failing at Python dependency installation  
-**Resolution**: Registered submodule properly using `git submodule add --force`  
+**Issue**: GitHub Actions CI failing with "ERROR: Invalid requirement: '../dependencies/holmesgpt/'"
+**Root Cause**: Git submodule directory existed locally but was not registered in git index
+**Impact**: ALL workflow runs failing at Python dependency installation
+**Resolution**: Registered submodule properly using `git submodule add --force`
 **Status**: ✅ FIXED - Commit 97df481e4
 
 ---
@@ -239,8 +239,8 @@ A directory can exist locally but be untracked in git. CI always works from the 
 
 ---
 
-**Status**: ✅ RESOLVED - Awaiting CI validation  
-**Date**: December 31, 2025  
-**Engineer**: AI Assistant (with user guidance)  
+**Status**: ✅ RESOLVED - Awaiting CI validation
+**Date**: December 31, 2025
+**Engineer**: AI Assistant (with user guidance)
 **PR**: #19
 

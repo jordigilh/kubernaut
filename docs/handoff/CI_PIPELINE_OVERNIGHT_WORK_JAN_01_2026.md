@@ -1,9 +1,9 @@
 # CI Pipeline Overnight Work - New Year 2026
 
-**Date**: 2026-01-01  
-**Time**: 00:30 EST  
-**Status**: ⏳ In Progress - Iteration 4 Complete  
-**Branch**: fix/ci-python-dependencies-path  
+**Date**: 2026-01-01
+**Time**: 00:30 EST
+**Status**: ⏳ In Progress - Iteration 4 Complete
+**Branch**: fix/ci-python-dependencies-path
 **Latest CI Run**: 20633281663 (Iteration 5)
 
 ---
@@ -35,8 +35,8 @@ Continue iterations to get all integration tests passing, then validate E2E test
 ## Detailed Progress
 
 ### Iteration 1: Container Networking
-**CI Run**: 20632650292  
-**Problem**: DNS resolution failures (`lookup workflowexecution_postgres_1: no such host`)  
+**CI Run**: 20632650292
+**Problem**: DNS resolution failures (`lookup workflowexecution_postgres_1: no such host`)
 **Solution**: Updated 3 service config files to use `host.containers.internal` with DD-TEST-001 ports
 
 **Files Changed**:
@@ -47,8 +47,8 @@ Continue iterations to get all integration tests passing, then validate E2E test
 ---
 
 ### Iteration 2: Dockerfile Path
-**CI Run**: 20632803402  
-**Problem**: Image build failures (`cmd/datastorage/Dockerfile: no such file`)  
+**CI Run**: 20632803402
+**Problem**: Image build failures (`cmd/datastorage/Dockerfile: no such file`)
 **Solution**: Updated 5 infrastructure files to use correct path: `docker/data-storage.Dockerfile`
 
 **Files Changed**:
@@ -60,8 +60,8 @@ Continue iterations to get all integration tests passing, then validate E2E test
 ---
 
 ### Iteration 3: Migration Skip Logic
-**CI Run**: 20632993439  
-**Problem**: Database schema missing (`ERROR: relation "resource_action_traces" does not exist`)  
+**CI Run**: 20632993439
+**Problem**: Database schema missing (`ERROR: relation "resource_action_traces" does not exist`)
 **Root Cause**: Migration script skipped 001-008 thinking they were "vector-dependent"
 
 **Discovery**:
@@ -79,8 +79,8 @@ Continue iterations to get all integration tests passing, then validate E2E test
 ---
 
 ### Iteration 4: PostgreSQL Role Creation
-**CI Run**: 20633190997 (current)  
-**Problem**: GRANT failures (`ERROR: role "slm_user" does not exist`)  
+**CI Run**: 20633190997 (current)
+**Problem**: GRANT failures (`ERROR: role "slm_user" does not exist`)
 **Root Cause**: PostgreSQL created with `kubernaut` user, migrations GRANT to `slm_user`
 
 **Solution**: Added role creation before migrations:
@@ -129,15 +129,15 @@ Still checking...
 ## What Worked
 
 ### Infrastructure Fixes
-✅ Container networking strategy proven  
-✅ Dockerfile path corrections effective  
-✅ Migration logic fixed  
+✅ Container networking strategy proven
+✅ Dockerfile path corrections effective
+✅ Migration logic fixed
 ✅ PostgreSQL setup corrected
 
 ### Process
-✅ Systematic log analysis  
-✅ Incremental iteration  
-✅ Root cause identification  
+✅ Systematic log analysis
+✅ Incremental iteration
+✅ Root cause identification
 ✅ Validation at each step
 
 ---
@@ -145,9 +145,9 @@ Still checking...
 ## What Didn't Work
 
 ### Initial Assumptions
-❌ Container names would resolve without networks  
-❌ Dockerfile location was in `cmd/`  
-❌ Migration skip logic was correct  
+❌ Container names would resolve without networks
+❌ Dockerfile location was in `cmd/`
+❌ Migration skip logic was correct
 ❌ PostgreSQL roles were created automatically
 
 ### Time Estimates
@@ -160,15 +160,15 @@ Still checking...
 ## Technical Debt Identified
 
 ### 1. Inconsistent Container Networking
-**Problem**: 3 different networking strategies across services  
+**Problem**: 3 different networking strategies across services
 **Recommendation**: Standardize on `host.containers.internal` for all
 
 ### 2. Hardcoded Infrastructure Assumptions
-**Problem**: Migration logic, role creation, container names all hardcoded  
+**Problem**: Migration logic, role creation, container names all hardcoded
 **Recommendation**: Auto-discovery and dynamic setup
 
 ### 3. Missing Prerequisites Documentation
-**Problem**: No docs on PostgreSQL role requirements  
+**Problem**: No docs on PostgreSQL role requirements
 **Recommendation**: Document all infrastructure prerequisites
 
 ---
@@ -241,28 +241,28 @@ Gateway is at 98.3% (116/118). Is this:
 
 ## Current CI Run Details
 
-**Run ID**: 20633190997  
-**URL**: https://github.com/jordigilh/kubernaut/actions/runs/20633190997  
-**Started**: 2026-01-01 00:23 EST  
-**Duration**: ~10 minutes  
+**Run ID**: 20633190997
+**URL**: https://github.com/jordigilh/kubernaut/actions/runs/20633190997
+**Started**: 2026-01-01 00:23 EST
+**Duration**: ~10 minutes
 **Status**: Completed (with failures)
 
 ### Build & Lint
 ✅ **SUCCESS** (3m6s)
 
 ### Unit Tests (8/8 Passing)
-✅ AI Analysis (52s)  
-✅ Gateway (54s)  
-✅ Signal Processing (57s)  
-✅ HolmesGPT API (3m5s)  
-✅ Workflow Execution (53s)  
-✅ Data Storage (43s)  
-✅ Remediation Orchestrator (57s)  
+✅ AI Analysis (52s)
+✅ Gateway (54s)
+✅ Signal Processing (57s)
+✅ HolmesGPT API (3m5s)
+✅ Workflow Execution (53s)
+✅ Data Storage (43s)
+✅ Remediation Orchestrator (57s)
 ✅ Notification (1m0s)
 
 ### Integration Tests
-🔄 Gateway: 116/118 (98.3%)  
-❌ Data Storage: BeforeSuite failure  
+🔄 Gateway: 116/118 (98.3%)
+❌ Data Storage: BeforeSuite failure
 ❓ Others: Checking...
 
 ---
@@ -346,8 +346,8 @@ When you're back and have had your coffee ☕, let me know:
 
 ---
 
-**Generated**: 2026-01-01 00:30 EST  
-**By**: AI Assistant  
+**Generated**: 2026-01-01 00:30 EST
+**By**: AI Assistant
 **For**: Jordi Gil
 
 ---

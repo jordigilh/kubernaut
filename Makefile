@@ -305,7 +305,7 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	echo "🐍 Python Test Phase (DD-HAPI-005 client auto-regeneration)..."; \
 	echo "════════════════════════════════════════════════════════════════════════"; \
 	echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."; \
-	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1; \
+	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || exit 1; \
 	echo "✅ Client generated successfully"; \
 	echo ""; \
 	echo "🧪 Step 2: Install Python dependencies..."; \

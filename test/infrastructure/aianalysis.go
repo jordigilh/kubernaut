@@ -1698,20 +1698,25 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// ============================================================================
-	// STEP 2: Create custom network for internal communication
+	// STEP 2: Network strategy
 	// ============================================================================
-	fmt.Fprintf(writer, "🌐 Creating custom Podman network '%s'...\n", AIAnalysisIntegrationNetwork)
-	createNetworkCmd := exec.Command("podman", "network", "create", AIAnalysisIntegrationNetwork)
-	createNetworkCmd.Stdout = writer
-	createNetworkCmd.Stderr = writer
-	if err := createNetworkCmd.Run(); err != nil {
-		// Ignore if network already exists
-		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("failed to create network '%s': %w", AIAnalysisIntegrationNetwork, err)
+	// Note: Using port mapping (-p) instead of custom podman network to avoid DNS resolution issues
+	// All services connect via host.containers.internal:PORT (same pattern as Gateway/Notification/WE)
+	fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
+
+	if false { // Skip network creation - using port mapping instead
+		createNetworkCmd := exec.Command("podman", "network", "create", AIAnalysisIntegrationNetwork)
+		createNetworkCmd.Stdout = writer
+		createNetworkCmd.Stderr = writer
+		if err := createNetworkCmd.Run(); err != nil {
+			// Ignore if network already exists
+			if !strings.Contains(err.Error(), "already exists") {
+				return fmt.Errorf("failed to create network '%s': %w", AIAnalysisIntegrationNetwork, err)
+			}
+			fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", AIAnalysisIntegrationNetwork)
 		}
-		fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", AIAnalysisIntegrationNetwork)
-	}
-	fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", AIAnalysisIntegrationNetwork)
+		fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", AIAnalysisIntegrationNetwork)
+	} // End of skipped network creation block
 
 	// ============================================================================
 	// STEP 3: Start PostgreSQL FIRST (DD-TEST-002 Sequential Pattern)
@@ -1740,9 +1745,8 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	// ============================================================================
 	fmt.Fprintf(writer, "🔄 Running migrations...\n")
 	migrationsCmd := exec.Command("podman", "run", "--rm",
-		"--network", AIAnalysisIntegrationNetwork,
-		"-e", "PGHOST="+AIAnalysisIntegrationPostgresContainer,
-		"-e", "PGPORT=5432",
+		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
+		"-e", fmt.Sprintf("PGPORT=%d", AIAnalysisIntegrationPostgresPort),
 		"-e", "PGUSER="+AIAnalysisIntegrationDBUser,
 		"-e", "PGPASSWORD="+AIAnalysisIntegrationDBPassword,
 		"-e", "PGDATABASE="+AIAnalysisIntegrationDBName,
@@ -1854,7 +1858,6 @@ echo "Migrations complete!"`)
 	// ADR-030: Use -config flag (consistent with Go services)
 	hapiCmd := exec.Command("podman", "run", "-d",
 		"--name", AIAnalysisIntegrationHAPIContainer,
-		"--network", AIAnalysisIntegrationNetwork,
 		"-p", fmt.Sprintf("%d:8080", AIAnalysisIntegrationHAPIPort), // Map host port to container's 8080
 		"-v", fmt.Sprintf("%s:/etc/holmesgpt:ro", hapiConfigDir),
 		"-e", "MOCK_LLM_MODE=true",

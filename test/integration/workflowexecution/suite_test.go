@@ -109,18 +109,26 @@ func TestWorkflowExecutionIntegration(t *testing.T) {
 	RunSpecs(t, "WorkflowExecution Controller Integration Suite (EnvTest + Tekton CRDs)")
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// Phase 1: Runs ONCE on parallel process #1
+	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
+	// This runs once to avoid container name collisions when TEST_PROCS > 1
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	By("Starting WorkflowExecution integration infrastructure (Process #1 only, DD-TEST-002)")
+	err := infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
+
+	return []byte{} // No data to share between processes
+}, func(data []byte) {
+	// Phase 2: Runs on ALL parallel processes (receives data from phase 1)
+	// Set up envtest, K8s client, and controller manager per process
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
-
-	// DD-TEST-002: Start WorkflowExecution integration infrastructure (sequential startup)
-	By("Starting WorkflowExecution integration infrastructure (DD-TEST-002)")
-	err = infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
 
 	By("Registering CRD schemes")
 	err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
