@@ -238,10 +238,11 @@ echo "Migrations complete!"`)
 	fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
-	// STEP 7: Build DataStorage image
+	// STEP 7: Build DataStorage image (using GenerateInfraImageName for consistency)
 	// ============================================================================
-	fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
-	if err := buildDataStorageImageWithTag("data-storage:notification-integration-test", writer); err != nil {
+	dsImageTag := GenerateInfraImageName("datastorage", "notification")
+	fmt.Fprintf(writer, "🏗️  Building DataStorage image (%s)...\n", dsImageTag)
+	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 	fmt.Fprintf(writer, "   ✅ DataStorage image built\n\n")
@@ -250,7 +251,7 @@ echo "Migrations complete!"`)
 	// STEP 8: Start DataStorage LAST (service-specific)
 	// ============================================================================
 	fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startNotificationDataStorage(writer); err != nil {
+	if err := startNotificationDataStorage(dsImageTag, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
@@ -322,7 +323,7 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 
 // startNotificationDataStorage starts the DataStorage container for Notification integration tests
 // This is service-specific because it needs to connect to Notification-specific PostgreSQL/Redis instances
-func startNotificationDataStorage(writer io.Writer) error {
+func startNotificationDataStorage(imageTag string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	
 	// Use existing config file from test/integration/notification/config/
@@ -335,7 +336,7 @@ func startNotificationDataStorage(writer io.Writer) error {
 		"-p", fmt.Sprintf("%d:9090", NTIntegrationMetricsPort),
 		"-v", configMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"data-storage:notification-integration-test",
+		imageTag,
 	)
 	cmd.Dir = projectRoot
 	cmd.Stdout = writer
