@@ -629,20 +629,6 @@ echo "Migrations complete!"`)
 		return fmt.Errorf("Redis failed to become ready: %w", err)
 	}
 
-	// Step 7b: Get Redis IP (workaround for Podman DNS issues on macOS)
-	fmt.Fprintf(writer, "🔍 Getting Redis IP for DataStorage config...\n")
-	redisIPCmd := exec.Command("podman", "inspect", ROIntegrationRedisContainer,
-		"--format", `{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}`)
-	redisIPOutput, err := redisIPCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get Redis container IP: %w", err)
-	}
-	redisHost := strings.TrimSpace(string(redisIPOutput))
-	if redisHost == "" {
-		return fmt.Errorf("failed to get Redis container IP: empty result")
-	}
-	fmt.Fprintf(writer, "   Redis IP: %s\n", redisHost)
-
 	// Step 8: Create DataStorage config files (DataStorage team pattern)
 	fmt.Fprintf(writer, "📝 Creating DataStorage config files...\n")
 	configDir := filepath.Join(projectRoot, "test", "integration", "remediationorchestrator", "config")
@@ -650,8 +636,10 @@ echo "Migrations complete!"`)
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Create config.yaml (matching DataStorage team's pattern exactly)
-	configYAML := fmt.Sprintf(`service:
+	// Create config.yaml (using host.containers.internal for port-mapped containers)
+	// Note: DataStorage container connects to PostgreSQL/Redis via host.containers.internal
+	// because they are port-mapped to the host, not on a custom network
+	configYAML := `service:
   name: data-storage
   metricsPort: 9090
   logLevel: debug
@@ -662,8 +650,8 @@ server:
   read_timeout: 30s
   write_timeout: 30s
 database:
-  host: %s
-  port: 5432
+  host: host.containers.internal
+  port: ` + fmt.Sprintf("%d", ROIntegrationPostgresPort) + `
   name: action_history
   user: slm_user
   ssl_mode: disable
@@ -675,7 +663,7 @@ database:
   usernameKey: "username"
   passwordKey: "password"
 redis:
-  addr: %s:6379
+  addr: host.containers.internal:` + fmt.Sprintf("%d", ROIntegrationRedisPort) + `
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
@@ -685,7 +673,7 @@ redis:
 logging:
   level: debug
   format: json
-`, pgHost, redisHost)
+`
 
 	configPath := filepath.Join(configDir, "config.yaml")
 	if err := os.WriteFile(configPath, []byte(configYAML), 0666); err != nil {
