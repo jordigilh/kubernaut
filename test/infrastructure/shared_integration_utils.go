@@ -464,24 +464,13 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	}
 	fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
 
-	// STEP 2: Build DataStorage image
+	// STEP 2: Build DataStorage image using shared utility
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
-	fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", cfg.ImageTag)
-	buildArgs := []string{
-		"build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-		"-t", cfg.ImageTag,
-		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-		projectRoot, // Build context is the project root
-	}
-
-	buildCmd := exec.Command("podman", buildArgs...)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
+	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", cfg.ImageTag)
+	if err := buildDataStorageImageWithTag(cfg.ImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", cfg.ImageTag)
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// STEP 3: Start DataStorage container
 	runArgs := []string{"run", "-d",
