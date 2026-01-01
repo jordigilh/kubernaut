@@ -238,7 +238,16 @@ echo "Migrations complete!"`)
 	fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
-	// STEP 7: Start DataStorage LAST (service-specific)
+	// STEP 7: Build DataStorage image
+	// ============================================================================
+	fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
+	if err := buildDataStorageImageWithTag("data-storage:notification-integration-test", writer); err != nil {
+		return fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n\n")
+
+	// ============================================================================
+	// STEP 8: Start DataStorage LAST (service-specific)
 	// ============================================================================
 	fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
 	if err := startNotificationDataStorage(writer); err != nil {
@@ -246,7 +255,7 @@ echo "Migrations complete!"`)
 	}
 
 	// ============================================================================
-	// STEP 8: Wait for DataStorage HTTP endpoint (using shared utility)
+	// STEP 9: Wait for DataStorage HTTP endpoint (using shared utility)
 	// ============================================================================
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
@@ -315,21 +324,18 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 // This is service-specific because it needs to connect to Notification-specific PostgreSQL/Redis instances
 func startNotificationDataStorage(writer io.Writer) error {
 	projectRoot := getProjectRoot()
+	
+	// Use existing config file from test/integration/notification/config/
+	configDir := filepath.Join(projectRoot, "test", "integration", "notification", "config")
+	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
 
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", NTIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", NTIntegrationDataStoragePort),
-		"-p", fmt.Sprintf("%d:8081", NTIntegrationMetricsPort),
-		"-e", fmt.Sprintf("POSTGRES_HOST=host.containers.internal"),
-		"-e", fmt.Sprintf("POSTGRES_PORT=%d", NTIntegrationPostgresPort),
-		"-e", fmt.Sprintf("POSTGRES_DB=%s", NTIntegrationDBName),
-		"-e", fmt.Sprintf("POSTGRES_USER=%s", NTIntegrationDBUser),
-		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", NTIntegrationDBPassword),
-		"-e", fmt.Sprintf("REDIS_HOST=host.containers.internal"),
-		"-e", fmt.Sprintf("REDIS_PORT=%d", NTIntegrationRedisPort),
-		"-e", "SERVICE_PORT=8080",
-		"-e", "METRICS_PORT=8081",
-		"quay.io/jordigilh/datastorage:latest",
+		"-p", fmt.Sprintf("%d:9090", NTIntegrationMetricsPort),
+		"-v", configMount,
+		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
+		"data-storage:notification-integration-test",
 	)
 	cmd.Dir = projectRoot
 	cmd.Stdout = writer
