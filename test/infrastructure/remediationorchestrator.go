@@ -699,9 +699,10 @@ password: test_password
 
 	fmt.Fprintf(writer, "✅ Config files created\n")
 
-	// Step 9: Build DataStorage image (using shared utility)
-	fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
-	if err := buildDataStorageImageWithTag("data-storage:ro-integration-test", writer); err != nil {
+	// Step 9: Build DataStorage image (using shared utility with GenerateInfraImageName)
+	dsImageTag := GenerateInfraImageName("datastorage", "remediationorchestrator")
+	fmt.Fprintf(writer, "🏗️  Building DataStorage image (%s)...\n", dsImageTag)
+	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
@@ -719,7 +720,7 @@ password: test_password
 		"-v", configMount,
 		"-v", secretsMount,
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"data-storage:ro-integration-test")
+		dsImageTag)
 	datastorageCmd.Stdout = writer
 	datastorageCmd.Stderr = writer
 	if err := datastorageCmd.Run(); err != nil {
