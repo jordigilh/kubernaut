@@ -330,16 +330,12 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 	migrationsDir := filepath.Join(projectRoot, defaultMigrationsPath)
 
 	// Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
-	// Skip vector-dependent migrations (001-008) as pgvector removed for V1.0
+	// NOTE: Migrations 001-008 (001,002,003,004,006) do NOT use pgvector - they are core schema
+	// The pgvector-dependent migrations (005,007,008) were removed in V1.0 and no longer exist
 	migrationScript := `
 		set -e
-		echo "Applying migrations (Up sections only, skipping 001-008 vector migrations)..."
+		echo "Applying migrations (Up sections only)..."
 		find /migrations -maxdepth 1 -name "*.sql" -type f | sort | while read f; do
-			# Skip vector-dependent migrations (001-008)
-			if echo "$f" | grep -qE "/00[1-8]_"; then
-				echo "Skipping vector migration: $f"
-				continue
-			fi
 			echo "Applying $f..."
 			sed -n "1,/^-- +goose Down/p" "$f" | grep -v "^-- +goose Down" | psql
 		done
