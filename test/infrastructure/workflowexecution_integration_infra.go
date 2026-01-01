@@ -298,7 +298,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 	buildCmd := exec.Command("podman", "build",
 		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
 		"-t", dsImage,
-		"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
 		projectRoot,
 	)
 	buildCmd.Stdout = writer

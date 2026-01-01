@@ -245,7 +245,7 @@ func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 		fmt.Fprintf(writer, "   Building DataStorage image...\n")
 		buildCmd := exec.Command("podman", "build",
 			"-t", "kubernaut/datastorage:latest",
-			"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
+			"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
 			projectRoot,
 		)
 		buildCmd.Stdout = writer

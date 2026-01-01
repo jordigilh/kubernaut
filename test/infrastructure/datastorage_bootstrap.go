@@ -412,15 +412,15 @@ func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer
 	// Check if DataStorage image exists, build if not
 	checkCmd := exec.Command("podman", "image", "exists", imageName)
 	if checkCmd.Run() != nil {
-		fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
-		buildCmd := exec.Command("podman", "build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+	fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
+	buildCmd := exec.Command("podman", "build",
+	"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
 
-			"-t", imageName,
-			"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
-			"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
-			projectRoot,
-		)
+		"-t", imageName,
+		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
+		projectRoot,
+	)
 		buildCmd.Stdout = writer
 		buildCmd.Stderr = writer
 		if err := buildCmd.Run(); err != nil {
@@ -742,7 +742,7 @@ func waitForContainerHealth(check *HealthCheckConfig, writer io.Writer) error {
 type E2EImageConfig struct {
 	ServiceName      string // Service name (e.g., "gateway", "aianalysis")
 	ImageName        string // Base image name (e.g., "kubernaut/datastorage")
-	DockerfilePath   string // Relative to project root (e.g., "cmd/datastorage/Dockerfile")
+	DockerfilePath   string // Relative to project root (e.g., "docker/data-storage.Dockerfile")
 	KindClusterName  string // Kind cluster name to load image into
 	BuildContextPath string // Build context path, default: "." (project root)
 	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
