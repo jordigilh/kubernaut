@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -188,19 +189,31 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
-	// STEP 4: Run migrations (using shared utility)
+	// STEP 4: Run migrations (using local migrations directory)
 	// ============================================================================
 	fmt.Fprintf(writer, "🔄 Running database migrations...\n")
-	if err := RunMigrations(MigrationsConfig{
-		ContainerName:   NTIntegrationMigrationsContainer,
-		PostgresHost:    "localhost",
-		PostgresPort:    NTIntegrationPostgresPort,
-		DBName:          NTIntegrationDBName,
-		DBUser:          NTIntegrationDBUser,
-		DBPassword:      NTIntegrationDBPassword,
-		MigrationsImage: "quay.io/jordigilh/datastorage-migrations:latest",
-	}, writer); err != nil {
-		return fmt.Errorf("failed to run migrations: %w", err)
+	projectRoot := getProjectRoot()
+	migrationsCmd := exec.Command("podman", "run", "--rm",
+		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
+		"-e", fmt.Sprintf("PGPORT=%d", NTIntegrationPostgresPort),
+		"-e", fmt.Sprintf("PGUSER=%s", NTIntegrationDBUser),
+		"-e", fmt.Sprintf("PGPASSWORD=%s", NTIntegrationDBPassword),
+		"-e", fmt.Sprintf("PGDATABASE=%s", NTIntegrationDBName),
+		"-v", filepath.Join(projectRoot, "migrations")+":/migrations:ro",
+		"postgres:16-alpine",
+		"sh", "-c",
+		`set -e
+echo "Applying migrations (Up sections only)..."
+find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+  echo "Applying $f..."
+  sed -n '1,/^-- +goose Down/p' "$f" | grep -v '^-- +goose Down' | psql 2>&1
+done
+echo "Migrations complete!"`)
+	migrationsCmd.Stdout = writer
+	migrationsCmd.Stderr = writer
+	if err := migrationsCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "\n❌ Migration command failed - check output above for specific SQL errors\n")
+		return fmt.Errorf("migrations failed (check test output for details): %w", err)
 	}
 	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
