@@ -157,32 +157,78 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 	return cmd.Run()
 }
 
-// WaitForPostgreSQLReady waits for PostgreSQL to be ready to accept connections
-// Uses pg_isready command to check PostgreSQL availability
+// WaitForPostgreSQLReady waits for PostgreSQL to be ready to accept connections AND execute queries
+// Uses two-phase verification to prevent "database system is starting up" errors during migrations
+//
+// Phase 1: Connection Check (pg_isready)
+// - Verifies PostgreSQL accepts connections
+// - 30 attempts with 1 second intervals
+//
+// Phase 2: Queryability Check (SELECT 1)
+// - Verifies database is fully initialized and can execute queries
+// - 10 attempts with 1 second intervals
+// - CRITICAL: pg_isready only checks connections, not full initialization
 //
 // Pattern: DD-TEST-002 Health Check
-// - 30 attempts with 1 second intervals
-// - Logs progress for debugging
-// - Returns error if not ready after timeout
+// - Prevents race condition: migrations running before DB is queryable
+// - Root cause fix for "FATAL: the database system is starting up"
 //
 // Usage:
 //   if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //       return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 //   }
 func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writer) error {
+	// ============================================================================
+	// PHASE 1: Wait for PostgreSQL to accept connections (pg_isready)
+	// ============================================================================
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
 		cmd := exec.Command("podman", "exec", containerName,
 			"pg_isready", "-U", dbUser, "-d", dbName)
 		if cmd.Run() == nil {
-			fmt.Fprintf(writer, "   ✅ PostgreSQL ready (attempt %d/%d)\n", i, maxAttempts)
-			return nil
+			fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
+			break
+		}
+		if i == maxAttempts {
+			return fmt.Errorf("PostgreSQL failed to accept connections after %d attempts", maxAttempts)
 		}
 		if i < maxAttempts {
 			time.Sleep(1 * time.Second)
 		}
 	}
-	return fmt.Errorf("PostgreSQL failed to become ready after %d attempts", maxAttempts)
+
+	// ============================================================================
+	// PHASE 2: Verify database is queryable (not just accepting connections)
+	// ============================================================================
+	// CRITICAL: pg_isready only checks if PostgreSQL accepts connections.
+	// It does NOT verify the database is fully initialized and ready for queries.
+	// Without this check, migrations can fail with:
+	//   "FATAL: the database system is starting up"
+	//
+	// This race condition was discovered in:
+	// - AIAnalysis integration tests (Jan 2, 2026)
+	// - Fixed by adding queryability verification
+	fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
+	maxQueryAttempts := 10
+	for i := 1; i <= maxQueryAttempts; i++ {
+		testQueryCmd := exec.Command("podman", "exec", containerName,
+			"psql", "-U", dbUser, "-d", dbName, "-c", "SELECT 1;")
+		testQueryCmd.Stdout = writer
+		testQueryCmd.Stderr = writer
+		if testQueryCmd.Run() == nil {
+			fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n\n", i, maxQueryAttempts)
+			return nil
+		}
+		if i == maxQueryAttempts {
+			return fmt.Errorf("database failed to become queryable after %d attempts (accepting connections but not fully initialized)", maxQueryAttempts)
+		}
+		if i < maxQueryAttempts {
+			fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxQueryAttempts)
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	return fmt.Errorf("PostgreSQL readiness check failed unexpectedly")
 }
 
 // RedisConfig holds configuration for starting a Redis container

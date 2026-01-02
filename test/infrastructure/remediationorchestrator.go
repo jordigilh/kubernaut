@@ -138,31 +138,12 @@ func StartROIntegrationInfrastructure(writer io.Writer) error {
 		return fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
-	// Step 4: WAIT for PostgreSQL to be ready (using shared utility)
+	// Step 4: WAIT for PostgreSQL to be ready (using enhanced shared utility)
+	// Uses two-phase verification: connection check + queryability check
+	// Prevents "database system is starting up" errors during migrations
 	fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
 	if err := WaitForPostgreSQLReady(ROIntegrationPostgresContainer, "slm_user", "action_history", writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
-	}
-
-	// Step 4b: VERIFY database is actually queryable (not just accepting connections)
-	// Per DD-TEST-002: pg_isready only checks connections, not full DB initialization
-	fmt.Fprintf(writer, "⏳ Verifying database is queryable...\n")
-	maxAttempts := 10
-	for i := 1; i <= maxAttempts; i++ {
-		testQueryCmd := exec.Command("podman", "exec", ROIntegrationPostgresContainer,
-			"psql", "-U", "slm_user", "-d", "action_history", "-c", "SELECT 1;")
-		testQueryCmd.Stdout = writer
-		testQueryCmd.Stderr = writer
-		if testQueryCmd.Run() == nil {
-			fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n", i, maxAttempts)
-			break
-		}
-		if i < maxAttempts {
-			fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxAttempts)
-			time.Sleep(1 * time.Second)
-		} else {
-			return fmt.Errorf("database failed to become queryable after %d attempts", maxAttempts)
-		}
 	}
 
 	// Step 5: Run migrations (using host.containers.internal for port mapping)
