@@ -20,11 +20,11 @@ WORKDIR /workspace
 
 # Copy Python dependencies first for layer caching
 COPY holmesgpt-api/requirements.txt holmesgpt-api/requirements-test.txt ./holmesgpt-api/
-COPY dependencies/holmesgpt/ ./dependencies/holmesgpt/
+COPY dependencies/holmesgpt ./dependencies/holmesgpt
 
 # Install holmesgpt package first (avoids relative path issues in requirements.txt)
 # The requirements.txt line 37 references "../dependencies/holmesgpt/" which doesn't resolve in container context
-RUN pip3.12 install --no-cache-dir --break-system-packages ./dependencies/holmesgpt/
+RUN pip3.12 install --no-cache-dir --break-system-packages /workspace/dependencies/holmesgpt
 
 # Install remaining Python dependencies
 # Filter out the broken relative path line before installing
