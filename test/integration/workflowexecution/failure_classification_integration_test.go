@@ -204,6 +204,7 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
+			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			RemediationRequestRef: corev1.ObjectReference{

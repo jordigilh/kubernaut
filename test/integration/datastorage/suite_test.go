@@ -195,7 +195,6 @@ func dropProcessSchema(db *sqlx.DB, schemaName string) error {
 }
 
 // usePublicSchema sets the search_path to public schema
-// This is used by Serial tests that need to access data in the public schema
 // (e.g., schema validation tests, tests that check partitions, etc.)
 func usePublicSchema() {
 	if db != nil {

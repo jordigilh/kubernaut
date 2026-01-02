@@ -59,15 +59,13 @@ import (
 //
 // ========================================
 
-var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking", Serial, Ordered, func() {
+var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking",  Ordered, func() {
 	var (
 		client          *http.Client
 		adr033HistoryID int64 // Auto-generated history ID for test data
 	)
 
 	BeforeAll(func() {
-		// Serial tests must use public schema
-		usePublicSchema()
 
 		// Use 30-second timeout for HTTP requests
 		client = &http.Client{Timeout: 30 * time.Second}

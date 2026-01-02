@@ -78,6 +78,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -137,6 +138,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -167,6 +169,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -228,6 +231,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -261,6 +265,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -317,6 +322,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -350,6 +356,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      notifName,
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -414,6 +421,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -443,6 +451,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -483,6 +492,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -582,6 +592,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -622,6 +633,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)

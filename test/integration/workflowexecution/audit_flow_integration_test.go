@@ -110,6 +110,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      wfeName,
 					Namespace: testNs.Name,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -228,6 +229,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      wfeName,
 					Namespace: testNs.Name,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					RemediationRequestRef: corev1.ObjectReference{

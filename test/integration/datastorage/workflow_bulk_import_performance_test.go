@@ -33,14 +33,13 @@ import (
 // Why This Matters: Initial catalog load is critical for deployment/bootstrap
 // ========================================
 
-var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations", Serial, Label("integration", "datastorage", "gap-4.2", "p1"), func() {
+var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations",  Label("integration", "datastorage", "gap-4.2", "p1"), func() {
 	var (
 		client *dsgen.ClientWithResponses
 		ctx    context.Context
 	)
 
 	BeforeEach(func() {
-		usePublicSchema() // Serial test: use public schema for consistency
 
 		ctx = context.Background()
 
@@ -49,13 +48,11 @@ var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations", Serial, Label("int
 		client, err = createOpenAPIClient(datastorageURL)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Serial tests: Global cleanup for bulk import workflows
 		// Clean up any leftover workflows from previous runs
 		_, _ = db.Exec("DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE 'bulk-import%'")
 	})
 
 	AfterEach(func() {
-		// Cleanup: Delete all bulk import test workflows (Serial test in public schema)
 		_, _ = db.Exec("DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE 'bulk-import%'")
 	})
 

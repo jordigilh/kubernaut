@@ -73,6 +73,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -139,6 +140,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -196,6 +198,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -238,6 +241,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -290,6 +294,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -342,6 +347,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
