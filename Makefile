@@ -116,11 +116,21 @@ test-integration-%: ginkgo ## Run integration tests for specified service (e.g.,
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) ./test/integration/$*/...
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast ./test/integration/$*/...
 
 # E2E Tests
+.PHONY: ensure-coverdata
+ensure-coverdata: ## Ensure coverdata directory exists for E2E coverage collection (DD-TEST-007)
+	@if [ ! -d "coverdata" ]; then \
+		echo "📁 Creating coverdata directory for E2E coverage collection..."; \
+		mkdir -p coverdata; \
+		chmod 777 coverdata; \
+		echo "   ✅ coverdata directory created"; \
+	fi
+
 .PHONY: test-e2e-%
-test-e2e-%: ginkgo ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -157,7 +167,7 @@ test-tier-unit: $(addprefix test-unit-,$(SERVICES)) ## Run unit tests for all se
 test-tier-integration: $(addprefix test-integration-,$(SERVICES)) ## Run integration tests for all services
 
 .PHONY: test-tier-e2e
-test-tier-e2e: $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
+test-tier-e2e: ensure-coverdata $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
 
 .PHONY: test-all-services
 test-all-services: $(addprefix test-all-,$(SERVICES)) ## Run all tests for all services
@@ -269,7 +279,63 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (Go infrastructure + Python tests, ~8 min)
+test-integration-holmesgpt-api: test-integration-holmesgpt-api-containerized ## Run holmesgpt-api integration tests (containerized, ~5 min)
+
+.PHONY: test-integration-holmesgpt-api-containerized
+test-integration-holmesgpt-api-containerized: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests in container (DD-INTEGRATION-001 v2.0)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐳 HolmesGPT API Integration Tests (Containerized)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Containerized tests)"
+	@echo "🐍 Test Logic: Python in container, Go infrastructure on host"
+	@echo "⏱️  Expected Duration: ~5 minutes"
+	@echo ""
+	@# Start Go infrastructure in background
+	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
+	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
+	GINKGO_PID=$$!; \
+	echo "   Infrastructure PID: $$GINKGO_PID"; \
+	echo "⏳ Waiting for Data Storage to be ready..."; \
+	for i in {1..60}; do \
+		if curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
+			echo "✅ Data Storage ready ($$((i*5))s)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 60 ]; then \
+			echo "❌ Timeout waiting for infrastructure"; \
+			kill $$GINKGO_PID 2>/dev/null || true; \
+			exit 1; \
+		fi; \
+		sleep 5; \
+	done; \
+	echo ""; \
+	echo "🐳 Phase 2: Running Python tests in container..."; \
+	podman build -t holmesgpt-api-integration-test:latest \
+		-f docker/holmesgpt-api-integration-test.Dockerfile . && \
+	podman run --rm \
+		--network=host \
+		--add-host=host.containers.internal:host-gateway \
+		-v $(CURDIR):/workspace:z \
+		holmesgpt-api-integration-test:latest; \
+	TEST_RESULT=$$?; \
+	echo ""; \
+	echo "🧹 Phase 3: Cleanup..."; \
+	touch /tmp/hapi-integration-tests-complete; \
+	sleep 2; \
+	kill $$GINKGO_PID 2>/dev/null || true; \
+	wait $$GINKGO_PID 2>/dev/null || true; \
+	rm -f /tmp/hapi-integration-tests-complete; \
+	echo "✅ Cleanup complete"; \
+	echo ""; \
+	if [ $$TEST_RESULT -eq 0 ]; then \
+		echo "✅ All HAPI integration tests passed (containerized)"; \
+	else \
+		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
+		exit $$TEST_RESULT; \
+	fi
+
+.PHONY: test-integration-holmesgpt-api-local
+test-integration-holmesgpt-api-local: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests locally (legacy, ~8 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API Integration Tests (Go Infrastructure + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -309,7 +375,7 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	echo "✅ Client generated successfully"; \
 	echo ""; \
 	echo "🧪 Step 2: Install Python dependencies..."; \
-	cd holmesgpt-api && pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && cd .. || exit 1; \
+	cd holmesgpt-api && python3.11 -m pip install -q -r requirements.txt && python3.11 -m pip install -q -r requirements-test.txt || exit 1; \
 	echo "✅ Python dependencies installed"; \
 	echo ""; \
 	echo "🧪 Step 3: Run integration tests with 4 parallel workers..."; \
@@ -320,8 +386,9 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	export HAPI_URL="http://localhost:18120" && \
 	export DATA_STORAGE_URL="http://localhost:18098" && \
 	export MOCK_LLM_MODE=true && \
-	python3 -m pytest tests/integration/ -n 4 -v --tb=short; \
+	python3.11 -m pytest tests/integration/ -n 4 -v --tb=short; \
 	TEST_RESULT=$$?; \
+	cd .. || exit 1; \
 	echo ""; \
 	echo "🐍 Python tests complete. Signaling Go infrastructure..."; \
 	touch /tmp/hapi-integration-tests-complete; \
@@ -344,7 +411,7 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ginkgo ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
