@@ -32,7 +32,8 @@ import (
 )
 
 // ServiceName is the canonical service identifier for audit events.
-const ServiceName = "remediation-orchestrator"
+// Follows naming convention: "<service>-controller" (consistent with notification-controller, signalprocessing-controller)
+const ServiceName = "remediationorchestrator-controller"
 
 // Event category for RO audit events (ADR-034 v1.2: Service-level category)
 const (
