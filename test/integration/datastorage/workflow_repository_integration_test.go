@@ -60,14 +60,13 @@ import (
 //
 // ========================================
 
-var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func() {
+var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 	var (
 		workflowRepo *workflow.Repository
 		testID       string
 	)
 
 	BeforeEach(func() {
-		usePublicSchema()
 
 		// Create repository with real database
 		workflowRepo = workflow.NewRepository(db, logger)
@@ -75,7 +74,6 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func()
 		// Generate unique test ID for isolation
 		testID = generateTestID()
 
-		// Serial tests: Global cleanup since they run sequentially in public schema
 		// This ensures no leftover data from previous test runs
 		// Clean up ALL test workflows (wf-repo%, wf-scoring%, wf-bulk%, etc.)
 		var countBefore int

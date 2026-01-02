@@ -331,6 +331,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: DefaultNamespace,
+			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			RemediationRequestRef: corev1.ObjectReference{

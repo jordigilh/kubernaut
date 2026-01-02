@@ -48,7 +48,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Client Timing Integration Tests", Serial, Label("audit-client", "timing"), func() {
+var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client", "timing"), func() {
 	var (
 		auditStore    audit.AuditStore
 		dsClient      *dsgen.ClientWithResponses
@@ -58,8 +58,6 @@ var _ = Describe("Audit Client Timing Integration Tests", Serial, Label("audit-c
 	)
 
 	BeforeEach(func() {
-		// Serial tests use public schema
-		usePublicSchema()
 
 		// Create test context
 		testCtx, testCancel = context.WithTimeout(context.Background(), 2*time.Minute)

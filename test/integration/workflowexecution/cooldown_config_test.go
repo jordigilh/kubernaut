@@ -192,6 +192,7 @@ func createTestWorkflowExecution(name, targetResource string) *workflowexecution
 		ObjectMeta: corev1.ObjectMeta{
 			Name:      name,
 			Namespace: DefaultNamespace,
+			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{

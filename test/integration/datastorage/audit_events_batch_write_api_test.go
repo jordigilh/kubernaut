@@ -52,12 +52,10 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Events Batch Write API Integration Tests", Serial, func() {
+var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
-		// Serial tests MUST use public schema (HTTP API writes to public schema)
-		usePublicSchema()
 
 		// Ensure service is ready before each test
 		Eventually(func() int {

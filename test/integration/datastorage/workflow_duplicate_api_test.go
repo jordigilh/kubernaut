@@ -41,7 +41,7 @@ const (
 	testContainerDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
 )
 
-var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Serial, Ordered, func() {
+var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)",  Ordered, func() {
 	var (
 		httpClient *http.Client
 	)

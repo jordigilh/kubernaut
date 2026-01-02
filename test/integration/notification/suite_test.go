@@ -824,6 +824,7 @@ func createSlackWebhookSecret() {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "notification-slack-webhook",
 			Namespace: "kubernaut-notifications",
+				Generation: 1, // K8s increments on create/update
 		},
 		StringData: map[string]string{
 			"webhook-url": slackWebhookURL,

@@ -74,6 +74,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      fmt.Sprintf("concurrent-test-%s-%d", uniqueSuffix, idx),
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -143,6 +144,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      fmt.Sprintf("rapid-test-%s-%d", uniqueSuffix, i),
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -203,6 +205,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      fmt.Sprintf("status-concurrent-%s-%d", uniqueSuffix, idx),
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,

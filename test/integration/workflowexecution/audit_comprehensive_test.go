@@ -62,6 +62,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("audit-started-%d", time.Now().UnixNano()),
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -111,6 +112,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("audit-started-meta-%d", time.Now().UnixNano()),
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"correlation-id": fmt.Sprintf("corr-%d", time.Now().UnixNano()),
 					},
@@ -162,6 +164,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("audit-completed-%d", time.Now().UnixNano()),
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -246,6 +249,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("audit-preexec-fail-%d", time.Now().UnixNano()),
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					RemediationRequestRef: corev1.ObjectReference{
@@ -297,6 +301,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("audit-ordering-%d", time.Now().UnixNano()),
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					RemediationRequestRef: corev1.ObjectReference{

@@ -49,7 +49,7 @@ import (
 // TDD RED PHASE: Tests define contract, implementation will follow
 // ========================================
 
-var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Label("gap-3.3", "p0"), Serial, func() {
+var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Label("gap-3.3", "p0"),  func() {
 	var (
 		// Test constants
 		dlqMaxLen         int64 = 1000 // From config
