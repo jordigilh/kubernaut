@@ -32,7 +32,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
@@ -140,10 +139,27 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// ========================================
+	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
+	// ========================================
+	// Prevents duplicate reconciliations when status-only updates occur.
+	// Skip reconcile if we've already processed this generation AND not in terminal phase.
+	if analysis.Status.ObservedGeneration == analysis.Generation &&
+		analysis.Status.Phase != "" &&
+		analysis.Status.Phase != PhaseCompleted &&
+		analysis.Status.Phase != PhaseFailed {
+		log.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
+			"generation", analysis.Generation,
+			"observedGeneration", analysis.Status.ObservedGeneration,
+			"phase", analysis.Status.Phase)
+		return ctrl.Result{}, nil
+	}
+
 	// Capture current phase for metrics
 	currentPhase := analysis.Status.Phase
 	if currentPhase == "" {
 		// Initialize phase to Pending on first reconciliation
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
 		currentPhase = PhasePending
 		analysis.Status.Phase = PhasePending
 		analysis.Status.Message = "AIAnalysis created"
@@ -196,11 +212,11 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // DD-AUDIT-003: Record audit events for terminal states
 
 // SetupWithManager sets up the controller with the Manager
-// DD-1: Use GenerationChangedPredicate to prevent reconciliation loops from status updates
+// DD-CONTROLLER-001: ObservedGeneration provides idempotency without blocking status updates
+// GenerationChangedPredicate removed to allow phase progression via status updates
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
 

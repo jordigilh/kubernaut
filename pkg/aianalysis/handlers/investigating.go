@@ -236,6 +236,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		// Transition to permanent failure after max retries
 		now := metav1.Now()
 		analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
@@ -255,6 +256,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	)
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
 	analysis.Status.Reason = "APIError"

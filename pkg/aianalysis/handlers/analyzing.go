@@ -79,6 +79,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	if analysis.Status.SelectedWorkflow == nil {
 		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
 		analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "No workflow selected - investigation may have failed"
 		analysis.Status.Reason = "NoWorkflowSelected"
 
@@ -112,6 +113,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		}
 
 		analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "Rego evaluation failed unexpectedly"
 		analysis.Status.Reason = "RegoEvaluationError"
 
@@ -185,6 +187,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	// Transition directly to Completed (per reconciliation-phases.md v2.0)
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = "Analysis complete"
 

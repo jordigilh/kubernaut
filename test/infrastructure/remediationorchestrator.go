@@ -14,10 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package infrastructure provides shared E2E test infrastructure for all services.
+// Package infrastructure provides shared test infrastructure for all services.
 //
-// This file implements the RemediationOrchestrator E2E infrastructure.
-// Uses the shared migration library per DS_E2E_MIGRATION_LIBRARY_IMPLEMENTATION_SCHEDULE.md
+// This file implements the RemediationOrchestrator integration test infrastructure.
+// Uses envtest for Kubernetes API + Podman for dependencies (PostgreSQL, Redis, DataStorage).
 //
 // RO Audit Events Emitted:
 //   - orchestrator.lifecycle.started
@@ -29,448 +29,24 @@ limitations under the License.
 package infrastructure
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
-// RemediationOrchestrator E2E container names
+// RemediationOrchestrator integration test container names (DD-TEST-001)
 const (
-	ROIntegrationPostgresContainer    = "ro-e2e-postgres"
-	ROIntegrationRedisContainer       = "ro-e2e-redis"
-	ROIntegrationDataStorageContainer = "ro-e2e-datastorage"
-	ROIntegrationNetwork              = "ro-e2e-network"
+	ROIntegrationPostgresContainer    = "ro-integration-postgres"
+	ROIntegrationRedisContainer       = "ro-integration-redis"
+	ROIntegrationDataStorageContainer = "ro-integration-datastorage"
+	ROIntegrationNetwork              = "ro-integration-network"
 )
 
-// ROClusterConfig holds configuration for RO E2E cluster setup
-type ROClusterConfig struct {
-	ClusterName    string
-	KubeconfigPath string
-	Namespace      string
-	Writer         io.Writer
-}
-
-// DefaultROClusterConfig returns default configuration for RO E2E tests
-func DefaultROClusterConfig() ROClusterConfig {
-	homeDir, _ := os.UserHomeDir()
-	return ROClusterConfig{
-		ClusterName:    "ro-e2e",
-		KubeconfigPath: filepath.Join(homeDir, ".kube", "ro-e2e-config"),
-		Namespace:      "kubernaut-system",
-	}
-}
-
-// CreateROCluster creates a Kind cluster for RemediationOrchestrator E2E testing.
-// This is called ONCE in SynchronizedBeforeSuite (first parallel process only).
-//
-// Steps:
-// 1. Create Kind cluster with production-like configuration
-// 2. Export kubeconfig to ~/.kube/ro-e2e-config
-// 3. Install ALL CRDs required for RO orchestration
-// 4. Deploy PostgreSQL for audit storage (DD-AUDIT-003)
-// 5. Apply audit migrations using shared library
-// 6. Deploy Data Storage service
-// 7. Deploy RO controller and dependent controllers
-//
-// Time: ~2-3 minutes (full stack deployment)
-func CreateROCluster(ctx context.Context, config ROClusterConfig) error {
-	writer := config.Writer
-	if writer == nil {
-		writer = os.Stdout
-	}
-
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "RemediationOrchestrator E2E Cluster Setup")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	// 1. Check if cluster already exists
-	if roClusterExists(config.ClusterName) {
-		fmt.Fprintln(writer, "♻️  Reusing existing cluster")
-		if err := roExportKubeconfig(config.ClusterName, config.KubeconfigPath, writer); err != nil {
-			return fmt.Errorf("failed to export kubeconfig: %w", err)
-		}
-	} else {
-		// Create Kind cluster
-		fmt.Fprintln(writer, "📦 Creating Kind cluster...")
-		if err := createROKindCluster(config.ClusterName, config.KubeconfigPath, writer); err != nil {
-			return fmt.Errorf("failed to create Kind cluster: %w", err)
-		}
-	}
-
-	// 2. Set KUBECONFIG environment variable
-	if err := os.Setenv("KUBECONFIG", config.KubeconfigPath); err != nil {
-		return fmt.Errorf("failed to set KUBECONFIG: %w", err)
-	}
-	fmt.Fprintf(writer, "📂 KUBECONFIG=%s\n", config.KubeconfigPath)
-
-	// 3. Install ALL CRDs required for RO orchestration
-	fmt.Fprintln(writer, "📋 Installing CRDs...")
-	if err := installROCRDs(config.KubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to install CRDs: %w", err)
-	}
-
-	// 4. Create namespace
-	fmt.Fprintf(writer, "📁 Creating namespace: %s\n", config.Namespace)
-	if err := roCreateNamespace(config.KubeconfigPath, config.Namespace, writer); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
-	}
-
-	// 5. Deploy PostgreSQL for audit storage
-	fmt.Fprintln(writer, "🐘 Deploying PostgreSQL...")
-	if err := deployROPostgreSQL(ctx, config.Namespace, config.KubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
-	}
-
-	// 6. Apply audit migrations using shared library (DD-AUDIT-003)
-	fmt.Fprintln(writer, "🔄 Applying audit migrations (shared library)...")
-	if err := ApplyAuditMigrations(ctx, config.Namespace, config.KubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to apply audit migrations: %w", err)
-	}
-
-	// 7. Verify migrations applied correctly
-	fmt.Fprintln(writer, "✅ Verifying migrations...")
-	migConfig := DefaultMigrationConfig(config.Namespace, config.KubeconfigPath)
-	migConfig.Tables = []string{"audit_events"}
-	if err := VerifyMigrations(ctx, migConfig, writer); err != nil {
-		return fmt.Errorf("migration verification failed: %w", err)
-	}
-
-	// 8. Deploy Data Storage service
-	fmt.Fprintln(writer, "📦 Deploying Data Storage service...")
-	if err := deployDataStorageForRO(ctx, config.Namespace, config.KubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy Data Storage: %w", err)
-	}
-
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "✅ RemediationOrchestrator E2E cluster ready!")
-	fmt.Fprintf(writer, "   Cluster: %s\n", config.ClusterName)
-	fmt.Fprintf(writer, "   Kubeconfig: %s\n", config.KubeconfigPath)
-	fmt.Fprintf(writer, "   Namespace: %s\n", config.Namespace)
-	fmt.Fprintln(writer, "   Audit: audit_events table + partitions + indexes")
-	fmt.Fprintln(writer, "")
-
-	return nil
-}
-
-// DeleteROCluster deletes the RO E2E Kind cluster
-func DeleteROCluster(config ROClusterConfig, preserveOnFailure bool) error {
-	writer := config.Writer
-	if writer == nil {
-		writer = os.Stdout
-	}
-
-	if preserveOnFailure {
-		fmt.Fprintln(writer, "⚠️  PRESERVE_E2E_CLUSTER=true, keeping cluster for debugging")
-		fmt.Fprintf(writer, "   To access: export KUBECONFIG=%s\n", config.KubeconfigPath)
-		fmt.Fprintf(writer, "   To delete: kind delete cluster --name %s\n", config.ClusterName)
-		return nil
-	}
-
-	fmt.Fprintln(writer, "🗑️  Deleting Kind cluster...")
-	cmd := exec.Command("kind", "delete", "cluster", "--name", config.ClusterName)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(writer, "⚠️  Failed to delete cluster (may not exist): %v\n", err)
-	}
-
-	// Remove kubeconfig file
-	if config.KubeconfigPath != "" {
-		defaultConfig := os.ExpandEnv("$HOME/.kube/config")
-		if config.KubeconfigPath != defaultConfig {
-			_ = os.Remove(config.KubeconfigPath)
-			fmt.Fprintf(writer, "🗑️  Removed kubeconfig: %s\n", config.KubeconfigPath)
-		}
-	}
-
-	return nil
-}
-
-// ============================================================================
-// Internal Helper Functions (prefixed with ro to avoid conflicts)
-// ============================================================================
-
-func roClusterExists(name string) bool {
-	cmd := exec.Command("kind", "get", "clusters")
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	for _, line := range roSplitLines(string(output)) {
-		if line == name {
-			return true
-		}
-	}
-	return false
-}
-
-func roSplitLines(s string) []string {
-	var lines []string
-	var current string
-	for _, c := range s {
-		if c == '\n' {
-			if current != "" {
-				lines = append(lines, current)
-			}
-			current = ""
-		} else {
-			current += string(c)
-		}
-	}
-	if current != "" {
-		lines = append(lines, current)
-	}
-	return lines
-}
-
-func createROKindCluster(name, kubeconfig string, writer io.Writer) error {
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", name,
-		"--kubeconfig", kubeconfig,
-		"--wait", "120s",
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kind create cluster failed: %w", err)
-	}
-	return nil
-}
-
-func roExportKubeconfig(name, kubeconfig string, writer io.Writer) error {
-	cmd := exec.Command("kind", "export", "kubeconfig",
-		"--name", name,
-		"--kubeconfig", kubeconfig,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
-}
-
-func installROCRDs(kubeconfig string, writer io.Writer) error {
-	// CRDs required for RO orchestration
-	// Updated to kubernaut.ai API group (Dec 25, 2025)
-	crdPaths := []string{
-		"config/crd/bases/kubernaut.ai_remediationrequests.yaml",
-		"config/crd/bases/kubernaut.ai_remediationapprovalrequests.yaml",
-		"config/crd/bases/kubernaut.ai_signalprocessings.yaml",
-		"config/crd/bases/kubernaut.ai_aianalyses.yaml",
-		"config/crd/bases/kubernaut.ai_workflowexecutions.yaml",
-		"config/crd/bases/kubernaut.ai_notificationrequests.yaml",
-	}
-
-	for _, crdPath := range crdPaths {
-		fullPath := roFindProjectFile(crdPath)
-		if fullPath == "" {
-			fmt.Fprintf(writer, "⚠️  CRD not found: %s\n", crdPath)
-			continue
-		}
-
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig,
-			"apply", "-f", fullPath)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(writer, "⚠️  Failed to install CRD %s: %v\n", crdPath, err)
-		}
-	}
-	return nil
-}
-
-func roFindProjectFile(relativePath string) string {
-	paths := []string{
-		relativePath,
-		"../../../" + relativePath,
-		"../../" + relativePath,
-	}
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return ""
-}
-
-func roCreateNamespace(kubeconfig, namespace string, writer io.Writer) error {
-	// Check if namespace already exists (idempotent operation)
-	checkCmd := exec.Command("kubectl", "--kubeconfig", kubeconfig,
-		"get", "namespace", namespace)
-	if err := checkCmd.Run(); err == nil {
-		// Namespace already exists, nothing to do
-		fmt.Fprintf(writer, "   ♻️  Namespace %s already exists (reusing)\n", namespace)
-		return nil
-	}
-
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig,
-		"create", "namespace", namespace, "--dry-run=client", "-o", "yaml")
-	yaml, err := cmd.Output()
-	if err != nil {
-		return err
-	}
-
-	applyCmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "apply", "-f", "-")
-	applyCmd.Stdin = roBytesReader(yaml)
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-	if err := applyCmd.Run(); err != nil {
-		// Check if error is "AlreadyExists" - if so, ignore (race condition from parallel processes)
-		if errOutput := err.Error(); len(errOutput) > 0 {
-			if strings.Contains(errOutput, "already exists") {
-				fmt.Fprintf(writer, "   ♻️  Namespace %s already exists (created by parallel process)\n", namespace)
-				return nil
-			}
-		}
-		return err
-	}
-	return nil
-}
-
-func roBytesReader(b []byte) *roBytesReaderImpl {
-	return &roBytesReaderImpl{data: b}
-}
-
-type roBytesReaderImpl struct {
-	data []byte
-	pos  int
-}
-
-func (r *roBytesReaderImpl) Read(p []byte) (n int, err error) {
-	if r.pos >= len(r.data) {
-		return 0, io.EOF
-	}
-	n = copy(p, r.data[r.pos:])
-	r.pos += n
-	return n, nil
-}
-
-func deployROPostgreSQL(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error {
-	fmt.Fprintln(writer, "   Checking for existing PostgreSQL...")
-
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace,
-		"get", "pod", "-l", "app=postgresql", "-o", "name")
-	output, _ := cmd.Output()
-	if len(output) > 0 {
-		fmt.Fprintln(writer, "   ♻️  Reusing existing PostgreSQL")
-		return waitForROPostgreSQL(ctx, namespace, kubeconfig, writer)
-	}
-
-	fmt.Fprintln(writer, "   Deploying PostgreSQL...")
-	return createMinimalROPostgreSQL(namespace, kubeconfig, writer)
-}
-
-func createMinimalROPostgreSQL(namespace, kubeconfig string, writer io.Writer) error {
-	manifest := `
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgresql
-spec:
-  ports:
-    - port: 5432
-  selector:
-    app: postgresql
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgresql
-spec:
-  serviceName: postgresql
-  replicas: 1
-  selector:
-    matchLabels:
-      app: postgresql
-  template:
-    metadata:
-      labels:
-        app: postgresql
-    spec:
-      containers:
-        - name: postgresql
-          image: postgres:16-alpine
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_USER
-              value: slm_user
-            - name: POSTGRES_PASSWORD
-              value: slm_password
-            - name: POSTGRES_DB
-              value: action_history
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "slm_user", "-d", "action_history"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-`
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "apply", "-f", "-")
-	cmd.Stdin = roBytesReader([]byte(manifest))
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create PostgreSQL: %w", err)
-	}
-
-	return waitForROPostgreSQL(context.Background(), namespace, kubeconfig, writer)
-}
-
-func waitForROPostgreSQL(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error {
-	fmt.Fprintln(writer, "   Waiting for PostgreSQL to be ready...")
-
-	deadline := time.Now().Add(2 * time.Minute)
-	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace,
-			"wait", "--for=condition=ready", "pod", "-l", "app=postgresql", "--timeout=10s")
-		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "   ✅ PostgreSQL ready")
-			return nil
-		}
-		time.Sleep(5 * time.Second)
-	}
-	return fmt.Errorf("PostgreSQL not ready within timeout")
-}
-
-func deployDataStorageForRO(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error {
-	manifestPath := roFindProjectFile("deploy/datastorage/deployment.yaml")
-	if manifestPath == "" {
-		fmt.Fprintln(writer, "   ⚠️  Data Storage manifest not found, skipping (audit will fail)")
-		return nil
-	}
-
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace,
-		"apply", "-f", manifestPath)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(writer, "   ⚠️  Failed to deploy Data Storage: %v\n", err)
-		return nil
-	}
-
-	fmt.Fprintln(writer, "   Waiting for Data Storage to be ready...")
-	deadline := time.Now().Add(2 * time.Minute)
-	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace,
-			"wait", "--for=condition=ready", "pod", "-l", "app=datastorage", "--timeout=10s")
-		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "   ✅ Data Storage ready")
-			return nil
-		}
-		time.Sleep(5 * time.Second)
-	}
-
-	fmt.Fprintln(writer, "   ⚠️  Data Storage not ready within timeout (audit may fail)")
-	return nil
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// RemediationOrchestrator Integration Test Infrastructure (Podman Compose)
+// RemediationOrchestrator Integration Test Infrastructure (Podman + envtest)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
 // Pattern: AIAnalysis Pattern (Programmatic podman-compose management)
@@ -499,13 +75,15 @@ const (
 	ROIntegrationRedisPort              = 16381
 	ROIntegrationDataStoragePort        = 18140
 	ROIntegrationDataStorageMetricsPort = 18141
-
-	// Compose project name
-	ROIntegrationComposeProject = "remediationorchestrator-integration"
-
-	// Compose file path relative to project root
-	ROIntegrationComposeFile = "test/integration/remediationorchestrator/podman-compose.remediationorchestrator.test.yml"
 )
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Integration Test Infrastructure (envtest + Podman)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOTE: The following functions are for integration tests (test/integration/), NOT E2E tests.
+// Integration tests use envtest for K8s API + Podman for dependencies (PostgreSQL, Redis, DataStorage).
+// E2E tests use Kind clusters (see E2E Test Infrastructure section above).
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // StartROIntegrationInfrastructure starts the full podman-compose stack for RO integration tests
 // This includes: PostgreSQL, Redis, and Data Storage API

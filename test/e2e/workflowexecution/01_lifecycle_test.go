@@ -94,12 +94,14 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 					return false
 				}
 
-				// Verify all lifecycle conditions are present
-				hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
-				hasPipelineRunning := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
-				hasPipelineComplete := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineComplete)
-				// AuditRecorded may be True or False depending on audit store availability
-				hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
+			// Verify all lifecycle conditions are present
+			hasPipelineCreated := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineCreated)
+			hasPipelineRunning := weconditions.IsConditionTrue(updated, weconditions.ConditionTektonPipelineRunning)
+			// TektonPipelineComplete can be True (success) or False (failure) - just verify it's set
+			// Test accepts both success and failure (line 73-74), so only check existence
+			hasPipelineComplete := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete) != nil
+			// AuditRecorded may be True or False depending on audit store availability
+			hasAuditRecorded := weconditions.GetCondition(updated, weconditions.ConditionAuditRecorded) != nil
 
 				return hasPipelineCreated && hasPipelineRunning && hasPipelineComplete && hasAuditRecorded
 			}, 30*time.Second, 5*time.Second).Should(BeTrue(),

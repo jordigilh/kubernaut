@@ -1798,14 +1798,14 @@ echo "Migrations complete!"`)
 	if err := StartDataStorage(IntegrationDataStorageConfig{
 		ContainerName: AIAnalysisIntegrationDataStorageContainer,
 		Port:          AIAnalysisIntegrationDataStoragePort,
-		Network:       "", // Use port mapping instead of custom network
-		PostgresHost:  "host.containers.internal",         // Use host.containers.internal for port-mapped PostgreSQL
-		PostgresPort:  AIAnalysisIntegrationPostgresPort,  // External mapped port
+		Network:       "",                                // Use port mapping instead of custom network
+		PostgresHost:  "host.containers.internal",        // Use host.containers.internal for port-mapped PostgreSQL
+		PostgresPort:  AIAnalysisIntegrationPostgresPort, // External mapped port
 		DBName:        AIAnalysisIntegrationDBName,
 		DBUser:        AIAnalysisIntegrationDBUser,
 		DBPassword:    AIAnalysisIntegrationDBPassword,
-		RedisHost:     "host.containers.internal",       // Use host.containers.internal for port-mapped Redis
-		RedisPort:     AIAnalysisIntegrationRedisPort,   // External mapped port
+		RedisHost:     "host.containers.internal",     // Use host.containers.internal for port-mapped Redis
+		RedisPort:     AIAnalysisIntegrationRedisPort, // External mapped port
 		LogLevel:      "info",
 		ImageTag:      dsImageTag, // DD-INTEGRATION-001 v2.0: Composite tag for collision avoidance
 	}, writer); err != nil {

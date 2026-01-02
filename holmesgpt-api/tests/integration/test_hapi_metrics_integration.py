@@ -38,43 +38,26 @@ Reference:
 import os
 import time
 import pytest
-import requests
 from typing import Dict, Any
-
-
-# ========================================
-# FIXTURES
-# ========================================
-
-@pytest.fixture
-def hapi_base_url():
-    """
-    HAPI service URL for integration tests.
-
-    Integration tests assume HAPI is running via podman-compose.test.yml.
-    Default: http://localhost:18120 (HAPI integration port per DD-TEST-001)
-
-    Override via HAPI_URL environment variable if needed.
-    """
-    return os.environ.get("HAPI_URL", "http://localhost:18120")
 
 
 # ========================================
 # HELPER FUNCTIONS
 # ========================================
 
-def get_metrics(hapi_url: str, timeout: int = 5) -> str:
+def get_metrics(hapi_client) -> str:
     """
-    Query HAPI's /metrics endpoint.
+    Query HAPI's /metrics endpoint using TestClient.
 
     Args:
-        hapi_url: HAPI service URL
-        timeout: Request timeout in seconds
+        hapi_client: FastAPI TestClient instance (from conftest.py hapi_client fixture)
 
     Returns:
         Metrics text in Prometheus format
+        
+    Note: Uses TestClient (in-process) instead of HTTP requests for faster, more reliable testing.
     """
-    response = requests.get(f"{hapi_url}/metrics", timeout=timeout)
+    response = hapi_client.get("/metrics")
     assert response.status_code == 200, f"Metrics endpoint returned {response.status_code}"
     return response.text
 
@@ -165,7 +148,7 @@ class TestHTTPRequestMetrics:
     BR-MONITORING-001: HAPI MUST record HTTP request metrics
     """
 
-    def test_incident_analysis_records_http_request_metrics(self, hapi_base_url, unique_test_id):
+    def test_incident_analysis_records_http_request_metrics(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Incident analysis MUST record HTTP request metrics.
 
@@ -175,7 +158,7 @@ class TestHTTPRequestMetrics:
         ✅ CORRECT: Tests HAPI behavior (records metrics during business operation)
         """
         # ARRANGE: Get baseline metrics
-        metrics_before = get_metrics(hapi_base_url)
+        metrics_before = get_metrics(hapi_client)
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
@@ -184,18 +167,14 @@ class TestHTTPRequestMetrics:
 
         # ACT: Trigger business operation (incident analysis)
         incident_request = make_incident_request(unique_test_id)
-        response = requests.post(
-            f"{hapi_base_url}/api/v1/incident/analyze",
-            json=incident_request,
-            timeout=30
-        )
+        response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
 
         # Verify business operation succeeded
         assert response.status_code == 200, \
             f"Incident analysis failed: {response.status_code} - {response.text}"
 
         # ASSERT: Verify HTTP metrics recorded
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
 
         # Verify http_requests_total incremented
         requests_after = parse_metric_value(
@@ -210,14 +189,14 @@ class TestHTTPRequestMetrics:
         assert "http_request_duration_seconds" in metrics_after, \
             "http_request_duration_seconds metric not found"
 
-    def test_recovery_analysis_records_http_request_metrics(self, hapi_base_url, unique_test_id):
+    def test_recovery_analysis_records_http_request_metrics(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Recovery analysis MUST record HTTP request metrics.
 
         This test validates that HAPI records HTTP metrics for recovery endpoint.
         """
         # ARRANGE: Get baseline
-        metrics_before = get_metrics(hapi_base_url)
+        metrics_before = get_metrics(hapi_client)
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
@@ -226,16 +205,12 @@ class TestHTTPRequestMetrics:
 
         # ACT: Trigger recovery analysis
         recovery_request = make_recovery_request(unique_test_id)
-        response = requests.post(
-            f"{hapi_base_url}/api/v1/recovery/analyze",
-            json=recovery_request,
-            timeout=30
-        )
+        response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_request)
 
         assert response.status_code == 200
 
         # ASSERT: Verify metrics
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
         requests_after = parse_metric_value(
             metrics_after,
             "http_requests_total",
@@ -245,14 +220,14 @@ class TestHTTPRequestMetrics:
         assert requests_after > requests_before, \
             "Recovery endpoint should record http_requests_total"
 
-    def test_health_endpoint_records_metrics(self, hapi_base_url, unique_test_id):
+    def test_health_endpoint_records_metrics(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Health endpoint MUST record HTTP request metrics.
 
         This test validates that even health checks are metered.
         """
         # ARRANGE
-        metrics_before = get_metrics(hapi_base_url)
+        metrics_before = get_metrics(hapi_client)
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
@@ -260,11 +235,11 @@ class TestHTTPRequestMetrics:
         )
 
         # ACT: Call health endpoint
-        response = requests.get(f"{hapi_base_url}/health", timeout=5)
+        response = hapi_client.get("/health")
         assert response.status_code == 200
 
         # ASSERT
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
         requests_after = parse_metric_value(
             metrics_after,
             "http_requests_total",
@@ -284,7 +259,7 @@ class TestLLMMetrics:
     BR-MONITORING-001: HAPI MUST record LLM request metrics
     """
 
-    def test_incident_analysis_records_llm_request_duration(self, hapi_base_url, unique_test_id):
+    def test_incident_analysis_records_llm_request_duration(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Incident analysis MUST record LLM request duration.
 
@@ -292,20 +267,16 @@ class TestLLMMetrics:
         using AI for incident analysis.
         """
         # ARRANGE
-        metrics_before = get_metrics(hapi_base_url)
+        metrics_before = get_metrics(hapi_client)
 
         # ACT: Trigger incident analysis (uses LLM)
         incident_request = make_incident_request(unique_test_id)
-        response = requests.post(
-            f"{hapi_base_url}/api/v1/incident/analyze",
-            json=incident_request,
-            timeout=30
-        )
+        response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
 
         assert response.status_code == 200
 
         # ASSERT: Verify LLM metrics recorded
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
 
         # LLM request duration should be present
         # (Metric name may vary: llm_request_duration_seconds, llm_call_duration_seconds, llm_latency_seconds, etc.)
@@ -318,7 +289,7 @@ class TestLLMMetrics:
             "LLM request duration metric not found in /metrics. " \
             "Check if HAPI is recording LLM performance metrics."
 
-    def test_recovery_analysis_records_llm_request_duration(self, hapi_base_url, unique_test_id):
+    def test_recovery_analysis_records_llm_request_duration(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Recovery analysis MUST record LLM request duration.
 
@@ -326,16 +297,12 @@ class TestLLMMetrics:
         """
         # ACT
         recovery_request = make_recovery_request(unique_test_id)
-        response = requests.post(
-            f"{hapi_base_url}/api/v1/recovery/analyze",
-            json=recovery_request,
-            timeout=30
-        )
+        response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_request)
 
         assert response.status_code == 200
 
         # ASSERT
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
 
         # Verify LLM metrics exist (any LLM-related metric)
         llm_metrics_found = any(
@@ -356,7 +323,7 @@ class TestMetricsAggregation:
     BR-MONITORING-001: Metrics MUST aggregate correctly over time
     """
 
-    def test_multiple_requests_increment_counter(self, hapi_base_url, unique_test_id):
+    def test_multiple_requests_increment_counter(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Multiple requests MUST increment counter metrics.
 
@@ -364,7 +331,7 @@ class TestMetricsAggregation:
         accumulate across multiple requests.
         """
         # ARRANGE: Get baseline
-        metrics_before = get_metrics(hapi_base_url)
+        metrics_before = get_metrics(hapi_client)
         requests_before = parse_metric_value(
             metrics_before,
             "http_requests_total",
@@ -375,15 +342,11 @@ class TestMetricsAggregation:
         num_requests = 3
         for i in range(num_requests):
             incident_request = make_incident_request(unique_test_id)
-            response = requests.post(
-                f"{hapi_base_url}/api/v1/incident/analyze",
-                json=incident_request,
-                timeout=30
-            )
+            response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
             assert response.status_code == 200
 
         # ASSERT: Verify counter incremented by num_requests
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
         requests_after = parse_metric_value(
             metrics_after,
             "http_requests_total",
@@ -397,7 +360,7 @@ class TestMetricsAggregation:
             f"Expected at least {expected_increment} requests recorded, " \
             f"got {actual_increment} (before: {requests_before}, after: {requests_after})"
 
-    def test_histogram_metrics_record_multiple_samples(self, hapi_base_url, unique_test_id):
+    def test_histogram_metrics_record_multiple_samples(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Histogram metrics MUST record multiple samples.
 
@@ -410,15 +373,11 @@ class TestMetricsAggregation:
             # Vary the request slightly to potentially get different durations
             incident_request["signal_type"] = ["OOMKilled", "CrashLoopBackOff", "ImagePullBackOff"][i]
 
-            response = requests.post(
-                f"{hapi_base_url}/api/v1/incident/analyze",
-                json=incident_request,
-                timeout=30
-            )
+            response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
             assert response.status_code == 200
 
         # ASSERT: Verify histogram has samples
-        metrics_after = get_metrics(hapi_base_url)
+        metrics_after = get_metrics(hapi_client)
 
         # Histogram metrics should have _count and _sum suffixes
         has_histogram_count = "http_request_duration_seconds_count" in metrics_after
@@ -438,7 +397,7 @@ class TestMetricsEndpointAvailability:
     BR-MONITORING-001: /metrics endpoint MUST be available
     """
 
-    def test_metrics_endpoint_is_accessible(self, hapi_base_url, unique_test_id):
+    def test_metrics_endpoint_is_accessible(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: /metrics endpoint MUST be accessible.
 
@@ -446,7 +405,7 @@ class TestMetricsEndpointAvailability:
         and returns valid Prometheus format.
         """
         # ACT
-        response = requests.get(f"{hapi_base_url}/metrics", timeout=5)
+        response = hapi_client.get("/metrics")
 
         # ASSERT
         assert response.status_code == 200, \
@@ -460,14 +419,14 @@ class TestMetricsEndpointAvailability:
         assert "# TYPE" in metrics_text, \
             "/metrics should include # TYPE comments (Prometheus format)"
 
-    def test_metrics_endpoint_returns_content_type_text_plain(self, hapi_base_url, unique_test_id):
+    def test_metrics_endpoint_returns_content_type_text_plain(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: /metrics endpoint MUST return text/plain content type.
 
         Prometheus expects metrics in text/plain format.
         """
         # ACT
-        response = requests.get(f"{hapi_base_url}/metrics", timeout=5)
+        response = hapi_client.get("/metrics")
 
         # ASSERT
         assert response.status_code == 200
@@ -486,7 +445,7 @@ class TestBusinessMetrics:
     BR-MONITORING-001: HAPI SHOULD record business-specific metrics
     """
 
-    def test_workflow_selection_metrics_recorded(self, hapi_base_url, unique_test_id):
+    def test_workflow_selection_metrics_recorded(self, hapi_client, unique_test_id):
         """
         BR-MONITORING-001: Workflow selection SHOULD be metered.
 
@@ -495,16 +454,12 @@ class TestBusinessMetrics:
         """
         # ACT: Trigger incident analysis
         incident_request = make_incident_request(unique_test_id)
-        response = requests.post(
-            f"{hapi_base_url}/api/v1/incident/analyze",
-            json=incident_request,
-            timeout=30
-        )
+        response = hapi_client.post("/api/v1/incident/analyze", json=incident_request)
 
         assert response.status_code == 200
 
         # ASSERT: Check if workflow metrics exist
-        metrics = get_metrics(hapi_base_url)
+        metrics = get_metrics(hapi_client)
 
         # Workflow-related metrics (may not exist yet, so this is informational)
         workflow_metrics_found = any(

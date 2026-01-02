@@ -33,8 +33,8 @@ import (
 // Replaces: Python pytest fixtures calling docker-compose via subprocess
 //
 // Port Allocation (per DD-TEST-001 v1.8):
-//   PostgreSQL:   15439  (HAPI-specific, shared with Notification/WE)
-//   Redis:        16387  (HAPI-specific, shared with Notification/WE)
+//   PostgreSQL:   15439  (HAPI-specific, unique - Notification now uses 15440)
+//   Redis:        16387  (HAPI-specific, unique - all services have separate Redis ports)
 //   DataStorage:  18098  (HAPI allocation)
 //   HAPI:         18120  (HAPI service port)
 //
@@ -52,8 +52,8 @@ import (
 
 // Port allocation per DD-TEST-001 v1.8
 const (
-	HAPIIntegrationPostgresPort    = 15439 // HAPI-specific port (shared with Notification/WE)
-	HAPIIntegrationRedisPort       = 16387 // HAPI-specific port (shared with Notification/WE)
+	HAPIIntegrationPostgresPort    = 15439 // HAPI-specific port (unique - Notification moved to 15440)
+	HAPIIntegrationRedisPort       = 16387 // HAPI-specific port (unique - all services have separate Redis ports)
 	HAPIIntegrationDataStoragePort = 18098 // HAPI allocation per DD-TEST-001 v1.8
 	HAPIIntegrationServicePort     = 18120 // HAPI service port (per DD-TEST-001 v1.8)
 )
@@ -85,7 +85,7 @@ const (
 //
 // Prerequisites:
 // - podman must be installed
-// - Ports 15439, 16387, 18098, 18120 must be available (per DD-TEST-001 v1.8)
+// - Ports 15439, 16387, 18098, 18120 must be available (per DD-TEST-001 v2.0 - all unique)
 //
 // Returns:
 // - error: Any errors during infrastructure startup
