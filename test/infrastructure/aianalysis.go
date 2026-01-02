@@ -1738,7 +1738,29 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	if err := WaitForPostgreSQLReady(AIAnalysisIntegrationPostgresContainer, AIAnalysisIntegrationDBUser, AIAnalysisIntegrationDBName, writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
+	fmt.Fprintf(writer, "   ✅ PostgreSQL ready (accepting connections)\n\n")
+
+	// CRITICAL: Verify database is actually queryable (not just accepting connections)
+	// Per DD-TEST-002: pg_isready only checks connections, not full DB initialization
+	// Fix for: "FATAL: the database system is starting up" during migrations
+	fmt.Fprintf(writer, "⏳ Verifying database is queryable...\n")
+	maxAttempts := 10
+	for i := 1; i <= maxAttempts; i++ {
+		testQueryCmd := exec.Command("podman", "exec", AIAnalysisIntegrationPostgresContainer,
+			"psql", "-U", AIAnalysisIntegrationDBUser, "-d", AIAnalysisIntegrationDBName, "-c", "SELECT 1;")
+		testQueryCmd.Stdout = writer
+		testQueryCmd.Stderr = writer
+		if testQueryCmd.Run() == nil {
+			fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n\n", i, maxAttempts)
+			break
+		}
+		if i < maxAttempts {
+			fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxAttempts)
+			time.Sleep(1 * time.Second)
+		} else {
+			return fmt.Errorf("database failed to become queryable after %d attempts", maxAttempts)
+		}
+	}
 
 	// ============================================================================
 	// STEP 4: Run migrations (inline approach - same as RO)

@@ -48,8 +48,28 @@ import (
 //
 // TDD RED PHASE: Tests define contract, implementation will follow
 // ========================================
+//
+// ARCHITECTURAL NOTE: Serial Execution Required
+// ----------------------------------------------
+// These tests MUST run serially because they validate specific DLQ depth thresholds
+// (70%, 80%, 90%, 95%) using the DLQ client's hardcoded stream name "audit:dlq:events".
+// 
+// Why Serial is necessary here:
+// 1. Tests verify exact depth values (700, 800, 900, 950 events)
+// 2. DLQ client API doesn't support custom stream names per call
+// 3. Parallel execution would cause state conflicts and flaky assertions
+//
+// Alternative approaches considered:
+// - Unique stream names: Requires DLQ client API changes (EnqueueAuditEvent signature)
+// - Direct Redis manipulation: Bypasses business logic being tested
+// - Mock DLQ client: Defeats purpose of integration test
+//
+// Decision: Serial execution is the correct architectural choice for capacity threshold tests
+// that validate shared infrastructure behavior. This is NOT a bottleneck - these tests complete
+// in < 5 seconds total.
+// ========================================
 
-var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Label("gap-3.3", "p0"),  func() {
+var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Serial, Label("gap-3.3", "p0"),  func() {
 	var (
 		// Test constants
 		dlqMaxLen         int64 = 1000 // From config
@@ -58,7 +78,7 @@ var _ = Describe("GAP 3.3: DLQ Near-Capacity Early Warning", Label("gap-3.3", "p
 	)
 
 	BeforeEach(func() {
-		// Clean up DLQ
+		// Clean up DLQ before each test
 		streamKey := "audit:dlq:events"
 		redisClient.Del(ctx, streamKey)
 	})
