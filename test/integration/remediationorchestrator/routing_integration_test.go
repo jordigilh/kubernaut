@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -70,15 +71,60 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 	// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/routing_cooldown_e2e_test.go
 
 
-		It("should allow RR when cooldown period has expired", func() {
-			// Create unique namespace for this test
-			ns := createTestNamespace("routing-cooldown-expired")
-			defer deleteTestNamespace(ns)
+	It("should transition from Blocked to Failed when cooldown period has expired", func() {
+		// Create unique namespace for this test
+		ns := createTestNamespace("routing-cooldown-expired")
+		defer deleteTestNamespace(ns)
 
-			GinkgoWriter.Println("📋 This test validates cooldown expiry (requires time manipulation)")
-			GinkgoWriter.Println("⏭️ PENDING: Cooldown expiry test requires time manipulation")
-			Skip("Cooldown expiry test requires time manipulation or extended wait")
-		})
+		GinkgoWriter.Println("📋 Testing cooldown expiry by setting BlockedUntil in the past")
+
+		// Use unique fingerprint for this test (must be valid 64-char hex: ^[a-f0-9]{64}$)
+		fingerprint := "aaaa0000bbbb1111cccc2222dddd3333eeee4444ffff5555aaaa6666bbbb7777"
+
+		// Create RR that will be blocked
+		rr := createRemediationRequestWithFingerprint(ns, "rr-cooldown-expired", fingerprint)
+
+		// Wait for RR to be initialized (controller assigns a phase)
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).ShouldNot(BeEmpty())
+
+		// Manually set RR to Blocked state with BlockedUntil in the PAST
+		// This simulates a cooldown that has already expired
+		pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
+		Eventually(func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
+				return err
+			}
+
+			rr.Status.OverallPhase = remediationv1.PhaseBlocked
+			rr.Status.BlockedUntil = &pastTime
+			rr.Status.BlockReason = string(remediationv1.BlockReasonConsecutiveFailures)
+			rr.Status.Message = "Blocked due to consecutive failures (test scenario)"
+
+			return k8sClient.Status().Update(ctx, rr)
+		}, timeout, interval).Should(Succeed())
+
+		// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
+		// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
+			return rr.Status.OverallPhase
+		}, "10s", interval).Should(Equal(remediationv1.PhaseFailed),
+			"RR should transition to Failed when BlockedUntil is in the past")
+
+		// Refresh RR to get latest status
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
+
+		// Verify failure details indicate cooldown expiry
+		Expect(rr.Status.FailurePhase).ToNot(BeNil())
+		Expect(*rr.Status.FailurePhase).To(Equal("blocked"))
+		Expect(rr.Status.FailureReason).ToNot(BeNil())
+		Expect(*rr.Status.FailureReason).To(ContainSubstring("Cooldown expired"))
+
+		GinkgoWriter.Println("✅ TEST PASSED: Cooldown expiry correctly triggered transition to Failed")
+	})
 	})
 
 	// ========================================
