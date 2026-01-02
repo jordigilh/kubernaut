@@ -1,6 +1,6 @@
 database:
   host: host.containers.internal
-  port: 15439
+  port: 15440  # Changed from 15439 to resolve conflict with HAPI (DD-TEST-001 v2.0)
   user: slm_user
   name: action_history
   sslmode: disable

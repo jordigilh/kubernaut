@@ -20,7 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +39,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -78,10 +79,11 @@ var (
 	cancel            context.CancelFunc
 	postgresContainer = "datastorage-postgres-test"
 	redisContainer    = "datastorage-redis-test"
-	serviceContainer  = "datastorage-service-test"
 	datastorageURL    string
-	configDir         string // ADR-030: Directory for config and secret files
-	schemaName        string // Schema name for this parallel process (for isolation)
+	configDir         string           // ADR-030: Directory for config and secret files
+	schemaName        string           // Schema name for this parallel process (for isolation)
+	testServer        *httptest.Server // In-process HTTP server for DataStorage API
+	dsServer          *server.Server   // DataStorage server instance (for graceful shutdown)
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -274,8 +276,8 @@ func cleanupContainers() {
 
 	GinkgoWriter.Println("🧹 Cleaning up test infrastructure...")
 
-	// Stop and remove integration test containers
-	containers := []string{serviceContainer, postgresContainer, redisContainer}
+	// Stop and remove integration test containers (PostgreSQL and Redis only - service runs in-process)
+	containers := []string{postgresContainer, redisContainer}
 	for _, container := range containers {
 		// Stop container
 		cmd := exec.Command("podman", "stop", container)
@@ -401,25 +403,40 @@ var _ = SynchronizedBeforeSuite(
 			serviceURL = os.Getenv("DATASTORAGE_URL")
 			GinkgoWriter.Printf("🐳 Using external Data Storage Service at %s\n", serviceURL)
 		} else {
-			// Local execution - build and start our own container
-			GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
-			createConfigFiles()
+			// Local execution - start in-process HTTP server (like other services)
+			GinkgoWriter.Println("🚀 Starting in-process Data Storage server...")
 
-			GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
-			buildDataStorageService()
+			// Build connection strings for in-process server
+			// Must match PostgreSQL container credentials (see startPostgreSQL function)
+			dbConnStr := "host=localhost port=15433 user=slm_user password=test_password dbname=action_history sslmode=disable"
+			redisAddr := "localhost:16379"
 
-			GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
-			startDataStorageService()
-
-			GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
-			waitForServiceReady()
-
-			// Determine service URL based on environment (DD-TEST-001)
-			port := "18090"
-			if p := os.Getenv("DATASTORAGE_PORT"); p != "" {
-				port = p
+			// Create server configuration
+			serverCfg := &server.Config{
+				Port:         0, // Use dynamic port for test server
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
 			}
-			serviceURL = fmt.Sprintf("http://localhost:%s", port)
+
+			// Create Data Storage server instance
+			var err error
+			dsServer, err = server.NewServer(
+				dbConnStr,
+				redisAddr,
+				"", // No Redis password in test
+				logger,
+				serverCfg,
+				10000, // DLQ max length
+			)
+			if err != nil {
+				Fail(fmt.Sprintf("Failed to create Data Storage server: %v", err))
+			}
+
+			// Create test HTTP server with server's handler
+			testServer = httptest.NewServer(dsServer.Handler())
+			serviceURL = testServer.URL
+
+			GinkgoWriter.Printf("✅ In-process server started at %s\n", serviceURL)
 		}
 
 		GinkgoWriter.Println("✅ Infrastructure ready!")
@@ -495,19 +512,18 @@ var _ = AfterSuite(func() {
 		}
 	}
 
-	// Capture service logs before cleanup for debugging (only process 1)
-	if processNum == 1 && serviceContainer != "" {
-		logs, err := exec.Command("podman", "logs", "--tail", "200", serviceContainer).CombinedOutput()
-		if err == nil && len(logs) > 0 {
-			GinkgoWriter.Printf("\n📋 Final Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
-		} else {
-			GinkgoWriter.Printf("\n⚠️  Failed to get final service logs: %v\n", err)
-		}
+	// Shutdown in-process test server (only process 1)
+	if processNum == 1 && testServer != nil {
+		GinkgoWriter.Println("🛑 Shutting down in-process server...")
+		testServer.Close()
 
-		// Check container status
-		status, err := exec.Command("podman", "inspect", "-f", "{{.State.Status}}", serviceContainer).CombinedOutput()
-		if err == nil {
-			GinkgoWriter.Printf("📊 Container status: %s\n", strings.TrimSpace(string(status)))
+		// Gracefully shutdown DataStorage server
+		if dsServer != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := dsServer.Shutdown(shutdownCtx); err != nil {
+				GinkgoWriter.Printf("⚠️  Server shutdown error: %v\n", err)
+			}
 		}
 	}
 
@@ -964,86 +980,9 @@ password: test_password
 	GinkgoWriter.Printf("  ✅ Config files created in %s\n", configDir)
 }
 
-// buildDataStorageService builds the Data Storage Service container image
-// Note: Builds for ARM64 (Apple Silicon) for local integration tests
-// Production multi-arch builds handled separately
-func buildDataStorageService() {
-	// Cleanup any existing image
-	exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
-
-	// Build image for ARM64 (local testing on Apple Silicon)
-	buildCmd := exec.Command("podman", "build",
-		"--build-arg", "GOARCH=arm64",
-		"-t", "data-storage:test",
-		"-f", "docker/data-storage.Dockerfile",
-		".")
-	buildCmd.Dir = "../../../" // Run from workspace root
-
-	output, err := buildCmd.CombinedOutput()
-	if err != nil {
-		GinkgoWriter.Printf("❌ Build output:\n%s\n", string(output))
-		Fail(fmt.Sprintf("Failed to build Data Storage Service image: %v", err))
-	}
-
-	GinkgoWriter.Println("  ✅ Data Storage Service image built successfully")
-}
-
-// startDataStorageService starts the Data Storage Service container
-func startDataStorageService() {
-	// Cleanup existing container
-	exec.Command("podman", "stop", serviceContainer).Run()
-	exec.Command("podman", "rm", serviceContainer).Run()
-
-	// Mount config files (ADR-030)
-	// Note: On macOS with Podman, :Z flag doesn't apply (SELinux is Linux-only)
-	// Instead, ensure files have world-readable permissions before mounting
-	configMount := fmt.Sprintf("%s/config.yaml:/etc/datastorage/config.yaml:ro", configDir)
-	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
-
-	// Start service container with ADR-030 config
-	// Use --network=datastorage-test for container-to-container communication
-	// Port mapping allows host to access service on localhost:8080
-	startCmd := exec.Command("podman", "run", "-d",
-		"--name", serviceContainer,
-		"--network", "datastorage-test",
-		"-p", "18090:8080", // DD-TEST-001
-		"-v", configMount,
-		"-v", secretsMount,
-		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"data-storage:test")
-
-	output, err := startCmd.CombinedOutput()
-	if err != nil {
-		GinkgoWriter.Printf("❌ Start output:\n%s\n", string(output))
-		Fail(fmt.Sprintf("Failed to start Data Storage Service container: %v", err))
-	}
-
-	GinkgoWriter.Println("  ✅ Data Storage Service container started")
-}
-
-// waitForServiceReady waits for the Data Storage Service health endpoint to respond
-func waitForServiceReady() {
-	datastorageURL = "http://localhost:18090" // DD-TEST-001
-
-	// Wait up to 60 seconds for service to be ready (increased for parallel execution)
-	Eventually(func() int {
-		resp, err := http.Get(datastorageURL + "/health")
-		if err != nil || resp == nil {
-			GinkgoWriter.Printf("  ⏳ Waiting for service... (error: %v)\n", err)
-			return 0
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode
-	}, "60s", "2s").Should(Equal(200), "Data Storage Service should be healthy")
-
-	// Print container logs for debugging (first 100 lines)
-	logs, logErr := exec.Command("podman", "logs", "--tail", "100", serviceContainer).CombinedOutput()
-	if logErr == nil {
-		GinkgoWriter.Printf("\n📋 Data Storage Service logs:\n%s\n", string(logs))
-	}
-
-	GinkgoWriter.Printf("  ✅ Data Storage Service ready at %s\n", datastorageURL)
-}
+// NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)
+// removed as part of refactoring to in-process testing pattern (consistent with other services).
+// DataStorage now runs via httptest.Server with server.NewServer() for integration tests.
 
 // DBExecutor is an interface that both *sql.DB and *sqlx.DB satisfy
 // Used for dynamic partition creation in tests

@@ -232,6 +232,32 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	// ========================================
+	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
+	// ========================================
+	// WFE must reconcile on PipelineRun status changes (external watch).
+	// Only skip reconcile for annotation/label changes when:
+	// 1. Generation unchanged
+	// 2. Phase is empty (not yet initialized) OR terminal
+	// 3. NOT watching PipelineRun (Phase is Pending or no PipelineRunRef yet)
+	//
+	// This allows reconciles for:
+	// - PipelineRun status updates (Running phase)
+	// - Condition updates
+	// - Metrics recording
+	if wfe.Status.ObservedGeneration == wfe.Generation &&
+		wfe.Status.Phase != "" &&
+		(wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted ||
+			wfe.Status.Phase == workflowexecutionv1alpha1.PhaseFailed ||
+			wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending) {
+		// Safe to skip: either terminal or not yet watching PipelineRun
+		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
+			"generation", wfe.Generation,
+			"observedGeneration", wfe.Status.ObservedGeneration,
+			"phase", wfe.Status.Phase)
+		return ctrl.Result{}, nil
+	}
+
+	// ========================================
 	// Add Finalizer (if not present)
 	// ========================================
 	if !controllerutil.ContainsFinalizer(&wfe, FinalizerName) {
@@ -685,6 +711,11 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&workflowexecutionv1alpha1.WorkflowExecution{}).
+		// WE-BUG-001: Prevent duplicate reconciles from status-only updates
+		// Use GenerationChangedPredicate to only reconcile on spec changes
+		// Status updates (PipelineRunStatus) are informational and don't require reconciliation
+		// Rationale: Controller only needs to act on spec changes, not status updates
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		// Watch PipelineRuns in execution namespace (cross-namespace via label)
 		// Only watch PipelineRuns with our label to avoid unnecessary reconciles
 		// Watch for status updates (not just metadata changes)

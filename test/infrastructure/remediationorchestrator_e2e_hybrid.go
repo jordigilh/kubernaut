@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -130,13 +131,29 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	// Install ALL CRDs required for RO orchestration
 	fmt.Fprintln(writer, "📋 Installing CRDs...")
-	if err := installROCRDs(kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to install CRDs: %w", err)
+	crdFiles := []string{
+		"kubernaut.ai_remediationrequests.yaml",
+		"kubernaut.ai_remediationapprovalrequests.yaml", // Required for RO approval workflow
+		"kubernaut.ai_aianalyses.yaml",
+		"kubernaut.ai_workflowexecutions.yaml",
+		"kubernaut.ai_signalprocessings.yaml",
+		"kubernaut.ai_notificationrequests.yaml",
+	}
+
+	for _, crdFile := range crdFiles {
+		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
+		fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
+		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd.Stdout = writer
+		crdCmd.Stderr = writer
+		if err := crdCmd.Run(); err != nil {
+			return fmt.Errorf("failed to install %s: %w", crdFile, err)
+		}
 	}
 
 	// Create kubernaut-system namespace
 	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := roCreateNamespace(kubeconfigPath, namespace, writer); err != nil {
+	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -493,7 +510,7 @@ subjects:
 `, coverdataPath)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = roBytesReader([]byte(manifest))
+	cmd.Stdin = bytes.NewReader([]byte(manifest))
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 
@@ -592,7 +609,7 @@ spec:
             periodSeconds: 5
 `
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfig, "-n", namespace, "apply", "-f", "-")
-	cmd.Stdin = roBytesReader([]byte(manifest))
+	cmd.Stdin = bytes.NewReader([]byte(manifest))
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {

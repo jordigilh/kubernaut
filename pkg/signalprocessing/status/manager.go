@@ -98,6 +98,7 @@ func (m *Manager) UpdatePhase(
 
 		// 2. Update phase field
 		sp.Status.Phase = newPhase
+	sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001
 		// Note: SignalProcessing doesn't have a Message field, status details tracked in Conditions
 		_ = message // Suppress unused parameter warning
 

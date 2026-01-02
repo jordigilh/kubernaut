@@ -205,6 +205,20 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		"totalAttempts", notification.Status.TotalAttempts,
 		"deliveryAttemptCount", len(notification.Status.DeliveryAttempts))
 
+	// NT-BUG-008: Prevent duplicate reconciliations from processing same generation twice
+	// Bug: Status updates (Pending→Sending) trigger immediate reconciles that race with original reconcile
+	// Symptom: 2x audit events per notification (discovered in E2E test 02_audit_correlation_test.go)
+	// Fix: Skip reconcile if this generation was already processed (has delivery attempts)
+	if notification.Generation == notification.Status.ObservedGeneration &&
+		len(notification.Status.DeliveryAttempts) > 0 {
+		log.Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
+			"generation", notification.Generation,
+			"observedGeneration", notification.Status.ObservedGeneration,
+			"deliveryAttempts", len(notification.Status.DeliveryAttempts),
+			"phase", notification.Status.Phase)
+		return ctrl.Result{}, nil
+	}
+
 	// Phase 1: Initialize status if first reconciliation
 	initialized, err := r.handleInitialization(ctx, notification)
 	if err != nil {

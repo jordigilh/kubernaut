@@ -25,16 +25,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"k8s.io/apimachinery/pkg/types"
+	ptr "k8s.io/utils/ptr"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	notificationcontroller "github.com/jordigilh/kubernaut/internal/controller/notification"
-	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
 // ========================================
-// E2E Test 2: Audit Correlation Across Multiple Notification Events (REAL DATA STORAGE)
+// E2E Test 2: Controller Audit Correlation Across Multiple Notifications (CORRECT PATTERN)
 // ========================================
 //
 // Business Requirements:
@@ -42,37 +41,42 @@ import (
 // - BR-NOT-063: Graceful degradation (async, fire-and-forget)
 // - BR-NOT-064: Audit event correlation
 //
-// Defense-in-Depth: This test validates the FULL audit chain for correlation:
-// - Multiple notifications → BufferedStore → Data Storage → PostgreSQL
-// - All events queryable by same correlation_id
+// ✅ CORRECT PATTERN (Per TESTING_GUIDELINES.md lines 1688-1948):
+// This test validates controller BUSINESS LOGIC with audit correlation as side effect:
+// 1. Create 3 NotificationRequests with same remediation context (trigger business operations)
+// 2. Wait for controller to process all 3 notifications (business logic)
+// 3. Verify controller emitted correlated audit events (side effect validation)
+//
+// ❌ ANTI-PATTERN AVOIDED:
+// - NOT manually creating audit events for lifecycle (tests infrastructure)
+// - NOT directly calling auditStore.StoreAudit() (tests client library)
+// - NOT using test-specific actor_id (tests wrong code path)
 //
 // Test Scenario:
 // 1. Create 3 NotificationRequests with same remediation context
-// 2. Simulate delivery lifecycle for all 3 (sent → acknowledged → escalated)
-// 3. Verify all 9 audit events persisted to PostgreSQL
-// 4. Verify all events share same correlation_id via Data Storage API
-// 5. Verify chronological ordering of events
-// 6. Verify fire-and-forget pattern (no blocking)
+// 2. Wait for controller to process all 3 notifications (phase → Sent)
+// 3. Verify controller emitted 3 "notification.message.sent" audit events
+// 4. Verify all events share same correlation_id (remediation request name)
+// 5. Verify all events follow ADR-034 format
 //
 // Expected Results:
-// - 9 audit events persisted (3 sent, 3 acknowledged, 3 escalated)
+// - 3 NotificationRequest CRDs created successfully
+// - Controller processes all 3 notifications and updates phases
+// - Controller emits 3 audit events with actor_id="notification-controller"
 // - All events have same correlation_id (remediation request name)
-// - Events are chronologically ordered by timestamp
-// - Audit writes are non-blocking (fire-and-forget)
+// - Audit events persisted to PostgreSQL via Data Storage API
 // - All events follow ADR-034 format
 //
 // Business Value:
-// This test validates the critical ability to trace a complete incident response
-// across multiple notification attempts, which is essential for compliance auditing
-// and post-incident analysis.
+// This test validates the critical ability to trace controller audit events
+// across multiple notification attempts using correlation_id, which is essential
+// for compliance auditing and post-incident analysis.
 
 var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", Label("e2e", "correlation", "audit", "compliance"), func() {
 	var (
 		testCtx        context.Context
 		testCancel     context.CancelFunc
 		notifications  []*notificationv1alpha1.NotificationRequest
-		auditHelpers   *notificationcontroller.AuditHelpers
-		auditStore     audit.AuditStore
 		dsClient       *dsgen.ClientWithResponses
 		dataStorageURL string
 		correlationID  string
@@ -93,24 +97,6 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
-		// Create audit store pointing to real Data Storage (DD-API-001)
-		dataStorageClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 10*time.Second)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
-
-		config := audit.Config{
-			BufferSize:    1000,
-			BatchSize:     10,
-			FlushInterval: 100 * time.Millisecond,
-			MaxRetries:    3,
-		}
-
-		testLogger := crzap.New(crzap.UseDevMode(true))
-		auditStore, err = audit.NewBufferedStore(dataStorageClient, config, "notification", testLogger)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create audit store")
-
-		// Create audit helpers
-		auditHelpers = notificationcontroller.NewAuditHelpers("notification")
-
 		// Create 3 NotificationRequests with same remediation context
 		for i := 1; i <= 3; i++ {
 			notification := &notificationv1alpha1.NotificationRequest{
@@ -123,9 +109,9 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 					Priority: notificationv1alpha1.NotificationPriority([]string{"low", "medium", "high"}[i-1]),
 					Subject:  "E2E Correlation Test - Notification " + string(rune('0'+i)),
 					Body:     "Testing audit correlation across multiple notifications",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelSlack},
+					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole}, // Use Console to avoid delivery failures
 					Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#e2e-tests"},
+						{Slack: "#e2e-tests"}, // Keep for CRD validation, but Console channel doesn't use it
 					},
 					Metadata: map[string]string{
 						"remediationRequestName": correlationID,
@@ -140,9 +126,6 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 	AfterEach(func() {
 		testCancel()
-		if auditStore != nil {
-			auditStore.Close()
-		}
 
 		// Clean up all NotificationRequest CRDs
 		for _, notification := range notifications {
@@ -168,58 +151,57 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 				"NotificationRequest CRD creation should succeed: %s", notification.Name)
 		}
 
-		// ===== STEP 2: Simulate lifecycle events for all notifications =====
-		By("Simulating complete lifecycle for all 3 notifications (sent → ack → escalated)")
+		// ===== STEP 2: Wait for controller to process all notifications =====
+		// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
+		By("Waiting for controller to process all 3 notifications")
 
 		for _, notification := range notifications {
-			// Event 1: Message sent
-			sentEvent, err := auditHelpers.CreateMessageSentEvent(notification, "slack")
-			Expect(err).ToNot(HaveOccurred())
-			err = auditStore.StoreAudit(testCtx, sentEvent)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Small delay between events to ensure chronological ordering
-			time.Sleep(50 * time.Millisecond)
-
-			// Event 2: Message acknowledged
-			ackEvent, err := auditHelpers.CreateMessageAcknowledgedEvent(notification)
-			Expect(err).ToNot(HaveOccurred())
-			err = auditStore.StoreAudit(testCtx, ackEvent)
-			Expect(err).ToNot(HaveOccurred())
-
-			time.Sleep(50 * time.Millisecond)
-
-			// Event 3: Message escalated
-			escalatedEvent, err := auditHelpers.CreateMessageEscalatedEvent(notification)
-			Expect(err).ToNot(HaveOccurred())
-			err = auditStore.StoreAudit(testCtx, escalatedEvent)
-			Expect(err).ToNot(HaveOccurred())
-
-			time.Sleep(50 * time.Millisecond)
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				var updated notificationv1alpha1.NotificationRequest
+				err := k8sClient.Get(testCtx, types.NamespacedName{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, &updated)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+				"Controller should process notification %s and update phase to Sent", notification.Name)
 		}
 
-		// ===== STEP 3: Wait for all test-emitted events to be persisted to PostgreSQL =====
-		By("Waiting for all 9 test-emitted audit events to be persisted to PostgreSQL")
+		// ===== STEP 3: Wait for controller to emit audit events (side effect) =====
+		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
+		By("Waiting for controller to emit audit events for all processed notifications")
 
-		// DD-E2E-002: Wait for filtered events (ActorId "notification"), not total events
-		// This ensures we wait for test-emitted events specifically, not controller events
 		Eventually(func() int {
-			allEvents := queryAuditEvents(dsClient, correlationID)
-			testEvents := filterEventsByActorId(allEvents, "notification")
-			return len(testEvents)
-		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 9),
-			"All 9 test-emitted audit events (3 notifications × 3 events) should be persisted to PostgreSQL")
+			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
+				EventType:     ptr.To("notification.message.sent"),
+				EventCategory: ptr.To("notification"),
+				CorrelationId: &correlationID,
+			})
+			if err != nil || resp.JSON200 == nil {
+				return 0
+			}
+			// Filter by controller actor_id after retrieving events
+			events := *resp.JSON200.Data
+			controllerEvents := filterEventsByActorId(events, "notification-controller")
+			return len(controllerEvents)
+		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
+			"Controller should emit audit events for all 3 processed notifications")
 
 		// ===== STEP 4: Verify all events queryable by correlation_id =====
-		By("Verifying all audit events queryable by correlation_id via Data Storage API")
+		By("Verifying all controller-emitted audit events queryable by correlation_id")
 
 		allEvents := queryAuditEvents(dsClient, correlationID)
 
-		// DD-E2E-002: Filter to only test-emitted events (ActorId "notification")
-		// Excludes controller-emitted events (ActorId "notification-controller") that may run concurrently
-		events := filterEventsByActorId(allEvents, "notification")
-		Expect(events).To(HaveLen(9),
-			"Should have exactly 9 test-emitted audit events with same correlation_id")
+		// Filter to only controller-emitted events (ActorId "notification-controller")
+		events := filterEventsByActorId(allEvents, "notification-controller")
+		Expect(events).To(HaveLen(6),
+			"Should have exactly 6 controller-emitted audit events with same correlation_id:\n"+
+				"  - 3 'sent' events (1 per notification/channel from delivery orchestrator)\n"+
+				"  - 3 'acknowledged' events (1 per notification completion from transitionToSent)\n"+
+				"  Bug NT-BUG-008 fix: Generation check prevents 12 events (would be 2x reconciles × 6 = 12 without fix)")
 
 		// Verify all events have same correlation_id
 		for _, event := range events {
@@ -228,30 +210,87 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 				correlationID, event.CorrelationId)
 		}
 
-		// ===== STEP 5: Verify event types distribution =====
-		By("Verifying correct distribution of event types")
+		// ===== STEP 5: Verify event types distribution and per-notification uniqueness =====
+		By("Verifying event types: 3 'sent' + 3 'acknowledged' (1 of each per notification)")
 
-		sentCount := 0
-		ackCount := 0
-		escalatedCount := 0
+		// Track events by notification_id in a single pass
+		// Note: `events` already filtered by correlation_id + actor_id, safe for parallel execution
+		type notificationEventCount struct {
+			sentCount         int
+			acknowledgedCount int
+		}
+		notificationEvents := make(map[string]*notificationEventCount)
 
 		for _, event := range events {
+			// Extract notification_id from EventData
+			// EventData structure: {"notification_id": "...", "channel": "...", ...}
+			notificationID := ""
+			if event.EventData != nil {
+				// Try direct map access first
+				if eventDataMap, ok := event.EventData.(map[string]interface{}); ok {
+					if id, exists := eventDataMap["notification_id"]; exists {
+						if idStr, ok := id.(string); ok {
+							notificationID = idStr
+						}
+					}
+				} else if eventDataStr, ok := event.EventData.(string); ok {
+					// EventData might be JSON string from PostgreSQL JSONB
+					var eventDataMap map[string]interface{}
+					if err := json.Unmarshal([]byte(eventDataStr), &eventDataMap); err == nil {
+						if id, exists := eventDataMap["notification_id"]; exists {
+							if idStr, ok := id.(string); ok {
+								notificationID = idStr
+							}
+						}
+					}
+				}
+			}
+
+			Expect(notificationID).ToNot(BeEmpty(),
+				"Event should have notification_id in EventData (got EventData type: %T)", event.EventData)
+
+			// Initialize struct for this notification if needed
+			if notificationEvents[notificationID] == nil {
+				notificationEvents[notificationID] = &notificationEventCount{}
+			}
+
+			// Increment count for this event type
 			switch event.EventType {
 			case "notification.message.sent":
-				sentCount++
+				notificationEvents[notificationID].sentCount++
 			case "notification.message.acknowledged":
-				ackCount++
-			case "notification.message.escalated":
-				escalatedCount++
+				notificationEvents[notificationID].acknowledgedCount++
+			default:
+				Fail(fmt.Sprintf("Unexpected event type: %s (should be 'sent' or 'acknowledged')", event.EventType))
 			}
 		}
 
-		Expect(sentCount).To(Equal(3), "Should have 3 sent events")
-		Expect(ackCount).To(Equal(3), "Should have 3 acknowledged events")
-		Expect(escalatedCount).To(Equal(3), "Should have 3 escalated events")
+		// Verify we have exactly 3 notifications
+		Expect(notificationEvents).To(HaveLen(3),
+			"Should have events for exactly 3 distinct notifications")
+
+		// Verify each notification has exactly 1 sent + 1 acknowledged event
+		totalSent := 0
+		totalAcknowledged := 0
+		for notificationID, counts := range notificationEvents {
+			Expect(counts.sentCount).To(Equal(1),
+				"Notification %s should have exactly 1 'sent' event", notificationID)
+
+			Expect(counts.acknowledgedCount).To(Equal(1),
+				"Notification %s should have exactly 1 'acknowledged' event", notificationID)
+
+			totalSent += counts.sentCount
+			totalAcknowledged += counts.acknowledgedCount
+
+			GinkgoWriter.Printf("✅ Notification %s: 1 sent + 1 acknowledged event (correct)\n", notificationID)
+		}
+
+		// Final sanity check: totals should be 3 + 3 = 6
+		Expect(totalSent).To(Equal(3), "Total 'sent' events across all notifications should be 3")
+		Expect(totalAcknowledged).To(Equal(3), "Total 'acknowledged' events across all notifications should be 3")
 
 		// ===== STEP 6: Verify ADR-034 compliance for all events =====
-		By("Verifying all events follow ADR-034 format")
+		By("Verifying all controller-emitted events follow ADR-034 format")
 
 		for _, event := range events {
 			// Verify required fields
@@ -260,7 +299,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			Expect(event.ActorType).ToNot(BeNil(), "ActorType should be set")
 			Expect(*event.ActorType).To(Equal("service"), "ActorType should be 'service'")
 			Expect(event.ActorId).ToNot(BeNil(), "ActorID should be set")
-			Expect(*event.ActorId).To(Equal("notification"), "ActorID should be service name")
+			Expect(*event.ActorId).To(Equal("notification-controller"), "ActorID should be 'notification-controller'")
 			Expect(event.ResourceType).ToNot(BeNil(), "ResourceType should be set")
 			Expect(*event.ResourceType).To(Equal("NotificationRequest"), "ResourceType should be 'NotificationRequest'")
 			// Note: RetentionDays is stored in PostgreSQL but not returned by Data Storage Query API
@@ -280,12 +319,12 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			}
 		}
 
-		// ===== STEP 7: Verify fire-and-forget pattern (non-blocking) =====
-		By("Verifying fire-and-forget pattern ensures non-blocking audit writes")
+		// ===== STEP 7: Verify controller audit integration =====
+		By("Verifying controller audit integration for all notifications")
 
-		// If we got here without timeout, fire-and-forget is working
-		// All audit writes were async and didn't block test execution
-		GinkgoWriter.Printf("✅ Full audit correlation chain validated: 9 events with correlation_id=%s\n", correlationID)
-		GinkgoWriter.Printf("✅ Controller → BufferedStore → DataStorage → PostgreSQL (verified via query)\n")
+		// If we got here without timeout, controller is properly emitting audits
+		// All controller-emitted audit events were persisted successfully
+		GinkgoWriter.Printf("✅ Audit correlation validated: %d controller-emitted events with correlation_id=%s\n", len(events), correlationID)
+		GinkgoWriter.Printf("✅ Controller emits audits for all %d processed notifications\n", len(notifications))
 	})
 })

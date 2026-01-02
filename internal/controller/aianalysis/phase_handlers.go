@@ -56,6 +56,7 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	analysis.Status.StartedAt = &now
 
 	// Transition to Investigating phase (first processing phase per CRD schema)
+	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Investigating handler after processing
 	analysis.Status.Phase = PhaseInvestigating
 	analysis.Status.Message = "AIAnalysis created, starting investigation"
 
