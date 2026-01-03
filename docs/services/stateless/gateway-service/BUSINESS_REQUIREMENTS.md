@@ -554,13 +554,34 @@ This document provides a comprehensive list of all business requirements for the
 **Implementation**: `pkg/gateway/server.go`
 **Tests**: `test/integration/gateway/graceful_shutdown_test.go`
 
-### **BR-GATEWAY-093: Circuit Breaker**
-**Description**: Gateway must implement circuit breaker for external dependencies
-**Priority**: P2 (Medium)
-**Test Coverage**: ⏳ Deferred (v2.0)
-**Implementation**: None (intentionally not implemented for v1.0)
-**Tests**: None (intentional - feature deferred to v2.0)
-**Rationale**: Gateway has no external service dependencies requiring circuit breaker. Rate limiting delegated to proxy (ADR-048). K8s API uses retry logic (BR-111-114). Circuit breaker will be added if external AI service integration is introduced in v2.0.
+### **BR-GATEWAY-093: Circuit Breaker for K8s API**
+**Description**: Gateway must implement circuit breaker for critical dependencies (Kubernetes API)
+**Priority**: P1 (High)
+**Test Coverage**: ✅ Implemented (2026-01-03)
+**Implementation**: `pkg/gateway/k8s/client_with_circuit_breaker.go`
+**Tests**: `test/integration/gateway/k8s_api_failure_test.go` (BR-GATEWAY-093)
+**Design Decision**: DD-GATEWAY-014 (Circuit Breaker for K8s API)
+**Library**: `github.com/sony/gobreaker` (industry-standard, production-grade)
+**Rationale**: Kubernetes API is a critical dependency for Gateway operations. Circuit breaker prevents cascading failures when K8s API is degraded (high latency, rate limiting, or unavailability), enabling fail-fast behavior and protecting Gateway availability. Complements existing retry logic (BR-111-114) by preventing repeated attempts when K8s API is known to be degraded.
+
+**Sub-Requirements**:
+- **BR-GATEWAY-093-A**: Fail-fast when K8s API unavailable (prevent request queue buildup)
+- **BR-GATEWAY-093-B**: Prevent cascade failures during K8s API overload (protect cluster control plane)
+- **BR-GATEWAY-093-C**: Observable metrics for circuit breaker state and operations (enable SRE response)
+
+**Circuit Breaker Configuration**:
+- **Threshold**: 50% failure rate over 10 requests
+- **Timeout**: 30 seconds (half-open state attempt)
+- **Interval**: 60 seconds (success/failure counter reset)
+- **Max Requests**: 3 (half-open state test requests)
+
+**Metrics Exposed**:
+- `gateway_circuit_breaker_state{name="k8s-api"}` - State gauge (0=closed, 1=half-open, 2=open)
+- `gateway_circuit_breaker_operations_total{name="k8s-api",result="success|failure"}` - Operations counter
+
+**Alert Rules**:
+- Alert when circuit breaker is open (K8s API degraded)
+- Alert when failure rate exceeds 20% (pre-trip warning)
 
 ### **BR-GATEWAY-101: Error Handling**
 **Description**: Gateway must handle all errors gracefully and return RFC7807 problem details

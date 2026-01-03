@@ -279,10 +279,7 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: test-integration-holmesgpt-api-containerized ## Run holmesgpt-api integration tests (containerized, ~5 min)
-
-.PHONY: test-integration-holmesgpt-api-containerized
-test-integration-holmesgpt-api-containerized: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests in container (DD-INTEGRATION-001 v2.0)
+test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (containerized - matches CI exactly)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐳 HolmesGPT API Integration Tests (Containerized)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -329,82 +326,6 @@ test-integration-holmesgpt-api-containerized: ginkgo clean-holmesgpt-test-ports 
 	echo ""; \
 	if [ $$TEST_RESULT -eq 0 ]; then \
 		echo "✅ All HAPI integration tests passed (containerized)"; \
-	else \
-		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
-		exit $$TEST_RESULT; \
-	fi
-
-.PHONY: test-integration-holmesgpt-api-local
-test-integration-holmesgpt-api-local: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests locally (legacy, ~8 min)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API Integration Tests (Go Infrastructure + Python Tests)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped infrastructure)"
-	@echo "🐍 Test Logic: Python (native for HAPI service)"
-	@echo "⏱️  Expected Duration: ~8 minutes (first run with image builds)"
-	@echo ""
-	@echo "🏗️  Infrastructure Phase (Go Ginkgo)..."
-	@echo "   • Building Data Storage image (~3 min)"
-	@echo "   • Starting PostgreSQL, Redis, Data Storage (~2 min)"
-	@echo "   • HAPI runs in-process (FastAPI TestClient)"
-	@echo "   • Total: ~5 minutes infrastructure setup"
-	@echo ""
-	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m & \
-	GINKGO_PID=$$!; \
-	echo "🚀 Go infrastructure starting (PID: $$GINKGO_PID)..."; \
-	echo "   • PostgreSQL, Redis, Data Storage (HAPI is in-process TestClient)"; \
-	echo "⏳ Waiting for Data Storage to be ready (checking every 5 seconds)..."; \
-	for i in {1..180}; do \
-		if curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
-			echo "✅ Data Storage healthy (took $$((i*5)) seconds)"; \
-			break; \
-		fi; \
-		if [ $$i -eq 180 ]; then \
-			echo "❌ Timeout waiting for Data Storage (15 minutes)"; \
-			kill $$GINKGO_PID 2>/dev/null || true; \
-			exit 1; \
-		fi; \
-		sleep 5; \
-	done; \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🐍 Python Test Phase (DD-HAPI-005 client auto-regeneration)..."; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."; \
-	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || exit 1; \
-	echo "✅ Client generated successfully"; \
-	echo ""; \
-	echo "🧪 Step 2: Install Python dependencies..."; \
-	cd holmesgpt-api && python3.11 -m pip install -q -r requirements.txt && python3.11 -m pip install -q -r requirements-test.txt || exit 1; \
-	echo "✅ Python dependencies installed"; \
-	echo ""; \
-	echo "🧪 Step 3: Run integration tests with 4 parallel workers..."; \
-	export HAPI_INTEGRATION_PORT=18120 && \
-	export DS_INTEGRATION_PORT=18098 && \
-	export PG_INTEGRATION_PORT=15439 && \
-	export REDIS_INTEGRATION_PORT=16387 && \
-	export HAPI_URL="http://localhost:18120" && \
-	export DATA_STORAGE_URL="http://localhost:18098" && \
-	export MOCK_LLM_MODE=true && \
-	python3.11 -m pytest tests/integration/ -n 4 -v --tb=short; \
-	TEST_RESULT=$$?; \
-	cd .. || exit 1; \
-	echo ""; \
-	echo "🐍 Python tests complete. Signaling Go infrastructure..."; \
-	touch /tmp/hapi-integration-tests-complete; \
-	sleep 2; \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🧹 Cleanup Phase..."; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	kill $$GINKGO_PID 2>/dev/null || true; \
-	wait $$GINKGO_PID 2>/dev/null || true; \
-	sleep 2; \
-	echo "✅ Cleanup complete"; \
-	rm -f /tmp/hapi-integration-tests-complete; \
-	echo ""; \
-	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ All HAPI integration tests passed (4 parallel workers)"; \
 	else \
 		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
 		exit $$TEST_RESULT; \
