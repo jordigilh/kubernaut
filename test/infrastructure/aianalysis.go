@@ -2153,12 +2153,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	namespace := "kubernaut-system" // Infrastructure always in kubernaut-system; tests use dynamic namespaces
 
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL)")
+	fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL + DISK OPTIMIZATION)")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
-	fmt.Fprintln(writer, "  Benefits: Fast builds + No cluster timeout + Reliable")
+	fmt.Fprintln(writer, "  Strategy: Build → Export → Prune → Cluster → Load → Deploy")
+	fmt.Fprintln(writer, "  Benefits: Fast builds + Aggressive cleanup + Disk tracking")
 	fmt.Fprintln(writer, "  Per DD-TEST-002: Hybrid Parallel Setup Standard")
+	fmt.Fprintln(writer, "  Per DD-TEST-008: Disk Space Management")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Track initial disk space
+	LogDiskSpace("START", writer)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
@@ -2217,11 +2221,21 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
 	}
 	fmt.Fprintln(writer, "\n✅ All images built! (~3-4 min parallel)")
+	LogDiskSpace("IMAGES_BUILT", writer)
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster (AFTER builds complete)
+	// PHASE 2-3: Export images to .tar and aggressive Podman cleanup
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	// This frees ~5-9 GB of disk space by removing Podman cache and intermediate layers
+	tarFiles, err := ExportImagesAndPrune(builtImages, "/tmp", writer)
+	if err != nil {
+		return fmt.Errorf("failed to export images and prune: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
 	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
@@ -2244,40 +2258,17 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load images (parallel)
+	// PHASE 5-6: Load images from .tar into Kind and cleanup .tar files
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into cluster...")
-	type imageLoadResult struct {
-		name string
-		err  error
-	}
-	loadResults := make(chan imageLoadResult, 3)
-
-	go func() {
-		err := loadImageToKind(clusterName, builtImages["datastorage"], writer)
-		loadResults <- imageLoadResult{"DataStorage", err}
-	}()
-	go func() {
-		err := loadImageToKind(clusterName, builtImages["holmesgpt-api"], writer)
-		loadResults <- imageLoadResult{"HolmesGPT-API", err}
-	}()
-	go func() {
-		err := loadImageToKind(clusterName, builtImages["aianalysis"], writer)
-		loadResults <- imageLoadResult{"AIAnalysis", err}
-	}()
-
-	for i := 0; i < 3; i++ {
-		result := <-loadResults
-		if result.err != nil {
-			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
-		}
-		fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
+	// Uses shared helpers for efficient loading and cleanup
+	if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
+		return fmt.Errorf("failed to load images and cleanup: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy services IN PARALLEL (let Kubernetes reconcile)
+	// PHASE 7: Deploy services IN PARALLEL (let Kubernetes reconcile)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	fmt.Fprintln(writer, "\n📦 PHASE 7: Deploying services in parallel...")
 	fmt.Fprintln(writer, "  ├── Data Storage infrastructure (PostgreSQL + Redis + DataStorage + Migrations)")
 	fmt.Fprintln(writer, "  ├── HolmesGPT-API")
 	fmt.Fprintln(writer, "  └── AIAnalysis controller")
@@ -2332,7 +2323,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 Compliant)")
+	fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 + DD-TEST-008)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	LogDiskSpace("FINAL", writer)
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
