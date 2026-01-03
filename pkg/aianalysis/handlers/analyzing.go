@@ -82,7 +82,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	if analysis.Status.SelectedWorkflow == nil {
 		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
 		analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "No workflow selected - investigation may have failed"
 		analysis.Status.Reason = "NoWorkflowSelected"
 
@@ -92,8 +92,10 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
 
-		// DD-AUDIT-003: Record phase transition
-		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+		// DD-AUDIT-003: Record phase transition if phase changed
+		if analysis.Status.Phase != oldPhase {
+			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -117,7 +119,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
 
 		analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "Rego evaluation failed unexpectedly"
 		analysis.Status.Reason = "RegoEvaluationError"
 
@@ -127,8 +129,10 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
 
-		// DD-AUDIT-003: Record phase transition
-		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+		// DD-AUDIT-003: Record phase transition if phase changed
+		if analysis.Status.Phase != oldPhase {
+			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -211,8 +215,10 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = "Analysis complete"
 
-	// DD-AUDIT-003: Record phase transition
-	h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+	// DD-AUDIT-003: Record phase transition if phase changed
+	if analysis.Status.Phase != oldPhase {
+		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+	}
 
 	h.log.Info("Analysis completed",
 		"name", analysis.Name,

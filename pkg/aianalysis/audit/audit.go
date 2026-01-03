@@ -140,6 +140,15 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 //
 // Uses structured types per DD-AUDIT-004 for compile-time type safety.
 func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
+	// Idempotency check: Only record if phase actually changed
+	if from == to {
+		c.log.V(1).Info("Skipping phase transition audit - phase unchanged",
+			"phase", from,
+			"name", analysis.Name,
+			"namespace", analysis.Namespace)
+		return
+	}
+	
 	// Build structured payload (DD-AUDIT-004: Type-safe event data)
 	payload := PhaseTransitionPayload{
 		OldPhase: from,
