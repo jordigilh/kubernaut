@@ -254,6 +254,8 @@ jobs:
             timeout: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
@@ -339,7 +341,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-      
+
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
