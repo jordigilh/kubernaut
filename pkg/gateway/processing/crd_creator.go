@@ -415,8 +415,32 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			// Fetch existing CRD and return it
 			// This allows deduplication metadata to be updated in Redis
-			existing, err := c.k8sClient.GetRemediationRequest(ctx, signal.Namespace, crdName)
-			if err != nil {
+			//
+			// Note: Use retry logic here because in concurrent scenarios, another goroutine
+			// may have just created the CRD, and K8s API might not have fully committed it yet.
+			// Retry with exponential backoff to allow K8s API time to sync.
+			var existing *remediationv1alpha1.RemediationRequest
+			var fetchErr error
+			maxFetchAttempts := 3
+			for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+				existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, signal.Namespace, crdName)
+				if fetchErr == nil {
+					break // Successfully fetched
+				}
+
+				if attempt < maxFetchAttempts {
+					// Exponential backoff: 50ms, 100ms, 200ms
+					backoff := time.Duration(50*attempt) * time.Millisecond
+					c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
+						"name", crdName,
+						"attempt", attempt,
+						"backoff_ms", backoff.Milliseconds(),
+						"error", fetchErr)
+					time.Sleep(backoff)
+				}
+			}
+
+			if fetchErr != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
 				// GAP-10: Wrap error with full context
 				return nil, NewCRDCreationError(
@@ -425,9 +449,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 					crdName,
 					signal.SourceType,
 					signal.AlertName,
-					1, // Single attempt to fetch
+					maxFetchAttempts,
 					startTime,
-					fmt.Errorf("CRD exists but failed to fetch: %w", err),
+					fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
 				)
 			}
 
