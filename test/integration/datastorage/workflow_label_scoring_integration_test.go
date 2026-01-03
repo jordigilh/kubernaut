@@ -296,6 +296,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: Search for PDB-protected workflows
+				// NOTE: Don't add test_run_id to search filters - it would add +0.05 boost and pollute assertions
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
 						SignalType:  "HighMemoryUsage",
@@ -303,9 +304,6 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "deployment",
 						Environment: "production",
 						Priority:    "P1",
-						CustomLabels: map[string][]string{
-							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Filter by unique test ID
-						},
 						DetectedLabels: models.DetectedLabels{
 							PDBProtected: true, // Search wants PDB protection
 						},
@@ -314,31 +312,35 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				}
 
 				// Handle async workflow indexing/search - allow time for workflows to become searchable
+				// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
 				var response *models.WorkflowSearchResponse
-				Eventually(func() int {
+				var pdbResult, noPdbResult *models.WorkflowSearchResult
+				Eventually(func() bool {
 					var err error
 					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
 					if err != nil {
-						return -1
+						return false
 					}
-					return len(response.Workflows)
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
-
-				// ASSERT: PDB workflow should have 0.05 boost
-				Expect(response.Workflows).To(HaveLen(2))
-
-				var pdbResult, noPdbResult *models.WorkflowSearchResult
-				for i := range response.Workflows {
-					if response.Workflows[i].Title == pdbWorkflow.Name {
-						pdbResult = &response.Workflows[i]
+					
+					// Filter to find OUR test workflows (by name which includes testID)
+					pdbResult = nil
+					noPdbResult = nil
+					for i := range response.Workflows {
+						if response.Workflows[i].Title == pdbWorkflow.Name {
+							pdbResult = &response.Workflows[i]
+						}
+						if response.Workflows[i].Title == noPdbWorkflow.Name {
+							noPdbResult = &response.Workflows[i]
+						}
 					}
-					if response.Workflows[i].Title == noPdbWorkflow.Name {
-						noPdbResult = &response.Workflows[i]
-					}
-				}
+					
+					// Success when both our workflows are found
+					return pdbResult != nil && noPdbResult != nil
+				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
 
-				Expect(pdbResult).ToNot(BeNil())
-				Expect(noPdbResult).ToNot(BeNil())
+				// ASSERT: Found both our test workflows
+				Expect(pdbResult).ToNot(BeNil(), "PDB workflow should be found")
+				Expect(noPdbResult).ToNot(BeNil(), "No-PDB workflow should be found")
 
 				// BUSINESS VALUE ASSERTIONS:
 				Expect(pdbResult.LabelBoost).To(Equal(0.05),
@@ -393,6 +395,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: Search with GitOps requirement
+				// NOTE: Don't add test_run_id to avoid +0.05 boost pollution
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
 						SignalType:  "DatabaseConnectionLeak",
@@ -400,9 +403,6 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "deployment",
 						Environment: "production",
 						Priority:    "P0",
-						CustomLabels: map[string][]string{
-							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Filter by unique test ID
-						},
 						DetectedLabels: models.DetectedLabels{
 							GitOpsManaged: true, // ⚠️ Signal REQUIRES GitOps
 						},
@@ -411,19 +411,30 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				}
 
 				// Handle async workflow indexing/search - allow time for workflow to become searchable
+				// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
 				var response *models.WorkflowSearchResponse
-				Eventually(func() int {
+				var result *models.WorkflowSearchResult
+				Eventually(func() bool {
 					var err error
 					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
 					if err != nil {
-						return -1
+						return false
 					}
-					return len(response.Workflows)
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Manual workflow should be searchable")
+					
+					// Filter to find OUR test workflow (by name which includes testID)
+					result = nil
+					for i := range response.Workflows {
+						if response.Workflows[i].Title == manualWorkflow.Name {
+							result = &response.Workflows[i]
+							break
+						}
+					}
+					
+					return result != nil
+				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Manual workflow should be searchable")
 
-				// ASSERT: Manual workflow should have penalty
-				Expect(response.Workflows).To(HaveLen(1))
-				result := response.Workflows[0]
+				// ASSERT: Found our test workflow
+				Expect(result).ToNot(BeNil(), "Manual workflow should be found")
 
 				// BUSINESS VALUE ASSERTIONS:
 				Expect(result.LabelPenalty).To(Equal(0.10),
@@ -627,6 +638,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: Search with wildcard service mesh (any mesh accepted)
+				// NOTE: Don't add test_run_id to avoid +0.05 boost pollution
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
 						SignalType:  "NetworkLatency",
@@ -634,9 +646,6 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "service",
 						Environment: "production",
 						Priority:    "P1",
-						CustomLabels: map[string][]string{
-							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Filter by unique test ID
-						},
 						DetectedLabels: models.DetectedLabels{
 							ServiceMesh: "*", // ⚠️ Wildcard: ANY service mesh
 						},
@@ -645,31 +654,34 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				}
 
 				// Handle async workflow indexing/search - allow time for workflows to become searchable
+				// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
 				var response *models.WorkflowSearchResponse
-				Eventually(func() int {
+				var istioResult, noMeshResult *models.WorkflowSearchResult
+				Eventually(func() bool {
 					var err error
 					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
 					if err != nil {
-						return -1
+						return false
 					}
-					return len(response.Workflows)
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
-
-				// ASSERT: Istio workflow should have half boost (0.025) for wildcard match
-				Expect(response.Workflows).To(HaveLen(2))
-
-				var istioResult, noMeshResult *models.WorkflowSearchResult
-				for i := range response.Workflows {
-					if response.Workflows[i].Title == istioWorkflow.Name {
-						istioResult = &response.Workflows[i]
+					
+					// Filter to find OUR test workflows (by name which includes testID)
+					istioResult = nil
+					noMeshResult = nil
+					for i := range response.Workflows {
+						if response.Workflows[i].Title == istioWorkflow.Name {
+							istioResult = &response.Workflows[i]
+						}
+						if response.Workflows[i].Title == noMeshWorkflow.Name {
+							noMeshResult = &response.Workflows[i]
+						}
 					}
-					if response.Workflows[i].Title == noMeshWorkflow.Name {
-						noMeshResult = &response.Workflows[i]
-					}
-				}
+					
+					return istioResult != nil && noMeshResult != nil
+				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
 
-				Expect(istioResult).ToNot(BeNil())
-				Expect(noMeshResult).ToNot(BeNil())
+				// ASSERT: Found both our test workflows
+				Expect(istioResult).ToNot(BeNil(), "Istio workflow should be found")
+				Expect(noMeshResult).ToNot(BeNil(), "No-mesh workflow should be found")
 
 				// BUSINESS VALUE ASSERTIONS:
 				// Wildcard match should give ~0.025 boost (half of 0.05)
@@ -720,6 +732,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ACT: Search with EXACT service mesh requirement
+				// NOTE: Don't add test_run_id to avoid +0.05 boost pollution
 				searchRequest := &models.WorkflowSearchRequest{
 					Filters: &models.WorkflowSearchFilters{
 						SignalType:  "NetworkLatency",
@@ -727,9 +740,6 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "service",
 						Environment: "production",
 						Priority:    "P1",
-						CustomLabels: map[string][]string{
-							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
-						},
 						DetectedLabels: models.DetectedLabels{
 							ServiceMesh: "istio", // ✅ Exact match: istio
 						},
@@ -738,19 +748,30 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 				}
 
 				// Handle async workflow indexing/search - allow time for workflow to become searchable
+				// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
 				var response *models.WorkflowSearchResponse
-				Eventually(func() int {
+				var result *models.WorkflowSearchResult
+				Eventually(func() bool {
 					var err error
 					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
 					if err != nil {
-						return -1
+						return false
 					}
-					return len(response.Workflows)
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Workflow should be searchable")
+					
+					// Filter to find OUR test workflow (by name which includes testID)
+					result = nil
+					for i := range response.Workflows {
+						if response.Workflows[i].Title == istioWorkflow.Name {
+							result = &response.Workflows[i]
+							break
+						}
+					}
+					
+					return result != nil
+				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Test workflow should be searchable")
 
-				// ASSERT: Exact match should give full 0.05 boost
-				Expect(response.Workflows).To(HaveLen(1))
-				result := response.Workflows[0]
+				// ASSERT: Found our test workflow
+				Expect(result).ToNot(BeNil(), "Istio workflow should be found")
 
 				// BUSINESS VALUE ASSERTIONS:
 				Expect(result.LabelBoost).To(Equal(0.05),
