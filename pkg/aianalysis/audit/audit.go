@@ -170,8 +170,8 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, phase string, err error) {
 	// Build structured payload (DD-AUDIT-004: Type-safe event data)
 	payload := ErrorPayload{
-		Phase: phase,
-		Error: err.Error(),
+		Phase:        phase,
+		ErrorMessage: err.Error(),
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
