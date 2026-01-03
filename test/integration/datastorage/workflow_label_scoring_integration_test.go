@@ -65,6 +65,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	)
 
 	BeforeEach(func() {
+		// CRITICAL: Use public schema FIRST before any cleanup/operations
+		// remediation_workflow_catalog is NOT schema-isolated - shared by ALL test processes
+		usePublicSchema()
 
 		// Create repository with real database
 		workflowRepo = workflow.NewRepository(db, logger)
