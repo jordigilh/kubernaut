@@ -466,17 +466,8 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("✅ Infrastructure ready!")
 
-		// Export environment variables for tests that create their own connections
-		// This ensures all tests use the correct ports (e.g., graceful shutdown tests)
-		if os.Getenv("POSTGRES_HOST") == "" {
-			os.Setenv("POSTGRES_HOST", "localhost")
-			os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
-			os.Setenv("REDIS_HOST", "localhost")
-			os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
-			GinkgoWriter.Println("📌 Exported environment variables for test infrastructure")
-		}
-
 		// Return connection info to all processes
+		// Include port info in the payload so all processes can set env vars
 		return []byte(serviceURL)
 	},
 	// All processes: Connect to shared infrastructure
@@ -492,6 +483,20 @@ var _ = SynchronizedBeforeSuite(
 		// Declare err for use in subsequent operations
 		var err error
 		_ = err // Suppress unused warning until used
+
+		// ========================================
+		// CRITICAL: Set environment variables in ALL parallel processes
+		// ========================================
+		// Env vars set in process 1 don't propagate to processes 2, 3, 4
+		// Each parallel process needs these vars for tests that create their own
+		// connections (e.g., graceful shutdown tests)
+		if os.Getenv("POSTGRES_HOST") == "" {
+			os.Setenv("POSTGRES_HOST", "localhost")
+			os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
+			os.Setenv("REDIS_HOST", "localhost")
+			os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
+			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
+		}
 
 		// Parse service URL from process 1
 		datastorageURL = string(data)

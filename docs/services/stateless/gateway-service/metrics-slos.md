@@ -1,10 +1,13 @@
 # Gateway Service - Metrics & SLOs
 
-**Version**: v1.0
-**Last Updated**: December 21, 2025
+**Version**: v1.1
+**Last Updated**: January 3, 2026
 **Status**: ✅ Production (Redis Removed per DD-GATEWAY-012)
 
 **Changelog**:
+- **2026-01-03**: Added performance observability metrics (Option A: conflict resolution, field index)
+- **2026-01-03**: Added circuit breaker metrics (Option B: K8s API resilience)
+- **2026-01-03**: Circuit breaker implementation using github.com/sony/gobreaker
 - **2025-12-21**: Redis metrics removed (Gateway no longer uses Redis)
 - **2025-12-21**: Metric names updated to match actual implementation
 - **2025-12-21**: DD-005 V3.0 metric constants applied
@@ -92,6 +95,69 @@ var (
             Name: "gateway_deduplication_rate",
             Help: "Current deduplication rate (percentage)",
         },
+    )
+)
+```
+
+### Conflict Resolution Metrics (Option A: Performance Observability)
+
+```go
+// Track optimistic concurrency control performance for status updates
+var (
+    conflictRetriesTotal = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "gateway_conflict_retries_total",
+            Help: "Total K8s optimistic concurrency retry attempts by operation and error type",
+        },
+        []string{"operation", "error_type"},
+    )
+
+    conflictResolutionLatency = promauto.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "gateway_conflict_resolution_duration_seconds",
+            Help:    "Latency for K8s conflict resolution including retries (seconds)",
+            Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
+        },
+        []string{"operation"},
+    )
+)
+```
+
+### Field Index Performance Metrics (Option A: Performance Observability)
+
+```go
+// Track O(1) field index query performance for deduplication lookups
+var (
+    fieldIndexQueryDuration = promauto.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "gateway_field_index_query_duration_seconds",
+            Help:    "Field index query duration for deduplication lookups (seconds)",
+            Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
+        },
+        []string{"index_name"},
+    )
+)
+```
+
+### Circuit Breaker Metrics (Option B: K8s API Resilience)
+
+```go
+// Track K8s API circuit breaker state and operation results
+var (
+    circuitBreakerState = promauto.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "gateway_circuit_breaker_state",
+            Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+        },
+        []string{"name"},
+    )
+
+    circuitBreakerOperations = promauto.NewCounterVec(
+        prometheus.CounterOpts{
+            Name: "gateway_circuit_breaker_operations_total",
+            Help: "Total operations through circuit breaker by name and result",
+        },
+        []string{"name", "result"},
     )
 )
 ```
