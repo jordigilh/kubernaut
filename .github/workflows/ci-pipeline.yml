@@ -219,7 +219,7 @@ jobs:
   # ========================================
 
   integration-tests:
-    name: Integration (${{ matrix.service_name }})
+    name: integration (${{ matrix.service }})
     needs: [unit-tests]
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
@@ -267,7 +267,7 @@ jobs:
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
-      - name: Run ${{ matrix.service_name }} integration tests
+      - name: Run ${{ matrix.service }} integration tests
         run: make test-integration-${{ matrix.service }}
       - name: Validate Data Storage OpenAPI spec (ADR-031)
         if: matrix.service == 'datastorage'
