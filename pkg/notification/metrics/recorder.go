@@ -113,5 +113,15 @@ func (p *PrometheusRecorder) RecordSlackBackoff(namespace string, durationSecond
 	// Keeping as no-op for interface compliance
 }
 
+// UpdateCircuitBreakerState updates the circuit breaker state metric for a channel
+// States: 0=closed, 1=open, 2=half-open (gobreaker.State values)
+func (p *PrometheusRecorder) UpdateCircuitBreakerState(channel string, state interface{}) {
+	// Convert gobreaker.State to float64 for Prometheus gauge
+	// gobreaker.State values: StateClosed=0, StateHalfOpen=1, StateOpen=2
+	if stateValue, ok := state.(int); ok {
+		p.metrics.ChannelCircuitBreakerState.WithLabelValues(channel).Set(float64(stateValue))
+	}
+}
+
 // Compile-time check that PrometheusRecorder implements Recorder
 var _ Recorder = (*PrometheusRecorder)(nil)

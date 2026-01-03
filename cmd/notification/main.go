@@ -354,7 +354,7 @@ func main() {
 
 			// Update Prometheus metric
 			if metricsRecorder != nil {
-				metricsRecorder.CircuitBreakerState.WithLabelValues(name).Set(float64(to))
+				metricsRecorder.UpdateCircuitBreakerState(name, to)
 			}
 		},
 	})
@@ -369,8 +369,8 @@ func main() {
 		Scheme:               mgr.GetScheme(),
 		ConsoleService:       consoleService,
 		SlackService:         slackService,
-		FileService:          fileService,                                        // DD-NOT-006: File delivery
-		DeliveryOrchestrator: deliveryOrchestrator,                               // Pattern 3: Delivery Orchestrator (P0)
+		FileService:          fileService,          // DD-NOT-006: File delivery
+		DeliveryOrchestrator: deliveryOrchestrator, // Pattern 3: Delivery Orchestrator (P0)
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager,                              // BR-NOT-055: Circuit breaker with gobreaker
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
