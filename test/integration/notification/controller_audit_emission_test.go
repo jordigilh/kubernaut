@@ -353,8 +353,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			Eventually(func() int {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				return len(events)
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 2),
-				"Controller should emit audit event for each channel (Console + Slack) to Data Storage (DD-AUDIT-003)")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
+				"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())

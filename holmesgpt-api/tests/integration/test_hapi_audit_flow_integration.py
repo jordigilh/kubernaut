@@ -270,8 +270,8 @@ class TestIncidentAnalysisAuditFlow:
             timeout_seconds=10
         )
 
-        # Should have at least llm_request and llm_response
-        assert len(events) >= 2, f"Expected at least 2 audit events (llm_request, llm_response), got {len(events)}"
+        # DD-TESTING-001: Deterministic count validation - exactly 2 events for one LLM call
+        assert len(events) == 2, f"Expected exactly 2 audit events (llm_request, llm_response), got {len(events)}"
 
         # Extract event types
         event_types = [e.event_type for e in events]
@@ -430,7 +430,8 @@ class TestRecoveryAnalysisAuditFlow:
             min_expected_events=2,  # llm_request + llm_response
             timeout_seconds=10
         )
-        assert len(events) >= 2, f"Expected at least 2 audit events, got {len(events)}"
+        # DD-TESTING-001: Deterministic count validation - exactly 2 events for one LLM call
+        assert len(events) == 2, f"Expected exactly 2 audit events (llm_request, llm_response), got {len(events)}"
 
         event_types = [e.event_type for e in events]
         assert "llm_request" in event_types, f"llm_request not found in {event_types}"
@@ -585,9 +586,9 @@ class TestErrorScenarioAuditFlow:
             timeout_seconds=10
         )
 
-        # Should have audit events even though no workflow matched
-        assert len(events) >= 2, \
-            f"Expected audit events even for failed workflow search, got {len(events)}"
+        # DD-TESTING-001: Deterministic count - exactly 2 events even for failed workflow search
+        assert len(events) == 2, \
+            f"Expected exactly 2 audit events (llm_request, llm_response) even for failed workflow search, got {len(events)}"
 
         # Verify events include the remediation_id (correlation)
         for event in events:

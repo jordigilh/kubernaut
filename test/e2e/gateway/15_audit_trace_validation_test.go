@@ -218,8 +218,8 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			}
 			testLogger.Info("Audit events found", "count", total)
 			return total
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"BR-GATEWAY-190: Gateway MUST emit audit events to Data Storage")
+		}, 30*time.Second, 2*time.Second).Should(Equal(2),
+			"BR-GATEWAY-190: Gateway MUST emit exactly 2 audit events (signal.received + crd.created) to Data Storage (DD-TESTING-001)")
 
 		testLogger.Info("✅ Audit events found in Data Storage", "eventCount", len(auditEvents))
 

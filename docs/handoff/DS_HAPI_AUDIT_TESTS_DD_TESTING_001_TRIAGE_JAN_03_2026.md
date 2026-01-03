@@ -1,8 +1,8 @@
 # DataStorage & HolmesGPT API Audit Tests DD-TESTING-001 Compliance Triage
 
-**Date**: January 3, 2026  
-**Status**: ⚠️ **NON-COMPLIANT** - 12 Violations Found  
-**Services**: DataStorage (DS), HolmesGPT API (HAPI)  
+**Date**: January 3, 2026
+**Status**: ⚠️ **NON-COMPLIANT** - 12 Violations Found
+**Services**: DataStorage (DS), HolmesGPT API (HAPI)
 **Authority**: DD-TESTING-001: Audit Event Validation Standards
 
 ---
@@ -195,7 +195,7 @@ while retries < max_retries:
 def poll_for_audit_events(query_func, expected_count, timeout=30, poll_interval=0.5):
     """
     Poll for audit events with timeout (Python equivalent of Eventually).
-    
+
     DD-TESTING-001: Use polling with timeout instead of fixed time.sleep()
     """
     start_time = time.time()
@@ -204,7 +204,7 @@ def poll_for_audit_events(query_func, expected_count, timeout=30, poll_interval=
         if len(events) == expected_count:  # ✅ Deterministic
             return events
         time.sleep(poll_interval)
-    
+
     raise AssertionError(f"Expected {expected_count} events, got {len(events)} after {timeout}s")
 
 # Usage:
@@ -392,8 +392,8 @@ Identified 12 additional violations in the 2 initially-overlooked services:
 
 ---
 
-**Document Status**: ✅ Complete - Missing Services Found  
-**Created**: 2026-01-03  
-**Priority**: ⚠️ HIGH (Complete scope coverage)  
+**Document Status**: ✅ Complete - Missing Services Found
+**Created**: 2026-01-03
+**Priority**: ⚠️ HIGH (Complete scope coverage)
 **Business Impact**: Ensures all audit-emitting services are DD-TESTING-001 compliant
 

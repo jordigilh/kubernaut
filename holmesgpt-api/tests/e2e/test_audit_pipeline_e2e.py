@@ -374,7 +374,8 @@ class TestAuditPipelineE2E:
 
         # Verify llm_request event exists (Pydantic model attribute access)
         llm_requests = [e for e in events if e.event_type == "llm_request"]
-        assert len(llm_requests) >= 1, f"llm_request event not found. Found events: {[e.event_type for e in events]}"
+        # DD-TESTING-001: Deterministic count - exactly 1 LLM call = 1 llm_request event
+        assert len(llm_requests) == 1, f"Expected exactly 1 llm_request event. Found events: {[e.event_type for e in events]}"
 
         # ADR-034: incident_id and prompt info are in event_data
         event = llm_requests[0]
@@ -428,7 +429,8 @@ class TestAuditPipelineE2E:
 
         # Verify llm_response event exists (Pydantic model attribute access)
         llm_responses = [e for e in events if e.event_type == "llm_response"]
-        assert len(llm_responses) >= 1, f"llm_response event not found. Found events: {[e.event_type for e in events]}"
+        # DD-TESTING-001: Deterministic count - exactly 1 LLM call = 1 llm_response event
+        assert len(llm_responses) == 1, f"Expected exactly 1 llm_response event. Found events: {[e.event_type for e in events]}"
 
         # ADR-034: Fields are in event_data
         event = llm_responses[0]
@@ -484,7 +486,8 @@ class TestAuditPipelineE2E:
 
         # Verify validation attempt event exists (Pydantic model attribute access)
         validation_events = [e for e in events if e.event_type == "workflow_validation_attempt"]
-        assert len(validation_events) >= 1, f"workflow_validation_attempt event not found. Found events: {[e.event_type for e in events]}"
+        # DD-TESTING-001: Deterministic count - exactly 1 validation attempt per incident analysis
+        assert len(validation_events) == 1, f"Expected exactly 1 workflow_validation_attempt event. Found events: {[e.event_type for e in events]}"
 
         # ADR-034: Fields are in event_data
         event = validation_events[0]

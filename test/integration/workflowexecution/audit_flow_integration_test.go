@@ -177,8 +177,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-				"BR-WE-005: WorkflowExecution MUST emit workflow.started audit event")
+			}, 20*time.Second, 1*time.Second).Should(Equal(1),
+				"BR-WE-005: WorkflowExecution MUST emit exactly 1 workflow.started audit event (DD-TESTING-001)")
 
 			By("5. Validate audit event content")
 			var startedEvent *dsgen.AuditEvent
@@ -253,33 +253,41 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 			correlationID := wfeName
 
-			By("3. Wait for controller to process")
-			time.Sleep(10 * time.Second) // Allow controller time to process
-
-			By("4. Query all workflow audit events for this execution")
-			// ✅ DD-API-001: Use OpenAPI client
+			By("3. Wait for controller to process and emit workflow.started event")
+			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
 			eventCategory := "workflow"
-			var auditEvents []dsgen.AuditEvent
 			Eventually(func() int {
 				resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 					EventCategory: &eventCategory,
 					CorrelationId: &correlationID,
 				})
-				if err != nil {
+				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
 					return 0
-				}
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-					return 0
-				}
-				if resp.JSON200.Data != nil {
-					auditEvents = *resp.JSON200.Data
 				}
 				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
 			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-				"Should have at least one workflow audit event")
+				"Controller should emit at least workflow.started event")
+
+			By("4. Fetch all workflow audit events for detailed validation")
+			// ✅ DD-API-001: Use OpenAPI client
+			var auditEvents []dsgen.AuditEvent
+			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+				EventCategory: &eventCategory,
+				CorrelationId: &correlationID,
+			})
+			Expect(err).ToNot(HaveOccurred(), "Should successfully query audit events")
+			Expect(resp.StatusCode()).To(Equal(http.StatusOK), "Query should return 200")
+			Expect(resp.JSON200).ToNot(BeNil(), "Response should have JSON body")
+			if resp.JSON200.Data != nil {
+				auditEvents = *resp.JSON200.Data
+			}
+			// DD-TESTING-001: Deterministic validation - we always expect workflow.started
+			// May also have workflow.completed/failed if Tekton is available
+			Expect(len(auditEvents)).To(BeNumerically(">=", 1),
+				"Should have at least workflow.started event")
 
 			By("5. Verify workflow lifecycle events")
 			eventTypes := make(map[string]bool)
