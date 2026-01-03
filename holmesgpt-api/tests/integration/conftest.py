@@ -313,7 +313,7 @@ def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, r
         bool: True if service responds with 200 OK, False otherwise
     """
     import time
-    
+
     for attempt in range(max_retries):
         try:
             response = requests.get(url, timeout=timeout)
@@ -321,10 +321,10 @@ def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, r
                 return True
         except (requests.RequestException, ConnectionError):
             pass
-        
+
         if attempt < max_retries - 1:
             time.sleep(retry_delay)
-    
+
     return False
 
 
@@ -363,14 +363,25 @@ def pytest_collection_modifyitems(config, items):
 
     This is a safety mechanism. In practice, tests should fail (not skip)
     if infrastructure is missing, per TESTING_GUIDELINES.md.
+    
+    Note: HAPI runs in-process with tests (FastAPI TestClient), so we only
+    check DataStorage availability for @pytest.mark.requires_data_storage tests.
     """
     if config.getoption("--collect-only"):
         return
 
-    infra_available = is_integration_infra_available()
+    # Check infrastructure availability based on test requirements
+    ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
+    hapi_available = is_service_available(f"{HAPI_URL}/health")
 
-    if not infra_available:
-        skip_infra = pytest.mark.skip(reason="Integration infrastructure not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
-        for item in items:
-            if "requires_data_storage" in item.keywords or "requires_hapi" in item.keywords:
-                item.add_marker(skip_infra)
+    for item in items:
+        # Skip tests that require DataStorage if it's not available
+        if "requires_data_storage" in item.keywords and not ds_available:
+            skip_ds = pytest.mark.skip(reason="Data Storage not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
+            item.add_marker(skip_ds)
+        
+        # Skip tests that require HAPI if it's not available
+        # (Most HAPI tests use in-process TestClient, so this is rare)
+        if "requires_hapi" in item.keywords and not hapi_available:
+            skip_hapi = pytest.mark.skip(reason="HAPI service not available")
+            item.add_marker(skip_hapi)
