@@ -2,9 +2,6 @@ package aianalysis
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,6 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
@@ -38,13 +36,11 @@ import (
 
 var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func() {
 	var (
-		httpClient *http.Client
-		ctx        context.Context
+		ctx context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		httpClient = &http.Client{Timeout: 10 * time.Second}
 	})
 
 	// ========================================
@@ -83,41 +79,38 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for controller to process (may retry on errors)")
-			// Give controller time to call HAPI and record audit events
-			// Even if HAPI fails, audit events should be created
-			time.Sleep(15 * time.Second)
-
 			remediationID := analysis.Spec.RemediationID
 
 			By("Querying Data Storage for HolmesGPT call audit events")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
 			// Wait for at least one HAPI call event (success or failure)
-			hapiEvents := waitForAuditEvents(httpClient, remediationID, "aianalysis.holmesgpt.call", 1)
+			// waitForAuditEvents already uses Eventually() internally
+			hapiEventType := "aianalysis.holmesgpt.call"
+			hapiEvents := waitForAuditEvents(remediationID, hapiEventType, 1)
 
 			By("Validating HolmesGPT call was audited regardless of success/failure")
 			Expect(hapiEvents).ToNot(BeEmpty(),
 				"Controller MUST audit HolmesGPT calls even when they fail (ADR-032 §1)")
 
-			By("Verifying HTTP status code is captured in audit event")
-			event := hapiEvents[0]
-			eventData, ok := event["event_data"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be a JSON object")
-			Expect(eventData).To(HaveKey("http_status_code"),
-				"HTTP status code MUST be captured for all HAPI calls")
+		By("Verifying HTTP status code is captured in audit event")
+		event := hapiEvents[0]
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue(), "event_data should be a JSON object")
+		Expect(eventData).To(HaveKey("http_status_code"),
+			"HTTP status code MUST be captured for all HAPI calls")
 
-			statusCode := int(eventData["http_status_code"].(float64))
-			GinkgoWriter.Printf("📊 HAPI call status code: %d\n", statusCode)
+		statusCode := int(eventData["http_status_code"].(float64))
+		GinkgoWriter.Printf("📊 HAPI call status code: %d\n", statusCode)
 
-			// Status code could be 200 (success), 500 (error), or timeout
-			// The key is that it's captured, not necessarily what it is
-			Expect(statusCode).To(BeNumerically(">", 0),
-				"Status code should be a positive integer")
+		// Status code could be 200 (success), 500 (error), or timeout
+		// The key is that it's captured, not necessarily what it is
+		Expect(statusCode).To(BeNumerically(">", 0),
+			"Status code should be a positive integer")
 
-			By("Verifying event outcome reflects call result")
-			eventOutcome, ok := event["event_outcome"].(string)
-			Expect(ok).To(BeTrue(), "event_outcome should be a string")
-			Expect([]string{"success", "failure"}).To(ContainElement(eventOutcome),
-				"event_outcome should be 'success' or 'failure'")
+		By("Verifying event outcome reflects call result")
+		eventOutcome := string(event.EventOutcome)
+		Expect([]string{"success", "failure"}).To(ContainElement(eventOutcome),
+			"event_outcome should be 'success' or 'failure'")
 		})
 
 		It("should create audit trail even when AIAnalysis remains in retry loop", func() {
@@ -151,35 +144,27 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for controller to process and potentially retry")
-			time.Sleep(20 * time.Second)
-
 			remediationID := analysis.Spec.RemediationID
 
-			By("Verifying audit trail exists regardless of AIAnalysis completion state")
-			// Query for ANY audit events (don't filter by type initially)
-			resp, err := httpClient.Get(fmt.Sprintf(
-				"http://localhost:8091/api/v1/audit/events?correlation_id=%s",
-				remediationID,
-			))
-			Expect(err).ToNot(HaveOccurred(), "Should be able to query DataStorage API")
-			defer resp.Body.Close()
-
-			var auditResponse struct {
-				Data []map[string]interface{} `json:"data"`
-			}
-			err = json.NewDecoder(resp.Body).Decode(&auditResponse)
-			Expect(err).ToNot(HaveOccurred(), "Should be able to decode audit response")
-
-			events := auditResponse.Data
-			Expect(events).ToNot(BeEmpty(),
+			By("Verifying audit trail exists regardless of AIAnalysis completion state (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			var events []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAuditEvents(remediationID, nil) // Query all event types
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return nil
+				}
+				return events
+			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(),
 				"Controller MUST create audit trail even if analysis doesn't complete (ADR-032 §1)")
 
 			By("Verifying audit events have correct correlation_id")
 			for _, event := range events {
-				correlationID, ok := event["correlation_id"].(string)
-				Expect(ok).To(BeTrue(), "correlation_id should be a string")
-				Expect(correlationID).To(Equal(remediationID),
+				// ✅ Type-safe field access (OpenAPI generated)
+				Expect(event.CorrelationId).To(Equal(remediationID),
 					"All audit events must have correlation_id matching remediation_id")
 			}
 
@@ -234,34 +219,27 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for controller to process")
-			time.Sleep(15 * time.Second)
-
 			remediationID := analysis.Spec.RemediationID
 
-			By("Verifying audit trail exists for this AIAnalysis")
-			resp, err := httpClient.Get(fmt.Sprintf(
-				"http://localhost:8091/api/v1/audit/events?correlation_id=%s",
-				remediationID,
-			))
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
-
-			var auditResponse struct {
-				Data []map[string]interface{} `json:"data"`
-			}
-			err = json.NewDecoder(resp.Body).Decode(&auditResponse)
-			Expect(err).ToNot(HaveOccurred())
-
-			events := auditResponse.Data
-			Expect(events).ToNot(BeEmpty(),
+			By("Verifying audit trail exists for this AIAnalysis (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			var events []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAuditEvents(remediationID, nil)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return nil
+				}
+				return events
+			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(),
 				"Controller MUST generate audit events even during error scenarios")
 
 			By("Checking for error audit events if present")
-			errorEvents := []map[string]interface{}{}
+			errorEvents := []dsgen.AuditEvent{}
 			for _, event := range events {
-				eventType, ok := event["event_type"].(string)
-				if ok && eventType == "aianalysis.error.occurred" {
+				if event.EventType == "aianalysis.error.occurred" {
 					errorEvents = append(errorEvents, event)
 				}
 			}
@@ -271,11 +249,11 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 				By("Validating error event structure")
 				for _, errEvent := range errorEvents {
-					eventData, ok := errEvent["event_data"].(map[string]interface{})
-					Expect(ok).To(BeTrue(), "error event_data should be a JSON object")
+					// ✅ Type-safe field access (OpenAPI generated)
+					Expect(errEvent.EventData).NotTo(BeNil(), "error event_data should exist")
 
 					// Error events should capture error details
-					Expect(eventData).To(HaveKey("error_message"),
+					Expect(errEvent.EventData).To(HaveKey("error_message"),
 						"Error events should include error message")
 				}
 			} else {
@@ -322,51 +300,36 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for initial audit events to be created")
-			time.Sleep(10 * time.Second)
-
 			remediationID := analysis.Spec.RemediationID
 
-			By("Capturing initial audit event count")
-			resp, err := httpClient.Get(fmt.Sprintf(
-				"http://localhost:8091/api/v1/audit/events?correlation_id=%s",
-				remediationID,
-			))
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			By("Capturing initial audit event count (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			var initialEvents []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				initialEvents, err = queryAuditEvents(remediationID, nil)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for initial audit events (error: %v)\n", err)
+					return nil
+				}
+				return initialEvents
+			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(),
+				"Should have audit events before persistence check")
 
-			var auditResponse1 struct {
-				Data []map[string]interface{} `json:"data"`
-			}
-			err = json.NewDecoder(resp.Body).Decode(&auditResponse1)
-			Expect(err).ToNot(HaveOccurred())
-
-			initialEventCount := len(auditResponse1.Data)
+			initialEventCount := len(initialEvents)
 			GinkgoWriter.Printf("📊 Initial audit events: %d\n", initialEventCount)
-			Expect(initialEventCount).To(BeNumerically(">", 0),
-				"Should have audit events before restart")
 
 			// Note: In a real E2E test with controller pod restart capability,
 			// we would restart the controller pod here. For now, we validate
-			// that events persist in DataStorage (PostgreSQL)
+			// that events persist in DataStorage (PostgreSQL) by querying again
 
-			By("Verifying audit events persist after time passes (simulating restart)")
-			time.Sleep(10 * time.Second)
+			By("Verifying audit events persist in DataStorage (PostgreSQL durability)")
 
-			resp2, err := httpClient.Get(fmt.Sprintf(
-				"http://localhost:8091/api/v1/audit/events?correlation_id=%s",
-				remediationID,
-			))
-			Expect(err).ToNot(HaveOccurred())
-			defer resp2.Body.Close()
-
-			var auditResponse2 struct {
-				Data []map[string]interface{} `json:"data"`
-			}
-			err = json.NewDecoder(resp2.Body).Decode(&auditResponse2)
+			persistedEvents, err := queryAuditEvents(remediationID, nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			persistedEventCount := len(auditResponse2.Data)
+			persistedEventCount := len(persistedEvents)
 			GinkgoWriter.Printf("📊 Persisted audit events: %d\n", persistedEventCount)
 
 			Expect(persistedEventCount).To(BeNumerically(">=", initialEventCount),
@@ -412,45 +375,36 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for audit events to be created")
-			time.Sleep(15 * time.Second)
-
 			remediationID := analysis.Spec.RemediationID
 
-			By("Querying all audit events for metadata validation")
-			resp, err := httpClient.Get(fmt.Sprintf(
-				"http://localhost:8091/api/v1/audit/events?correlation_id=%s",
-				remediationID,
-			))
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
-
-			var auditResponse struct {
-				Data []map[string]interface{} `json:"data"`
-			}
-			err = json.NewDecoder(resp.Body).Decode(&auditResponse)
-			Expect(err).ToNot(HaveOccurred())
-
-			events := auditResponse.Data
-			Expect(events).ToNot(BeEmpty(), "Should have audit events")
+			By("Querying all audit events for metadata validation (DD-API-001)")
+			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+			// Per DD-API-001: Use OpenAPI client, NOT raw HTTP
+			var events []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAuditEvents(remediationID, nil)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return nil
+				}
+				return events
+			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(),
+				"Should have audit events for metadata validation")
 
 			By("Validating REQUIRED metadata fields in ALL events (DD-AUDIT-003)")
 			for i, event := range events {
 				GinkgoWriter.Printf("📋 Validating event %d/%d\n", i+1, len(events))
 
 				// P0: Use testutil validator for comprehensive field validation
-				typedEvent := convertJSONToAuditEvent(event)
-				testutil.ValidateAuditEventHasRequiredFields(typedEvent)
+				// ✅ OpenAPI type validation (no conversion needed)
+				testutil.ValidateAuditEventHasRequiredFields(event)
 
 				// Additional E2E-specific validation
-				eventCategory, ok := event["event_category"].(string)
-				Expect(ok).To(BeTrue(), "event_category should be a string")
-				Expect(eventCategory).To(Equal("analysis"),
+				Expect(event.EventCategory).To(Equal("analysis"),
 					"AIAnalysis events should have category 'analysis'")
 
-				correlationID, ok := event["correlation_id"].(string)
-				Expect(ok).To(BeTrue(), "correlation_id should be a string")
-				Expect(correlationID).To(Equal(remediationID),
+				Expect(event.CorrelationId).To(Equal(remediationID),
 					"correlation_id should match remediation_id")
 			}
 
@@ -458,4 +412,3 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 		})
 	})
 })
-
