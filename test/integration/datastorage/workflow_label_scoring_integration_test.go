@@ -177,8 +177,16 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				response, err := workflowRepo.SearchByLabels(ctx, searchRequest)
-				Expect(err).ToNot(HaveOccurred(), "Search should succeed")
+				// Handle async workflow indexing/search - allow time for workflows to become searchable
+				var response *models.WorkflowSearchResponse
+				Eventually(func() int {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return -1
+					}
+					return len(response.Workflows)
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
 
 				// ASSERT: GitOps workflow should be ranked first with 0.10 boost
 				Expect(response.Workflows).To(HaveLen(2), "Should return both workflows")
@@ -297,8 +305,16 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				response, err := workflowRepo.SearchByLabels(ctx, searchRequest)
-				Expect(err).ToNot(HaveOccurred())
+				// Handle async workflow indexing/search - allow time for workflows to become searchable
+				var response *models.WorkflowSearchResponse
+				Eventually(func() int {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return -1
+					}
+					return len(response.Workflows)
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
 
 				// ASSERT: PDB workflow should have 0.05 boost
 				Expect(response.Workflows).To(HaveLen(2))
@@ -381,8 +397,16 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				response, err := workflowRepo.SearchByLabels(ctx, searchRequest)
-				Expect(err).ToNot(HaveOccurred())
+				// Handle async workflow indexing/search - allow time for workflow to become searchable
+				var response *models.WorkflowSearchResponse
+				Eventually(func() int {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return -1
+					}
+					return len(response.Workflows)
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Manual workflow should be searchable")
 
 				// ASSERT: Manual workflow should have penalty
 				Expect(response.Workflows).To(HaveLen(1))
@@ -480,8 +504,16 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				response, err := workflowRepo.SearchByLabels(ctx, searchRequest)
-				Expect(err).ToNot(HaveOccurred())
+				// Handle async workflow indexing/search - allow time for workflows to become searchable
+				var response *models.WorkflowSearchResponse
+				Eventually(func() int {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return -1
+					}
+					return len(response.Workflows)
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
 
 				// ASSERT: Workflow matching more custom labels should have higher boost
 				Expect(response.Workflows).To(HaveLen(2))
@@ -592,8 +624,16 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				response, err := workflowRepo.SearchByLabels(ctx, searchRequest)
-				Expect(err).ToNot(HaveOccurred())
+				// Handle async workflow indexing/search - allow time for workflows to become searchable
+				var response *models.WorkflowSearchResponse
+				Eventually(func() int {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return -1
+					}
+					return len(response.Workflows)
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
 
 				// ASSERT: Istio workflow should have half boost (0.025) for wildcard match
 				Expect(response.Workflows).To(HaveLen(2))
@@ -672,8 +712,16 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				response, err := workflowRepo.SearchByLabels(ctx, searchRequest)
-				Expect(err).ToNot(HaveOccurred())
+				// Handle async workflow indexing/search - allow time for workflow to become searchable
+				var response *models.WorkflowSearchResponse
+				Eventually(func() int {
+					var err error
+					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+					if err != nil {
+						return -1
+					}
+					return len(response.Workflows)
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Workflow should be searchable")
 
 				// ASSERT: Exact match should give full 0.05 boost
 				Expect(response.Workflows).To(HaveLen(1))
