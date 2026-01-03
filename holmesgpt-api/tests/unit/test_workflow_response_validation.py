@@ -28,11 +28,10 @@ Design Decision: DD-HAPI-002 v1.2 - Workflow Response Validation Architecture
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from typing import Dict, Any, List, Optional
+from unittest.mock import Mock
+from typing import Dict, Any, List
 
 # Import patch for use in decorators
-from unittest.mock import patch
 
 # These imports will fail until we implement the classes (TDD RED)
 # from src.clients.datastorage.client import DataStorageClient

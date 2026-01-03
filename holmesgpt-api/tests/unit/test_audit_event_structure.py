@@ -34,7 +34,6 @@ Moved from E2E per TESTING_GUIDELINES.md:
 - Unit tests: "Focus on implementation correctness", "Execute quickly", "Have minimal external dependencies"
 """
 
-import pytest
 
 
 class TestAuditEventStructure:

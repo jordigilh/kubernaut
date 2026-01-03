@@ -11,12 +11,10 @@ import hashlib
 import logging
 import os
 import tempfile
-import threading
 import time
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 
 
 class TestFileWatcherInitialization:

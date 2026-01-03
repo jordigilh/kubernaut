@@ -28,7 +28,6 @@ Tests verify:
 5. Tool wrapper integration sanitizes results correctly
 """
 
-import pytest
 from src.sanitization.llm_sanitizer import (
     LLMSanitizer,
     sanitize_for_llm,

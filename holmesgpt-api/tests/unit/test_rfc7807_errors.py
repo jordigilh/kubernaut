@@ -34,11 +34,6 @@ Reference: Context API (pkg/contextapi/errors/rfc7807.go)
 Reference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)
 """
 
-import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
-from pydantic import BaseModel, ValidationError as PydanticValidationError
-from typing import Optional
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

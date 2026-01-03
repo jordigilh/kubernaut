@@ -20,7 +20,6 @@ Recovery Analysis Endpoint Tests
 Business Requirements: BR-HAPI-001 to 050 (Recovery Analysis)
 """
 
-import pytest
 
 
 class TestRecoveryEndpoint:

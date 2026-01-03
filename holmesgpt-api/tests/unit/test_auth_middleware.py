@@ -24,8 +24,7 @@ Phase 1.2 of HolmesGPT API Implementation Plan
 """
 
 import pytest
-import asyncio
-from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from unittest.mock import Mock, patch, AsyncMock
 from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 from starlette.datastructures import Headers

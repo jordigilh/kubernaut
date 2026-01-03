@@ -31,7 +31,6 @@ Test Coverage:
 - Edge Cases and Boundary Conditions
 """
 
-import pytest
 from src.extensions.recovery import _create_investigation_prompt
 
 

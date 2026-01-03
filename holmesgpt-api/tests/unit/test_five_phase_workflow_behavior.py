@@ -15,7 +15,6 @@ limitations under the License.
 """
 
 
-import pytest
 from src.extensions.recovery import _create_investigation_prompt
 
 

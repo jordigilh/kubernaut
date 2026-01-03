@@ -26,7 +26,6 @@ Tests validate BUSINESS OUTCOMES:
 - MCP filter instructions are included for workflow filtering
 """
 
-import pytest
 from src.models.incident_models import DetectedLabels
 
 
