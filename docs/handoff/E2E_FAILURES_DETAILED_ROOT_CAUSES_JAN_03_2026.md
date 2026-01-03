@@ -1,7 +1,7 @@
 # E2E Failures: Detailed Root Cause Analysis
 
-**Date**: January 3, 2026 15:00 PST  
-**GitHub Actions Run**: https://github.com/jordigilh/kubernaut/actions/runs/20678370816  
+**Date**: January 3, 2026 15:00 PST
+**GitHub Actions Run**: https://github.com/jordigilh/kubernaut/actions/runs/20678370816
 **Context**: Deep dive into Notification and HolmesGPT API failures
 
 ---
@@ -10,8 +10,8 @@
 
 ### **1. HolmesGPT API E2E - MAKEFILE TARGET MISMATCH** 🚨
 
-**Status**: ❌ **CONFIGURATION BUG**  
-**Job ID**: 59369665508  
+**Status**: ❌ **CONFIGURATION BUG**
+**Job ID**: 59369665508
 **Severity**: HIGH
 
 #### **Error Message**:
@@ -83,8 +83,8 @@ make test-e2e-holmesgpt-api      # ← WORKS (correct target)
 
 ### **2. Notification E2E - POD STARTUP TIMEOUT** ⚠️
 
-**Status**: ❌ **POD READINESS FAILURE**  
-**Job ID**: 59369665509  
+**Status**: ❌ **POD READINESS FAILURE**
+**Job ID**: 59369665509
 **Severity**: MEDIUM
 
 #### **Error Message**:
@@ -168,7 +168,7 @@ error: timed out waiting for the condition on pods/notification-controller-8d9bd
 
 ### **Priority 1: Fix HolmesGPT API Configuration**
 
-**File**: `.github/workflows/ci-pipeline.yml`  
+**File**: `.github/workflows/ci-pipeline.yml`
 **Line**: 308
 
 ```yaml
@@ -190,7 +190,7 @@ matrix:
 
 ### **Priority 2: Retry Notification After Podman Fixes**
 
-**Action**: No config change needed - fixes already applied  
+**Action**: No config change needed - fixes already applied
 **Validation**: Retry E2E test to confirm Podman cleanup resolves disk space issue
 
 ---
@@ -288,6 +288,6 @@ matrix:
 
 ---
 
-**Document Status**: ✅ Complete  
+**Document Status**: ✅ Complete
 **Next Update**: After configuration fix and E2E rerun validation
 

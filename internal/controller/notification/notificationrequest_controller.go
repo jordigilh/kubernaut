@@ -40,9 +40,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationphase "github.com/jordigilh/kubernaut/pkg/notification/phase"
-	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
@@ -91,7 +91,9 @@ type NotificationRequestReconciler struct {
 	Sanitizer *sanitization.Sanitizer
 
 	// v3.1: Circuit breaker for graceful degradation (Category B)
-	CircuitBreaker *retry.CircuitBreaker
+	// Migrated to github.com/sony/gobreaker via shared Manager wrapper
+	// Provides per-channel isolation (Slack, console, webhooks)
+	CircuitBreaker *circuitbreaker.Manager
 
 	// v1.1: Audit integration for unified audit table (ADR-034)
 	// BR-NOT-062: Unified Audit Table Integration
