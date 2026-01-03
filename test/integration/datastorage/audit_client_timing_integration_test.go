@@ -58,6 +58,10 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 	)
 
 	BeforeEach(func() {
+		// CRITICAL: Use public schema for audit_events table queries
+		// audit_events table is written to public schema by HTTP API
+		// Without this, DELETE and SELECT queries go to test_process_N schema (wrong schema)
+		usePublicSchema()
 
 		// Create test context
 		testCtx, testCancel = context.WithTimeout(context.Background(), 2*time.Minute)
