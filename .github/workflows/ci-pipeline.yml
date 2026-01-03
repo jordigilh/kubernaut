@@ -291,6 +291,7 @@ jobs:
     # Run if: (push to main OR DS changed OR SP changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
@@ -324,6 +325,7 @@ jobs:
     # Run if: (push to main OR DS changed OR service changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
@@ -357,6 +359,7 @@ jobs:
     # Run if: (push to main OR DS changed OR service changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
@@ -390,6 +393,7 @@ jobs:
     # Run if: (push to main OR DS changed OR service changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
@@ -423,6 +427,7 @@ jobs:
     # Run if: (push to main OR DS changed OR service changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
@@ -454,9 +459,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # DS always runs E2E (it's the shared dependency)
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
-      github.event.pull_request.draft == false ||
-      github.event_name != 'pull_request'
+      always() &&
+      (github.event.pull_request.draft == false ||
+       github.event_name != 'pull_request')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -485,6 +492,7 @@ jobs:
     # Run if: (push to main OR DS changed OR service changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
@@ -518,6 +526,7 @@ jobs:
     # Run if: (push to main OR DS changed OR service changed), AND not draft PR
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
+      always() &&
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
