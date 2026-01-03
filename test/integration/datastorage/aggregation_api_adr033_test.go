@@ -66,6 +66,12 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 	)
 
 	BeforeAll(func() {
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert data into test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		// This is NOT a parallel execution issue - it's an API server architecture decision.
+		usePublicSchema()
 
 		// Use 30-second timeout for HTTP requests
 		client = &http.Client{Timeout: 30 * time.Second}
