@@ -86,6 +86,7 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 			ObjectMeta: metav1.ObjectMeta{
 				GenerateName: "smoke-test-",
 				Namespace:    ns.Name,
+				Generation:   1, // Required for ObservedGeneration pattern
 			},
 			Spec: remediationv1alpha1.RemediationRequestSpec{
 				SignalFingerprint: fingerprint, // Field we're indexing
