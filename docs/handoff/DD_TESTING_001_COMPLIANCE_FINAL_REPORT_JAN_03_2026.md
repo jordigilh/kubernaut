@@ -29,7 +29,9 @@ Completed systematic DD-TESTING-001 compliance work across all 6 microservices:
 | **Workflow Execution** | ⏭️ **TRIAGED** | 3 | 0 | 3 | **TBD** |
 | **Gateway** | ⏭️ **TRIAGED** | 4 | 0 | 4 | **TBD** |
 | **Notification** | ⏭️ **TRIAGED** | 1 | 0 | 1 | **TBD** |
-| **Total** | - | **34** | **22** | **12** | **65% Fixed** |
+| **DataStorage** | ⏭️ **TRIAGED** | 3 (E2E) | 0 | 3 (E2E) | **TBD** |
+| **HolmesGPT API** | ⏭️ **TRIAGED** | 9 | 0 | 9 | **TBD** |
+| **Total** | - | **46** | **22** | **24** | **48% Fixed** |
 
 \* *Remaining violation in SP is error scenario edge case (acceptable)*
 
