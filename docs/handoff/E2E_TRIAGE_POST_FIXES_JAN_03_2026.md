@@ -1,7 +1,7 @@
 # E2E Test Triage: Post Podman Cleanup & Race Condition Fixes
 
-**Date**: January 3, 2026 14:30 PST  
-**GitHub Actions Run**: https://github.com/jordigilh/kubernaut/actions/runs/20678370816  
+**Date**: January 3, 2026 14:30 PST
+**GitHub Actions Run**: https://github.com/jordigilh/kubernaut/actions/runs/20678370816
 **Context**: Analysis after applying Podman cleanup (commits 2db193760, 47e4fc784) and race condition fixes (commit 5bfcbea4d)
 
 ---
@@ -27,7 +27,7 @@
 
 ### **1. Gateway E2E - Cluster Race Condition** ❌
 
-**Job ID**: 59369665477  
+**Job ID**: 59369665477
 **Error**:
 ```
 ERROR: no nodes found for cluster "gateway-e2e"
@@ -47,7 +47,7 @@ ERROR: no nodes found for cluster "gateway-e2e"
 
 ### **2. Workflow Execution E2E - Disk Space Exhaustion** ❌
 
-**Job ID**: 59369665499  
+**Job ID**: 59369665499
 **Error**:
 ```
 Error: copying layers and metadata: writing blob: storing blob to file "/var/tmp/container_images_storage188759767/1": write /var/tmp/container_images_storage188759767/1: no space left on device
@@ -66,7 +66,7 @@ Error: copying layers and metadata: writing blob: storing blob to file "/var/tmp
 
 ### **3. AI Analysis E2E - Disk Space Exhaustion** ❌
 
-**Job ID**: 59369665501  
+**Job ID**: 59369665501
 **Error**:
 ```
 ERROR: failed to load image: command "docker exec --privileged -i aianalysis-e2e-worker ctr --namespace=k8s.io images import --all-platforms --digests --snapshotter=overlayfs -" failed with error: exit status 1
@@ -85,7 +85,7 @@ Command Output: ctr: failed to ingest "1678fffa16da057c6d7d0e21ff94b820780b3e41d
 
 ### **4. Notification E2E - Pod Startup Timeout** ❌
 
-**Job ID**: 59369665509  
+**Job ID**: 59369665509
 **Error**:
 ```
 error: timed out waiting for the condition on pods/notification-controller-8d9bd69dc-dpjpx
@@ -101,7 +101,7 @@ error: timed out waiting for the condition on pods/notification-controller-8d9bd
 
 **Fix Applied**: ❌ **NO** - Podman cleanup may help indirectly
 
-**Recommendation**: 
+**Recommendation**:
 - ⚠️ **Retry test** to see if Podman cleanup resolves it indirectly
 - If still fails: Investigate pod logs and events
 
@@ -109,7 +109,7 @@ error: timed out waiting for the condition on pods/notification-controller-8d9bd
 
 ### **5. HolmesGPT API E2E - No Test Suites Found** ❌
 
-**Job ID**: 59369665508  
+**Job ID**: 59369665508
 **Error**:
 ```
 ginkgo run failed
@@ -126,7 +126,7 @@ make: *** [Makefile:137: test-e2e-holmesgpt] Error 1
 
 **Fix Applied**: ❌ **NO** - Unrelated to disk space or race conditions
 
-**Recommendation**: 
+**Recommendation**:
 - ❌ **Separate investigation needed**
 - Check test file structure: `test/e2e/holmesgpt/`
 - Verify Ginkgo test suite initialization
@@ -160,7 +160,7 @@ make: *** [Makefile:137: test-e2e-holmesgpt] Error 1
 
 **Disk Space Failures**: 3/5 failures (60%) were **"no space left on device"**
 - ✅ Workflow Execution
-- ✅ AI Analysis  
+- ✅ AI Analysis
 - ✅ Gateway (indirectly related)
 
 **Our Fixes Directly Address**:
@@ -216,6 +216,6 @@ make: *** [Makefile:137: test-e2e-holmesgpt] Error 1
 
 ---
 
-**Document Status**: ✅ Complete  
+**Document Status**: ✅ Complete
 **Next Update**: After E2E rerun validation
 
