@@ -50,8 +50,10 @@ ENV HAPI_INTEGRATION_PORT=18120
 ENV DS_INTEGRATION_PORT=18098
 ENV PG_INTEGRATION_PORT=15439
 ENV REDIS_INTEGRATION_PORT=16387
-ENV HAPI_URL=http://host.containers.internal:18120
-ENV DATA_STORAGE_URL=http://host.containers.internal:18098
+# Use localhost because Makefile runs container with --network=host
+# This gives the container direct access to host's network stack
+ENV HAPI_URL=http://localhost:18120
+ENV DATA_STORAGE_URL=http://localhost:18098
 
 # Default command: Run integration tests with pytest
 WORKDIR /workspace/holmesgpt-api
