@@ -87,7 +87,9 @@ func validateFileOutputDirectory(dir string) error {
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		return fmt.Errorf("directory not writable: %w", err)
 	}
-	os.Remove(testFile)
+	if err := os.Remove(testFile); err != nil {
+		return fmt.Errorf("failed to remove test file: %w", err)
+	}
 
 	return nil
 }
