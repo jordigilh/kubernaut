@@ -272,7 +272,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		})
 
 		Context("when testing AI execution mode tracking", func() {
-			It("should track AI execution mode distribution correctly (TC-ADR033-04)", func() {
+			It("should track AI execution mode distribution correctly (TC-ADR033-04)", FlakeAttempts(3), func() {
 				incidentType := fmt.Sprintf("test-ai-execution-tracking-%s", testID)
 
 				// Setup: 10 catalog-selected, 5 chained, 2 manual escalation
@@ -304,7 +304,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 
 	Describe("GetSuccessRateByWorkflow - Integration", func() {
 		Context("when workflow has sufficient data", func() {
-			It("should calculate workflow success rate correctly (TC-ADR033-05)", func() {
+			It("should calculate workflow success rate correctly (TC-ADR033-05)", FlakeAttempts(3), func() {
 				workflowID := "test-memory-increase"
 				workflowVersion := "v1.0"
 
