@@ -476,6 +476,18 @@ func loadNotificationImageOnly(clusterName string, writer io.Writer) error {
 	// Clean up tar file
 	_ = os.Remove("/tmp/notification-e2e.tar")
 
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
+	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-notification:e2e-test")
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-notification:e2e-test")
+	}
+
 	fmt.Fprintln(writer, "   Notification Controller image loaded into Kind cluster")
 	return nil
 }

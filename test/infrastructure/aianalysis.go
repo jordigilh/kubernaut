@@ -1270,6 +1270,18 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 		return fmt.Errorf("failed to load image %s: %w", imageName, err)
 	}
 
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	return nil
 }
 

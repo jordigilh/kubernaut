@@ -833,6 +833,19 @@ func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, erro
 		fmt.Fprintf(writer, "   ⚠️  Failed to remove temp file %s: %v\n", tmpFile, err)
 	}
 
+	// CRITICAL: Delete Podman image immediately after Kind load to free disk space
+	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
+	// Solution: Once in Kind, we don't need the Podman copy anymore
+	fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", localImageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", localImageName)
+	}
+
 	fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")
 
 	return localImageName, nil
