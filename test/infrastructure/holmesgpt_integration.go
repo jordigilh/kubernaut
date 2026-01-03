@@ -249,7 +249,7 @@ echo "Migrations complete!"`)
 	}
 
 	// CRITICAL: Wait for DataStorage HTTP health endpoint
-	dataStorageURL := fmt.Sprintf("http://localhost:%d/health", HAPIIntegrationDataStoragePort)
+	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d/health", HAPIIntegrationDataStoragePort)
 	if err := WaitForHTTPHealth(dataStorageURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 	}

@@ -203,7 +203,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", WEIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", WEIntegrationDataStoragePort),
 		30*time.Second,
 		writer,
 	); err != nil {

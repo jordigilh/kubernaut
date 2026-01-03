@@ -260,7 +260,7 @@ echo "Migrations complete!"`)
 	// ============================================================================
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", NTIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", NTIntegrationDataStoragePort),
 		30*time.Second,
 		writer,
 	); err != nil {
