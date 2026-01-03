@@ -1596,7 +1596,7 @@ func buildHAPIImage(writer io.Writer) error {
 
 // waitForHAPIHealth waits for HAPI health endpoint to respond
 func waitForHAPIHealth(port int, timeout time.Duration) error {
-	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/health", port)
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
@@ -1816,10 +1816,10 @@ echo "Migrations complete!"`)
 
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", AIAnalysisIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", AIAnalysisIntegrationDataStoragePort),
 		60*time.Second,
 		writer,
-	); err != nil {
+	); err != nil{
 		// Print container logs for debugging
 		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", AIAnalysisIntegrationDataStorageContainer)
@@ -1874,7 +1874,7 @@ echo "Migrations complete!"`)
 
 	// CRITICAL: Wait for HAPI HTTP endpoint to be ready
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", AIAnalysisIntegrationHAPIPort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", AIAnalysisIntegrationHAPIPort),
 		60*time.Second,
 		writer,
 	); err != nil {

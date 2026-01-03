@@ -1481,10 +1481,10 @@ func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", SignalProcessingIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", SignalProcessingIntegrationDataStoragePort),
 		60*time.Second,
 		writer,
-	); err != nil {
+	); err != nil{
 		// Print container logs for debugging
 		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", SignalProcessingIntegrationDataStorageContainer)
