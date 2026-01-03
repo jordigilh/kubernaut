@@ -37,7 +37,9 @@ Phase: 3 of 4 (Road to 100% Confidence)
 
 import pytest
 import sys
-sys.path.insert(0, 'tests/clients')
+from pathlib import Path
+# Add tests/clients to path (absolute path resolution for CI)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 
 from holmesgpt_api_client import ApiClient, Configuration
 from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi

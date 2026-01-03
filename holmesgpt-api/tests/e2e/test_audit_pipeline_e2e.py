@@ -44,7 +44,9 @@ from src.clients.datastorage import ApiClient as DSApiClient, Configuration as D
 from src.clients.datastorage.api import AuditWriteAPIApi
 
 import sys
-sys.path.insert(0, 'tests/clients')
+from pathlib import Path
+# Add tests/clients to path (absolute path resolution for CI)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 from holmesgpt_api_client import ApiClient as HAPIApiClient, Configuration as HAPIConfiguration
 from holmesgpt_api_client.api import IncidentAnalysisApi
 from holmesgpt_api_client.models import IncidentRequest
