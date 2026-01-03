@@ -279,259 +279,60 @@ jobs:
 
   # ========================================
   # STAGE 3: E2E TESTS
-  # 8 parallel jobs, smart path detection
-  # Only start if ALL integration tests pass
+  # Matrix strategy: 8 services (all use Kind clusters)
+  # Simplified: Run all E2E tests for every non-draft PR
+  # Smart path detection can be added later once CI/CD is stable
   # ========================================
 
-  e2e-signalprocessing:
-    name: E2E (Signal Processing)
+  e2e-tests:
+    name: E2E (${{ matrix.service_name }})
     needs: [integration-tests]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR SP changed), AND not draft PR
+    timeout-minutes: ${{ matrix.timeout }}
     # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
+    # Simplified: Run all E2E tests for every non-draft PR
+    # Smart path detection can be added later once CI/CD is stable
     if: |
       always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'pkg/signalprocessing/'))
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run Signal Processing E2E tests
-        run: make test-e2e-signalprocessing
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name signalprocessing-e2e 2>/dev/null || true
-          podman ps -a --filter "name=signalprocessing-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-aianalysis:
-    name: E2E (AI Analysis)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'pkg/aianalysis/'))
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run AI Analysis E2E tests
-        run: make test-e2e-aianalysis
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name aianalysis-e2e 2>/dev/null || true
-          podman ps -a --filter "name=aianalysis-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-workflowexecution:
-    name: E2E (Workflow Execution)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'pkg/workflowexecution/'))
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run Workflow Execution E2E tests
-        run: make test-e2e-workflowexecution
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name workflowexecution-e2e 2>/dev/null || true
-          podman ps -a --filter "name=workflowexecution-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-remediationorchestrator:
-    name: E2E (Remediation Orchestrator)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'pkg/remediationorchestrator/'))
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run Remediation Orchestrator E2E tests
-        run: make test-e2e-remediationorchestrator
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name remediationorchestrator-e2e 2>/dev/null || true
-          podman ps -a --filter "name=remediationorchestrator-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-gateway:
-    name: E2E (Gateway)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'pkg/gateway/'))
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run Gateway E2E tests
-        run: make test-e2e-gateway
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name gateway-e2e 2>/dev/null || true
-          podman ps -a --filter "name=gateway-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-datastorage:
-    name: E2E (Data Storage)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # DS always runs E2E (it's the shared dependency)
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false ||
-       github.event_name != 'pull_request')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run Data Storage E2E tests
-        run: make test-e2e-datastorage
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name datastorage-e2e 2>/dev/null || true
-          podman ps -a --filter "name=datastorage-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-notification:
-    name: E2E (Notification)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'pkg/notification/'))
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - name: Install Kind & Podman
-        run: |
-          curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Run Notification E2E tests
-        run: make test-e2e-notification
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name notification-e2e 2>/dev/null || true
-          podman ps -a --filter "name=notification-" --format "{{.Names}}" | xargs -r podman rm -f
-
-  e2e-holmesgpt:
-    name: E2E (HolmesGPT API)
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (github.event_name == 'push' ||
-       contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
-       contains(github.event.pull_request.changed_files, 'migrations/') ||
-       contains(github.event.pull_request.changed_files, 'holmesgpt-api/'))
+      (github.event.pull_request.draft == false || github.event_name != 'pull_request')
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt]
+        include:
+          - service: signalprocessing
+            service_name: "Signal Processing"
+            timeout: 30
+            cluster_name: "signalprocessing-e2e"
+          - service: aianalysis
+            service_name: "AI Analysis"
+            timeout: 30
+            cluster_name: "aianalysis-e2e"
+          - service: workflowexecution
+            service_name: "Workflow Execution"
+            timeout: 30
+            cluster_name: "workflowexecution-e2e"
+          - service: remediationorchestrator
+            service_name: "Remediation Orchestrator"
+            timeout: 30
+            cluster_name: "remediationorchestrator-e2e"
+          - service: notification
+            service_name: "Notification"
+            timeout: 30
+            cluster_name: "notification-e2e"
+          - service: gateway
+            service_name: "Gateway"
+            timeout: 30
+            cluster_name: "gateway-e2e"
+          - service: datastorage
+            service_name: "Data Storage"
+            timeout: 30
+            cluster_name: "datastorage-e2e"
+          - service: holmesgpt
+            service_name: "HolmesGPT API"
+            timeout: 30
+            cluster_name: "datastorage-e2e"
+            needs_python: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -540,6 +341,7 @@ jobs:
       - name: Generate OpenAPI specs
         run: make generate
       - uses: actions/setup-python@v5
+        if: matrix.needs_python == true
         with:
           python-version: '3.12'
           cache: 'pip'
@@ -548,19 +350,26 @@ jobs:
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.20.0/kind-linux-amd64
           chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
+      - name: Install Podman
+        if: matrix.needs_python != true
+        run: |
+          sudo apt-get update && sudo apt-get install -y podman
       - name: Install Python dependencies
+        if: matrix.needs_python == true
         working-directory: holmesgpt-api
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r requirements-test.txt
-      - name: Run HolmesGPT API E2E tests
-        run: make test-e2e-holmesgpt
+      - name: Run ${{ matrix.service_name }} E2E tests
+        run: make test-e2e-${{ matrix.service }}
         env:
-          MOCK_LLM: 'true'
+          MOCK_LLM: ${{ matrix.needs_python == true && 'true' || '' }}
       - name: Cleanup
         if: always()
-        run: kind delete cluster --name datastorage-e2e 2>/dev/null || true
+        run: |
+          kind delete cluster --name ${{ matrix.cluster_name }} 2>/dev/null || true
+          podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f 2>/dev/null || true
 
   # ========================================
   # SUMMARY
@@ -570,7 +379,7 @@ jobs:
     needs: [
       build-and-lint-go, build-and-lint-python, unit-tests,
       integration-tests,
-      e2e-signalprocessing, e2e-aianalysis, e2e-workflowexecution, e2e-remediationorchestrator, e2e-gateway, e2e-datastorage, e2e-notification, e2e-holmesgpt
+      e2e-tests
     ]
     if: always()
     runs-on: ubuntu-latest

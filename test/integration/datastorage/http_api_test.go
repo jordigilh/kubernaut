@@ -48,6 +48,12 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ord
 	)
 
 	BeforeAll(func() {
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert/query data in test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		usePublicSchema()
+
 		client = &http.Client{Timeout: 10 * time.Second}
 	})
 

@@ -58,6 +58,12 @@ var _ = Describe("Audit Events Write API Integration Tests",  func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert/query data in test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		usePublicSchema()
+
 		// Ensure service is ready before each test
 		Eventually(func() int {
 			resp, err := http.Get(datastorageURL + "/health")
