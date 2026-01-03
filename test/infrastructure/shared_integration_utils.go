@@ -311,7 +311,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 // - Returns detailed error with attempt count
 //
 // Usage:
-//   if err := WaitForHTTPHealth("http://localhost:18096/health", 30*time.Second, writer); err != nil {
+//   if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
 //       return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 //   }
 func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
@@ -481,7 +481,7 @@ type IntegrationDataStorageConfig struct {
 //   }
 //
 //   // Wait for health check
-//   if err := WaitForHTTPHealth("http://localhost:18091/health", 60*time.Second, writer); err != nil {
+//   if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
 //       return err
 //   }
 func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error {
@@ -717,7 +717,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 8: Wait for DataStorage HTTP health
-//       if err := WaitForHTTPHealth("http://localhost:18096/health", 60*time.Second, writer); err != nil {
+//       if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
 //           return err
 //       }
 //

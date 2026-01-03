@@ -113,7 +113,7 @@ const (
 //   defer infrastructure.StopNotificationIntegrationInfrastructure(os.Stdout)
 //
 // Health Check:
-//   curl http://localhost:18096/health  # Should return 200 OK
+//   curl http://127.0.0.1:18096/health  # Should return 200 OK
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

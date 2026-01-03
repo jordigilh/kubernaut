@@ -120,9 +120,9 @@ DATA_STORAGE_PORT = int(os.getenv("DS_INTEGRATION_PORT", "18098"))
 POSTGRES_PORT = int(os.getenv("PG_INTEGRATION_PORT", "15439"))
 REDIS_PORT = int(os.getenv("REDIS_INTEGRATION_PORT", "16387"))
 
-# Service URLs
-HAPI_URL = os.getenv("HAPI_URL", f"http://localhost:{HAPI_PORT}")
-DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://localhost:{DATA_STORAGE_PORT}")
+# Service URLs (use 127.0.0.1 to force IPv4, avoid IPv6 resolution issues in CI)
+HAPI_URL = os.getenv("HAPI_URL", f"http://127.0.0.1:{HAPI_PORT}")
+DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://127.0.0.1:{DATA_STORAGE_PORT}")
 
 
 # ========================================

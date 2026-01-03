@@ -201,7 +201,7 @@ func waitForSPDataStorageReady(ctx context.Context, namespace, kubeconfigPath st
 			// Also check if service is accessible
 			healthCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 				"exec", "-n", namespace, "deploy/datastorage", "--",
-				"curl", "-sf", "http://localhost:8080/health")
+				"curl", "-sf", "http://127.0.0.1:8080/health")
 			if healthCmd.Run() == nil {
 				fmt.Fprintln(writer, "  ✅ DataStorage is ready and healthy")
 				return nil

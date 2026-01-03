@@ -380,7 +380,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 
 	// Verify DataStorage health endpoint is responding
 	// NodePort 30090 is exposed by kind-notification-config.yaml for E2E tests
-	dataStorageHealthURL := "http://localhost:30090/health"
+	dataStorageHealthURL := "http://127.0.0.1:30090/health"
 	fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
 	if err := WaitForHTTPHealth(dataStorageHealthURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage health check failed: %w", err)
