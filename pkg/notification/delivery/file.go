@@ -193,7 +193,10 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 			"tempFile", tempFile,
 			"filePath", filePath)
 		// Clean up temp file on error
-		os.Remove(tempFile)
+		if removeErr := os.Remove(tempFile); removeErr != nil {
+			log.Error(removeErr, "Failed to remove temporary file after rename error",
+				"tempFile", tempFile)
+		}
 		// NT-BUG-006: Wrap rename errors as retryable (permission denied, etc.)
 		return NewRetryableError(fmt.Errorf("failed to rename temporary file: %w", err))
 	}
