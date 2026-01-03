@@ -512,7 +512,7 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 //	    BuildContext:    ".",                     // Optional: build if needed
 //	    BuildDockerfile: "holmesgpt-api/Dockerfile",
 //	    HealthCheck: &HealthCheckConfig{
-//	        URL:     "http://localhost:18120/health",
+//	        URL:     "http://127.0.0.1:18120/health",
 //	        Timeout: 30 * time.Second,
 //	    },
 //	}
@@ -537,7 +537,7 @@ type GenericContainerConfig struct {
 
 // HealthCheckConfig defines how to verify container health
 type HealthCheckConfig struct {
-	URL     string        // HTTP endpoint to check (e.g., "http://localhost:8080/health")
+	URL     string        // HTTP endpoint to check (e.g., "http://127.0.0.1:8080/health")
 	Timeout time.Duration // Maximum time to wait for health check to pass
 }
 
