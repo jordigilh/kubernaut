@@ -174,15 +174,20 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 					Expect(idStr).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
 				}
 
-				// ✅ CORRECTNESS: All events persisted in database
-				By("Verifying all 3 events persisted in database (CORRECTNESS)")
-				for i, id := range eventIDs {
-					idStr := id.(string)
+			// ✅ CORRECTNESS: All events persisted in database
+			By("Verifying all 3 events persisted in database (CORRECTNESS)")
+			for i, id := range eventIDs {
+				idStr := id.(string)
+				// Handle async HTTP API processing - data may not be committed immediately
+				Eventually(func() int {
 					var count int
 					err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE event_id = $1", idStr).Scan(&count)
-					Expect(err).ToNot(HaveOccurred())
-					Expect(count).To(Equal(1), "Event %d should exist in database", i+1)
-				}
+					if err != nil {
+						return -1
+					}
+					return count
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Event %d should exist in database", i+1)
+			}
 
 				// ✅ CORRECTNESS: Verify event content matches sent payload
 				By("Verifying event content matches sent payload (CORRECTNESS)")
