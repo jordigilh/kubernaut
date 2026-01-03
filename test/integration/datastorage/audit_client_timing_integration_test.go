@@ -192,7 +192,8 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			GinkgoWriter.Printf("✅ Close() took %v\n", closeTime)
 
 			// Close() should wait for flush
-			Expect(closeTime).To(BeNumerically(">", 100*time.Millisecond),
+			// Increased threshold from 100ms to 200ms for CI environment variability
+			Expect(closeTime).To(BeNumerically(">", 200*time.Millisecond),
 				"Close() should wait for flush")
 
 		By("Verifying all 5 events were flushed")
