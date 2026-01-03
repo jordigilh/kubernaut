@@ -112,8 +112,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -182,8 +182,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -253,8 +253,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -315,8 +315,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -377,8 +377,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -459,8 +459,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -531,8 +531,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{

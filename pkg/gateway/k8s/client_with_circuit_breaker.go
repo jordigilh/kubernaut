@@ -29,10 +29,12 @@ import (
 // ClientWithCircuitBreaker wraps K8s client operations with circuit breaker protection
 //
 // Business Requirements:
-// - BR-GATEWAY-XXX: Protect Gateway from K8s API overload
-// - BR-GATEWAY-XXX: Fail-fast when K8s API is degraded
+// - BR-GATEWAY-093: Circuit breaker for critical dependencies (K8s API)
+// - BR-GATEWAY-093-A: Fail-fast when K8s API unavailable
+// - BR-GATEWAY-093-B: Prevent cascade failures during K8s API overload
+// - BR-GATEWAY-093-C: Observable metrics for circuit breaker state and operations
 //
-// Design Decision: DD-GATEWAY-014 (Circuit Breaker for K8s API)
+// Design Decision: DD-GATEWAY-015 (Kubernetes API Circuit Breaker Implementation)
 //
 // Circuit Breaker States:
 // - Closed: Normal operation, all requests allowed
@@ -90,16 +92,20 @@ func NewClientWithCircuitBreaker(client *Client, metricsInstance *metrics.Metric
 	}
 }
 
-// CreateRemediationRequestWithCB creates a RemediationRequest with circuit breaker protection
+// ========================================
+// Client Interface Methods (with Circuit Breaker Protection)
+// ========================================
+
+// CreateRemediationRequest creates a RemediationRequest with circuit breaker protection
 //
-// This method wraps CreateRemediationRequest with circuit breaker protection:
-// - If circuit is open: Returns gobreaker.ErrOpenState immediately (fail-fast)
-// - If circuit is closed/half-open: Attempts operation, tracks success/failure
+// Circuit Breaker Behavior:
+// - If circuit is OPEN: Returns gobreaker.ErrOpenState immediately (fail-fast)
+// - If circuit is CLOSED/HALF-OPEN: Executes K8s API call and tracks result
 //
-// Benefits:
-// - Fail-fast during K8s API outages (no wasted retries)
-// - Automatic recovery detection (half-open state)
-// - Metrics for observability (circuit state, operation results)
+// Benefits (BR-GATEWAY-093):
+// - Fail-fast during K8s API outages (BR-GATEWAY-093-A)
+// - Prevents cascade failures (BR-GATEWAY-093-B)
+// - Observable via Prometheus metrics (BR-GATEWAY-093-C)
 //
 // Parameters:
 // - ctx: Context for cancellation and timeout
@@ -107,7 +113,7 @@ func NewClientWithCircuitBreaker(client *Client, metricsInstance *metrics.Metric
 //
 // Returns:
 // - error: gobreaker.ErrOpenState if circuit is open, or K8s API error
-func (c *ClientWithCircuitBreaker) CreateRemediationRequestWithCB(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
+func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
 	_, err := c.cb.Execute(func() (interface{}, error) {
 		err := c.Client.CreateRemediationRequest(ctx, rr)
 		c.recordOperationResult("create", err)
@@ -116,7 +122,7 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequestWithCB(ctx context.Co
 	return err
 }
 
-// UpdateRemediationRequestWithCB updates a RemediationRequest with circuit breaker protection
+// UpdateRemediationRequest updates a RemediationRequest with circuit breaker protection
 //
 // Parameters:
 // - ctx: Context for cancellation and timeout
@@ -124,7 +130,7 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequestWithCB(ctx context.Co
 //
 // Returns:
 // - error: gobreaker.ErrOpenState if circuit is open, or K8s API error
-func (c *ClientWithCircuitBreaker) UpdateRemediationRequestWithCB(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
+func (c *ClientWithCircuitBreaker) UpdateRemediationRequest(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
 	_, err := c.cb.Execute(func() (interface{}, error) {
 		err := c.Client.UpdateRemediationRequest(ctx, rr)
 		c.recordOperationResult("update", err)
@@ -133,7 +139,7 @@ func (c *ClientWithCircuitBreaker) UpdateRemediationRequestWithCB(ctx context.Co
 	return err
 }
 
-// GetRemediationRequestWithCB retrieves a RemediationRequest with circuit breaker protection
+// GetRemediationRequest retrieves a RemediationRequest with circuit breaker protection
 //
 // Parameters:
 // - ctx: Context for cancellation and timeout
@@ -143,7 +149,7 @@ func (c *ClientWithCircuitBreaker) UpdateRemediationRequestWithCB(ctx context.Co
 // Returns:
 // - *RemediationRequest: The retrieved CRD
 // - error: gobreaker.ErrOpenState if circuit is open, or K8s API error
-func (c *ClientWithCircuitBreaker) GetRemediationRequestWithCB(ctx context.Context, namespace, name string) (*remediationv1alpha1.RemediationRequest, error) {
+func (c *ClientWithCircuitBreaker) GetRemediationRequest(ctx context.Context, namespace, name string) (*remediationv1alpha1.RemediationRequest, error) {
 	result, err := c.cb.Execute(func() (interface{}, error) {
 		rr, err := c.Client.GetRemediationRequest(ctx, namespace, name)
 		c.recordOperationResult("get", err)
@@ -157,12 +163,12 @@ func (c *ClientWithCircuitBreaker) GetRemediationRequestWithCB(ctx context.Conte
 	return result.(*remediationv1alpha1.RemediationRequest), nil
 }
 
-// State returns the current circuit breaker state
+// State returns the current circuit breaker state (for observability)
 //
 // Returns:
 // - gobreaker.StateClosed (0): Normal operation
 // - gobreaker.StateHalfOpen (1): Testing recovery
-// - gobreaker.StateOpen (2): Blocking requests
+// - gobreaker.StateOpen (2): Blocking requests (fail-fast)
 func (c *ClientWithCircuitBreaker) State() gobreaker.State {
 	return c.cb.State()
 }

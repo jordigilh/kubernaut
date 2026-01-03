@@ -49,7 +49,7 @@ import (
 // - Example: rr-a1b2c3d4e5f6789
 // - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
-	k8sClient         *k8s.Client
+	k8sClient         k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
 	logger            logr.Logger           // DD-005: logr.Logger for unified logging
 	metrics           *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
 	fallbackNamespace string                // Configurable fallback namespace for CRD creation
@@ -60,13 +60,15 @@ type CRDCreator struct {
 // NewCRDCreator creates a new CRD creator
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
 // DD-005: Uses logr.Logger for unified logging
-func NewCRDCreator(k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
+func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
 	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, fallbackNamespace, retryConfig, nil)
 }
 
 // NewCRDCreatorWithClock creates a new CRD creator with a custom clock
 // This variant enables testing with MockClock for time-dependent behavior
-func NewCRDCreatorWithClock(k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, clock Clock) *CRDCreator {
+//
+// TDD GREEN: Accepts ClientInterface to support circuit breaker (BR-GATEWAY-093)
+func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, clock Clock) *CRDCreator {
 	// Metrics are mandatory for observability
 	if metricsInstance == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")

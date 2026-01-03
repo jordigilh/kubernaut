@@ -73,6 +73,19 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		if testNamespace != "" && testClient != nil {
 			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 				client.InNamespace(testNamespace))
+
+			// Wait for all CRDs to be deleted before next test
+			// This prevents test pollution in parallel execution
+			Eventually(func() int {
+				rrList := &remediationv1alpha1.RemediationRequestList{}
+				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
+				if err != nil {
+					GinkgoWriter.Printf("Error during cleanup list: %v\n", err)
+					return -1
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
+				"All CRDs should be deleted before next test starts")
 		}
 	})
 
