@@ -31,6 +31,7 @@ Business Requirements:
 import logging
 import os
 import signal
+import threading
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -98,11 +99,16 @@ def handle_shutdown_signal(signum, frame):
     })
 
 
-# Register signal handlers
-signal.signal(signal.SIGTERM, handle_shutdown_signal)
-signal.signal(signal.SIGINT, handle_shutdown_signal)
-
-logger.info("Signal handlers registered for graceful shutdown (SIGTERM, SIGINT)")
+# Register signal handlers (only in main thread)
+# BR-HAPI-TESTING: Signal handlers only work in main thread
+# When pytest runs with -n (parallel workers), worker threads cannot register signal handlers
+# Solution: Only register in main thread to allow parallel test execution
+if threading.current_thread() is threading.main_thread():
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    logger.info("Signal handlers registered for graceful shutdown (SIGTERM, SIGINT)")
+else:
+    logger.info("Skipping signal handler registration (not main thread)")
 
 
 def load_config() -> AppConfig:
