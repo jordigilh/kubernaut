@@ -261,9 +261,9 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 	})
 
 	Context("Performance Impact", func() {
-		It("[Flaky] should have minimal overhead for counter increment", func() {
+		It("[Flaky] should have minimal overhead for counter increment", FlakeAttempts(3), func() {
 			// BR-STORAGE-019: Metrics should have < 5% performance overhead
-			// [Flaky] flag: Auto-retry up to 3 times due to timing sensitivity in CI
+			// FlakeAttempts(3): Auto-retry up to 3 times due to timing sensitivity in CI environments
 			start := time.Now()
 			for i := 0; i < 1000; i++ {
 				metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
@@ -274,7 +274,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 			Expect(duration.Milliseconds()).To(BeNumerically("<", 5),
 				"Counter increment should be very fast (< 5μs per operation)")
 
-			GinkgoWriter.Printf("✅ 1000 counter increments took %v (< 1ms target)\n", duration)
+			GinkgoWriter.Printf("✅ 1000 counter increments took %v (< 5ms target for CI)\n", duration)
 		})
 
 		It("should have minimal overhead for histogram observation", func() {
