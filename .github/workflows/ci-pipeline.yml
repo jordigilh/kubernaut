@@ -48,6 +48,11 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
+  # This ensures all Kind commands (create, load, etc.) use Podman as the provider
+  KIND_EXPERIMENTAL_PROVIDER: podman
+
 jobs:
   # ========================================
   # STAGE 1A: BUILD & LINT (PARALLEL)

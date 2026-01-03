@@ -24,6 +24,10 @@ on:
         description: 'Test result (success/failure/skipped)'
         value: ${{ jobs.e2e.outputs.result }}
 
+env:
+  # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
+  KIND_EXPERIMENTAL_PROVIDER: podman
+
 jobs:
   e2e:
     name: e2e (${{ inputs.service }})
@@ -34,6 +38,8 @@ jobs:
       !inputs.skip_on_draft ||
       github.event.pull_request.draft == false ||
       github.event_name != 'pull_request'
+    env:
+      KIND_EXPERIMENTAL_PROVIDER: podman
     outputs:
       result: ${{ steps.test.outcome }}
 

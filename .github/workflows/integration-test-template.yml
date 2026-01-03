@@ -23,6 +23,10 @@ on:
         description: 'Test result (success/failure)'
         value: ${{ jobs.integration.outputs.result }}
 
+env:
+  # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
+  KIND_EXPERIMENTAL_PROVIDER: podman
+
 jobs:
   integration:
     name: integration (${{ inputs.service }})
