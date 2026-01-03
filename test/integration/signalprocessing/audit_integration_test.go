@@ -181,8 +181,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: SignalProcessing MUST emit audit events")
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 signal.processed event per processing completion")
 
 			By("7. Find 'signal.processed' audit event")
 			var processedEvent *dsgen.AuditEvent
@@ -292,11 +292,11 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: Must emit classification.decision audit event")
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 classification.decision event per classification")
 
 			By("7. Validate classification audit event using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty())
+			Expect(len(auditEvents)).To(Equal(1), "Should have exactly 1 classification event")
 			testutil.ValidateAuditEvent(auditEvents[0], testutil.ExpectedAuditEvent{
 				EventType:     "signalprocessing.classification.decision",
 				EventCategory: dsgen.AuditEventEventCategorySignalprocessing,
@@ -392,11 +392,11 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return *resp.JSON200.Pagination.Total
 			}
 			return 0
-		}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-			"AUDIT-06: Must emit business.classified audit event")
+		}, 90*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"AUDIT-06: SignalProcessing MUST emit exactly 1 business.classified event per business classification")
 
 			By("7. Validate business classification audit event using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty())
+			Expect(len(auditEvents)).To(Equal(1), "Should have exactly 1 business classification event")
 			testutil.ValidateAuditEvent(auditEvents[0], testutil.ExpectedAuditEvent{
 				EventType:     "signalprocessing.business.classified",
 				EventCategory: dsgen.AuditEventEventCategorySignalprocessing,
@@ -520,11 +520,11 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: Must emit enrichment.completed audit event")
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 enrichment.completed event per enrichment operation")
 
 			By("7. Validate enrichment audit event using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least one enrichment audit event")
+			Expect(len(auditEvents)).To(Equal(1), "Should have exactly 1 enrichment audit event")
 
 			// Debug: Print found events
 			GinkgoWriter.Printf("\n📊 Found %d audit events\n", len(auditEvents))
@@ -624,11 +624,11 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: Must emit phase.transition audit events")
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal(4),
+				"BR-SP-090: SignalProcessing MUST emit exactly 4 phase.transition events: Pending→Enriching, Enriching→Classifying, Classifying→Categorizing, Categorizing→Completed")
 
 			By("7. Validate phase transition audit events using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least one phase transition event")
+			Expect(len(auditEvents)).To(Equal(4), "Should have exactly 4 phase transition events")
 
 			// V1.0 MANDATORY: Use testutil.ValidateAuditEvent for type-safe validation
 			testutil.ValidateAuditEvent(auditEvents[0], testutil.ExpectedAuditEvent{
@@ -683,9 +683,19 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			sp.Spec.Signal.Severity = "critical"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			By("4. Wait for processing attempt")
-			// Should enter degraded mode or failed phase
-			time.Sleep(5 * time.Second)
+			By("4. Wait for processing attempt to reach degraded mode or failed phase")
+			Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      sp.Name,
+					Namespace: sp.Namespace,
+				}, &updated)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 500*time.Millisecond).ShouldNot(Equal(signalprocessingv1alpha1.PhasePending),
+				"SignalProcessing should leave Pending phase even with errors (degraded mode)")
 
 			By("5. Query Data Storage for error audit events via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
