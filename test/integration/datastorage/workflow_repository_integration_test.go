@@ -329,6 +329,12 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 		var createdWorkflowNames []string
 
 		BeforeEach(func() {
+			// CRITICAL: Use public schema for workflow catalog tests
+			// remediation_workflow_catalog is NOT schema-isolated - all parallel processes
+			// share the same table. Without usePublicSchema(), each process sees different
+			// data, causing cleanup to be ineffective and tests to see contaminated data.
+			usePublicSchema()
+
 			createdWorkflowNames = []string{} // Reset for each test
 
 			// Cleanup any leftover test workflows from previous runs (data pollution fix)
