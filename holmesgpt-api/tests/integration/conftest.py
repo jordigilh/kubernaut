@@ -363,7 +363,7 @@ def pytest_collection_modifyitems(config, items):
 
     This is a safety mechanism. In practice, tests should fail (not skip)
     if infrastructure is missing, per TESTING_GUIDELINES.md.
-    
+
     Note: HAPI runs in-process with tests (FastAPI TestClient), so we only
     check DataStorage availability for @pytest.mark.requires_data_storage tests.
     """
@@ -379,7 +379,7 @@ def pytest_collection_modifyitems(config, items):
         if "requires_data_storage" in item.keywords and not ds_available:
             skip_ds = pytest.mark.skip(reason="Data Storage not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
             item.add_marker(skip_ds)
-        
+
         # Skip tests that require HAPI if it's not available
         # (Most HAPI tests use in-process TestClient, so this is rare)
         if "requires_hapi" in item.keywords and not hapi_available:

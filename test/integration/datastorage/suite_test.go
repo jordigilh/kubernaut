@@ -167,6 +167,32 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 		GinkgoWriter.Printf("  ✅ [Process %d] Copied table: %s\n", processNum, tableName)
 	}
 
+	// ========================================
+	// CRITICAL: Recreate Foreign Key Constraints
+	// ========================================
+	// PostgreSQL's "LIKE ... INCLUDING ALL" copies table structure, indexes, constraints,
+	// BUT it does NOT copy foreign key constraints! We must recreate them manually.
+	//
+	// Reference: Migration 013 (fk_audit_events_parent constraint)
+	// BR-STORAGE-032: Event sourcing immutability enforcement
+	GinkgoWriter.Printf("🔗 [Process %d] Recreating foreign key constraints...\n", processNum)
+
+	// FK constraint: audit_events parent-child relationship (ADR-034)
+	// Prevents deletion of parent events with children (event sourcing immutability)
+	fkConstraintSQL := fmt.Sprintf(`
+		ALTER TABLE %s.audit_events
+		ADD CONSTRAINT fk_audit_events_parent
+		FOREIGN KEY (parent_event_id, parent_event_date)
+		REFERENCES %s.audit_events(event_id, event_date)
+		ON DELETE RESTRICT
+	`, schemaName, schemaName)
+
+	_, err = db.Exec(fkConstraintSQL)
+	if err != nil {
+		return "", fmt.Errorf("failed to create FK constraint fk_audit_events_parent: %w", err)
+	}
+	GinkgoWriter.Printf("  ✅ [Process %d] Created FK constraint: fk_audit_events_parent\n", processNum)
+
 	// Set search_path to use this schema
 	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", schemaName))
 	if err != nil {

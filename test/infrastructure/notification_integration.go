@@ -325,7 +325,7 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 // This is service-specific because it needs to connect to Notification-specific PostgreSQL/Redis instances
 func startNotificationDataStorage(imageTag string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
-	
+
 	// Use existing config file from test/integration/notification/config/
 	configDir := filepath.Join(projectRoot, "test", "integration", "notification", "config")
 	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
