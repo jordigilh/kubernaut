@@ -716,6 +716,7 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageAcknowledged(ctx con
 func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	return r.auditMessageEscalated(ctx, notification)
 }
+
 // ========================================
 // AUDIT EVENT IDEMPOTENCY (NT-BUG-001 Fix)
 // ========================================
@@ -806,6 +807,7 @@ func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error
 		).
 		Complete(r)
 }
+
 // ========================================
 // PHASE HANDLERS (P2 Refactoring - Complexity Reduction)
 // ========================================
@@ -1168,18 +1170,18 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 				}
 			}
 
-		backoff := r.calculateBackoffWithPolicy(notification, maxAttemptCount)
+			backoff := r.calculateBackoffWithPolicy(notification, maxAttemptCount)
 
-		log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
-			"successful", totalSuccessful,
-			"failed", result.failureCount,
-			"total", totalChannels,
-			"backoff", backoff,
-			"maxAttemptCount", maxAttemptCount,
-			"currentPhase", notification.Status.Phase,
-			"nextPhase", notificationv1alpha1.NotificationPhaseRetrying)
+			log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
+				"successful", totalSuccessful,
+				"failed", result.failureCount,
+				"total", totalChannels,
+				"backoff", backoff,
+				"maxAttemptCount", maxAttemptCount,
+				"currentPhase", notification.Status.Phase,
+				"nextPhase", notificationv1alpha1.NotificationPhaseRetrying)
 
-		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
+			return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
 		}
 		// All channels failed, retries remain → Failed (temporary, will retry)
 		log.Info("🔍 ALL CHANNELS FAILED BRANCH",

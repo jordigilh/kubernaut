@@ -54,8 +54,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/sony/gobreaker"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -69,6 +71,7 @@ var (
 	cfg             *rest.Config
 	k8sClient       client.Client
 	k8sManager      ctrl.Manager
+	testNamespace   string // Default test namespace (kubernaut-notifications)
 	mockSlackServer *httptest.Server
 	slackWebhookURL string
 	slackRequests   []SlackWebhookRequest
@@ -198,18 +201,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Creating namespaces for testing")
 	// Create kubernaut-notifications namespace for controller
+	testNamespace = "kubernaut-notifications"
 	notifNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-notifications",
+			Name: testNamespace,
 		},
 	}
 	err = k8sClient.Create(ctx, notifNs)
 	Expect(err).NotTo(HaveOccurred())
 
-	// DD-TEST-002: No shared "default" namespace - each test creates its own unique namespace
-	// This enables parallel execution with -procs=4 (3x speed improvement)
-	GinkgoWriter.Println("✅ Namespace created: kubernaut-notifications (controller)")
-	GinkgoWriter.Println("📦 Test namespaces will be created per-test (DD-TEST-002 compliance)")
+	// DD-TEST-002: Using kubernaut-notifications as default test namespace
+	// Tests can create their own unique namespaces if needed for isolation
+	GinkgoWriter.Printf("✅ Namespace created: %s (controller)\n", testNamespace)
+	GinkgoWriter.Println("📦 Tests use this namespace by default (DD-TEST-002 compliance)")
 
 	By("Deploying mock Slack webhook server")
 	deployMockSlackServer()
@@ -302,6 +306,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	GinkgoWriter.Println("  ✅ Delivery Orchestrator initialized (DD-NOT-007 Registration Pattern)")
 
+	// Create circuit breaker for integration tests
+	// Per BR-NOT-055: Circuit breaker provides per-channel isolation
+	circuitBreakerManager := circuitbreaker.NewManager(gobreaker.Settings{
+		MaxRequests: 2,
+		Interval:    10 * time.Second,
+		Timeout:     30 * time.Second,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return counts.ConsecutiveFailures >= 3
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			// Update metrics on state change
+			if metricsRecorder != nil {
+				metricsRecorder.UpdateCircuitBreakerState(name, to)
+			}
+		},
+	})
+	GinkgoWriter.Println("  ✅ Circuit Breaker Manager initialized (BR-NOT-055)")
+
 	// Create controller with all dependencies including REAL audit (Defense-in-Depth Layer 4)
 	// Patterns 1-3: Metrics, StatusManager, DeliveryOrchestrator wired in
 	err = (&notification.NotificationRequestReconciler{
@@ -310,7 +332,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ConsoleService:       consoleService,
 		SlackService:         slackService,
 		Sanitizer:            sanitizer,
-		AuditStore:           realAuditStore, // ✅ REAL audit store (mandate compliance)
+		CircuitBreaker:       circuitBreakerManager, // BR-NOT-055: Circuit breaker with gobreaker
+		AuditStore:           realAuditStore,        // ✅ REAL audit store (mandate compliance)
 		AuditHelpers:         auditHelpers,
 		Metrics:              metricsRecorder,                                           // Pattern 1: Metrics (DD-METRICS-001)
 		Recorder:             k8sManager.GetEventRecorderFor("notification-controller"), // Pattern 1: EventRecorder
@@ -352,6 +375,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 var _ = AfterSuite(func() {
 	By("Tearing down the test environment")
 
+	// Check if any tests failed (for debugging)
+	// If tests failed, preserve infrastructure for triaging
+	// Note: We can't easily check if tests failed at this point in AfterSuite
+	// Instead, we'll check for an environment variable to control cleanup
+	skipCleanup := os.Getenv("SKIP_CLEANUP_ON_FAILURE") == "true"
+
 	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
 	if realAuditStore != nil {
 		By("Flushing and closing real audit store")
@@ -368,23 +397,41 @@ var _ = AfterSuite(func() {
 		GinkgoWriter.Println("✅ Mock Slack server stopped")
 	}
 
-	// DD-TEST-001 v1.1: Clean up podman-compose infrastructure
-	By("Cleaning up podman-compose integration test infrastructure")
-	cleanupPodmanComposeInfrastructure()
+	if skipCleanup {
+		GinkgoWriter.Println("")
+		GinkgoWriter.Println("⚠️  SKIP_CLEANUP_ON_FAILURE=true detected")
+		GinkgoWriter.Println("⚠️  Preserving infrastructure containers for triaging")
+		GinkgoWriter.Println("")
+		GinkgoWriter.Println("To inspect:")
+		GinkgoWriter.Println("  podman ps -a | grep notification")
+		GinkgoWriter.Println("  podman logs notification-datastorage-1")
+		GinkgoWriter.Println("  podman logs notification-postgres-1")
+		GinkgoWriter.Println("")
+		GinkgoWriter.Println("To cleanup manually:")
+		GinkgoWriter.Println("  podman stop notification-datastorage-1 notification-postgres-1 notification-redis-1")
+		GinkgoWriter.Println("  podman rm notification-datastorage-1 notification-postgres-1 notification-redis-1")
+		GinkgoWriter.Println("")
+	} else {
+		// DD-TEST-001 v1.1: Clean up infrastructure containers
+		By("Cleaning up integration test infrastructure (Go-bootstrapped)")
+		cleanupPodmanComposeInfrastructure()
+	}
 
 	cancel()
 
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	if skipCleanup {
+		GinkgoWriter.Println("⚠️  Envtest stopped but containers preserved for debugging")
+	} else {
+		GinkgoWriter.Println("✅ Cleanup complete")
+	}
 })
 
 // DD-TEST-002 Compliance: Unique namespace per test for parallel execution
 // This enables -procs=4 parallel execution (3x speed improvement)
-var (
-	testNamespace string // Unique per test - enables parallel execution
-)
+// Note: testNamespace is declared in package-level var block (line 74)
 
 var _ = BeforeEach(func() {
 	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
@@ -822,9 +869,9 @@ func resetSlackRequests() {
 func createSlackWebhookSecret() {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "notification-slack-webhook",
-			Namespace: "kubernaut-notifications",
-				Generation: 1, // K8s increments on create/update
+			Name:       "notification-slack-webhook",
+			Namespace:  "kubernaut-notifications",
+			Generation: 1, // K8s increments on create/update
 		},
 		StringData: map[string]string{
 			"webhook-url": slackWebhookURL,

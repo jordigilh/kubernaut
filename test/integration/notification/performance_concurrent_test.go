@@ -284,8 +284,13 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 				"Circuit should allow requests initially (normal operation)")
 
 			// Record failures up to threshold - 1
+			// Note: Must use Execute() to actually record failures
+			// RecordFailure() is a no-op (for backward compatibility only)
 			for i := 0; i < 2; i++ {
-				circuitBreaker.RecordFailure("slack")
+				_, err := circuitBreaker.Execute("slack", func() (interface{}, error) {
+					return nil, fmt.Errorf("simulated failure %d", i+1)
+				})
+				Expect(err).To(HaveOccurred()) // Confirm failure was returned
 
 				// BEHAVIOR VALIDATION: Requests still allowed before threshold
 				Expect(circuitBreaker.AllowRequest("slack")).To(BeTrue(),
@@ -293,7 +298,10 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 			}
 
 			// 3rd failure triggers circuit breaker
-			circuitBreaker.RecordFailure("slack")
+			_, err := circuitBreaker.Execute("slack", func() (interface{}, error) {
+				return nil, fmt.Errorf("simulated failure 3")
+			})
+			Expect(err).To(HaveOccurred()) // Confirm failure was returned
 
 			// BEHAVIOR VALIDATION: Circuit breaker now blocks requests
 			Expect(circuitBreaker.AllowRequest("slack")).To(BeFalse(),
