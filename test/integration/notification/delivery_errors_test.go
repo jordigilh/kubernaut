@@ -104,14 +104,24 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					return ""
 				}
 				return notif.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed),
-				"Should fail immediately for permanent error")
+		}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed),
+			"Should fail immediately for permanent error")
 
-			// Verify NO retries for permanent error (only 1 attempt)
-			Expect(notif.Status.TotalAttempts).To(Equal(1),
-				"Should NOT retry permanent 4xx errors")
+		// Verify NO retries for permanent error (only 1 attempt)
+		// FIX: Refetch to avoid stale status in parallel execution
+		var totalAttempts int
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1
+			}
+			totalAttempts = refetchedNotif.Status.TotalAttempts
+			return totalAttempts
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1),
+			"Should NOT retry permanent 4xx errors")
 
-			GinkgoWriter.Printf("✅ HTTP 400 classified as permanent: %d attempts\n", notif.Status.TotalAttempts)
+		GinkgoWriter.Printf("✅ HTTP 400 classified as permanent: %d attempts\n", totalAttempts)
 
 			// Cleanup
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
@@ -157,11 +167,19 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					return ""
 				}
 				return notif.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed))
+		}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed))
 
-			Expect(notif.Status.TotalAttempts).To(Equal(1), "Should NOT retry 403 errors")
+		// FIX: Refetch to avoid stale status in parallel execution
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1
+			}
+			return refetchedNotif.Status.TotalAttempts
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Should NOT retry 403 errors")
 
-			GinkgoWriter.Printf("✅ HTTP 403 classified as permanent\n")
+		GinkgoWriter.Printf("✅ HTTP 403 classified as permanent\n")
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
@@ -206,11 +224,19 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					return ""
 				}
 				return notif.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed))
+		}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed))
 
-			Expect(notif.Status.TotalAttempts).To(Equal(1))
+		// FIX: Refetch to avoid stale status in parallel execution
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1
+			}
+			return refetchedNotif.Status.TotalAttempts
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1))
 
-			GinkgoWriter.Printf("✅ HTTP 404 classified as permanent\n")
+		GinkgoWriter.Printf("✅ HTTP 404 classified as permanent\n")
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
@@ -255,11 +281,19 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					return ""
 				}
 				return notif.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed))
+		}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed))
 
-			Expect(notif.Status.TotalAttempts).To(Equal(1))
+		// FIX: Refetch to avoid stale status in parallel execution
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1
+			}
+			return refetchedNotif.Status.TotalAttempts
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1))
 
-			GinkgoWriter.Printf("✅ HTTP 410 classified as permanent\n")
+		GinkgoWriter.Printf("✅ HTTP 410 classified as permanent\n")
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
@@ -321,21 +355,40 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 					return ""
 				}
 				return notif.Status.Phase
-			}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-				"Should succeed after retrying 502 Bad Gateway error")
+		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+			"Should succeed after retrying 502 Bad Gateway error")
 
-			// BEHAVIOR VALIDATION: Verify 502 was treated as retryable and succeeded
-			// Controller may reconcile multiple times, but only retries once per delivery
-			Expect(notif.Status.SuccessfulDeliveries).To(Equal(1),
-				"Should have exactly 1 successful delivery")
-			Expect(notif.Status.FailedDeliveries).To(BeNumerically(">=", 1),
-				"Should have at least 1 failed attempt with HTTP 502")
+		// BEHAVIOR VALIDATION: Verify 502 was treated as retryable and succeeded
+		// Controller may reconcile multiple times, but only retries once per delivery
+		// FIX: Refetch object to avoid stale status in parallel execution
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1 // Indicate error to retry
+			}
+			return refetchedNotif.Status.SuccessfulDeliveries
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Should have exactly 1 successful delivery after retry")
 
-			// CORRECTNESS VALIDATION: Verify error classification
-			Expect(notif.Status.DeliveryAttempts[0].Status).To(Equal("failed"))
-			Expect(notif.Status.DeliveryAttempts[0].Error).To(ContainSubstring("502"),
-				"Error should indicate 502 Bad Gateway")
-			Expect(notif.Status.DeliveryAttempts[1].Status).To(Equal("success"))
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1
+			}
+			return refetchedNotif.Status.FailedDeliveries
+		}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1),
+			"Should have at least 1 failed attempt with HTTP 502")
+
+		// CORRECTNESS VALIDATION: Verify error classification
+		// Refetch once more to get latest delivery attempts
+		refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(refetchedNotif.Status.DeliveryAttempts[0].Status).To(Equal("failed"))
+		Expect(refetchedNotif.Status.DeliveryAttempts[0].Error).To(ContainSubstring("502"),
+			"Error should indicate 502 Bad Gateway")
+		Expect(refetchedNotif.Status.DeliveryAttempts[1].Status).To(Equal("success"))
 
 			GinkgoWriter.Printf("✅ HTTP 502 retried successfully: %d attempts\n", notif.Status.TotalAttempts)
 
