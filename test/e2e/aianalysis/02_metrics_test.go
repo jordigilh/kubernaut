@@ -149,7 +149,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should expose metrics in Prometheus format", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"))
@@ -158,7 +158,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include reconciliation metrics - BR-AI-022", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -180,7 +180,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include Rego policy evaluation metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -208,7 +208,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include confidence score distribution metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -224,7 +224,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include approval decision metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -240,7 +240,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include recovery status metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -263,7 +263,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include Go runtime metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -277,7 +277,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 		It("should include controller-runtime metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -294,7 +294,7 @@ var _ = Describe("Metrics Endpoint E2E", Label("e2e", "metrics"), func() {
 			resp1, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
 			body1, _ := io.ReadAll(resp1.Body)
-			resp1.Body.Close()
+			_ = resp1.Body.Close()
 			initialMetrics := string(body1)
 
 			// Metrics should contain reconciliation counter

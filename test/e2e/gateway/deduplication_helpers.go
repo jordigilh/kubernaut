@@ -150,7 +150,7 @@ func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
 
 	resp, err := http.DefaultClient.Do(req)
 	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	Expect(err).ToNot(HaveOccurred(), "Should read response body")

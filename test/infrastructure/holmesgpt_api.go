@@ -75,11 +75,13 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	}
 	fmt.Fprintf(writer, "✅ [%s] Data Storage image built: %s\n", time.Now().Format("15:04:05"), dataStorageImage)
 
-	// Build HAPI (using standard Dockerfile with optimizations)
-	fmt.Fprintf(writer, "🔨 [%s] Building HolmesGPT-API...\n", time.Now().Format("15:04:05"))
-	if err := buildImageOnly("HolmesGPT-API", hapiImage,
-		"holmesgpt-api/Dockerfile", projectRoot, writer); err != nil {
-		return fmt.Errorf("failed to build holmesgpt-api image: %w", err)
+	// Build HAPI (using E2E Dockerfile with minimal dependencies)
+	// Uses requirements-e2e.txt (no google-cloud-aiplatform 1.5GB)
+	// Expected: 2-3 minutes (vs 5-15 minutes with full Dockerfile)
+	fmt.Fprintf(writer, "🔨 [%s] Building HolmesGPT-API (E2E - minimal deps)...\n", time.Now().Format("15:04:05"))
+	if err := buildImageOnly("HolmesGPT-API (E2E)", hapiImage,
+		"holmesgpt-api/Dockerfile.e2e", projectRoot, writer); err != nil {
+		return fmt.Errorf("failed to build holmesgpt-api E2E image: %w", err)
 	}
 	fmt.Fprintf(writer, "✅ [%s] HolmesGPT-API image built: %s\n", time.Now().Format("15:04:05"), hapiImage)
 

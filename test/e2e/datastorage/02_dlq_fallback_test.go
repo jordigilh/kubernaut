@@ -145,7 +145,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 				if err != nil {
 					return err
 				}
-				defer testDB.Close()
+				defer func() { _ = testDB.Close() }()
 				return testDB.Ping()
 			}, 60*time.Second, 2*time.Second).Should(Succeed(), "PostgreSQL should be ready after restore")
 			testLogger.Info("✅ PostgreSQL is ready")

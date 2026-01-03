@@ -165,7 +165,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 						atomic.AddInt64(&errorCount, 1)
 						continue
 					}
-					resp.Body.Close()
+					_ = resp.Body.Close()
 
 					switch resp.StatusCode {
 					case http.StatusCreated:
@@ -248,7 +248,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 
 		resp, err := httpClient.Get(gatewayURL + "/health")
 		Expect(err).ToNot(HaveOccurred())
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK),
 			"Gateway should be healthy after concurrent load")
 		testLogger.Info("  ✅ Gateway is healthy")

@@ -69,7 +69,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 
 	AfterAll(func() {
 		if db != nil {
-			db.Close()
+			_ = db.Close()
 		}
 	})
 
@@ -103,7 +103,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 					bytes.NewReader(payloadBytes),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 400 Bad Request (not 500)
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -157,7 +157,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 					bytes.NewReader(payloadBytes),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -201,7 +201,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 					bytes.NewReader(payloadBytes),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -249,7 +249,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 					bytes.NewReader(payloadBytes),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -297,7 +297,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 					bytes.NewReader(payloadBytes),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: Should either accept (auto-wrap string as JSON) or reject with 400
 				// This tests actual behavior - either is acceptable
@@ -346,7 +346,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 					bytes.NewReader(payloadBytes),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -395,7 +395,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				bytes.NewReader(payloadBytes),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Request failed
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -434,7 +434,7 @@ var _ = Describe("GAP 1.2: Malformed Event Rejection (RFC 7807)", Label("e2e", "
 				bytes.NewReader(payloadBytes),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: RFC 7807 compliance
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))

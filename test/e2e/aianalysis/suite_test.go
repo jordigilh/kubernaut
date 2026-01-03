@@ -314,14 +314,14 @@ func checkServicesReady() bool {
 	if err != nil || healthResp.StatusCode != 200 {
 		return false
 	}
-	defer healthResp.Body.Close()
+	defer func() { _ = healthResp.Body.Close() }()
 
 	// Check metrics endpoint
 	metricsResp, err := http.Get(metricsURL + "/metrics")
 	if err != nil || metricsResp.StatusCode != 200 {
 		return false
 	}
-	defer metricsResp.Body.Close()
+	defer func() { _ = metricsResp.Body.Close() }()
 
 	return true
 }

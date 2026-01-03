@@ -222,9 +222,55 @@ test-coverage-%: ## Run unit tests with coverage for service
 ##@ Special Cases - HolmesGPT (Python Service)
 
 .PHONY: build-holmesgpt-api
-build-holmesgpt-api: ## Build holmesgpt-api (Python service)
-	@echo "🐍 Building holmesgpt-api..."
+build-holmesgpt-api: ## Build holmesgpt-api for local development (pip install)
+	@echo "🐍 Building holmesgpt-api for local development..."
 	@cd holmesgpt-api && pip install -e .
+
+.PHONY: build-holmesgpt-api-image
+build-holmesgpt-api-image: ## Build holmesgpt-api Docker image (PRODUCTION - full dependencies)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐳 Building HolmesGPT API Docker Image (PRODUCTION)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📦 Dockerfile: holmesgpt-api/Dockerfile"
+	@echo "📋 Requirements: requirements.txt (full dependencies)"
+	@echo "💾 Size: ~2.5GB (includes google-cloud-aiplatform 1.5GB)"
+	@echo "🎯 Use Case: Production deployments, Quay.io releases"
+	@echo ""
+	@cd holmesgpt-api && podman build \
+		--platform linux/amd64,linux/arm64 \
+		-t localhost/kubernaut-holmesgpt-api:latest \
+		-t localhost/kubernaut-holmesgpt-api:$$(git rev-parse --short HEAD) \
+		-f Dockerfile \
+		.
+	@echo ""
+	@echo "✅ Production image built successfully!"
+	@echo "   Tags: localhost/kubernaut-holmesgpt-api:latest"
+	@echo "         localhost/kubernaut-holmesgpt-api:$$(git rev-parse --short HEAD)"
+	@echo ""
+	@echo "📤 To push to Quay.io:"
+	@echo "   podman tag localhost/kubernaut-holmesgpt-api:latest quay.io/YOUR_ORG/kubernaut-holmesgpt-api:VERSION"
+	@echo "   podman push quay.io/YOUR_ORG/kubernaut-holmesgpt-api:VERSION"
+
+.PHONY: build-holmesgpt-api-image-e2e
+build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minimal dependencies)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐳 Building HolmesGPT API Docker Image (E2E)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📦 Dockerfile: holmesgpt-api/Dockerfile.e2e"
+	@echo "📋 Requirements: requirements-e2e.txt (minimal dependencies)"
+	@echo "💾 Size: ~800MB (excludes google-cloud-aiplatform 1.5GB)"
+	@echo "🎯 Use Case: E2E testing, CI/CD"
+	@echo ""
+	@cd holmesgpt-api && podman build \
+		--platform linux/amd64,linux/arm64 \
+		-t localhost/kubernaut-holmesgpt-api:e2e \
+		-t localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD) \
+		-f Dockerfile.e2e \
+		.
+	@echo ""
+	@echo "✅ E2E image built successfully!"
+	@echo "   Tags: localhost/kubernaut-holmesgpt-api:e2e"
+	@echo "         localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD)"
 
 .PHONY: export-openapi-holmesgpt-api
 export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI (ADR-045)

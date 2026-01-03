@@ -79,7 +79,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		Expect(err).ToNot(HaveOccurred())
 
 		healthBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(resp.StatusCode).To(Equal(http.StatusOK),
@@ -112,7 +112,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		readyResp, err = httpClient.Get(gatewayURL + "/ready")
 		if err == nil {
 			readyBody, _ := io.ReadAll(readyResp.Body)
-			readyResp.Body.Close()
+			_ = readyResp.Body.Close()
 
 			// /ready should return 200 when service is ready
 			Expect(readyResp.StatusCode).To(Or(
@@ -138,7 +138,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		healthzResp, err := httpClient.Get(gatewayURL + "/healthz")
 		if err == nil {
 			healthzBody, _ := io.ReadAll(healthzResp.Body)
-			healthzResp.Body.Close()
+			_ = healthzResp.Body.Close()
 
 			if healthzResp.StatusCode == http.StatusOK {
 				testLogger.Info(fmt.Sprintf("  /healthz: HTTP %d", healthzResp.StatusCode))
@@ -176,7 +176,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 				return httpClient.Do(req10)
 			}()
 			if err == nil {
-				alertResp.Body.Close()
+				_ = alertResp.Body.Close()
 			}
 		}
 
@@ -204,7 +204,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 			rapidResp, err := httpClient.Get(gatewayURL + "/health")
 			if err == nil && rapidResp.StatusCode == http.StatusOK {
 				successCount++
-				rapidResp.Body.Close()
+				_ = rapidResp.Body.Close()
 			}
 		}
 

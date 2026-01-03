@@ -24,8 +24,8 @@ import (
 	"context"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
+	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 )
 
 // ========================================
@@ -88,4 +88,3 @@ type AnalyzingAuditClientInterface interface {
 type RegoEvaluatorInterface interface {
 	Evaluate(ctx context.Context, input *rego.PolicyInput) (*rego.PolicyResult, error)
 }
-
