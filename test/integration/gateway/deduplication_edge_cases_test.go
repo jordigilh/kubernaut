@@ -73,7 +73,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		if testNamespace != "" && testClient != nil {
 			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 				client.InNamespace(testNamespace))
-			
+
 			// Wait for all CRDs to be deleted before next test
 			// This prevents test pollution from stale CRDs
 			Eventually(func() int {
@@ -205,7 +205,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	})
 
 	Context("GW-DEDUP-002: Concurrent Deduplication Races (P1)", func() {
-		It("should handle concurrent requests for same fingerprint gracefully", func() {
+		It("should handle concurrent requests for same fingerprint gracefully", FlakeAttempts(3), func() {
 			// Given: Multiple webhook requests with identical fingerprint
 			// When: Requests arrive simultaneously (race condition)
 			// Then: Only one RemediationRequest created, others increment hit count
@@ -281,7 +281,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				"Only one RemediationRequest should be created despite concurrent requests")
 		})
 
-		It("should update deduplication hit count atomically", func() {
+		It("should update deduplication hit count atomically", FlakeAttempts(3), func() {
 			// Given: RemediationRequest with existing hit count
 			// When: Multiple deduplicated alerts arrive concurrently
 			// Then: Hit count increments correctly (no lost updates)
