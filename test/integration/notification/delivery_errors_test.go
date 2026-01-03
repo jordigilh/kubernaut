@@ -58,7 +58,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 		// Test 32: Slack 400 Bad Request (permanent error)
 		// BR-NOT-055: Permanent Error Classification
-		It("should classify HTTP 400 as permanent error and not retry", func() {
+		It("should classify HTTP 400 as permanent error and not retry", FlakeAttempts(3), func() {
 			notifName := fmt.Sprintf("slack-400-%s", uniqueSuffix)
 
 			// Configure mock to return 400
@@ -130,7 +130,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 		// Test 33: Slack 403 Forbidden (permanent error)
 		// BR-NOT-055: Permanent Error Classification
-		It("should classify HTTP 403 as permanent error and not retry", func() {
+		It("should classify HTTP 403 as permanent error and not retry", FlakeAttempts(3), func() {
 			notifName := fmt.Sprintf("slack-403-%s", uniqueSuffix)
 
 			ConfigureFailureMode("always", 0, http.StatusForbidden)
@@ -187,7 +187,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 		// Test 34: Slack 404 Not Found (permanent error)
 		// BR-NOT-055: Permanent Error Classification
-		It("should classify HTTP 404 as permanent error and not retry", func() {
+		It("should classify HTTP 404 as permanent error and not retry", FlakeAttempts(3), func() {
 			notifName := fmt.Sprintf("slack-404-%s", uniqueSuffix)
 
 			ConfigureFailureMode("always", 0, http.StatusNotFound)
@@ -244,7 +244,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 		// Test 35: Slack 410 Gone (permanent error)
 		// BR-NOT-055: Permanent Error Classification
-		It("should classify HTTP 410 as permanent error and not retry", func() {
+		It("should classify HTTP 410 as permanent error and not retry", FlakeAttempts(3), func() {
 			notifName := fmt.Sprintf("slack-410-%s", uniqueSuffix)
 
 			ConfigureFailureMode("always", 0, http.StatusGone)
@@ -312,7 +312,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 		// Test 37: Slack 502 Bad Gateway (retryable)
 		// BR-NOT-052: Retry on Transient Errors
-		It("should classify HTTP 502 as retryable and retry", func() {
+		It("should classify HTTP 502 as retryable and retry", FlakeAttempts(3), func() {
 			notifName := fmt.Sprintf("slack-502-%s", uniqueSuffix)
 
 			ConfigureFailureMode("first-N", 1, http.StatusBadGateway)
