@@ -299,22 +299,33 @@ def unique_test_id(worker_id, request):
 # HELPER FUNCTIONS
 # ========================================
 
-def is_service_available(url: str, timeout: float = 2.0) -> bool:
+def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, retry_delay: float = 1.0) -> bool:
     """
-    Check if a service is available at the given URL.
+    Check if a service is available at the given URL with retries.
 
     Args:
         url: Service URL to check (e.g., http://localhost:18120/health)
-        timeout: Request timeout in seconds
+        timeout: Request timeout in seconds per attempt
+        max_retries: Maximum number of retry attempts
+        retry_delay: Delay in seconds between retries
 
     Returns:
         bool: True if service responds with 200 OK, False otherwise
     """
-    try:
-        response = requests.get(url, timeout=timeout)
-        return response.status_code == 200
-    except (requests.RequestException, ConnectionError):
-        return False
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code == 200:
+                return True
+        except (requests.RequestException, ConnectionError):
+            pass
+        
+        if attempt < max_retries - 1:
+            time.sleep(retry_delay)
+    
+    return False
 
 
 def is_integration_infra_available() -> bool:
