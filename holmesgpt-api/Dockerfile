@@ -20,7 +20,8 @@ USER 1001
 WORKDIR /opt/app-root/src
 
 # Copy HolmesGPT SDK dependencies (referenced in requirements.txt)
-COPY --chown=1001:0 dependencies/ ../dependencies/
+# NOTE: No trailing slash on source - copies directory itself, not just contents
+COPY --chown=1001:0 dependencies ../dependencies
 
 # Copy requirements first for layer caching
 COPY --chown=1001:0 holmesgpt-api/requirements.txt ./
