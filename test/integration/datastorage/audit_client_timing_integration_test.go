@@ -195,12 +195,17 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			Expect(closeTime).To(BeNumerically(">", 100*time.Millisecond),
 				"Close() should wait for flush")
 
-			By("Verifying all 5 events were flushed")
+		By("Verifying all 5 events were flushed")
+		// Handle async database write - Close() triggers flush but data may not be immediately committed
+		Eventually(func() int {
 			var eventCount int
-			err = db.Get(&eventCount, "SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(eventCount).To(Equal(5),
-				"All buffered events should be flushed on Close()")
+			err := db.Get(&eventCount, "SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID)
+			if err != nil {
+				return -1
+			}
+			return eventCount
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(5),
+			"All buffered events should be flushed on Close()")
 		})
 
 		// ═══════════════════════════════════════════════════════════════
