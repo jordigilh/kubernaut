@@ -140,20 +140,13 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// ========================================
-	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
+	// NO OBSERVED GENERATION CHECK FOR AIAnalysis
 	// ========================================
-	// Prevents duplicate reconciliations when status-only updates occur.
-	// Skip reconcile if we've already processed this generation AND not in terminal phase.
-	if analysis.Status.ObservedGeneration == analysis.Generation &&
-		analysis.Status.Phase != "" &&
-		analysis.Status.Phase != PhaseCompleted &&
-		analysis.Status.Phase != PhaseFailed {
-		log.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
-			"generation", analysis.Generation,
-			"observedGeneration", analysis.Status.ObservedGeneration,
-			"phase", analysis.Status.Phase)
-		return ctrl.Result{}, nil
-	}
+	// AIAnalysis progresses through multiple phases (Pending→Investigating→Analyzing→Completed)
+	// within a SINGLE generation via status-only updates.
+	// ObservedGeneration checks would block phase progression!
+	// See SetupWithManager comment: "GenerationChangedPredicate removed to allow phase progression"
+	// ========================================
 
 	// Capture current phase for metrics
 	currentPhase := analysis.Status.Phase
