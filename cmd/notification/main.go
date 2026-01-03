@@ -40,7 +40,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+	"github.com/sony/gobreaker"
 	//+kubebuilder:scaffold:imports
 )
 
@@ -92,6 +94,21 @@ func validateFileOutputDirectory(dir string) error {
 	}
 
 	return nil
+}
+
+// stateToString converts gobreaker.State to human-readable string
+// Used for logging circuit breaker state transitions
+func stateToString(state gobreaker.State) string {
+	switch state {
+	case gobreaker.StateClosed:
+		return "closed"
+	case gobreaker.StateOpen:
+		return "open"
+	case gobreaker.StateHalfOpen:
+		return "half-open"
+	default:
+		return "unknown"
+	}
 }
 
 func main() {
@@ -307,7 +324,46 @@ func main() {
 	logger.Info("Registered channels",
 		"channels", []string{"console", "slack", "file", "log"})
 
-	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator
+	// ========================================
+	// Circuit Breaker for Graceful Degradation (BR-NOT-055)
+	// ========================================
+	// Initialize circuit breaker with github.com/sony/gobreaker
+	// Provides per-channel isolation (Slack, console, webhooks)
+	//
+	// Circuit Breaker Configuration:
+	// - Failure threshold: 3 consecutive failures trigger open state
+	// - Recovery timeout: 30s before testing recovery (half-open state)
+	// - Success threshold: 2 successful calls in half-open close circuit
+	//
+	// See: docs/services/crd-controllers/06-notification/README.md#circuit-breaker
+	// ========================================
+	circuitBreakerManager := circuitbreaker.NewManager(gobreaker.Settings{
+		MaxRequests: 2, // Allow 2 test requests in half-open state
+		Interval:    10 * time.Second,
+		Timeout:     30 * time.Second, // Stay open for 30s before recovery attempt
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			// Trip circuit after 3 consecutive failures
+			return counts.ConsecutiveFailures >= 3
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			// Log circuit breaker state transitions
+			logger.Info("Circuit breaker state changed",
+				"channel", name,
+				"from", stateToString(from),
+				"to", stateToString(to))
+
+			// Update Prometheus metric
+			if metricsRecorder != nil {
+				metricsRecorder.CircuitBreakerState.WithLabelValues(name).Set(float64(to))
+			}
+		},
+	})
+	logger.Info("Circuit Breaker Manager initialized",
+		"failure_threshold", 3,
+		"recovery_timeout", "30s",
+		"half_open_max_requests", 2)
+
+	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
 		Scheme:               mgr.GetScheme(),
@@ -316,6 +372,7 @@ func main() {
 		FileService:          fileService,                                        // DD-NOT-006: File delivery
 		DeliveryOrchestrator: deliveryOrchestrator,                               // Pattern 3: Delivery Orchestrator (P0)
 		Sanitizer:            sanitizer,
+		CircuitBreaker:       circuitBreakerManager,                              // BR-NOT-055: Circuit breaker with gobreaker
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
 		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
 		AuditStore:           auditStore,                                         // ADR-032: Audit store

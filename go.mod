@@ -30,6 +30,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/redis/go-redis/v9 v9.14.0
 	github.com/slack-go/slack v0.17.3
+	github.com/sony/gobreaker v1.0.0
 	github.com/tektoncd/pipeline v0.59.0
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/metric v1.38.0
@@ -125,7 +126,6 @@ require (
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.4-0.20230606125235-dd1b4c2e81af // indirect
-	github.com/sony/gobreaker v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.3 // indirect
