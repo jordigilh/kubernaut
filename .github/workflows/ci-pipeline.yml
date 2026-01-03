@@ -297,6 +297,7 @@ jobs:
       (github.event.pull_request.draft == false || github.event_name != 'pull_request')
     strategy:
       fail-fast: false
+      max-parallel: 2  # Limit parallel execution to prevent disk space exhaustion
       matrix:
         service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt]
         include:
@@ -334,7 +335,22 @@ jobs:
             cluster_name: "datastorage-e2e"
             needs_python: true
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Clean Container Images
+        run: |
+          echo "📊 Disk space before cleanup:"
+          df -h
+          
+          echo "📦 Cleaning up Podman images from previous builds..."
+          podman system prune -a -f --volumes 2>/dev/null || true
+          
+          echo "📊 Disk space after cleanup:"
+          df -h
+      
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
