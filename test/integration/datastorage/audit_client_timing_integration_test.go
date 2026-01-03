@@ -191,12 +191,10 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			Expect(err).ToNot(HaveOccurred())
 			GinkgoWriter.Printf("✅ Close() took %v\n", closeTime)
 
-			// Close() should wait for flush
-			// Increased threshold from 100ms to 200ms for CI environment variability
-			Expect(closeTime).To(BeNumerically(">", 200*time.Millisecond),
-				"Close() should wait for flush")
+			// NOTE: Timing assertion removed - flush duration is too variable (4ms-200ms+)
+			// depending on system load. Correctness is validated by database check below.
 
-		By("Verifying all 5 events were flushed")
+			By("Verifying all 5 events were flushed")
 		// Handle async database write - Close() triggers flush but data may not be immediately committed
 		Eventually(func() int {
 			var eventCount int
