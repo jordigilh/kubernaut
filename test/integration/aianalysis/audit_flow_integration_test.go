@@ -328,7 +328,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(resp.JSON200.Data).ToNot(BeNil())
 
 			events := *resp.JSON200.Data
-			
+
 			// DD-TESTING-001: Deterministic count validation instead of weak null-testing
 			eventCounts := countEventsByType(events)
 			Expect(eventCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1),
@@ -343,17 +343,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
 				CorrelationID: correlationID,
 			})
-			
+
 			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
 			eventData := event.EventData.(map[string]interface{})
 			Expect(eventData).To(HaveKey("endpoint"), "event_data should include HolmesGPT endpoint")
 			Expect(eventData).To(HaveKey("http_status_code"), "event_data should include HTTP status code")
 			Expect(eventData).To(HaveKey("duration_ms"), "event_data should include call duration")
-			
+
 			// Validate field values
 			statusCode := int(eventData["http_status_code"].(float64))
 			Expect(statusCode).To(Equal(200), "Successful HolmesGPT call should return 200")
-			
+
 			durationMs := int(eventData["duration_ms"].(float64))
 			Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive")
 		})
@@ -403,7 +403,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			By("Waiting for controller to process and generate audit events")
 			correlationID := analysis.Spec.RemediationID
 			eventCategory := "analysis"
-			
+
 			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
 			var events []dsgen.AuditEvent
 			Eventually(func() int {
@@ -423,11 +423,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// DD-TESTING-001: Validate specific event types even in error scenarios
 			// Business Value: Operators have audit trail regardless of success/failure
 			eventCounts := countEventsByType(events)
-			
+
 			// At minimum, we expect phase transition events
 			Expect(eventCounts[aiaudit.EventTypePhaseTransition]).To(BeNumerically(">=", 1),
 				"Expected at least 1 phase transition event even in error scenarios")
-			
+
 			// Verify events include required metadata
 			for _, event := range events {
 				Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryAnalysis),
@@ -511,7 +511,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(resp.JSON200.Data).ToNot(BeNil())
 
 			events := *resp.JSON200.Data
-			
+
 			// DD-TESTING-001: Deterministic count validation instead of weak null-testing
 			eventCounts := countEventsByType(events)
 			Expect(eventCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
@@ -526,12 +526,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
 				CorrelationID: correlationID,
 			})
-			
+
 			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
 			eventData := event.EventData.(map[string]interface{})
 			Expect(eventData).To(HaveKey("decision"), "event_data should include approval decision")
 			Expect(eventData).To(HaveKey("reason"), "event_data should include decision reason")
-			
+
 			// Validate field values
 			decision := eventData["decision"].(string)
 			Expect([]string{"requires_approval", "auto_approved"}).To(ContainElement(decision),
@@ -751,7 +751,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeHolmesGPTCall
 			eventCategory := "analysis"
-			
+
 			// DD-TESTING-001: Use Eventually() for async event polling
 			var events []dsgen.AuditEvent
 			Eventually(func() int {
@@ -786,7 +786,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(eventData).To(HaveKey("endpoint"), "event_data should include HolmesGPT endpoint")
 			Expect(eventData).To(HaveKey("http_status_code"), "event_data should include HTTP status code")
 			Expect(eventData).To(HaveKey("duration_ms"), "event_data should include call duration")
-			
+
 			// Validate duration is positive (even for failed calls)
 			durationMs := int(eventData["duration_ms"].(float64))
 			Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive even for failed calls")

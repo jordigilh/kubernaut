@@ -1,0 +1,24 @@
+# HolmesGPT-API Service Configuration
+# Per ADR-030: Configuration Management Standard
+# Only business-critical settings exposed
+
+# Logging (for debugging/troubleshooting)
+logging:
+  level: "INFO"                   # DEBUG, INFO, WARNING, ERROR
+
+# LLM provider (critical business dependency)
+llm:
+  provider: "ollama"              # Options: ollama, openai, google, mock
+  model: "llama2"
+  endpoint: "http://localhost:11434"
+  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
+
+# Data Storage service (critical business dependency)
+data_storage:
+  url: "http://localhost:18098"  # Integration test (Go-started container)
+
+# Audit configuration (BR-AUDIT-005, ADR-038)
+audit:
+  flush_interval_seconds: 0.1    # Fast flush for integration tests (0.1s)
+  buffer_size: 10000              # Maximum events to buffer in memory
+  batch_size: 50                  # Events per HTTP batch to Data Storage

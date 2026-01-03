@@ -137,7 +137,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 				return httpClient.Do(req1)
 			}()
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 5 alerts to trigger storm threshold")
@@ -153,7 +153,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			if err != nil {
 				return false
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return resp.StatusCode == http.StatusOK
 		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), "Gateway should be healthy after processing alerts")
 
@@ -178,7 +178,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 			return httpClient.Do(req2)
 		}()
 		Expect(err).ToNot(HaveOccurred())
-		resp2.Body.Close()
+		_ = resp2.Body.Close()
 
 		testLogger.Info(fmt.Sprintf("  Duplicate alert: HTTP %d", resp2.StatusCode))
 		// Duplicate should be accepted (202) - deduplicated or storm aggregated
@@ -212,7 +212,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 				return httpClient.Do(req3)
 			}()
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			testLogger.V(1).Info(fmt.Sprintf("  Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 5 alerts with different alertname")

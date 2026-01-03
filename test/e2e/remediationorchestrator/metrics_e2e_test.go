@@ -112,7 +112,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should expose metrics in Prometheus format", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"))
@@ -121,7 +121,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include core reconciliation metrics - BR-ORCH-044", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -143,7 +143,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include child CRD orchestration metrics - BR-ORCH-044", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -161,7 +161,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include notification metrics - BR-ORCH-029, BR-ORCH-030", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -185,7 +185,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include routing decision metrics - BR-ORCH-044", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -207,7 +207,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include blocking metrics - BR-ORCH-042", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -229,7 +229,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include retry metrics - REFACTOR-RO-008", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -250,7 +250,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include condition metrics - BR-ORCH-043, DD-CRD-002", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -277,7 +277,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include Go runtime metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -298,7 +298,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		It("should include controller-runtime metrics", func() {
 			resp, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -316,7 +316,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 			resp1, err := httpClient.Get(metricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
 			body1, _ := io.ReadAll(resp1.Body)
-			resp1.Body.Close()
+			_ = resp1.Body.Close()
 			initialMetrics := string(body1)
 
 			// Verify metrics contain RO metrics

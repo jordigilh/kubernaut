@@ -156,7 +156,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			return httpClient.Do(req23)
 		}()
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		testLogger.Info("Gateway response received",
 			"status", resp.StatusCode,

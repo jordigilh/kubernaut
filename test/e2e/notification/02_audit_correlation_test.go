@@ -129,7 +129,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		// Clean up all NotificationRequest CRDs
 		for _, notification := range notifications {
-			k8sClient.Delete(testCtx, notification)
+			_ = k8sClient.Delete(testCtx, notification)
 		}
 	})
 

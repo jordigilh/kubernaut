@@ -190,7 +190,7 @@ execution:
 				bytes.NewBuffer(workflowJSON),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
@@ -230,7 +230,7 @@ execution:
 			)
 			searchDuration := time.Since(searchStart)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
@@ -425,7 +425,7 @@ execution:
 				totalDuration += duration
 
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),

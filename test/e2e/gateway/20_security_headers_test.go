@@ -126,7 +126,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				return httpClient.Do(req29)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 201 Created response")
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -197,7 +197,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				return httpClient.Do(req30)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 201 Created response")
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -230,7 +230,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			testLogger.Info("Step 1: Record initial metrics baseline")
 			metricsResp, err := httpClient.Get(gatewayURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
-			defer metricsResp.Body.Close()
+			defer func() { _ = metricsResp.Body.Close() }()
 
 			Expect(metricsResp.StatusCode).To(Equal(http.StatusOK),
 				"Metrics endpoint should return HTTP 200")
@@ -260,7 +260,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				return httpClient.Do(req31)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 			testLogger.Info("Step 3: Poll for updated metrics with count > 0")
@@ -272,7 +272,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 				if err != nil {
 					return false
 				}
-				defer metricsResp.Body.Close()
+				defer func() { _ = metricsResp.Body.Close() }()
 
 				updatedMetrics, err := io.ReadAll(metricsResp.Body)
 				if err != nil {

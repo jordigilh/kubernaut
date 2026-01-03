@@ -230,7 +230,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
@@ -279,7 +279,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
 					return err
@@ -320,7 +320,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				metricsBody := string(body)
 
@@ -347,7 +347,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
 					return err
@@ -391,7 +391,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				metricsBody := string(body)
 

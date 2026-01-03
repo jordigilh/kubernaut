@@ -15,12 +15,17 @@ Test Strategy:
 5. Verify non-blocking behavior (fire-and-forget)
 """
 
-import pytest
-import uuid
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, Any
+# Standard library imports
+# Third-party imports
+import pytest  # noqa: E402
 
-from src.audit import BufferedAuditStore, AuditConfig
+# Local imports
+from src.audit import BufferedAuditStore, AuditConfig  # noqa: E402
+from src.audit.events import (  # noqa: E402
+    create_llm_request_event as create_llm_request_audit_event,
+    create_llm_response_event as create_llm_response_audit_event,
+    create_tool_call_event as create_tool_call_audit_event,
+)
 
 
 class TestLLMAuditIntegration:
@@ -207,16 +212,6 @@ class TestLLMAuditIntegration:
         assert event_data["tool_name"] == "search_workflow_catalog"
         assert "tool_arguments" in event_data
         assert "tool_result" in event_data
-
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Import audit event factory functions from src/audit/events.py
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-from src.audit.events import (
-    create_llm_request_event as create_llm_request_audit_event,
-    create_llm_response_event as create_llm_response_audit_event,
-    create_tool_call_event as create_tool_call_audit_event,
-)
 
 
 if __name__ == "__main__":

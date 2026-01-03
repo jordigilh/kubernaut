@@ -321,7 +321,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					if err != nil {
 						return false
 					}
-					
+
 					// Filter to find OUR test workflows (by name which includes testID)
 					pdbResult = nil
 					noPdbResult = nil
@@ -333,7 +333,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 							noPdbResult = &response.Workflows[i]
 						}
 					}
-					
+
 					// Success when both our workflows are found
 					return pdbResult != nil && noPdbResult != nil
 				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
@@ -420,7 +420,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					if err != nil {
 						return false
 					}
-					
+
 					// Filter to find OUR test workflow (by name which includes testID)
 					result = nil
 					for i := range response.Workflows {
@@ -429,7 +429,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 							break
 						}
 					}
-					
+
 					return result != nil
 				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Manual workflow should be searchable")
 
@@ -663,7 +663,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					if err != nil {
 						return false
 					}
-					
+
 					// Filter to find OUR test workflows (by name which includes testID)
 					istioResult = nil
 					noMeshResult = nil
@@ -675,7 +675,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 							noMeshResult = &response.Workflows[i]
 						}
 					}
-					
+
 					return istioResult != nil && noMeshResult != nil
 				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
 
@@ -757,7 +757,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					if err != nil {
 						return false
 					}
-					
+
 					// Filter to find OUR test workflow (by name which includes testID)
 					result = nil
 					for i := range response.Workflows {
@@ -766,7 +766,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 							break
 						}
 					}
-					
+
 					return result != nil
 				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Test workflow should be searchable")
 

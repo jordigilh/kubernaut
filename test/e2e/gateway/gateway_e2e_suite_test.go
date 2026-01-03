@@ -126,7 +126,7 @@ var _ = SynchronizedBeforeSuite(
 			if err != nil {
 				return 0
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode
 		}, 60*time.Second, 2*time.Second).Should(Equal(http.StatusOK),
 			"Gateway HTTP endpoint should be ready within 60 seconds")

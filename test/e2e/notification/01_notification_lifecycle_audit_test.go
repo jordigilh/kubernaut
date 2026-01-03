@@ -123,7 +123,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 
 		// Clean up NotificationRequest CRD if it exists
 		if notification != nil {
-			k8sClient.Delete(testCtx, notification)
+			_ = k8sClient.Delete(testCtx, notification)
 		}
 	})
 

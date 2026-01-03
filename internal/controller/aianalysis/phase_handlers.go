@@ -126,10 +126,8 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 		if analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
 
-			// DD-AUDIT-003: Record phase transition AFTER atomic status update
-			if r.AuditClient != nil {
-				r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
-			}
+			// DD-AUDIT-003: Phase transition already recorded INSIDE handler
+			// (investigating.go:142, 177 - no duplicate recording needed here)
 
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -189,10 +187,8 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		if analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
 
-			// DD-AUDIT-003: Record phase transition AFTER atomic status update
-			if r.AuditClient != nil {
-				r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
-			}
+			// DD-AUDIT-003: Phase transition already recorded INSIDE handler
+			// (analyzing.go:97, 134, 220 - no duplicate recording needed here)
 
 			return ctrl.Result{Requeue: true}, nil
 		}

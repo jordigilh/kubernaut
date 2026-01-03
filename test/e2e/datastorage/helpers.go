@@ -82,7 +82,7 @@ func portForwardService(ctx context.Context, namespace, serviceName, kubeconfigP
 		if err != nil {
 			return false
 		}
-		conn.Close()
+		_ = conn.Close()
 		return true
 	}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 

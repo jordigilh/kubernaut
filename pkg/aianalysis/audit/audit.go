@@ -148,7 +148,7 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 			"namespace", analysis.Namespace)
 		return
 	}
-	
+
 	// Build structured payload (DD-AUDIT-004: Type-safe event data)
 	payload := PhaseTransitionPayload{
 		OldPhase: from,

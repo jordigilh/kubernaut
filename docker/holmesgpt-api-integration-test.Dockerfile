@@ -19,16 +19,18 @@ RUN dnf install -y --allowerasing \
 WORKDIR /workspace
 
 # Copy Python dependencies first for layer caching
-COPY holmesgpt-api/requirements.txt holmesgpt-api/requirements-test.txt ./holmesgpt-api/
+# Using requirements-e2e.txt for faster builds (no google-cloud-aiplatform 1.5GB)
+COPY holmesgpt-api/requirements-e2e.txt holmesgpt-api/requirements-test.txt ./holmesgpt-api/
 COPY dependencies/holmesgpt ./dependencies/holmesgpt
 
 # Install holmesgpt package first (avoids relative path issues in requirements.txt)
-# The requirements.txt line 37 references "../dependencies/holmesgpt/" which doesn't resolve in container context
+# The requirements-e2e.txt line references "../dependencies/holmesgpt/" which doesn't resolve in container context
 RUN pip3.12 install --no-cache-dir --break-system-packages /workspace/dependencies/holmesgpt
 
 # Install remaining Python dependencies
 # Filter out the broken relative path line before installing
-RUN grep -v "../dependencies/holmesgpt" holmesgpt-api/requirements.txt > /tmp/requirements-filtered.txt && \
+# Using requirements-e2e.txt (minimal deps) instead of requirements.txt (full deps)
+RUN grep -v "../dependencies/holmesgpt" holmesgpt-api/requirements-e2e.txt > /tmp/requirements-filtered.txt && \
 	pip3.12 install --no-cache-dir --break-system-packages \
 	-r /tmp/requirements-filtered.txt \
 	-r holmesgpt-api/requirements-test.txt

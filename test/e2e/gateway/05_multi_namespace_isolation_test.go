@@ -152,7 +152,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 				return httpClient.Do(req7)
 			}()
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			testLogger.V(1).Info(fmt.Sprintf("  NS1 Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 10 alerts to namespace 1")
@@ -182,7 +182,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 				return httpClient.Do(req8)
 			}()
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			testLogger.V(1).Info(fmt.Sprintf("  NS2 Alert %d: HTTP %d", i+1, resp.StatusCode))
 		}
 		testLogger.Info("  ✅ Sent 10 alerts to namespace 2")

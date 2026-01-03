@@ -54,7 +54,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			By("Querying metrics endpoint")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Metrics endpoint should return 200 OK")
 
@@ -104,7 +104,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				if err != nil {
 					return ""
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				return string(body)
 				// DD-005: kubernaut_notification_reconciler_active (proper namespace/subsystem)
@@ -116,7 +116,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
 			metricsOutput = string(body)
@@ -169,7 +169,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				if err != nil {
 					return ""
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				return string(body)
 				// DD-005: kubernaut_notification_delivery_attempts_total (proper namespace/subsystem)
@@ -180,7 +180,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
 			metricsOutput = string(body)
@@ -235,7 +235,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				if err != nil {
 					return ""
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				return string(body)
 			}, 15*time.Second, 1*time.Second).Should(ContainSubstring(ntmetrics.MetricNameDeliveryDuration),
@@ -245,7 +245,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
 			metricsOutput = string(body)
@@ -305,7 +305,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 				if err != nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				metricsOutput = string(body)
 
@@ -321,7 +321,7 @@ var _ = Describe("Metrics E2E Validation", Label("metrics"), func() {
 			By("Querying metrics endpoint for detailed validation")
 			resp, err := http.Get(metricsEndpoint)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
 			metricsOutput = string(body)

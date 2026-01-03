@@ -122,7 +122,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			// Deliberately NOT setting X-Timestamp header to test rejection
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should complete")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 400 Bad Request response")
 			body, _ := io.ReadAll(resp.Body)
@@ -167,7 +167,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 201 Created response")
 			body, _ := io.ReadAll(resp.Body)
@@ -212,7 +212,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 400 Bad Request response")
 			body, _ := io.ReadAll(resp.Body)
@@ -262,7 +262,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 400 Bad Request response")
 			body, _ := io.ReadAll(resp.Body)
@@ -308,7 +308,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 3: Verify HTTP 400 Bad Request response")
 			body, _ := io.ReadAll(resp.Body)

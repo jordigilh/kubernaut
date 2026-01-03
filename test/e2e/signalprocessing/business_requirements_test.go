@@ -1047,7 +1047,7 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 				GinkgoWriter.Printf("  ⚠️  DataStorage health check failed: %v\n", err)
 				return false
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			GinkgoWriter.Printf("  ✅ DataStorage health: %d\n", resp.StatusCode)
 			return resp.StatusCode == http.StatusOK
 		}, 30*time.Second, 2*time.Second).Should(BeTrue(), "DataStorage should be accessible")

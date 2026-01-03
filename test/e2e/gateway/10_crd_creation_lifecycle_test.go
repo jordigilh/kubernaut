@@ -119,7 +119,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 				return httpClient.Do(req11)
 			}()
 			if err == nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 		}
 		testLogger.Info("  ✅ Sent 5 alerts")
