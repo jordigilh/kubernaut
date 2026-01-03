@@ -58,6 +58,21 @@ const (
 
 	// MetricNameDeduplicationRate tracks current deduplication percentage
 	MetricNameDeduplicationRate = "gateway_deduplication_rate"
+
+	// MetricNameConflictRetriesTotal tracks K8s optimistic concurrency retry attempts
+	MetricNameConflictRetriesTotal = "gateway_conflict_retries_total"
+
+	// MetricNameConflictResolutionDuration tracks latency for conflict resolution with retries
+	MetricNameConflictResolutionDuration = "gateway_conflict_resolution_duration_seconds"
+
+	// MetricNameFieldIndexQueryDuration tracks field index query performance
+	MetricNameFieldIndexQueryDuration = "gateway_field_index_query_duration_seconds"
+
+	// MetricNameCircuitBreakerState tracks circuit breaker state (0=closed, 1=half-open, 2=open)
+	MetricNameCircuitBreakerState = "gateway_circuit_breaker_state"
+
+	// MetricNameCircuitBreakerOperationsTotal tracks operations through circuit breaker
+	MetricNameCircuitBreakerOperationsTotal = "gateway_circuit_breaker_operations_total"
 )
 
 // Metrics holds all Gateway service Prometheus metrics
@@ -78,6 +93,20 @@ type Metrics struct {
 	// Deduplication Metrics (BR-GATEWAY-069: Deduplication metrics)
 	DeduplicationCacheHitsTotal prometheus.Counter // gateway_deduplication_cache_hits_total
 	DeduplicationRate           prometheus.Gauge   // gateway_deduplication_rate
+
+	// Conflict Resolution Metrics (Performance Observability - Option A)
+	// Track optimistic concurrency control performance for status updates
+	ConflictRetriesTotal      *prometheus.CounterVec   // gateway_conflict_retries_total
+	ConflictResolutionLatency *prometheus.HistogramVec // gateway_conflict_resolution_duration_seconds
+
+	// Field Index Performance Metrics (Performance Observability - Option A)
+	// Track O(1) field index query performance for deduplication lookups
+	FieldIndexQueryDuration *prometheus.HistogramVec // gateway_field_index_query_duration_seconds
+
+	// Circuit Breaker Metrics (Resilience - Option B)
+	// Track K8s API circuit breaker state and operation results
+	CircuitBreakerState      *prometheus.GaugeVec   // gateway_circuit_breaker_state
+	CircuitBreakerOperations *prometheus.CounterVec // gateway_circuit_breaker_operations_total
 
 	// Internal: Registry for custom metrics exposure (test isolation)
 	registry prometheus.Gatherer // Used by /metrics endpoint to expose custom registry metrics
@@ -161,6 +190,52 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 				Name: MetricNameDeduplicationRate, // DD-005 V3.0: Pattern B,
 				Help: "Current deduplication rate (percentage of signals deduplicated)",
 			},
+		),
+
+		// Conflict Resolution Metrics (Performance Observability - Option A)
+		// Track optimistic concurrency control performance for status updates
+		ConflictRetriesTotal: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameConflictRetriesTotal,
+				Help: "Total K8s optimistic concurrency retry attempts by operation and error type",
+			},
+			[]string{"operation", "error_type"},
+		),
+		ConflictResolutionLatency: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    MetricNameConflictResolutionDuration,
+				Help:    "Latency for K8s conflict resolution including retries (seconds)",
+				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s
+			},
+			[]string{"operation"},
+		),
+
+		// Field Index Performance Metrics (Performance Observability - Option A)
+		// Track O(1) field index query performance for deduplication lookups
+		FieldIndexQueryDuration: factory.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    MetricNameFieldIndexQueryDuration,
+				Help:    "Field index query duration for deduplication lookups (seconds)",
+				Buckets: prometheus.ExponentialBuckets(0.0001, 2, 10), // 0.1ms to ~100ms
+			},
+			[]string{"index_name"},
+		),
+
+		// Circuit Breaker Metrics (Resilience - Option B)
+		// Track K8s API circuit breaker state and operation results
+		CircuitBreakerState: factory.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: MetricNameCircuitBreakerState,
+				Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+			},
+			[]string{"name"},
+		),
+		CircuitBreakerOperations: factory.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameCircuitBreakerOperationsTotal,
+				Help: "Total operations through circuit breaker by name and result",
+			},
+			[]string{"name", "result"},
 		),
 	}
 }

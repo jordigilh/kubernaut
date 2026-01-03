@@ -367,15 +367,21 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 				eventIDs, _ := response["event_ids"].([]interface{})
 				Expect(eventIDs).To(HaveLen(100))
 
-				// ✅ CORRECTNESS: All 100 events in database
-				By("Verifying all 100 events persisted in database")
+			// ✅ CORRECTNESS: All 100 events in database
+			By("Verifying all 100 events persisted in database")
+			// Handle async HTTP API processing - large batch may take longer to commit
+			Eventually(func() int {
 				var count int
-				err = db.QueryRow(`
+				err := db.QueryRow(`
 					SELECT COUNT(*) FROM audit_events
 					WHERE correlation_id = $1
 				`, testCorrelationID+"-large").Scan(&count)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(100))
+				if err != nil {
+					return -1
+				}
+				return count
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal(100),
+				"All 100 events should be persisted in database after async processing")
 
 				// Performance check (should be <5s for 100 events)
 				Expect(duration).To(BeNumerically("<", 5*time.Second),

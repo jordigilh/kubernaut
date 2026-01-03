@@ -1,0 +1,183 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package k8s
+
+import (
+	"context"
+	"time"
+
+	"github.com/sony/gobreaker"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+)
+
+// ClientWithCircuitBreaker wraps K8s client operations with circuit breaker protection
+//
+// Business Requirements:
+// - BR-GATEWAY-XXX: Protect Gateway from K8s API overload
+// - BR-GATEWAY-XXX: Fail-fast when K8s API is degraded
+//
+// Design Decision: DD-GATEWAY-014 (Circuit Breaker for K8s API)
+//
+// Circuit Breaker States:
+// - Closed: Normal operation, all requests allowed
+// - Open: Too many failures, block all requests (fail-fast)
+// - Half-Open: Testing recovery, allow limited requests
+//
+// Configuration:
+// - MaxRequests: 3 (allow 3 test requests in half-open state)
+// - Interval: 10s (reset failure count every 10s)
+// - Timeout: 30s (stay open for 30s before attempting recovery)
+// - ReadyToTrip: 50% failure rate over 10 requests triggers open state
+//
+// Metrics Integration:
+// - OnStateChange callback updates gateway_circuit_breaker_state metric
+// - Success/failure tracked in gateway_circuit_breaker_operations_total
+type ClientWithCircuitBreaker struct {
+	*Client                        // Embed base client for non-circuit-breaker methods
+	cb      *gobreaker.CircuitBreaker
+	metrics *metrics.Metrics
+}
+
+// NewClientWithCircuitBreaker creates a K8s client with circuit breaker protection
+//
+// Parameters:
+// - client: Base K8s client
+// - metricsInstance: Prometheus metrics for observability
+//
+// Circuit Breaker Configuration:
+// - Threshold: 50% failure rate over 10 requests
+// - Recovery: 30s timeout before testing recovery
+// - Half-Open: Allow 3 test requests during recovery
+func NewClientWithCircuitBreaker(client *Client, metricsInstance *metrics.Metrics) *ClientWithCircuitBreaker {
+	cb := gobreaker.NewCircuitBreaker(gobreaker.Settings{
+		Name:        "k8s-api",
+		MaxRequests: 3, // Allow 3 test requests in half-open state
+		Interval:    10 * time.Second,
+		Timeout:     30 * time.Second, // Stay open for 30s before trying again
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			// Trip circuit if 50% failure rate over 10 requests
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= 10 && failureRatio >= 0.5
+		},
+		OnStateChange: func(name string, from gobreaker.State, to gobreaker.State) {
+			// Update Prometheus metric
+			if metricsInstance != nil {
+				metricsInstance.CircuitBreakerState.WithLabelValues(name).Set(float64(to))
+			}
+		},
+	})
+
+	return &ClientWithCircuitBreaker{
+		Client:  client,
+		cb:      cb,
+		metrics: metricsInstance,
+	}
+}
+
+// CreateRemediationRequestWithCB creates a RemediationRequest with circuit breaker protection
+//
+// This method wraps CreateRemediationRequest with circuit breaker protection:
+// - If circuit is open: Returns gobreaker.ErrOpenState immediately (fail-fast)
+// - If circuit is closed/half-open: Attempts operation, tracks success/failure
+//
+// Benefits:
+// - Fail-fast during K8s API outages (no wasted retries)
+// - Automatic recovery detection (half-open state)
+// - Metrics for observability (circuit state, operation results)
+//
+// Parameters:
+// - ctx: Context for cancellation and timeout
+// - rr: RemediationRequest CRD to create
+//
+// Returns:
+// - error: gobreaker.ErrOpenState if circuit is open, or K8s API error
+func (c *ClientWithCircuitBreaker) CreateRemediationRequestWithCB(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
+	_, err := c.cb.Execute(func() (interface{}, error) {
+		err := c.Client.CreateRemediationRequest(ctx, rr)
+		c.recordOperationResult("create", err)
+		return nil, err
+	})
+	return err
+}
+
+// UpdateRemediationRequestWithCB updates a RemediationRequest with circuit breaker protection
+//
+// Parameters:
+// - ctx: Context for cancellation and timeout
+// - rr: RemediationRequest CRD with updated fields
+//
+// Returns:
+// - error: gobreaker.ErrOpenState if circuit is open, or K8s API error
+func (c *ClientWithCircuitBreaker) UpdateRemediationRequestWithCB(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
+	_, err := c.cb.Execute(func() (interface{}, error) {
+		err := c.Client.UpdateRemediationRequest(ctx, rr)
+		c.recordOperationResult("update", err)
+		return nil, err
+	})
+	return err
+}
+
+// GetRemediationRequestWithCB retrieves a RemediationRequest with circuit breaker protection
+//
+// Parameters:
+// - ctx: Context for cancellation and timeout
+// - namespace: Namespace of the RemediationRequest
+// - name: Name of the RemediationRequest
+//
+// Returns:
+// - *RemediationRequest: The retrieved CRD
+// - error: gobreaker.ErrOpenState if circuit is open, or K8s API error
+func (c *ClientWithCircuitBreaker) GetRemediationRequestWithCB(ctx context.Context, namespace, name string) (*remediationv1alpha1.RemediationRequest, error) {
+	result, err := c.cb.Execute(func() (interface{}, error) {
+		rr, err := c.Client.GetRemediationRequest(ctx, namespace, name)
+		c.recordOperationResult("get", err)
+		return rr, err
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*remediationv1alpha1.RemediationRequest), nil
+}
+
+// State returns the current circuit breaker state
+//
+// Returns:
+// - gobreaker.StateClosed (0): Normal operation
+// - gobreaker.StateHalfOpen (1): Testing recovery
+// - gobreaker.StateOpen (2): Blocking requests
+func (c *ClientWithCircuitBreaker) State() gobreaker.State {
+	return c.cb.State()
+}
+
+// recordOperationResult updates Prometheus metrics for circuit breaker operations
+func (c *ClientWithCircuitBreaker) recordOperationResult(operation string, err error) {
+	if c.metrics == nil {
+		return
+	}
+
+	result := "success"
+	if err != nil {
+		result = "failure"
+	}
+
+	c.metrics.CircuitBreakerOperations.WithLabelValues("k8s-api", result).Inc()
+}
+

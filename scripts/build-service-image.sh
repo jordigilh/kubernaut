@@ -375,7 +375,7 @@ if [[ "$LOAD_TO_KIND" == true ]]; then
 
         rm -f "$TEMP_TAR"
         log_debug "Cleaned up temporary tar file"
-        
+
         # CRITICAL: Remove Podman image immediately after Kind load to free disk space
         # Problem: Image exists in both Podman storage AND Kind = 2x disk usage
         # Solution: Once in Kind, we don't need the Podman copy anymore
