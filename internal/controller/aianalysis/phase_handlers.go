@@ -69,7 +69,8 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	}
 
 	// DD-AUDIT-003: Record phase transition AFTER status update (ensures audit reflects committed state)
-	if r.AuditClient != nil {
+	// IDEMPOTENCY: Only record if phase actually changed (prevents duplicate events in race conditions)
+	if r.AuditClient != nil && phaseBefore != PhaseInvestigating {
 		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, PhaseInvestigating)
 	}
 
