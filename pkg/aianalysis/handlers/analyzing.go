@@ -148,31 +148,50 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		"reason", result.Reason,
 	)
 
+	// ========================================
+	// IDEMPOTENCY CHECK: Only record approval decision once
+	// ========================================
+	// Check if ApprovalRequired condition is already set to prevent duplicate audit events
+	// This can happen when controller reconciles multiple times in Analyzing phase
+	// (e.g., status update triggers immediate re-reconcile before ObservedGeneration is updated)
+	approvalCondition := aianalysis.GetCondition(analysis, aianalysis.ConditionApprovalRequired)
+	alreadyRecorded := approvalCondition != nil && approvalCondition.Status != ""
+
 	// BR-AI-019: Populate ApprovalContext if approval is required
 	if result.ApprovalRequired {
 		h.populateApprovalContext(analysis, result)
 		// Set ApprovalRequired condition
 		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
 
-		// Record approval decision metric
-		environment := getEnvironment(analysis)
-		h.metrics.RecordApprovalDecision("requires_approval", environment)
+		// Record approval decision metric and audit event ONLY if not already recorded
+		if !alreadyRecorded {
+			environment := getEnvironment(analysis)
+			h.metrics.RecordApprovalDecision("requires_approval", environment)
 
-		// DD-AUDIT-003: Record approval decision audit event
-		if h.auditClient != nil {
-			h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
+			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
+			if h.auditClient != nil {
+				h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
+			}
+			h.log.V(1).Info("Approval decision recorded", "decision", "requires_approval")
+		} else {
+			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "requires_approval")
 		}
 	} else {
 		// Set ApprovalRequired=False condition (auto-approved)
 		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", "Policy evaluation does not require manual approval")
 
-		// Record approval decision metric
-		environment := getEnvironment(analysis)
-		h.metrics.RecordApprovalDecision("auto_approved", environment)
+		// Record approval decision metric and audit event ONLY if not already recorded
+		if !alreadyRecorded {
+			environment := getEnvironment(analysis)
+			h.metrics.RecordApprovalDecision("auto_approved", environment)
 
-		// DD-AUDIT-003: Record approval decision audit event
-		if h.auditClient != nil {
-			h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
+			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
+			if h.auditClient != nil {
+				h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
+			}
+			h.log.V(1).Info("Approval decision recorded", "decision", "auto_approved")
+		} else {
+			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "auto_approved")
 		}
 	}
 

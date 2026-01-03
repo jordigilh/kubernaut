@@ -237,20 +237,21 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	// WFE must reconcile on PipelineRun status changes (external watch).
 	// Only skip reconcile for annotation/label changes when:
 	// 1. Generation unchanged
-	// 2. Phase is empty (not yet initialized) OR terminal
-	// 3. NOT watching PipelineRun (Phase is Pending or no PipelineRunRef yet)
+	// 2. Phase is Pending (not yet watching PipelineRun)
+	//
+	// IMPORTANT: Terminal phases (Completed/Failed) MUST continue reconciling
+	// until cooldown expires and lock is released (ReconcileTerminal handles this).
+	// Skipping terminal phases prevents cooldown processing and lock release.
 	//
 	// This allows reconciles for:
 	// - PipelineRun status updates (Running phase)
+	// - Cooldown processing (Completed/Failed phases)
 	// - Condition updates
 	// - Metrics recording
 	if wfe.Status.ObservedGeneration == wfe.Generation &&
-		wfe.Status.Phase != "" &&
-		(wfe.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted ||
-			wfe.Status.Phase == workflowexecutionv1alpha1.PhaseFailed ||
-			wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending) {
-		// Safe to skip: either terminal or not yet watching PipelineRun
-		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
+		wfe.Status.Phase == workflowexecutionv1alpha1.PhasePending {
+		// Safe to skip: Pending phase not yet watching PipelineRun
+		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed (Pending phase)",
 			"generation", wfe.Generation,
 			"observedGeneration", wfe.Status.ObservedGeneration,
 			"phase", wfe.Status.Phase)
