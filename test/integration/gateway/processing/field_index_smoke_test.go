@@ -120,39 +120,45 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		// 4. Field index not registered in SetupWithManager()
 		//
 		// This validates the INFRASTRUCTURE, not just the business logic.
-		rrList := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(ctx, rrList,
-			client.InNamespace(ns.Name),
-			client.MatchingFields{"spec.signalFingerprint": fingerprint},
-		)
+		//
+		// Use Eventually to allow cache sync time (typical in envtest)
+		var rrList *remediationv1alpha1.RemediationRequestList
+		Eventually(func() int {
+			rrList = &remediationv1alpha1.RemediationRequestList{}
+			err := k8sClient.List(ctx, rrList,
+				client.InNamespace(ns.Name),
+				client.MatchingFields{"spec.signalFingerprint": fingerprint},
+			)
 
-		// ========================================
-		// FAIL FAST - NO FALLBACKS (DD-TEST-009 §2)
-		// ========================================
-		// Per DD-TEST-009: If field selector doesn't work → Fail immediately
-		// NO runtime fallbacks, NO graceful degradation
-		// This ensures infrastructure problems are detected at test time, not production
-		if err != nil {
-			Fail("🚨 DD-TEST-009 VIOLATION: Field index setup is incorrect\n\n" +
-				"Expected field selector query to work, but got error:\n" +
-				"  " + err.Error() + "\n\n" +
-				"Common causes (check test/integration/gateway/processing/suite_test.go):\n" +
-				"  1. Client retrieved before SetupWithManager() called\n" +
-				"     ❌ WRONG: k8sClient = k8sManager.GetClient(); reconciler.SetupWithManager()\n" +
-				"     ✅ RIGHT: reconciler.SetupWithManager(); k8sClient = k8sManager.GetClient()\n\n" +
-				"  2. Using direct client instead of manager's client\n" +
-				"     ❌ WRONG: client.New(k8sConfig, ...)\n" +
-				"     ✅ RIGHT: k8sManager.GetClient()\n\n" +
-				"  3. Manager not started before tests run\n" +
-				"     ✅ Check: go k8sManager.Start(ctx) in BeforeSuite\n\n" +
-				"  4. Field index not registered in SetupWithManager()\n" +
-				"     ✅ Check: mgr.GetFieldIndexer().IndexField(..., \"spec.signalFingerprint\", ...)\n\n" +
-				"See: docs/architecture/decisions/DD-TEST-009-FIELD-INDEX-ENVTEST-SETUP.md")
-		}
+			// ========================================
+			// FAIL FAST - NO FALLBACKS (DD-TEST-009 §2)
+			// ========================================
+			// Per DD-TEST-009: If field selector doesn't work → Fail immediately
+			// NO runtime fallbacks, NO graceful degradation
+			// This ensures infrastructure problems are detected at test time, not production
+			if err != nil {
+				Fail("🚨 DD-TEST-009 VIOLATION: Field index setup is incorrect\n\n" +
+					"Expected field selector query to work, but got error:\n" +
+					"  " + err.Error() + "\n\n" +
+					"Common causes (check test/integration/gateway/processing/suite_test.go):\n" +
+					"  1. Client retrieved before SetupWithManager() called\n" +
+					"     ❌ WRONG: k8sClient = k8sManager.GetClient(); reconciler.SetupWithManager()\n" +
+					"     ✅ RIGHT: reconciler.SetupWithManager(); k8sClient = k8sManager.GetClient()\n\n" +
+					"  2. Using direct client instead of manager's client\n" +
+					"     ❌ WRONG: client.New(k8sConfig, ...)\n" +
+					"     ✅ RIGHT: k8sManager.GetClient()\n\n" +
+					"  3. Manager not started before tests run\n" +
+					"     ✅ Check: go k8sManager.Start(ctx) in BeforeSuite\n\n" +
+					"  4. Field index not registered in SetupWithManager()\n" +
+					"     ✅ Check: mgr.GetFieldIndexer().IndexField(..., \"spec.signalFingerprint\", ...)\n\n" +
+					"See: docs/architecture/decisions/DD-TEST-009-FIELD-INDEX-ENVTEST-SETUP.md")
+			}
 
-		// Verify we got exactly 1 result with correct fingerprint
-		Expect(len(rrList.Items)).To(Equal(1),
-			"Field selector should return exactly 1 RemediationRequest")
+			// Return the number of items found (Eventually will retry until it equals 1)
+			return len(rrList.Items)
+		}, "5s", "100ms").Should(Equal(1), "Field selector query should eventually return 1 result")
+
+		// Verify the returned RemediationRequest has correct fingerprint
 		Expect(rrList.Items[0].Spec.SignalFingerprint).To(Equal(fingerprint),
 			"Returned RemediationRequest should have matching fingerprint")
 
@@ -214,16 +220,20 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 		}, "10s", "500ms").Should(Equal(3))
 
 		// Query for fingerprint2 only - should return exactly 1 (not 3)
-		rrList := &remediationv1alpha1.RemediationRequestList{}
-		err := k8sClient.List(ctx, rrList,
-			client.InNamespace(ns.Name),
-			client.MatchingFields{"spec.signalFingerprint": fingerprint2},
-		)
-
-		Expect(err).ToNot(HaveOccurred(),
-			"Field selector query should succeed")
-		Expect(len(rrList.Items)).To(Equal(1),
+		// Use Eventually to allow for field index cache sync
+		var rrList *remediationv1alpha1.RemediationRequestList
+		Eventually(func() int {
+			rrList = &remediationv1alpha1.RemediationRequestList{}
+			err := k8sClient.List(ctx, rrList,
+				client.InNamespace(ns.Name),
+				client.MatchingFields{"spec.signalFingerprint": fingerprint2},
+			)
+			Expect(err).ToNot(HaveOccurred(),
+				"Field selector query should succeed")
+			return len(rrList.Items)
+		}, "5s", "100ms").Should(Equal(1),
 			"Field selector should return ONLY matching fingerprint (O(1) query, not O(n) filter)")
+		
 		Expect(rrList.Items[0].Spec.SignalFingerprint).To(Equal(fingerprint2),
 			"Returned RR should have fingerprint2")
 
