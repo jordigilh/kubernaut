@@ -770,6 +770,89 @@ spec:
 	return cmd.Run()
 }
 
+// deployHolmesGPTAPIManifestOnly deploys HolmesGPT-API manifest assuming image is already in Kind
+// Used by hybrid flow: build → export → prune → load → deploy
+func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+	fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
+	// ADR-030: Deploy manifest with ConfigMap
+	manifest := fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    llm:
+      provider: "mock"
+      model: "mock/test-model"
+      endpoint: "http://localhost:11434"
+    data_storage:
+      url: "http://datastorage:8080"
+    logging:
+      level: "INFO"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: holmesgpt-api
+  template:
+    metadata:
+      labels:
+        app: holmesgpt-api
+    spec:
+      containers:
+      - name: holmesgpt-api
+        image: %s
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        args:
+        - "-config"
+        - "/etc/holmesgpt/config.yaml"
+        env:
+        - name: MOCK_LLM_MODE
+          value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/holmesgpt
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: holmesgpt-api-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  selector:
+    app: holmesgpt-api
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30088
+`, imageName)
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = stringReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
 // deployAIAnalysisControllerOnly deploys AIAnalysis controller using pre-built image (separation of build/deploy)
 func deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Load pre-built image into Kind
@@ -780,6 +863,161 @@ func deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, imageName strin
 		return fmt.Errorf("failed to load AIAnalysis image: %w", err)
 	}
 
+	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
+	manifest := `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      read_timeout: "30s"
+      write_timeout: "30s"
+    logging:
+      level: "info"
+      format: "json"
+    holmesgpt:
+      url: "http://holmesgpt-api:8080"
+      timeout: "60s"
+    datastorage:
+      url: "http://datastorage:8080"
+      timeout: "60s"
+    rego:
+      policy_path: "/etc/aianalysis/policies/approval.rego"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aianalysis-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aianalysis-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aianalysis-controller
+subjects:
+- kind: ServiceAccount
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aianalysis-controller
+  template:
+    metadata:
+      labels:
+        app: aianalysis-controller
+    spec:
+      serviceAccountName: aianalysis-controller
+      containers:
+      - name: aianalysis
+        image: localhost/kubernaut-aianalysis:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        - containerPort: 9090
+        - containerPort: 8081
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        env:
+        - name: CONFIG_PATH
+          value: /etc/aianalysis/config.yaml
+        - name: REGO_POLICY_PATH
+          value: /etc/aianalysis/policies/approval.rego
+        - name: HOLMESGPT_API_URL
+          value: http://holmesgpt-api:8080
+        - name: DATASTORAGE_URL
+          value: http://datastorage:8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aianalysis
+          readOnly: true
+        - name: rego-policies
+          mountPath: /etc/aianalysis/policies
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: aianalysis-config
+      - name: rego-policies
+        configMap:
+          name: aianalysis-policies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  selector:
+    app: aianalysis-controller
+  ports:
+  - name: api
+    port: 8080
+    targetPort: 8080
+    nodePort: 30084
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30184
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30284
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = stringReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Deploy Rego policy ConfigMap
+	return deployRegoPolicyConfigMap(kubeconfigPath, writer)
+}
+
+// deployAIAnalysisControllerManifestOnly deploys AIAnalysis controller manifest assuming image is already in Kind
+// Used by hybrid flow: build → export → prune → load → deploy
+func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+	fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
 	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
 	manifest := `
 apiVersion: v1
@@ -2288,14 +2526,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}()
 
 	// Deploy HAPI (AIAnalysis dependency)
+	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
-		err := deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, builtImages["holmesgpt-api"], writer)
+		err := deployHolmesGPTAPIManifestOnly(kubeconfigPath, builtImages["holmesgpt-api"], writer)
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
 
 	// Deploy AIAnalysis controller (service under test)
+	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
-		err := deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, builtImages["aianalysis"], writer)
+		err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, builtImages["aianalysis"], writer)
 		deployResults <- deployResult{"AIAnalysis", err}
 	}()
 

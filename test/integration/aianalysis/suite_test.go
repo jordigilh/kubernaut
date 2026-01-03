@@ -50,6 +50,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/google/uuid"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,6 +93,9 @@ var (
 	realRegoEvaluator *rego.Evaluator
 	regoCtx           context.Context
 	regoCancel        context.CancelFunc
+
+	// DD-TEST-002: Unique namespace per test for parallel execution
+	testNamespace string
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -432,6 +436,47 @@ var _ = SynchronizedAfterSuite(func() {
 	}
 
 	GinkgoWriter.Println("✅ Cleanup complete")
+})
+
+// DD-TEST-002 Compliance: Unique namespace per test for parallel execution
+// This enables -procs=4 parallel execution (matching Notification pattern)
+// Each test gets its own namespace to prevent resource conflicts
+
+var _ = BeforeEach(func() {
+	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
+	// Format: test-aa-<8-char-uuid> for readability and uniqueness
+	testNamespace = "test-aa-" + uuid.New().String()[:8]
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNamespace,
+		},
+	}
+
+	err := k8sClient.Create(context.Background(), ns)
+	Expect(err).NotTo(HaveOccurred(),
+		"Failed to create test namespace %s", testNamespace)
+
+	GinkgoWriter.Printf("📦 [AA] Test namespace created: %s (DD-TEST-002 compliance)\n", testNamespace)
+})
+
+var _ = AfterEach(func() {
+	// DD-TEST-002: Clean up namespace and ALL resources (instant cleanup)
+	// This is MUCH faster than deleting individual AIAnalysis resources
+	if testNamespace != "" {
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespace,
+			},
+		}
+
+		err := k8sClient.Delete(context.Background(), ns)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  [AA] Failed to delete namespace %s: %v\n", testNamespace, err)
+		} else {
+			GinkgoWriter.Printf("🗑️  [AA] Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
+		}
+	}
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.

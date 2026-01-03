@@ -75,6 +75,9 @@ func (h *AnalyzingHandler) Name() string {
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
 
+	// Track phase for audit logging
+	oldPhase := analysis.Status.Phase
+
 	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
 	if analysis.Status.SelectedWorkflow == nil {
 		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
@@ -88,6 +91,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
+
+		// DD-AUDIT-003: Record phase transition
+		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
 		return ctrl.Result{}, nil
 	}
 
@@ -108,9 +114,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		h.metrics.RecordRegoEvaluation("error", true)
 
 		// DD-AUDIT-003: Record Rego evaluation audit event
-		if h.auditClient != nil {
-			h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
-		}
+		h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
 
 		analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
@@ -122,6 +126,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
+
+		// DD-AUDIT-003: Record phase transition
+		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
 		return ctrl.Result{}, nil
 	}
 
@@ -133,9 +140,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	h.metrics.RecordRegoEvaluation(outcome, result.Degraded)
 
 	// DD-AUDIT-003: Record Rego evaluation audit event
-	if h.auditClient != nil {
-		h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason)
-	}
+	h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason)
 
 	// Store evaluation results in status
 	analysis.Status.ApprovalRequired = result.ApprovalRequired
@@ -169,9 +174,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 			h.metrics.RecordApprovalDecision("requires_approval", environment)
 
 			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
-			if h.auditClient != nil {
-				h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
-			}
+			h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
 			h.log.V(1).Info("Approval decision recorded", "decision", "requires_approval")
 		} else {
 			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "requires_approval")
@@ -186,9 +189,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 			h.metrics.RecordApprovalDecision("auto_approved", environment)
 
 			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
-			if h.auditClient != nil {
-				h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
-			}
+			h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
 			h.log.V(1).Info("Approval decision recorded", "decision", "auto_approved")
 		} else {
 			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "auto_approved")
@@ -209,6 +210,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = "Analysis complete"
+
+	// DD-AUDIT-003: Record phase transition
+	h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
 
 	h.log.Info("Analysis completed",
 		"name", analysis.Name,

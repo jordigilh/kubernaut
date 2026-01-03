@@ -349,7 +349,7 @@ class TestRecoveryEndpointE2EErrorScenarios:
     ):
         """E2E: Invalid recovery attempt number rejected (client-side validation)"""
         from pydantic_core import ValidationError
-        
+
         # Arrange: Invalid request (recovery_attempt_number = 0)
         # Act & Assert: Pydantic validates on the client before API call
         with pytest.raises(ValidationError) as exc_info:
