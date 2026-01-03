@@ -49,7 +49,9 @@ from typing import List, Dict, Any
 
 # DD-API-001: Import OpenAPI generated clients
 import sys
-sys.path.insert(0, 'tests/clients')
+from pathlib import Path
+# Add tests/clients to path (absolute path resolution for CI)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 from holmesgpt_api_client import ApiClient as HapiApiClient, Configuration as HapiConfiguration
 from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
 from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
