@@ -56,6 +56,9 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
+		// CRITICAL: Use public schema for audit_events table queries
+		// HTTP API writes to public schema, test queries must target same schema
+		usePublicSchema()
 
 		// Ensure service is ready before each test
 		Eventually(func() int {

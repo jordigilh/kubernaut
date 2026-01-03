@@ -40,6 +40,9 @@ var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations",  Label("integratio
 	)
 
 	BeforeEach(func() {
+		// CRITICAL: Use public schema for remediation_workflow_catalog
+		// This prevents data contamination in workflow repository tests
+		usePublicSchema()
 
 		ctx = context.Background()
 
