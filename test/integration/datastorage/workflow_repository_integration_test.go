@@ -101,6 +101,12 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 	// CREATE METHOD TESTS - COMPOSITE PK VALIDATION
 	// ========================================
 	Describe("Create", func() {
+		BeforeEach(func() {
+			// CRITICAL: Use public schema - remediation_workflow_catalog is NOT schema-isolated
+			// Without this, workflow created in test_process_N schema won't be found by Get/List
+			usePublicSchema()
+		})
+
 		Context("with valid workflow and all required fields", func() {
 			It("should persist workflow with structured labels and composite PK", func() {
 				// ARRANGE: Create test workflow per DD-STORAGE-008 schema
