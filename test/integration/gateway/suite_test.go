@@ -88,8 +88,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	suiteLogger.Info("   ✅ All services started and healthy")
 
-	// Store Data Storage URL for tests
-	dataStorageURL := fmt.Sprintf("http://localhost:%d", infrastructure.GatewayIntegrationDataStoragePort)
+	// Store Data Storage URL for tests (IPv4 explicit for CI compatibility)
+	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)
 
 	// 2. Start envtest (in-memory K8s API server)
 	suiteLogger.Info("📦 Starting envtest (in-memory K8s API)...")
