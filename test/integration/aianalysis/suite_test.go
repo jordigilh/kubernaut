@@ -86,6 +86,12 @@ var (
 	// Real HAPI client for integration tests (with MOCK_LLM_MODE=true inside HAPI)
 	// Per testing strategy: Only LLM is mocked (inside HAPI), all other services are real
 	realHGClient *hgclient.HolmesGPTClient
+
+	// Real Rego evaluator for integration tests
+	// Per user requirement: "real rego evaluator for all 3 tiers"
+	realRegoEvaluator *rego.Evaluator
+	regoCtx           context.Context
+	regoCancel        context.CancelFunc
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -177,8 +183,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	})
 	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
-	// Create mock Rego evaluator that auto-approves staging, requires approval for production
-	mockRegoEvaluator := &MockRegoEvaluator{}
+	By("Setting up REAL Rego evaluator with production policies")
+	// Per user requirement: "real rego evaluator for all 3 tiers"
+	// Integration tests MUST use real Rego evaluator to validate actual policy behavior
+	// Per TESTING_GUIDELINES.md: Integration tests validate business logic, not infrastructure
+	policyPath := filepath.Join("..", "..", "..", "config", "rego", "aianalysis", "approval.rego")
+	realRegoEvaluator = rego.NewEvaluator(rego.Config{
+		PolicyPath: policyPath,
+	}, ctrl.Log.WithName("rego"))
+
+	// Create context for Rego evaluator lifecycle
+	regoCtx, regoCancel = context.WithCancel(context.Background())
+
+	// ADR-050: Startup validation required
+	err = realRegoEvaluator.StartHotReload(regoCtx)
+	Expect(err).NotTo(HaveOccurred(), "Production policy should load successfully in integration tests")
+
+	GinkgoWriter.Println("✅ Real Rego evaluator initialized with production policy")
+	GinkgoWriter.Printf("  • Policy path: %s\n", policyPath)
+	GinkgoWriter.Printf("  • Policy hash: %s\n", realRegoEvaluator.GetPolicyHash())
 
 	By("Setting up audit client for flow-based audit integration tests")
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
@@ -219,7 +242,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
 	// Integration tests use REAL services (only LLM inside HAPI is mocked for cost)
 	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient)
-	analyzingHandler := handlers.NewAnalyzingHandler(mockRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
+	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
 
 	// Create controller with wired handlers and audit client
 	// Per DD-AUDIT-003: Audit client MUST be wired for audit trail compliance
@@ -258,13 +281,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("Environment:")
 	GinkgoWriter.Println("  • ENVTEST with real Kubernetes API (etcd + kube-apiserver)")
 	GinkgoWriter.Println("  • AIAnalysis CRD installed")
-	GinkgoWriter.Println("  • AIAnalysis controller running with mock HolmesGPT client")
-	GinkgoWriter.Println("  • Mock Rego evaluator (staging=auto-approve, production=manual)")
-	GinkgoWriter.Println("  • REAL services available for recovery_integration_test.go:")
+	GinkgoWriter.Println("  • AIAnalysis controller with REAL handlers:")
+	GinkgoWriter.Println("    - InvestigatingHandler: REAL HolmesGPT-API client")
+	GinkgoWriter.Println("    - AnalyzingHandler: REAL Rego evaluator (production policies)")
+	GinkgoWriter.Println("  • REAL services (per TESTING_GUIDELINES.md):")
 	GinkgoWriter.Println("    - PostgreSQL: localhost:15438")
 	GinkgoWriter.Println("    - Redis: localhost:16384")
 	GinkgoWriter.Println("    - Data Storage: http://localhost:18095")
-	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM)")
+	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM only)")
 	GinkgoWriter.Println("")
 
 	// Serialize REST config to pass to all processes
@@ -341,6 +365,12 @@ var _ = SynchronizedAfterSuite(func() {
 	// This runs on ALL parallel processes - no cleanup needed per process
 }, func() {
 	// This runs ONCE on the last parallel process - cleanup shared infrastructure
+	By("Stopping Rego evaluator")
+	if regoCancel != nil {
+		regoCancel() // Stop hot-reload goroutine
+		GinkgoWriter.Println("✅ Rego evaluator stopped")
+	}
+
 	By("Flushing audit store before shutdown")
 	// Per DD-007: Graceful shutdown MUST flush all audit events
 	// This validates that audit buffer properly persists all events
@@ -418,33 +448,4 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
-}
-
-// MockRegoEvaluator is a simple mock for integration tests.
-// It approves staging environments automatically, requires approval for production
-// and for recovery attempts with multiple retries (escalation).
-type MockRegoEvaluator struct{}
-
-func (m *MockRegoEvaluator) Evaluate(ctx context.Context, input *rego.PolicyInput) (*rego.PolicyResult, error) {
-	// Check for recovery escalation (recovery attempt >= 3 always requires approval)
-	if input.RecoveryAttemptNumber >= 3 {
-		return &rego.PolicyResult{
-			ApprovalRequired: true,
-			Reason:           "Multiple recovery attempts require manual approval",
-		}, nil
-	}
-
-	// Simple policy: staging auto-approves, production requires approval
-	if input.Environment == "staging" || input.Environment == "dev" {
-		return &rego.PolicyResult{
-			ApprovalRequired: false,
-			Reason:           "Auto-approved for non-production environment",
-		}, nil
-	}
-
-	// Production or unknown environments require approval
-	return &rego.PolicyResult{
-		ApprovalRequired: true,
-		Reason:           "Production environment requires manual approval",
-	}, nil
 }
