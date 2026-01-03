@@ -1,7 +1,7 @@
 # E2E Disk Space Optimization Guide
 
-**Created**: January 3, 2026  
-**Design Decision**: DD-TEST-008  
+**Created**: January 3, 2026
+**Design Decision**: DD-TEST-008
 **Applies To**: All E2E test services
 
 ---
@@ -225,12 +225,12 @@ func CreateMyServiceE2E(...) error {
 + if err != nil {
 +     return err
 + }
-+ 
++
 + // Create cluster AFTER prune (max space available)
 + if err := createKindCluster(...); err != nil {
 +     return err
 + }
-+ 
++
 + if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
 +     return err
 + }
@@ -346,7 +346,7 @@ If you encounter issues migrating a service:
 
 ---
 
-**Document Status**: ✅ Active  
-**Last Updated**: January 3, 2026  
+**Document Status**: ✅ Active
+**Last Updated**: January 3, 2026
 **Maintainer**: Infrastructure Team
 

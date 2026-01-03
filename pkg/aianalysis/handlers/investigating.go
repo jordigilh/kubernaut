@@ -102,9 +102,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			statusCode = 500 // Error case
 		}
-		if h.auditClient != nil {
-			h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
-		}
+		h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
 
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
@@ -135,9 +133,14 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
+		oldPhase := analysis.Status.Phase
 		result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
+			// DD-AUDIT-003: Record phase transition if phase changed
+			if analysis.Status.Phase != oldPhase {
+				h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+			}
 		}
 		return result, err
 	} else {
@@ -151,9 +154,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			statusCode = 500 // Error case
 		}
-		if h.auditClient != nil {
-			h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
-		}
+		h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
 
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
@@ -167,9 +168,14 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
+		oldPhase := analysis.Status.Phase
 		result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
+			// DD-AUDIT-003: Record phase transition if phase changed
+			if analysis.Status.Phase != oldPhase {
+				h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+			}
 		}
 		return result, err
 	}

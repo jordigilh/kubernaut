@@ -401,7 +401,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 				testutil.ValidateAuditEventHasRequiredFields(event)
 
 				// Additional E2E-specific validation
-				Expect(event.EventCategory).To(Equal("analysis"),
+				Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryAnalysis),
 					"AIAnalysis events should have category 'analysis'")
 
 				Expect(event.CorrelationId).To(Equal(remediationID),

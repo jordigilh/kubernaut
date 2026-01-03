@@ -55,8 +55,10 @@ type HolmesGPTClientInterface interface {
 //
 // Methods:
 // - RecordHolmesGPTCall: Records HAPI API calls with status and duration
+// - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
 type AuditClientInterface interface {
 	RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
+	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
 }
 
 // AnalyzingAuditClientInterface defines audit methods for the Analyzing phase.
@@ -65,9 +67,11 @@ type AuditClientInterface interface {
 // Methods:
 // - RecordRegoEvaluation: Records Rego policy evaluation results
 // - RecordApprovalDecision: Records approval/auto-execute decisions
+// - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
 type AnalyzingAuditClientInterface interface {
 	RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string)
 	RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision string, reason string)
+	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
 }
 
 // ========================================

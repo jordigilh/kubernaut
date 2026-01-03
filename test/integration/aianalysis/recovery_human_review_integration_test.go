@@ -55,11 +55,8 @@ import (
 // - E2E tests (10-15%): Complete workflow validation
 
 var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Label("integration", "recovery", "human-review"), func() {
-	var testNamespace string
-
-	BeforeEach(func() {
-		testNamespace = "default"
-	})
+	// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
+	// No need to set it here - each test gets a unique namespace automatically
 
 	// ========================================
 	// BR-HAPI-197: Recovery Human Review - No Matching Workflows
