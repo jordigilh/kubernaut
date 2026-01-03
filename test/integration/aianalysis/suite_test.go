@@ -209,7 +209,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	GinkgoWriter.Println("📋 Setting up audit store...")
 	dsClient, err := audit.NewOpenAPIClientAdapter(
-		"http://localhost:18095", // AIAnalysis integration test DS port
+		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
 		5*time.Second,
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")

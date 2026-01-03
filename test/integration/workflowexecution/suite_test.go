@@ -83,9 +83,9 @@ var (
 	cfg                *rest.Config
 	k8sClient          client.Client
 	k8sManager         ctrl.Manager
-	dataStorageBaseURL string = fmt.Sprintf("http://localhost:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port per DD-TEST-001
-	realAuditStore     audit.AuditStore                                                                          // REAL audit store (DD-AUDIT-003 compliance)
-	reconciler         *workflowexecution.WorkflowExecutionReconciler                                            // Controller instance for metrics access
+	dataStorageBaseURL string = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
+	realAuditStore     audit.AuditStore                                                                             // REAL audit store (DD-AUDIT-003 compliance)
+	reconciler         *workflowexecution.WorkflowExecutionReconciler                                               // Controller instance for metrics access
 )
 
 // Test namespaces (unique per test run for parallel safety)
