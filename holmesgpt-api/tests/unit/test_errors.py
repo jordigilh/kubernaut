@@ -24,9 +24,7 @@ Phase 1.1 of HolmesGPT API Implementation Plan
 """
 
 import pytest
-import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
+from datetime import datetime, timezone
 from src.errors import (
     HolmesGPTAPIError,
     AuthenticationError,

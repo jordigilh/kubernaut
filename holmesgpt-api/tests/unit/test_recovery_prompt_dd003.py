@@ -27,8 +27,6 @@ Tests validate BUSINESS OUTCOMES:
 - Prompts must support DetectedLabels for workflow filtering
 """
 
-import pytest
-import json
 
 from src.models.incident_models import DetectedLabels
 

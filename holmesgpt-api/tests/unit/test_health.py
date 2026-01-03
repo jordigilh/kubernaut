@@ -20,7 +20,6 @@ Health and Readiness Endpoint Tests
 Business Requirements: BR-HAPI-126 to 145 (Health/Monitoring)
 """
 
-import pytest
 
 
 class TestHealthEndpoint:
