@@ -511,11 +511,17 @@ var _ = Describe("Audit Events Write API Integration Tests",  func() {
 				defer resp2.Body.Close()
 				Expect(resp2.StatusCode).To(Equal(http.StatusCreated))
 
-				By("Verifying both events exist with same correlation_id")
+			By("Verifying both events exist with same correlation_id")
+			// Use Eventually to handle async HTTP API processing and parallel execution timing
+			Eventually(func() int {
 				var count int
-				err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(2))
+				err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+				if err != nil {
+					return -1
+				}
+				return count
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(2),
+				"Both events should be written with same correlation_id")
 			})
 		})
 
