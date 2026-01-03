@@ -67,6 +67,10 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 	)
 
 	BeforeEach(func() {
+		// CRITICAL: Use public schema FIRST before any cleanup/operations
+		// remediation_workflow_catalog is NOT schema-isolated - all workflows are in public schema
+		// Without this, cleanup queries wrong schema and leaves data contamination
+		usePublicSchema()
 
 		// Create repository with real database
 		workflowRepo = workflow.NewRepository(db, logger)
