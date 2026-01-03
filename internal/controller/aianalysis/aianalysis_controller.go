@@ -170,9 +170,8 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var result ctrl.Result
 	var err error
 
-	// Capture phase before processing for phase transition audit
-	phaseBefore := currentPhase
-
+	// DD-AUDIT-003: Phase transition audits now emitted INSIDE phase handlers
+	// (avoids race condition where status update triggers immediate reconcile before audit)
 	switch currentPhase {
 	case PhasePending:
 		result, err = r.reconcilePending(ctx, analysis)
@@ -187,11 +186,6 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	default:
 		log.Info("Unknown phase", "phase", currentPhase)
 		return ctrl.Result{}, nil
-	}
-
-	// DD-AUDIT-003: Record phase transition if phase changed
-	if r.AuditClient != nil && analysis.Status.Phase != phaseBefore {
-		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
 	}
 
 	// BR-AI-017: Record metrics and audit events after phase processing

@@ -5,7 +5,7 @@ name: CI Pipeline
 # Stage 1A: Build & Lint (parallel: Go + Python)
 # Stage 1B: Unit Tests (parallel matrix: 8 services)
 # Stage 2: Integration Tests (parallel matrix: 8 services)
-# Stage 3: E2E Tests (parallel jobs: 8 services)
+# Stage 3: E2E Tests (parallel jobs: 8 services) - Run REGARDLESS of integration results
 #
 # Smart Path Detection:
 #   - Build & Lint: Runs in parallel (Go and Python separately)
@@ -288,10 +288,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Run if: integration ran AND passed, AND (push to main OR DS changed OR SP changed), AND not draft PR
+    # Run if: (push to main OR DS changed OR SP changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -321,9 +321,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -353,9 +354,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -385,9 +387,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -417,9 +420,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -478,9 +482,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
@@ -510,9 +515,10 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Run if: (push to main OR DS changed OR service changed), AND not draft PR
+    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
     if: |
       (github.event.pull_request.draft == false || github.event_name != 'pull_request') &&
-      (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') &&
       (github.event_name == 'push' ||
        contains(github.event.pull_request.changed_files, 'pkg/datastorage/') ||
        contains(github.event.pull_request.changed_files, 'migrations/') ||
