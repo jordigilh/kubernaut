@@ -79,17 +79,16 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 		testID = generateTestID()
 
 		// This ensures no leftover data from previous test runs
-		// Clean up ALL test workflows (wf-repo%, wf-scoring%, wf-bulk%, etc.)
-		var countBefore int
-		_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name LIKE 'wf-%'").Scan(&countBefore)
-		GinkgoWriter.Printf("🧹 Cleaning up workflows: found %d workflows matching 'wf-%%' pattern\n", countBefore)
-
-		result, err := db.ExecContext(ctx,
-			"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE 'wf-%'")
+		// Clean up ALL test workflows including:
+		// - wf-repo-% (workflow repository tests)
+		// - wf-scoring-% (scoring tests)
+		// - bulk-import-test-% (bulk import tests)
+		// Use TRUNCATE for complete cleanup to avoid LIKE pattern mismatches
+		result, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
 		Expect(err).ToNot(HaveOccurred(), "Global cleanup should succeed")
 
 		rowsDeleted, _ := result.RowsAffected()
-		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in global cleanup\n", rowsDeleted)
+		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in global cleanup (TRUNCATE)\n", rowsDeleted)
 	})
 
 	AfterEach(func() {
