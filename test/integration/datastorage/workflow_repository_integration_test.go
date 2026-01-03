@@ -334,7 +334,14 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 	// ========================================
 	// LIST METHOD TESTS - FILTERING & PAGINATION
 	// ========================================
-	Describe("List", func() {
+	// ARCHITECTURAL NOTE: Serial Execution Required for List tests
+	// remediation_workflow_catalog is a global table shared by ALL test processes.
+	// List tests verify exact workflow counts (e.g., Expect(len).To(Equal(3)))
+	// Parallel execution causes data contamination:
+	// - Process 1: TRUNCATE → Create 3 workflows → List (expect 3)
+	// - Process 2: Create 200 bulk workflows (during P1's test) → P1 finds 203 ❌
+	// Decision: Serial execution prevents cross-process data contamination for count tests
+	Describe("List", Serial, func() {
 		var createdWorkflowNames []string
 
 		BeforeEach(func() {
