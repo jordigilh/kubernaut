@@ -73,6 +73,18 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		if testNamespace != "" && testClient != nil {
 			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 				client.InNamespace(testNamespace))
+			
+			// Wait for all CRDs to be deleted before next test
+			// This prevents test pollution from stale CRDs
+			Eventually(func() int {
+				rrList := &remediationv1alpha1.RemediationRequestList{}
+				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
+				if err != nil {
+					return -1 // Error, keep retrying
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
+				"All CRDs should be deleted before next test starts")
 		}
 	})
 

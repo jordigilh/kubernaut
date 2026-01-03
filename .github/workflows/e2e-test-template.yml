@@ -41,7 +41,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          submodules: true
+          submodules: recursive
+
+      # ========================================
+      # Disk Space Management
+      # ========================================
+      - name: Clean Container Images
+        run: |
+          echo "📊 Disk space before cleanup:"
+          df -h
+          
+          echo "📦 Cleaning up Podman images from previous builds..."
+          podman system prune -a -f --volumes 2>/dev/null || true
+          
+          echo "📊 Disk space after cleanup:"
+          df -h
 
       # ========================================
       # Infrastructure Setup
