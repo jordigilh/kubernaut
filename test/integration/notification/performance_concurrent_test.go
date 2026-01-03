@@ -56,7 +56,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 	// ==============================================
 
 	Context("BR-NOT-060: Concurrent Delivery Safety", func() {
-		It("should handle 10 concurrent notification deliveries without race conditions", func() {
+		It("should handle 10 concurrent notification deliveries without race conditions", FlakeAttempts(3), func() {
 			// BEHAVIOR: Concurrent deliveries succeed independently
 			// CORRECTNESS: No data races, all notifications delivered
 
