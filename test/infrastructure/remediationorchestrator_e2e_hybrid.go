@@ -335,6 +335,21 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 		return fmt.Errorf("failed to load image archive into Kind: %w", err)
 	}
 
+	// Clean up tar file
+	os.Remove("/tmp/remediationorchestrator-e2e-coverage.tar")
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintln(writer, "  🗑️  Removing Podman image to free disk space...")
+	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/remediationorchestrator-controller:e2e-coverage")
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintln(writer, "  ✅ Podman image removed: localhost/remediationorchestrator-controller:e2e-coverage")
+	}
+
 	fmt.Fprintln(writer, "  ✅ RemediationOrchestrator coverage image loaded")
 	return nil
 }
