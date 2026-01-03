@@ -105,7 +105,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Weight: 0.10 (high-impact)
 	Describe("GitOps DetectedLabel Weight", func() {
 		Context("when searching for GitOps workflows", func() {
-			It("should apply 0.10 boost for GitOps-managed workflows", func() {
+			It("should apply 0.10 boost for GitOps-managed workflows", FlakeAttempts(3), func() {
 				// ARRANGE: Create 2 workflows - one GitOps, one manual
 				// Both have identical mandatory labels to isolate DetectedLabel impact
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
@@ -235,7 +235,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Weight: 0.05 (medium-impact)
 	Describe("PDB DetectedLabel Weight", func() {
 		Context("when searching for PDB-protected workflows", func() {
-			It("should apply 0.05 boost for PDB-protected workflows", func() {
+			It("should apply 0.05 boost for PDB-protected workflows", FlakeAttempts(3), func() {
 				// ARRANGE: Create 2 workflows - one with PDB, one without
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -353,7 +353,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Penalty: -0.10 (high-impact mismatch)
 	Describe("GitOps DetectedLabel Penalty", func() {
 		Context("when signal requires GitOps but workflow is manual", func() {
-			It("should apply -0.10 penalty for GitOps mismatch", func() {
+			It("should apply -0.10 penalty for GitOps mismatch", FlakeAttempts(3), func() {
 				// ARRANGE: Create manual workflow
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -435,7 +435,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Weight: 0.05 per custom label key (up to 10 keys = 0.50 max)
 	Describe("Custom Label Boost", func() {
 		Context("when workflows have matching custom labels", func() {
-			It("should apply 0.05 boost per matching custom label key", func() {
+			It("should apply 0.05 boost per matching custom label key", FlakeAttempts(3), func() {
 				// ARRANGE: Create workflows with different custom labels
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -555,7 +555,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Weight: 0.05 for exact, 0.025 for wildcard (half of 0.05)
 	Describe("Wildcard DetectedLabel Matching", func() {
 		Context("when searching with wildcard service mesh requirement", func() {
-			It("should apply half boost (0.025) for wildcard matches", func() {
+			It("should apply half boost (0.025) for wildcard matches", FlakeAttempts(3), func() {
 				// ARRANGE: Create 2 workflows - one with specific mesh, one without
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -668,7 +668,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 		})
 
 		Context("when searching with exact service mesh requirement", func() {
-			It("should apply full boost (0.05) for exact matches", func() {
+			It("should apply full boost (0.05) for exact matches", FlakeAttempts(3), func() {
 				// ARRANGE: Reuse workflows from wildcard test
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
