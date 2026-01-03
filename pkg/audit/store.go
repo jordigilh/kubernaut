@@ -359,9 +359,12 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			if !ok {
 				// Channel closed, flush remaining events
 				if len(batch) > 0 {
+					batchSizeBeforeFlush := len(batch)
 					s.logger.V(1).Info("🛑 Flushing remaining events on shutdown",
-						"batch_size", len(batch))
+						"batch_size", batchSizeBeforeFlush)
 					s.writeBatchWithRetry(batch)
+					s.logger.Info("✅ Shutdown flush completed",
+						"flushed_count", batchSizeBeforeFlush)
 				}
 				s.logger.Info("🛑 Audit background writer stopped",
 					"total_runtime", time.Since(startTime),
@@ -376,14 +379,22 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 		// Write when batch is full
 			if len(batch) >= s.config.BatchSize {
+				// Capture size BEFORE flushing (AA Team: prevent misleading logs)
+				batchSizeBeforeFlush := len(batch)
+				bufferUtilizationBeforeFlush := len(s.buffer)
 				timeSinceLastFlush := time.Since(lastFlushTime)
+				
 				s.logger.V(1).Info("📦 Batch-full flush triggered",
-					"batch_size", len(batch),
-					"buffer_utilization", len(s.buffer),
+					"batch_size", batchSizeBeforeFlush,
+					"buffer_utilization", bufferUtilizationBeforeFlush,
 					"time_since_last_flush", timeSinceLastFlush)
 				s.writeBatchWithRetry(batch)
 				lastFlushTime = time.Now()
 				batch = batch[:0] // Reset batch
+				s.logger.V(1).Info("✅ Batch-full flush completed",
+					"flushed_count", batchSizeBeforeFlush,
+					"batch_size_after_flush", len(batch),
+					"buffer_utilization_after_flush", len(s.buffer))
 			}
 
 		case tickTime := <-ticker.C:
@@ -392,11 +403,17 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			expectedInterval := s.config.FlushInterval
 			drift := timeSinceLastFlush - expectedInterval
 
+			// Capture batch size BEFORE any flushing (AA Team: prevent misleading logs)
+			// This prevents the "batch_size: 0" confusion that occurred when logging AFTER flush
+			batchSizeBeforeFlush := len(batch)
+			bufferUtilizationBeforeFlush := len(s.buffer)
+
 			// DEBUG: Log every ticker fire (RO Team issue - detecting 50-90s delays)
+			// AA Team fix: Log batch_size BEFORE flush to avoid misleading "0" values
 			s.logger.Info("⏰ Timer tick received",
 				"tick_number", tickCount,
-				"batch_size", len(batch),
-				"buffer_utilization", len(s.buffer),
+				"batch_size_before_flush", batchSizeBeforeFlush,
+				"buffer_utilization", bufferUtilizationBeforeFlush,
 				"expected_interval", expectedInterval,
 				"actual_interval", timeSinceLastFlush,
 				"drift", drift,
@@ -412,18 +429,22 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			}
 
 			// Flush partial batch periodically
-			if len(batch) > 0 {
+			if batchSizeBeforeFlush > 0 {
 				s.logger.V(1).Info("⏱️  Timer-based flush triggered",
-					"batch_size", len(batch),
-					"buffer_utilization", len(s.buffer),
+					"batch_size", batchSizeBeforeFlush,
+					"buffer_utilization", bufferUtilizationBeforeFlush,
 					"time_since_last_flush", timeSinceLastFlush)
 				s.writeBatchWithRetry(batch)
 				lastFlushTime = time.Now()
 				batch = batch[:0]
+				s.logger.V(1).Info("✅ Timer-based flush completed",
+					"flushed_count", batchSizeBeforeFlush,
+					"batch_size_after_flush", len(batch),
+					"buffer_utilization_after_flush", len(s.buffer))
 			} else {
 				// Timer fired but no events to flush
 				s.logger.V(2).Info("⏱️  Timer tick (no events to flush)",
-					"buffer_utilization", len(s.buffer),
+					"buffer_utilization", bufferUtilizationBeforeFlush,
 					"time_since_last_flush", timeSinceLastFlush)
 				lastFlushTime = time.Now()
 			}
