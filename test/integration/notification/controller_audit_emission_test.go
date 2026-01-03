@@ -65,9 +65,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 		queryCtx = context.Background()
 
 		// Get Data Storage URL from environment or use NT integration port
+		// MUST match the port in suite_test.go (line 252)
 		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://localhost:18110" // NT integration port
+			dataStorageURL = "http://127.0.0.1:18096" // NT integration port (IPv4 explicit, matches suite_test.go)
 		}
 
 		// Create REST API client for querying audit events
