@@ -235,7 +235,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Weight: 0.05 (medium-impact)
 	Describe("PDB DetectedLabel Weight", func() {
 		Context("when searching for PDB-protected workflows", func() {
-			It("should apply 0.05 boost for PDB-protected workflows", FlakeAttempts(3), func() {
+			It("should apply 0.05 boost for PDB-protected workflows", func() {
 				// ARRANGE: Create 2 workflows - one with PDB, one without
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -251,7 +251,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Environment: "production",
 						Priority:    "P1",
 					},
-					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
+					CustomLabels: models.CustomLabels{
+						"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+					},
 					DetectedLabels: models.DetectedLabels{
 						PDBProtected: true, // ✅ +0.05 boost expected
 					},
@@ -274,7 +276,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Environment: "production",
 						Priority:    "P1",
 					},
-					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
+					CustomLabels: models.CustomLabels{
+						"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+					},
 					DetectedLabels: models.DetectedLabels{
 						PDBProtected: false, // ❌ No boost
 					},
@@ -299,6 +303,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "deployment",
 						Environment: "production",
 						Priority:    "P1",
+						CustomLabels: map[string][]string{
+							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Filter by unique test ID
+						},
 						DetectedLabels: models.DetectedLabels{
 							PDBProtected: true, // Search wants PDB protection
 						},
@@ -353,7 +360,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Penalty: -0.10 (high-impact mismatch)
 	Describe("GitOps DetectedLabel Penalty", func() {
 		Context("when signal requires GitOps but workflow is manual", func() {
-			It("should apply -0.10 penalty for GitOps mismatch", FlakeAttempts(3), func() {
+			It("should apply -0.10 penalty for GitOps mismatch", func() {
 				// ARRANGE: Create manual workflow
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -369,7 +376,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Environment: "production",
 						Priority:    "P0",
 					},
-					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
+					CustomLabels: models.CustomLabels{
+						"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+					},
 					DetectedLabels: models.DetectedLabels{
 						GitOpsManaged: false, // ❌ Mismatch: signal wants GitOps
 					},
@@ -391,6 +400,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "deployment",
 						Environment: "production",
 						Priority:    "P0",
+						CustomLabels: map[string][]string{
+							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Filter by unique test ID
+						},
 						DetectedLabels: models.DetectedLabels{
 							GitOpsManaged: true, // ⚠️ Signal REQUIRES GitOps
 						},
@@ -555,7 +567,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 	// Weight: 0.05 for exact, 0.025 for wildcard (half of 0.05)
 	Describe("Wildcard DetectedLabel Matching", func() {
 		Context("when searching with wildcard service mesh requirement", func() {
-			It("should apply half boost (0.025) for wildcard matches", FlakeAttempts(3), func() {
+			It("should apply half boost (0.025) for wildcard matches", func() {
 				// ARRANGE: Create 2 workflows - one with specific mesh, one without
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -571,7 +583,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Environment: "production",
 						Priority:    "P1",
 					},
-					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
+					CustomLabels: models.CustomLabels{
+						"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+					},
 					DetectedLabels: models.DetectedLabels{
 						ServiceMesh: "istio", // Exact match: +0.05
 					},
@@ -594,7 +608,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Environment: "production",
 						Priority:    "P1",
 					},
-					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
+					CustomLabels: models.CustomLabels{
+						"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+					},
 					DetectedLabels: models.DetectedLabels{
 						ServiceMesh: "", // No mesh
 					},
@@ -618,6 +634,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "service",
 						Environment: "production",
 						Priority:    "P1",
+						CustomLabels: map[string][]string{
+							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Filter by unique test ID
+						},
 						DetectedLabels: models.DetectedLabels{
 							ServiceMesh: "*", // ⚠️ Wildcard: ANY service mesh
 						},
@@ -668,7 +687,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 		})
 
 		Context("when searching with exact service mesh requirement", func() {
-			It("should apply full boost (0.05) for exact matches", FlakeAttempts(3), func() {
+			It("should apply full boost (0.05) for exact matches", func() {
 				// ARRANGE: Reuse workflows from wildcard test
 				content := `{"steps":[{"action":"scale","replicas":3}]}`
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
@@ -684,7 +703,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Environment: "production",
 						Priority:    "P1",
 					},
-					CustomLabels: models.CustomLabels{}, // ✅ Empty map (NOT NULL constraint)
+					CustomLabels: models.CustomLabels{
+						"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+					},
 					DetectedLabels: models.DetectedLabels{
 						ServiceMesh: "istio", // Exact match
 					},
@@ -706,6 +727,9 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 						Component:   "service",
 						Environment: "production",
 						Priority:    "P1",
+						CustomLabels: map[string][]string{
+							"test_run_id": {testID}, // 🎯 TEST ISOLATION: Unique ID per parallel test
+						},
 						DetectedLabels: models.DetectedLabels{
 							ServiceMesh: "istio", // ✅ Exact match: istio
 						},
