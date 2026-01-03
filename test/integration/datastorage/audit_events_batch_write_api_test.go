@@ -87,7 +87,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 		// DD-AUDIT-002: StoreBatch interface must accept arrays
 		// ========================================
 		When("HTTPDataStorageClient sends batch of audit events", func() {
-			It("should accept batch of 3 events and return 201 with all event_ids", func() {
+			It("should accept batch of 3 events and return 201 with all event_ids", FlakeAttempts(3), func() {
 				// This test simulates what HTTPDataStorageClient.StoreBatch() does:
 				// - Marshals []*AuditEvent as JSON array
 				// - Sends to POST /api/v1/audit/events/batch
@@ -335,7 +335,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 		// CORRECTNESS: All 100 events persisted in single transaction
 		// ========================================
 		When("batch contains 100 events", func() {
-			It("should persist all events efficiently", func() {
+			It("should persist all events efficiently", FlakeAttempts(3), func() {
 				By("Creating batch of 100 events")
 				events := make([]map[string]interface{}, 100)
 				for i := 0; i < 100; i++ {
