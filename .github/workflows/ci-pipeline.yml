@@ -299,7 +299,6 @@ jobs:
       (github.event.pull_request.draft == false || github.event_name != 'pull_request')
     strategy:
       fail-fast: false
-      max-parallel: 2  # Limit parallel execution to prevent disk space exhaustion
       matrix:
         service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt]
         include:
