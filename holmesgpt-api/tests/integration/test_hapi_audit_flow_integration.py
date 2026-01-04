@@ -186,13 +186,14 @@ def call_hapi_incident_analyze(
     config = HapiConfiguration(host=hapi_url)
     client = HapiApiClient(configuration=config)
     api_instance = IncidentAnalysisApi(client)
-    
+
     # Create IncidentRequest model from dict
     incident_request = IncidentRequest(**incident_data)
-    
+
     # DD-API-001: Use OpenAPI generated client
-    response = api_instance.analyze_incident(incident_request=incident_request)
-    
+    # Note: Method name matches OpenAPI spec operationId from api/openapi.json
+    response = api_instance.incident_analyze_endpoint_api_v1_incident_analyze_post(incident_request=incident_request)
+
     # Convert response to dict for compatibility with existing tests
     return response.to_dict() if hasattr(response, 'to_dict') else response
 
@@ -218,13 +219,14 @@ def call_hapi_recovery_analyze(
     config = HapiConfiguration(host=hapi_url)
     client = HapiApiClient(configuration=config)
     api_instance = RecoveryAnalysisApi(client)
-    
+
     # Create RecoveryRequest model from dict
     recovery_request = RecoveryRequest(**recovery_data)
-    
+
     # DD-API-001: Use OpenAPI generated client
-    response = api_instance.analyze_recovery(recovery_request=recovery_request)
-    
+    # Note: Method name matches OpenAPI spec operationId from api/openapi.json
+    response = api_instance.recovery_analyze_endpoint_api_v1_recovery_analyze_post(recovery_request=recovery_request)
+
     # Convert response to dict for compatibility with existing tests
     return response.to_dict() if hasattr(response, 'to_dict') else response
 

@@ -1,5 +1,5 @@
 # HAPI Integration Test Logic Triage
-**Date**: January 3, 2026  
+**Date**: January 3, 2026
 **Status**: 🔍 Analyzing test failures - Business logic evolution mismatch
 
 ---
@@ -21,8 +21,8 @@
 ## 📊 **Failing Tests**
 
 ### **Test 1: test_incident_analysis_emits_llm_request_and_response_events**
-**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py:224`  
-**Line**: 274  
+**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py:224`
+**Line**: 274
 
 **Failure**:
 ```python
@@ -53,7 +53,7 @@ E   AssertionError: Expected exactly 2 audit events (llm_request, llm_response),
 ---
 
 ### **Test 2: test_workflow_not_found_emits_audit_with_error_context**
-**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py:535`  
+**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py:535`
 **Line**: TBD (need to check exact assertion)
 
 **Status**: Need to run locally to get exact failure details.
@@ -142,8 +142,8 @@ assert len(events) == 4, f"Expected 4 events, got {len(events)}"
 ## 📋 **Fix Implementation Plan**
 
 ### **Phase 1: Fix Test 1** ✅
-**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`  
-**Method**: `test_incident_analysis_emits_llm_request_and_response_events`  
+**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`
+**Method**: `test_incident_analysis_emits_llm_request_and_response_events`
 **Changes**:
 1. Query all events (keep existing logic)
 2. Filter for `event_type in ['llm_request', 'llm_response']`
@@ -155,15 +155,15 @@ assert len(events) == 4, f"Expected 4 events, got {len(events)}"
 ---
 
 ### **Phase 2: Fix Test 2** ✅
-**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`  
-**Method**: `test_workflow_not_found_emits_audit_with_error_context`  
+**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`
+**Method**: `test_workflow_not_found_emits_audit_with_error_context`
 **Changes**: TBD (need to analyze exact failure first)
 
 ---
 
 ### **Phase 3: Verify Recovery Analysis Test** ✅
-**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`  
-**Method**: `test_recovery_analysis_emits_llm_request_and_response_events`  
+**File**: `holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py`
+**Method**: `test_recovery_analysis_emits_llm_request_and_response_events`
 **Status**: Check if this test has the same issue (line 434 asserts `len(events) == 2`)
 
 ---
@@ -268,9 +268,9 @@ Test Evidence:
 
 ## 🎯 **Confidence Assessment**
 
-**Diagnosis**: 100% - Exact failure cause identified  
-**Fix**: 95% - Straightforward filter logic  
-**Risk**: Low - Isolated change to test logic, no production code affected  
+**Diagnosis**: 100% - Exact failure cause identified
+**Fix**: 95% - Straightforward filter logic
+**Risk**: Low - Isolated change to test logic, no production code affected
 **Priority**: P1 - Blocks HAPI integration tests in CI
 
 ---

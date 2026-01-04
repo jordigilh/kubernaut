@@ -1,5 +1,5 @@
 # Data Storage Integration Test Failures - Triage
-**Date**: January 3, 2026  
+**Date**: January 3, 2026
 **Status**: 🔍 Pre-existing flaky tests - NOT related to IPv6/IPv4 or test logic changes
 
 ---
@@ -21,9 +21,9 @@
 ## 📊 **Reported CI Failures** (User Report)
 
 ### **1. ADR-033: Multi-Dimensional Success Tracking**
-**Test**: `should handle multiple workflows for same incident type (TC-ADR033-02)`  
-**File**: `test/integration/datastorage/repository_adr033_integration_test.go:142`  
-**Status**: **FAIL** (actual failure, not interrupted)  
+**Test**: `should handle multiple workflows for same incident type (TC-ADR033-02)`
+**File**: `test/integration/datastorage/repository_adr033_integration_test.go:142`
+**Status**: **FAIL** (actual failure, not interrupted)
 **Line 142**: `Expect(err).ToNot(HaveOccurred())` in `insertActionTrace` helper
 
 **Likely Cause**: Database insert failure or timing issue with test data setup.
@@ -31,12 +31,12 @@
 ---
 
 ### **2. BR-STORAGE-028: DLQ Drain During Shutdown**
-**Test 1**: `MUST include DLQ drain time in total shutdown duration`  
-**File**: `test/integration/datastorage/graceful_shutdown_test.go:888`  
+**Test 1**: `MUST include DLQ drain time in total shutdown duration`
+**File**: `test/integration/datastorage/graceful_shutdown_test.go:888`
 **Status**: **INTERRUPTED**
 
-**Test 2**: `MUST handle graceful shutdown even when DLQ is empty`  
-**File**: `test/integration/datastorage/graceful_shutdown_test.go:849`  
+**Test 2**: `MUST handle graceful shutdown even when DLQ is empty`
+**File**: `test/integration/datastorage/graceful_shutdown_test.go:849`
 **Status**: **INTERRUPTED**
 
 **Likely Cause**: Test timeout or killed by CI runner (long-running shutdown tests).
@@ -55,7 +55,7 @@ Summarizing 3 Failures:
   [INTERRUPTED] Workflow Label Scoring Integration Tests [It] should apply 0.05 boost for PDB-protected workflows
   /Users/jgil/go/src/github.com/jordigilh/kubernaut/test/integration/datastorage/workflow_label_scoring_integration_test.go:238
 
-  [INTERRUPTED] Workflow Label Scoring Integration Tests [It] should apply 0.10 boost for GitOps-managed workflows  
+  [INTERRUPTED] Workflow Label Scoring Integration Tests [It] should apply 0.10 boost for GitOps-managed workflows
   /Users/jgil/go/src/github.com/jordigilh/kubernaut/test/integration/datastorage/workflow_label_scoring_integration_test.go:108
 
 Ran 14 of 157 Specs in 17.679 seconds
@@ -106,7 +106,7 @@ FAIL! - Interrupted by Other Ginkgo Process
 
 ### **ADR-033: Repository Test Failure**
 
-**File**: `repository_adr033_integration_test.go:196-246`  
+**File**: `repository_adr033_integration_test.go:196-246`
 **Test**: TC-ADR033-02 - Multiple workflows for same incident type
 
 **Test Logic**:
@@ -144,7 +144,7 @@ Expect(err).ToNot(HaveOccurred()) // ← FAILING HERE
 
 ### **BR-STORAGE-028: Graceful Shutdown Tests**
 
-**File**: `graceful_shutdown_test.go:849,888`  
+**File**: `graceful_shutdown_test.go:849,888`
 **Tests**: DLQ drain timing and empty DLQ handling
 
 **Test Nature**:
@@ -270,8 +270,8 @@ Eventually(func() bool {
 
 ---
 
-**Confidence**: 90% (evidence-based analysis)  
-**Risk**: Low (isolated to DS tests, unrelated to recent changes)  
-**Priority**: P2 (does not block other service fixes, can be addressed separately)  
+**Confidence**: 90% (evidence-based analysis)
+**Risk**: Low (isolated to DS tests, unrelated to recent changes)
+**Priority**: P2 (does not block other service fixes, can be addressed separately)
 **Immediate Action**: Add `FlakeAttempts(3)` to 3 tests
 

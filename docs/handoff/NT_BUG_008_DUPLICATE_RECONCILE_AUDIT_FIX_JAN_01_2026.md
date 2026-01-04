@@ -1,9 +1,9 @@
 # NT-BUG-008: Duplicate Reconciliation Audit Events - Root Cause & Fix
 
-**Date**: January 1, 2026  
-**Severity**: P2 - Medium (Audit overhead, no functional impact)  
-**Status**: ✅ FIXED  
-**Discovered By**: E2E Test 02_audit_correlation_test.go  
+**Date**: January 1, 2026
+**Severity**: P2 - Medium (Audit overhead, no functional impact)
+**Status**: ✅ FIXED
+**Discovered By**: E2E Test 02_audit_correlation_test.go
 **Fixed In**: internal/controller/notification/notificationrequest_controller.go
 
 ---
@@ -52,8 +52,8 @@ for i := 1; i <= 3; i++ {
 }
 ```
 
-**Expected**: 3 audit events (1 per notification)  
-**Actual (Before Fix)**: 6 audit events (2 per notification)  
+**Expected**: 3 audit events (1 per notification)
+**Actual (Before Fix)**: 6 audit events (2 per notification)
 **Actual (After Fix)**: 3 audit events ✅
 
 ---
@@ -141,8 +141,8 @@ initialized, err := r.handleInitialization(ctx, notification)
 
 ### Implementation
 
-**File**: `internal/controller/notification/notificationrequest_controller.go`  
-**Location**: After line 207 (after reconcile start debug log)  
+**File**: `internal/controller/notification/notificationrequest_controller.go`
+**Location**: After line 207 (after reconcile start debug log)
 **Lines Added**: 13 lines
 
 ```go
@@ -175,7 +175,7 @@ if notification.Generation == notification.Status.ObservedGeneration &&
 
 ### E2E Test Update
 
-**File**: `test/e2e/notification/02_audit_correlation_test.go`  
+**File**: `test/e2e/notification/02_audit_correlation_test.go`
 **Line**: 200
 
 **Before**:
