@@ -172,7 +172,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 		e.logger.Error(err, "Failed to fetch pod", "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
 		e.recordEnrichmentResult("failure")
-		return result, nil
+		return nil, fmt.Errorf("failed to fetch pod: %w", err)
 	}
 	result.Pod = e.convertPodDetails(pod)
 
@@ -223,7 +223,7 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 		e.logger.Error(err, "Failed to fetch deployment", "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
 		e.recordEnrichmentResult("failure")
-		return result, nil
+		return nil, fmt.Errorf("failed to fetch deployment: %w", err)
 	}
 	result.Deployment = e.convertDeploymentDetails(deployment)
 
@@ -255,7 +255,7 @@ func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signa
 		e.logger.Error(err, "Failed to fetch statefulset", "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
 		e.recordEnrichmentResult("failure")
-		return result, nil
+		return nil, fmt.Errorf("failed to fetch statefulset: %w", err)
 	}
 	result.StatefulSet = e.convertStatefulSetDetails(statefulset)
 
@@ -287,7 +287,7 @@ func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalp
 		e.logger.Error(err, "Failed to fetch daemonset", "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
 		e.recordEnrichmentResult("failure")
-		return result, nil
+		return nil, fmt.Errorf("failed to fetch daemonset: %w", err)
 	}
 	result.DaemonSet = e.convertDaemonSetDetails(daemonset)
 
@@ -319,7 +319,7 @@ func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signal
 		e.logger.Error(err, "Failed to fetch replicaset", "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
 		e.recordEnrichmentResult("failure")
-		return result, nil
+		return nil, fmt.Errorf("failed to fetch replicaset: %w", err)
 	}
 	result.ReplicaSet = e.convertReplicaSetDetails(replicaset)
 
@@ -351,7 +351,7 @@ func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalpro
 		e.logger.Error(err, "Failed to fetch service", "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")  // DD-005: Record error metric
 		e.recordEnrichmentResult("failure")
-		return result, nil
+		return nil, fmt.Errorf("failed to fetch service: %w", err)
 	}
 	result.Service = e.convertServiceDetails(service)
 
