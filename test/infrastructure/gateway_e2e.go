@@ -64,33 +64,33 @@ const (
 //
 // Reference: test/infrastructure/signalprocessing.go:246 (authoritative pattern)
 func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 Gateway E2E Infrastructure (PARALLEL MODE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Parallel optimization: ~2 min saved per E2E run (27% faster)")
-	fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 Gateway E2E Infrastructure (PARALLEL MODE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Parallel optimization: ~2 min saved per E2E run (27% faster)")
+	_, _ = fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := "kubernaut-system"
 
 	// Generate consistent DataStorage image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "gateway")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Create Kind cluster + CRDs + namespace (Sequential - must be first)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + CRDs + namespace...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + CRDs + namespace...")
 
 	// Create Kind cluster
-	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
 	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// Install RemediationRequest CRD
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
 	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
@@ -100,7 +100,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	}
 
 	// Create namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
@@ -108,10 +108,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Parallel infrastructure setup
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
-	fmt.Fprintln(writer, "  ├── Building + Loading Gateway image")
-	fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
-	fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading Gateway image")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
 
 	type result struct {
 		name string
@@ -157,9 +157,9 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		r := <-results
 		if r.err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
-			fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
 		}
 	}
 
@@ -170,7 +170,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
 
 	// Deploy DataStorage using AIAnalysis's proven pattern
 	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
@@ -180,19 +180,19 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy Gateway (requires DataStorage)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Gateway...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Gateway...")
 
 	// Deploy Gateway service
 	if err := deployGatewayService(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Gateway: %w", err)
 	}
 
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (PARALLEL MODE)!")
-	fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
-	fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
-	fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (PARALLEL MODE)!")
+	_, _ = fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
+	_, _ = fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
 }
@@ -219,25 +219,25 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 //
 // Usage: Set COVERAGE_MODE=true environment variable
 func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "📊 Gateway E2E Infrastructure (SEQUENTIAL MODE + COVERAGE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Per DD-TEST-007: E2E Coverage Capture Standard")
-	fmt.Fprintln(writer, "  Sequential setup (Build→Cluster→Load) prevents Kind timeout")
-	fmt.Fprintln(writer, "  With SKIP_SYSTEM_UPDATE=true: 2-3min builds vs 10min")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📊 Gateway E2E Infrastructure (SEQUENTIAL MODE + COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-007: E2E Coverage Capture Standard")
+	_, _ = fmt.Fprintln(writer, "  Sequential setup (Build→Cluster→Load) prevents Kind timeout")
+	_, _ = fmt.Fprintln(writer, "  With SKIP_SYSTEM_UPDATE=true: 2-3min builds vs 10min")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := "kubernaut-system"
 
 	// Generate consistent DataStorage image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "gateway")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// DD-TEST-007: Create coverdata directory BEFORE anything else
 	projectRoot := getProjectRoot()
 	coverdataPath := filepath.Join(projectRoot, "coverdata")
-	fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
 	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 		return fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
@@ -245,34 +245,34 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images FIRST (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images (BEFORE cluster creation)...")
-	fmt.Fprintln(writer, "  This prevents Kind cluster from sitting idle during long builds")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images (BEFORE cluster creation)...")
+	_, _ = fmt.Fprintln(writer, "  This prevents Kind cluster from sitting idle during long builds")
 
-	fmt.Fprintln(writer, "  🔨 Building Gateway image with coverage...")
+	_, _ = fmt.Fprintln(writer, "  🔨 Building Gateway image with coverage...")
 	if err := BuildGatewayImageWithCoverage(writer); err != nil {
 		return fmt.Errorf("Gateway coverage image build failed: %w", err)
 	}
-	fmt.Fprintln(writer, "  ✅ Gateway image built")
+	_, _ = fmt.Fprintln(writer, "  ✅ Gateway image built")
 
-	fmt.Fprintln(writer, "  🔨 Building DataStorage image with dynamic tag...")
+	_, _ = fmt.Fprintln(writer, "  🔨 Building DataStorage image with dynamic tag...")
 	if err := buildDataStorageImageWithTag(dataStorageImage, writer); err != nil {
 		return fmt.Errorf("DataStorage image build failed: %w", err)
 	}
-	fmt.Fprintln(writer, "  ✅ DataStorage image built")
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage image built")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster + CRDs + namespace
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster (NOW - after builds complete)...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster (NOW - after builds complete)...")
 
 	// Create Kind cluster (uses config with /coverdata mount)
-	fmt.Fprintln(writer, "📦 Creating Kind cluster with /coverdata mount...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster with /coverdata mount...")
 	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// Install RemediationRequest CRD
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
 	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
@@ -282,7 +282,7 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 	}
 
 	// Create namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
@@ -290,48 +290,48 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images IMMEDIATELY (cluster is fresh and healthy)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster (immediately after cluster creation)...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster (immediately after cluster creation)...")
 
-	fmt.Fprintln(writer, "  📦 Loading Gateway image...")
+	_, _ = fmt.Fprintln(writer, "  📦 Loading Gateway image...")
 	if err := LoadGatewayCoverageImage(clusterName, writer); err != nil {
 		return fmt.Errorf("Gateway coverage image load failed: %w", err)
 	}
-	fmt.Fprintln(writer, "  ✅ Gateway image loaded")
+	_, _ = fmt.Fprintln(writer, "  ✅ Gateway image loaded")
 
-	fmt.Fprintln(writer, "  📦 Loading DataStorage image with dynamic tag...")
+	_, _ = fmt.Fprintln(writer, "  📦 Loading DataStorage image with dynamic tag...")
 	if err := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("DataStorage image load failed: %w", err)
 	}
-	fmt.Fprintln(writer, "  ✅ DataStorage image loaded")
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage image loaded")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy infrastructure services (PostgreSQL + Redis)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Data Storage infrastructure...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Data Storage infrastructure...")
 
 	// Deploy shared Data Storage infrastructure (PostgreSQL + Redis + Migrations + Data Storage)
 	// Use same image tag that was built and loaded earlier
 	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
-	fmt.Fprintln(writer, "  ✅ Data Storage infrastructure deployed")
+	_, _ = fmt.Fprintln(writer, "  ✅ Data Storage infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: Deploy Gateway WITH COVERAGE (requires DataStorage)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 6: Deploying Gateway (coverage-enabled)...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 6: Deploying Gateway (coverage-enabled)...")
 
 	if err := DeployGatewayCoverageManifest(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Gateway: %w", err)
 	}
-	fmt.Fprintln(writer, "  ✅ Gateway deployed with coverage")
+	_, _ = fmt.Fprintln(writer, "  ✅ Gateway deployed with coverage")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// SUCCESS
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ Gateway E2E Infrastructure Ready (Sequential + Coverage)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E Infrastructure Ready (Sequential + Coverage)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
 }
@@ -349,25 +349,25 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 //
 // Usage: Set COVERAGE_MODE=true environment variable
 func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "📊 Gateway E2E Infrastructure (PARALLEL MODE + COVERAGE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Per DD-TEST-007: E2E Coverage Capture Standard")
-	fmt.Fprintln(writer, "  Parallel optimization + Coverage instrumentation")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📊 Gateway E2E Infrastructure (PARALLEL MODE + COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-007: E2E Coverage Capture Standard")
+	_, _ = fmt.Fprintln(writer, "  Parallel optimization + Coverage instrumentation")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := "kubernaut-system"
 
 	// Generate consistent DataStorage image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "gateway")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// DD-TEST-007: Create coverdata directory BEFORE Kind cluster creation
 	// Kind needs the hostPath to exist before mounting it
 	projectRoot := getProjectRoot()
 	coverdataPath := filepath.Join(projectRoot, "coverdata")
-	fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
 	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 		return fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
@@ -375,16 +375,16 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Create Kind cluster + CRDs + namespace (Sequential - must be first)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + CRDs + namespace...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + CRDs + namespace...")
 
 	// Create Kind cluster (uses config with /coverdata mount)
-	fmt.Fprintln(writer, "📦 Creating Kind cluster with /coverdata mount...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster with /coverdata mount...")
 	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// Install RemediationRequest CRD
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
 	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
@@ -394,7 +394,7 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	}
 
 	// Create namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
@@ -402,10 +402,10 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Parallel infrastructure setup (WITH COVERAGE)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup (coverage-enabled)...")
-	fmt.Fprintln(writer, "  ├── Building + Loading Gateway image (WITH COVERAGE)")
-	fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
-	fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup (coverage-enabled)...")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading Gateway image (WITH COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
 
 	type result struct {
 		name string
@@ -453,9 +453,9 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 		r := <-results
 		if r.err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
-			fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
 		}
 	}
 
@@ -466,7 +466,7 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
 
 	// Deploy DataStorage using AIAnalysis's proven pattern
 	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
@@ -476,20 +476,20 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy Gateway WITH COVERAGE (requires DataStorage)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Gateway (coverage-enabled)...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Gateway (coverage-enabled)...")
 
 	// Deploy Gateway with coverage manifest (includes GOCOVERDIR and /coverdata mount)
 	if err := DeployGatewayCoverageManifest(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Gateway with coverage: %w", err)
 	}
 
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (PARALLEL + COVERAGE)!")
-	fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
-	fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
-	fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
-	fmt.Fprintln(writer, "  • Coverage Dir: /coverdata (mounted from Kind worker node)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E infrastructure ready (PARALLEL + COVERAGE)!")
+	_, _ = fmt.Fprintf(writer, "  • Gateway: http://localhost:%d\n", GatewayE2EHostPort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway Metrics: http://localhost:%d/metrics\n", GatewayE2EMetricsPort)
+	_, _ = fmt.Fprintf(writer, "  • DataStorage: http://localhost:%d (NodePort %d)\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	_, _ = fmt.Fprintln(writer, "  • Coverage Dir: /coverdata (mounted from Kind worker node)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
 }
@@ -500,24 +500,24 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 //
 // DEPRECATED: Use SetupGatewayInfrastructureParallel for ~27% faster setup
 func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "Gateway E2E Cluster Setup")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "Dependencies:")
-	fmt.Fprintf(writer, "  • PostgreSQL (port 5433) - Data Storage persistence\n")
-	fmt.Fprintf(writer, "  • Redis (port 6380) - Data Storage caching\n")
-	fmt.Fprintf(writer, "  • Data Storage (host port %d, NodePort %d) - Audit trail\n", DataStorageE2EHostPort, GatewayDataStoragePort)
-	fmt.Fprintf(writer, "  • Gateway (host port %d) - Signal ingestion\n", GatewayE2EHostPort)
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "Gateway E2E Cluster Setup")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "Dependencies:")
+	_, _ = fmt.Fprintf(writer, "  • PostgreSQL (port 5433) - Data Storage persistence\n")
+	_, _ = fmt.Fprintf(writer, "  • Redis (port 6380) - Data Storage caching\n")
+	_, _ = fmt.Fprintf(writer, "  • Data Storage (host port %d, NodePort %d) - Audit trail\n", DataStorageE2EHostPort, GatewayDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  • Gateway (host port %d) - Signal ingestion\n", GatewayE2EHostPort)
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// 1. Create Kind cluster
-	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
 	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// 2. Install RemediationRequest CRD (reuse from signalprocessing.go)
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
 	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
@@ -527,12 +527,12 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 	}
 
 	// 3. Build and load Gateway Docker image
-	fmt.Fprintln(writer, "🐳 Building Gateway Docker image...")
+	_, _ = fmt.Fprintln(writer, "🐳 Building Gateway Docker image...")
 	if err := buildAndLoadGatewayImage(clusterName, writer); err != nil {
 		return fmt.Errorf("failed to build Gateway image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "✅ Gateway E2E cluster created successfully")
+	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E cluster created successfully")
 	return nil
 }
 
@@ -544,30 +544,30 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 // 3. Data Storage deployment
 // 4. Gateway deployment
 func DeployTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
-	fmt.Fprintln(writer, "📦 Deploying Gateway E2E services...")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying Gateway E2E services...")
 
 	// 0. Create namespace first (shared function from datastorage.go)
 	// Deploy shared Data Storage infrastructure (Namespace + PostgreSQL + Redis + Migrations + Data Storage)
 	// Use same image tag that was built and loaded earlier
-	fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure...")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure...")
 	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
-	fmt.Fprintln(writer, "✅ Data Storage infrastructure deployed")
+	_, _ = fmt.Fprintln(writer, "✅ Data Storage infrastructure deployed")
 
 	// 5. Deploy Gateway service
-	fmt.Fprintln(writer, "🚪 Deploying Gateway service...")
+	_, _ = fmt.Fprintln(writer, "🚪 Deploying Gateway service...")
 	if err := deployGatewayService(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Gateway: %w", err)
 	}
 
-	fmt.Fprintln(writer, "✅ All services deployed successfully")
+	_, _ = fmt.Fprintln(writer, "✅ All services deployed successfully")
 	return nil
 }
 
 // DeleteGatewayCluster deletes the Kind cluster
 func DeleteGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "🗑️  Deleting Gateway E2E cluster...")
+	_, _ = fmt.Fprintln(writer, "🗑️  Deleting Gateway E2E cluster...")
 
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 	cmd.Stdout = writer
@@ -579,7 +579,7 @@ func DeleteGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 
-	fmt.Fprintln(writer, "✅ Gateway E2E cluster deleted")
+	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E cluster deleted")
 	return nil
 }
 
@@ -627,7 +627,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	// - Consistent with all other services (notification, signalprocessing, etc.)
 	// - Zero maintenance (Platform Team owns shared script)
 	// - Automatic cleanup support
-	fmt.Fprintln(writer, "   Building Gateway image via shared build utilities (DD-TEST-001)...")
+	_, _ = fmt.Fprintln(writer, "   Building Gateway image via shared build utilities (DD-TEST-001)...")
 
 	buildScript := filepath.Join(projectRoot, "scripts", "build-service-image.sh")
 	buildCmd := exec.Command(buildScript,
@@ -643,14 +643,14 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 		return fmt.Errorf("shared build script failed: %w", err)
 	}
 
-	fmt.Fprintln(writer, "   ✅ Gateway image built and loaded to Kind with unique tag")
+	_, _ = fmt.Fprintln(writer, "   ✅ Gateway image built and loaded to Kind with unique tag")
 	return nil
 }
 
 // deployDataStorageToCluster is DEPRECATED - replaced by shared deployDataStorage from aianalysis.go
 // See: docs/handoff/DS_TEAM_GATEWAY_E2E_DATASTORAGE_ISSUE.md (Option A)
 // This function is no longer called and will be removed in future cleanup.
-func deployDataStorageToCluster_DEPRECATED(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func deployDataStorageToCluster_DEPRECATED(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	// Deploy using Data Storage's shared deployment function
 	// This is a simplified version - full deployment would include ConfigMap, Secrets, etc.
 	// For now, Gateway E2E tests will use a basic deployment
@@ -720,7 +720,7 @@ spec:
 	}
 
 	// Wait for Data Storage to be ready
-	fmt.Fprintln(writer, "   Waiting for Data Storage pod...")
+	_, _ = fmt.Fprintln(writer, "   Waiting for Data Storage pod...")
 	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=datastorage",
@@ -755,7 +755,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string,
 	imageTag := strings.TrimPrefix(tagLine, "IMAGE_TAG=")
 	fullImage := fmt.Sprintf("localhost/gateway:%s", imageTag)
 
-	fmt.Fprintf(writer, "   Using Gateway image: %s (DD-TEST-001 unique tag)\n", fullImage)
+	_, _ = fmt.Fprintf(writer, "   Using Gateway image: %s (DD-TEST-001 unique tag)\n", fullImage)
 
 	// Read deployment manifest and replace hardcoded tag with actual tag
 	deploymentPath := filepath.Join(projectRoot, "test/e2e/gateway/gateway-deployment.yaml")
@@ -774,7 +774,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string,
 	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
 		return fmt.Errorf("failed to write temp deployment: %w", err)
 	}
-	defer os.Remove(tmpDeployment)
+	defer func() { _ = os.Remove(tmpDeployment) }()
 
 	// Apply the modified deployment
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
@@ -788,7 +788,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string,
 	}
 
 	// Wait for Gateway to be ready (extended timeout for RBAC propagation + initial image pull in Podman)
-	fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
+	_, _ = fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
 	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway",
@@ -805,9 +805,9 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string,
 
 // waitForDataStorageInfraReady waits for PostgreSQL and Redis to be ready
 // This is a simplified version for Gateway E2E tests
-func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	// Wait for PostgreSQL
-	fmt.Fprintln(writer, "   Waiting for PostgreSQL...")
+	_, _ = fmt.Fprintln(writer, "   Waiting for PostgreSQL...")
 	pgCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=postgresql",
@@ -820,7 +820,7 @@ func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath
 	}
 
 	// Wait for Redis
-	fmt.Fprintln(writer, "   Waiting for Redis...")
+	_, _ = fmt.Fprintln(writer, "   Waiting for Redis...")
 	redisCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=redis",

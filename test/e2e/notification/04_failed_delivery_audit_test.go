@@ -135,7 +135,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		// Clean up NotificationRequest CRD if it exists
 		if notification != nil {
-			k8sClient.Delete(testCtx, notification)
+			_ = k8sClient.Delete(testCtx, notification)
 		}
 	})
 

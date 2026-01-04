@@ -55,7 +55,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
@@ -149,11 +148,27 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
+	// ========================================
+	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001)
+	// ========================================
+	// Skip reconcile if we've already processed this generation AND not in terminal phase
+	if sp.Status.ObservedGeneration == sp.Generation &&
+		sp.Status.Phase != "" &&
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseCompleted &&
+		sp.Status.Phase != signalprocessingv1alpha1.PhaseFailed {
+		logger.V(1).Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
+			"generation", sp.Generation,
+			"observedGeneration", sp.Status.ObservedGeneration,
+			"phase", sp.Status.Phase)
+		return ctrl.Result{}, nil
+	}
+
 	// Initialize status if needed
 	if sp.Status.Phase == "" {
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
 		// Initialize phase + timestamp in single API call
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
 		// ========================================
 		err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 			sp.Status.Phase = signalprocessingv1alpha1.PhasePending
@@ -192,6 +207,7 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
 		// Phase transition in single API call
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Enriching handler after processing
 		// ========================================
 		err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 			sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
@@ -236,13 +252,24 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 	// ========================================
 	// DD-PERF-001: ATOMIC STATUS UPDATE
 	// Transition to Enriching in single API call
+	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Enriching handler after processing
 	// ========================================
+	oldPhase := sp.Status.Phase
 	err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
 		return nil
 	})
 	if err != nil {
 		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("pending", "failure")
+		return ctrl.Result{}, err
+	}
+
+	// Record phase transition audit event (BR-SP-090)
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	// FIX: SP-BUG-001 - Missing audit event for Pending→Enriching transition
+	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseEnriching)); err != nil {
+		// DD-005: Track phase processing failure (audit failure)
 		r.Metrics.IncrementProcessingTotal("pending", "failure")
 		return ctrl.Result{}, err
 	}
@@ -326,6 +353,13 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		// DD-005: Track enrichment failure
 		r.Metrics.IncrementProcessingTotal("enriching", "failure")
 		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
+
+		// BR-SP-090: Emit error audit event before returning (ADR-038: non-blocking)
+		// Test: audit_integration_test.go:761 expects error.occurred OR signal.processed
+		// NOTE: NotFound errors enter degraded mode (return success), so this only fires for
+		//       other errors: namespace fetch failures, API timeouts, RBAC denials, etc.
+		r.AuditClient.RecordError(ctx, sp, "Enriching", err)
+
 		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
 	}
 
@@ -404,6 +438,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	oldPhase := sp.Status.Phase
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		// Apply enrichment updates after refetch
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Classifying handler after processing
 		sp.Status.KubernetesContext = k8sCtx
 		sp.Status.RecoveryContext = recoveryCtx
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseClassifying
@@ -486,6 +521,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// ========================================
 	oldPhase := sp.Status.Phase
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Categorizing handler after processing
 		// Apply classification updates after refetch
 		sp.Status.EnvironmentClassification = envClass
 		sp.Status.PriorityAssignment = priorityAssignment
@@ -550,6 +586,7 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	// BEFORE: 5 status fields in 1 update (but refetch+update pattern)
 	// AFTER: Atomic refetch → apply all → single Status().Update()
 	// ========================================
+	sp.Status.ObservedGeneration = sp.Generation // DD-CONTROLLER-001
 	oldPhase := sp.Status.Phase
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		// Apply final updates after refetch
@@ -993,11 +1030,11 @@ func (r *SignalProcessingReconciler) buildRegoKubernetesContextForDetection(k8sC
 }
 
 // SetupWithManager sets up the controller with the Manager.
-// Per SERVICE_MATURITY_REQUIREMENTS.md: Predicates filter events to reduce unnecessary reconciliations.
+// DD-CONTROLLER-001: ObservedGeneration provides idempotency without blocking status updates
+// GenerationChangedPredicate removed to allow phase progression via status updates
 func (r *SignalProcessingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&signalprocessingv1alpha1.SignalProcessing{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Named(fmt.Sprintf("signalprocessing-%s", "controller")).
 		Complete(r)
 }
@@ -1127,9 +1164,15 @@ func isTransientError(err error) bool {
 
 // recordPhaseTransitionAudit records a phase transition audit event.
 // ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// SP-BUG-002: Prevents duplicate audit events when phase hasn't actually changed (race condition mitigation).
 func (r *SignalProcessingReconciler) recordPhaseTransitionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase, newPhase string) error {
 	if r.AuditClient == nil {
 		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+	// SP-BUG-002: Skip audit if no actual transition occurred
+	// This prevents duplicate events when controller processes same phase twice due to K8s cache/watch timing
+	if oldPhase == newPhase {
+		return nil
 	}
 	r.AuditClient.RecordPhaseTransition(ctx, sp, oldPhase, newPhase)
 	return nil

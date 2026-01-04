@@ -54,11 +54,14 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
+var _ = Describe("Audit Events Write API Integration Tests", func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
-		// Serial tests MUST use public schema (HTTP API writes to public schema)
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert/query data in test_process_X
+		// schemas, the API won't find the data and tests will fail.
 		usePublicSchema()
 
 		// Ensure service is ready before each test
@@ -67,7 +70,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 			if err != nil || resp == nil {
 				return 0
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode
 		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
 
@@ -123,7 +126,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				By("Verifying 201 Created response")
 				if resp.StatusCode != http.StatusCreated {
@@ -227,7 +230,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -309,7 +312,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -379,7 +382,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				By("Verifying 400 Bad Request response")
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -408,7 +411,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 				Expect(resp.Header.Get("Content-Type")).To(Equal("application/problem+json"))
@@ -436,7 +439,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
@@ -480,7 +483,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp1, err := http.DefaultClient.Do(req1)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp1.Body.Close()
+				defer func() { _ = resp1.Body.Close() }()
 				Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
 
 				By("Writing AI Analysis completed event with same correlation_id")
@@ -505,14 +508,20 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp2, err := http.DefaultClient.Do(req2)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp2.Body.Close()
+				defer func() { _ = resp2.Body.Close() }()
 				Expect(resp2.StatusCode).To(Equal(http.StatusCreated))
 
 				By("Verifying both events exist with same correlation_id")
-				var count int
-				err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(2))
+				// Use Eventually to handle async HTTP API processing and parallel execution timing
+				Eventually(func() int {
+					var count int
+					err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+					if err != nil {
+						return -1
+					}
+					return count
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2),
+					"Both events should be written with same correlation_id")
 			})
 		})
 
@@ -555,7 +564,7 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				By("Verifying 400 Bad Request response")
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest), "Should reject FK constraint violation")

@@ -33,7 +33,7 @@ import (
 // Per scripts/validate-service-maturity.sh check for testutil usage.
 // ========================================
 
-var _ = Describe("Audit Event Validation Helper", Serial, func() {
+var _ = Describe("Audit Event Validation Helper",  func() {
 	var (
 		baseURL string
 		client  *dsgen.ClientWithResponses

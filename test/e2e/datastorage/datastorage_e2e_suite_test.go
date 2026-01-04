@@ -157,7 +157,7 @@ var _ = SynchronizedBeforeSuite(
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("health check returned status %d", resp.StatusCode)
 			}
@@ -208,7 +208,7 @@ var _ = SynchronizedBeforeSuite(
 				nodePortWorks = true
 				logger.Info("✅ NodePort accessible (Docker provider)", "process", processID)
 			}
-			testDB.Close()
+			_ = testDB.Close()
 		}
 
 		// If NodePort doesn't work, use kubectl port-forward (Podman)
@@ -252,7 +252,7 @@ var _ = SynchronizedBeforeSuite(
 				if err != nil {
 					return false
 				}
-				conn.Close()
+				_ = conn.Close()
 				return true
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 

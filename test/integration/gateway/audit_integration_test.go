@@ -129,7 +129,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					"  Start with: podman-compose -f test/infrastructure/podman-compose.test.yml up -d\n\n"+
 					"  Error: %v", dataStorageURL, err))
 		}
-		defer healthResp.Body.Close()
+		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage health check failed at %s\n"+
@@ -231,15 +231,15 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = *resp.JSON200.Pagination.Total
 				}
 				return total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-GATEWAY-190: Gateway MUST emit 'signal.received' audit event")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-GATEWAY-190: Gateway MUST emit exactly 1 'signal.received' audit event (DD-TESTING-001)")
 
 			// Convert to map format for compatibility with existing validation code
 			auditEventsMap := make([]map[string]interface{}, len(auditEvents))
 			for i, evt := range auditEvents {
 				eventJSON, _ := json.Marshal(evt)
 				var eventMap map[string]interface{}
-				json.Unmarshal(eventJSON, &eventMap)
+				_ = json.Unmarshal(eventJSON, &eventMap)
 				auditEventsMap[i] = eventMap
 			}
 
@@ -440,15 +440,15 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = *resp.JSON200.Pagination.Total
 				}
 				return total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-GATEWAY-191: Gateway MUST emit 'signal.deduplicated' audit event")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-GATEWAY-191: Gateway MUST emit exactly 1 'signal.deduplicated' audit event (DD-TESTING-001)")
 
 			// Convert to map format for compatibility with existing validation code
 			auditEvents := make([]map[string]interface{}, len(auditEvents2))
 			for i, evt := range auditEvents2 {
 				eventJSON, _ := json.Marshal(evt)
 				var eventMap map[string]interface{}
-				json.Unmarshal(eventJSON, &eventMap)
+				_ = json.Unmarshal(eventJSON, &eventMap)
 				auditEvents[i] = eventMap
 			}
 
@@ -545,8 +545,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"deduplication_status should be 'duplicate' for deduplicated signal")
 
 			// Field 18: occurrence_count
-			Expect(gatewayData["occurrence_count"]).To(BeNumerically(">=", 2),
-				"occurrence_count should be >= 2 for duplicate (first + duplicate)")
+			Expect(gatewayData["occurrence_count"]).To(Equal(float64(2)),
+				"occurrence_count should be exactly 2 for duplicate (first + one duplicate) (DD-TESTING-001)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION
@@ -622,7 +622,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			for i, evt := range auditEvents3 {
 				eventJSON, _ := json.Marshal(evt)
 				var eventMap map[string]interface{}
-				json.Unmarshal(eventJSON, &eventMap)
+				_ = json.Unmarshal(eventJSON, &eventMap)
 				auditEvents[i] = eventMap
 			}
 

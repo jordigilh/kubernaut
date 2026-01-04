@@ -83,7 +83,7 @@ var _ = Describe("NotificationAuditRepository", func() {
 	})
 
 	AfterEach(func() {
-		mockDB.Close()
+		_ = mockDB.Close()
 	})
 
 	Describe("Create", func() {

@@ -101,7 +101,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
 			// Then: Request should eventually succeed (after retries)
@@ -158,7 +158,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
 			// Validate response
@@ -194,7 +194,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Note: Actual timing validation requires instrumentation
 			// This test documents the expected behavior
@@ -229,7 +229,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
 			// Then: Should return error quickly (no retry delays)
@@ -261,7 +261,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
 			// Fast failure (no retries)
@@ -290,7 +290,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 				var errorResp map[string]interface{}
@@ -335,7 +335,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// If retries exhausted, should return error
 			if resp.StatusCode >= 500 {
@@ -378,7 +378,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			totalDuration := time.Since(startTime)
 
 			// With 3 retries and MaxBackoff=2s:
@@ -417,7 +417,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Note: Retry count observability helps debug infrastructure issues
 			// This test documents expected behavior for error responses

@@ -58,7 +58,7 @@ var _ = Describe("Business Classifier", func() {
 	AfterEach(func() {
 		// Cleanup temp directory
 		if policyDir != "" {
-			os.RemoveAll(policyDir)
+			_ = os.RemoveAll(policyDir)
 		}
 	})
 

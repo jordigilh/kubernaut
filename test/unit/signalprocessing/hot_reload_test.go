@@ -60,7 +60,7 @@ var _ = Describe("Hot Reload Lifecycle", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	})
 
 	// ========================================

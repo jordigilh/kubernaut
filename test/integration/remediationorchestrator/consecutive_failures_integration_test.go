@@ -46,7 +46,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
-var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", Ordered, func() {
+var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() {
 	var testNamespace string
 
 	BeforeEach(func() {

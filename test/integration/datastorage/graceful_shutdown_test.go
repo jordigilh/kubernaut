@@ -46,7 +46,7 @@ import (
 // 3. Drain in-flight HTTP connections
 // 4. Close resources (database, Redis)
 
-var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Serial, func() {
+var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown",  func() {
 
 	Context("Business Requirement: Readiness Probe Coordination", func() {
 		It("MUST return 503 on readiness probe immediately when shutdown starts", func() {
@@ -60,7 +60,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			resp, err := http.Get(testServer.URL + "/health/ready")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(200))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Start shutdown in background
 			shutdownDone := make(chan error, 1)
@@ -77,7 +77,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				if e != nil || r == nil {
 					return 0
 				}
-				r.Body.Close()
+				_ = r.Body.Close()
 				return r.StatusCode
 			}, 5*time.Second, 100*time.Millisecond).Should(Equal(503),
 				"Readiness probe MUST return 503 during shutdown (DD-007 STEP 1)")
@@ -85,7 +85,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			// Get final response for detailed checks
 			resp, err = http.Get(testServer.URL + "/health/ready")
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(503),
 				"Readiness probe MUST return 503 during shutdown to trigger Kubernetes endpoint removal (DD-007 STEP 1)")
@@ -116,7 +116,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			resp, err := http.Get(testServer.URL + "/health/live")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(200))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Start shutdown in background
 			shutdownDone := make(chan error, 1)
@@ -133,7 +133,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				if e != nil || r == nil {
 					return 0
 				}
-				r.Body.Close()
+				_ = r.Body.Close()
 				return r.StatusCode
 			}, 5*time.Second, 100*time.Millisecond).Should(Equal(200),
 				"Liveness probe MUST return 200 during shutdown (DD-007)")
@@ -141,7 +141,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			// Get final response for detailed checks
 			resp, err = http.Get(testServer.URL + "/health/live")
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(200),
 				"Liveness probe MUST return 200 during shutdown (pod is still alive, just draining)")
@@ -171,7 +171,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 					errorChan <- err
 					return
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				responseChan <- resp.StatusCode
 			}()
 
@@ -228,7 +228,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 					return true // Connection refused = server not accepting
 				}
 				if r != nil {
-					r.Body.Close()
+					_ = r.Body.Close()
 					return r.StatusCode == 503 || r.StatusCode >= 500
 				}
 				return false
@@ -243,7 +243,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			// Business Outcome: New request should fail or timeout
 			// Server is draining connections, not accepting new ones
 			if resp != nil {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				// If we get a response, it should be a server error (not 200)
 				Expect(resp.StatusCode).ToNot(Equal(200),
 					"New requests after shutdown should not succeed with 200 OK")
@@ -271,7 +271,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			resp, err := http.Get(testServer.URL + "/health/ready")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(200))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Initiate graceful shutdown
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -400,7 +400,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			resp, err := http.Get(testServer.URL + "/api/v1/audit/events?limit=1")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(200))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Initiate graceful shutdown
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -431,7 +431,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 					errorChan <- err
 					return
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				responseChan <- resp.StatusCode
 			}()
 
@@ -484,7 +484,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 						errorCount <- err
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 					if resp.StatusCode == 200 {
 						successCount <- 1
 					}
@@ -552,7 +552,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 					errorChan <- err
 					return
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				responseChan <- resp.StatusCode
 			}()
 
@@ -594,7 +594,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			resp, err := http.Get(testServer.URL + "/health/ready")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(200))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Initiate graceful shutdown
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -641,7 +641,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 						errorCount <- err
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 					if resp.StatusCode == 200 {
 						successCount <- 1
 					}
@@ -707,7 +707,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 				if e != nil || r == nil {
 					return 0
 				}
-				r.Body.Close()
+				_ = r.Body.Close()
 				return r.StatusCode
 			}, 5*time.Second, 100*time.Millisecond).Should(Equal(503),
 				"Shutdown flag must be set (DD-007 STEP 1)")
@@ -716,7 +716,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Se
 			resp, err := http.Get(testServer.URL + "/health/ready")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(503))
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			flagSetTime := time.Since(startTime)
 

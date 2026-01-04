@@ -29,13 +29,15 @@ Per ADR-032 §2: Audit is MANDATORY for LLM interactions (P1 service).
 Service MUST crash if audit store cannot be initialized.
 """
 
-import os
-import sys
-import logging
+# Standard library imports
+import logging  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from typing import Optional  # noqa: E402
 
-from typing import Optional
-from . import BufferedAuditStore, AuditConfig
-from src.config.constants import (
+# Local imports
+from . import AuditConfig, BufferedAuditStore  # noqa: E402
+from src.config.constants import (  # noqa: E402
     AUDIT_BUFFER_SIZE,
     AUDIT_BATCH_SIZE,
     AUDIT_FLUSH_INTERVAL_SECONDS,

@@ -117,7 +117,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		By("Gateway returns 400 Bad Request (not crash)")
 		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -174,7 +174,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		By("Gateway rejects large payload")
 		// Expected: 413 Payload Too Large or 400 Bad Request
@@ -218,7 +218,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		By("Gateway returns validation error")
 		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -280,7 +280,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 			"Gateway should process alert despite invalid namespace (201 Created)")
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		By("Gateway creates CRD in kubernaut-system namespace as fallback")
 		var createdCRD *remediationv1alpha1.RemediationRequest

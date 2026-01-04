@@ -188,7 +188,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 				testLogger.Info(fmt.Sprintf("  ⚠️  Alert %d connection error: %v", i+1, err))
 				continue
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Gateway should handle burst gracefully
 			switch resp.StatusCode {
@@ -218,7 +218,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		resp, err := httpClient.Get(gatewayURL + "/health")
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Gateway should still be healthy after burst")
 		testLogger.Info("  ✅ Gateway health check passed")
 

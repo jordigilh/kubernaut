@@ -54,11 +54,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	"encoding/json"
+
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	"encoding/json"
 )
 
 func TestAIAnalysisE2E(t *testing.T) {
@@ -76,10 +77,13 @@ var (
 	kubeconfigPath string
 
 	// Namespace for infrastructure (fixed)
-	infraNamespace = "kubernaut-system"
+	infraNamespace = "kubernaut-system" //nolint:unused
 
 	// Kubernetes client
 	k8sClient client.Client
+
+	// DataStorage OpenAPI client (DD-API-001: MANDATORY)
+	dsClient *dsgen.ClientWithResponses
 
 	// Service URLs (per DD-TEST-001)
 	healthURL  string
@@ -198,10 +202,22 @@ var _ = SynchronizedBeforeSuite(
 			return ready
 		}, healthTimeout, 3*time.Second).Should(BeTrue(), "AIAnalysis services should become ready")
 
+		// DD-API-001: Initialize DataStorage OpenAPI client (MANDATORY)
+		// Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN
+		// All queries MUST use generated OpenAPI client for type safety
+		dataStorageURL := "http://localhost:8091" // DataStorage NodePort 30081
+		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		if err != nil {
+			logger.Error(err, "Failed to create DataStorage OpenAPI client")
+			Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
+		}
+		logger.Info("✅ DataStorage OpenAPI client initialized (DD-API-001 compliant)")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info(fmt.Sprintf("✅ Process %d ready!", GinkgoParallelProcess()))
 		logger.Info(fmt.Sprintf("  • Health: %s/healthz", healthURL))
 		logger.Info(fmt.Sprintf("  • Metrics: %s/metrics", metricsURL))
+		logger.Info(fmt.Sprintf("  • DataStorage API: %s (OpenAPI client)", dataStorageURL))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
@@ -298,14 +314,14 @@ func checkServicesReady() bool {
 	if err != nil || healthResp.StatusCode != 200 {
 		return false
 	}
-	defer healthResp.Body.Close()
+	defer func() { _ = healthResp.Body.Close() }()
 
 	// Check metrics endpoint
 	metricsResp, err := http.Get(metricsURL + "/metrics")
 	if err != nil || metricsResp.StatusCode != 200 {
 		return false
 	}
-	defer metricsResp.Body.Close()
+	defer func() { _ = metricsResp.Body.Close() }()
 
 	return true
 }
@@ -334,7 +350,7 @@ func createTestNamespace(prefix string) string {
 }
 
 // deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(name string) {
+func deleteTestNamespace(name string) { //nolint:unused
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
@@ -346,7 +362,7 @@ func deleteTestNamespace(name string) {
 //
 // Rationale: E2E tests query Data Storage via HTTP, which returns JSON.
 // Converting to typed structs allows testutil helpers for consistent validation.
-func convertJSONToAuditEvent(jsonEvent map[string]interface{}) dsgen.AuditEvent {
+func convertJSONToAuditEvent(jsonEvent map[string]interface{}) dsgen.AuditEvent { //nolint:unused
 	// Marshal back to JSON, then unmarshal into typed struct
 	// This ensures proper type conversion for all fields
 	data, err := json.Marshal(jsonEvent)

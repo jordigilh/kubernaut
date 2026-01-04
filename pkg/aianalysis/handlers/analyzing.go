@@ -75,10 +75,14 @@ func (h *AnalyzingHandler) Name() string {
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
 
+	// Track phase for audit logging
+	oldPhase := analysis.Status.Phase
+
 	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
 	if analysis.Status.SelectedWorkflow == nil {
 		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
 		analysis.Status.Phase = aianalysis.PhaseFailed
+		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "No workflow selected - investigation may have failed"
 		analysis.Status.Reason = "NoWorkflowSelected"
 
@@ -87,6 +91,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
+
+		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
 		return ctrl.Result{}, nil
 	}
 
@@ -107,11 +114,10 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		h.metrics.RecordRegoEvaluation("error", true)
 
 		// DD-AUDIT-003: Record Rego evaluation audit event
-		if h.auditClient != nil {
-			h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
-		}
+		h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
 
 		analysis.Status.Phase = aianalysis.PhaseFailed
+		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.Message = "Rego evaluation failed unexpectedly"
 		analysis.Status.Reason = "RegoEvaluationError"
 
@@ -120,6 +126,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
+
+		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
 		return ctrl.Result{}, nil
 	}
 
@@ -131,9 +140,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	h.metrics.RecordRegoEvaluation(outcome, result.Degraded)
 
 	// DD-AUDIT-003: Record Rego evaluation audit event
-	if h.auditClient != nil {
-		h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason)
-	}
+	h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason)
 
 	// Store evaluation results in status
 	analysis.Status.ApprovalRequired = result.ApprovalRequired
@@ -146,31 +153,46 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		"reason", result.Reason,
 	)
 
+	// ========================================
+	// IDEMPOTENCY CHECK: Only record approval decision once
+	// ========================================
+	// Check if ApprovalRequired condition is already set to prevent duplicate audit events
+	// This can happen when controller reconciles multiple times in Analyzing phase
+	// (e.g., status update triggers immediate re-reconcile before ObservedGeneration is updated)
+	approvalCondition := aianalysis.GetCondition(analysis, aianalysis.ConditionApprovalRequired)
+	alreadyRecorded := approvalCondition != nil && approvalCondition.Status != ""
+
 	// BR-AI-019: Populate ApprovalContext if approval is required
 	if result.ApprovalRequired {
 		h.populateApprovalContext(analysis, result)
 		// Set ApprovalRequired condition
 		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
 
-		// Record approval decision metric
-		environment := getEnvironment(analysis)
-		h.metrics.RecordApprovalDecision("requires_approval", environment)
+		// Record approval decision metric and audit event ONLY if not already recorded
+		if !alreadyRecorded {
+			environment := getEnvironment(analysis)
+			h.metrics.RecordApprovalDecision("requires_approval", environment)
 
-		// DD-AUDIT-003: Record approval decision audit event
-		if h.auditClient != nil {
+			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
 			h.auditClient.RecordApprovalDecision(ctx, analysis, "requires_approval", result.Reason)
+			h.log.V(1).Info("Approval decision recorded", "decision", "requires_approval")
+		} else {
+			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "requires_approval")
 		}
 	} else {
 		// Set ApprovalRequired=False condition (auto-approved)
 		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", "Policy evaluation does not require manual approval")
 
-		// Record approval decision metric
-		environment := getEnvironment(analysis)
-		h.metrics.RecordApprovalDecision("auto_approved", environment)
+		// Record approval decision metric and audit event ONLY if not already recorded
+		if !alreadyRecorded {
+			environment := getEnvironment(analysis)
+			h.metrics.RecordApprovalDecision("auto_approved", environment)
 
-		// DD-AUDIT-003: Record approval decision audit event
-		if h.auditClient != nil {
+			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
 			h.auditClient.RecordApprovalDecision(ctx, analysis, "auto_approved", "Policy evaluation does not require manual approval")
+			h.log.V(1).Info("Approval decision recorded", "decision", "auto_approved")
+		} else {
+			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", "auto_approved")
 		}
 	}
 
@@ -185,8 +207,18 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	// Transition directly to Completed (per reconciliation-phases.md v2.0)
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = "Analysis complete"
+
+	// DD-AUDIT-003: Record analysis completion when transitioning to Completed
+	// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+	// Handler should NOT record phase transition to avoid duplicates (follows InvestigatingHandler pattern)
+	if analysis.Status.Phase != oldPhase {
+		// AA-BUG-006: Record analysis.completed here (on transition), not in recordPhaseMetrics
+		// This ensures it's only recorded ONCE when transitioning TO Completed, not on every reconcile
+		h.auditClient.RecordAnalysisComplete(ctx, analysis)
+	}
 
 	h.log.Info("Analysis completed",
 		"name", analysis.Name,

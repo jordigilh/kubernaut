@@ -64,8 +64,8 @@ type FileDeliveryService struct {
 	outputDir string // Directory where JSON files will be written
 }
 
-// Ensure FileDeliveryService implements DeliveryService interface at compile-time
-var _ DeliveryService = (*FileDeliveryService)(nil)
+// Ensure FileDeliveryService implements Service interface at compile-time
+var _ Service = (*FileDeliveryService)(nil)
 
 // NewFileDeliveryService creates a new file-based delivery service for E2E testing.
 //
@@ -127,7 +127,10 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 			"outputDir", outputDir,
 			"notification", notification.Name,
 			"namespace", notification.Namespace)
-		return fmt.Errorf("failed to create output directory: %w", err)
+		// NT-BUG-006: Wrap directory creation errors as retryable (permission denied, disk full, etc.)
+		// These are temporary errors that may resolve after directory permissions are fixed
+		// Fixes Test 06 (Multi-Channel Fanout) - ensures directory permission errors trigger retry
+		return NewRetryableError(fmt.Errorf("failed to create output directory: %w", err))
 	}
 
 	// Generate filename with timestamp and format (prevents overwrites)
@@ -190,7 +193,10 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 			"tempFile", tempFile,
 			"filePath", filePath)
 		// Clean up temp file on error
-		os.Remove(tempFile)
+		if removeErr := os.Remove(tempFile); removeErr != nil {
+			log.Error(removeErr, "Failed to remove temporary file after rename error",
+				"tempFile", tempFile)
+		}
 		// NT-BUG-006: Wrap rename errors as retryable (permission denied, etc.)
 		return NewRetryableError(fmt.Errorf("failed to rename temporary file: %w", err))
 	}

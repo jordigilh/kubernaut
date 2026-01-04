@@ -83,9 +83,9 @@ var (
 	cfg                *rest.Config
 	k8sClient          client.Client
 	k8sManager         ctrl.Manager
-	dataStorageBaseURL string = fmt.Sprintf("http://localhost:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port per DD-TEST-001
-	realAuditStore     audit.AuditStore                                                                          // REAL audit store (DD-AUDIT-003 compliance)
-	reconciler         *workflowexecution.WorkflowExecutionReconciler                                            // Controller instance for metrics access
+	dataStorageBaseURL string                                         = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
+	auditStore         audit.AuditStore                                                                                                                 // REAL audit store (DD-AUDIT-003 compliance)
+	reconciler         *workflowexecution.WorkflowExecutionReconciler                                                                                   // Controller instance for metrics access
 )
 
 // Test namespaces (unique per test run for parallel safety)
@@ -109,18 +109,26 @@ func TestWorkflowExecutionIntegration(t *testing.T) {
 	RunSpecs(t, "WorkflowExecution Controller Integration Suite (EnvTest + Tekton CRDs)")
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// Phase 1: Runs ONCE on parallel process #1
+	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
+	// This runs once to avoid container name collisions when TEST_PROCS > 1
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	By("Starting WorkflowExecution integration infrastructure (Process #1 only, DD-TEST-002)")
+	err := infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
+
+	return []byte{} // No data to share between processes
+}, func(data []byte) {
+	// Phase 2: Runs on ALL parallel processes (receives data from phase 1)
+	// Set up envtest, K8s client, and controller manager per process
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
-
-	// DD-TEST-002: Start WorkflowExecution integration infrastructure (sequential startup)
-	By("Starting WorkflowExecution integration infrastructure (DD-TEST-002)")
-	err = infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
 
 	By("Registering CRD schemes")
 	err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
@@ -194,7 +202,7 @@ var _ = BeforeSuite(func() {
 	}
 
 	// Create REAL buffered audit store (Defense-in-Depth Layer 4)
-	realAuditStore, err = audit.NewBufferedStore(
+	auditStore, err = audit.NewBufferedStore(
 		dsClient,
 		audit.DefaultConfig(),
 		"workflowexecution-controller",
@@ -218,7 +226,7 @@ var _ = BeforeSuite(func() {
 	statusManager := westatus.NewManager(k8sManager.GetClient())
 
 	// Initialize audit manager (P3: Audit Manager pattern)
-	auditManager := weaudit.NewManager(realAuditStore, ctrl.Log.WithName("audit"))
+	auditManager := weaudit.NewManager(auditStore, ctrl.Log.WithName("audit"))
 
 	reconciler = &workflowexecution.WorkflowExecutionReconciler{
 		Client:                 k8sManager.GetClient(),
@@ -230,10 +238,10 @@ var _ = BeforeSuite(func() {
 		BaseCooldownPeriod:     DefaultBaseCooldownPeriod,
 		MaxCooldownPeriod:      DefaultMaxCooldownPeriod,
 		MaxConsecutiveFailures: DefaultMaxConsecutiveFailures,
-		AuditStore:             realAuditStore, // REAL audit store for integration tests
-		Metrics:                testMetrics,    // Test-isolated metrics (DD-METRICS-001)
-		StatusManager:          statusManager,  // DD-PERF-001: Atomic status updates
-		AuditManager:           auditManager,   // P3: Audit Manager pattern
+		AuditStore:             auditStore,    // REAL audit store for integration tests
+		Metrics:                testMetrics,   // Test-isolated metrics (DD-METRICS-001)
+		StatusManager:          statusManager, // DD-PERF-001: Atomic status updates
+		AuditManager:           auditManager,  // P3: Audit Manager pattern
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -268,24 +276,38 @@ var _ = AfterSuite(func() {
 	By("Tearing down the test environment")
 
 	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
-	if realAuditStore != nil {
-		By("Flushing and closing real audit store")
-		err := realAuditStore.Close()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Failed to close audit store: %v\n", err)
-		} else {
-			GinkgoWriter.Println("✅ Real audit store closed (all events flushed)")
-		}
+	// WE-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+	// This prevents "connection refused" errors during cleanup when the
+	// background writer tries to flush buffered events after DataStorage is stopped.
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	By("Flushing audit store before infrastructure shutdown")
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
+
+	By("Closing audit store")
+	err = auditStore.Close()
+	if err != nil {
+		GinkgoWriter.Printf("⚠️  Warning: Failed to close audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
 	}
 
 	cancel()
 
-	err := testEnv.Stop()
+	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Stopping DataStorage infrastructure (DD-TEST-002)")
 	// Stop infrastructure services (postgres, redis, datastorage)
 	// DD-TEST-001: MANDATORY infrastructure cleanup after integration tests
+	// WE-SHUTDOWN-001: Safe to stop now - audit events already flushed
 	err = infrastructure.StopWEIntegrationInfrastructure(GinkgoWriter)
 	if err != nil {
 		GinkgoWriter.Printf("⚠️  Warning: Failed to stop infrastructure: %v\n", err)
@@ -321,8 +343,9 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 	name := IntegrationTestNamePrefix + testID + "-" + time.Now().Format("150405000")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: DefaultNamespace,
+			Name:       name,
+			Namespace:  DefaultNamespace,
+			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			RemediationRequestRef: corev1.ObjectReference{
@@ -447,7 +470,7 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 }
 
 // getPipelineRun gets a PipelineRun by name
-func getPipelineRun(name, namespace string) (*tektonv1.PipelineRun, error) {
+func getPipelineRun(name, namespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
 	pr := &tektonv1.PipelineRun{}
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, pr)
 	return pr, err
@@ -470,12 +493,12 @@ func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 }
 
 // completePipelineRun simulates a PipelineRun completing successfully or failing
-func completePipelineRun(pr *tektonv1.PipelineRun, succeeded bool) error {
+func completePipelineRun(pr *tektonv1.PipelineRun, succeeded bool) error { //nolint:unused
 	return simulatePipelineRunCompletion(pr, succeeded)
 }
 
 // failPipelineRunWithReason simulates a PipelineRun failing with a specific reason and message
-func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string) error {
+func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string) error { //nolint:unused
 	pr.Status.InitializeConditions(testClock)
 	pr.Status.SetCondition(&apis.Condition{
 		Type:    apis.ConditionSucceeded,

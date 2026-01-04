@@ -65,9 +65,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 		queryCtx = context.Background()
 
 		// Get Data Storage URL from environment or use NT integration port
+		// MUST match the port in suite_test.go (line 252)
 		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://localhost:18110" // NT integration port
+			dataStorageURL = "http://127.0.0.1:18096" // NT integration port (IPv4 explicit, matches suite_test.go)
 		}
 
 		// Create REST API client for querying audit events
@@ -111,8 +112,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -180,8 +182,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -250,8 +253,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -311,8 +315,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -348,8 +353,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			Eventually(func() int {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				return len(events)
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 2),
-				"Controller should emit audit event for each channel (Console + Slack) to Data Storage (DD-AUDIT-003)")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
+				"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
@@ -372,8 +377,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -453,8 +459,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -524,8 +531,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: testNamespace,
+					Name:       notificationName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,

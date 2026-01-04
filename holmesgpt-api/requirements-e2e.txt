@@ -1,0 +1,68 @@
+# HolmesGPT API Service - E2E/Testing Dependencies (Minimal)
+#
+# Strategy: Minimal dependencies for E2E testing with MOCK_LLM_MODE=true
+# This file REMOVES cloud provider SDKs that aren't needed for mock LLM testing
+#
+# Size Impact: ~800MB (vs ~2.5GB with full requirements.txt)
+# Build Time: 2-3 minutes (vs 5-15 minutes with full requirements.txt)
+#
+# Use Case: E2E tests, unit tests, integration tests with mock LLM mode
+# NOT for production deployments (use requirements.txt for production)
+#
+# IMPORTANT: HolmesGPT has a dependency specification issue:
+#   - Requires: supabase = "^2.5" (allows any 2.x)
+#   - Requires: postgrest = "0.16.8" (locked for bug workaround)
+#   - But supabase 2.9+ requires postgrest>=0.17 (conflict!)
+#
+# Solution: We constrain supabase to compatible version range.
+
+# Constrain supabase to version compatible with HolmesGPT's postgrest pin
+# Must install BEFORE HolmesGPT to prevent pip from picking incompatible version
+# supabase 2.8+ requires postgrest>=0.17, but we need 0.16.8
+# Also constrain httpx for supabase compatibility
+supabase>=2.5,<2.8  # Compatible with postgrest 0.16.8 (HolmesGPT requirement)
+postgrest==0.16.8   # Match HolmesGPT's pin exactly
+httpx<0.28,>=0.24   # Supabase stack requires <0.28
+
+# NOTE: urllib3 version is constrained by prometrix (from HolmesGPT SDK)
+# prometrix 0.2.5 requires urllib3<2.0.0, so we cannot use urllib3 2.x
+# OpenAPI clients must be compatible with urllib3 1.26.x
+urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
+
+# HolmesGPT SDK (from local copy) - Install AFTER supabase constraint
+# Using local copy from ../dependencies/holmesgpt/ for faster installation
+../dependencies/holmesgpt/
+
+# Additional service-specific dependencies (NOT in HolmesGPT SDK)
+# These are only for holmesgpt-api service functionality
+
+# HTTP client for K8s TokenReviewer API (not used by HolmesGPT SDK)
+aiohttp>=3.9.1
+aiodns>=3.1.1
+
+# Prometheus metrics (holmesgpt has 'prometrix' but we need prometheus-client for direct metrics)
+prometheus-client>=0.19.0
+
+# Structured logging (HolmesGPT has colorlog, we add python-json-logger for JSON output)
+python-json-logger>=2.0.7
+
+# YAML configuration parsing (for mounted ConfigMap)
+PyYAML>=6.0
+
+# File system watching for ConfigMap hot-reload (DD-HAPI-004, BR-HAPI-199)
+watchdog>=3.0.0,<4.0.0
+
+# ========================================
+# CLOUD PROVIDER SDKs - REMOVED FOR E2E
+# ========================================
+# These are NOT needed when MOCK_LLM_MODE=true (BR-HAPI-212)
+# Mock mode returns deterministic responses without calling real LLM providers
+#
+# REMOVED (1.5GB):
+# google-cloud-aiplatform>=1.38  # Vertex AI (only needed for Vertex AI users)
+#
+# Note: boto3, azure-*, opensearch-py are in HolmesGPT SDK dependencies
+# but not used by holmesgpt-api mock mode, so they're just wasted space in E2E
+
+
+

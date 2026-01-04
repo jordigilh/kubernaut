@@ -148,6 +148,69 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy")
 
+	// SP-BUG-006: Capture infrastructure state for diagnostics
+	By("Verifying infrastructure container status")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("📋 Infrastructure Status Verification")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Check PostgreSQL container
+	psqlStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_postgres", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}")
+	if psqlOut, err := psqlStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("🐘 PostgreSQL: %s\n", string(psqlOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  PostgreSQL: Failed to check status: %v\n", err)
+	}
+
+	// Check Redis container
+	redisStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_redis", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}")
+	if redisOut, err := redisStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("🔴 Redis: %s\n", string(redisOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Redis: Failed to check status: %v\n", err)
+	}
+
+	// Check Data Storage container
+	dsStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_datastorage", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}")
+	if dsOut, err := dsStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("💾 Data Storage: %s\n", string(dsOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Data Storage: Failed to check status: %v\n", err)
+	}
+
+	// Check Migrations container (should be exited/completed)
+	migrationsStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_migrations", "--format", "{{.Names}}\t{{.Status}}\t{{.ExitCode}}")
+	if migrationsOut, err := migrationsStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("🔧 Migrations: %s\n", string(migrationsOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Migrations: Failed to check status: %v\n", err)
+	}
+
+	// Check Data Storage health endpoint
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("🏥 Data Storage Health Check")
+	healthCheck := exec.Command("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "http://127.0.0.1:18094/health")
+	if healthOut, err := healthCheck.CombinedOutput(); err == nil {
+		statusCode := string(healthOut)
+		if statusCode == "200" {
+			GinkgoWriter.Printf("✅ Data Storage health: HTTP %s (ready)\n", statusCode)
+		} else {
+			GinkgoWriter.Printf("⚠️  Data Storage health: HTTP %s (not ready)\n", statusCode)
+		}
+	} else {
+		GinkgoWriter.Printf("❌ Data Storage health check failed: %v\n", err)
+	}
+
+	// Check Data Storage version endpoint
+	versionCheck := exec.Command("curl", "-s", "http://127.0.0.1:18094/version")
+	if versionOut, err := versionCheck.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("📌 Data Storage version: %s\n", string(versionOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Data Storage version check failed: %v\n", err)
+	}
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	By("Registering SignalProcessing CRD scheme")
 	err = signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
@@ -215,7 +278,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	GinkgoWriter.Println("📋 Setting up audit store...")
 	dsClient, err := audit.NewOpenAPIClientAdapter(
-		fmt.Sprintf("http://localhost:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort), // IPv4 explicit for CI
 		5*time.Second,
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
@@ -275,7 +338,7 @@ else := {"environment": "development", "confidence": 0.80, "source": "configmap"
 else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	envPolicyFile.Close()
+	_ = 	envPolicyFile.Close()
 
 	priorityPolicyFile, err := os.CreateTemp("", "priority-*.rego")
 	Expect(err).ToNot(HaveOccurred())
@@ -335,7 +398,7 @@ else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if 
 else := {"priority": "P3", "confidence": 0.5, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	priorityPolicyFile.Close()
+	_ = 	priorityPolicyFile.Close()
 
 	By("Initializing classifiers (Day 10 integration)")
 	// Initialize Environment Classifier (BR-SP-051, BR-SP-052, BR-SP-053)
@@ -381,7 +444,7 @@ result := {
 }
 `)
 	Expect(err).ToNot(HaveOccurred())
-	businessPolicyFile.Close()
+	_ = 	businessPolicyFile.Close()
 
 	// Initialize Business Classifier (BR-SP-002, BR-SP-080, BR-SP-081)
 	businessClassifier, err := classifier.NewBusinessClassifier(
@@ -418,7 +481,7 @@ labels := result if {
 } else := {}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	labelsPolicyFile.Close()
+	_ = 	labelsPolicyFile.Close()
 
 	// BR-SP-072: Store policy file path for hot-reload testing
 	labelsPolicyFilePath = labelsPolicyFile.Name()
@@ -490,10 +553,10 @@ labels := result if {
 		}
 
 		// Remove temp policy files
-		os.Remove(envPolicyFile.Name())
-		os.Remove(priorityPolicyFile.Name())
-		os.Remove(businessPolicyFile.Name())
-		os.Remove(labelsPolicyFile.Name())
+		_ = os.Remove(envPolicyFile.Name())
+		_ = os.Remove(priorityPolicyFile.Name())
+		_ = os.Remove(businessPolicyFile.Name())
+		_ = os.Remove(labelsPolicyFile.Name())
 	})
 
 	By("Starting the controller manager")
@@ -598,49 +661,77 @@ labels := result if {
 	GinkgoWriter.Printf("✅ Process setup complete (k8sClient initialized for this process)\n")
 })
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
+// SP-BUG-005: Use SynchronizedAfterSuite to make Process 1-only cleanup explicit
+// Function 1: Runs on ALL processes (per-process cleanup)
+// Function 2: Runs ONLY on Process 1 (shared infrastructure cleanup)
+var _ = SynchronizedAfterSuite(
+	func() {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// ALL PROCESSES: Per-process cleanup
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		By("Tearing down per-process test environment")
 
-	// Cancel context if it was created
-	if cancel != nil {
-		cancel()
-	}
+		// Cancel context if it was created
+		if cancel != nil {
+			cancel()
+		}
 
-	// Clean up audit infrastructure (BR-SP-090)
-	if auditStore != nil {
-		GinkgoWriter.Println("🧹 Closing audit store...")
-		err := auditStore.Close()
+		// Stop testEnv if it was created (each process has its own)
+		if testEnv != nil {
+			err := testEnv.Stop()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️ Warning: Failed to stop testEnv: %v\n", err)
+			}
+		}
+	},
+	func() {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// PROCESS 1 ONLY: Shared infrastructure cleanup
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		By("Tearing down shared infrastructure (Process 1 only)")
+
+		// Clean up audit infrastructure (BR-SP-090)
+		// SP-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+		// This prevents "connection refused" errors during cleanup when the
+		// background writer tries to flush buffered events after DataStorage is stopped.
+		// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+		GinkgoWriter.Println("🧹 Flushing audit store before infrastructure shutdown...")
+
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer flushCancel()
+
+		err := auditStore.Flush(flushCtx)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+		}
+
+		err = auditStore.Close()
 		if err != nil {
 			GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Audit store closed")
 		}
-	}
 
-	// Stop testEnv if it was created
-	if testEnv != nil {
-		err := testEnv.Stop()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: Failed to stop testEnv: %v\n", err)
+		// DD-TEST-002: Stop infrastructure using programmatic Go setup (NOT podman-compose)
+		// SP-SHUTDOWN-001: Safe to stop now - audit events already flushed
+		By("Stopping SignalProcessing infrastructure (programmatic Podman)")
+		if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
 		}
-	}
 
-	// DD-TEST-002: Stop infrastructure using programmatic Go setup (NOT podman-compose)
-	By("Stopping SignalProcessing infrastructure (programmatic Podman)")
-	if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
-		GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
-	}
-
-	// DD-TEST-002 + DD-INTEGRATION-001 v2.0: Clean up composite-tagged images
-	By("Cleaning up infrastructure images to prevent disk space issues")
-	// Prune dangling images (composite tags from this test run)
-	pruneCmd := exec.Command("podman", "image", "prune", "-f")
-	if pruneErr := pruneCmd.Run(); pruneErr != nil {
-		GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n", pruneErr)
-	} else {
-		GinkgoWriter.Println("✅ Infrastructure images pruned")
-	}
-
-	GinkgoWriter.Println("✅ Cleanup complete")
-})
+		// DD-TEST-002 + DD-INTEGRATION-001 v2.0: Clean up composite-tagged images
+		By("Cleaning up infrastructure images to prevent disk space issues")
+		// Prune dangling images (composite tags from this test run)
+		pruneCmd := exec.Command("podman", "image", "prune", "-f")
+		if pruneErr := pruneCmd.Run(); pruneErr != nil {
+			GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n", pruneErr)
+		} else {
+			GinkgoWriter.Println("✅ Infrastructure images pruned")
+		}
+	},
+)
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by

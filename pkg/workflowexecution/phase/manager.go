@@ -60,6 +60,7 @@ func (m *Manager) TransitionTo(obj *workflowexecutionv1alpha1.WorkflowExecution,
 	// No-op if already in target phase (handles "" → Pending case)
 	if current == target {
 		obj.Status.Phase = string(target)
+	obj.Status.ObservedGeneration = obj.Generation // DD-CONTROLLER-001
 		return nil
 	}
 
@@ -67,6 +68,7 @@ func (m *Manager) TransitionTo(obj *workflowexecutionv1alpha1.WorkflowExecution,
 		return fmt.Errorf("invalid phase transition from %s to %s", current, target)
 	}
 
+	obj.Status.ObservedGeneration = obj.Generation // DD-CONTROLLER-001
 	obj.Status.Phase = string(target)
 	return nil
 }

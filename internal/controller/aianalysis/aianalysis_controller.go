@@ -32,7 +32,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
@@ -140,10 +139,20 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{Requeue: true}, nil
 	}
 
+	// ========================================
+	// NO OBSERVED GENERATION CHECK FOR AIAnalysis
+	// ========================================
+	// AIAnalysis progresses through multiple phases (Pending→Investigating→Analyzing→Completed)
+	// within a SINGLE generation via status-only updates.
+	// ObservedGeneration checks would block phase progression!
+	// See SetupWithManager comment: "GenerationChangedPredicate removed to allow phase progression"
+	// ========================================
+
 	// Capture current phase for metrics
 	currentPhase := analysis.Status.Phase
 	if currentPhase == "" {
 		// Initialize phase to Pending on first reconciliation
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
 		currentPhase = PhasePending
 		analysis.Status.Phase = PhasePending
 		analysis.Status.Message = "AIAnalysis created"
@@ -161,9 +170,8 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var result ctrl.Result
 	var err error
 
-	// Capture phase before processing for phase transition audit
-	phaseBefore := currentPhase
-
+	// DD-AUDIT-003: Phase transition audits now emitted INSIDE phase handlers
+	// (avoids race condition where status update triggers immediate reconcile before audit)
 	switch currentPhase {
 	case PhasePending:
 		result, err = r.reconcilePending(ctx, analysis)
@@ -174,18 +182,18 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
-		return ctrl.Result{}, nil
+		// AA-BUG-005: Must call recordPhaseMetrics for terminal states to record analysis.completed event
+		result = ctrl.Result{}
+		err = nil
 	default:
 		log.Info("Unknown phase", "phase", currentPhase)
-		return ctrl.Result{}, nil
-	}
-
-	// DD-AUDIT-003: Record phase transition if phase changed
-	if r.AuditClient != nil && analysis.Status.Phase != phaseBefore {
-		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+		result = ctrl.Result{}
+		err = nil
 	}
 
 	// BR-AI-017: Record metrics and audit events after phase processing
+	// AA-BUG-005: This must run for ALL phases including terminal states (Completed/Failed)
+	// to record the analysis.completed audit event via RecordAnalysisComplete
 	r.recordPhaseMetrics(ctx, currentPhase, analysis, err)
 
 	return result, err
@@ -196,11 +204,11 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 // DD-AUDIT-003: Record audit events for terminal states
 
 // SetupWithManager sets up the controller with the Manager
-// DD-1: Use GenerationChangedPredicate to prevent reconciliation loops from status updates
+// DD-CONTROLLER-001: ObservedGeneration provides idempotency without blocking status updates
+// GenerationChangedPredicate removed to allow phase progression via status updates
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
 

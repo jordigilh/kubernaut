@@ -145,7 +145,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 					return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -232,7 +232,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 					return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

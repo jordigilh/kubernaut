@@ -60,54 +60,54 @@ import (
 //
 // Time: ~60 seconds
 func CreateSignalProcessingCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "SignalProcessing E2E Cluster Setup (ONCE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "SignalProcessing E2E Cluster Setup (ONCE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// 1. Create Kind cluster
-	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
 	if err := createSignalProcessingKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// 2. Install SignalProcessing CRD
-	fmt.Fprintln(writer, "📋 Installing SignalProcessing CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing SignalProcessing CRD...")
 	if err := installSignalProcessingCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install SignalProcessing CRD: %w", err)
 	}
 
 	// 2a. Install RemediationRequest CRD (parent of SignalProcessing)
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	if err := installRemediationRequestCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
 	}
 
 	// 3. Create kubernaut-system namespace
-	fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
+	_, _ = fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
 	if err := createSignalProcessingNamespace(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// 4. Deploy Rego policy ConfigMaps
-	fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
+	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
 	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy policies: %w", err)
 	}
 
 	// 5. Build SignalProcessing controller image
-	fmt.Fprintln(writer, "🔨 Building SignalProcessing controller image...")
+	_, _ = fmt.Fprintln(writer, "🔨 Building SignalProcessing controller image...")
 	if err := buildSignalProcessingImage(writer); err != nil {
 		return fmt.Errorf("failed to build controller image: %w", err)
 	}
 
 	// 6. Load image into Kind cluster
-	fmt.Fprintln(writer, "📦 Loading SignalProcessing image into Kind...")
+	_, _ = fmt.Fprintln(writer, "📦 Loading SignalProcessing image into Kind...")
 	if err := loadSignalProcessingImage(clusterName, writer); err != nil {
 		return fmt.Errorf("failed to load controller image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "✅ SignalProcessing cluster ready for E2E tests")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ SignalProcessing cluster ready for E2E tests")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -120,9 +120,9 @@ func CreateSignalProcessingCluster(clusterName, kubeconfigPath string, writer io
 //
 // This enables the SignalProcessing controller to write audit events to DataStorage.
 func DeployDataStorageForSignalProcessing(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "BR-SP-090: Deploying DataStorage for Audit Testing")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "BR-SP-090: Deploying DataStorage for Audit Testing")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := "kubernaut-system"
 	clusterName := "signalprocessing-e2e" // Matches CreateSignalProcessingCluster
@@ -130,34 +130,34 @@ func DeployDataStorageForSignalProcessing(ctx context.Context, kubeconfigPath st
 	// Generate consistent DataStorage image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "signalprocessing")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// 1. Build DataStorage image with dynamic tag
-	fmt.Fprintln(writer, "🔨 Building DataStorage image...")
+	_, _ = fmt.Fprintln(writer, "🔨 Building DataStorage image...")
 	if err := buildDataStorageImageWithTag(dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 
 	// 2. Load DataStorage image into Kind with same tag
-	fmt.Fprintln(writer, "📦 Loading DataStorage image into Kind...")
+	_, _ = fmt.Fprintln(writer, "📦 Loading DataStorage image into Kind...")
 	if err := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to load DataStorage image: %w", err)
 	}
 
 	// 3. Deploy shared Data Storage infrastructure with same image tag
-	fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure...")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure...")
 	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
-	fmt.Fprintln(writer, "✅ Data Storage infrastructure deployed")
+	_, _ = fmt.Fprintln(writer, "✅ Data Storage infrastructure deployed")
 
-	fmt.Fprintln(writer, "✅ DataStorage infrastructure ready for BR-SP-090 audit testing")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ DataStorage infrastructure ready for BR-SP-090 audit testing")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
 // loadDataStorageImageForSP loads the DataStorage image into the SP Kind cluster
-func loadDataStorageImageForSP(writer io.Writer) error {
+func loadDataStorageImageForSP(writer io.Writer) error { //nolint:unused
 	// Get cluster name - should match what's used in CreateSignalProcessingCluster
 	clusterName := "signalprocessing-e2e"
 
@@ -180,7 +180,7 @@ func loadDataStorageImageForSP(writer io.Writer) error {
 		return fmt.Errorf("failed to load DataStorage image into Kind: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ DataStorage image loaded into Kind cluster")
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage image loaded into Kind cluster")
 	return nil
 }
 
@@ -201,14 +201,14 @@ func waitForSPDataStorageReady(ctx context.Context, namespace, kubeconfigPath st
 			// Also check if service is accessible
 			healthCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 				"exec", "-n", namespace, "deploy/datastorage", "--",
-				"curl", "-sf", "http://localhost:8080/health")
+				"curl", "-sf", "http://127.0.0.1:8080/health")
 			if healthCmd.Run() == nil {
-				fmt.Fprintln(writer, "  ✅ DataStorage is ready and healthy")
+				_, _ = fmt.Fprintln(writer, "  ✅ DataStorage is ready and healthy")
 				return nil
 			}
 		}
 
-		fmt.Fprintln(writer, "  ⏳ DataStorage not ready yet, waiting...")
+		_, _ = fmt.Fprintln(writer, "  ⏳ DataStorage not ready yet, waiting...")
 		time.Sleep(interval)
 	}
 
@@ -227,21 +227,21 @@ func waitForSPDataStorageReady(ctx context.Context, namespace, kubeconfigPath st
 //
 // Total time: ~3 minutes (vs ~5.5 minutes sequential)
 func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 SignalProcessing E2E Infrastructure (PARALLEL MODE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 SignalProcessing E2E Infrastructure (PARALLEL MODE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := "kubernaut-system"
 
 	// Generate consistent DataStorage image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "signalprocessing")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Create Kind cluster (Sequential - must be first)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster...")
 
 	// Create Kind cluster
 	if err := createSignalProcessingKindCluster(clusterName, kubeconfigPath, writer); err != nil {
@@ -249,24 +249,24 @@ func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterNam
 	}
 
 	// Install CRDs
-	fmt.Fprintln(writer, "📋 Installing SignalProcessing CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing SignalProcessing CRD...")
 	if err := installSignalProcessingCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install SignalProcessing CRD: %w", err)
 	}
 
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	if err := installRemediationRequestCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
 	}
 
 	// Create namespace
-	fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
+	_, _ = fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
 	if err := createSignalProcessingNamespace(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// Deploy Rego policies
-	fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
+	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
 	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy policies: %w", err)
 	}
@@ -274,10 +274,10 @@ func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterNam
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Parallel infrastructure setup
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
-	fmt.Fprintln(writer, "  ├── Building + Loading SP image")
-	fmt.Fprintln(writer, "  ├── Building + Loading DS image")
-	fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading SP image")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DS image")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
 
 	type result struct {
 		name string
@@ -325,9 +325,9 @@ func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterNam
 		r := <-results
 		if r.err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
-			fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
 		}
 	}
 
@@ -338,22 +338,22 @@ func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterNam
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
 
 	// Apply migrations
-	fmt.Fprintln(writer, "📋 Applying audit migrations...")
+	_, _ = fmt.Fprintln(writer, "📋 Applying audit migrations...")
 	if err := ApplyAuditMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply audit migrations: %w", err)
 	}
 
 	// Deploy DataStorage service
-	fmt.Fprintln(writer, "🚀 Deploying DataStorage service...")
+	_, _ = fmt.Fprintln(writer, "🚀 Deploying DataStorage service...")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, GenerateInfraImageName("datastorage", "signalprocessing"), writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
 	// Wait for DataStorage to be ready
-	fmt.Fprintln(writer, "⏳ Waiting for DataStorage to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for DataStorage to be ready...")
 	if err := waitForSPDataStorageReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("DataStorage not ready: %w", err)
 	}
@@ -361,14 +361,14 @@ func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterNam
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy SignalProcessing controller (requires DataStorage)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n🎮 PHASE 4: Deploying SignalProcessing controller...")
+	_, _ = fmt.Fprintln(writer, "\n🎮 PHASE 4: Deploying SignalProcessing controller...")
 	if err := DeploySignalProcessingController(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy controller: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ SignalProcessing E2E infrastructure ready (PARALLEL MODE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ SignalProcessing E2E infrastructure ready (PARALLEL MODE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -376,22 +376,22 @@ func SetupSignalProcessingInfrastructureParallel(ctx context.Context, clusterNam
 // Per docs/development/testing/E2E_COVERAGE_COLLECTION.md
 // This builds the controller with coverage instrumentation and deploys with GOCOVERDIR set.
 func SetupSignalProcessingInfrastructureWithCoverage(ctx context.Context, clusterName, kubeconfigPath, coverDir string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 SignalProcessing E2E Infrastructure (COVERAGE MODE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintf(writer, "📊 Coverage directory: %s\n", coverDir)
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 SignalProcessing E2E Infrastructure (COVERAGE MODE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintf(writer, "📊 Coverage directory: %s\n", coverDir)
 
 	namespace := "kubernaut-system"
 
 	// Generate consistent DataStorage image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "signalprocessing")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Create Kind cluster with coverage mount
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster (with coverage mount)...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster (with coverage mount)...")
 
 	// Create Kind cluster (uses standard config, coverage mount via deployment)
 	if err := createSignalProcessingKindCluster(clusterName, kubeconfigPath, writer); err != nil {
@@ -399,24 +399,24 @@ func SetupSignalProcessingInfrastructureWithCoverage(ctx context.Context, cluste
 	}
 
 	// Install CRDs
-	fmt.Fprintln(writer, "📋 Installing SignalProcessing CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing SignalProcessing CRD...")
 	if err := installSignalProcessingCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install SignalProcessing CRD: %w", err)
 	}
 
-	fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	if err := installRemediationRequestCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install RemediationRequest CRD: %w", err)
 	}
 
 	// Create namespace
-	fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
+	_, _ = fmt.Fprintln(writer, "📁 Creating kubernaut-system namespace...")
 	if err := createSignalProcessingNamespace(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// Deploy Rego policies
-	fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
+	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
 	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy policies: %w", err)
 	}
@@ -424,10 +424,10 @@ func SetupSignalProcessingInfrastructureWithCoverage(ctx context.Context, cluste
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Parallel infrastructure setup (with coverage-enabled SP image)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup (COVERAGE)...")
-	fmt.Fprintln(writer, "  ├── Building + Loading SP image (WITH COVERAGE)")
-	fmt.Fprintln(writer, "  ├── Building + Loading DS image")
-	fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup (COVERAGE)...")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading SP image (WITH COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DS image")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying PostgreSQL + Redis")
 
 	type result struct {
 		name string
@@ -475,9 +475,9 @@ func SetupSignalProcessingInfrastructureWithCoverage(ctx context.Context, cluste
 		r := <-results
 		if r.err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", r.name, r.err))
-			fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s failed: %v\n", r.name, r.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s completed\n", r.name)
 		}
 	}
 
@@ -488,22 +488,22 @@ func SetupSignalProcessingInfrastructureWithCoverage(ctx context.Context, cluste
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
 
 	// Apply migrations
-	fmt.Fprintln(writer, "📋 Applying audit migrations...")
+	_, _ = fmt.Fprintln(writer, "📋 Applying audit migrations...")
 	if err := ApplyAuditMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply audit migrations: %w", err)
 	}
 
 	// Deploy DataStorage service
-	fmt.Fprintln(writer, "🚀 Deploying DataStorage service...")
+	_, _ = fmt.Fprintln(writer, "🚀 Deploying DataStorage service...")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, GenerateInfraImageName("datastorage", "signalprocessing"), writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
 	// Wait for DataStorage to be ready
-	fmt.Fprintln(writer, "⏳ Waiting for DataStorage to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for DataStorage to be ready...")
 	if err := waitForSPDataStorageReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("DataStorage not ready: %w", err)
 	}
@@ -511,21 +511,21 @@ func SetupSignalProcessingInfrastructureWithCoverage(ctx context.Context, cluste
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy SignalProcessing controller WITH COVERAGE
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n🎮 PHASE 4: Deploying SignalProcessing controller (WITH COVERAGE)...")
+	_, _ = fmt.Fprintln(writer, "\n🎮 PHASE 4: Deploying SignalProcessing controller (WITH COVERAGE)...")
 	if err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy coverage controller: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ SignalProcessing E2E infrastructure ready (COVERAGE MODE)")
-	fmt.Fprintf(writer, "📊 Coverage will be collected in: %s\n", coverDir)
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ SignalProcessing E2E infrastructure ready (COVERAGE MODE)")
+	_, _ = fmt.Fprintf(writer, "📊 Coverage will be collected in: %s\n", coverDir)
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
 // DeleteSignalProcessingCluster deletes the Kind cluster and cleans up resources.
 func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "🗑️  Deleting SignalProcessing E2E cluster...")
+	_, _ = fmt.Fprintln(writer, "🗑️  Deleting SignalProcessing E2E cluster...")
 
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 	cmd.Stdout = writer
@@ -540,14 +540,14 @@ func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, writer io
 		_ = os.Remove(kubeconfigPath)
 	}
 
-	fmt.Fprintln(writer, "✅ SignalProcessing cluster deleted")
+	_, _ = fmt.Fprintln(writer, "✅ SignalProcessing cluster deleted")
 	return nil
 }
 
 // DeploySignalProcessingController deploys the controller to the cluster.
 // This should be called after CreateSignalProcessingCluster.
 func DeploySignalProcessingController(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "🚀 Deploying SignalProcessing controller...")
+	_, _ = fmt.Fprintln(writer, "🚀 Deploying SignalProcessing controller...")
 
 	// Deploy controller manager
 	manifest := signalProcessingControllerManifest()
@@ -561,7 +561,7 @@ func DeploySignalProcessingController(ctx context.Context, kubeconfigPath string
 	}
 
 	// Wait for controller to be ready
-	fmt.Fprintln(writer, "⏳ Waiting for controller to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for controller to be ready...")
 	return waitForSignalProcessingController(ctx, kubeconfigPath, writer)
 }
 
@@ -580,7 +580,7 @@ func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, write
 	checkCmd := exec.Command("kind", "get", "clusters")
 	output, _ := checkCmd.Output()
 	if strings.Contains(string(output), clusterName) {
-		fmt.Fprintln(writer, "  Cluster already exists, reusing...")
+		_, _ = fmt.Fprintln(writer, "  Cluster already exists, reusing...")
 		return exportSignalProcessingKubeconfig(clusterName, kubeconfigPath, writer)
 	}
 
@@ -637,13 +637,13 @@ func exportSignalProcessingKubeconfig(clusterName, kubeconfigPath string, writer
 }
 
 func waitForSignalProcessingClusterReady(kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
+	_, _ = fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
 	for i := 0; i < 60; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "nodes", "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
 		output, err := cmd.Output()
 		if err == nil && strings.Contains(string(output), "True") {
-			fmt.Fprintln(writer, "  ✓ Cluster ready")
+			_, _ = fmt.Fprintln(writer, "  ✓ Cluster ready")
 			return nil
 		}
 		time.Sleep(2 * time.Second)
@@ -680,12 +680,12 @@ func installSignalProcessingCRD(kubeconfigPath string, writer io.Writer) error {
 	}
 
 	// Wait for CRD to be established
-	fmt.Fprintln(writer, "  Waiting for CRD to be established...")
+	_, _ = fmt.Fprintln(writer, "  Waiting for CRD to be established...")
 	for i := 0; i < 30; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "signalprocessings.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "  ✓ CRD established")
+			_, _ = fmt.Fprintln(writer, "  ✓ CRD established")
 			return nil
 		}
 		time.Sleep(time.Second)
@@ -722,12 +722,12 @@ func installRemediationRequestCRD(kubeconfigPath string, writer io.Writer) error
 	}
 
 	// Wait for CRD to be established
-	fmt.Fprintln(writer, "  Waiting for RemediationRequest CRD to be established...")
+	_, _ = fmt.Fprintln(writer, "  Waiting for RemediationRequest CRD to be established...")
 	for i := 0; i < 30; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "remediationrequests.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
+			_, _ = fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
 			return nil
 		}
 		time.Sleep(time.Second)
@@ -785,14 +785,14 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 	}
 
 	// Wait for both CRDs to be established
-	fmt.Fprintln(writer, "  Waiting for CRDs to be established...")
+	_, _ = fmt.Fprintln(writer, "  Waiting for CRDs to be established...")
 
 	// Check SignalProcessing CRD
 	for i := 0; i < 30; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "signalprocessings.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "  ✓ SignalProcessing CRD established")
+			_, _ = fmt.Fprintln(writer, "  ✓ SignalProcessing CRD established")
 			break
 		}
 		if i == 29 {
@@ -806,7 +806,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "remediationrequests.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
+			_, _ = fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
 			return nil
 		}
 		if i == 29 {
@@ -982,7 +982,7 @@ data:
 		return fmt.Errorf("failed to deploy Rego policies (batched): %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✓ Rego policies deployed (batched: environment, priority, business, customlabels)")
+	_, _ = fmt.Fprintln(writer, "  ✓ Rego policies deployed (batched: environment, priority, business, customlabels)")
 	return nil
 }
 
@@ -1010,7 +1010,7 @@ func buildSignalProcessingImage(writer io.Writer) error {
 	// DD-TEST-001 v1.1: Use unique image tag
 	imageTag := GetSignalProcessingImageTag()
 	imageName := fmt.Sprintf("localhost/signalprocessing-controller:%s", imageTag)
-	fmt.Fprintf(writer, "  📦 Image tag: %s (DD-TEST-001 compliant)\n", imageTag)
+	_, _ = fmt.Fprintf(writer, "  📦 Image tag: %s (DD-TEST-001 compliant)\n", imageTag)
 
 	cmd := exec.Command(containerCmd, "build",
 		"-t", imageName,
@@ -1033,7 +1033,7 @@ func loadSignalProcessingImage(clusterName string, writer io.Writer) error {
 	imageName := fmt.Sprintf("localhost/signalprocessing-controller:%s", imageTag)
 
 	// Save image to tar file
-	fmt.Fprintf(writer, "  Saving image to tar file: %s...\n", tmpFile)
+	_, _ = fmt.Fprintf(writer, "  Saving image to tar file: %s...\n", tmpFile)
 	saveCmd := exec.Command("podman", "save",
 		"-o", tmpFile,
 		imageName,
@@ -1045,7 +1045,7 @@ func loadSignalProcessingImage(clusterName string, writer io.Writer) error {
 	}
 
 	// Load image into Kind using image-archive
-	fmt.Fprintln(writer, "  Loading image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading image into Kind...")
 	loadCmd := exec.Command("kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
@@ -1054,13 +1054,26 @@ func loadSignalProcessingImage(clusterName string, writer io.Writer) error {
 	loadCmd.Stderr = writer
 	if err := loadCmd.Run(); err != nil {
 		// Cleanup tmp file
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to load image: %w", err)
 	}
 
 	// DD-TEST-001 v1.1: Cleanup tmp file immediately after load
-	os.Remove(tmpFile)
-	fmt.Fprintf(writer, "  ✅ Temp tar file cleaned: %s\n", tmpFile)
+	_ = os.Remove(tmpFile)
+	_, _ = fmt.Fprintf(writer, "  ✅ Temp tar file cleaned: %s\n", tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	return nil
 }
 
@@ -1249,13 +1262,13 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 			"rollout", "status", "deployment/signalprocessing-controller",
 			"-n", "kubernaut-system", "--timeout=5s")
 		if err := cmd.Run(); err == nil {
-			fmt.Fprintln(writer, "  ✓ Controller ready")
+			_, _ = fmt.Fprintln(writer, "  ✓ Controller ready")
 			return nil
 		}
 
 		// Print diagnostic info every 5 attempts (25 seconds)
 		if attempt%5 == 0 {
-			fmt.Fprintf(writer, "  ⏳ Controller not ready yet (attempt %d)...\n", attempt)
+			_, _ = fmt.Fprintf(writer, "  ⏳ Controller not ready yet (attempt %d)...\n", attempt)
 			// Get pod status
 			podCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 				"get", "pods", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "-o", "wide")
@@ -1274,7 +1287,7 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 	}
 
 	// Final diagnostic dump before failure
-	fmt.Fprintln(writer, "  ❌ Controller not ready after timeout. Final diagnostics:")
+	_, _ = fmt.Fprintln(writer, "  ❌ Controller not ready after timeout. Final diagnostics:")
 	describeCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"describe", "pod", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller")
 	describeCmd.Stdout = writer
@@ -1351,7 +1364,7 @@ func GetSignalProcessingImageTag() string {
 	signalProcessingImageTag = fmt.Sprintf("signalprocessing-%s-%s-%d", user, gitHash, timestamp)
 
 	// Export for cleanup in AfterSuite
-	os.Setenv("IMAGE_TAG", signalProcessingImageTag)
+	_ = os.Setenv("IMAGE_TAG", signalProcessingImageTag)
 
 	return signalProcessingImageTag
 }
@@ -1391,20 +1404,20 @@ func GetSignalProcessingFullImageName() string {
 func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Starting SignalProcessing Integration Test Infrastructure\n")
-	fmt.Fprintf(writer, "Per DD-TEST-002: Sequential Startup Pattern (Programmatic Podman)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (RO:15435, SP:15436)\n", SignalProcessingIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:          localhost:%d (RO:16381, SP:16382)\n", SignalProcessingIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", SignalProcessingIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  Pattern:        DD-TEST-002 Sequential Startup (Programmatic Go)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Starting SignalProcessing Integration Test Infrastructure\n")
+	_, _ = fmt.Fprintf(writer, "Per DD-TEST-002: Sequential Startup Pattern (Programmatic Podman)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (RO:15435, SP:15436)\n", SignalProcessingIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d (RO:16381, SP:16382)\n", SignalProcessingIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", SignalProcessingIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  Pattern:        DD-TEST-002 Sequential Startup (Programmatic Go)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	// ============================================================================
 	// STEP 1: Cleanup existing containers (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
+	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
 	CleanupContainers([]string{
 		SignalProcessingIntegrationPostgresContainer,
 		SignalProcessingIntegrationRedisContainer,
@@ -1412,19 +1425,19 @@ func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 		SignalProcessingIntegrationMigrationsContainer,
 	}, writer)
 	// Note: No custom network to remove (using host network pattern)
-	fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// ============================================================================
 	// STEP 2: Network setup (SKIPPED - using host network for localhost connectivity)
 	// ============================================================================
 	// Note: Using host network instead of custom podman network to avoid DNS resolution issues
 	// All services connect via localhost:PORT (same pattern as Gateway/other successful services)
-	fmt.Fprintf(writer, "🌐 Network: Using host network for localhost connectivity\n\n")
+	_, _ = fmt.Fprintf(writer, "🌐 Network: Using host network for localhost connectivity\n\n")
 
 	// ============================================================================
 	// STEP 3: Start PostgreSQL FIRST (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
+	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
 	if err := StartPostgreSQL(PostgreSQLConfig{
 		ContainerName: SignalProcessingIntegrationPostgresContainer,
 		Port:          SignalProcessingIntegrationPostgresPort,
@@ -1437,25 +1450,25 @@ func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 	}
 
 	// CRITICAL: Wait for PostgreSQL to be ready before proceeding (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
 	if err := WaitForPostgreSQLReady(SignalProcessingIntegrationPostgresContainer, SignalProcessingIntegrationDBUser, SignalProcessingIntegrationDBName, writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
 	// STEP 4: Run migrations (SP-specific)
 	// ============================================================================
-	fmt.Fprintf(writer, "🔄 Running database migrations...\n")
+	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
 	if err := runSPMigrations(projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
 	// ============================================================================
 	// STEP 5: Start Redis SECOND (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "🔴 Starting Redis...\n")
+	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
 	if err := StartRedis(RedisConfig{
 		ContainerName: SignalProcessingIntegrationRedisContainer,
 		Port:          SignalProcessingIntegrationRedisPort,
@@ -1464,56 +1477,56 @@ func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 	}
 
 	// Wait for Redis to be ready (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
 	if err := WaitForRedisReady(SignalProcessingIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("Redis failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
 	// STEP 6: Start DataStorage LAST (SP-specific)
 	// ============================================================================
-	fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
 	if err := startSPDataStorage(projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", SignalProcessingIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", SignalProcessingIntegrationDataStoragePort),
 		60*time.Second,
 		writer,
-	); err != nil {
+	); err != nil{
 		// Print container logs for debugging
-		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
+		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", SignalProcessingIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
 		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 	}
-	fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
 	// SUCCESS
 	// ============================================================================
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "✅ SignalProcessing Integration Infrastructure Ready\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", SignalProcessingIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:             localhost:%d\n", SignalProcessingIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage HTTP:  http://localhost:%d\n", SignalProcessingIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  DataStorage Metrics: http://localhost:%d\n", SignalProcessingIntegrationMetricsPort)
-	fmt.Fprintf(writer, "  Database:          %s\n", SignalProcessingIntegrationDBName)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ SignalProcessing Integration Infrastructure Ready\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", SignalProcessingIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:             localhost:%d\n", SignalProcessingIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage HTTP:  http://localhost:%d\n", SignalProcessingIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage Metrics: http://localhost:%d\n", SignalProcessingIntegrationMetricsPort)
+	_, _ = fmt.Fprintf(writer, "  Database:          %s\n", SignalProcessingIntegrationDBName)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	return nil
 }
 
 // StopSignalProcessingIntegrationInfrastructure stops and cleans up the SignalProcessing integration test infrastructure
 func StopSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "🛑 Stopping SignalProcessing Integration Infrastructure (DD-TEST-002)...\n")
+	_, _ = fmt.Fprintf(writer, "🛑 Stopping SignalProcessing Integration Infrastructure (DD-TEST-002)...\n")
 
 	// Stop and remove containers (using shared utility)
 	CleanupContainers([]string{
@@ -1527,15 +1540,15 @@ func StopSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 
 	// DD-INTEGRATION-001 v2.0: Clean up composite-tagged DataStorage image
 	// This ensures images with UUID tags don't accumulate between test runs
-	fmt.Fprintf(writer, "   Cleaning up DataStorage image (composite tag)...\n")
+	_, _ = fmt.Fprintf(writer, "   Cleaning up DataStorage image (composite tag)...\n")
 	pruneCmd := exec.Command("podman", "image", "prune", "-f", "--all")
 	if err := pruneCmd.Run(); err != nil {
-		fmt.Fprintf(writer, "   ⚠️  Warning: Failed to prune images: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Warning: Failed to prune images: %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "   ✅ Images pruned\n")
+		_, _ = fmt.Fprintf(writer, "   ✅ Images pruned\n")
 	}
 
-	fmt.Fprintf(writer, "✅ SignalProcessing Integration Infrastructure stopped and cleaned up\n")
+	_, _ = fmt.Fprintf(writer, "✅ SignalProcessing Integration Infrastructure stopped and cleaned up\n")
 	return nil
 }
 
@@ -1580,10 +1593,10 @@ func startSPDataStorage(projectRoot string, writer io.Writer) error {
 	dsImage := GetDataStorageImageTagForSP()
 
 	// Always build with unique tag (no image reuse to ensure fresh builds)
-	fmt.Fprintf(writer, "   Building DataStorage image: %s\n", dsImage)
+	_, _ = fmt.Fprintf(writer, "   Building DataStorage image: %s\n", dsImage)
 	buildCmd := exec.Command("podman", "build",
 		"-t", dsImage,
-		"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
 		projectRoot,
 	)
 	buildCmd.Stdout = writer
@@ -1591,7 +1604,7 @@ func startSPDataStorage(projectRoot string, writer io.Writer) error {
 	if err := buildCmd.Run(); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", dsImage)
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", dsImage)
 
 	// Mount config directory
 	configDir := filepath.Join(projectRoot, "test", "integration", "signalprocessing", "config")
@@ -1640,7 +1653,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 	// Use unique image tag with coverage suffix
 	imageTag := GetSignalProcessingImageTag() + "-coverage"
 	imageName := fmt.Sprintf("localhost/signalprocessing-controller:%s", imageTag)
-	fmt.Fprintf(writer, "  📦 Building with coverage: %s\n", imageName)
+	_, _ = fmt.Fprintf(writer, "  📦 Building with coverage: %s\n", imageName)
 
 	// Build with GOFLAGS=-cover passed as build arg
 	cmd := exec.Command(containerCmd, "build",
@@ -1661,7 +1674,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 	sizeCmd := exec.Command(containerCmd, "images", "--format", "{{.Size}}", imageName)
 	sizeOutput, err := sizeCmd.Output()
 	if err == nil {
-		fmt.Fprintf(writer, "  📊 Image size: %s\n", string(sizeOutput))
+		_, _ = fmt.Fprintf(writer, "  📊 Image size: %s\n", string(sizeOutput))
 	}
 
 	return nil
@@ -1683,7 +1696,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("signalprocessing-controller-%s.tar", imageTag))
 	imageName := GetSignalProcessingCoverageFullImageName()
 
-	fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
+	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
 	saveCmd := exec.Command("podman", "save",
 		"-o", tmpFile,
 		imageName,
@@ -1694,7 +1707,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 		return fmt.Errorf("failed to save image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  Loading coverage image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
 	loadCmd := exec.Command("kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
@@ -1702,12 +1715,25 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 	if err := loadCmd.Run(); err != nil {
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to load image: %w", err)
 	}
 
-	os.Remove(tmpFile)
-	fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
+	_ = os.Remove(tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
 	return nil
 }
 
@@ -1875,7 +1901,7 @@ spec:
 }
 
 // applyManifest applies a Kubernetes manifest using kubectl
-func applyManifest(kubeconfigPath, manifest string, writer io.Writer) error {
+func applyManifest(kubeconfigPath, manifest string, writer io.Writer) error { //nolint:unused
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
@@ -1897,7 +1923,7 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath string, writer 
 	}
 
 	// Wait for controller to be ready
-	fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled controller to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled controller to be ready...")
 	ctx := context.Background()
 	return waitForSignalProcessingController(ctx, kubeconfigPath, writer)
 }
@@ -1905,7 +1931,7 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath string, writer 
 // ScaleDownControllerForCoverage scales the controller to 0 to trigger graceful shutdown
 // and flush coverage data to /coverdata
 func ScaleDownControllerForCoverage(kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "📊 Scaling down controller for coverage flush...")
+	_, _ = fmt.Fprintln(writer, "📊 Scaling down controller for coverage flush...")
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"scale", "deployment", "signalprocessing-controller",
@@ -1918,7 +1944,7 @@ func ScaleDownControllerForCoverage(kubeconfigPath string, writer io.Writer) err
 	}
 
 	// Wait for pod to terminate using kubectl wait (blocks until pod is deleted)
-	fmt.Fprintln(writer, "⏳ Waiting for controller pod to terminate...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for controller pod to terminate...")
 	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=delete", "pod",
 		"-l", "app=signalprocessing-controller",
@@ -1931,13 +1957,13 @@ func ScaleDownControllerForCoverage(kubeconfigPath string, writer io.Writer) err
 	// Coverage data is written on SIGTERM before pod exits, no additional wait needed
 	// The kubectl wait --for=delete already blocks until pod is fully terminated
 
-	fmt.Fprintln(writer, "✅ Controller scaled down, coverage data should be flushed")
+	_, _ = fmt.Fprintln(writer, "✅ Controller scaled down, coverage data should be flushed")
 	return nil
 }
 
 // ExtractCoverageFromKind copies coverage data from Kind node to host
 func ExtractCoverageFromKind(clusterName, coverDir string, writer io.Writer) error {
-	fmt.Fprintln(writer, "📦 Extracting coverage data from Kind node...")
+	_, _ = fmt.Fprintln(writer, "📦 Extracting coverage data from Kind node...")
 
 	// Get the worker node container name
 	workerNode := clusterName + "-worker"
@@ -1969,9 +1995,9 @@ func ExtractCoverageFromKind(clusterName, coverDir string, writer io.Writer) err
 	// List extracted files
 	files, _ := os.ReadDir(coverDir)
 	if len(files) == 0 {
-		fmt.Fprintln(writer, "⚠️  No coverage files found (controller may not have processed any requests)")
+		_, _ = fmt.Fprintln(writer, "⚠️  No coverage files found (controller may not have processed any requests)")
 	} else {
-		fmt.Fprintf(writer, "✅ Extracted %d coverage files\n", len(files))
+		_, _ = fmt.Fprintf(writer, "✅ Extracted %d coverage files\n", len(files))
 	}
 
 	return nil
@@ -1979,12 +2005,12 @@ func ExtractCoverageFromKind(clusterName, coverDir string, writer io.Writer) err
 
 // GenerateCoverageReport generates coverage report from extracted data
 func GenerateCoverageReport(coverDir string, writer io.Writer) error {
-	fmt.Fprintln(writer, "📊 Generating E2E coverage report...")
+	_, _ = fmt.Fprintln(writer, "📊 Generating E2E coverage report...")
 
 	// Check if coverage data exists
 	files, err := os.ReadDir(coverDir)
 	if err != nil || len(files) == 0 {
-		fmt.Fprintln(writer, "⚠️  No coverage data to report")
+		_, _ = fmt.Fprintln(writer, "⚠️  No coverage data to report")
 		return nil
 	}
 
@@ -1994,7 +2020,7 @@ func GenerateCoverageReport(coverDir string, writer io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("failed to generate coverage percent: %w\n%s", err, output)
 	}
-	fmt.Fprintf(writer, "\n%s\n", output)
+	_, _ = fmt.Fprintf(writer, "\n%s\n", output)
 
 	// Generate text format for HTML conversion
 	textFile := filepath.Join(coverDir, "e2e-coverage.txt")
@@ -2014,9 +2040,9 @@ func GenerateCoverageReport(coverDir string, writer io.Writer) error {
 		return fmt.Errorf("failed to generate HTML report: %w", err)
 	}
 
-	fmt.Fprintf(writer, "📄 Text report: %s\n", textFile)
-	fmt.Fprintf(writer, "📄 HTML report: %s\n", htmlFile)
-	fmt.Fprintln(writer, "✅ E2E coverage report generated")
+	_, _ = fmt.Fprintf(writer, "📄 Text report: %s\n", textFile)
+	_, _ = fmt.Fprintf(writer, "📄 HTML report: %s\n", htmlFile)
+	_, _ = fmt.Fprintln(writer, "✅ E2E coverage report generated")
 
 	return nil
 }

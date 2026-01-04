@@ -7,9 +7,11 @@ test-slm
 bin/
 mcp-server
 *.log
-dependencies/
 *.bak
 *.bak2
+
+# HolmesGPT API virtual environments (test venvs with pattern venv-*-test)
+holmesgpt-api/venv-*-test/
 
 # Compiled Go binaries (service executables - root directory only)
 /aianalysis
@@ -25,6 +27,31 @@ dependencies/
 /*.md
 !/README.md
 !/CHANGELOG*.md
+
+# Root ephemeral files (test artifacts, build metadata)
+/watch_*
+/.last-image-tag-*.env
+/.perf-baseline.json
+/coverprofile.out
+/*-coverage.out
+/coverage-*.out
+/coverage-*.html
+/*.out
+/*.html
+/run_*.sh
+/*-unit.json
+/*-integration.json
+/*-e2e.json
+/test-results.json
+/report.json
+
+# Root ephemeral directories
+/TODO/
+/.hypothesis/
+/.preserved/
+/.pytest_cache/
+/htmlcov/
+/coverdata/
 # Python artifacts
 *.pyc
 __pycache__/
@@ -203,4 +230,3 @@ coverage-e2e/
 
 # Generated integration test configs (ADR-030)
 test/infrastructure/.generated-configs/
-report.json

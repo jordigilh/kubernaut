@@ -290,7 +290,35 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// Old CRDUpdater updated Spec.Deduplication (incorrect per DD-GATEWAY-011)
 	// StatusUpdater now handles status updates (status.deduplication)
 
-	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
+	// DD-GATEWAY-015 / BR-GATEWAY-093: Circuit Breaker Integration (TDD GREEN COMPLETE)
+	// ========================================
+	// Circuit breaker protects Gateway from K8s API cascading failures
+	//
+	// Implementation:
+	//   - ClientWithCircuitBreaker wraps k8sClient with fail-fast protection
+	//   - CRDCreator uses k8s.ClientInterface (supports both Client and ClientWithCircuitBreaker)
+	//   - Circuit breaker metrics: gateway_circuit_breaker_state, gateway_circuit_breaker_operations_total
+	//
+	// Behavior:
+	//   - Closed (0): Normal operation, all requests pass through
+	//   - Open (2): K8s API degraded, requests fail-fast (<10ms) with gobreaker.ErrOpenState
+	//   - Half-Open (1): Testing recovery, limited requests allowed
+	//
+	// Configuration:
+	//   - Threshold: 50% failure rate over 10 requests
+	//   - Timeout: 30s (transitions to half-open after 30s in open state)
+	//   - Max Requests: 3 (half-open state test requests)
+	//
+	// Business Requirements:
+	//   - BR-GATEWAY-093-A: Fail-fast when K8s API unavailable
+	//   - BR-GATEWAY-093-B: Prevent cascade failures during K8s API overload
+	//   - BR-GATEWAY-093-C: Observable metrics for SRE response
+	//
+	// Design Decision: DD-GATEWAY-015 (K8s API Circuit Breaker Implementation)
+	// ========================================
+	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
+
+	crdCreator := processing.NewCRDCreator(cbClient, logger, metricsInstance, cfg.Processing.CRD.FallbackNamespace, &cfg.Processing.Retry)
 
 	// DD-GATEWAY-011: Status-based deduplication
 	// All state in K8s RR status - Redis fully deprecated

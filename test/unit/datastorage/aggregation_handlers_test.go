@@ -487,7 +487,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Special characters (hyphen, underscore, dot) should be accepted")
 
 				var response models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.IncidentType).To(Equal("pod-oom-killer_v2.0"),
 					"Incident type with special characters should be preserved")
 			})
@@ -513,7 +513,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"URL-encoded incident_type should be decoded")
 
 				var response models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.IncidentType).To(Equal("High CPU Usage"),
 					"Incident type should be URL-decoded")
 			})
@@ -580,7 +580,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 				Expect(rec.Code).To(Equal(http.StatusOK))
 
 				var response models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.IncidentType).To(Equal("HighCPUUsage"),
 					"Incident type case should be preserved (case-sensitive)")
 			})
@@ -609,7 +609,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Special characters in workflow_id should be accepted")
 
 				var response models.WorkflowSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.WorkflowID).To(Equal("pod-oom-recovery_v2.0"),
 					"Workflow ID with special characters should be preserved")
 			})
@@ -659,7 +659,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"URL-encoded + in version should be decoded")
 
 				var response models.WorkflowSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.WorkflowVersion).To(Equal("v1.0.0+build123"),
 					"Workflow version with + should be URL-decoded")
 			})
@@ -733,7 +733,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// ASSERT: Response has incident_type + workflow, no action_type
 				var response models.MultiDimensionalSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
 				Expect(response.Dimensions.WorkflowID).To(Equal("pod-oom-recovery"))
 				Expect(response.Dimensions.ActionType).To(BeEmpty())
@@ -760,7 +760,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: RFC 7807 error format
 				var problem map[string]interface{}
-				json.Unmarshal(rec.Body.Bytes(), &problem)
+				_ = json.Unmarshal(rec.Body.Bytes(), &problem)
 				Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
 				Expect(problem["detail"]).To(ContainSubstring("workflow_version requires workflow_id"))
 			})
@@ -782,7 +782,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: Error message explains the issue
 				var problem map[string]interface{}
-				json.Unmarshal(rec.Body.Bytes(), &problem)
+				_ = json.Unmarshal(rec.Body.Bytes(), &problem)
 				Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
 				Expect(problem["detail"]).To(ContainSubstring("at least one dimension filter"))
 			})
@@ -803,7 +803,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: Error message mentions time_range
 				var problem map[string]interface{}
-				json.Unmarshal(rec.Body.Bytes(), &problem)
+				_ = json.Unmarshal(rec.Body.Bytes(), &problem)
 				Expect(problem["detail"]).To(ContainSubstring("time_range"))
 			})
 
@@ -823,7 +823,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: Error message mentions min_samples
 				var problem map[string]interface{}
-				json.Unmarshal(rec.Body.Bytes(), &problem)
+				_ = json.Unmarshal(rec.Body.Bytes(), &problem)
 				Expect(problem["detail"]).To(ContainSubstring("min_samples"))
 			})
 
@@ -843,7 +843,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: Error message mentions positive integer
 				var problem map[string]interface{}
-				json.Unmarshal(rec.Body.Bytes(), &problem)
+				_ = json.Unmarshal(rec.Body.Bytes(), &problem)
 				Expect(problem["detail"]).To(ContainSubstring("positive"))
 			})
 		})
@@ -871,7 +871,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// CORRECTNESS: time_range defaults to "7d"
 				var result models.MultiDimensionalSuccessRateResponse
-				json.Unmarshal(rec.Body.Bytes(), &result)
+				_ = json.Unmarshal(rec.Body.Bytes(), &result)
 				Expect(result.TimeRange).To(Equal("7d"))
 
 				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
@@ -899,7 +899,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 
 				// BEHAVIOR: min_samples defaults to 5 (used in confidence calculation)
 				var result models.MultiDimensionalSuccessRateResponse
-				json.Unmarshal(rec.Body.Bytes(), &result)
+				_ = json.Unmarshal(rec.Body.Bytes(), &result)
 				// Response will reflect default min_samples behavior (3 < 5 = insufficient_data)
 				Expect(result.Confidence).To(Equal("insufficient_data"))
 
@@ -928,7 +928,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Special characters should be URL-decoded")
 
 				var response models.MultiDimensionalSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer/high-memory"))
 
 				Expect(mockDB.ExpectationsWereMet()).To(Succeed())
@@ -976,7 +976,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Parameter order should not affect response")
 
 				var response models.MultiDimensionalSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("pod-oom-killer"))
 				Expect(response.Dimensions.WorkflowID).To(Equal("pod-oom-recovery"))
 				Expect(response.Dimensions.WorkflowVersion).To(Equal("v1.2"))
@@ -1005,7 +1005,7 @@ var _ = Describe("ADR-033 Aggregation Handlers", func() {
 					"Case should be preserved")
 
 				var response models.MultiDimensionalSuccessRateResponse
-				json.NewDecoder(rec.Body).Decode(&response)
+				_ = json.NewDecoder(rec.Body).Decode(&response)
 				Expect(response.Dimensions.IncidentType).To(Equal("Pod-OOM-Killer"))
 
 				Expect(mockDB.ExpectationsWereMet()).To(Succeed())

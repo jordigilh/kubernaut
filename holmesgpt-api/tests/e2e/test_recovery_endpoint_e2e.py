@@ -37,7 +37,9 @@ Phase: 3 of 4 (Road to 100% Confidence)
 
 import pytest
 import sys
-sys.path.insert(0, 'tests/clients')
+from pathlib import Path
+# Add tests/clients to path (absolute path resolution for CI)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 
 from holmesgpt_api_client import ApiClient, Configuration
 from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
@@ -347,7 +349,7 @@ class TestRecoveryEndpointE2EErrorScenarios:
     ):
         """E2E: Invalid recovery attempt number rejected (client-side validation)"""
         from pydantic_core import ValidationError
-        
+
         # Arrange: Invalid request (recovery_attempt_number = 0)
         # Act & Assert: Pydantic validates on the client before API call
         with pytest.raises(ValidationError) as exc_info:

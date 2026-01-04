@@ -158,15 +158,13 @@ func main() {
 		ctrl.Log.WithName("audit"),
 	)
 	if err != nil {
-		setupLog.Error(err, "failed to create audit store, audit will be disabled")
-		// Continue without audit - graceful degradation per DD-AUDIT-002
+		setupLog.Error(err, "failed to create audit store - audit is a P0 requirement (BR-AI-090)")
+		os.Exit(1) // Fatal: Cannot run without audit trail
 	}
 
-	// Create service-specific audit client
-	var auditClient *audit.AuditClient
-	if auditStore != nil {
-		auditClient = audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
-	}
+	// Create service-specific audit client (guaranteed non-nil)
+	auditClient := audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
+	setupLog.Info("✅ Audit client initialized successfully")
 
 	// ========================================
 	// DD-METRICS-001: Initialize Metrics

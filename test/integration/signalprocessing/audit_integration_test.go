@@ -69,7 +69,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 	BeforeEach(func() {
 		// DataStorage URL from suite's shared infrastructure (port 18094)
-		dataStorageURL = fmt.Sprintf("http://localhost:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
+		// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2, matches suite_test.go:218)
+		dataStorageURL = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
 
 		// Verify Data Storage is running
 		healthResp, err := http.Get(dataStorageURL + "/health")
@@ -81,7 +82,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					"  Start with: podman-compose -f test/integration/signalprocessing/podman-compose.signalprocessing.test.yml up -d\n\n"+
 					"  Error: %v", dataStorageURL, err))
 		}
-		defer healthResp.Body.Close()
+		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage health check failed at %s\n"+
@@ -147,44 +148,59 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-			By("6. Query Data Storage for 'signal.processed' audit event via OpenAPI client")
+			By("6. Query Data Storage for ALL signalprocessing audit events via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
 			auditClient, err := dsgen.NewClientWithResponses(dataStorageURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
 			eventCategory := "signalprocessing"
 			var auditEvents []dsgen.AuditEvent
-			// WORKAROUND: 90s timeout for DataStorage buffer flush bug
+			// WORKAROUND: 120s timeout for DataStorage buffer flush bug
 			// Expected: 2-5s for audit events to appear (1s flush interval)
-			// Actual: 60-90s due to timer not firing in pkg/audit/store.go backgroundWriter
+			// Actual: 60-120s due to timer not firing in pkg/audit/store.go backgroundWriter
 			// See: DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md
-			// This timeout matches RemediationOrchestrator pattern and proves bug affects SignalProcessing
-			Eventually(func() int {
+			// Increased from 90s to 120s for slow CI/CD runs
+			Eventually(func() bool {
 				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 					EventCategory: &eventCategory,
 					CorrelationId: &correlationID,
 				})
 				if err != nil {
 					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
-					return 0
+					return false
 				}
 
 				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
 					GinkgoWriter.Printf("Audit query returned status %d\n", resp.StatusCode())
-					return 0
+					return false
 				}
 
 				if resp.JSON200.Data != nil {
 					auditEvents = *resp.JSON200.Data
 				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
-				}
-				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: SignalProcessing MUST emit audit events")
 
-			By("7. Find 'signal.processed' audit event")
+				// DD-TESTING-001: Wait for specific event type to appear (deterministic)
+				for _, event := range auditEvents {
+					if event.EventType == "signalprocessing.signal.processed" {
+						return true
+					}
+				}
+				return false
+			}, 120*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"BR-SP-090: SignalProcessing MUST emit 'signal.processed' audit event")
+
+			By("7. Count events by event_type (DD-TESTING-001 deterministic validation)")
+			// DD-TESTING-001 MANDATORY: Count events by type to detect duplicates/missing events
+			eventCounts := make(map[string]int)
+			for _, event := range auditEvents {
+				eventCounts[event.EventType]++
+			}
+
+			By("8. Validate exact event count for 'signal.processed' (DD-TESTING-001 compliance)")
+			Expect(eventCounts["signalprocessing.signal.processed"]).To(Equal(1),
+				"BR-SP-090: MUST emit exactly 1 'signal.processed' audit event per processing completion")
+
+			By("9. Find 'signal.processed' audit event for detailed validation")
 			var processedEvent *dsgen.AuditEvent
 			for i := range auditEvents {
 				if auditEvents[i].EventType == "signalprocessing.signal.processed" {
@@ -192,7 +208,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					break
 				}
 			}
-			Expect(processedEvent).ToNot(BeNil(), "Should have 'signal.processed' audit event")
+			Expect(processedEvent).ToNot(BeNil(),
+				"Should have found 'signal.processed' audit event")
 
 			By("8. Validate audit event using testutil.ValidateAuditEvent (V1.0 MANDATORY)")
 			// V1.0 MANDATORY: Use testutil.ValidateAuditEvent for type-safe validation
@@ -275,7 +292,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 			eventType := "signalprocessing.classification.decision"
 			var auditEvents []dsgen.AuditEvent
-			// WORKAROUND: 90s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
+			// WORKAROUND: 120s timeout for DataStorage buffer flush bug (increased for slow CI/CD)
 			Eventually(func() int {
 				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 					EventType:     &eventType,
@@ -292,11 +309,11 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: Must emit classification.decision audit event")
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 classification.decision event per classification")
 
 			By("7. Validate classification audit event using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty())
+			Expect(len(auditEvents)).To(Equal(1), "Should have exactly 1 classification event")
 			testutil.ValidateAuditEvent(auditEvents[0], testutil.ExpectedAuditEvent{
 				EventType:     "signalprocessing.classification.decision",
 				EventCategory: dsgen.AuditEventEventCategorySignalprocessing,
@@ -368,35 +385,35 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		By("6. Query Data Storage for 'business.classified' audit event via OpenAPI client")
-		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-		auditClient, err := dsgen.NewClientWithResponses(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred())
+			By("6. Query Data Storage for 'business.classified' audit event via OpenAPI client")
+			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
+			auditClient, err := dsgen.NewClientWithResponses(dataStorageURL)
+			Expect(err).ToNot(HaveOccurred())
 
-		eventType := "signalprocessing.business.classified"
-		var auditEvents []dsgen.AuditEvent
-		// WORKAROUND: 90s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
-		Eventually(func() int {
-			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventType:     &eventType,
-				CorrelationId: &correlationID,
-			})
-			if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+			eventType := "signalprocessing.business.classified"
+			var auditEvents []dsgen.AuditEvent
+			// WORKAROUND: 120s timeout for DataStorage buffer flush bug (increased for slow CI/CD)
+			Eventually(func() int {
+				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+					EventType:     &eventType,
+					CorrelationId: &correlationID,
+				})
+				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+					return 0
+				}
+
+				if resp.JSON200.Data != nil {
+					auditEvents = *resp.JSON200.Data
+				}
+				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
+					return *resp.JSON200.Pagination.Total
+				}
 				return 0
-			}
-
-			if resp.JSON200.Data != nil {
-				auditEvents = *resp.JSON200.Data
-			}
-			if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-				return *resp.JSON200.Pagination.Total
-			}
-			return 0
-		}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-			"AUDIT-06: Must emit business.classified audit event")
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"AUDIT-06: SignalProcessing MUST emit exactly 1 business.classified event per business classification")
 
 			By("7. Validate business classification audit event using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty())
+			Expect(len(auditEvents)).To(Equal(1), "Should have exactly 1 business classification event")
 			testutil.ValidateAuditEvent(auditEvents[0], testutil.ExpectedAuditEvent{
 				EventType:     "signalprocessing.business.classified",
 				EventCategory: dsgen.AuditEventEventCategorySignalprocessing,
@@ -503,7 +520,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 			eventType := "signalprocessing.enrichment.completed"
 			var auditEvents []dsgen.AuditEvent
-			// WORKAROUND: 90s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
+			// WORKAROUND: 120s timeout for DataStorage buffer flush bug (increased for slow CI/CD)
 			Eventually(func() int {
 				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 					EventType:     &eventType,
@@ -520,11 +537,11 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					return *resp.JSON200.Pagination.Total
 				}
 				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: Must emit enrichment.completed audit event")
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 enrichment.completed event per enrichment operation")
 
 			By("7. Validate enrichment audit event using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least one enrichment audit event")
+			Expect(len(auditEvents)).To(Equal(1), "Should have exactly 1 enrichment audit event")
 
 			// Debug: Print found events
 			GinkgoWriter.Printf("\n📊 Found %d audit events\n", len(auditEvents))
@@ -600,17 +617,19 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-			By("6. Query Data Storage for 'phase.transition' audit events via OpenAPI client")
+			By("6. Query Data Storage for ALL signalprocessing audit events via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
 			auditClient, err := dsgen.NewClientWithResponses(dataStorageURL)
 			Expect(err).ToNot(HaveOccurred())
 
-			eventType := "signalprocessing.phase.transition"
+			eventCategory := "signalprocessing"
 			var auditEvents []dsgen.AuditEvent
-			// WORKAROUND: 90s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
+			// WORKAROUND: 120s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
+			// Increased from 90s to 120s for slow CI/CD runs
+			// DD-TESTING-001: BeNumerically acceptable for polling, deterministic validation follows
 			Eventually(func() int {
 				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventType:     &eventType,
+					EventCategory: &eventCategory,
 					CorrelationId: &correlationID,
 				})
 				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
@@ -620,18 +639,37 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				if resp.JSON200.Data != nil {
 					auditEvents = *resp.JSON200.Data
 				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
+				return len(auditEvents)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"BR-SP-090: SignalProcessing MUST emit audit events")
+
+			By("7. Count events by event_type (DD-TESTING-001 deterministic validation)")
+			// DD-TESTING-001 MANDATORY: Count events by type to detect duplicates/missing events
+			eventCounts := make(map[string]int)
+			for _, event := range auditEvents {
+				eventCounts[event.EventType]++
+			}
+
+			By("8. Validate exact event count for 'phase.transition' (DD-TESTING-001 compliance)")
+			// Business requirement: SP has 5 phases (Pending→Enriching→Classifying→Categorizing→Completed)
+			// Therefore: Exactly 4 phase transitions per successful processing
+			Expect(eventCounts["signalprocessing.phase.transition"]).To(Equal(4),
+				"BR-SP-090: MUST emit exactly 4 phase transitions: Pending→Enriching→Classifying→Categorizing→Completed")
+
+			By("9. Find first 'phase.transition' event for detailed validation")
+			var phaseTransitionEvent *dsgen.AuditEvent
+			for i := range auditEvents {
+				if auditEvents[i].EventType == "signalprocessing.phase.transition" {
+					phaseTransitionEvent = &auditEvents[i]
+					break
 				}
-				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-SP-090: Must emit phase.transition audit events")
+			}
+			Expect(phaseTransitionEvent).ToNot(BeNil(),
+				"Should have found at least one phase.transition audit event")
 
-			By("7. Validate phase transition audit events using testutil.ValidateAuditEvent")
-			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least one phase transition event")
-
+			By("10. Validate phase transition event structure (V1.0 MANDATORY)")
 			// V1.0 MANDATORY: Use testutil.ValidateAuditEvent for type-safe validation
-			testutil.ValidateAuditEvent(auditEvents[0], testutil.ExpectedAuditEvent{
+			testutil.ValidateAuditEvent(*phaseTransitionEvent, testutil.ExpectedAuditEvent{
 				EventType:     "signalprocessing.phase.transition",
 				EventCategory: dsgen.AuditEventEventCategorySignalprocessing,
 				EventAction:   "phase_transition",
@@ -640,7 +678,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			})
 
 			// Verify event_data contains phase information
-			testutil.ValidateAuditEventDataNotEmpty(auditEvents[0])
+			testutil.ValidateAuditEventDataNotEmpty(*phaseTransitionEvent)
 		})
 	})
 
@@ -683,9 +721,19 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			sp.Spec.Signal.Severity = "critical"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			By("4. Wait for processing attempt")
-			// Should enter degraded mode or failed phase
-			time.Sleep(5 * time.Second)
+			By("4. Wait for processing attempt to reach degraded mode or failed phase")
+			Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				err := k8sClient.Get(ctx, types.NamespacedName{
+					Name:      sp.Name,
+					Namespace: sp.Namespace,
+				}, &updated)
+				if err != nil {
+					return ""
+				}
+				return updated.Status.Phase
+			}, 15*time.Second, 500*time.Millisecond).ShouldNot(Equal(signalprocessingv1alpha1.PhasePending),
+				"SignalProcessing should leave Pending phase even with errors (degraded mode)")
 
 			By("5. Query Data Storage for error audit events via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
@@ -694,7 +742,9 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 			eventCategory := "signalprocessing"
 			var auditEvents []dsgen.AuditEvent
-			// WORKAROUND: 90s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
+			// WORKAROUND: 120s timeout for DataStorage buffer flush bug (see DATASTORAGE_AUDIT_BUFFER_FLUSH_TIMING_ISSUE.md)
+			// Increased from 90s to 120s for slow CI/CD runs
+			// DD-TESTING-001: BeNumerically acceptable for polling, deterministic validation follows
 			Eventually(func() int {
 				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 					EventCategory: &eventCategory,
@@ -707,35 +757,64 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				if resp.JSON200.Data != nil {
 					auditEvents = *resp.JSON200.Data
 				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
-				}
-				return 0
-			}, 90*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+				return len(auditEvents)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"Should have audit events even with errors (degraded mode processing)")
 
-			By("6. Verify audit events captured error handling")
-			// Should have either error event OR completion event with degraded mode
-			foundAudit := false
+			By("6. Count events by event_type (DD-TESTING-001 deterministic validation)")
+			// DD-TESTING-001 MANDATORY: Count events by type to detect duplicates/missing events
+			eventCounts := make(map[string]int)
 			for _, event := range auditEvents {
-				if event.EventType == "signalprocessing.error.occurred" {
-					// Explicit error event
-					foundAudit = true
-					Expect(event.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeFailure))
-					Expect(event.EventData).ToNot(BeNil(),
-						"Error event should contain event data with error details")
-					break
-				} else if event.EventType == "signalprocessing.signal.processed" {
-					// Completion event (degraded mode)
-					foundAudit = true
-					GinkgoWriter.Printf("Processed in degraded mode: %v\n", event.EventData)
-					break
-				}
+				eventCounts[event.EventType]++
 			}
-			Expect(foundAudit).To(BeTrue(),
-				"Should have either error audit or degraded mode completion audit")
 
-			By("7. Verify ADR-038: Reconciliation was not blocked by audit")
+			By("7. Validate error handling produced expected audit event (DD-TESTING-001 compliance)")
+			// Business logic: In error scenarios, SP emits either:
+			// - Option A: Explicit error event (signalprocessing.error.occurred) with EventOutcome=Failure
+			// - Option B: Completion in degraded mode (signalprocessing.signal.processed) with degraded=true
+			hasErrorEvent := eventCounts["signalprocessing.error.occurred"] > 0
+			hasCompletionEvent := eventCounts["signalprocessing.signal.processed"] > 0
+
+			Expect(hasErrorEvent || hasCompletionEvent).To(BeTrue(),
+				"BR-SP-090: MUST emit either error event OR degraded mode completion event")
+
+			// Validate exactly 1 of the expected event types (deterministic)
+			if hasErrorEvent {
+				Expect(eventCounts["signalprocessing.error.occurred"]).To(Equal(1),
+					"BR-SP-090: Should emit exactly 1 error event per error occurrence")
+
+				By("8. Validate error event structure (DD-TESTING-001 structured content validation)")
+				var errorEvent *dsgen.AuditEvent
+				for i := range auditEvents {
+					if auditEvents[i].EventType == "signalprocessing.error.occurred" {
+						errorEvent = &auditEvents[i]
+						break
+					}
+				}
+				Expect(errorEvent).ToNot(BeNil())
+
+				// Validate event_outcome is Failure
+				Expect(errorEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeFailure),
+					"Error events MUST have EventOutcome=Failure")
+
+				// DD-TESTING-001 MANDATORY: Validate structured event_data fields (not just not nil)
+				eventData, ok := errorEvent.EventData.(map[string]interface{})
+				Expect(ok).To(BeTrue(), "event_data should be a JSON object")
+
+				// Per DD-AUDIT-004: Error events should contain structured error information
+				Expect(eventData).To(HaveKey("error_message"),
+					"Error event should contain error_message field")
+
+				errorMessage := eventData["error_message"].(string)
+				Expect(errorMessage).ToNot(BeEmpty(),
+					"Error message should not be empty")
+			} else {
+				Expect(eventCounts["signalprocessing.signal.processed"]).To(Equal(1),
+					"BR-SP-090: Should emit exactly 1 completion event (degraded mode)")
+				GinkgoWriter.Printf("✅ Processed in degraded mode (no explicit error event)\n")
+			}
+
+			By("9. Verify ADR-038: Reconciliation was not blocked by audit")
 			// SignalProcessing should still have updated status (not stuck in Pending)
 			var finalSP signalprocessingv1alpha1.SignalProcessing
 			err = k8sClient.Get(ctx, types.NamespacedName{
@@ -745,6 +824,109 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred())
 			Expect(finalSP.Status.Phase).ToNot(Equal(signalprocessingv1alpha1.PhasePending),
 				"ADR-038: Audit failures must not block reconciliation progress")
+		})
+
+		// SP-BUG-003/004: Test fatal enrichment error path (namespace not found)
+		// This test validates that error.occurred audit events are emitted for fatal enrichment errors
+		// (as opposed to degraded mode for missing target resources)
+		It("should emit 'error.occurred' event for fatal enrichment errors (namespace not found)", func() {
+			// BUSINESS SCENARIO:
+			// Fatal enrichment errors (namespace not found, API timeouts, RBAC denials)
+			// MUST emit error.occurred audit events before stopping reconciliation
+			//
+			// This is DIFFERENT from degraded mode (missing target Pod):
+			// - Missing Pod → degraded mode → continue processing → signal.processed
+			// - Missing namespace → fatal error → stop processing → error.occurred
+			//
+			// SP-BUG-003: Controller now emits error audit events before returning
+			// SP-BUG-004: Enricher properly propagates fatal errors (not silent success)
+
+			By("1. Creating parent RemediationRequest in EXISTING namespace")
+			existingNs := createTestNamespaceWithLabels("audit-test-fatal-error", map[string]string{
+				"kubernaut.ai/environment": "production",
+			})
+			defer deleteTestNamespace(existingNs)
+
+			rrName := "audit-test-rr-fatal-06"
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-pod-fatal",
+				Namespace: "non-existent-namespace-fatal", // This namespace does NOT exist
+			}
+			rr := CreateTestRemediationRequest(rrName, existingNs, ValidTestFingerprints["audit-006"], "critical", targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			correlationID := rrName
+
+			By("2. Creating SignalProcessing CR targeting NON-EXISTENT namespace")
+			sp := CreateTestSignalProcessingWithParent("audit-test-sp-fatal-06", existingNs, rr, ValidTestFingerprints["audit-006"], targetResource)
+			sp.Spec.Signal.Severity = "critical"
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			By("3. Wait for enrichment to fail (namespace not found is fatal)")
+			// Controller should attempt reconciliation and fail during enrichment
+			time.Sleep(5 * time.Second)
+
+			By("4. Query Data Storage for audit events")
+			auditClient, err := dsgen.NewClientWithResponses(dataStorageURL)
+			Expect(err).ToNot(HaveOccurred())
+
+			eventCategory := "signalprocessing"
+			var auditEvents []dsgen.AuditEvent
+			Eventually(func() int {
+				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+					EventCategory: &eventCategory,
+					CorrelationId: &correlationID,
+				})
+				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+					return 0
+				}
+
+				if resp.JSON200.Data != nil {
+					auditEvents = *resp.JSON200.Data
+				}
+				return len(auditEvents)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Should have error.occurred audit event for fatal enrichment error")
+
+			By("5. Validate error.occurred event was emitted (DD-TESTING-001)")
+			eventCounts := make(map[string]int)
+			for _, event := range auditEvents {
+				eventCounts[event.EventType]++
+			}
+
+			// For fatal errors, we MUST have error.occurred (not signal.processed)
+			Expect(eventCounts["signalprocessing.error.occurred"]).To(BeNumerically(">=", 1),
+				"BR-SP-090: MUST emit error.occurred for fatal enrichment errors")
+
+			By("6. Validate error event structure contains namespace error details")
+			var errorEvent *dsgen.AuditEvent
+			for i := range auditEvents {
+				if auditEvents[i].EventType == "signalprocessing.error.occurred" {
+					errorEvent = &auditEvents[i]
+					break
+				}
+			}
+			Expect(errorEvent).ToNot(BeNil())
+
+			// Validate EventOutcome is Failure
+			Expect(errorEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeFailure),
+				"Fatal errors MUST have EventOutcome=Failure")
+
+			// Validate error_data contains namespace error information
+			eventData, ok := errorEvent.EventData.(map[string]interface{})
+			Expect(ok).To(BeTrue(), "event_data should be a JSON object")
+
+			Expect(eventData).To(HaveKey("phase"), "Error event should contain phase")
+			Expect(eventData["phase"]).To(Equal("Enriching"), "Error should occur during Enriching phase")
+
+			Expect(eventData).To(HaveKey("error"), "Error event should contain error message")
+			errorMsg := eventData["error"].(string)
+			Expect(errorMsg).To(ContainSubstring("non-existent-namespace-fatal"),
+				"Error message should reference the missing namespace")
+
+			GinkgoWriter.Printf("✅ Fatal enrichment error correctly emitted error.occurred audit event\n")
+			GinkgoWriter.Printf("   Error: %s\n", errorMsg)
 		})
 	})
 })

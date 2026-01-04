@@ -76,7 +76,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 				// Test DataStorage BUSINESS LOGIC: metrics emission
 				event := &audit.AuditEvent{EventType: "test.event"}
 
-				auditHandler.StoreAuditEvent(ctx, event)
+				_ = auditHandler.StoreAuditEvent(ctx, event)
 
 				// Verify metrics were emitted (business logic)
 				Expect(mockMetrics.DLQEnqueueCount()).To(Equal(1))
@@ -86,7 +86,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 				// Test DataStorage BUSINESS LOGIC: error logging
 				event := &audit.AuditEvent{EventType: "test.event"}
 
-				auditHandler.StoreAuditEvent(ctx, event)
+				_ = auditHandler.StoreAuditEvent(ctx, event)
 
 				// Verify error was logged (business logic)
 				Expect(mockMetrics.DatabaseErrorCount()).To(Equal(1))
@@ -99,7 +99,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 					CorrelationID: "test-correlation-123",
 				}
 
-				auditHandler.StoreAuditEvent(ctx, event)
+				_ = auditHandler.StoreAuditEvent(ctx, event)
 
 				// Verify DLQ received complete event (business logic)
 				Expect(mockDLQClient.EnqueueCallCount()).To(Equal(1))
@@ -130,7 +130,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 				// Test DataStorage BUSINESS LOGIC: success metrics
 				event := &audit.AuditEvent{EventType: "test.event"}
 
-				auditHandler.StoreAuditEvent(ctx, event)
+				_ = auditHandler.StoreAuditEvent(ctx, event)
 
 				// Verify success metrics (business logic)
 				Expect(mockMetrics.DatabaseWriteCount()).To(Equal(1))
@@ -184,7 +184,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 				// Test DataStorage BUSINESS LOGIC: error metrics
 				event := &audit.AuditEvent{EventType: "test.event"}
 
-				auditHandler.StoreAuditEvent(ctx, event)
+				_ = auditHandler.StoreAuditEvent(ctx, event)
 
 				// Verify both error metrics (business logic)
 				Expect(mockMetrics.DatabaseErrorCount()).To(Equal(1))

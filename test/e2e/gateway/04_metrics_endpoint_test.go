@@ -117,7 +117,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		Expect(resp.StatusCode).To(Equal(http.StatusOK), "/metrics should return 200 OK")
 
 		metricsBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		Expect(err).ToNot(HaveOccurred())
 
 		metricsOutput := string(metricsBody)
@@ -167,7 +167,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			return httpClient.Do(req5)
 		}()
 		Expect(err).ToNot(HaveOccurred())
-		alertResp.Body.Close()
+		_ = alertResp.Body.Close()
 
 		testLogger.Info(fmt.Sprintf("  Alert sent: HTTP %d", alertResp.StatusCode))
 		Expect(alertResp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
@@ -185,7 +185,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 				return false
 			}
 			metricsBody2, err := io.ReadAll(resp2.Body)
-			resp2.Body.Close()
+			_ = resp2.Body.Close()
 			if err != nil {
 				return false
 			}
@@ -222,7 +222,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			return httpClient.Do(req6)
 		}()
 		Expect(err).ToNot(HaveOccurred())
-		invalidResp.Body.Close()
+		_ = invalidResp.Body.Close()
 
 		testLogger.Info(fmt.Sprintf("  Invalid request: HTTP %d", invalidResp.StatusCode))
 
@@ -233,7 +233,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 				return false
 			}
 			body, err := io.ReadAll(resp3.Body)
-			resp3.Body.Close()
+			_ = resp3.Body.Close()
 			if err != nil {
 				return false
 			}

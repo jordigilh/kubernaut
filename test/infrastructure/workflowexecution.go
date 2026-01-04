@@ -65,23 +65,23 @@ const (
 // CreateWorkflowExecutionCluster creates a Kind cluster for WorkflowExecution E2E tests
 // It installs Tekton Pipelines and prepares the cluster for testing
 func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output io.Writer) error {
-	fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(output, "Creating WorkflowExecution E2E Kind Cluster\n")
-	fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(output, "  Cluster: %s\n", clusterName)
-	fmt.Fprintf(output, "  Kubeconfig: %s\n", kubeconfigPath)
-	fmt.Fprintf(output, "  Tekton Version: %s\n", TektonPipelinesVersion)
-	fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(output, "Creating WorkflowExecution E2E Kind Cluster\n")
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(output, "  Cluster: %s\n", clusterName)
+	_, _ = fmt.Fprintf(output, "  Kubeconfig: %s\n", kubeconfigPath)
+	_, _ = fmt.Fprintf(output, "  Tekton Version: %s\n", TektonPipelinesVersion)
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// Find config file
 	configPath, err := findKindConfig("kind-workflowexecution-config.yaml")
 	if err != nil {
 		return fmt.Errorf("failed to find Kind config: %w", err)
 	}
-	fmt.Fprintf(output, "Using Kind config: %s\n", configPath)
+	_, _ = fmt.Fprintf(output, "Using Kind config: %s\n", configPath)
 
 	// Create Kind cluster
-	fmt.Fprintf(output, "\n📦 Creating Kind cluster...\n")
+	_, _ = fmt.Fprintf(output, "\n📦 Creating Kind cluster...\n")
 	createCmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", configPath,
@@ -92,18 +92,18 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	if err := createCmd.Run(); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
-	fmt.Fprintf(output, "✅ Kind cluster created\n")
+	_, _ = fmt.Fprintf(output, "✅ Kind cluster created\n")
 
 	// Install Tekton Pipelines
-	fmt.Fprintf(output, "\n🔧 Installing Tekton Pipelines %s...\n", TektonPipelinesVersion)
+	_, _ = fmt.Fprintf(output, "\n🔧 Installing Tekton Pipelines %s...\n", TektonPipelinesVersion)
 	if err := installTektonPipelines(kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to install Tekton: %w", err)
 	}
-	fmt.Fprintf(output, "✅ Tekton Pipelines installed\n")
+	_, _ = fmt.Fprintf(output, "✅ Tekton Pipelines installed\n")
 
 	// Deploy Data Storage infrastructure for audit events (BR-WE-005)
 	// Following AIAnalysis E2E pattern: build → load → deploy (runs once, shared by 4 parallel procs)
-	fmt.Fprintf(output, "\n🗄️  Deploying Data Storage infrastructure (BR-WE-005 audit events)...\n")
+	_, _ = fmt.Fprintf(output, "\n🗄️  Deploying Data Storage infrastructure (BR-WE-005 audit events)...\n")
 
 	// Create context for infrastructure deployment
 	ctx := context.Background()
@@ -112,47 +112,47 @@ func CreateWorkflowExecutionCluster(clusterName, kubeconfigPath string, output i
 	// Note: Standard ordering (PostgreSQL → Redis → Migrations → Data Storage)
 	// Previous pattern applied migrations AFTER Data Storage, but this is unnecessary:
 	// Data Storage only needs PostgreSQL/Redis to START, not migrations (migrations are for data, not startup)
-	fmt.Fprintf(output, "📦 Deploying Data Storage infrastructure...\n")
+	_, _ = fmt.Fprintf(output, "📦 Deploying Data Storage infrastructure...\n")
 	if err := DeployDataStorageTestServices(ctx, WorkflowExecutionNamespace, kubeconfigPath, GenerateInfraImageName("datastorage", "workflowexecution"), output); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
-	fmt.Fprintf(output, "✅ Data Storage infrastructure deployed (PostgreSQL + Redis + Migrations + DataStorage)\n")
+	_, _ = fmt.Fprintf(output, "✅ Data Storage infrastructure deployed (PostgreSQL + Redis + Migrations + DataStorage)\n")
 
 	// Build and register test workflow bundles
 	// This creates OCI bundles for test workflows and registers them in DataStorage
 	// Per DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
 	// BR-WE-001: Workflow execution via Tekton bundle resolver
-	fmt.Fprintf(output, "\n🎯 Building and registering test workflow bundles...\n")
+	_, _ = fmt.Fprintf(output, "\n🎯 Building and registering test workflow bundles...\n")
 	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001
 	if _, err := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, output); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
-	fmt.Fprintf(output, "✅ Test workflows ready\n")
+	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
 
 	// Create execution namespace
-	fmt.Fprintf(output, "\n📁 Creating execution namespace %s...\n", ExecutionNamespace)
+	_, _ = fmt.Fprintf(output, "\n📁 Creating execution namespace %s...\n", ExecutionNamespace)
 	nsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	nsCmd.Stdout = output
 	nsCmd.Stderr = output
 	if err := nsCmd.Run(); err != nil {
 		// Namespace may already exist
-		fmt.Fprintf(output, "Note: namespace creation returned error (may already exist): %v\n", err)
+		_, _ = fmt.Fprintf(output, "Note: namespace creation returned error (may already exist): %v\n", err)
 	}
 
 	// Create image pull secret for quay.io (from podman auth)
 	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, output); err != nil {
-		fmt.Fprintf(output, "Warning: Could not create quay.io pull secret: %v\n", err)
+		_, _ = fmt.Fprintf(output, "Warning: Could not create quay.io pull secret: %v\n", err)
 		// Non-fatal - repos may be public
 	}
 
-	fmt.Fprintf(output, "\n✅ WorkflowExecution E2E cluster ready!\n")
+	_, _ = fmt.Fprintf(output, "\n✅ WorkflowExecution E2E cluster ready!\n")
 	return nil
 }
 
 // createQuayPullSecret creates an image pull secret from the podman auth config
 func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) error {
-	fmt.Fprintf(output, "🔐 Creating quay.io pull secret...\n")
+	_, _ = fmt.Fprintf(output, "🔐 Creating quay.io pull secret...\n")
 
 	// Get the auth config from podman
 	homeDir, err := os.UserHomeDir()
@@ -218,13 +218,13 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	patchResolverCmd.Stderr = output
 	_ = patchResolverCmd.Run()
 
-	fmt.Fprintf(output, "✅ Pull secret created and linked to service accounts\n")
+	_, _ = fmt.Fprintf(output, "✅ Pull secret created and linked to service accounts\n")
 	return nil
 }
 
 // DeleteWorkflowExecutionCluster deletes the Kind cluster
 func DeleteWorkflowExecutionCluster(clusterName string, output io.Writer) error {
-	fmt.Fprintf(output, "🗑️  Deleting Kind cluster %s...\n", clusterName)
+	_, _ = fmt.Fprintf(output, "🗑️  Deleting Kind cluster %s...\n", clusterName)
 
 	// Add 60-second timeout to prevent hanging on stuck clusters
 	// Issue: kind delete can hang indefinitely with Podman provider
@@ -237,19 +237,19 @@ func DeleteWorkflowExecutionCluster(clusterName string, output io.Writer) error 
 	if err := cmd.Run(); err != nil {
 		// If timeout, ignore the error (cluster will be cleaned up by system)
 		if ctx.Err() == context.DeadlineExceeded {
-			fmt.Fprintf(output, "⚠️  Cluster deletion timed out after 60s, continuing...\n")
+			_, _ = fmt.Fprintf(output, "⚠️  Cluster deletion timed out after 60s, continuing...\n")
 			return nil
 		}
 		// For other errors, check if cluster doesn't exist (ignore error)
 		// Error message: "cluster \"workflowexecution-e2e\" not found"
 		if strings.Contains(err.Error(), "not found") {
-			fmt.Fprintf(output, "ℹ️  Cluster already deleted or doesn't exist\n")
+			_, _ = fmt.Fprintf(output, "ℹ️  Cluster already deleted or doesn't exist\n")
 			return nil
 		}
 		return fmt.Errorf("failed to delete Kind cluster: %w", err)
 	}
 
-	fmt.Fprintf(output, "✅ Kind cluster deleted\n")
+	_, _ = fmt.Fprintf(output, "✅ Kind cluster deleted\n")
 	return nil
 }
 
@@ -259,7 +259,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	// NOTE: storage.googleapis.com/tekton-releases requires auth since 2025
 	releaseURL := fmt.Sprintf("https://github.com/tektoncd/pipeline/releases/download/%s/release.yaml", TektonPipelinesVersion)
 
-	fmt.Fprintf(output, "  Applying Tekton release from: %s\n", releaseURL)
+	_, _ = fmt.Fprintf(output, "  Applying Tekton release from: %s\n", releaseURL)
 
 	// Retry logic for transient GitHub CDN failures (503 Service Unavailable)
 	// GitHub's CDN occasionally returns 503 errors during high load
@@ -269,9 +269,9 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
-			fmt.Fprintf(output, "  ⚠️  Attempt %d/%d failed, retrying in %ds...\n", attempt, maxRetries, backoffSeconds[attempt-1])
+			_, _ = fmt.Fprintf(output, "  ⚠️  Attempt %d/%d failed, retrying in %ds...\n", attempt, maxRetries, backoffSeconds[attempt-1])
 			time.Sleep(time.Duration(backoffSeconds[attempt-1]) * time.Second)
-			fmt.Fprintf(output, "  🔄 Retry attempt %d/%d...\n", attempt+1, maxRetries)
+			_, _ = fmt.Fprintf(output, "  🔄 Retry attempt %d/%d...\n", attempt+1, maxRetries)
 		}
 
 		applyCmd := exec.Command("kubectl", "apply",
@@ -288,7 +288,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 
 		// Success!
 		if attempt > 0 {
-			fmt.Fprintf(output, "  ✅ Tekton release applied successfully on attempt %d\n", attempt+1)
+			_, _ = fmt.Fprintf(output, "  ✅ Tekton release applied successfully on attempt %d\n", attempt+1)
 		}
 		lastErr = nil
 		break
@@ -301,7 +301,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	// Wait for Tekton controller to be ready
 	// Phase 1 E2E Stabilization: Increased timeout to 1 hour (3600s) to prevent timeout failures
 	// Root cause: Slow Tekton image pulls in Kind cluster (see WE_E2E_INFRASTRUCTURE_STABILIZATION_PLAN.md)
-	fmt.Fprintf(output, "  ⏳ Waiting for Tekton Pipelines controller (up to 1 hour)...\n")
+	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Tekton Pipelines controller (up to 1 hour)...\n")
 	waitCmd := exec.Command("kubectl", "wait",
 		"-n", "tekton-pipelines",
 		"--for=condition=available",
@@ -317,7 +317,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 
 	// Wait for Tekton webhook to be ready
 	// Phase 1 E2E Stabilization: Increased timeout to 1 hour (3600s)
-	fmt.Fprintf(output, "  ⏳ Waiting for Tekton webhook (up to 1 hour)...\n")
+	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Tekton webhook (up to 1 hour)...\n")
 	webhookWaitCmd := exec.Command("kubectl", "wait",
 		"-n", "tekton-pipelines",
 		"--for=condition=available",
@@ -408,15 +408,15 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 								// Only add GOCOVERDIR if E2E_COVERAGE=true
 								// MUST match Kind extraMounts path: /coverdata
 								coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
-								fmt.Fprintf(output, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
+								_, _ = fmt.Fprintf(output, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
 								if coverageEnabled {
-									fmt.Fprintf(output, "   ✅ Adding GOCOVERDIR=/coverdata to WorkflowExecution deployment\n")
+									_, _ = fmt.Fprintf(output, "   ✅ Adding GOCOVERDIR=/coverdata to WorkflowExecution deployment\n")
 									envVars = append(envVars, corev1.EnvVar{
 										Name:  "GOCOVERDIR",
 										Value: "/coverdata",
 									})
 								} else {
-									fmt.Fprintf(output, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
+									_, _ = fmt.Fprintf(output, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
 								}
 								return envVars
 							}(),
@@ -491,8 +491,8 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 	}
 
 	// Create Deployment
-	fmt.Fprintf(output, "   Creating Deployment/workflowexecution-controller...\n")
-	fmt.Fprintf(output, "   📊 Debug: Image=%s, ImagePullPolicy=%s\n",
+	_, _ = fmt.Fprintf(output, "   Creating Deployment/workflowexecution-controller...\n")
+	_, _ = fmt.Fprintf(output, "   📊 Debug: Image=%s, ImagePullPolicy=%s\n",
 		deployment.Spec.Template.Spec.Containers[0].Image,
 		deployment.Spec.Template.Spec.Containers[0].ImagePullPolicy)
 
@@ -500,7 +500,7 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 	if err != nil {
 		return fmt.Errorf("failed to create deployment: %w", err)
 	}
-	fmt.Fprintf(output, "   ✅ Deployment created (UID: %s)\n", createdDep.UID)
+	_, _ = fmt.Fprintf(output, "   ✅ Deployment created (UID: %s)\n", createdDep.UID)
 
 	// Wait and check status
 	time.Sleep(3 * time.Second)
@@ -509,9 +509,9 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 	podList, _ := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app=workflowexecution-controller",
 	})
-	fmt.Fprintf(output, "   📊 Debug: Found %d pod(s) after 3s\n", len(podList.Items))
+	_, _ = fmt.Fprintf(output, "   📊 Debug: Found %d pod(s) after 3s\n", len(podList.Items))
 	for _, pod := range podList.Items {
-		fmt.Fprintf(output, "      Pod %s: Phase=%s\n", pod.Name, pod.Status.Phase)
+		_, _ = fmt.Fprintf(output, "      Pod %s: Phase=%s\n", pod.Name, pod.Status.Phase)
 	}
 
 	// Create Service for metrics
@@ -536,19 +536,19 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 		},
 	}
 
-	fmt.Fprintf(output, "   Creating Service/workflowexecution-controller-metrics...\n")
+	_, _ = fmt.Fprintf(output, "   Creating Service/workflowexecution-controller-metrics...\n")
 	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
-	fmt.Fprintf(output, "   ✅ Service created\n")
+	_, _ = fmt.Fprintf(output, "   ✅ Service created\n")
 
 	return nil
 }
 
 // DeployWorkflowExecutionController deploys the WorkflowExecution controller to the cluster
 func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfigPath string, output io.Writer) error {
-	fmt.Fprintf(output, "\n🚀 Deploying WorkflowExecution Controller to %s...\n", namespace)
+	_, _ = fmt.Fprintf(output, "\n🚀 Deploying WorkflowExecution Controller to %s...\n", namespace)
 
 	// Find project root for absolute paths
 	projectRoot, err := findProjectRoot()
@@ -565,7 +565,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 
 	// Deploy CRDs (use absolute path)
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
-	fmt.Fprintf(output, "  Applying WorkflowExecution CRDs...\n")
+	_, _ = fmt.Fprintf(output, "  Applying WorkflowExecution CRDs...\n")
 	crdCmd := exec.Command("kubectl", "apply",
 		"-f", crdPath,
 		"--kubeconfig", kubeconfigPath,
@@ -577,8 +577,8 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	}
 
 	// Build controller image with optional E2E coverage instrumentation (DD-TEST-007)
-	fmt.Fprintf(output, "  Building controller image...\n")
-	dockerfilePath := filepath.Join(projectRoot, "cmd/workflowexecution/Dockerfile")
+	_, _ = fmt.Fprintf(output, "  Building controller image...\n")
+	dockerfilePath := filepath.Join(projectRoot, "docker/workflowexecution-controller.Dockerfile")
 	// DD-REGISTRY-001: Use localhost prefix for E2E test images
 	// DD-TEST-001: Use service-specific tag to avoid conflicts with other services
 	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"
@@ -594,13 +594,13 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	// Build for host architecture (no multi-arch support needed)
 	hostArch := runtime.GOARCH
 	buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("GOARCH=%s", hostArch))
-	fmt.Fprintf(output, "   🏗️  Building for host architecture: %s\n", hostArch)
+	_, _ = fmt.Fprintf(output, "   🏗️  Building for host architecture: %s\n", hostArch)
 
 	// DD-TEST-007: E2E Coverage Collection
 	// If E2E_COVERAGE=true, build with coverage instrumentation
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
-		fmt.Fprintf(output, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
+		_, _ = fmt.Fprintf(output, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
 	}
 
 	buildArgs = append(buildArgs, projectRoot)
@@ -613,7 +613,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	}
 
 	// Save image to tarball for Kind loading (Podman images need explicit save/load)
-	fmt.Fprintf(output, "  Saving image for Kind cluster...\n")
+	_, _ = fmt.Fprintf(output, "  Saving image for Kind cluster...\n")
 	tarPath := filepath.Join(projectRoot, "workflowexecution-controller.tar")
 	saveCmd := exec.Command("podman", "save", "-o", tarPath, imageName)
 	saveCmd.Stdout = output
@@ -621,10 +621,10 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	if err := saveCmd.Run(); err != nil {
 		return fmt.Errorf("failed to save controller image: %w", err)
 	}
-	defer os.Remove(tarPath)
+	defer func() { _ = os.Remove(tarPath) }()
 
 	// Load image into Kind from tarball
-	fmt.Fprintf(output, "  Loading image into Kind cluster...\n")
+	_, _ = fmt.Fprintf(output, "  Loading image into Kind cluster...\n")
 	loadCmd := exec.Command("kind", "load", "image-archive", tarPath,
 		"--name", WorkflowExecutionClusterName,
 	)
@@ -634,10 +634,22 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("failed to load image into Kind: %w", err)
 	}
 
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintf(output, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = output
+	rmiCmd.Stderr = output
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(output, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintf(output, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	// Apply static resources (Namespaces, ServiceAccounts, RBAC)
 	// Note: Deployment and Service are created programmatically for E2E coverage support
 	manifestsPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/manifests/controller-deployment.yaml")
-	fmt.Fprintf(output, "  Applying static resources (Namespaces, ServiceAccounts, RBAC)...\n")
+	_, _ = fmt.Fprintf(output, "  Applying static resources (Namespaces, ServiceAccounts, RBAC)...\n")
 
 	// Use kubectl apply but exclude Deployment and Service resources
 	// They will be created programmatically with E2E coverage support
@@ -649,12 +661,12 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	excludeCmd.Stderr = output
 	if err := excludeCmd.Run(); err != nil {
 		// Ignore errors - some resources may already exist
-		fmt.Fprintf(output, "   ⚠️  Some resources may already exist (continuing)\n")
+		_, _ = fmt.Fprintf(output, "   ⚠️  Some resources may already exist (continuing)\n")
 	}
 
 	// Delete existing Deployment and Service if they exist (they were created by kubectl apply above)
 	// We'll recreate them programmatically with E2E coverage support
-	fmt.Fprintf(output, "  Cleaning up existing Deployment/Service (if any)...\n")
+	_, _ = fmt.Fprintf(output, "  Cleaning up existing Deployment/Service (if any)...\n")
 	deleteDeployCmd := exec.Command("kubectl", "delete", "deployment",
 		"workflowexecution-controller",
 		"-n", namespace,
@@ -674,19 +686,19 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	_ = deleteSvcCmd.Run() // Ignore errors
 
 	// Deploy controller programmatically with E2E coverage support (DD-TEST-007)
-	fmt.Fprintf(output, "  Deploying controller programmatically (E2E coverage support)...\n")
+	_, _ = fmt.Fprintf(output, "  Deploying controller programmatically (E2E coverage support)...\n")
 	if err := deployWorkflowExecutionControllerDeployment(ctx, namespace, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy controller: %w", err)
 	}
 
-	fmt.Fprintf(output, "✅ WorkflowExecution Controller deployed\n")
+	_, _ = fmt.Fprintf(output, "✅ WorkflowExecution Controller deployed\n")
 	return nil
 }
 
 // CreateSimpleTestPipeline creates a simple "hello world" pipeline for testing
 // Also creates a failing pipeline for BR-WE-004 failure details testing
 func CreateSimpleTestPipeline(kubeconfigPath string, output io.Writer) error {
-	fmt.Fprintf(output, "\n📝 Creating test pipelines (success + failure)...\n")
+	_, _ = fmt.Fprintf(output, "\n📝 Creating test pipelines (success + failure)...\n")
 
 	pipelineYAML := `
 apiVersion: tekton.dev/v1
@@ -779,7 +791,7 @@ spec:
 	if _, err := tmpFile.WriteString(pipelineYAML); err != nil {
 		return fmt.Errorf("failed to write pipeline YAML: %w", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	applyCmd := exec.Command("kubectl", "apply",
 		"-f", tmpFile.Name(),
@@ -791,13 +803,13 @@ spec:
 		return fmt.Errorf("failed to create test pipeline: %w", err)
 	}
 
-	fmt.Fprintf(output, "✅ Test pipeline created\n")
+	_, _ = fmt.Fprintf(output, "✅ Test pipeline created\n")
 	return nil
 }
 
 // WaitForPipelineRunCompletion waits for a PipelineRun to complete
 func WaitForPipelineRunCompletion(kubeconfigPath, prName, namespace string, timeout time.Duration, output io.Writer) error {
-	fmt.Fprintf(output, "⏳ Waiting for PipelineRun %s/%s to complete (timeout: %v)...\n", namespace, prName, timeout)
+	_, _ = fmt.Fprintf(output, "⏳ Waiting for PipelineRun %s/%s to complete (timeout: %v)...\n", namespace, prName, timeout)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -823,7 +835,7 @@ func WaitForPipelineRunCompletion(kubeconfigPath, prName, namespace string, time
 
 			status := string(statusOutput)
 			if status == "True" {
-				fmt.Fprintf(output, "✅ PipelineRun completed successfully\n")
+				_, _ = fmt.Fprintf(output, "✅ PipelineRun completed successfully\n")
 				return nil
 			} else if status == "False" {
 				// Get failure reason
@@ -836,7 +848,7 @@ func WaitForPipelineRunCompletion(kubeconfigPath, prName, namespace string, time
 				return fmt.Errorf("PipelineRun failed: %s", string(reasonOutput))
 			}
 			// status == "Unknown" means still running
-			fmt.Fprintf(output, "  PipelineRun status: %s\n", status)
+			_, _ = fmt.Fprintf(output, "  PipelineRun status: %s\n", status)
 		}
 	}
 }
@@ -847,7 +859,7 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 	projectRoot := getProjectRoot()
 
 	// Build Data Storage image
-	fmt.Fprintln(output, "    Building Data Storage image...")
+	_, _ = fmt.Fprintln(output, "    Building Data Storage image...")
 	buildCmd := exec.Command("podman", "build", "-t", "kubernaut-datastorage:latest",
 		"-f", "docker/data-storage.Dockerfile", ".")
 	buildCmd.Dir = projectRoot
@@ -866,7 +878,7 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 	}
 
 	// Load into Kind
-	fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
+	_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
 	if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
 		return fmt.Errorf("failed to load image: %w", err)
 	}

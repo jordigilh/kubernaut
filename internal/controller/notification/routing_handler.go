@@ -70,7 +70,7 @@ import (
 //   - PreviousExecutionFailed → CRITICAL (PagerDuty)
 //   - ExhaustedRetries → HIGH (Slack)
 //   - ResourceBusy/RecentlyRemediated → LOW (Console bulk)
-func (r *NotificationRequestReconciler) resolveChannelsFromRouting(
+func (r *NotificationRequestReconciler) resolveChannelsFromRouting( //nolint:unused
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 ) []notificationv1alpha1.Channel {

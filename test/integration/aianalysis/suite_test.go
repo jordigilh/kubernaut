@@ -50,6 +50,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/google/uuid"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,6 +87,15 @@ var (
 	// Real HAPI client for integration tests (with MOCK_LLM_MODE=true inside HAPI)
 	// Per testing strategy: Only LLM is mocked (inside HAPI), all other services are real
 	realHGClient *hgclient.HolmesGPTClient
+
+	// Real Rego evaluator for integration tests
+	// Per user requirement: "real rego evaluator for all 3 tiers"
+	realRegoEvaluator *rego.Evaluator
+	regoCtx           context.Context
+	regoCancel        context.CancelFunc
+
+	// DD-TEST-002: Unique namespace per test for parallel execution
+	testNamespace string
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -95,7 +105,12 @@ func TestAIAnalysisIntegration(t *testing.T) {
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
 // This follows Gateway/Notification pattern for automated infrastructure startup
-var _ = SynchronizedBeforeSuite(func() []byte {
+//
+// TIMEOUT NOTE: Infrastructure startup takes ~70-90 seconds locally, but up to 3+ minutes in CI.
+// CI environments (GitHub Actions) have slower container startup times, especially HAPI.
+// Default Ginkgo timeout (60s) is insufficient, causing INTERRUPTED in parallel mode.
+// NodeTimeout(5*time.Minute) ensures sufficient time for complete infrastructure startup in CI.
+var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecContext) []byte {
 	// This runs ONCE on process 1 only - creates shared infrastructure
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -177,8 +192,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	})
 	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
-	// Create mock Rego evaluator that auto-approves staging, requires approval for production
-	mockRegoEvaluator := &MockRegoEvaluator{}
+	By("Setting up REAL Rego evaluator with production policies")
+	// Per user requirement: "real rego evaluator for all 3 tiers"
+	// Integration tests MUST use real Rego evaluator to validate actual policy behavior
+	// Per TESTING_GUIDELINES.md: Integration tests validate business logic, not infrastructure
+	policyPath := filepath.Join("..", "..", "..", "config", "rego", "aianalysis", "approval.rego")
+	realRegoEvaluator = rego.NewEvaluator(rego.Config{
+		PolicyPath: policyPath,
+	}, ctrl.Log.WithName("rego"))
+
+	// Create context for Rego evaluator lifecycle
+	regoCtx, regoCancel = context.WithCancel(context.Background())
+
+	// ADR-050: Startup validation required
+	err = realRegoEvaluator.StartHotReload(regoCtx)
+	Expect(err).NotTo(HaveOccurred(), "Production policy should load successfully in integration tests")
+
+	GinkgoWriter.Println("✅ Real Rego evaluator initialized with production policy")
+	GinkgoWriter.Printf("  • Policy path: %s\n", policyPath)
+	GinkgoWriter.Printf("  • Policy hash: %s\n", realRegoEvaluator.GetPolicyHash())
 
 	By("Setting up audit client for flow-based audit integration tests")
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
@@ -186,7 +218,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	GinkgoWriter.Println("📋 Setting up audit store...")
 	dsClient, err := audit.NewOpenAPIClientAdapter(
-		"http://localhost:18095", // AIAnalysis integration test DS port
+		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
 		5*time.Second,
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
@@ -195,7 +227,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
 	auditLogger := zap.New(zap.WriteTo(GinkgoWriter))
 
-	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
+	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for DD-AUDIT-003")
 	GinkgoWriter.Println("✅ Audit store configured")
 
@@ -219,7 +251,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
 	// Integration tests use REAL services (only LLM inside HAPI is mocked for cost)
 	investigatingHandler := handlers.NewInvestigatingHandler(realHGClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient)
-	analyzingHandler := handlers.NewAnalyzingHandler(mockRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
+	analyzingHandler := handlers.NewAnalyzingHandler(realRegoEvaluator, ctrl.Log.WithName("analyzing-handler"), testMetrics, auditClient)
 
 	// Create controller with wired handlers and audit client
 	// Per DD-AUDIT-003: Audit client MUST be wired for audit trail compliance
@@ -258,13 +290,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("Environment:")
 	GinkgoWriter.Println("  • ENVTEST with real Kubernetes API (etcd + kube-apiserver)")
 	GinkgoWriter.Println("  • AIAnalysis CRD installed")
-	GinkgoWriter.Println("  • AIAnalysis controller running with mock HolmesGPT client")
-	GinkgoWriter.Println("  • Mock Rego evaluator (staging=auto-approve, production=manual)")
-	GinkgoWriter.Println("  • REAL services available for recovery_integration_test.go:")
+	GinkgoWriter.Println("  • AIAnalysis controller with REAL handlers:")
+	GinkgoWriter.Println("    - InvestigatingHandler: REAL HolmesGPT-API client")
+	GinkgoWriter.Println("    - AnalyzingHandler: REAL Rego evaluator (production policies)")
+	GinkgoWriter.Println("  • REAL services (per TESTING_GUIDELINES.md):")
 	GinkgoWriter.Println("    - PostgreSQL: localhost:15438")
 	GinkgoWriter.Println("    - Redis: localhost:16384")
 	GinkgoWriter.Println("    - Data Storage: http://localhost:18095")
-	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM)")
+	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM only)")
 	GinkgoWriter.Println("")
 
 	// Serialize REST config to pass to all processes
@@ -283,7 +316,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 
 	return configBytes
-}, func(data []byte) {
+}, func(specCtx SpecContext, data []byte) {
 	// This runs on ALL parallel processes (including process 1)
 	// Each process creates its own k8s client and context
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
@@ -341,20 +374,33 @@ var _ = SynchronizedAfterSuite(func() {
 	// This runs on ALL parallel processes - no cleanup needed per process
 }, func() {
 	// This runs ONCE on the last parallel process - cleanup shared infrastructure
+	By("Stopping Rego evaluator")
+	if regoCancel != nil {
+		regoCancel() // Stop hot-reload goroutine
+		GinkgoWriter.Println("✅ Rego evaluator stopped")
+	}
+
 	By("Flushing audit store before shutdown")
 	// Per DD-007: Graceful shutdown MUST flush all audit events
-	// This validates that audit buffer properly persists all events
-	if auditStore != nil {
-		GinkgoWriter.Println("📋 Flushing audit store...")
-		if err := auditStore.Close(); err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: audit store close error: %v\n", err)
-		}
+	// AA-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+	// This prevents "connection refused" errors during cleanup when the
+	// background writer tries to flush buffered events after DataStorage is stopped.
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	GinkgoWriter.Println("📋 Flushing audit store...")
 
-		// Wait for flush to complete
-		// Per TESTING_GUIDELINES.md: Use Eventually(), NEVER time.Sleep()
-		// However, Close() is synchronous, so a brief pause is acceptable here
-		time.Sleep(1 * time.Second)
-		GinkgoWriter.Println("✅ Audit store flushed")
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
+
+	if err := auditStore.Flush(flushCtx); err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
+
+	if err := auditStore.Close(); err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: audit store close error: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
 	}
 
 	By("Tearing down the test environment")
@@ -404,6 +450,47 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("✅ Cleanup complete")
 })
 
+// DD-TEST-002 Compliance: Unique namespace per test for parallel execution
+// This enables -procs=4 parallel execution (matching Notification pattern)
+// Each test gets its own namespace to prevent resource conflicts
+
+var _ = BeforeEach(func() {
+	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
+	// Format: test-aa-<8-char-uuid> for readability and uniqueness
+	testNamespace = "test-aa-" + uuid.New().String()[:8]
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: testNamespace,
+		},
+	}
+
+	err := k8sClient.Create(context.Background(), ns)
+	Expect(err).NotTo(HaveOccurred(),
+		"Failed to create test namespace %s", testNamespace)
+
+	GinkgoWriter.Printf("📦 [AA] Test namespace created: %s (DD-TEST-002 compliance)\n", testNamespace)
+})
+
+var _ = AfterEach(func() {
+	// DD-TEST-002: Clean up namespace and ALL resources (instant cleanup)
+	// This is MUCH faster than deleting individual AIAnalysis resources
+	if testNamespace != "" {
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespace,
+			},
+		}
+
+		err := k8sClient.Delete(context.Background(), ns)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  [AA] Failed to delete namespace %s: %v\n", testNamespace, err)
+		} else {
+			GinkgoWriter.Printf("🗑️  [AA] Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
+		}
+	}
+})
+
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 func getFirstFoundEnvTestBinaryDir() string {
 	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
@@ -418,33 +505,4 @@ func getFirstFoundEnvTestBinaryDir() string {
 		}
 	}
 	return ""
-}
-
-// MockRegoEvaluator is a simple mock for integration tests.
-// It approves staging environments automatically, requires approval for production
-// and for recovery attempts with multiple retries (escalation).
-type MockRegoEvaluator struct{}
-
-func (m *MockRegoEvaluator) Evaluate(ctx context.Context, input *rego.PolicyInput) (*rego.PolicyResult, error) {
-	// Check for recovery escalation (recovery attempt >= 3 always requires approval)
-	if input.RecoveryAttemptNumber >= 3 {
-		return &rego.PolicyResult{
-			ApprovalRequired: true,
-			Reason:           "Multiple recovery attempts require manual approval",
-		}, nil
-	}
-
-	// Simple policy: staging auto-approves, production requires approval
-	if input.Environment == "staging" || input.Environment == "dev" {
-		return &rego.PolicyResult{
-			ApprovalRequired: false,
-			Reason:           "Auto-approved for non-production environment",
-		}, nil
-	}
-
-	// Production or unknown environments require approval
-	return &rego.PolicyResult{
-		ApprovalRequired: true,
-		Reason:           "Production environment requires manual approval",
-	}, nil
 }

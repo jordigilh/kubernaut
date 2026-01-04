@@ -53,9 +53,9 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 		if testServer != nil {
 			testServer.Close()
 		}
-		os.Unsetenv("CORS_ALLOWED_ORIGINS")
-		os.Unsetenv("CORS_ALLOWED_METHODS")
-		os.Unsetenv("CORS_ALLOW_CREDENTIALS")
+		_ = os.Unsetenv("CORS_ALLOWED_ORIGINS")
+		_ = os.Unsetenv("CORS_ALLOWED_METHODS")
+		_ = os.Unsetenv("CORS_ALLOW_CREDENTIALS")
 	})
 
 	// ==============================================
@@ -69,7 +69,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 			// Setup chi router with CORS middleware (mimics Gateway setup)
 			router = chi.NewRouter()
 
-			os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
 			corsOpts := kubecors.FromEnvironment()
 			router.Use(kubecors.Handler(corsOpts))
 
@@ -101,7 +101,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 
 				resp, err := client.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR VALIDATION: CORS headers are present
 				allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
@@ -124,7 +124,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BEHAVIOR VALIDATION: Preflight succeeds with CORS headers
 			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusOK), Equal(http.StatusNoContent)),
@@ -146,7 +146,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 		BeforeEach(func() {
 			router = chi.NewRouter()
 
-			os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
 			corsOpts := kubecors.FromEnvironment()
 			router.Use(kubecors.Handler(corsOpts))
 
@@ -172,7 +172,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BEHAVIOR VALIDATION: CORS headers present even on error
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -192,7 +192,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 			router = chi.NewRouter()
 
 			// Production configuration: specific origin only
-			os.Setenv("CORS_ALLOWED_ORIGINS", "https://app.kubernaut.io")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://app.kubernaut.io")
 			corsOpts := kubecors.FromEnvironment()
 			router.Use(kubecors.Handler(corsOpts))
 
@@ -214,7 +214,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BEHAVIOR VALIDATION: Whitelisted origin is authorized
 			allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
@@ -232,7 +232,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BEHAVIOR VALIDATION: Unknown origin is NOT authorized
 			allowOrigin := resp.Header.Get("Access-Control-Allow-Origin")

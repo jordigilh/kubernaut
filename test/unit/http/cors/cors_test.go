@@ -48,12 +48,12 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 
 	AfterEach(func() {
 		// Cleanup environment variables after each test
-		os.Unsetenv("CORS_ALLOWED_ORIGINS")
-		os.Unsetenv("CORS_ALLOWED_METHODS")
-		os.Unsetenv("CORS_ALLOWED_HEADERS")
-		os.Unsetenv("CORS_ALLOW_CREDENTIALS")
-		os.Unsetenv("CORS_MAX_AGE")
-		os.Unsetenv("CORS_EXPOSED_HEADERS")
+		_ = os.Unsetenv("CORS_ALLOWED_ORIGINS")
+		_ = os.Unsetenv("CORS_ALLOWED_METHODS")
+		_ = os.Unsetenv("CORS_ALLOWED_HEADERS")
+		_ = os.Unsetenv("CORS_ALLOW_CREDENTIALS")
+		_ = os.Unsetenv("CORS_MAX_AGE")
+		_ = os.Unsetenv("CORS_EXPOSED_HEADERS")
 	})
 
 	// ==============================================
@@ -66,7 +66,7 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 		DescribeTable("should authorize/deny cross-origin requests based on origin whitelist",
 			func(configuredOrigins, requestOrigin string, shouldBeAuthorized bool, description string) {
 				// BEHAVIOR: Browser either gets CORS permission or doesn't
-				os.Setenv("CORS_ALLOWED_ORIGINS", configuredOrigins)
+				_ = os.Setenv("CORS_ALLOWED_ORIGINS", configuredOrigins)
 				opts := kubecors.FromEnvironment()
 				handler := kubecors.Handler(opts)(testHandler)
 
@@ -129,8 +129,8 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 		DescribeTable("should permit/deny specific HTTP methods for cross-origin requests",
 			func(configuredMethods, requestedMethod string, shouldBePermitted bool, description string) {
 				// BEHAVIOR: Browser can/cannot use specific HTTP method cross-origin
-				os.Setenv("CORS_ALLOWED_ORIGINS", "*")
-				os.Setenv("CORS_ALLOWED_METHODS", configuredMethods)
+				_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+				_ = os.Setenv("CORS_ALLOWED_METHODS", configuredMethods)
 				opts := kubecors.FromEnvironment()
 				handler := kubecors.Handler(opts)(testHandler)
 
@@ -215,7 +215,7 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 
 		It("should respond to preflight OPTIONS request with CORS headers", func() {
 			// BEHAVIOR: Browser's preflight check succeeds before actual request
-			os.Setenv("CORS_ALLOWED_ORIGINS", "https://app.kubernaut.io")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://app.kubernaut.io")
 			opts := kubecors.FromEnvironment()
 			handler := kubecors.Handler(opts)(testHandler)
 
@@ -236,7 +236,7 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 
 		It("should include Max-Age header for preflight caching", func() {
 			// BEHAVIOR: Browsers can cache preflight response to reduce requests
-			os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
 			opts := kubecors.FromEnvironment()
 			handler := kubecors.Handler(opts)(testHandler)
 
@@ -295,8 +295,8 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 
 		It("should include credentials header when configured", func() {
 			// BEHAVIOR: Cross-origin requests can include cookies/auth when enabled
-			os.Setenv("CORS_ALLOWED_ORIGINS", "https://app.kubernaut.io")
-			os.Setenv("CORS_ALLOW_CREDENTIALS", "true")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "https://app.kubernaut.io")
+			_ = os.Setenv("CORS_ALLOW_CREDENTIALS", "true")
 			opts := kubecors.FromEnvironment()
 			handler := kubecors.Handler(opts)(testHandler)
 
@@ -314,7 +314,7 @@ var _ = Describe("BR-HTTP-015: CORS Security Policy Enforcement", func() {
 
 		It("should NOT include credentials header by default", func() {
 			// BEHAVIOR: Credentials disabled by default for security
-			os.Setenv("CORS_ALLOWED_ORIGINS", "*")
+			_ = os.Setenv("CORS_ALLOWED_ORIGINS", "*")
 			opts := kubecors.FromEnvironment()
 			handler := kubecors.Handler(opts)(testHandler)
 

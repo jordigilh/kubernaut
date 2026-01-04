@@ -122,7 +122,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("health check returned %d", resp.StatusCode)
 			}
@@ -170,7 +170,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 				testLogger.V(1).Info(fmt.Sprintf("Alert %d failed", i+1), "error", err)
 				continue
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
 				preFailureSuccess++
@@ -258,7 +258,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 				testLogger.V(1).Info(fmt.Sprintf("Alert %d failed (expected during degradation)", i+1), "error", err)
 				continue
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Gateway should still accept alerts even without Redis (graceful degradation)
 			// It may return 201/202 (success) or 500 (if Redis is required)
@@ -283,7 +283,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			// Health check may return degraded status but should still respond
 			if resp.StatusCode >= 500 {
 				return fmt.Errorf("health check returned server error %d", resp.StatusCode)

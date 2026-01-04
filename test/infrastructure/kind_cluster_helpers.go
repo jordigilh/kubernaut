@@ -101,7 +101,7 @@ func CreateKindClusterWithExtraMounts(
 	if err != nil {
 		return fmt.Errorf("failed to create temp config: %w", err)
 	}
-	defer os.Remove(tmpConfig.Name())
+	defer func() { _ = os.Remove(tmpConfig.Name()) }()
 
 	if _, err := tmpConfig.WriteString(updatedConfig); err != nil {
 		return fmt.Errorf("failed to write temp config: %w", err)
@@ -111,13 +111,13 @@ func CreateKindClusterWithExtraMounts(
 	}
 
 	// 6. Log mount information
-	fmt.Fprintf(writer, "   📦 Kind cluster with %d extraMount(s):\n", len(extraMounts))
+	_, _ = fmt.Fprintf(writer, "   📦 Kind cluster with %d extraMount(s):\n", len(extraMounts))
 	for _, mount := range extraMounts {
 		readOnlyStr := ""
 		if mount.ReadOnly {
 			readOnlyStr = " (read-only)"
 		}
-		fmt.Fprintf(writer, "      %s → %s%s\n", mount.HostPath, mount.ContainerPath, readOnlyStr)
+		_, _ = fmt.Fprintf(writer, "      %s → %s%s\n", mount.HostPath, mount.ContainerPath, readOnlyStr)
 	}
 
 	// 7. Create Kind cluster
@@ -194,12 +194,12 @@ func insertExtraMountsAfterControlPlane(config, extraMountsYAML string) string {
 // This is useful for extraMounts that require pre-existing directories
 func CreateHostDirectoryIfNeeded(path string, perm os.FileMode, writer io.Writer) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		fmt.Fprintf(writer, "   📁 Creating directory: %s\n", path)
+		_, _ = fmt.Fprintf(writer, "   📁 Creating directory: %s\n", path)
 		if err := os.MkdirAll(path, perm); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", path, err)
 		}
 	} else {
-		fmt.Fprintf(writer, "   ✅ Directory already exists: %s\n", path)
+		_, _ = fmt.Fprintf(writer, "   ✅ Directory already exists: %s\n", path)
 	}
 	return nil
 }

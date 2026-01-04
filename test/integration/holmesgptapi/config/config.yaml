@@ -15,9 +15,9 @@ logging:
   format: "json"
 
 database:
-  # PostgreSQL runs in same network, accessible by container name
-  host: "holmesgptapi_postgres_1"
-  port: 5432
+  # PostgreSQL accessible via host.containers.internal (DD-TEST-001: port 15439)
+  host: host.containers.internal
+  port: 15439
   name: "action_history"
   user: "slm_user"
   ssl_mode: "disable"
@@ -30,8 +30,8 @@ database:
   passwordKey: "password"
 
 redis:
-  # Redis runs in same network, accessible by container name
-  addr: "holmesgptapi_redis_1:6379"
+  # Redis accessible via host.containers.internal (DD-TEST-001: port 16387)
+  addr: host.containers.internal:16387
   db: 0
   # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
   dlq_stream_name: "audit:dlq:notification"

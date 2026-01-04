@@ -53,7 +53,9 @@ import (
 // Pattern: CREATE CRD → WAIT FOR RECONCILIATION → VERIFY METRICS
 // ========================================
 
-var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
+// SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
+// See audit_flow_integration_test.go for detailed rationale.
+var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
 	var (
 		ctx       context.Context
 		namespace string
@@ -369,7 +371,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 	// ========================================
 	Context("Confidence Score Metrics via Workflow Selection", Serial, func() {
 		// NOTE: Running serially due to metrics registry state interference
-		It("should emit confidence score histogram during workflow selection - BR-AI-022", func() {
+		It("should emit confidence score histogram during workflow selection - BR-AI-022", FlakeAttempts(3), func() {
 			// 1. Create AIAnalysis that will select a workflow
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{

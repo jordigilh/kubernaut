@@ -60,7 +60,7 @@ import (
 // See: docs/architecture/decisions/DD-NOT-007-DELIVERY-ORCHESTRATOR-REGISTRATION-PATTERN.md
 type Orchestrator struct {
 	// DD-NOT-007: Dynamic channel registration (map-based routing)
-	channels map[string]DeliveryService
+	channels map[string]Service
 
 	// Dependencies
 	sanitizer     *sanitization.Sanitizer
@@ -95,7 +95,7 @@ func NewOrchestrator(
 	logger logr.Logger,
 ) *Orchestrator {
 	return &Orchestrator{
-		channels:      make(map[string]DeliveryService),
+		channels:      make(map[string]Service),
 		sanitizer:     sanitizer,
 		metrics:       metrics,
 		statusManager: statusManager,
@@ -115,7 +115,7 @@ func NewOrchestrator(
 //	orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), slackService)
 //	orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), fileService)
 //	orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), logService)
-func (o *Orchestrator) RegisterChannel(channel string, service DeliveryService) {
+func (o *Orchestrator) RegisterChannel(channel string, service Service) {
 	if service == nil {
 		o.logger.Info("Skipping registration of nil service", "channel", channel)
 		return

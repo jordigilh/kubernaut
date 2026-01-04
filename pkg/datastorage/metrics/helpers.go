@@ -30,13 +30,10 @@ package metrics
 // Target Cardinality: < 100 unique label combinations per metric
 // Current Cardinality: ~5-60 combinations (SAFE)
 
-// Dual-write failure reasons - bounded set for cardinality protection
+// Failure reasons - bounded set for cardinality protection
 const (
 	// ReasonPostgreSQLFailure indicates PostgreSQL transaction failure
 	ReasonPostgreSQLFailure = "postgresql_failure"
-
-	// ReasonVectorDBFailure indicates Vector DB operation failure
-	ReasonVectorDBFailure = "vectordb_failure"
 
 	// ReasonValidationFailure indicates input validation failure
 	ReasonValidationFailure = "validation_failure"
@@ -116,9 +113,8 @@ const (
 //
 // Usage:
 //
-//	metrics.DualWriteFailure.WithLabelValues(
-//	    metrics.SanitizeFailureReason("postgresql_failure"),
-//	).Inc()
+//	reason := metrics.SanitizeFailureReason("postgresql_failure")
+//	// Use sanitized reason in metric labels
 //
 // Returns:
 //   - Original reason if it's in the known set
@@ -126,7 +122,6 @@ const (
 func SanitizeFailureReason(reason string) string {
 	knownReasons := map[string]bool{
 		ReasonPostgreSQLFailure:   true,
-		ReasonVectorDBFailure:     true,
 		ReasonValidationFailure:   true,
 		ReasonContextCanceled:     true,
 		ReasonTransactionRollback: true,
@@ -245,10 +240,6 @@ func SanitizeQueryOperation(operation string) string {
 }
 
 // Cardinality Summary:
-//
-// Metric: datastorage_dualwrite_failure_total{reason}
-//   - Maximum cardinality: 6 values (5 known + 1 unknown catch-all)
-//   - Protected by: SanitizeFailureReason()
 //
 // Metric: datastorage_validation_failures_total{field, reason}
 //   - Maximum cardinality: ~60 combinations (10 fields × 6 reasons)

@@ -80,7 +80,7 @@ func BenchmarkConcurrentWorkflowSearch(b *testing.B) {
 				b.Errorf("Search request failed: %v", err)
 				continue
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
 				b.Errorf("Unexpected status code: %d", resp.StatusCode)
@@ -105,7 +105,7 @@ var _ = Describe("GAP 5.2: Concurrent Workflow Search Performance", Label("perfo
 			if err != nil {
 				return false
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode == http.StatusOK
 		}, 30*time.Second, 1*time.Second).Should(BeTrue())
 	})
@@ -157,7 +157,7 @@ var _ = Describe("GAP 5.2: Concurrent Workflow Search Performance", Label("perfo
 						statusCodes[idx] = 0
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					statusCodes[idx] = resp.StatusCode
 				}(i)
@@ -232,7 +232,7 @@ var _ = Describe("GAP 5.2: Concurrent Workflow Search Performance", Label("perfo
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT: Execute sustained load (10 QPS for 60s = 600 queries)
-			const duration = 60 * time.Second
+			const duration = 60 * time.Second //nolint:unused
 			const targetQPS = 10
 			const totalQueries = 600
 
@@ -264,7 +264,7 @@ var _ = Describe("GAP 5.2: Concurrent Workflow Search Performance", Label("perfo
 					if err != nil {
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 				}(idx)
 			}
 

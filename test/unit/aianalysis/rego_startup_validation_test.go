@@ -130,7 +130,7 @@ approval {
 		Context("with invalid policy file (syntax error)", func() {
 			It("should fail fast at startup (MUST return error)", func() {
 				invalidPolicyPath := createInvalidPolicyFile()
-				defer os.Remove(invalidPolicyPath)
+				defer func() { _ = os.Remove(invalidPolicyPath) }()
 
 				evaluator := rego.NewEvaluator(rego.Config{
 					PolicyPath: invalidPolicyPath,
@@ -143,7 +143,7 @@ approval {
 
 			It("should provide actionable error message with details", func() {
 				invalidPolicyPath := createInvalidPolicyFile()
-				defer os.Remove(invalidPolicyPath)
+				defer func() { _ = os.Remove(invalidPolicyPath) }()
 
 				evaluator := rego.NewEvaluator(rego.Config{
 					PolicyPath: invalidPolicyPath,
@@ -227,7 +227,7 @@ approval = result {
 				evaluator.Stop()
 			}
 			if tmpDir != "" {
-				os.RemoveAll(tmpDir)
+				_ = os.RemoveAll(tmpDir)
 			}
 		})
 
@@ -316,14 +316,14 @@ approval = result {
 			tempPolicy, err := os.CreateTemp("", "approval-cache-test-*.rego")
 			Expect(err).NotTo(HaveOccurred())
 			tempPolicyPath := tempPolicy.Name()
-			defer os.Remove(tempPolicyPath)
+			defer func() { _ = os.Remove(tempPolicyPath) }()
 
 			// Copy policy content to temp file
 			originalContent, err := os.ReadFile(originalPath)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = tempPolicy.Write(originalContent)
 			Expect(err).NotTo(HaveOccurred())
-			tempPolicy.Close()
+			_ = tempPolicy.Close()
 
 			// Use temp policy for this test
 			evaluator := rego.NewEvaluator(rego.Config{

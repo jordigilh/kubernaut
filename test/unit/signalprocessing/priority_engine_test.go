@@ -56,7 +56,7 @@ var _ = Describe("Priority Engine (Rego)", func() {
 	AfterEach(func() {
 		// Cleanup temp directory
 		if policyDir != "" {
-			os.RemoveAll(policyDir)
+			_ = os.RemoveAll(policyDir)
 		}
 	})
 

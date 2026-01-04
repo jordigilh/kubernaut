@@ -60,13 +60,16 @@ import (
 //
 // ========================================
 
-var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func() {
+var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 	var (
 		workflowRepo *workflow.Repository
 		testID       string
 	)
 
 	BeforeEach(func() {
+		// CRITICAL: Use public schema FIRST before any cleanup/operations
+		// remediation_workflow_catalog is NOT schema-isolated - all workflows are in public schema
+		// Without this, cleanup queries wrong schema and leaves data contamination
 		usePublicSchema()
 
 		// Create repository with real database
@@ -75,19 +78,17 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func()
 		// Generate unique test ID for isolation
 		testID = generateTestID()
 
-		// Serial tests: Global cleanup since they run sequentially in public schema
 		// This ensures no leftover data from previous test runs
-		// Clean up ALL test workflows (wf-repo%, wf-scoring%, wf-bulk%, etc.)
-		var countBefore int
-		_ = db.QueryRowContext(ctx, "SELECT COUNT(*) FROM remediation_workflow_catalog WHERE workflow_name LIKE 'wf-%'").Scan(&countBefore)
-		GinkgoWriter.Printf("🧹 Cleaning up workflows: found %d workflows matching 'wf-%%' pattern\n", countBefore)
-
-		result, err := db.ExecContext(ctx,
-			"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE 'wf-%'")
+		// Clean up ALL test workflows including:
+		// - wf-repo-% (workflow repository tests)
+		// - wf-scoring-% (scoring tests)
+		// - bulk-import-test-% (bulk import tests)
+		// Use TRUNCATE for complete cleanup to avoid LIKE pattern mismatches
+		result, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
 		Expect(err).ToNot(HaveOccurred(), "Global cleanup should succeed")
 
 		rowsDeleted, _ := result.RowsAffected()
-		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in global cleanup\n", rowsDeleted)
+		GinkgoWriter.Printf("✅ Deleted %d workflow(s) in global cleanup (TRUNCATE)\n", rowsDeleted)
 	})
 
 	AfterEach(func() {
@@ -103,6 +104,12 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func()
 	// CREATE METHOD TESTS - COMPOSITE PK VALIDATION
 	// ========================================
 	Describe("Create", func() {
+		BeforeEach(func() {
+			// CRITICAL: Use public schema - remediation_workflow_catalog is NOT schema-isolated
+			// Without this, workflow created in test_process_N schema won't be found by Get/List
+			usePublicSchema()
+		})
+
 		Context("with valid workflow and all required fields", func() {
 			It("should persist workflow with structured labels and composite PK", func() {
 				// ARRANGE: Create test workflow per DD-STORAGE-008 schema
@@ -303,13 +310,13 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(retrievedWorkflow).ToNot(BeNil())
 
-				// ASSERT: All fields populated correctly
-				Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
-				Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
-				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
-				Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
-				Expect(retrievedWorkflow.Status).To(Equal("active"))
-				Expect(retrievedWorkflow.ExecutionEngine).To(Equal("argo-workflows"))
+			// ASSERT: All fields populated correctly
+			Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
+			Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
+			Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
+			Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
+			Expect(retrievedWorkflow.Status).To(Equal("active"))
+			Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
@@ -327,10 +334,23 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", Serial, func()
 	// ========================================
 	// LIST METHOD TESTS - FILTERING & PAGINATION
 	// ========================================
-	Describe("List", func() {
+	// ARCHITECTURAL NOTE: Serial Execution Required for List tests
+	// remediation_workflow_catalog is a global table shared by ALL test processes.
+	// List tests verify exact workflow counts (e.g., Expect(len).To(Equal(3)))
+	// Parallel execution causes data contamination:
+	// - Process 1: TRUNCATE → Create 3 workflows → List (expect 3)
+	// - Process 2: Create 200 bulk workflows (during P1's test) → P1 finds 203 ❌
+	// Decision: Serial execution prevents cross-process data contamination for count tests
+	Describe("List", Serial, func() {
 		var createdWorkflowNames []string
 
 		BeforeEach(func() {
+			// CRITICAL: Use public schema for workflow catalog tests
+			// remediation_workflow_catalog is NOT schema-isolated - all parallel processes
+			// share the same table. Without usePublicSchema(), each process sees different
+			// data, causing cleanup to be ineffective and tests to see contaminated data.
+			usePublicSchema()
+
 			createdWorkflowNames = []string{} // Reset for each test
 
 			// Cleanup any leftover test workflows from previous runs (data pollution fix)
