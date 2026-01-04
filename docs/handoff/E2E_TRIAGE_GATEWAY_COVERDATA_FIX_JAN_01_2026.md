@@ -1,9 +1,9 @@
 # Gateway E2E Test Triage - Missing Coverdata Directory
 
-**Date**: January 1, 2026  
-**Status**: ✅ **FIXED** - Gateway E2E tests now starting  
-**Service**: Gateway (GW)  
-**Test Tier**: E2E Tests  
+**Date**: January 1, 2026
+**Status**: ✅ **FIXED** - Gateway E2E tests now starting
+**Service**: Gateway (GW)
+**Test Tier**: E2E Tests
 
 ---
 
@@ -158,10 +158,10 @@ test/infrastructure/kind-workflowexecution-config.yaml
 ## 📊 **Test Execution Status**
 
 ### Gateway E2E Tests
-**Status**: 🔄 Running  
-**Started**: 2026-01-01 10:24:00  
-**Expected Duration**: ~8-10 minutes  
-**Log**: `/tmp/gateway_e2e_retry_20260101_102400.log`  
+**Status**: 🔄 Running
+**Started**: 2026-01-01 10:24:00
+**Expected Duration**: ~8-10 minutes
+**Log**: `/tmp/gateway_e2e_retry_20260101_102400.log`
 
 **Progress Monitoring**:
 ```bash
