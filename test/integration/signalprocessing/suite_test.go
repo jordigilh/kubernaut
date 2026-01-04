@@ -148,6 +148,69 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy")
 
+	// SP-BUG-006: Capture infrastructure state for diagnostics
+	By("Verifying infrastructure container status")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("📋 Infrastructure Status Verification")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Check PostgreSQL container
+	psqlStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_postgres", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}")
+	if psqlOut, err := psqlStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("🐘 PostgreSQL: %s\n", string(psqlOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  PostgreSQL: Failed to check status: %v\n", err)
+	}
+
+	// Check Redis container
+	redisStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_redis", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}")
+	if redisOut, err := redisStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("🔴 Redis: %s\n", string(redisOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Redis: Failed to check status: %v\n", err)
+	}
+
+	// Check Data Storage container
+	dsStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_datastorage", "--format", "{{.Names}}\t{{.Status}}\t{{.Ports}}")
+	if dsOut, err := dsStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("💾 Data Storage: %s\n", string(dsOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Data Storage: Failed to check status: %v\n", err)
+	}
+
+	// Check Migrations container (should be exited/completed)
+	migrationsStatus := exec.Command("podman", "ps", "-a", "--filter", "name=signalprocessing_migrations", "--format", "{{.Names}}\t{{.Status}}\t{{.ExitCode}}")
+	if migrationsOut, err := migrationsStatus.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("🔧 Migrations: %s\n", string(migrationsOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Migrations: Failed to check status: %v\n", err)
+	}
+
+	// Check Data Storage health endpoint
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("🏥 Data Storage Health Check")
+	healthCheck := exec.Command("curl", "-s", "-o", "/dev/null", "-w", "%{http_code}", "http://127.0.0.1:18094/health")
+	if healthOut, err := healthCheck.CombinedOutput(); err == nil {
+		statusCode := string(healthOut)
+		if statusCode == "200" {
+			GinkgoWriter.Printf("✅ Data Storage health: HTTP %s (ready)\n", statusCode)
+		} else {
+			GinkgoWriter.Printf("⚠️  Data Storage health: HTTP %s (not ready)\n", statusCode)
+		}
+	} else {
+		GinkgoWriter.Printf("❌ Data Storage health check failed: %v\n", err)
+	}
+
+	// Check Data Storage version endpoint
+	versionCheck := exec.Command("curl", "-s", "http://127.0.0.1:18094/version")
+	if versionOut, err := versionCheck.CombinedOutput(); err == nil {
+		GinkgoWriter.Printf("📌 Data Storage version: %s\n", string(versionOut))
+	} else {
+		GinkgoWriter.Printf("⚠️  Data Storage version check failed: %v\n", err)
+	}
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	By("Registering SignalProcessing CRD scheme")
 	err = signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
