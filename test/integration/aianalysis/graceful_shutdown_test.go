@@ -301,11 +301,18 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", Serial, func() {
 				Equal(aianalysisv1alpha1.PhaseFailed),
 			), "Analysis should complete and generate audit events")
 
-			// BEHAVIOR VALIDATION: Audit events persisted to Data Storage
-			// Allow time for async audit writes (100ms batch interval)
-			time.Sleep(500 * time.Millisecond)
+		// BEHAVIOR VALIDATION: Audit events persisted to Data Storage
+		// IMPROVEMENT: Use explicit Flush() instead of time.Sleep() for reliability
+		// This guarantees audit events are written before querying
+		if auditStore != nil {
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer flushCancel()
+			err := auditStore.Flush(flushCtx)
+			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+			GinkgoWriter.Printf("✅ Audit store flushed before querying\n")
+		}
 
-		// Query audit events via Data Storage API
+	// Query audit events via Data Storage API
 		dsClient, err := dsgen.NewClientWithResponses(dataStorageURL)
 		Expect(err).NotTo(HaveOccurred())
 

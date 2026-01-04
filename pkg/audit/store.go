@@ -39,6 +39,25 @@ type AuditStore interface {
 	// DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
 	StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error
 
+	// Flush forces an immediate write of all buffered events to DataStorage.
+	//
+	// This method blocks until:
+	// - All currently buffered events are written to DataStorage, OR
+	// - The provided context is cancelled
+	//
+	// Use cases:
+	// - Integration tests: Ensure events are persisted before querying
+	// - Graceful shutdown: Flush before Close() (though Close() also flushes)
+	// - Critical events: Force immediate persistence for compliance
+	//
+	// NOTE: This method is primarily for testing. Production code should rely
+	// on automatic flushing (FlushInterval) for better performance.
+	//
+	// Example (integration test):
+	//   auditStore.Flush(ctx)  // Force immediate write
+	//   events := queryDataStorage(correlationID)  // Now reliable
+	Flush(ctx context.Context) error
+
 	// Close flushes remaining events and stops the background worker.
 	//
 	// This method blocks until all buffered events are written or the max timeout is reached.
@@ -105,15 +124,16 @@ type DLQClient interface {
 //
 // DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
 type BufferedAuditStore struct {
-	buffer    chan *dsgen.AuditEventRequest
-	client    DataStorageClient
-	dlqClient DLQClient // GAP-10: Optional DLQ fallback for failed writes (DD-009)
-	logger    logr.Logger
-	config    Config
-	metrics   MetricsLabels
-	done      chan struct{}
-	wg        sync.WaitGroup
-	closed    int32 // Atomic flag to prevent double-close
+	buffer     chan *dsgen.AuditEventRequest
+	flushChan  chan chan error // Channel to signal flush request and receive completion
+	client     DataStorageClient
+	dlqClient  DLQClient // GAP-10: Optional DLQ fallback for failed writes (DD-009)
+	logger     logr.Logger
+	config     Config
+	metrics    MetricsLabels
+	done       chan struct{}
+	wg         sync.WaitGroup
+	closed     int32 // Atomic flag to prevent double-close
 
 	// Metrics (atomic counters for thread-safe access)
 	bufferedCount    int64
@@ -150,12 +170,13 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 	}
 
 	store := &BufferedAuditStore{
-		buffer:  make(chan *dsgen.AuditEventRequest, config.BufferSize),
-		client:  client,
-		logger:  logger.WithName("audit-store"),
-		config:  config,
-		metrics: MetricsLabels{Service: serviceName},
-		done:    make(chan struct{}),
+		buffer:    make(chan *dsgen.AuditEventRequest, config.BufferSize),
+		flushChan: make(chan chan error, 1), // Buffered to prevent deadlock
+		client:    client,
+		logger:    logger.WithName("audit-store"),
+		config:    config,
+		metrics:   MetricsLabels{Service: serviceName},
+		done:      make(chan struct{}),
 	}
 
 	// DD-AUDIT-004: Initialize buffer capacity metric for saturation monitoring
@@ -279,6 +300,52 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditE
 // This method blocks until all buffered events are written or the max timeout is reached.
 // Call this during graceful shutdown to ensure no events are lost.
 // Safe to call multiple times (idempotent).
+// Flush forces an immediate write of all buffered events to DataStorage.
+//
+// This method is useful for:
+// - Integration tests: Ensure events are persisted before querying
+// - Graceful shutdown preparation: Flush before Close()
+// - Critical events: Force immediate persistence
+//
+// Implementation:
+// - Sends flush signal to background writer
+// - Waits for flush completion or context cancellation
+// - Does not stop the background writer (unlike Close())
+//
+// Note: Store continues accepting new events after Flush() completes.
+func (s *BufferedAuditStore) Flush(ctx context.Context) error {
+	// Check if store is closed
+	if atomic.LoadInt32(&s.closed) == 1 {
+		return fmt.Errorf("audit store is closed")
+	}
+
+	s.logger.V(1).Info("🔄 Explicit flush requested")
+
+	// Create response channel
+	done := make(chan error, 1)
+
+	// Send flush request to background writer
+	select {
+	case s.flushChan <- done:
+		// Flush request sent successfully
+	case <-ctx.Done():
+		return fmt.Errorf("flush cancelled: %w", ctx.Err())
+	}
+
+	// Wait for flush to complete
+	select {
+	case err := <-done:
+		if err != nil {
+			s.logger.Error(err, "❌ Flush failed")
+			return fmt.Errorf("flush failed: %w", err)
+		}
+		s.logger.V(1).Info("✅ Explicit flush completed")
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("flush timeout: %w", ctx.Err())
+	}
+}
+
 func (s *BufferedAuditStore) Close() error {
 	// Check if already closed (atomic operation)
 	if !atomic.CompareAndSwapInt32(&s.closed, 0, 1) {
@@ -451,6 +518,26 @@ func (s *BufferedAuditStore) backgroundWriter() {
 			bufferSize := len(s.buffer)
 			s.metrics.SetBufferSize(bufferSize)
 			s.metrics.SetBufferUtilization(bufferSize, s.config.BufferSize) // DD-AUDIT-004
+
+		case done := <-s.flushChan:
+			// Explicit flush requested (typically from tests or graceful shutdown prep)
+			s.logger.V(1).Info("🔄 Processing explicit flush request",
+				"batch_size", len(batch),
+				"buffer_size", len(s.buffer))
+
+			if len(batch) > 0 {
+				batchSizeBeforeFlush := len(batch)
+				s.writeBatchWithRetry(batch)
+				lastFlushTime = time.Now()
+				batch = batch[:0] // Reset batch
+				s.logger.V(1).Info("✅ Explicit flush completed",
+					"flushed_count", batchSizeBeforeFlush,
+					"buffer_size_after", len(s.buffer))
+				done <- nil // Signal success
+			} else {
+				s.logger.V(1).Info("✅ Explicit flush completed (no events to flush)")
+				done <- nil // Signal success (nothing to flush)
+			}
 		}
 	}
 }
