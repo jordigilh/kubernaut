@@ -372,7 +372,7 @@ def pytest_collection_modifyitems(config, items):
 
     # Check infrastructure availability based on test requirements
     ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
-    hapi_available = is_service_available(f"{HAPI_URL}/health")
+    # NOTE: HAPI tests use direct business logic calls (no HTTP service), so no availability check needed
 
     for item in items:
         # Skip tests that require DataStorage if it's not available
@@ -380,8 +380,4 @@ def pytest_collection_modifyitems(config, items):
             skip_ds = pytest.mark.skip(reason="Data Storage not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
             item.add_marker(skip_ds)
 
-        # Skip tests that require HAPI if it's not available
-        # (Most HAPI tests use in-process TestClient, so this is rare)
-        if "requires_hapi" in item.keywords and not hapi_available:
-            skip_hapi = pytest.mark.skip(reason="HAPI service not available")
-            item.add_marker(skip_hapi)
+        # NOTE: "requires_hapi" marker no longer needed - HAPI tests use direct business logic calls (in-process)

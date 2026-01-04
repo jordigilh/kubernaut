@@ -1157,9 +1157,15 @@ func isTransientError(err error) bool {
 
 // recordPhaseTransitionAudit records a phase transition audit event.
 // ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// SP-BUG-002: Prevents duplicate audit events when phase hasn't actually changed (race condition mitigation).
 func (r *SignalProcessingReconciler) recordPhaseTransitionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase, newPhase string) error {
 	if r.AuditClient == nil {
 		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+	// SP-BUG-002: Skip audit if no actual transition occurred
+	// This prevents duplicate events when controller processes same phase twice due to K8s cache/watch timing
+	if oldPhase == newPhase {
+		return nil
 	}
 	r.AuditClient.RecordPhaseTransition(ctx, sp, oldPhase, newPhase)
 	return nil

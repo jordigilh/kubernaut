@@ -653,6 +653,16 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 		By("8. Validate exact event count for 'phase.transition' (DD-TESTING-001 compliance)")
 		// Business requirement: SP has 5 phases (Pending→Enriching→Classifying→Categorizing→Completed)
 		// Therefore: Exactly 4 phase transitions per successful processing
+		
+		// DEBUG: Print all phase transitions to understand what's happening
+		fmt.Printf("\n=== DEBUG: Phase Transitions Found ===\n")
+		for _, event := range auditEvents {
+			if event.EventType == "signalprocessing.phase.transition" {
+				fmt.Printf("Transition: %v\n", event.EventData)
+			}
+		}
+		fmt.Printf("=== Total transitions: %d ===\n\n", eventCounts["signalprocessing.phase.transition"])
+		
 		Expect(eventCounts["signalprocessing.phase.transition"]).To(Equal(4),
 			"BR-SP-090: MUST emit exactly 4 phase transitions: Pending→Enriching→Classifying→Categorizing→Completed")
 
