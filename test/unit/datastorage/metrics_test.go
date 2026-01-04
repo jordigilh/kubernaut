@@ -34,7 +34,6 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 		// Reset metrics before each test
 		metrics.WriteTotal.Reset()
 		metrics.WriteDuration.Reset()
-		metrics.DualWriteSuccess.Collect(make(chan prometheus.Metric, 10))
 		// Note: Some metrics don't have Reset(), but we can verify increments
 	})
 
@@ -82,34 +81,7 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics", func() {
 		})
 	})
 
-	Context("Dual-Write Coordination Metrics", func() {
-		It("should track successful dual-write operations", func() {
-			// BR-STORAGE-019: DualWriteSuccess counter
-			initialValue := getCounterValue(metrics.DualWriteSuccess)
-			metrics.DualWriteSuccess.Inc()
-			newValue := getCounterValue(metrics.DualWriteSuccess)
-			Expect(newValue).To(Equal(initialValue + 1))
-		})
-
-		It("should track dual-write failures by reason", func() {
-			// BR-STORAGE-019: DualWriteFailure counter with reasons
-			reasons := []string{
-				metrics.ReasonPostgreSQLFailure,
-				metrics.ReasonVectorDBFailure,
-				metrics.ReasonValidationFailure,
-				metrics.ReasonContextCanceled,
-				metrics.ReasonTransactionRollback,
-				metrics.ReasonUnknown,
-			}
-
-			for _, reason := range reasons {
-				initialValue := getCounterValue(metrics.DualWriteFailure.WithLabelValues(reason))
-				metrics.DualWriteFailure.WithLabelValues(reason).Inc()
-				newValue := getCounterValue(metrics.DualWriteFailure.WithLabelValues(reason))
-				Expect(newValue).To(Equal(initialValue+1), "reason %s should be tracked", reason)
-			}
-		})
-
+	Context("Fallback Mode Metrics", func() {
 		It("should track fallback mode operations", func() {
 			// BR-STORAGE-015: Graceful degradation tracking
 			initialValue := getCounterValue(metrics.FallbackModeTotal)
@@ -336,14 +308,6 @@ func BenchmarkMetricsValidationFailureTracking(b *testing.B) {
 	}
 }
 
-func BenchmarkMetricsDualWriteFailureTracking(b *testing.B) {
-	// BR-STORAGE-014: Benchmark dual-write failure tracking overhead
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
-	}
-}
-
 func BenchmarkMetricsCacheHitTracking(b *testing.B) {
 	// BR-STORAGE-009: Benchmark cache hit tracking overhead
 	b.ResetTimer()
@@ -376,8 +340,5 @@ func BenchmarkMetricsFullWriteOperationInstrumentation(b *testing.B) {
 		// Write metrics
 		metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
 		metrics.WriteDuration.WithLabelValues(metrics.TableRemediationAudit).Observe(0.025)
-
-		// Dual-write metrics
-		metrics.DualWriteSuccess.Inc()
 	}
 }

@@ -45,7 +45,6 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			},
 
 			Entry("postgresql_failure", metrics.ReasonPostgreSQLFailure, metrics.ReasonPostgreSQLFailure),
-			Entry("vectordb_failure", metrics.ReasonVectorDBFailure, metrics.ReasonVectorDBFailure),
 			Entry("validation_failure", metrics.ReasonValidationFailure, metrics.ReasonValidationFailure),
 			Entry("context_canceled", metrics.ReasonContextCanceled, metrics.ReasonContextCanceled),
 			Entry("transaction_rollback", metrics.ReasonTransactionRollback, metrics.ReasonTransactionRollback),
