@@ -235,7 +235,7 @@ def integration_infrastructure():
     Integration infrastructure URLs (services started by Go infrastructure).
 
     This fixture provides service URLs for tests that need them.
-    
+
     Note: HAPI integration tests use direct business logic calls (no HTTP),
     so hapi_url is not included.
 
@@ -368,7 +368,7 @@ def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, r
 def is_integration_infra_available() -> bool:
     """
     Check if HAPI integration infrastructure is available.
-    
+
     Note: HAPI integration tests use direct business logic calls (no HTTP),
     so we only check Data Storage availability.
 
