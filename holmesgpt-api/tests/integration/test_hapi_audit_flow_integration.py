@@ -47,7 +47,16 @@ import pytest
 import requests
 from typing import List, Dict, Any
 
-# Test uses FastAPI TestClient (in-process HAPI), not OpenAPI generated clients
+# DD-API-001: Import OpenAPI generated clients
+import sys
+from pathlib import Path
+# Add tests/clients to path (absolute path resolution for CI)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
+from holmesgpt_api_client import ApiClient as HapiApiClient, Configuration as HapiConfiguration
+from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
+from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
+from holmesgpt_api_client.models.incident_request import IncidentRequest
+from holmesgpt_api_client.models.recovery_request import RecoveryRequest
 from src.clients.datastorage import ApiClient as DataStorageApiClient, Configuration as DataStorageConfiguration
 from src.clients.datastorage.api.audit_write_api_api import AuditWriteAPIApi
 from src.clients.datastorage.models.audit_event import AuditEvent
@@ -57,9 +66,10 @@ from src.clients.datastorage.models.audit_event import AuditEvent
 # FIXTURES
 # ========================================
 
-# Note: hapi_client fixture is provided by conftest.py (session-scoped, TestClient)
+# Note: hapi_url fixture is provided by conftest.py (session-scoped, HAPI service URL)
 # Note: data_storage_url fixture is provided by conftest.py (session-scoped)
 # This allows workflow seeding and audit validation to work correctly
+# Tests use OpenAPI clients (DD-API-001) for type-safe, contract-validated communication
 
 
 # ========================================
@@ -156,45 +166,67 @@ def query_audit_events_with_retry(
 
 
 def call_hapi_incident_analyze(
-    hapi_client,
+    hapi_url: str,
     incident_data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Call HAPI's /api/v1/incident/analyze endpoint using FastAPI TestClient.
+    Call HAPI's /api/v1/incident/analyze endpoint using OpenAPI client.
 
-    Architecture: Integration tests use TestClient (in-process HAPI)
+    DD-API-001 COMPLIANT: Uses generated OpenAPI client (type-safe, contract-validated).
+
+    Architecture: Integration tests use OpenAPI client (external HTTP calls)
 
     Args:
-        hapi_client: FastAPI TestClient fixture
+        hapi_url: HAPI service URL
         incident_data: Incident request data
 
     Returns:
         Response dict
     """
-    response = hapi_client.post("/api/v1/incident/analyze", json=incident_data)
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    return response.json()
+    config = HapiConfiguration(host=hapi_url)
+    client = HapiApiClient(configuration=config)
+    api_instance = IncidentAnalysisApi(client)
+    
+    # Create IncidentRequest model from dict
+    incident_request = IncidentRequest(**incident_data)
+    
+    # DD-API-001: Use OpenAPI generated client
+    response = api_instance.analyze_incident(incident_request=incident_request)
+    
+    # Convert response to dict for compatibility with existing tests
+    return response.to_dict() if hasattr(response, 'to_dict') else response
 
 
 def call_hapi_recovery_analyze(
-    hapi_client,
+    hapi_url: str,
     recovery_data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Call HAPI's /api/v1/recovery/analyze endpoint using FastAPI TestClient.
+    Call HAPI's /api/v1/recovery/analyze endpoint using OpenAPI client.
 
-    Architecture: Integration tests use TestClient (in-process HAPI)
+    DD-API-001 COMPLIANT: Uses generated OpenAPI client (type-safe, contract-validated).
+
+    Architecture: Integration tests use OpenAPI client (external HTTP calls)
 
     Args:
-        hapi_client: FastAPI TestClient fixture
+        hapi_url: HAPI service URL
         recovery_data: Recovery request data
 
     Returns:
         Response dict
     """
-    response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_data)
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    return response.json()
+    config = HapiConfiguration(host=hapi_url)
+    client = HapiApiClient(configuration=config)
+    api_instance = RecoveryAnalysisApi(client)
+    
+    # Create RecoveryRequest model from dict
+    recovery_request = RecoveryRequest(**recovery_data)
+    
+    # DD-API-001: Use OpenAPI generated client
+    response = api_instance.analyze_recovery(recovery_request=recovery_request)
+    
+    # Convert response to dict for compatibility with existing tests
+    return response.to_dict() if hasattr(response, 'to_dict') else response
 
 
 # ========================================
@@ -214,7 +246,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_emits_llm_request_and_response_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url,
         unique_test_id):
         """
@@ -245,8 +277,8 @@ class TestIncidentAnalysisAuditFlow:
             "error_message": "Pod OOMKilled - integration test",
         }
 
-        # ACT: Trigger business operation (incident analysis) via TestClient
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        # ACT: Trigger business operation (incident analysis) via OpenAPI client
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
 
         # Verify business operation succeeded
         assert response is not None, "HAPI should return a response"
@@ -289,7 +321,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_emits_llm_tool_call_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_tool_call events for workflow searches.
@@ -319,7 +351,7 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
         assert response is not None
 
         # ASSERT: Verify tool call events emitted (with retry polling)
@@ -337,7 +369,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Workflow validation MUST emit workflow_validation_attempt events.
@@ -367,7 +399,7 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
         assert response is not None
 
         # ASSERT: Verify validation attempt events emitted (with retry polling)
@@ -395,7 +427,7 @@ class TestRecoveryAnalysisAuditFlow:
 
     def test_recovery_analysis_emits_llm_request_and_response_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Recovery analysis MUST emit llm_request and llm_response audit events.
@@ -418,7 +450,7 @@ class TestRecoveryAnalysisAuditFlow:
         }
 
         # ACT: Trigger recovery analysis
-        response = call_hapi_recovery_analyze(hapi_client, recovery_request)
+        response = call_hapi_recovery_analyze(hapi_url, recovery_request)
         assert response is not None
 
         # ASSERT: Verify audit events emitted (with retry polling)
@@ -454,7 +486,7 @@ class TestAuditEventSchemaValidation:
 
     def test_audit_events_have_required_adr034_fields(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         ADR-034: Audit events MUST include required fields per ADR-034 spec.
@@ -484,7 +516,7 @@ class TestAuditEventSchemaValidation:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
         assert response is not None
 
         # ASSERT: Verify all audit events have ADR-034 required fields (with retry polling)
@@ -539,7 +571,7 @@ class TestErrorScenarioAuditFlow:
 
     def test_workflow_not_found_emits_audit_with_error_context(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url,
         unique_test_id):
         """
@@ -576,7 +608,7 @@ class TestErrorScenarioAuditFlow:
         }
 
         # ACT: Trigger business operation that will fail gracefully
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
 
         # Verify business operation completed (even if no workflow found)
         assert response is not None, "HAPI should return a response"

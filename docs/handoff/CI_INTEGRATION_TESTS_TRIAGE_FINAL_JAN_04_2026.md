@@ -1,8 +1,8 @@
 # CI Integration Tests Triage - Final Analysis (Jan 4, 2026)
 
-**Date**: 2026-01-04  
-**CI Run**: `20686859226`  
-**Branch**: `fix/ci-python-dependencies-path`  
+**Date**: 2026-01-04
+**CI Run**: `20686859226`
+**Branch**: `fix/ci-python-dependencies-path`
 **Commit**: `9dc5cc759` (NT-BUG-013 race condition fix)
 
 ---
@@ -41,7 +41,7 @@ Our fix to `test_hapi_audit_flow_integration.py` introduced imports that aren't 
 from holmesgpt_api_client import ApiClient as HapiApiClient, Configuration as HapiConfiguration
 ```
 
-**Impact**: 
+**Impact**:
 - HAPI audit flow tests cannot even be collected/run
 - This is a **regression** introduced by our changes
 
@@ -62,7 +62,7 @@ BR-NOT-060: Concurrent Delivery Safety
 [It] should handle rapid successive CRD creations (stress test)
 ```
 
-**Status**: 
+**Status**:
 - ✅ **Local**: 124/124 passing
 - ❌ **CI**: 120/121 passing, 1 failed
 
@@ -86,7 +86,7 @@ The fix is correct, but the stress test is **exposing timing-sensitive behavior*
 [INTERRUPTED] BR-SP-090: SignalProcessing → Data Storage Audit Integration
 [It] should create 'phase.transition' audit events for each phase change
 
-[FAIL] BR-SP-090: SignalProcessing → Data Storage Audit Integration  
+[FAIL] BR-SP-090: SignalProcessing → Data Storage Audit Integration
 [It] should create 'signalprocessing.signal.processed' audit event in Data Storage
 ```
 
@@ -117,7 +117,7 @@ The fix is correct, but the stress test is **exposing timing-sensitive behavior*
 [INTERRUPTED] BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown
 [It] MUST include DLQ drain time in total shutdown duration
 
-[INTERRUPTED] BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown  
+[INTERRUPTED] BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown
 [It] MUST handle graceful shutdown even when DLQ is empty
 ```
 

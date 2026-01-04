@@ -38,9 +38,14 @@ RUN grep -v "../dependencies/holmesgpt" holmesgpt-api/requirements-e2e.txt > /tm
 # Copy application code
 COPY holmesgpt-api/ ./holmesgpt-api/
 COPY docs/ ./docs/
+COPY api/ ./api/
 
 # Copy test fixtures and configuration
 COPY holmesgpt-api/config.yaml ./holmesgpt-api/config.yaml
+
+# Generate HAPI OpenAPI client (DD-API-001)
+# Required for integration tests to use type-safe OpenAPI client
+RUN cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../..
 
 # Set environment variables for integration tests
 ENV PYTHONPATH=/workspace/holmesgpt-api
