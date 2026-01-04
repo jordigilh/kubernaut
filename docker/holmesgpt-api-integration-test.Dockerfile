@@ -38,14 +38,13 @@ RUN grep -v "../dependencies/holmesgpt" holmesgpt-api/requirements-e2e.txt > /tm
 # Copy application code
 COPY holmesgpt-api/ ./holmesgpt-api/
 COPY docs/ ./docs/
-COPY api/ ./api/
 
 # Copy test fixtures and configuration
 COPY holmesgpt-api/config.yaml ./holmesgpt-api/config.yaml
 
-# Generate HAPI OpenAPI client (DD-API-001)
-# Required for integration tests to use type-safe OpenAPI client
-RUN cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../..
+# NOTE: OpenAPI client is generated on HOST before docker build (see Makefile)
+# Rationale: generate-client.sh requires podman/docker which is not available in container
+# Pattern: Matches E2E test approach (DD-API-001 compliance)
 
 # Set environment variables for integration tests
 ENV PYTHONPATH=/workspace/holmesgpt-api
