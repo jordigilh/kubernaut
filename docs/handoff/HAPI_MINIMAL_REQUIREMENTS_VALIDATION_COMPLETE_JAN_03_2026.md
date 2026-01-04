@@ -305,3 +305,4 @@ supabase>=2.5,<2.8               # ✅ Supabase client
 **Validation**: Unit + Integration tests complete (622/622 passing)
 
 
+
