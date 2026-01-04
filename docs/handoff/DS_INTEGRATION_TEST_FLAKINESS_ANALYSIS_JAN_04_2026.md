@@ -1,8 +1,8 @@
 # Data Storage Integration Test Flakiness Analysis
 
-**Date**: January 4, 2026  
-**Branch**: `fix/ci-python-dependencies-path`  
-**Issue**: Data Storage integration tests showing non-deterministic failures  
+**Date**: January 4, 2026
+**Branch**: `fix/ci-python-dependencies-path`
+**Issue**: Data Storage integration tests showing non-deterministic failures
 **Status**: UNRELATED to CI fixes (SP, AA, HAPI, NT, GW, RO)
 
 ---
@@ -114,7 +114,7 @@ Eventually(func() float64 {
 - Always marked as INTERRUPTED
 - Block subsequent tests from running
 
-**Analysis**: 
+**Analysis**:
 - Tests involve complex shutdown orchestration
 - May have timing assumptions that don't hold in test environment
 - Could benefit from FlakeAttempts or increased timeouts
@@ -294,7 +294,7 @@ Eventually(..., 5*time.Second, 200*time.Millisecond) // Buffer for CI
 - Workflow Execution: 320/320 specs pass
 - HolmesGPT API: 6/6 audit tests pass
 
-**Recommendation**: 
+**Recommendation**:
 1. ✅ Merge our CI fixes immediately (SP, AA, HAPI, NT, GW, RO)
 2. ⏳ Track DS flakiness separately (create tickets for DS-FLAKY-002 through DS-FLAKY-005)
 3. ⏳ Apply similar Eventually patterns to other async tests
@@ -303,9 +303,9 @@ Eventually(..., 5*time.Second, 200*time.Millisecond) // Buffer for CI
 
 ---
 
-**Prepared by**: AI Assistant  
-**Verified by**: Multiple test runs with different failure patterns  
-**Status**: ✅ One fix applied (pagination), others documented for future work  
-**Branch**: `fix/ci-python-dependencies-path`  
+**Prepared by**: AI Assistant
+**Verified by**: Multiple test runs with different failure patterns
+**Status**: ✅ One fix applied (pagination), others documented for future work
+**Branch**: `fix/ci-python-dependencies-path`
 **Commit**: To be pushed
 
