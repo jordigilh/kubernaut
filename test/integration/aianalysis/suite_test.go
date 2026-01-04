@@ -106,10 +106,11 @@ func TestAIAnalysisIntegration(t *testing.T) {
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
 // This follows Gateway/Notification pattern for automated infrastructure startup
 //
-// TIMEOUT NOTE: Infrastructure startup takes ~70-90 seconds (PostgreSQL, Redis, DataStorage, HAPI).
+// TIMEOUT NOTE: Infrastructure startup takes ~70-90 seconds locally, but up to 3+ minutes in CI.
+// CI environments (GitHub Actions) have slower container startup times, especially HAPI.
 // Default Ginkgo timeout (60s) is insufficient, causing INTERRUPTED in parallel mode.
-// NodeTimeout(3*time.Minute) ensures sufficient time for complete infrastructure startup.
-var _ = SynchronizedBeforeSuite(NodeTimeout(3*time.Minute), func(specCtx SpecContext) []byte {
+// NodeTimeout(5*time.Minute) ensures sufficient time for complete infrastructure startup in CI.
+var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecContext) []byte {
 	// This runs ONCE on process 1 only - creates shared infrastructure
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
