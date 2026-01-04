@@ -68,10 +68,12 @@ type AuditClientInterface interface {
 // - RecordRegoEvaluation: Records Rego policy evaluation results
 // - RecordApprovalDecision: Records approval/auto-execute decisions
 // - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
+// - RecordAnalysisComplete: Records analysis completion event (AA-BUG-006)
 type AnalyzingAuditClientInterface interface {
 	RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string)
 	RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision string, reason string)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
+	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 }
 
 // ========================================

@@ -75,10 +75,9 @@ func (r *AIAnalysisReconciler) recordPhaseMetrics(ctx context.Context, phase str
 		r.Metrics.RecordConfidenceScore(signalType, confidence)
 	}
 
-	// DD-AUDIT-003: Record analysis complete audit event for terminal states
-	if r.AuditClient != nil && (analysis.Status.Phase == PhaseCompleted || analysis.Status.Phase == PhaseFailed) {
-		r.AuditClient.RecordAnalysisComplete(ctx, analysis)
-	}
+	// AA-BUG-006: RecordAnalysisComplete moved to handlers (analyzing.go:221, investigating.go error paths)
+	// This prevents duplicate analysis.completed events when terminal states reconcile multiple times
+	// Recording happens on TRANSITION to terminal state, not on EVERY reconcile of terminal state
 }
 
 

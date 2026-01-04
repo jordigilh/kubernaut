@@ -215,9 +215,12 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = "Analysis complete"
 
-	// DD-AUDIT-003: Record phase transition if phase changed
+	// DD-AUDIT-003: Record phase transition and analysis completion when transitioning to Completed
 	if analysis.Status.Phase != oldPhase {
 		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+		// AA-BUG-006: Record analysis.completed here (on transition), not in recordPhaseMetrics
+		// This ensures it's only recorded ONCE when transitioning TO Completed, not on every reconcile
+		h.auditClient.RecordAnalysisComplete(ctx, analysis)
 	}
 
 	h.log.Info("Analysis completed",
