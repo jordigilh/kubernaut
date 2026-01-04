@@ -179,7 +179,17 @@ def audit_store(data_storage_url):
     yield store
 
     # Cleanup: flush and close at end of session
-    print(f"\n🔄 Flushing and closing audit store...")
+    # HAPI-SHUTDOWN-001: Flush audit store BEFORE infrastructure stops
+    # This prevents "connection refused" errors during cleanup when the
+    # background writer tries to flush buffered events after DataStorage is stopped.
+    # See: docs/handoff/WE_DATASTORAGE_CONNECTION_REFUSED_TRIAGE_JAN_04_2026.md
+    print(f"\n🔄 Flushing audit store before infrastructure shutdown...")
+    if store.flush(timeout=10.0):
+        print(f"✅ Audit store flushed (all buffered events written)")
+    else:
+        print(f"⚠️  Warning: Audit store flush timed out or failed")
+    
+    print(f"🔄 Closing audit store...")
     store.close()
     print(f"✅ Audit store closed")
 

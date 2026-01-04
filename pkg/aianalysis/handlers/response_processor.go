@@ -157,6 +157,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Investigation complete, starting analysis"
 
+	// DD-AUDIT-003: Phase transition recorded by investigating handler (investigating.go:177)
+	// NOT recorded here to avoid duplicate audit events (AA-BUG-002 fix)
+	// The handler captures oldPhase before calling ProcessIncidentResponse, ensuring accurate audit trail
+
 	return ctrl.Result{Requeue: true}, nil
 }
 
@@ -238,6 +242,10 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Recovery investigation complete, starting analysis"
+
+	// DD-AUDIT-003: Phase transition recorded by investigating handler (investigating.go:142)
+	// NOT recorded here to avoid duplicate audit events (AA-BUG-002 fix)
+	// The handler captures oldPhase before calling ProcessRecoveryResponse, ensuring accurate audit trail
 
 	return ctrl.Result{Requeue: true}, nil
 }

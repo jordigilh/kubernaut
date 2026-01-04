@@ -1,0 +1,100 @@
+fix(test): Add Flush() before Close() in all integration test suites
+
+ISSUE: Audit store background writer attempts to flush buffered events after
+DataStorage has been stopped during test cleanup, causing ~27 seconds of
+"connection refused" error logs (no functional impact).
+
+ROOT CAUSE (All Services):
+- AfterSuite/SynchronizedAfterSuite calls auditStore.Close()
+- Infrastructure (DataStorage) stopped immediately after Close()
+- Background writer retries failed writes for ~27s (exponential backoff: 1s, 4s, 16s)
+- Each retry logs "dial tcp 127.0.0.1:PORT: connect: connection refused"
+
+SOLUTION APPLIED (Option A - 95% confidence):
+Add explicit Flush() with 10-second timeout BEFORE Close() in all services.
+This ensures all buffered audit events are written to DataStorage before
+infrastructure stops, preventing connection refused errors.
+
+SERVICES FIXED (6 total):
+
+1. WorkflowExecution (test/integration/workflowexecution/suite_test.go)
+   - Added WE-SHUTDOWN-001: Flush -> Close -> Stop infrastructure
+   - Timeout: 10 seconds for flush operation
+   - Reference: WE_DATASTORAGE_CONNECTION_REFUSED_TRIAGE_JAN_04_2026.md
+
+2. AIAnalysis (test/integration/aianalysis/suite_test.go)
+   - Added AA-SHUTDOWN-001: Flush -> Close -> Stop infrastructure
+   - Replaced time.Sleep(1s) with explicit Flush(10s timeout)
+   - Same pattern as WE for consistency
+
+3. SignalProcessing (test/integration/signalprocessing/suite_test.go)
+   - Added SP-SHUTDOWN-001: Flush -> Close -> Stop infrastructure
+   - Timeout: 10 seconds for flush operation
+
+4. RemediationOrchestrator (test/integration/remediationorchestrator/suite_test.go)
+   - Added RO-SHUTDOWN-001: Flush -> Close -> Stop infrastructure
+   - Previously missing audit store cleanup entirely
+   - Now properly flushes and closes before infrastructure stop
+
+5. Notification (test/integration/notification/suite_test.go)
+   - Added NT-SHUTDOWN-001: Flush -> Close -> Stop infrastructure
+   - Timeout: 10 seconds for flush operation
+
+6. HolmesGPT API (holmesgpt-api/tests/integration/conftest.py)
+   - Added HAPI-SHUTDOWN-001: flush(timeout=10.0) -> close()
+   - Python fixture cleanup in audit_store fixture
+   - Same pattern as Go services
+
+PATTERN (Consistent Across All Services):
+
+Go services (BeforeSuite/SynchronizedAfterSuite):
+
+    if auditStore != nil {
+        By("Flushing audit store before infrastructure shutdown")
+        
+        flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer flushCancel()
+
+        err := auditStore.Flush(flushCtx)  // Explicit flush FIRST
+        if err != nil {
+            GinkgoWriter.Printf("Warning: Failed to flush: %v\n", err)
+        } else {
+            GinkgoWriter.Println("Audit store flushed (all buffered events written)")
+        }
+
+        err = auditStore.Close()  // Then close
+        // ...
+    }
+
+    // ... cancel(), testEnv.Stop(), etc ...
+
+    // Safe to stop infrastructure now - events already flushed
+    err = infrastructure.StopServiceIntegrationInfrastructure(GinkgoWriter)
+
+Python service (pytest fixture cleanup):
+
+    if store.flush(timeout=10.0):
+        print("Audit store flushed (all buffered events written)")
+    else:
+        print("Warning: Audit store flush timed out or failed")
+
+    store.close()
+
+BENEFITS:
+- Clean logs: No "connection refused" errors during cleanup
+- Explicit control: Flush timing is deterministic (not dependent on Close())
+- Graceful shutdown: Follows best practices
+- Consistent pattern: All 6 services use same approach
+- +10s to test suite: Acceptable trade-off for clean logs
+
+VALIDATION:
+- No lint errors in any modified files
+- Pattern tested in WE (triage analysis confirmed root cause)
+- All services use BufferedAuditStore with Flush() support
+- Gateway not affected (doesn't use audit store)
+
+TRACEABILITY:
+- Analysis: docs/handoff/WE_DATASTORAGE_CONNECTION_REFUSED_TRIAGE_JAN_04_2026.md
+- Pattern: WE-SHUTDOWN-001, AA-SHUTDOWN-001, SP-SHUTDOWN-001, RO-SHUTDOWN-001, NT-SHUTDOWN-001, HAPI-SHUTDOWN-001
+- Authority: Graceful shutdown best practices for buffered systems
+

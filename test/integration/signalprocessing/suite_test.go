@@ -607,12 +607,27 @@ var _ = AfterSuite(func() {
 	}
 
 	// Clean up audit infrastructure (BR-SP-090)
-	if auditStore != nil {
-		GinkgoWriter.Println("🧹 Closing audit store...")
-		err := auditStore.Close()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
-		}
+	// SP-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+	// This prevents "connection refused" errors during cleanup when the
+	// background writer tries to flush buffered events after DataStorage is stopped.
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	GinkgoWriter.Println("🧹 Flushing audit store before infrastructure shutdown...")
+	
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
+
+	err = auditStore.Close()
+	if err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
 	}
 
 	// Stop testEnv if it was created
@@ -624,6 +639,7 @@ var _ = AfterSuite(func() {
 	}
 
 	// DD-TEST-002: Stop infrastructure using programmatic Go setup (NOT podman-compose)
+	// SP-SHUTDOWN-001: Safe to stop now - audit events already flushed
 	By("Stopping SignalProcessing infrastructure (programmatic Podman)")
 	if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
 		GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
