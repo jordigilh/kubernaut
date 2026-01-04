@@ -174,6 +174,10 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			h.setRetryCount(analysis, 0)
 			// DD-AUDIT-003: Record phase transition if phase changed
 			if analysis.Status.Phase != oldPhase {
+				h.log.Info("🔍 [AA-BUG-001 DEBUG] Investigating handler recording phase transition",
+					"from", string(oldPhase),
+					"to", string(analysis.Status.Phase),
+					"auditClientNil", h.auditClient == nil)
 				h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
 			}
 		}

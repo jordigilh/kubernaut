@@ -96,6 +96,15 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
+		// AA-BUG-004: EARLY PHASE CHECK - Verify phase BEFORE AtomicStatusUpdate
+		// This prevents duplicate handler execution when multiple reconciles are queued
+		// Check against the phase from Reconcile() line 152, not after refetch
+		if analysis.Status.Phase != PhaseInvestigating {
+			log.Info("Phase already changed before handler, skipping",
+				"expected", PhaseInvestigating, "actual", analysis.Status.Phase)
+			return ctrl.Result{}, nil
+		}
+
 		// Capture phase before handler for requeue detection
 		var phaseBefore string
 		var result ctrl.Result
@@ -165,6 +174,15 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.AnalyzingHandler != nil {
+		// AA-BUG-004: EARLY PHASE CHECK - Verify phase BEFORE AtomicStatusUpdate
+		// This prevents duplicate handler execution when multiple reconciles are queued
+		// Check against the phase from Reconcile() line 152, not after refetch
+		if analysis.Status.Phase != PhaseAnalyzing {
+			log.Info("Phase already changed before handler, skipping",
+				"expected", PhaseAnalyzing, "actual", analysis.Status.Phase)
+			return ctrl.Result{}, nil
+		}
+
 		// Capture phase before handler for requeue detection
 		var phaseBefore string
 		var result ctrl.Result

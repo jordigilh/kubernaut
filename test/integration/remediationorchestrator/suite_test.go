@@ -68,7 +68,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	// Import RO controller
-	"github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
+	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
 	// Import audit infrastructure (ADR-032)
@@ -95,6 +95,7 @@ var (
 	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
+	auditStore audit.AuditStore
 )
 
 func TestRemediationOrchestratorIntegration(t *testing.T) {
@@ -231,7 +232,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		BatchSize:     5,
 		MaxRetries:    3,
 	}
-	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
+	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create audit store - ensure DataStorage is running at http://localhost:18140")
 
 	By("Initializing RemediationOrchestrator metrics (DD-METRICS-001)")
@@ -463,7 +464,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// RO-SHUTDOWN-001: Safe to stop now - audit events already flushed
 	By("Stopping RO integration infrastructure")
-	err := infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
+	err = infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Cleaning up infrastructure images to prevent disk space issues (DD-TEST-001 v1.1)")

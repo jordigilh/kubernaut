@@ -84,7 +84,7 @@ var (
 	k8sClient          client.Client
 	k8sManager         ctrl.Manager
 	dataStorageBaseURL string                                         = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
-	realAuditStore     audit.AuditStore                                                                                                                 // REAL audit store (DD-AUDIT-003 compliance)
+	auditStore         audit.AuditStore                                                                                                                 // REAL audit store (DD-AUDIT-003 compliance)
 	reconciler         *workflowexecution.WorkflowExecutionReconciler                                                                                   // Controller instance for metrics access
 )
 
@@ -202,7 +202,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 
 	// Create REAL buffered audit store (Defense-in-Depth Layer 4)
-	realAuditStore, err = audit.NewBufferedStore(
+	auditStore, err = audit.NewBufferedStore(
 		dsClient,
 		audit.DefaultConfig(),
 		"workflowexecution-controller",
@@ -226,7 +226,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	statusManager := westatus.NewManager(k8sManager.GetClient())
 
 	// Initialize audit manager (P3: Audit Manager pattern)
-	auditManager := weaudit.NewManager(realAuditStore, ctrl.Log.WithName("audit"))
+	auditManager := weaudit.NewManager(auditStore, ctrl.Log.WithName("audit"))
 
 	reconciler = &workflowexecution.WorkflowExecutionReconciler{
 		Client:                 k8sManager.GetClient(),
@@ -238,10 +238,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		BaseCooldownPeriod:     DefaultBaseCooldownPeriod,
 		MaxCooldownPeriod:      DefaultMaxCooldownPeriod,
 		MaxConsecutiveFailures: DefaultMaxConsecutiveFailures,
-		AuditStore:             realAuditStore, // REAL audit store for integration tests
-		Metrics:                testMetrics,    // Test-isolated metrics (DD-METRICS-001)
-		StatusManager:          statusManager,  // DD-PERF-001: Atomic status updates
-		AuditManager:           auditManager,   // P3: Audit Manager pattern
+		AuditStore:             auditStore,    // REAL audit store for integration tests
+		Metrics:                testMetrics,   // Test-isolated metrics (DD-METRICS-001)
+		StatusManager:          statusManager, // DD-PERF-001: Atomic status updates
+		AuditManager:           auditManager,  // P3: Audit Manager pattern
 	}
 	err = reconciler.SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -284,7 +284,7 @@ var _ = AfterSuite(func() {
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer flushCancel()
 
-	err := realAuditStore.Flush(flushCtx)
+	err := auditStore.Flush(flushCtx)
 	if err != nil {
 		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit store: %v\n", err)
 	} else {
@@ -292,7 +292,7 @@ var _ = AfterSuite(func() {
 	}
 
 	By("Closing audit store")
-	err = realAuditStore.Close()
+	err = auditStore.Close()
 	if err != nil {
 		GinkgoWriter.Printf("⚠️  Warning: Failed to close audit store: %v\n", err)
 	} else {
@@ -301,7 +301,7 @@ var _ = AfterSuite(func() {
 
 	cancel()
 
-	err := testEnv.Stop()
+	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Stopping DataStorage infrastructure (DD-TEST-002)")

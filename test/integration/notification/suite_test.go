@@ -434,7 +434,7 @@ var _ = AfterSuite(func() {
 
 	cancel()
 
-	err := testEnv.Stop()
+	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
 	if skipCleanup {
