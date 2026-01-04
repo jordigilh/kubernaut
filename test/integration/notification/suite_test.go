@@ -385,27 +385,25 @@ var _ = AfterSuite(func() {
 	// NT-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
 	// This prevents "connection refused" errors during cleanup when the
 	// background writer tries to flush buffered events after DataStorage is stopped.
-	// Note: realAuditStore should never be nil in integration tests (DD-TESTING-001)
-	if realAuditStore != nil {
-		By("Flushing audit store before infrastructure shutdown")
-		
-		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer flushCancel()
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	By("Flushing audit store before infrastructure shutdown")
+	
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
 
-		err := realAuditStore.Flush(flushCtx)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit store: %v\n", err)
-		} else {
-			GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
-		}
+	err := realAuditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
 
-		By("Closing audit store")
-		err = realAuditStore.Close()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Failed to close audit store: %v\n", err)
-		} else {
-			GinkgoWriter.Println("✅ Audit store closed")
-		}
+	By("Closing audit store")
+	err = realAuditStore.Close()
+	if err != nil {
+		GinkgoWriter.Printf("⚠️  Warning: Failed to close audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
 	}
 
 	if mockSlackServer != nil {
