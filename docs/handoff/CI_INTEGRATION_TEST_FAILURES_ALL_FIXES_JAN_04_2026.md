@@ -73,7 +73,7 @@
 + // DD-TESTING-001 Pattern 4: Use Equal(N) for exact expected count
 + Expect(eventTypeCounts[aiaudit.EventTypePhaseTransition]).To(Equal(3),
 +     "BR-AI-050: MUST emit exactly 3 phase transitions")
-+ 
++
 + // DD-TESTING-001 Pattern 5: Validate structured event_data fields
 + phaseTransitions := make(map[string]bool)
 + for _, event := range events {
@@ -92,7 +92,7 @@
 
 **Rationale**:
 - AI Analysis implementation uses `old_phase`/`new_phase` field names (per `pkg/aianalysis/audit/event_types.go:54-57`)
-- DD-TESTING-001 Pattern 4 requires deterministic count validation using `Equal(N)`, not `BeNumerically(">=")` 
+- DD-TESTING-001 Pattern 4 requires deterministic count validation using `Equal(N)`, not `BeNumerically(">=")`
 - DD-TESTING-001 Pattern 5 requires structured event_data field validation
 - Correcting field names + restoring DD-TESTING-001 compliance
 

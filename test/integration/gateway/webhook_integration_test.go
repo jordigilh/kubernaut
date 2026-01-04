@@ -107,7 +107,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 		// Cleanup
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 	})
 

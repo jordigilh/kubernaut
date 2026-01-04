@@ -87,7 +87,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 	AfterEach(func() {
 		if server != nil {
-			_ = server.Close()
+			server.Close()
 		}
 
 		// DD-GATEWAY-009: Clean up CRDs after each test to prevent interference

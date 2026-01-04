@@ -192,9 +192,9 @@ Expect(errorMessage).ToNot(BeEmpty(),
 ```
 Lines Changed: ~60 lines
 Violations Fixed: 3
-New Validations Added: 
+New Validations Added:
 - Event type counting (2 places)
-- Exact count assertions (3 places)  
+- Exact count assertions (3 places)
 - Structured event_data validation (1 place)
 Patterns Removed:
 - BeNumerically(">=") for final assertions (2 places)
@@ -217,14 +217,14 @@ Patterns Removed:
 1. **Commit these fixes** with message:
    ```
    fix(test): SP audit tests DD-TESTING-001 compliance
-   
+
    Violations fixed:
    - Replace BeNumerically(">=") with Equal() for event counts
    - Add event type counting for deterministic validation
    - Replace weak null-testing with structured field validation
-   
+
    Per DD-TESTING-001 mandatory patterns (lines 256-334).
-   
+
    Related: CI run 20687479052 (phase transition test timeout)
    ```
 

@@ -54,7 +54,7 @@ var _ = Describe("Observability Integration Tests", func() {
 
 	AfterEach(func() {
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 		if cancel != nil {
 			cancel()

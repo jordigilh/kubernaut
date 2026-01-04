@@ -168,7 +168,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 	AfterEach(func() {
 		if server != nil {
-			_ = server.Close()
+			server.Close()
 		}
 	})
 

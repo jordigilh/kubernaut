@@ -31,7 +31,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 	})
 

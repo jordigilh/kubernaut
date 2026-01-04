@@ -66,7 +66,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 	AfterEach(func() {
 		// Cleanup server
 		if server != nil {
-			_ = server.Close()
+			server.Close()
 		}
 
 		// Cleanup resources in namespace (but keep namespace alive for next test)

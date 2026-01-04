@@ -124,3 +124,4 @@ echo "✓ All automatic fixes applied!"
 echo "Note: Files with json.Decoder.Decode() errors need manual review:"
 echo "  - test/e2e/datastorage/08_workflow_search_edge_cases_test.go (lines 445, 474)"
 
+

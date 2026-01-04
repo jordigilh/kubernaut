@@ -75,7 +75,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 	AfterEach(func() {
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 		if cancel != nil {
 			cancel()

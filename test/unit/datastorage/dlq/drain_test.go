@@ -91,12 +91,12 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 
 	AfterEach(func() {
 		cancel()
-		if redisClient != nil {
-			_ = redisClient.Close()
-		}
-		if miniRedis != nil {
-			_ = miniRedis.Close()
-		}
+	if redisClient != nil {
+		_ = redisClient.Close()
+	}
+	if miniRedis != nil {
+		miniRedis.Close()
+	}
 	})
 
 	Context("DrainWithTimeout method", func() {
