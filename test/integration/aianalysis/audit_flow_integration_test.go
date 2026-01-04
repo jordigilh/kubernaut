@@ -328,16 +328,20 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			Expect(eventTypeCounts[aiaudit.EventTypeAnalysisCompleted]).To(Equal(1),
 				"Should have exactly 1 analysis completion event")
 
-			// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
-			// Per DD-AUDIT-003: AIAnalysis emits exactly these events per successful workflow:
-			// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
-			// - 1 HolmesGPT API call (during investigation)
-			// - 1 Rego evaluation (policy check)
-			// - 1 Approval decision (auto-approval or manual review)
-			// - 1 Analysis completion
-			// Total: 7 events (deterministic)
-			Expect(len(events)).To(Equal(7),
-				"Complete workflow should generate exactly 7 audit events: 3 phase transitions + 1 HolmesGPT + 1 Rego + 1 approval + 1 completion")
+		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
+		// Per DD-AUDIT-003: Complete workflow audit trail includes:
+		// AIAnalysis Controller events:
+		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
+		// - 1 HolmesGPT API call metadata (holmesgpt.call)
+		// - 1 Rego evaluation (policy check)
+		// - 1 Approval decision (auto-approval or manual review)
+		// - 1 Analysis completion
+		// HolmesGPT-API events (BR-AUDIT-005 + ADR-032 §1):
+		// - 1 LLM request (llm_request) - HAPI audit of external LLM call
+		// Total: 8 events (deterministic, end-to-end audit trail)
+		// Note: Integration test validates COMPLETE audit trail using correlation_id
+		Expect(len(events)).To(Equal(8),
+			"Complete workflow should generate exactly 8 audit events: 3 phase transitions + 1 HolmesGPT metadata + 1 LLM request (HAPI) + 1 Rego + 1 approval + 1 completion")
 		})
 	})
 

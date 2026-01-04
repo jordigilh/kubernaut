@@ -153,6 +153,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if currentPhase == "" {
 		// Initialize phase to Pending on first reconciliation
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
+		phaseBefore := currentPhase // empty string
 		currentPhase = PhasePending
 		analysis.Status.Phase = PhasePending
 		analysis.Status.Message = "AIAnalysis created"
@@ -160,6 +161,13 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			log.Error(err, "Failed to initialize phase to Pending")
 			return ctrl.Result{}, err
 		}
+		
+		// DD-AUDIT-003: Record phase transition for initialization (AA-BUG-001 fix)
+		// This records the "" → "Pending" transition
+		if r.AuditClient != nil {
+			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, PhasePending)
+		}
+		
 		// Requeue to process Pending phase
 		return ctrl.Result{Requeue: true}, nil
 	}
