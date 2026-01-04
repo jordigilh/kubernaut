@@ -35,7 +35,7 @@ The `test-suite-summary` job was trying to check individual integration job resu
 # BEFORE (BROKEN):
 for job in signalprocessing aianalysis workflowexecution remediationorchestrator gateway datastorage notification holmesgpt-api; do
   integration_result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${job}\".result")
-  
+
   if [ "$integration_result" == "failure" ]; then
     echo "❌ Integration tests failed for ${job}"
     FAILED=1

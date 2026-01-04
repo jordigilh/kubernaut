@@ -20,7 +20,7 @@ limitations under the License.
 //
 // This package defines 10+ Prometheus metrics to monitor:
 // - Write operation performance and success rates
-// - Dual-write coordination (PostgreSQL + Vector DB)
+// - Fallback mode operations
 // - Embedding generation and caching
 // - Query operation performance
 // - Validation failures
@@ -49,10 +49,8 @@ const (
 	MetricNameWriteTotal    = "datastorage_write_total"
 	MetricNameWriteDuration = "datastorage_write_duration_seconds"
 
-	// Dual-write coordination metrics
-	MetricNameDualWriteSuccess = "datastorage_dualwrite_success_total"
-	MetricNameDualWriteFailure = "datastorage_dualwrite_failure_total"
-	MetricNameFallbackMode     = "datastorage_fallback_mode_total"
+	// Fallback mode metrics
+	MetricNameFallbackMode = "datastorage_fallback_mode_total"
 
 	// Audit write API metrics (GAP-10)
 	MetricNameAuditTracesTotal = "datastorage_audit_traces_total"
@@ -109,39 +107,11 @@ var (
 	)
 )
 
-// Dual-write coordination metrics
-// BR-STORAGE-002, BR-STORAGE-014, BR-STORAGE-015
+// Fallback mode metrics
+// BR-STORAGE-015: Graceful degradation during DLQ operations
 
 var (
-	// DualWriteSuccess tracks successful dual-write operations (PostgreSQL + Vector DB).
-	//
-	// Example Prometheus query:
-	//   rate(datastorage_dualwrite_success_total[5m])
-	DualWriteSuccess = promauto.NewCounter(
-		prometheus.CounterOpts{
-			Name: MetricNameDualWriteSuccess, // DD-005 V3.0: Pattern B (full name),
-			Help: "Total number of successful dual-write operations",
-		},
-	)
-
-	// DualWriteFailure tracks failed dual-write operations with failure reason.
-	//
-	// Labels:
-	//   - reason: Failure reason (postgresql_failure, vectordb_failure, validation_failure)
-	//
-	// Example Prometheus query:
-	//   rate(datastorage_dualwrite_failure_total[5m]) by (reason)
-	DualWriteFailure = promauto.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: MetricNameDualWriteFailure, // DD-005 V3.0: Pattern B (full name),
-			Help: "Total number of failed dual-write operations by reason",
-		},
-		[]string{"reason"},
-	)
-
 	// FallbackModeTotal tracks PostgreSQL-only fallback operations.
-	//
-	// BR-STORAGE-015: Graceful degradation when Vector DB is unavailable
 	//
 	// Example Prometheus query:
 	//   rate(datastorage_fallback_mode_total[5m])
@@ -291,11 +261,9 @@ var (
 
 // Metrics Summary:
 //
-// Total Metrics: 11
+// Total Metrics: 9
 // - WriteTotal (Counter with labels)
 // - WriteDuration (Histogram with labels)
-// - DualWriteSuccess (Counter)
-// - DualWriteFailure (Counter with labels)
 // - FallbackModeTotal (Counter)
 // - CacheHits (Counter)
 // - CacheMisses (Counter)
@@ -305,7 +273,7 @@ var (
 // - QueryTotal (Counter with labels)
 //
 // Performance Target: < 5% overhead
-// BR Coverage: BR-STORAGE-001, 002, 007, 008, 009, 010, 011, 012, 013, 014, 015, 019
+// BR Coverage: BR-STORAGE-001, 002, 007, 008, 009, 010, 011, 012, 013, 015, 019
 //
 // ⚠️ CRITICAL: Label Value Guidelines for Cardinality Protection
 //
@@ -324,17 +292,15 @@ var (
 //   - Dynamic strings: fmt.Sprintf("error_%d", i) // ❌ Unlimited cardinality
 //
 // ✅ CORRECT EXAMPLES:
-//   metrics.DualWriteFailure.WithLabelValues(metrics.ReasonPostgreSQLFailure).Inc()
 //   metrics.ValidationFailures.WithLabelValues("name", metrics.ValidationReasonRequired).Inc()
 //   metrics.WriteTotal.WithLabelValues(metrics.TableRemediationAudit, metrics.StatusSuccess).Inc()
+//   metrics.FallbackModeTotal.Inc()
 //
 // ❌ INCORRECT EXAMPLES (DO NOT DO THIS):
-//   metrics.DualWriteFailure.WithLabelValues(err.Error()).Inc() // ❌ High cardinality
 //   metrics.ValidationFailures.WithLabelValues(audit.Name, "error").Inc() // ❌ User input
 //   metrics.WriteTotal.WithLabelValues(tableName, time.Now().String()).Inc() // ❌ Timestamp
 //
-// Current Cardinality: ~78 unique label combinations (SAFE - well under 100 target)
-// - Dual-write failures: 6 values
+// Current Cardinality: ~72 unique label combinations (SAFE - well under 100 target)
 // - Validation failures: 60 combinations (10 fields × 6 reasons)
 // - Write operations: 8 combinations (4 tables × 2 statuses)
 // - Query operations: 4 values
