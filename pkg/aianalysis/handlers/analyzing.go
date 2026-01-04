@@ -92,10 +92,8 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
 
-		// DD-AUDIT-003: Record phase transition if phase changed
-		if analysis.Status.Phase != oldPhase {
-			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
-		}
+		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
 		return ctrl.Result{}, nil
 	}
 
@@ -129,10 +127,8 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		// Set AnalysisComplete=False condition
 		aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
 
-		// DD-AUDIT-003: Record phase transition if phase changed
-		if analysis.Status.Phase != oldPhase {
-			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
-		}
+		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
 		return ctrl.Result{}, nil
 	}
 
@@ -215,9 +211,10 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Message = "Analysis complete"
 
-	// DD-AUDIT-003: Record phase transition and analysis completion when transitioning to Completed
+	// DD-AUDIT-003: Record analysis completion when transitioning to Completed
+	// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+	// Handler should NOT record phase transition to avoid duplicates (follows InvestigatingHandler pattern)
 	if analysis.Status.Phase != oldPhase {
-		h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
 		// AA-BUG-006: Record analysis.completed here (on transition), not in recordPhaseMetrics
 		// This ensures it's only recorded ONCE when transitioning TO Completed, not on every reconcile
 		h.auditClient.RecordAnalysisComplete(ctx, analysis)
