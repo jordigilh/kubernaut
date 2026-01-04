@@ -513,7 +513,7 @@ func deleteTestNamespace(ns string) {
 }
 
 // waitForRRPhase waits for a RemediationRequest to reach a specific phase.
-func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration) error {
+func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration) error { //nolint:unused
 	return wait.PollImmediate(interval, timeout, func() (bool, error) {
 		rr := &remediationv1.RemediationRequest{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr)
@@ -525,7 +525,7 @@ func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration
 }
 
 // waitForChildCRD waits for a child CRD to be created by RO.
-func waitForChildCRD(name, namespace string, obj client.Object, timeout time.Duration) error {
+func waitForChildCRD(name, namespace string, obj client.Object, timeout time.Duration) error { //nolint:unused
 	return wait.PollImmediate(interval, timeout, func() (bool, error) {
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj)
 		if err != nil {
@@ -574,7 +574,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 }
 
 // updateAIAnalysisStatus updates the AIAnalysis status to simulate completion.
-func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aianalysisv1.SelectedWorkflow) error {
+func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aianalysisv1.SelectedWorkflow) error { //nolint:unused
 	ai := &aianalysisv1.AIAnalysis{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, ai); err != nil {
 		return err
@@ -633,7 +633,7 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 
 // createSignalProcessingCRD manually creates a SignalProcessing CRD for a RemediationRequest.
 // Used in Phase 1 integration tests where child controllers are not running.
-func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRequest) *signalprocessingv1.SignalProcessing {
+func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRequest) *signalprocessingv1.SignalProcessing { //nolint:unused
 	return &signalprocessingv1.SignalProcessing{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sp-" + rr.Name,
@@ -680,7 +680,7 @@ func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRe
 
 // createAIAnalysisCRD manually creates an AIAnalysis CRD for a RemediationRequest.
 // Used in Phase 1 integration tests where child controllers are not running.
-func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest) *aianalysisv1.AIAnalysis {
+func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest) *aianalysisv1.AIAnalysis { //nolint:unused
 	return &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ai-" + rr.Name,
@@ -726,7 +726,7 @@ func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest)
 
 // createWorkflowExecutionCRD manually creates a WorkflowExecution CRD for a RemediationRequest.
 // Used in Phase 1 integration tests where child controllers are not running.
-func createWorkflowExecutionCRD(namespace string, rr *remediationv1.RemediationRequest, workflowID string) *workflowexecutionv1.WorkflowExecution {
+func createWorkflowExecutionCRD(namespace string, rr *remediationv1.RemediationRequest, workflowID string) *workflowexecutionv1.WorkflowExecution { //nolint:unused
 	return &workflowexecutionv1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "wfe-" + rr.Name + "-",

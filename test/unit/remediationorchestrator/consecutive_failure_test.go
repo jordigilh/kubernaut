@@ -552,7 +552,7 @@ func createBlockedRR(ctx context.Context, c client.Client, namespace, fingerprin
 }
 
 // stringPtr returns a pointer to a string.
-func stringPtr(s string) *string {
+func stringPtr(s string) *string { //nolint:unused
 	return &s
 }
 

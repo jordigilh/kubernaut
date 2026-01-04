@@ -597,7 +597,7 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath string, writer i
 }
 
 // waitForNotificationControllerReady waits for the Notification Controller pod to become ready
-func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	timeout := 60 * time.Second
 	interval := 2 * time.Second
 	deadline := time.Now().Add(timeout)
@@ -648,7 +648,7 @@ func DeployNotificationDataStorageServices(ctx context.Context, namespace, kubec
 // Notification E2E tests use a different port (30090) than other services (30081)
 // per kind-notification-config.yaml extraPortMappings
 // DEPRECATED: Use DeployNotificationDataStorageServices instead
-func deployDataStorageServiceForNotification(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func deployDataStorageServiceForNotification(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return err

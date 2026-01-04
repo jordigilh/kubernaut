@@ -456,7 +456,7 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 }
 
 // getPipelineRun gets a PipelineRun by name
-func getPipelineRun(name, namespace string) (*tektonv1.PipelineRun, error) {
+func getPipelineRun(name, namespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
 	pr := &tektonv1.PipelineRun{}
 	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, pr)
 	return pr, err
@@ -479,12 +479,12 @@ func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 }
 
 // completePipelineRun simulates a PipelineRun completing successfully or failing
-func completePipelineRun(pr *tektonv1.PipelineRun, succeeded bool) error {
+func completePipelineRun(pr *tektonv1.PipelineRun, succeeded bool) error { //nolint:unused
 	return simulatePipelineRunCompletion(pr, succeeded)
 }
 
 // failPipelineRunWithReason simulates a PipelineRun failing with a specific reason and message
-func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string) error {
+func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string) error { //nolint:unused
 	pr.Status.InitializeConditions(testClock)
 	pr.Status.SetCondition(&apis.Condition{
 		Type:    apis.ConditionSucceeded,

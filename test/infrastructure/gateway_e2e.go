@@ -650,7 +650,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 // deployDataStorageToCluster is DEPRECATED - replaced by shared deployDataStorage from aianalysis.go
 // See: docs/handoff/DS_TEAM_GATEWAY_E2E_DATASTORAGE_ISSUE.md (Option A)
 // This function is no longer called and will be removed in future cleanup.
-func deployDataStorageToCluster_DEPRECATED(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func deployDataStorageToCluster_DEPRECATED(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	// Deploy using Data Storage's shared deployment function
 	// This is a simplified version - full deployment would include ConfigMap, Secrets, etc.
 	// For now, Gateway E2E tests will use a basic deployment
@@ -805,7 +805,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string,
 
 // waitForDataStorageInfraReady waits for PostgreSQL and Redis to be ready
 // This is a simplified version for Gateway E2E tests
-func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	// Wait for PostgreSQL
 	_, _ = fmt.Fprintln(writer, "   Waiting for PostgreSQL...")
 	pgCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,

@@ -2251,7 +2251,7 @@ func (r *Reconciler) getConsecutiveFailureThreshold() int {
 }
 
 // safeStringValue safely dereferences a string pointer.
-func safeStringValue(s *string) string {
+func safeStringValue(s *string) string { //nolint:unused
 	if s == nil {
 		return ""
 	}

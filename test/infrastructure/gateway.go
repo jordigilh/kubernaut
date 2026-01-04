@@ -262,7 +262,7 @@ func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 
 // waitForGatewayHTTPHealth waits for an HTTP health endpoint to respond with 200 OK
 // Pattern: AIAnalysis health check with verbose logging
-func waitForGatewayHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
+func waitForGatewayHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error { //nolint:unused
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 

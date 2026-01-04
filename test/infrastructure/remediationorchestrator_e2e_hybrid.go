@@ -584,7 +584,7 @@ subjects:
 }
 
 // deployRORedis deploys Redis for DataStorage caching
-func deployRORedis(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error {
+func deployRORedis(ctx context.Context, namespace, kubeconfig string, writer io.Writer) error { //nolint:unused
 	_, _ = fmt.Fprintln(writer, "   Deploying Redis...")
 
 	manifest := `

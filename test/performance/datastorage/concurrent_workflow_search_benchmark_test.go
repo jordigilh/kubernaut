@@ -232,7 +232,7 @@ var _ = Describe("GAP 5.2: Concurrent Workflow Search Performance", Label("perfo
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT: Execute sustained load (10 QPS for 60s = 600 queries)
-			const duration = 60 * time.Second
+			const duration = 60 * time.Second //nolint:unused
 			const targetQPS = 10
 			const totalQueries = 600
 

@@ -157,7 +157,7 @@ func DeployDataStorageForSignalProcessing(ctx context.Context, kubeconfigPath st
 }
 
 // loadDataStorageImageForSP loads the DataStorage image into the SP Kind cluster
-func loadDataStorageImageForSP(writer io.Writer) error {
+func loadDataStorageImageForSP(writer io.Writer) error { //nolint:unused
 	// Get cluster name - should match what's used in CreateSignalProcessingCluster
 	clusterName := "signalprocessing-e2e"
 
@@ -1901,7 +1901,7 @@ spec:
 }
 
 // applyManifest applies a Kubernetes manifest using kubectl
-func applyManifest(kubeconfigPath, manifest string, writer io.Writer) error {
+func applyManifest(kubeconfigPath, manifest string, writer io.Writer) error { //nolint:unused
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer

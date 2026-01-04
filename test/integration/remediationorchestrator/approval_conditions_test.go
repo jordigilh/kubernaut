@@ -54,14 +54,14 @@ import (
 // ============================================================================
 
 // Helper: Update SignalProcessing to Completed phase
-func updateSPStatusToCompleted(namespace, name string) {
+func updateSPStatusToCompleted(namespace, name string) { //nolint:unused
 	EventuallyWithOffset(1, func() error {
 		return updateSPStatus(namespace, name, signalprocessingv1.PhaseCompleted)
 	}, timeout, interval).Should(Succeed(), "Failed to update SignalProcessing status to Completed")
 }
 
 // Helper: Simulate AIAnalysis completion with low confidence (triggers approval workflow)
-func simulateAICompletionLowConfidence(namespace, name string) {
+func simulateAICompletionLowConfidence(namespace, name string) { //nolint:unused
 	lowConfidenceWorkflow := &aianalysisv1.SelectedWorkflow{
 		WorkflowID:     "test-workflow-1",
 		Version:        "v1.0.0",
@@ -75,7 +75,7 @@ func simulateAICompletionLowConfidence(namespace, name string) {
 }
 
 // Helper: Simulate human approval decision
-func approveRemediationApprovalRequest(namespace, name, approver string) {
+func approveRemediationApprovalRequest(namespace, name, approver string) { //nolint:unused
 	EventuallyWithOffset(1, func() error {
 		rar := &remediationv1.RemediationApprovalRequest{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rar); err != nil {
@@ -93,7 +93,7 @@ func approveRemediationApprovalRequest(namespace, name, approver string) {
 }
 
 // Helper: Simulate human rejection decision
-func rejectRemediationApprovalRequest(namespace, name, approver, reason string) {
+func rejectRemediationApprovalRequest(namespace, name, approver, reason string) { //nolint:unused
 	EventuallyWithOffset(1, func() error {
 		rar := &remediationv1.RemediationApprovalRequest{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rar); err != nil {
@@ -111,7 +111,7 @@ func rejectRemediationApprovalRequest(namespace, name, approver, reason string) 
 }
 
 // Helper: Force RAR expiration by setting RequiredBy in the past
-func forceRARExpiration(namespace, name string) {
+func forceRARExpiration(namespace, name string) { //nolint:unused
 	EventuallyWithOffset(1, func() error {
 		rar := &remediationv1.RemediationApprovalRequest{}
 		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rar); err != nil {

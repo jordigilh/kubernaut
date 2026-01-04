@@ -1169,7 +1169,7 @@ spec:
 	return deployRegoPolicyConfigMap(kubeconfigPath, writer)
 }
 
-func deployHolmesGPTAPI(clusterName, kubeconfigPath string, writer io.Writer) error {
+func deployHolmesGPTAPI(clusterName, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	// Get project root for build context
 	projectRoot := getProjectRoot()
 
@@ -1276,7 +1276,7 @@ spec:
 	return cmd.Run()
 }
 
-func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Writer) error {
+func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	// Get project root for build context
 	projectRoot := getProjectRoot()
 
