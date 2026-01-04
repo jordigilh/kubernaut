@@ -33,7 +33,8 @@ var _ = Describe("HolmesGPT API Integration Infrastructure", func() {
 			// BR-HAPI-250: HAPI requires Data Storage for workflow catalog
 			// DD-INTEGRATION-001 v2.0: Infrastructure set up programmatically via Go
 
-			dataStorageURL := fmt.Sprintf("http://localhost:%d/health", infrastructure.HAPIIntegrationDataStoragePort)
+			// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
+			dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d/health", infrastructure.HAPIIntegrationDataStoragePort)
 
 			By(fmt.Sprintf("Checking Data Storage health at %s", dataStorageURL))
 			client := &http.Client{Timeout: 5 * time.Second}
@@ -59,7 +60,8 @@ var _ = Describe("HolmesGPT API Integration Infrastructure", func() {
 			// Verify Data Storage can connect to PostgreSQL
 			// This is an indirect check via Data Storage health endpoint
 
-			dataStorageURL := fmt.Sprintf("http://localhost:%d/health", infrastructure.HAPIIntegrationDataStoragePort)
+			// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
+			dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d/health", infrastructure.HAPIIntegrationDataStoragePort)
 			client := &http.Client{Timeout: 5 * time.Second}
 
 			resp, err := client.Get(dataStorageURL)

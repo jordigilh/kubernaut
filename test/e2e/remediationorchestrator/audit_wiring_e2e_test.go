@@ -208,7 +208,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			var events []dsgen.AuditEvent
 			var total int
 			var err error
-			
+
 			Eventually(func() int {
 				events, total, err = queryAuditEvents(correlationID)
 				if err != nil {

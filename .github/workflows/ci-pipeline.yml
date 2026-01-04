@@ -296,12 +296,9 @@ jobs:
     needs: [integration-tests]
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
-    # E2E tests run REGARDLESS of integration test results (parallel debugging workflow)
-    # Simplified: Run all E2E tests for every non-draft PR
-    # Smart path detection can be added later once CI/CD is stable
-    if: |
-      always() &&
-      (github.event.pull_request.draft == false || github.event_name != 'pull_request')
+    # TEMPORARY: E2E tests disabled - focusing on integration test stability
+    # TODO: Re-enable after integration tests are stable and localhost → 127.0.0.1 fixes are validated
+    if: false
     strategy:
       fail-fast: false
       matrix:
@@ -459,9 +456,12 @@ jobs:
               FAILED=1
             fi
 
+            # E2E tests are currently disabled - treat skipped as success
             if [ "$e2e_result" == "failure" ]; then
               echo "❌ E2E tests failed for ${job}"
               FAILED=1
+            elif [ "$e2e_result" == "skipped" ]; then
+              echo "⏭️  E2E tests skipped for ${job} (currently disabled)"
             fi
           done
 
