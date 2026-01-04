@@ -225,7 +225,7 @@ nodes:
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpfile.Name())
+	defer func() { _ = os.Remove(tmpfile.Name()) }()
 
 	if _, err := tmpfile.Write([]byte(kindConfig)); err != nil {
 		return err

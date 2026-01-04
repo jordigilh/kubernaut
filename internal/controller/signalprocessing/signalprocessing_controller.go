@@ -353,6 +353,13 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		// DD-005: Track enrichment failure
 		r.Metrics.IncrementProcessingTotal("enriching", "failure")
 		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
+		
+		// BR-SP-090: Emit error audit event before returning (ADR-038: non-blocking)
+		// Test: audit_integration_test.go:761 expects error.occurred OR signal.processed
+		if r.AuditClient != nil {
+			r.AuditClient.RecordError(ctx, sp, "Enriching", err)
+		}
+		
 		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
 	}
 
