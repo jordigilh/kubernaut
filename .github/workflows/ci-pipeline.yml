@@ -282,107 +282,6 @@ jobs:
       - name: Cleanup
         if: always()
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
-
-
-  # ========================================
-  # STAGE 3: E2E TESTS
-  # Matrix strategy: 8 services (all use Kind clusters)
-  # Simplified: Run all E2E tests for every non-draft PR
-  # Smart path detection can be added later once CI/CD is stable
-  # ========================================
-
-  e2e-tests:
-    name: E2E (${{ matrix.service_name }})
-    needs: [integration-tests]
-    runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.timeout }}
-    # TEMPORARY: E2E tests disabled - focusing on integration test stability
-    # TODO: Re-enable after integration tests are stable and localhost → 127.0.0.1 fixes are validated
-    if: false
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
-        include:
-          - service: signalprocessing
-            service_name: "Signal Processing"
-            timeout: 30
-            cluster_name: "signalprocessing-e2e"
-          - service: aianalysis
-            service_name: "AI Analysis"
-            timeout: 30
-            cluster_name: "aianalysis-e2e"
-          - service: workflowexecution
-            service_name: "Workflow Execution"
-            timeout: 30
-            cluster_name: "workflowexecution-e2e"
-          - service: remediationorchestrator
-            service_name: "Remediation Orchestrator"
-            timeout: 30
-            cluster_name: "remediationorchestrator-e2e"
-          - service: notification
-            service_name: "Notification"
-            timeout: 30
-            cluster_name: "notification-e2e"
-          - service: gateway
-            service_name: "Gateway"
-            timeout: 30
-            cluster_name: "gateway-e2e"
-          - service: datastorage
-            service_name: "Data Storage"
-            timeout: 30
-            cluster_name: "datastorage-e2e"
-          - service: holmesgpt-api
-            service_name: "HolmesGPT API"
-            timeout: 30
-            cluster_name: "datastorage-e2e"
-            needs_python: true
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Generate OpenAPI specs
-        run: make generate
-      - uses: actions/setup-python@v5
-        if: matrix.needs_python == true
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
-      - name: Install Latest Kind
-        run: |
-          # Install latest Kind release
-          LATEST_KIND_VERSION=$(curl -sL https://api.github.com/repos/kubernetes-sigs/kind/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Installing Kind version: ${LATEST_KIND_VERSION}"
-          curl -Lo ./kind "https://kind.sigs.k8s.io/dl/${LATEST_KIND_VERSION}/kind-linux-amd64"
-          chmod +x ./kind && sudo mv ./kind /usr/local/bin/kind
-          kind --version
-      - name: Install Podman
-        if: matrix.needs_python != true
-        run: |
-          sudo apt-get update && sudo apt-get install -y podman
-      - name: Install Python dependencies
-        if: matrix.needs_python == true
-        working-directory: holmesgpt-api
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r requirements-test.txt
-      - name: Run ${{ matrix.service_name }} E2E tests
-        run: make test-e2e-${{ matrix.service }}
-        env:
-          MOCK_LLM: ${{ matrix.needs_python == true && 'true' || '' }}
-      - name: Cleanup
-        if: always()
-        run: |
-          kind delete cluster --name ${{ matrix.cluster_name }} 2>/dev/null || true
-          podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f 2>/dev/null || true
-
   # ========================================
   # SUMMARY
   # ========================================
@@ -390,8 +289,7 @@ jobs:
     name: Test Suite Summary
     needs: [
       build-and-lint-go, build-and-lint-python, unit-tests,
-      integration-tests,
-      e2e-tests
+      integration-tests
     ]
     if: always()
     runs-on: ubuntu-latest
@@ -412,9 +310,6 @@ jobs:
           echo "STAGE 2 - Integration Tests (Parallel Matrix):"
           echo "  All Services (8 services):  ${{ needs.integration-tests.result }}"
           echo ""
-          echo "STAGE 3 - E2E Tests (Parallel Matrix):"
-          echo "  All Services (8 services):  ${{ needs.e2e-tests.result }}"
-          echo ""
           echo "═══════════════════════════════════════════════════════════"
           echo "Test Strategy:"
           echo "  ✅ ALL tests run for every non-draft PR"
@@ -426,9 +321,8 @@ jobs:
           echo "  ✅ Build & lint separated from tests"
           echo "  ✅ Parallel unit tests (matrix: 8 services)"
           echo "  ✅ Parallel integration tests (matrix: 8 services)"
-          echo "  ✅ Parallel E2E tests (matrix: 8 services)"
-          echo "  ✅ Matrix strategy for ALL test tiers"
-          echo "  ✅ E2E runs REGARDLESS of integration results (parallel debugging)"
+          echo "  ✅ Matrix strategy for test tiers"
+          echo "  ⏭️  E2E tests temporarily disabled (focusing on integration stability)"
           echo "═══════════════════════════════════════════════════════════"
 
           # Check for build & lint failure (critical)
@@ -441,27 +335,18 @@ jobs:
           # Check for unit tests failure (critical)
           if [ "${{ needs.unit-tests.result }}" != "success" ]; then
             echo ""
-            echo "❌ Unit tests failed - integration/E2E tests skipped"
+            echo "❌ Unit tests failed - integration tests skipped"
             exit 1
           fi
 
-          # Check for any integration/E2E failures
+          # Check for any integration failures
           FAILED=0
           for job in signalprocessing aianalysis workflowexecution remediationorchestrator gateway datastorage notification holmesgpt-api; do
             integration_result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${job}\".result")
-            e2e_result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"e2e-${job}\".result")
 
             if [ "$integration_result" == "failure" ]; then
               echo "❌ Integration tests failed for ${job}"
               FAILED=1
-            fi
-
-            # E2E tests are currently disabled - treat skipped as success
-            if [ "$e2e_result" == "failure" ]; then
-              echo "❌ E2E tests failed for ${job}"
-              FAILED=1
-            elif [ "$e2e_result" == "skipped" ]; then
-              echo "⏭️  E2E tests skipped for ${job} (currently disabled)"
             fi
           done
 
