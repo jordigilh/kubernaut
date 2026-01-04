@@ -80,7 +80,7 @@
 Result: 74 Passed | 1 Failed | 6 Skipped
 ```
 
-**Root Cause**: 
+**Root Cause**:
 - Timeout in audit phase transition test (line 645)
 - Test was waiting for phase transition events from Data Storage
 - 120s timeout insufficient for CI/CD environment
