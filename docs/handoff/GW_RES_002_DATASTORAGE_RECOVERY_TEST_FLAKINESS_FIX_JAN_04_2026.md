@@ -207,7 +207,7 @@ Ran 120 of 120 Specs in 114.580 seconds - SUCCESS
 It("test description", FlakeAttempts(3), func() {
     // NOTE: FlakeAttempts(3) - Explain why (cache sync, timing, etc.)
     // Reference analysis document
-    
+
     // Test implementation...
 })
 ```

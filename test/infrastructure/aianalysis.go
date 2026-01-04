@@ -1487,8 +1487,8 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
+	defer func() { _ = tmpFile.Close() }()
 
 	// Save image with podman (imageName already includes localhost/ prefix)
 	_, _ = fmt.Fprintf(writer, "  Exporting image %s...\n", imageName)

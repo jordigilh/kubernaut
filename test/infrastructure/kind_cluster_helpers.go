@@ -101,7 +101,7 @@ func CreateKindClusterWithExtraMounts(
 	if err != nil {
 		return fmt.Errorf("failed to create temp config: %w", err)
 	}
-	defer os.Remove(tmpConfig.Name())
+	defer func() { _ = os.Remove(tmpConfig.Name()) }()
 
 	if _, err := tmpConfig.WriteString(updatedConfig); err != nil {
 		return fmt.Errorf("failed to write temp config: %w", err)
