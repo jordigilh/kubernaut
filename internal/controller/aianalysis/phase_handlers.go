@@ -111,6 +111,14 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			// Capture phase after refetch
 			phaseBefore = analysis.Status.Phase
 
+			// AA-BUG-003: Idempotency check - skip if phase already changed in concurrent reconcile
+			// This prevents duplicate audit events when multiple reconcile loops execute before status propagates
+			if phaseBefore != PhaseInvestigating {
+				log.V(1).Info("Phase already changed in concurrent reconcile, skipping handler",
+					"expected", PhaseInvestigating, "actual", phaseBefore)
+				return nil // No-op, phase already processed by another reconcile loop
+			}
+
 			// Execute handler (modifies analysis.Status in memory after refetch)
 			result, handlerErr = r.InvestigatingHandler.Handle(ctx, analysis)
 			if handlerErr != nil {
@@ -171,6 +179,14 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
 			// Capture phase after refetch
 			phaseBefore = analysis.Status.Phase
+
+			// AA-BUG-003: Idempotency check - skip if phase already changed in concurrent reconcile
+			// This prevents duplicate audit events when multiple reconcile loops execute before status propagates
+			if phaseBefore != PhaseAnalyzing {
+				log.V(1).Info("Phase already changed in concurrent reconcile, skipping handler",
+					"expected", PhaseAnalyzing, "actual", phaseBefore)
+				return nil // No-op, phase already processed by another reconcile loop
+			}
 
 			// Execute handler (modifies analysis.Status in memory after refetch)
 			result, handlerErr = r.AnalyzingHandler.Handle(ctx, analysis)

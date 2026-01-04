@@ -355,3 +355,4 @@ def test_incident_analysis_http_endpoint(hapi_url):
 **Next**: Verify tests pass in CI run
 **Owner**: Applied per user request (Jan 4, 2026)
 
+
