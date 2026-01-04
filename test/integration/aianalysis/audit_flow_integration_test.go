@@ -280,17 +280,24 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				eventTypeCounts[event.EventType]++
 			}
 
-			// DEBUG: Print actual phase transitions to diagnose extra transition
+			// DEBUG: Print actual phase transitions with proper type handling
 			GinkgoWriter.Printf("🔍 DEBUG: Phase transitions found:\n")
+			transitionCount := 0
 			for i, event := range events {
 				if event.EventType == aiaudit.EventTypePhaseTransition {
+					transitionCount++
+					// EventData is interface{}, could be map or struct
+					// Try multiple ways to access the data
 					if eventData, ok := event.EventData.(map[string]interface{}); ok {
 						fromPhase := eventData["from_phase"]
 						toPhase := eventData["to_phase"]
-						GinkgoWriter.Printf("  Transition %d: %v → %v\n", i+1, fromPhase, toPhase)
+						GinkgoWriter.Printf("  Transition %d (event %d): %v → %v\n", transitionCount, i+1, fromPhase, toPhase)
+					} else {
+						GinkgoWriter.Printf("  Transition %d (event %d): [event_data type: %T]\n", transitionCount, i+1, event.EventData)
 					}
 				}
 			}
+			GinkgoWriter.Printf("  Total phase transitions: %d (expected: 3)\n", transitionCount)
 
 			// Validate expected event counts (DD-TESTING-001: Deterministic count validation)
 			// Per DD-TESTING-001 Pattern 4 (lines 256-299): Use Equal(N) for exact expected count
@@ -341,19 +348,25 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				"Should have exactly 1 analysis completion event")
 
 		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
-		// Per DD-AUDIT-003: Complete workflow audit trail includes:
-		// AIAnalysis Controller events:
+		// Per DD-AUDIT-003 + BR-AUDIT-005: Complete end-to-end workflow audit trail includes:
+		//
+		// AIAnalysis Controller events (7):
 		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
 		// - 1 HolmesGPT API call metadata (holmesgpt.call)
 		// - 1 Rego evaluation (policy check)
 		// - 1 Approval decision (auto-approval or manual review)
 		// - 1 Analysis completion
-		// HolmesGPT-API events (BR-AUDIT-005 + ADR-032 §1):
-		// - 1 LLM request (llm_request) - HAPI audit of external LLM call
-		// Total: 8 events (deterministic, end-to-end audit trail)
-		// Note: Integration test validates COMPLETE audit trail using correlation_id
-		Expect(len(events)).To(Equal(8),
-			"Complete workflow should generate exactly 8 audit events: 3 phase transitions + 1 HolmesGPT metadata + 1 LLM request (HAPI) + 1 Rego + 1 approval + 1 completion")
+		//
+		// HolmesGPT-API events (4) - BR-AUDIT-005 + ADR-032 §1 MANDATE complete LLM audit:
+		// - 1 LLM request (llm_request) - Prompt sent to LLM
+		// - 1 LLM tool call (llm_tool_call) - Workflow catalog search
+		// - 1 LLM response (llm_response) - AI analysis received
+		// - 1 Workflow validation (workflow_validation_attempt) - Validation result
+		//
+		// Total: 11 events (deterministic, complete end-to-end audit trail)
+		// Note: Integration test validates COMPLETE audit trail per BR-AUDIT-005
+		Expect(len(events)).To(Equal(11),
+			"Complete workflow generates 11 audit events: 7 AIAnalysis (3 transitions + 1 HolmesGPT + 1 Rego + 1 approval + 1 completion) + 4 HAPI (LLM request + tool call + response + validation)")
 		})
 	})
 
