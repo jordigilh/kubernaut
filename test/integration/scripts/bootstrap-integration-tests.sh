@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Integration Test Bootstrap Script
-# Manages containerized PostgreSQL and Vector Database instances for integration testing
+# Manages containerized PostgreSQL and Redis instances for integration testing
 
 set -euo pipefail
 
@@ -10,7 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../../" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/../docker-compose.integration.yml"
 POSTGRES_CONTAINER="kubernaut-integration-postgres"
-VECTOR_DB_CONTAINER="kubernaut-integration-vectordb"
 REDIS_CONTAINER="kubernaut-integration-redis"
 
 # Connection details
@@ -19,12 +18,6 @@ POSTGRES_PORT="5433"
 POSTGRES_DB="action_history"
 POSTGRES_USER="slm_user"
 POSTGRES_PASSWORD="slm_password_dev"
-
-VECTOR_DB_HOST="localhost"
-VECTOR_DB_PORT="5434"
-VECTOR_DB_NAME="vector_store"
-VECTOR_DB_USER="vector_user"
-VECTOR_DB_PASSWORD="vector_password_dev"
 
 REDIS_HOST="localhost"
 REDIS_PORT="6380"
@@ -304,19 +297,6 @@ verify_setup() {
                  THEN 'INSTALLED' ELSE 'MISSING' END as status;
     " || log_warning "Main database verification failed"
 
-    # Test vector database
-    PGPASSWORD="$VECTOR_DB_PASSWORD" psql -h "$VECTOR_DB_HOST" -p "$VECTOR_DB_PORT" -U "$VECTOR_DB_USER" -d "$VECTOR_DB_NAME" -c "
-        SELECT
-            'Vector DB: embeddings schema' as component,
-            CASE WHEN EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'embeddings')
-                 THEN 'EXISTS' ELSE 'MISSING' END as status
-        UNION ALL
-        SELECT
-            'Vector DB: vector extension' as component,
-            CASE WHEN EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector')
-                 THEN 'INSTALLED' ELSE 'MISSING' END as status;
-    " || log_warning "Vector database verification failed"
-
     log_success "Database setup verification completed"
 }
 
@@ -337,12 +317,10 @@ start_services() {
 
     # Wait for services to be healthy
     wait_for_service "kubernaut-integration-postgres" 90
-    wait_for_service "kubernaut-integration-vectordb" 90
     wait_for_service "kubernaut-integration-redis" 30
 
     # Test database connections
     test_database_connection "$POSTGRES_HOST" "$POSTGRES_PORT" "$POSTGRES_DB" "$POSTGRES_USER" "$POSTGRES_PASSWORD" "PostgreSQL"
-    test_database_connection "$VECTOR_DB_HOST" "$VECTOR_DB_PORT" "$VECTOR_DB_NAME" "$VECTOR_DB_USER" "$VECTOR_DB_PASSWORD" "Vector DB"
 
     # Run migrations
     run_migrations
@@ -391,14 +369,6 @@ show_connection_info() {
     echo "   Password: $POSTGRES_PASSWORD"
     echo "   Connection: postgres://$POSTGRES_USER:$POSTGRES_PASSWORD@$POSTGRES_HOST:$POSTGRES_PORT/$POSTGRES_DB?sslmode=disable"
     echo ""
-    echo "🎯 Vector Database:"
-    echo "   Host: $VECTOR_DB_HOST"
-    echo "   Port: $VECTOR_DB_PORT"
-    echo "   Database: $VECTOR_DB_NAME"
-    echo "   Username: $VECTOR_DB_USER"
-    echo "   Password: $VECTOR_DB_PASSWORD"
-    echo "   Connection: postgres://$VECTOR_DB_USER:$VECTOR_DB_PASSWORD@$VECTOR_DB_HOST:$VECTOR_DB_PORT/$VECTOR_DB_NAME?sslmode=disable"
-    echo ""
     echo "🔄 Redis Cache:"
     echo "   Host: $REDIS_HOST"
     echo "   Port: $REDIS_PORT"
@@ -411,12 +381,6 @@ show_connection_info() {
     echo "   export DB_USER=$POSTGRES_USER"
     echo "   export DB_PASSWORD=$POSTGRES_PASSWORD"
     echo "   export DB_SSL_MODE=disable"
-    echo ""
-    echo "   export VECTOR_DB_HOST=$VECTOR_DB_HOST"
-    echo "   export VECTOR_DB_PORT=$VECTOR_DB_PORT"
-    echo "   export VECTOR_DB_NAME=$VECTOR_DB_NAME"
-    echo "   export VECTOR_DB_USER=$VECTOR_DB_USER"
-    echo "   export VECTOR_DB_PASSWORD=$VECTOR_DB_PASSWORD"
     echo ""
     echo "🚀 Run Integration Tests:"
     echo "   go test ./test/integration/... -tags=integration -v"
