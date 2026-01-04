@@ -73,8 +73,8 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      fmt.Sprintf("concurrent-test-%s-%d", uniqueSuffix, idx),
-							Namespace: testNamespace,
+							Name:       fmt.Sprintf("concurrent-test-%s-%d", uniqueSuffix, idx),
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -144,8 +144,8 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 			for i := 0; i < rapidCount; i++ {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      fmt.Sprintf("rapid-test-%s-%d", uniqueSuffix, i),
-						Namespace: testNamespace,
+						Name:       fmt.Sprintf("rapid-test-%s-%d", uniqueSuffix, i),
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -205,8 +205,8 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      fmt.Sprintf("status-concurrent-%s-%d", uniqueSuffix, idx),
-							Namespace: testNamespace,
+							Name:       fmt.Sprintf("status-concurrent-%s-%d", uniqueSuffix, idx),
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -271,7 +271,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 			// Configure circuit breaker with low threshold for testing
 			// Migrated to github.com/sony/gobreaker via Manager wrapper
 			circuitBreaker := circuitbreaker.NewManager(gobreaker.Settings{
-				MaxRequests: 2,              // Allow 2 test requests in half-open
+				MaxRequests: 2, // Allow 2 test requests in half-open
 				Interval:    10 * time.Second,
 				Timeout:     5 * time.Second, // Transition to half-open after 5s
 				ReadyToTrip: func(counts gobreaker.Counts) bool {
@@ -315,7 +315,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 			// Migrated to github.com/sony/gobreaker via Manager wrapper
 			circuitBreaker := circuitbreaker.NewManager(gobreaker.Settings{
-				MaxRequests: 2,                      // Allow 2 test requests in half-open
+				MaxRequests: 2, // Allow 2 test requests in half-open
 				Interval:    10 * time.Second,
 				Timeout:     100 * time.Millisecond, // Quick transition to half-open for testing
 				ReadyToTrip: func(counts gobreaker.Counts) bool {
