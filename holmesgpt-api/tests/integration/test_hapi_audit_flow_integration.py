@@ -335,7 +335,7 @@ class TestIncidentAnalysisAuditFlow:
             data_storage_url,
             remediation_id,
             min_expected_events=1,  # At least llm_tool_call
-            audit_store=audit_store
+            audit_store=audit_store,
             timeout_seconds=10
         )
         event_types = [e.event_type for e in events]
@@ -386,7 +386,7 @@ class TestIncidentAnalysisAuditFlow:
             data_storage_url,
             remediation_id,
             min_expected_events=1,  # At least workflow_validation_attempt
-            audit_store=audit_store
+            audit_store=audit_store,
             timeout_seconds=10
         )
         event_types = [e.event_type for e in events]
@@ -442,7 +442,7 @@ class TestRecoveryAnalysisAuditFlow:
             data_storage_url,
             remediation_id,
             min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
-            audit_store=audit_store
+            audit_store=audit_store,
             timeout_seconds=10
         )
 
@@ -511,7 +511,7 @@ class TestAuditEventSchemaValidation:
             data_storage_url,
             remediation_id,
             min_expected_events=1,
-            audit_store=audit_store
+            audit_store=audit_store,
             timeout_seconds=10
         )
         assert len(events) > 0, "No audit events found"
