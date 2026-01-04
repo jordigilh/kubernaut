@@ -339,23 +339,18 @@ jobs:
             exit 1
           fi
 
-          # Check for any integration failures
-          FAILED=0
-          for job in signalprocessing aianalysis workflowexecution remediationorchestrator gateway datastorage notification holmesgpt-api; do
-            integration_result=$(echo "${{ toJSON(needs) }}" | jq -r ".\"integration-${job}\".result")
-
-            if [ "$integration_result" == "failure" ]; then
-              echo "❌ Integration tests failed for ${job}"
-              FAILED=1
-            fi
-          done
-
-          if [ $FAILED -eq 0 ]; then
+          # Check for integration tests failure (matrix job)
+          # Note: integration-tests is a single matrix job that runs 8 services
+          # GitHub Actions reports the matrix job result as a whole (fail-fast: false)
+          if [ "${{ needs.integration-tests.result }}" != "success" ]; then
             echo ""
-            echo "✅ All tests passed!"
-            exit 0
-          else
-            echo ""
-            echo "❌ Some tests failed - check individual job logs"
+            echo "❌ Integration tests failed - check individual service logs in the matrix"
+            echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
+            echo "                    remediationorchestrator, gateway, datastorage,"
+            echo "                    notification, holmesgpt-api"
             exit 1
           fi
+
+          echo ""
+          echo "✅ All tests passed!"
+          exit 0
