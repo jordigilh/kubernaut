@@ -155,7 +155,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 		// Cleanup test server
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 	})
 

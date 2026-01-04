@@ -393,7 +393,7 @@ var _ = AfterSuite(func() {
 	}
 
 	if mockSlackServer != nil {
-		_ = mockSlackServer.Close()
+		mockSlackServer.Close()
 		GinkgoWriter.Println("✅ Mock Slack server stopped")
 	}
 

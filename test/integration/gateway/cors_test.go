@@ -51,7 +51,7 @@ var _ = Describe("BR-HTTP-015: Gateway CORS Integration", Label("integration", "
 	AfterEach(func() {
 		// Cleanup
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 		_ = os.Unsetenv("CORS_ALLOWED_ORIGINS")
 		_ = os.Unsetenv("CORS_ALLOWED_METHODS")

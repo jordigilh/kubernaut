@@ -545,7 +545,7 @@ var _ = AfterSuite(func() {
 	// Shutdown in-process test server (only process 1)
 	if processNum == 1 && testServer != nil {
 		GinkgoWriter.Println("🛑 Shutting down in-process server...")
-		_ = testServer.Close()
+		testServer.Close()
 
 		// Gracefully shutdown DataStorage server
 		if dsServer != nil {

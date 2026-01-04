@@ -66,7 +66,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	AfterEach(func() {
 		// Cleanup server
 		if server != nil {
-			_ = server.Close()
+			server.Close()
 		}
 
 		// Cleanup resources in namespace (but keep namespace alive for next test)

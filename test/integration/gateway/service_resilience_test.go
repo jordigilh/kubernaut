@@ -66,7 +66,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	AfterEach(func() {
 		// Cleanup server
 		if server != nil {
-			_ = server.Close()
+			server.Close()
 		}
 
 		// Cleanup resources in namespace (but keep namespace alive for next test)

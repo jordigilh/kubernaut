@@ -44,11 +44,11 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		ctx = context.Background()
 	})
 
-	AfterEach(func() {
-		if server != nil {
-			_ = server.Close()
-		}
-	})
+AfterEach(func() {
+	if server != nil {
+		server.Close()
+	}
+})
 
 	Describe("NewOpenAPIClientAdapter", func() {
 		It("should create adapter with valid parameters", func() {

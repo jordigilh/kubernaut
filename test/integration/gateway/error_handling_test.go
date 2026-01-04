@@ -83,7 +83,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		// Cleanup test server
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 
 		// CRITICAL FIX: Don't delete namespaces during parallel test execution

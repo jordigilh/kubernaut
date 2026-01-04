@@ -261,3 +261,4 @@ cat api/openapi.json | jq '.paths["/api/v1/incident/analyze"].post.operationId'
 **Status**: Triage complete, action plan defined
 **Next**: Implement fixes sequentially (HAPI → AA → SP)
 
+

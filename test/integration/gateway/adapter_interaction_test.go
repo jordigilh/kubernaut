@@ -80,7 +80,7 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 
 	AfterEach(func() {
 		if testServer != nil {
-			_ = testServer.Close()
+			testServer.Close()
 		}
 		if cancel != nil {
 			cancel()
