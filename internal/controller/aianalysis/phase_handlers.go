@@ -21,6 +21,7 @@ import (
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -96,14 +97,25 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
-		// AA-BUG-004: EARLY PHASE CHECK - Verify phase BEFORE AtomicStatusUpdate
+		// AA-BUG-004: FRESH REFETCH - Get latest state before processing
 		// This prevents duplicate handler execution when multiple reconciles are queued
-		// Check against the phase from Reconcile() line 152, not after refetch
-		if analysis.Status.Phase != PhaseInvestigating {
-			log.Info("Phase already changed before handler, skipping",
-				"expected", PhaseInvestigating, "actual", analysis.Status.Phase)
+		// CRITICAL: Must refetch here, not use cached 'analysis' from Reconcile() line 122
+		// because multiple concurrent reconciles may have fetched at the same time
+		fresh := &aianalysisv1.AIAnalysis{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(analysis), fresh); err != nil {
+			log.Error(err, "Failed to refetch AIAnalysis before handler")
+			return ctrl.Result{}, err
+		}
+		
+		// Check the FRESH phase, not the cached one
+		if fresh.Status.Phase != PhaseInvestigating {
+			log.Info("Phase already changed before handler (fresh check), skipping",
+				"expected", PhaseInvestigating, "actual", fresh.Status.Phase)
 			return ctrl.Result{}, nil
 		}
+		
+		// Update analysis pointer to use fresh data for handler
+		analysis = fresh
 
 		// Capture phase before handler for requeue detection
 		var phaseBefore string
@@ -174,14 +186,25 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.AnalyzingHandler != nil {
-		// AA-BUG-004: EARLY PHASE CHECK - Verify phase BEFORE AtomicStatusUpdate
+		// AA-BUG-004: FRESH REFETCH - Get latest state before processing
 		// This prevents duplicate handler execution when multiple reconciles are queued
-		// Check against the phase from Reconcile() line 152, not after refetch
-		if analysis.Status.Phase != PhaseAnalyzing {
-			log.Info("Phase already changed before handler, skipping",
-				"expected", PhaseAnalyzing, "actual", analysis.Status.Phase)
+		// CRITICAL: Must refetch here, not use cached 'analysis' from Reconcile() line 122
+		// because multiple concurrent reconciles may have fetched at the same time
+		fresh := &aianalysisv1.AIAnalysis{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(analysis), fresh); err != nil {
+			log.Error(err, "Failed to refetch AIAnalysis before handler")
+			return ctrl.Result{}, err
+		}
+		
+		// Check the FRESH phase, not the cached one
+		if fresh.Status.Phase != PhaseAnalyzing {
+			log.Info("Phase already changed before handler (fresh check), skipping",
+				"expected", PhaseAnalyzing, "actual", fresh.Status.Phase)
 			return ctrl.Result{}, nil
 		}
+		
+		// Update analysis pointer to use fresh data for handler
+		analysis = fresh
 
 		// Capture phase before handler for requeue detection
 		var phaseBefore string
