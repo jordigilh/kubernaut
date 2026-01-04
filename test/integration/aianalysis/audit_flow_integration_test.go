@@ -90,7 +90,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		namespace = "default"
 
 		// Data Storage URL for audit event queries
-		datastorageURL = "http://localhost:18095" // AIAnalysis integration test DS port (DD-TEST-001)
+		datastorageURL = "http://127.0.0.1:18095" // AIAnalysis integration test DS port (DD-TEST-001, IPv4 explicit)
 
 		// Create Data Storage client for querying audit events
 		var err error

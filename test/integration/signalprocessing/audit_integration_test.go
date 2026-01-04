@@ -69,7 +69,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 	BeforeEach(func() {
 		// DataStorage URL from suite's shared infrastructure (port 18094)
-		dataStorageURL = fmt.Sprintf("http://localhost:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
+		// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2)
+		dataStorageURL = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
 
 		// Verify Data Storage is running
 		healthResp, err := http.Get(dataStorageURL + "/health")
