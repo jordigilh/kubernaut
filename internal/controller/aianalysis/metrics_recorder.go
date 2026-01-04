@@ -63,7 +63,8 @@ func (r *AIAnalysisReconciler) recordPhaseMetrics(ctx context.Context, phase str
 		r.Metrics.RecordFailure(reason, subReason)
 
 		// DD-AUDIT-003: Record error audit event
-		if r.AuditClient != nil && err != nil {
+		// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+		if err != nil {
 			r.AuditClient.RecordError(ctx, analysis, phase, err)
 		}
 	}

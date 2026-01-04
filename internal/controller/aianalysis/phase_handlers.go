@@ -20,8 +20,8 @@ import (
 	"context"
 	"time"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 )
@@ -70,8 +70,14 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 
 	// DD-AUDIT-003: Record phase transition AFTER status update (ensures audit reflects committed state)
 	// IDEMPOTENCY: Only record if phase actually changed (prevents duplicate events in race conditions)
-	if r.AuditClient != nil && phaseBefore != PhaseInvestigating {
+	// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+	log.Info("🔍 [AA-BUG-001 DEBUG] Pending->Investigating transition",
+		"phaseBefore", phaseBefore,
+		"phaseAfter", PhaseInvestigating,
+		"willRecord", phaseBefore != PhaseInvestigating)
+	if phaseBefore != PhaseInvestigating {
 		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, PhaseInvestigating)
+		log.Info("🎯 [AA-BUG-001 DEBUG] Pending->Investigating audit recorded")
 	}
 
 	r.Recorder.Event(analysis, "Normal", "AIAnalysisCreated", "AIAnalysis processing started")
@@ -132,14 +138,19 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 		}
 
 		// Only requeue if handler actually executed and changed phase
+		log.Info("🔍 [AA-BUG-001 DEBUG] After Investigating AtomicStatusUpdate",
+			"handlerExecuted", handlerExecuted,
+			"phaseBefore", phaseBefore,
+			"phaseAfter", analysis.Status.Phase,
+			"phaseChanged", analysis.Status.Phase != phaseBefore)
+		
 		if handlerExecuted && analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
 			
 			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
-			// This is the CORRECT location - after AtomicStatusUpdate has persisted the phase change
-			if r.AuditClient != nil {
-				r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
-			}
+			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+			log.Info("🎯 [AA-BUG-001 DEBUG] Phase transition audit recorded", "from", phaseBefore, "to", analysis.Status.Phase)
 			
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -208,14 +219,19 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		}
 
 		// Only requeue if handler actually executed and changed phase
+		log.Info("🔍 [AA-BUG-001 DEBUG] After Analyzing AtomicStatusUpdate",
+			"handlerExecuted", handlerExecuted,
+			"phaseBefore", phaseBefore,
+			"phaseAfter", analysis.Status.Phase,
+			"phaseChanged", analysis.Status.Phase != phaseBefore)
+		
 		if handlerExecuted && analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
 			
 			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
-			// This is the CORRECT location - after AtomicStatusUpdate has persisted the phase change
-			if r.AuditClient != nil {
-				r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
-			}
+			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+			log.Info("🎯 [AA-BUG-001 DEBUG] Phase transition audit recorded", "from", phaseBefore, "to", analysis.Status.Phase)
 			
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -226,5 +242,3 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 	log.Info("No AnalyzingHandler configured - using stub")
 	return ctrl.Result{}, nil
 }
-
-
