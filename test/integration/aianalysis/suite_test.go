@@ -227,7 +227,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
 	auditLogger := zap.New(zap.WriteTo(GinkgoWriter))
 
-	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
+	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for DD-AUDIT-003")
 	GinkgoWriter.Println("✅ Audit store configured")
 
