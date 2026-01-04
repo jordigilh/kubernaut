@@ -115,38 +115,34 @@ def ensure_openapi_client(request):
 # ========================================
 # Read from environment (set by Go infrastructure or CI)
 # Defaults match test/infrastructure/holmesgpt_integration.go
-HAPI_PORT = int(os.getenv("HAPI_INTEGRATION_PORT", "18120"))
 DATA_STORAGE_PORT = int(os.getenv("DS_INTEGRATION_PORT", "18098"))
 POSTGRES_PORT = int(os.getenv("PG_INTEGRATION_PORT", "15439"))
 REDIS_PORT = int(os.getenv("REDIS_INTEGRATION_PORT", "16387"))
 
 # Service URLs (use 127.0.0.1 to force IPv4, avoid IPv6 resolution issues in CI)
-HAPI_URL = os.getenv("HAPI_URL", f"http://127.0.0.1:{HAPI_PORT}")
 DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://127.0.0.1:{DATA_STORAGE_PORT}")
 
 
 # ========================================
 # PYTEST FIXTURES
 # ========================================
-
-@pytest.fixture(scope="session")
-def hapi_url():
-    """
-    HAPI service URL (started by Go infrastructure).
-
-    Returns:
-        str: HAPI base URL (e.g., http://localhost:18120)
-    """
-    return HAPI_URL
-
+# Architecture Change (Jan 4, 2026):
+# Integration tests call business logic DIRECTLY (no HTTP, no HAPI container)
+# - Go pattern: controller.Reconcile(ctx, req)
+# - Python pattern: analyze_incident(request_data)
+# HTTP API testing deferred to E2E tests (future)
+# ========================================
 
 @pytest.fixture(scope="session")
 def data_storage_url():
     """
     Data Storage service URL (started by Go infrastructure).
 
+    Integration tests use this for audit event validation (external dependency).
+    Tests call HAPI business logic DIRECTLY (no HTTP client needed).
+
     Returns:
-        str: Data Storage base URL (e.g., http://localhost:18098)
+        str: Data Storage base URL (e.g., http://127.0.0.1:18098)
     """
     return DATA_STORAGE_URL
 
@@ -155,6 +151,10 @@ def data_storage_url():
 def hapi_client():
     """
     FastAPI TestClient for HAPI service (in-process).
+
+    NOTE (Jan 4, 2026): Integration tests NO LONGER use this fixture.
+    Integration tests call business logic DIRECTLY (no HTTP client).
+    This fixture is kept for future E2E tests or manual testing.
 
     Architecture Decision (Dec 29, 2025):
     - Integration tests: TestClient (in-process HAPI) ✅
