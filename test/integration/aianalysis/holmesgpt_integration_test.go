@@ -40,7 +40,9 @@ import (
 // - Unit: Mock ✅ | Integration: Mock ✅ | E2E: REAL ❌
 // - Contract validation via ADR-045 + OpenAPI spec
 
-var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"), func() {
+// SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
+// See audit_flow_integration_test.go for detailed rationale.
+var _ = Describe("HolmesGPT-API Integration", Serial, Label("integration", "holmesgpt"), func() {
 	var (
 		mockClient *testutil.MockHolmesGPTClient
 		testCtx    context.Context

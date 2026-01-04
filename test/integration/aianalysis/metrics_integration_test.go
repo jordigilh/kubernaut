@@ -53,7 +53,9 @@ import (
 // Pattern: CREATE CRD → WAIT FOR RECONCILIATION → VERIFY METRICS
 // ========================================
 
-var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
+// SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
+// See audit_flow_integration_test.go for detailed rationale.
+var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
 	var (
 		ctx       context.Context
 		namespace string
