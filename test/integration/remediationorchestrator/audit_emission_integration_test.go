@@ -178,23 +178,25 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
 
-			// Query for phase transition audit event using Eventually (accounts for buffer flush)
-			eventType := "orchestrator.phase.transitioned"
-			var transitionEvent *dsclient.AuditEvent
-			Eventually(func() bool {
-				events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-				// Find the Processing→Analyzing transition
-				for i, e := range events {
-					if e.EventData != nil {
-						eventData, ok := e.EventData.(map[string]interface{})
-						if ok && eventData["from_phase"] == "Processing" && eventData["to_phase"] == "Analyzing" {
-							transitionEvent = &events[i]
-							return true
-						}
+		// Query for phase transition audit event using Eventually (accounts for buffer flush)
+		// Timeout increased to 10s for consistency with other audit event queries (AE-INT-3, AE-INT-4, AE-INT-8)
+		// and to account for audit store flush interval (1s) + network latency + query processing
+		eventType := "orchestrator.phase.transitioned"
+		var transitionEvent *dsclient.AuditEvent
+		Eventually(func() bool {
+			events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+			// Find the Processing→Analyzing transition
+			for i, e := range events {
+				if e.EventData != nil {
+					eventData, ok := e.EventData.(map[string]interface{})
+					if ok && eventData["from_phase"] == "Processing" && eventData["to_phase"] == "Analyzing" {
+						transitionEvent = &events[i]
+						return true
 					}
 				}
-				return false
-			}, "5s", "500ms").Should(BeTrue(), "Expected Processing→Analyzing transition event after buffer flush")
+			}
+			return false
+		}, "10s", "500ms").Should(BeTrue(), "Expected Processing→Analyzing transition event after buffer flush")
 
 			// Validate event
 			Expect(transitionEvent.EventType).To(Equal("orchestrator.phase.transitioned"))
