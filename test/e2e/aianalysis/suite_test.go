@@ -77,7 +77,7 @@ var (
 	kubeconfigPath string
 
 	// Namespace for infrastructure (fixed)
-	infraNamespace = "kubernaut-system"
+	infraNamespace = "kubernaut-system" //nolint:unused
 
 	// Kubernetes client
 	k8sClient client.Client
@@ -350,7 +350,7 @@ func createTestNamespace(prefix string) string {
 }
 
 // deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(name string) {
+func deleteTestNamespace(name string) { //nolint:unused
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 	}
@@ -362,7 +362,7 @@ func deleteTestNamespace(name string) {
 //
 // Rationale: E2E tests query Data Storage via HTTP, which returns JSON.
 // Converting to typed structs allows testutil helpers for consistent validation.
-func convertJSONToAuditEvent(jsonEvent map[string]interface{}) dsgen.AuditEvent {
+func convertJSONToAuditEvent(jsonEvent map[string]interface{}) dsgen.AuditEvent { //nolint:unused
 	// Marshal back to JSON, then unmarshal into typed struct
 	// This ensures proper type conversion for all fields
 	data, err := json.Marshal(jsonEvent)

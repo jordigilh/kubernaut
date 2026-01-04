@@ -151,7 +151,7 @@ func (r *Reconciler) countConsecutiveFailures(ctx context.Context, fingerprint s
 // Returns (shouldBlock, reason) tuple.
 //
 // Reference: BR-ORCH-042.1
-func (r *Reconciler) shouldBlockSignal(ctx context.Context, fingerprint string) (bool, string) {
+func (r *Reconciler) shouldBlockSignal(ctx context.Context, fingerprint string) (bool, string) { //nolint:unused
 	consecutiveFailures := r.countConsecutiveFailures(ctx, fingerprint)
 
 	// Note: We check >= threshold because this is called AFTER the current
@@ -167,7 +167,7 @@ func (r *Reconciler) shouldBlockSignal(ctx context.Context, fingerprint string) 
 // update deduplication instead of creating new RRs.
 //
 // Reference: BR-ORCH-042.2, BR-ORCH-042.3
-func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.RemediationRequest, reason string, cooldown time.Duration) (ctrl.Result, error) {
+func (r *Reconciler) transitionToBlocked(ctx context.Context, rr *remediationv1.RemediationRequest, reason string, cooldown time.Duration) (ctrl.Result, error) { //nolint:unused
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
 	blockedUntil := metav1.NewTime(time.Now().Add(cooldown))

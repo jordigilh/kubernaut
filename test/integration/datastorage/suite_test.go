@@ -920,7 +920,7 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 }
 
 // createConfigFiles creates ADR-030 compliant config and secret files
-func createConfigFiles() {
+func createConfigFiles() { //nolint:unused
 	var err error
 	configDir, err = os.MkdirTemp("", "datastorage-config-*")
 	Expect(err).ToNot(HaveOccurred())

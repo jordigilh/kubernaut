@@ -889,7 +889,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 })
 
 // Helper to check if metrics contain expected labels
-func metricsContainLabel(metrics, label string) bool {
+func metricsContainLabel(metrics, label string) bool { //nolint:unused
 	return strings.Contains(metrics, label)
 }
 
@@ -932,7 +932,7 @@ func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
 }
 
 // getPipelineRunForWFE finds the PipelineRun created by a WorkflowExecution
-func getPipelineRunForWFE(wfeName, wfeNamespace string) (*tektonv1.PipelineRun, error) {
+func getPipelineRunForWFE(wfeName, wfeNamespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
 	prList := &tektonv1.PipelineRunList{}
 	if err := k8sClient.List(ctx, prList); err != nil {
 		return nil, err

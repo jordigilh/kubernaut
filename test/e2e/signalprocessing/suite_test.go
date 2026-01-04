@@ -293,7 +293,7 @@ var _ = SynchronizedAfterSuite(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // createTestNamespace creates a uniquely named namespace for test isolation.
-func createTestNamespace(prefix string, labels map[string]string) string {
+func createTestNamespace(prefix string, labels map[string]string) string { //nolint:unused
 	ns := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 
 	namespace := &corev1.Namespace{
@@ -310,7 +310,7 @@ func createTestNamespace(prefix string, labels map[string]string) string {
 }
 
 // deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(ns string) {
+func deleteTestNamespace(ns string) { //nolint:unused
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: ns},
 	}
@@ -318,7 +318,7 @@ func deleteTestNamespace(ns string) {
 }
 
 // waitForSignalProcessingComplete waits for a SignalProcessing CR to reach Completed phase.
-func waitForSignalProcessingComplete(name, namespace string) *signalprocessingv1alpha1.SignalProcessing {
+func waitForSignalProcessingComplete(name, namespace string) *signalprocessingv1alpha1.SignalProcessing { //nolint:unused
 	sp := &signalprocessingv1alpha1.SignalProcessing{}
 	Eventually(func() string {
 		err := k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, sp)

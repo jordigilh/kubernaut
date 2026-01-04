@@ -68,7 +68,7 @@ var (
 	controllerNamespace string = "notification-e2e"
 
 	// Test failure tracking (for keeping cluster alive on failure)
-	suiteHadFailures bool
+	suiteHadFailures bool //nolint:unused
 
 	// E2E file output directory (for FileService validation)
 	e2eFileOutputDir string

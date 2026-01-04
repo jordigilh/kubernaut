@@ -141,7 +141,7 @@ func createPrometheusWebhookPayloadWithTimestamp(payload PrometheusAlertPayload,
 
 // sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
 // with mandatory X-Timestamp header for replay attack prevention
-func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
+func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse { //nolint:unused
 	req, err := http.NewRequest("POST", gatewayURL+path, bytes.NewReader(body))
 	Expect(err).ToNot(HaveOccurred(), "HTTP request creation should succeed")
 

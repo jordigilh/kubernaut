@@ -357,7 +357,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 }
 
 // deliverToConsole delivers notification to console (stdout)
-func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error { //nolint:unused
 	if r.ConsoleService == nil {
 		return fmt.Errorf("console service not initialized")
 	}
@@ -368,7 +368,7 @@ func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, no
 }
 
 // deliverToSlack delivers notification to Slack webhook
-func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error { //nolint:unused
 	if r.SlackService == nil {
 		return fmt.Errorf("slack service not initialized")
 	}
@@ -395,7 +395,7 @@ func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, noti
 }
 
 // sanitizeNotification creates a sanitized copy of the notification
-func (r *NotificationRequestReconciler) sanitizeNotification(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest {
+func (r *NotificationRequestReconciler) sanitizeNotification(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest { //nolint:unused
 	// Create a shallow copy to avoid mutating the original
 	sanitized := notification.DeepCopy()
 

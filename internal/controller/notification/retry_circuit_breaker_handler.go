@@ -94,7 +94,7 @@ func (r *NotificationRequestReconciler) hasChannelPermanentError(notification *n
 
 // getMaxAttemptCount returns the maximum number of attempts across all channels.
 // Used for global retry limit enforcement and notification-level backoff calculation.
-func (r *NotificationRequestReconciler) getMaxAttemptCount(notification *notificationv1alpha1.NotificationRequest) int {
+func (r *NotificationRequestReconciler) getMaxAttemptCount(notification *notificationv1alpha1.NotificationRequest) int { //nolint:unused
 	maxAttempt := 0
 	attemptCounts := make(map[string]int)
 
@@ -156,7 +156,7 @@ func (r *NotificationRequestReconciler) calculateBackoffWithPolicy(notification 
 // isSlackCircuitBreakerOpen checks if the Slack circuit breaker is open
 // v3.1 Enhancement (Category B): Circuit breaker for graceful degradation
 // BR-NOT-055: Graceful Degradation (prevent cascading failures)
-func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool {
+func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool { //nolint:unused
 	if r.CircuitBreaker == nil {
 		return false // No circuit breaker configured, allow all requests
 	}

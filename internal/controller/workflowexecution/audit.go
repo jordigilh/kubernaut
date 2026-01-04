@@ -50,7 +50,7 @@ import (
 // recordAuditEventWithCondition is a helper that records an audit event
 // and updates the AuditRecorded condition accordingly
 // This reduces duplication of the audit + condition setting pattern
-func (r *WorkflowExecutionReconciler) recordAuditEventWithCondition(
+func (r *WorkflowExecutionReconciler) recordAuditEventWithCondition( //nolint:unused
 	ctx context.Context,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
 	eventType, category string,

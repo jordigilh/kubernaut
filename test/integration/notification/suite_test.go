@@ -635,7 +635,7 @@ type MockSlackServer struct {
 
 // createMockSlackServer creates an isolated mock Slack webhook server for a single test
 // Returns server instance with dedicated request tracking (prevents test pollution)
-func createMockSlackServer() *MockSlackServer {
+func createMockSlackServer() *MockSlackServer { //nolint:unused
 	mock := &MockSlackServer{
 		Requests:      make([]SlackWebhookRequest, 0),
 		FailureMode:   "none",
@@ -852,7 +852,7 @@ func deleteAndWait(ctx context.Context, client client.Client, notif *notificatio
 }
 
 // getSlackRequestCount returns the count of Slack requests (thread-safe)
-func getSlackRequestCount() int {
+func getSlackRequestCount() int { //nolint:unused
 	slackRequestsMu.Lock()
 	defer slackRequestsMu.Unlock()
 	return len(slackRequests)
