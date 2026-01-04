@@ -21,7 +21,6 @@ import (
 	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -97,51 +96,32 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
-		// AA-BUG-004: FRESH REFETCH - Get latest state before processing
-		// This prevents duplicate handler execution when multiple reconciles are queued
-		// CRITICAL: Must refetch here, not use cached 'analysis' from Reconcile() line 122
-		// because multiple concurrent reconciles may have fetched at the same time
-		fresh := &aianalysisv1.AIAnalysis{}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(analysis), fresh); err != nil {
-			log.Error(err, "Failed to refetch AIAnalysis before handler")
-			return ctrl.Result{}, err
-		}
+		// AA-BUG-007: Use optimistic locking with idempotency check
+		// Handler runs INSIDE updateFunc, checked AFTER each atomic refetch
 		
-		// Check the FRESH phase, not the cached one
-		if fresh.Status.Phase != PhaseInvestigating {
-			log.Info("Phase already changed before handler (fresh check), skipping",
-				"expected", PhaseInvestigating, "actual", fresh.Status.Phase)
-			return ctrl.Result{}, nil
-		}
-		
-		// Update analysis pointer to use fresh data for handler
-		analysis = fresh
-
-		// Capture phase before handler for requeue detection
 		var phaseBefore string
 		var result ctrl.Result
 		var handlerErr error
+		var handlerExecuted bool
 
 		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Handler modifies status fields, then atomic update commits all changes
-		// BEFORE: Handler modifies → Status().Update() (separate API call)
-		// AFTER: Atomic refetch → Handler modifies → Single Status().Update()
+		// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
-			// Capture phase after refetch
+			// Capture phase after ATOMIC refetch
 			phaseBefore = analysis.Status.Phase
 
-			// AA-BUG-003: Idempotency check - skip if phase already changed in concurrent reconcile
-			// This prevents duplicate audit events when multiple reconcile loops execute before status propagates
+			// AA-BUG-007: Idempotency - skip handler if phase already changed
 			if phaseBefore != PhaseInvestigating {
-				log.V(1).Info("Phase already changed in concurrent reconcile, skipping handler",
+				log.V(1).Info("Phase already changed, skipping handler",
 					"expected", PhaseInvestigating, "actual", phaseBefore)
-				return nil // No-op, phase already processed by another reconcile loop
+				handlerExecuted = false
+				return nil
 			}
 
-			// Execute handler (modifies analysis.Status in memory after refetch)
+			// Execute handler ONLY if phase check passed
 			result, handlerErr = r.InvestigatingHandler.Handle(ctx, analysis)
+			handlerExecuted = true
 			if handlerErr != nil {
 				return handlerErr
 			}
@@ -151,14 +131,9 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			return ctrl.Result{}, err
 		}
 
-		// Requeue if phase changed to ensure next phase is processed
-		// (GenerationChangedPredicate doesn't trigger on status-only updates)
-		if analysis.Status.Phase != phaseBefore {
-			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
-
-			// DD-AUDIT-003: Phase transition already recorded INSIDE handler
-			// (investigating.go:142, 177 - no duplicate recording needed here)
-
+		// Only requeue if handler actually executed and changed phase
+		if handlerExecuted && analysis.Status.Phase != phaseBefore {
+			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
@@ -186,51 +161,36 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.AnalyzingHandler != nil {
-		// AA-BUG-004: FRESH REFETCH - Get latest state before processing
-		// This prevents duplicate handler execution when multiple reconciles are queued
-		// CRITICAL: Must refetch here, not use cached 'analysis' from Reconcile() line 122
-		// because multiple concurrent reconciles may have fetched at the same time
-		fresh := &aianalysisv1.AIAnalysis{}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(analysis), fresh); err != nil {
-			log.Error(err, "Failed to refetch AIAnalysis before handler")
-			return ctrl.Result{}, err
-		}
+		// AA-BUG-007: Use optimistic locking with idempotency check
+		// The key insight: Move handler execution BEFORE AtomicStatusUpdate's refetch
+		// so we can check the phase ONCE and decide whether to proceed
 		
-		// Check the FRESH phase, not the cached one
-		if fresh.Status.Phase != PhaseAnalyzing {
-			log.Info("Phase already changed before handler (fresh check), skipping",
-				"expected", PhaseAnalyzing, "actual", fresh.Status.Phase)
-			return ctrl.Result{}, nil
-		}
-		
-		// Update analysis pointer to use fresh data for handler
-		analysis = fresh
-
-		// Capture phase before handler for requeue detection
 		var phaseBefore string
 		var result ctrl.Result
 		var handlerErr error
+		var handlerExecuted bool
 
 		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Handler modifies status fields, then atomic update commits all changes
-		// BEFORE: Handler modifies → Status().Update() (separate API call)
-		// AFTER: Atomic refetch → Handler modifies → Single Status().Update()
+		// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
+		// Handler runs INSIDE updateFunc, but ONLY ONCE per phase value
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
-			// Capture phase after refetch
+			// Capture phase after ATOMIC refetch (part of AtomicStatusUpdate)
 			phaseBefore = analysis.Status.Phase
 
-			// AA-BUG-003: Idempotency check - skip if phase already changed in concurrent reconcile
-			// This prevents duplicate audit events when multiple reconcile loops execute before status propagates
+			// AA-BUG-007: Idempotency - skip handler if phase already changed
+			// This check happens AFTER each refetch, preventing duplicate execution
 			if phaseBefore != PhaseAnalyzing {
-				log.V(1).Info("Phase already changed in concurrent reconcile, skipping handler",
+				log.V(1).Info("Phase already changed, skipping handler",
 					"expected", PhaseAnalyzing, "actual", phaseBefore)
-				return nil // No-op, phase already processed by another reconcile loop
+				handlerExecuted = false
+				return nil // No-op, phase already processed
 			}
 
-			// Execute handler (modifies analysis.Status in memory after refetch)
+			// AA-BUG-007: Execute handler ONLY if phase check passed
+			// Handler modifies analysis.Status in memory
 			result, handlerErr = r.AnalyzingHandler.Handle(ctx, analysis)
+			handlerExecuted = true
 			if handlerErr != nil {
 				return handlerErr
 			}
@@ -240,14 +200,9 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			return ctrl.Result{}, err
 		}
 
-		// Requeue if phase changed to ensure next phase is processed
-		// (GenerationChangedPredicate doesn't trigger on status-only updates)
-		if analysis.Status.Phase != phaseBefore {
-			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
-
-			// DD-AUDIT-003: Phase transition already recorded INSIDE handler
-			// (analyzing.go:97, 134, 220 - no duplicate recording needed here)
-
+		// Only requeue if handler actually executed and changed phase
+		if handlerExecuted && analysis.Status.Phase != phaseBefore {
+			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
