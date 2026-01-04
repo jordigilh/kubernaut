@@ -1216,6 +1216,45 @@ var _ = Describe("K8sEnricher", func() {
 				Expect(apierrors.IsTooManyRequests(err) || strings.Contains(err.Error(), "rate")).To(BeTrue())
 			})
 		})
+
+		// E-ER-09: API error on target resource fetch (not namespace)
+		// BUG: pkg/signalprocessing/enricher/k8s_enricher.go:175 returns (result, nil) instead of (nil, error)
+		// This test validates that non-NotFound errors on target resource fetching properly propagate
+		Context("E-ER-09: API error when fetching target Pod (namespace succeeds)", func() {
+			BeforeEach(func() {
+				// Create namespace object (will succeed)
+				ns := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"},
+				}
+
+				// Inject error for Pod fetches only (not namespace)
+				errFunc := interceptor.Funcs{
+					Get: func(ctx context.Context, client client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+						// Allow namespace fetch to succeed
+						if _, ok := obj.(*corev1.Namespace); ok {
+							return nil
+						}
+						// Fail pod fetch with Internal Server Error (not NotFound)
+						if _, ok := obj.(*corev1.Pod); ok {
+							return apierrors.NewInternalError(fmt.Errorf("etcd unavailable"))
+						}
+						return nil
+					},
+				}
+				k8sClient = createFakeClientWithError(errFunc, ns)
+				k8sEnricher = enricher.NewK8sEnricher(k8sClient, logger, m, 5*time.Second)
+			})
+
+			It("should return error (not success with incomplete data)", func() {
+				signal := createSignal("Pod", "test-pod", "test-namespace")
+				result, err := k8sEnricher.Enrich(ctx, signal)
+
+				// EXPECTED BEHAVIOR: Should return error because Pod fetch failed with API error
+				Expect(err).To(HaveOccurred(), "Should propagate API error from Pod fetch")
+				Expect(result).To(BeNil(), "Result should be nil when API error occurs")
+				Expect(err.Error()).To(ContainSubstring("etcd unavailable"), "Error should contain original failure reason")
+			})
+		})
 	})
 
 	// ========================================
