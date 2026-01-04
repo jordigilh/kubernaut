@@ -98,8 +98,9 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 			By("Creating SignalProcessing CR in Enriching phase")
 			sp := &signalprocessingv1alpha1.SignalProcessing{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-sp-no-audit",
-					Namespace: "default",
+					Name:       "test-sp-no-audit",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 					RemediationRequestRef: signalprocessingv1alpha1.ObjectReference{

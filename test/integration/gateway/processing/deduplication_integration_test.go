@@ -65,8 +65,9 @@ func createTestRR(name, namespace, fingerprintSeed, alertName, severity, phase s
 
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:       name,
+			Namespace:  namespace,
+			Generation: 1, // Required for ObservedGeneration pattern
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			SignalFingerprint: fingerprint,

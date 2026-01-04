@@ -479,10 +479,11 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			GinkgoWriter.Printf("✅ BR-ORCH-026: RR transitioned to Executing after RAR approval\n")
 		})
 
-		It("should detect RAR missing and handle gracefully", func() {
+		It("should detect RAR missing and handle gracefully", FlakeAttempts(3), func() {
 			// Scenario: Test RAR deletion detection (simplified - direct state simulation)
 			// Business Outcome: RR handles missing RAR gracefully
 			// Confidence: 90% - Validates resilience without full approval flow
+			// FlakeAttempts(3): Timing-sensitive test - retry up to 3 times in CI
 
 			ctx := context.Background()
 

@@ -63,8 +63,9 @@ import (
 var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 	var (
 		uniqueSuffix   string
-		testNamespace  = "default"
-		dataStorageURL = "http://localhost:18095" // From suite infrastructure
+		// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
+		// No need to declare it here - each test gets a unique namespace automatically
+		dataStorageURL = "http://127.0.0.1:18095" // From suite infrastructure (IPv4 explicit)
 	)
 
 	BeforeEach(func() {

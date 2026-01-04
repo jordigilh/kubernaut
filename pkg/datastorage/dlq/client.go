@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -273,6 +274,12 @@ func (c *Client) ReadMessages(ctx context.Context, auditType, consumerGroup, con
 			// No messages available (timeout)
 			return []*DLQMessage{}, nil
 		}
+		// Handle NOGROUP error (stream doesn't exist or consumer group creation race condition)
+		// This can happen when stream was recently deleted or in parallel test execution
+		if isNoGroupError(err) {
+			// Stream doesn't exist yet - return empty slice (no messages)
+			return []*DLQMessage{}, nil
+		}
 		return nil, fmt.Errorf("failed to read from DLQ: %w", err)
 	}
 
@@ -468,6 +475,21 @@ func isNoSuchKeyError(err error) bool {
 	}
 	// Redis returns this error when XPending is called on a non-existent stream
 	return err.Error() == "NOGROUP No such key 'audit:dlq:events' or consumer group 'test-consumer-group' in XINFO GROUPS reply"
+}
+
+// isNoGroupError checks if the error indicates the stream or consumer group doesn't exist during XREADGROUP.
+// This can happen when:
+// - Stream was recently deleted (e.g., in test cleanup)
+// - Consumer group creation race condition
+// - Parallel test execution with shared Redis instance
+func isNoGroupError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Redis returns NOGROUP errors in various forms
+	errStr := err.Error()
+	return strings.Contains(errStr, "NOGROUP") &&
+		(strings.Contains(errStr, "No such key") || strings.Contains(errStr, "consumer group"))
 }
 
 // ========================================

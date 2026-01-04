@@ -380,7 +380,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 
 	// Verify DataStorage health endpoint is responding
 	// NodePort 30090 is exposed by kind-notification-config.yaml for E2E tests
-	dataStorageHealthURL := "http://localhost:30090/health"
+	dataStorageHealthURL := "http://127.0.0.1:30090/health"
 	fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
 	if err := WaitForHTTPHealth(dataStorageHealthURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage health check failed: %w", err)
@@ -475,6 +475,18 @@ func loadNotificationImageOnly(clusterName string, writer io.Writer) error {
 
 	// Clean up tar file
 	_ = os.Remove("/tmp/notification-e2e.tar")
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
+	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-notification:e2e-test")
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-notification:e2e-test")
+	}
 
 	fmt.Fprintln(writer, "   Notification Controller image loaded into Kind cluster")
 	return nil

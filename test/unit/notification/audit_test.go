@@ -465,13 +465,13 @@ var _ = Describe("Audit Helpers", func() {
 		// ===== CATEGORY 2: Boundary Conditions (3 tests) =====
 
 		Context("when subject is very long", func() {
-			It("should handle subject >10KB", func() {
-				// Edge Case: Large string handling
-				longSubject := string(make([]byte, 15000)) // 15KB subject
-				for i := range longSubject {
-					longSubject = longSubject[:i] + "A" + longSubject[i+1:]
-				}
-				notification.Spec.Subject = longSubject
+		It("should handle subject >10KB", func() {
+			// Edge Case: Large string handling
+			longSubjectBytes := make([]byte, 15000) // 15KB subject
+			for i := range longSubjectBytes {
+				longSubjectBytes[i] = 'A'
+			}
+			notification.Spec.Subject = string(longSubjectBytes)
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
@@ -506,14 +506,14 @@ var _ = Describe("Audit Helpers", func() {
 		})
 
 		Context("when event_data approaches PostgreSQL JSONB limit", func() {
-			It("should handle maximum payload size (~1MB test)", func() {
-				// Edge Case: PostgreSQL JSONB practical limit test (reduced for test performance)
-				// Real limit is ~10MB, but we test with 1MB for faster execution
-				largeBody := string(make([]byte, 1*1024*1024)) // 1MB body
-				for i := range largeBody {
-					largeBody = largeBody[:i] + "X" + largeBody[i+1:]
-				}
-				notification.Spec.Body = largeBody
+		It("should handle maximum payload size (~1MB test)", func() {
+			// Edge Case: PostgreSQL JSONB practical limit test (reduced for test performance)
+			// Real limit is ~10MB, but we test with 1MB for faster execution
+			largeBodyBytes := make([]byte, 1*1024*1024) // 1MB body
+			for i := range largeBodyBytes {
+				largeBodyBytes[i] = 'X'
+			}
+			notification.Spec.Body = string(largeBodyBytes)
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 

@@ -42,23 +42,14 @@ Failure Impact:
 """
 
 import pytest
-import json
-import os
-import requests
-from typing import Dict, Any
 
 from holmes.config import Config
 from holmes.core.toolset_manager import ToolsetManager
-from holmes.core.tools import StructuredToolResultStatus
 
-from src.toolsets.workflow_catalog import WorkflowCatalogToolset, SearchWorkflowCatalogTool
+from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 from src.extensions.llm_config import get_model_config_for_sdk
 
 # Import infrastructure helpers from conftest
-from tests.integration.conftest import (
-    is_integration_infra_available,
-    DATA_STORAGE_URL,
-)
 
 
 class TestWorkflowCatalogSDKRegistration:
@@ -229,7 +220,6 @@ class TestWorkflowCatalogSDKRegistration:
         NOTE: This uses the shared functions from llm_config.py (same as incident.py)
         """
         from src.extensions.llm_config import (
-            get_model_config_for_sdk,
             prepare_toolsets_config_for_sdk,
             register_workflow_catalog_toolset
         )
@@ -275,7 +265,7 @@ class TestWorkflowCatalogSDKRegistration:
         # The real test is that SDK methods don't crash with AttributeError
         # Call list_server_toolsets to verify the monkey-patch works
         try:
-            toolsets = config.toolset_manager.list_server_toolsets(dal=None, refresh_status=True)
+            config.toolset_manager.list_server_toolsets(dal=None, refresh_status=True)
             # Success - the monkey-patch didn't crash
         except AttributeError as e:
             if "'WorkflowCatalogToolset' object has no attribute 'get'" in str(e):

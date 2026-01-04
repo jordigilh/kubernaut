@@ -64,18 +64,18 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:allowDangerousTypes=true webhook paths="./api/..." paths="./internal/controller/..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
+generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/shared/types/..."
 	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
 	@go generate ./pkg/datastorage/server/middleware/...
 	@go generate ./pkg/audit/...
 	@echo "📋 Generating HolmesGPT-API client (ogen)..."
-	@go generate ./pkg/holmesgpt/client/...
+	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ Generation complete"
 
 .PHONY: generate-holmesgpt-client
-generate-holmesgpt-client: ## Generate HolmesGPT-API client from OpenAPI spec
+generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI spec
 	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
 	@go generate ./pkg/holmesgpt/client/...
 	@echo "✅ HolmesGPT-API client generated successfully"
@@ -104,27 +104,37 @@ clean: ## Clean build artifacts
 
 # Unit Tests
 .PHONY: test-unit-%
-test-unit-%: ## Run unit tests for specified service (e.g., make test-unit-gateway)
+test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-unit-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@ginkgo -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/$*/...
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@ginkgo -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) ./test/integration/$*/...
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast ./test/integration/$*/...
 
 # E2E Tests
+.PHONY: ensure-coverdata
+ensure-coverdata: ## Ensure coverdata directory exists for E2E coverage collection (DD-TEST-007)
+	@if [ ! -d "coverdata" ]; then \
+		echo "📁 Creating coverdata directory for E2E coverage collection..."; \
+		mkdir -p coverdata; \
+		chmod 777 coverdata; \
+		echo "   ✅ coverdata directory created"; \
+	fi
+
 .PHONY: test-e2e-%
-test-e2e-%: ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@ginkgo -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
 
 # All Tests for Service
 .PHONY: test-all-%
@@ -145,9 +155,6 @@ test-all-%: ## Run all test tiers for specified service (e.g., make test-all-gat
 .PHONY: build-%
 build-%: ## Build specified service binary (e.g., make build-gateway)
 	@echo "🔨 Building $* service..."
-	@if [ "$*" = "datastorage" ]; then \
-		$(MAKE) generate; \
-	fi
 	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o bin/$* ./cmd/$*
 	@echo "✅ Built: bin/$*"
 
@@ -160,7 +167,7 @@ test-tier-unit: $(addprefix test-unit-,$(SERVICES)) ## Run unit tests for all se
 test-tier-integration: $(addprefix test-integration-,$(SERVICES)) ## Run integration tests for all services
 
 .PHONY: test-tier-e2e
-test-tier-e2e: $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
+test-tier-e2e: ensure-coverdata $(addprefix test-e2e-,$(SERVICES)) ## Run E2E tests for all services
 
 .PHONY: test-all-services
 test-all-services: $(addprefix test-all-,$(SERVICES)) ## Run all tests for all services
@@ -215,9 +222,55 @@ test-coverage-%: ## Run unit tests with coverage for service
 ##@ Special Cases - HolmesGPT (Python Service)
 
 .PHONY: build-holmesgpt-api
-build-holmesgpt-api: ## Build holmesgpt-api (Python service)
-	@echo "🐍 Building holmesgpt-api..."
+build-holmesgpt-api: ## Build holmesgpt-api for local development (pip install)
+	@echo "🐍 Building holmesgpt-api for local development..."
 	@cd holmesgpt-api && pip install -e .
+
+.PHONY: build-holmesgpt-api-image
+build-holmesgpt-api-image: ## Build holmesgpt-api Docker image (PRODUCTION - full dependencies)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐳 Building HolmesGPT API Docker Image (PRODUCTION)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📦 Dockerfile: holmesgpt-api/Dockerfile"
+	@echo "📋 Requirements: requirements.txt (full dependencies)"
+	@echo "💾 Size: ~2.5GB (includes google-cloud-aiplatform 1.5GB)"
+	@echo "🎯 Use Case: Production deployments, Quay.io releases"
+	@echo ""
+	@cd holmesgpt-api && podman build \
+		--platform linux/amd64,linux/arm64 \
+		-t localhost/kubernaut-holmesgpt-api:latest \
+		-t localhost/kubernaut-holmesgpt-api:$$(git rev-parse --short HEAD) \
+		-f Dockerfile \
+		.
+	@echo ""
+	@echo "✅ Production image built successfully!"
+	@echo "   Tags: localhost/kubernaut-holmesgpt-api:latest"
+	@echo "         localhost/kubernaut-holmesgpt-api:$$(git rev-parse --short HEAD)"
+	@echo ""
+	@echo "📤 To push to Quay.io:"
+	@echo "   podman tag localhost/kubernaut-holmesgpt-api:latest quay.io/YOUR_ORG/kubernaut-holmesgpt-api:VERSION"
+	@echo "   podman push quay.io/YOUR_ORG/kubernaut-holmesgpt-api:VERSION"
+
+.PHONY: build-holmesgpt-api-image-e2e
+build-holmesgpt-api-image-e2e: ## Build holmesgpt-api Docker image (E2E - minimal dependencies)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐳 Building HolmesGPT API Docker Image (E2E)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📦 Dockerfile: holmesgpt-api/Dockerfile.e2e"
+	@echo "📋 Requirements: requirements-e2e.txt (minimal dependencies)"
+	@echo "💾 Size: ~800MB (excludes google-cloud-aiplatform 1.5GB)"
+	@echo "🎯 Use Case: E2E testing, CI/CD"
+	@echo ""
+	@cd holmesgpt-api && podman build \
+		--platform linux/amd64,linux/arm64 \
+		-t localhost/kubernaut-holmesgpt-api:e2e \
+		-t localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD) \
+		-f Dockerfile.e2e \
+		.
+	@echo ""
+	@echo "✅ E2E image built successfully!"
+	@echo "   Tags: localhost/kubernaut-holmesgpt-api:e2e"
+	@echo "         localhost/kubernaut-holmesgpt-api:e2e-$$(git rev-parse --short HEAD)"
 
 .PHONY: export-openapi-holmesgpt-api
 export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI (ADR-045)
@@ -228,17 +281,35 @@ export-openapi-holmesgpt-api: ## Export holmesgpt-api OpenAPI spec from FastAPI 
 	@cd holmesgpt-api && echo "📊 Schema count: $$(python3 -c \"import json; spec=json.load(open('api/openapi.json')); print(len(spec.get('components', {}).get('schemas', {})))\")"
 
 .PHONY: validate-openapi-holmesgpt-api
-validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec consistency (CI - ADR-045)
-	@echo "🔍 Validating OpenAPI spec consistency..."
+validate-openapi-holmesgpt-api: export-openapi-holmesgpt-api ## Validate holmesgpt-api OpenAPI spec is committed (CI - ADR-045)
+	@echo "🔍 Validating OpenAPI spec is up-to-date..."
 	@cd holmesgpt-api && \
-	if [ -f "api/openapi.json.committed" ]; then \
-		diff -q api/openapi.json api/openapi.json.committed > /dev/null 2>&1 || \
-		(echo "❌ OpenAPI spec drift detected! Run 'make export-openapi-holmesgpt-api' and commit changes." && exit 1); \
-		echo "✅ OpenAPI spec is consistent"; \
-	else \
-		echo "⚠️  No committed spec found. Copying current as baseline..."; \
-		cp api/openapi.json api/openapi.json.committed; \
+	if ! git diff --quiet api/openapi.json; then \
+		echo ""; \
+		echo "❌ OpenAPI spec drift detected!"; \
+		echo ""; \
+		echo "The generated OpenAPI spec differs from the committed version."; \
+		echo ""; \
+		echo "📋 Changes:"; \
+		git diff api/openapi.json | head -50; \
+		echo ""; \
+		echo "🔧 To fix:"; \
+		echo "  1. Run: make export-openapi-holmesgpt-api"; \
+		echo "  2. Review: git diff holmesgpt-api/api/openapi.json"; \
+		echo "  3. Commit: git add holmesgpt-api/api/openapi.json"; \
+		echo ""; \
+		exit 1; \
 	fi
+	@echo "✅ OpenAPI spec is up-to-date and committed"
+
+.PHONY: validate-openapi-datastorage
+validate-openapi-datastorage: ## Validate Data Storage OpenAPI spec syntax (CI - ADR-031)
+	@echo "🔍 Validating Data Storage OpenAPI spec..."
+	@docker run --rm -v "$(PWD):/local" openapitools/openapi-generator-cli:v7.2.0 validate \
+		-i /local/api/openapi/data-storage-v1.yaml || \
+		(echo "❌ OpenAPI spec validation failed!" && exit 1)
+	@echo "✅ Data Storage OpenAPI spec is valid"
+
 .PHONY: lint-holmesgpt-api
 lint-holmesgpt-api: ## Run ruff linter on holmesgpt-api Python code
 	@echo "🔍 Running ruff linter on holmesgpt-api..."
@@ -254,78 +325,64 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (Go infrastructure + Python tests, ~8 min)
+test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (containerized - matches CI exactly)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 HolmesGPT API Integration Tests (Go Infrastructure + Python Tests)"
+	@echo "🐳 HolmesGPT API Integration Tests (Containerized)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Go-bootstrapped infrastructure)"
-	@echo "🐍 Test Logic: Python (native for HAPI service)"
-	@echo "⏱️  Expected Duration: ~8 minutes (first run with image builds)"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Containerized tests)"
+	@echo "🐍 Test Logic: Python in container, Go infrastructure on host"
+	@echo "⏱️  Expected Duration: ~5 minutes"
 	@echo ""
-	@echo "🏗️  Infrastructure Phase (Go Ginkgo)..."
-	@echo "   • Building Data Storage image (~3 min)"
-	@echo "   • Starting PostgreSQL, Redis, Data Storage (~2 min)"
-	@echo "   • HAPI runs in-process (FastAPI TestClient)"
-	@echo "   • Total: ~5 minutes infrastructure setup"
+	@echo "🔧 Phase 0: Generating HAPI OpenAPI client (DD-API-001)..."
+	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || (echo "❌ Client generation failed"; exit 1)
+	@echo "✅ OpenAPI client generated"
 	@echo ""
-	@cd test/integration/holmesgptapi && ginkgo --keep-going --timeout=20m & \
+	@# Start Go infrastructure in background
+	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
+	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
 	GINKGO_PID=$$!; \
-	echo "🚀 Go infrastructure starting (PID: $$GINKGO_PID)..."; \
-	echo "   • PostgreSQL, Redis, Data Storage (HAPI is in-process TestClient)"; \
-	echo "⏳ Waiting for Data Storage to be ready (checking every 5 seconds)..."; \
-	for i in {1..180}; do \
+	echo "   Infrastructure PID: $$GINKGO_PID"; \
+	echo "⏳ Waiting for Data Storage to be ready..."; \
+	for i in {1..60}; do \
 		if curl -sf http://localhost:18098/health > /dev/null 2>&1; then \
-			echo "✅ Data Storage healthy (took $$((i*5)) seconds)"; \
+			echo "✅ Data Storage ready ($$((i*5))s)"; \
 			break; \
 		fi; \
-		if [ $$i -eq 180 ]; then \
-			echo "❌ Timeout waiting for Data Storage (15 minutes)"; \
+		if [ $$i -eq 60 ]; then \
+			echo "❌ Timeout waiting for infrastructure"; \
 			kill $$GINKGO_PID 2>/dev/null || true; \
 			exit 1; \
 		fi; \
 		sleep 5; \
 	done; \
 	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🐍 Python Test Phase (DD-HAPI-005 client auto-regeneration)..."; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🔧 Step 1: Generate OpenAPI client (DD-HAPI-005)..."; \
-	cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../.. || exit 1; \
-	echo "✅ Client generated successfully"; \
-	echo ""; \
-	echo "🧪 Step 2: Run integration tests with 4 parallel workers..."; \
-	export HAPI_INTEGRATION_PORT=18120 && \
-	export DS_INTEGRATION_PORT=18098 && \
-	export PG_INTEGRATION_PORT=15439 && \
-	export REDIS_INTEGRATION_PORT=16387 && \
-	export HAPI_URL="http://localhost:18120" && \
-	export DATA_STORAGE_URL="http://localhost:18098" && \
-	export MOCK_LLM_MODE=true && \
-	python3 -m pytest tests/integration/ -n 4 -v --tb=short; \
+	echo "🐳 Phase 2: Running Python tests in container..."; \
+	podman build -t holmesgpt-api-integration-test:latest \
+		-f docker/holmesgpt-api-integration-test.Dockerfile . && \
+	podman run --rm \
+		--network=host \
+		--add-host=host.containers.internal:host-gateway \
+		-v $(CURDIR):/workspace:z \
+		holmesgpt-api-integration-test:latest; \
 	TEST_RESULT=$$?; \
 	echo ""; \
-	echo "🐍 Python tests complete. Signaling Go infrastructure..."; \
+	echo "🧹 Phase 3: Cleanup..."; \
 	touch /tmp/hapi-integration-tests-complete; \
 	sleep 2; \
-	echo ""; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
-	echo "🧹 Cleanup Phase..."; \
-	echo "════════════════════════════════════════════════════════════════════════"; \
 	kill $$GINKGO_PID 2>/dev/null || true; \
 	wait $$GINKGO_PID 2>/dev/null || true; \
-	sleep 2; \
-	echo "✅ Cleanup complete"; \
 	rm -f /tmp/hapi-integration-tests-complete; \
+	echo "✅ Cleanup complete"; \
 	echo ""; \
 	if [ $$TEST_RESULT -eq 0 ]; then \
-		echo "✅ All HAPI integration tests passed (4 parallel workers)"; \
+		echo "✅ All HAPI integration tests passed (containerized)"; \
 	else \
 		echo "❌ Some HAPI integration tests failed (exit code: $$TEST_RESULT)"; \
 		exit $$TEST_RESULT; \
 	fi
 
 .PHONY: test-e2e-holmesgpt-api
-test-e2e-holmesgpt-api: ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
+test-e2e-holmesgpt-api: ginkgo ensure-coverdata ## Run holmesgpt-api E2E tests (Kind cluster + Python tests, ~10 min)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 HolmesGPT API E2E Tests (Kind Cluster + Python Tests)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -338,7 +395,7 @@ test-e2e-holmesgpt-api: ## Run holmesgpt-api E2E tests (Kind cluster + Python te
 	@echo "✅ Client generated successfully"
 	@echo ""
 	@echo "🧪 Step 2: Run E2E tests (Go infrastructure + Python tests)..."
-	@cd test/e2e/holmesgpt-api && ginkgo -v --timeout=15m
+	@cd test/e2e/holmesgpt-api && $(GINKGO) -v --timeout=15m
 	@echo ""
 	@echo "✅ All HAPI E2E tests completed"
 
@@ -349,9 +406,13 @@ test-all-holmesgpt-api: test-unit-holmesgpt-api test-integration-holmesgpt-api t
 	@echo "════════════════════════════════════════════════════════════════════════"
 
 .PHONY: test-unit-holmesgpt-api
-test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (Python pytest)
-	@echo "🧪 Running holmesgpt-api unit tests..."
-	@cd holmesgpt-api && python3 -m pytest tests/unit/ -v
+test-unit-holmesgpt-api: ## Run holmesgpt-api unit tests (containerized with UBI)
+	@echo "🧪 Running holmesgpt-api unit tests (containerized with Red Hat UBI)..."
+	@podman run --rm \
+		-v $(CURDIR):/workspace:z \
+		-w /workspace/holmesgpt-api \
+		registry.access.redhat.com/ubi9/python-312:latest \
+		sh -c "pip install -q -r requirements.txt && pip install -q -r requirements-test.txt && pytest tests/unit/ -v --durations=20 --no-cov"
 
 .PHONY: clean-holmesgpt-test-ports
 clean-holmesgpt-test-ports: ## Clean up any stale HAPI integration test containers
@@ -387,15 +448,19 @@ $(LOCALBIN):
 ## Tool Binaries
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+OGEN ?= $(LOCALBIN)/ogen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GINKGO ?= $(LOCALBIN)/ginkgo
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.19.0
+OGEN_VERSION ?= v1.18.0
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.0
+GINKGO_VERSION ?= v2.27.2
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary
@@ -406,6 +471,11 @@ $(KUSTOMIZE): $(LOCALBIN)
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary
 $(CONTROLLER_GEN): $(LOCALBIN)
 	$(call go-install-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen,$(CONTROLLER_TOOLS_VERSION))
+
+.PHONY: ogen
+ogen: $(OGEN) ## Download ogen locally if necessary
+$(OGEN): $(LOCALBIN)
+	$(call go-install-tool,$(OGEN),github.com/ogen-go/ogen/cmd/ogen,$(OGEN_VERSION))
 
 .PHONY: setup-envtest
 setup-envtest: envtest ## Download the binaries required for ENVTEST in the local bin directory
@@ -422,6 +492,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: ginkgo
+ginkgo: $(GINKGO) ## Download ginkgo locally if necessary
+$(GINKGO): $(LOCALBIN)
+	$(call go-install-tool,$(GINKGO),github.com/onsi/ginkgo/v2/ginkgo,$(GINKGO_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

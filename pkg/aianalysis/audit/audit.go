@@ -40,6 +40,28 @@ const (
 	EventTypeError             = "aianalysis.error.occurred"
 )
 
+// Event category constant (per DD-AUDIT-003)
+// FIXED: Changed from "aianalysis" to "analysis" to match OpenAPI schema enum (api/openapi/data-storage-v1.yaml:832-920)
+const (
+	EventCategoryAIAnalysis = "analysis"
+)
+
+// Event action constants (per DD-AUDIT-003)
+const (
+	EventActionAnalysisComplete = "analysis_complete"
+	EventActionPhaseTransition  = "phase_transition"
+	EventActionError            = "error"
+	EventActionHolmesGPTCall    = "holmesgpt_call"
+	EventActionApprovalDecision = "approval_decision"
+	EventActionPolicyEvaluation = "policy_evaluation"
+)
+
+// Actor constants (per DD-AUDIT-003)
+const (
+	ActorTypeService            = "service"
+	ActorIDAIAnalysisController = "aianalysis-controller"
+)
+
 // AuditClient handles audit event storage using pkg/audit shared library
 type AuditClient struct {
 	store audit.AuditStore // Uses shared library interface
@@ -95,10 +117,10 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeAnalysisCompleted)
-	audit.SetEventCategory(event, "analysis")
-	audit.SetEventAction(event, "analysis_complete") // Fixed: Must match test contract
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionAnalysisComplete) // Fixed: Must match test contract
 	audit.SetEventOutcome(event, apiOutcome)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
@@ -118,6 +140,15 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 //
 // Uses structured types per DD-AUDIT-004 for compile-time type safety.
 func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
+	// Idempotency check: Only record if phase actually changed
+	if from == to {
+		c.log.V(1).Info("Skipping phase transition audit - phase unchanged",
+			"phase", from,
+			"name", analysis.Name,
+			"namespace", analysis.Namespace)
+		return
+	}
+
 	// Build structured payload (DD-AUDIT-004: Type-safe event data)
 	payload := PhaseTransitionPayload{
 		OldPhase: from,
@@ -128,10 +159,10 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypePhaseTransition)
-	audit.SetEventCategory(event, "analysis")
-	audit.SetEventAction(event, "phase_transition")
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionPhaseTransition)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
@@ -148,18 +179,18 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, phase string, err error) {
 	// Build structured payload (DD-AUDIT-004: Type-safe event data)
 	payload := ErrorPayload{
-		Phase: phase,
-		Error: err.Error(),
+		Phase:        phase,
+		ErrorMessage: err.Error(),
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeError)
-	audit.SetEventCategory(event, "analysis")
-	audit.SetEventAction(event, "error")
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionError)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
@@ -196,10 +227,10 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeHolmesGPTCall)
-	audit.SetEventCategory(event, "analysis")
-	audit.SetEventAction(event, "holmesgpt_call") // Fixed: Must match test contract
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionHolmesGPTCall) // Fixed: Must match test contract
 	audit.SetEventOutcome(event, apiOutcome)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
@@ -239,10 +270,10 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeApprovalDecision)
-	audit.SetEventCategory(event, "analysis")
-	audit.SetEventAction(event, "approval_decision")
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionApprovalDecision)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
@@ -280,10 +311,10 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeRegoEvaluation)
-	audit.SetEventCategory(event, "analysis")
-	audit.SetEventAction(event, "policy_evaluation")
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionPolicyEvaluation)
 	audit.SetEventOutcome(event, apiOutcome)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)

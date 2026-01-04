@@ -190,7 +190,7 @@ execution:
 				bytes.NewBuffer(workflowJSON),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 				body, _ := io.ReadAll(resp.Body)
@@ -230,7 +230,7 @@ execution:
 			)
 			searchDuration := time.Since(searchStart)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
@@ -348,8 +348,8 @@ execution:
 			// Verify results metadata (BR-AUDIT-027)
 			resultsData, ok := eventDataMap["results"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data should contain 'results' object")
-			Expect(resultsData["total_found"]).To(BeNumerically(">=", 1),
-				"Results should contain at least 1 workflow")
+			Expect(resultsData["total_found"]).To(Equal(float64(1)),
+				"Should find exactly 1 workflow matching the exact filter criteria (DD-TESTING-001)")
 
 			// Verify workflow scoring data (BR-AUDIT-026)
 			workflows, ok := resultsData["workflows"].([]interface{})
@@ -363,16 +363,20 @@ execution:
 			// V1.0: confidence only (DD-WORKFLOW-004 v2.0)
 			scoring, ok := firstWorkflow["scoring"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "workflow should contain 'scoring' object")
-			Expect(scoring["confidence"]).To(BeNumerically(">=", 0.5),
-				"Confidence should be >= min_similarity threshold")
+			Expect(scoring["confidence"]).To(And(
+				BeNumerically(">=", 0.9),
+				BeNumerically("<=", 1.0),
+			), "Confidence should be high (≥0.9) for exact label match (DD-TESTING-001)")
 
 			// Verify search metadata (BR-AUDIT-028)
 			searchMetadata, ok := eventDataMap["search_metadata"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data should contain 'search_metadata' object")
 			// Note: duration_ms may be 0 for sub-millisecond searches (Milliseconds() truncates)
-			// The important thing is that the field exists and is a valid number >= 0
-			Expect(searchMetadata["duration_ms"]).To(BeNumerically(">=", 0),
-				"Search duration should be recorded (may be 0 for sub-millisecond searches)")
+			// Add performance upper bound to catch regressions (DD-TESTING-001)
+			Expect(searchMetadata["duration_ms"]).To(And(
+				BeNumerically(">=", 0),
+				BeNumerically("<", 2000),
+			), "Search duration should be non-negative and complete within 2s (DD-TESTING-001)")
 
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			testLogger.Info("✅ Workflow Search Audit Trail Validation Complete")
@@ -425,7 +429,7 @@ execution:
 				totalDuration += duration
 
 				Expect(err).ToNot(HaveOccurred())
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),

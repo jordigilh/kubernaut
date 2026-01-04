@@ -9,7 +9,6 @@ TDD Phase: GREEN - These tests verify the enum and basic model behavior.
 """
 
 import json
-import pytest
 
 from src.models.incident_models import HumanReviewReason
 

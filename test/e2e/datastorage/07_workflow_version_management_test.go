@@ -106,7 +106,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("service not ready: status %d", resp.StatusCode)
 			}
@@ -136,7 +136,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			if err != nil {
 				testLogger.Info("warning: Failed to cleanup test workflows", "error", err)
 			}
-			db.Close()
+			_ = db.Close()
 		}
 
 		testCancel()
@@ -173,7 +173,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", bytes.NewReader(reqBody))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			testLogger.Info("Create v1.0.0 response", "status", resp.StatusCode, "body", string(body))
@@ -230,7 +230,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", bytes.NewReader(reqBody))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			testLogger.Info("Create v1.1.0 response", "status", resp.StatusCode, "body", string(body))
@@ -293,7 +293,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", bytes.NewReader(reqBody))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -340,7 +340,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			resp, err := httpClient.Post(serviceURL+"/api/v1/workflows/search", "application/json", bytes.NewReader(reqBody))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			testLogger.Info("Search response", "status", resp.StatusCode, "body", string(body))
@@ -396,7 +396,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-WORKFLOW-002 v3.0: Get by UUID only (no version parameter)
 			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/%s", serviceURL, workflowV3UUID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			testLogger.Info("Get workflow response", "status", resp.StatusCode, "body", string(body))
@@ -423,7 +423,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			// DD-WORKFLOW-002 v3.0: List versions by workflow_name
 			resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions", serviceURL, workflowName))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
 			testLogger.Info("List versions response", "status", resp.StatusCode, "body", string(body))

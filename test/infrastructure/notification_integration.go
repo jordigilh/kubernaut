@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"time"
 )
 
@@ -49,8 +50,8 @@ import (
 // Sequential allocation after AIAnalysis (15438/16384/18095/19095)
 const (
 	// PostgreSQL port for Notification integration tests
-	// Changed from 15453 (ad-hoc "+20") to 15439 (DD-TEST-001 sequential) on Dec 22, 2025
-	NTIntegrationPostgresPort = 15439
+	// Changed from 15439 to 15440 to resolve HAPI conflict (DD-TEST-001 v2.0) on Jan 1, 2026
+	NTIntegrationPostgresPort = 15440
 
 	// Redis port for Notification integration tests
 	// Changed from 16399 (ad-hoc "+20") to 16385 (DD-TEST-001 sequential) on Dec 22, 2025
@@ -112,7 +113,7 @@ const (
 //   defer infrastructure.StopNotificationIntegrationInfrastructure(os.Stdout)
 //
 // Health Check:
-//   curl http://localhost:18096/health  # Should return 200 OK
+//   curl http://127.0.0.1:18096/health  # Should return 200 OK
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -131,7 +132,7 @@ const (
 // - Parallel-safe with unique ports (DD-TEST-001)
 //
 // Infrastructure Components:
-// - PostgreSQL (port 15439): DataStorage backend
+// - PostgreSQL (port 15440): DataStorage backend (unique, no longer shared with HAPI)
 // - Redis (port 16385): DataStorage DLQ
 // - DataStorage API (port 18096): Audit events
 //
@@ -188,19 +189,31 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
-	// STEP 4: Run migrations (using shared utility)
+	// STEP 4: Run migrations (using local migrations directory)
 	// ============================================================================
 	fmt.Fprintf(writer, "🔄 Running database migrations...\n")
-	if err := RunMigrations(MigrationsConfig{
-		ContainerName:   NTIntegrationMigrationsContainer,
-		PostgresHost:    "localhost",
-		PostgresPort:    NTIntegrationPostgresPort,
-		DBName:          NTIntegrationDBName,
-		DBUser:          NTIntegrationDBUser,
-		DBPassword:      NTIntegrationDBPassword,
-		MigrationsImage: "quay.io/jordigilh/datastorage-migrations:latest",
-	}, writer); err != nil {
-		return fmt.Errorf("failed to run migrations: %w", err)
+	projectRoot := getProjectRoot()
+	migrationsCmd := exec.Command("podman", "run", "--rm",
+		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
+		"-e", fmt.Sprintf("PGPORT=%d", NTIntegrationPostgresPort),
+		"-e", fmt.Sprintf("PGUSER=%s", NTIntegrationDBUser),
+		"-e", fmt.Sprintf("PGPASSWORD=%s", NTIntegrationDBPassword),
+		"-e", fmt.Sprintf("PGDATABASE=%s", NTIntegrationDBName),
+		"-v", filepath.Join(projectRoot, "migrations")+":/migrations:ro",
+		"postgres:16-alpine",
+		"sh", "-c",
+		`set -e
+echo "Applying migrations (Up sections only)..."
+find /migrations -maxdepth 1 -name '*.sql' -type f | sort | while read f; do
+  echo "Applying $f..."
+  sed -n '1,/^-- +goose Down/p' "$f" | grep -v '^-- +goose Down' | psql 2>&1
+done
+echo "Migrations complete!"`)
+	migrationsCmd.Stdout = writer
+	migrationsCmd.Stderr = writer
+	if err := migrationsCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "\n❌ Migration command failed - check output above for specific SQL errors\n")
+		return fmt.Errorf("migrations failed (check test output for details): %w", err)
 	}
 	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
@@ -225,19 +238,29 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
-	// STEP 7: Start DataStorage LAST (service-specific)
+	// STEP 7: Build DataStorage image (using GenerateInfraImageName for consistency)
+	// ============================================================================
+	dsImageTag := GenerateInfraImageName("datastorage", "notification")
+	fmt.Fprintf(writer, "🏗️  Building DataStorage image (%s)...\n", dsImageTag)
+	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
+		return fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n\n")
+
+	// ============================================================================
+	// STEP 8: Start DataStorage LAST (service-specific)
 	// ============================================================================
 	fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startNotificationDataStorage(writer); err != nil {
+	if err := startNotificationDataStorage(dsImageTag, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
 	// ============================================================================
-	// STEP 8: Wait for DataStorage HTTP endpoint (using shared utility)
+	// STEP 9: Wait for DataStorage HTTP endpoint (using shared utility)
 	// ============================================================================
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", NTIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", NTIntegrationDataStoragePort),
 		30*time.Second,
 		writer,
 	); err != nil {
@@ -300,23 +323,20 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 
 // startNotificationDataStorage starts the DataStorage container for Notification integration tests
 // This is service-specific because it needs to connect to Notification-specific PostgreSQL/Redis instances
-func startNotificationDataStorage(writer io.Writer) error {
+func startNotificationDataStorage(imageTag string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
+
+	// Use existing config file from test/integration/notification/config/
+	configDir := filepath.Join(projectRoot, "test", "integration", "notification", "config")
+	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
 
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", NTIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", NTIntegrationDataStoragePort),
-		"-p", fmt.Sprintf("%d:8081", NTIntegrationMetricsPort),
-		"-e", fmt.Sprintf("POSTGRES_HOST=host.containers.internal"),
-		"-e", fmt.Sprintf("POSTGRES_PORT=%d", NTIntegrationPostgresPort),
-		"-e", fmt.Sprintf("POSTGRES_DB=%s", NTIntegrationDBName),
-		"-e", fmt.Sprintf("POSTGRES_USER=%s", NTIntegrationDBUser),
-		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", NTIntegrationDBPassword),
-		"-e", fmt.Sprintf("REDIS_HOST=host.containers.internal"),
-		"-e", fmt.Sprintf("REDIS_PORT=%d", NTIntegrationRedisPort),
-		"-e", "SERVICE_PORT=8080",
-		"-e", "METRICS_PORT=8081",
-		"quay.io/jordigilh/datastorage:latest",
+		"-p", fmt.Sprintf("%d:9090", NTIntegrationMetricsPort),
+		"-v", configMount,
+		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
+		imageTag,
 	)
 	cmd.Dir = projectRoot
 	cmd.Stdout = writer

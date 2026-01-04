@@ -117,7 +117,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 				return httpClient.Do(req25)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 2: Verify HTTP 400 response")
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -169,7 +169,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 				return httpClient.Do(req26)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 2: Verify HTTP 400 response")
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -195,7 +195,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 			testLogger.Info("Step 1: Request non-existent endpoint")
 			resp, err := httpClient.Get(gatewayURL + "/api/v1/nonexistent/endpoint")
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 2: Verify HTTP 404 response")
 			Expect(resp.StatusCode).To(Equal(http.StatusNotFound),
@@ -217,7 +217,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 			testLogger.Info("Step 1: Send GET to webhook endpoint (expects POST)")
 			resp, err := httpClient.Get(gatewayURL + "/api/v1/signals/prometheus")
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 2: Verify HTTP 405 response")
 			Expect(resp.StatusCode).To(Equal(http.StatusMethodNotAllowed),
@@ -252,7 +252,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 				return httpClient.Do(req27)
 			}()
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			testLogger.Info("Step 2: Check response body for error details")
 			body, err := io.ReadAll(resp.Body)

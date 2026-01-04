@@ -78,6 +78,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -151,6 +152,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      notifName,
 				Namespace: testNamespace,
+				Generation: 1, // K8s increments on create/update
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -201,6 +203,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -259,6 +262,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/notification-type": "escalation",
 						"kubernaut.ai/severity":          "critical",
@@ -312,6 +316,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/notification-type": "completed",
 						"kubernaut.ai/severity":          "low",
@@ -376,6 +381,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -420,6 +426,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 				}
 				err := deleteAndWait(ctx, k8sClient, notif, 5*time.Second)

@@ -362,6 +362,12 @@ const (
 
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// Used to prevent duplicate reconciliations and ensure idempotency.
+	// Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)
 	// Per reconciliation-phases.md v2.0: Pending → Investigating → Analyzing → Completed/Failed
 	// +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed

@@ -49,7 +49,9 @@ from typing import List, Dict, Any
 
 # DD-API-001: Import OpenAPI generated clients
 import sys
-sys.path.insert(0, 'tests/clients')
+from pathlib import Path
+# Add tests/clients to path (absolute path resolution for CI)
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
 from holmesgpt_api_client import ApiClient as HapiApiClient, Configuration as HapiConfiguration
 from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
 from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
@@ -64,9 +66,10 @@ from src.clients.datastorage.models.audit_event import AuditEvent
 # FIXTURES
 # ========================================
 
-# Note: hapi_client fixture is provided by conftest.py (session-scoped, TestClient)
+# Note: hapi_url fixture is provided by conftest.py (session-scoped, HAPI service URL)
 # Note: data_storage_url fixture is provided by conftest.py (session-scoped)
 # This allows workflow seeding and audit validation to work correctly
+# Tests use OpenAPI clients (DD-API-001) for type-safe, contract-validated communication
 
 
 # ========================================
@@ -163,45 +166,67 @@ def query_audit_events_with_retry(
 
 
 def call_hapi_incident_analyze(
-    hapi_client,
+    hapi_url: str,
     incident_data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Call HAPI's /api/v1/incident/analyze endpoint using FastAPI TestClient.
+    Call HAPI's /api/v1/incident/analyze endpoint using OpenAPI client.
 
-    Architecture: Integration tests use TestClient (in-process HAPI)
+    DD-API-001 COMPLIANT: Uses generated OpenAPI client (type-safe, contract-validated).
+
+    Architecture: Integration tests use OpenAPI client (external HTTP calls)
 
     Args:
-        hapi_client: FastAPI TestClient fixture
+        hapi_url: HAPI service URL
         incident_data: Incident request data
 
     Returns:
         Response dict
     """
-    response = hapi_client.post("/api/v1/incident/analyze", json=incident_data)
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    return response.json()
+    config = HapiConfiguration(host=hapi_url)
+    client = HapiApiClient(configuration=config)
+    api_instance = IncidentAnalysisApi(client)
+    
+    # Create IncidentRequest model from dict
+    incident_request = IncidentRequest(**incident_data)
+    
+    # DD-API-001: Use OpenAPI generated client
+    response = api_instance.analyze_incident(incident_request=incident_request)
+    
+    # Convert response to dict for compatibility with existing tests
+    return response.to_dict() if hasattr(response, 'to_dict') else response
 
 
 def call_hapi_recovery_analyze(
-    hapi_client,
+    hapi_url: str,
     recovery_data: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    Call HAPI's /api/v1/recovery/analyze endpoint using FastAPI TestClient.
+    Call HAPI's /api/v1/recovery/analyze endpoint using OpenAPI client.
 
-    Architecture: Integration tests use TestClient (in-process HAPI)
+    DD-API-001 COMPLIANT: Uses generated OpenAPI client (type-safe, contract-validated).
+
+    Architecture: Integration tests use OpenAPI client (external HTTP calls)
 
     Args:
-        hapi_client: FastAPI TestClient fixture
+        hapi_url: HAPI service URL
         recovery_data: Recovery request data
 
     Returns:
         Response dict
     """
-    response = hapi_client.post("/api/v1/recovery/analyze", json=recovery_data)
-    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-    return response.json()
+    config = HapiConfiguration(host=hapi_url)
+    client = HapiApiClient(configuration=config)
+    api_instance = RecoveryAnalysisApi(client)
+    
+    # Create RecoveryRequest model from dict
+    recovery_request = RecoveryRequest(**recovery_data)
+    
+    # DD-API-001: Use OpenAPI generated client
+    response = api_instance.analyze_recovery(recovery_request=recovery_request)
+    
+    # Convert response to dict for compatibility with existing tests
+    return response.to_dict() if hasattr(response, 'to_dict') else response
 
 
 # ========================================
@@ -221,7 +246,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_emits_llm_request_and_response_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url,
         unique_test_id):
         """
@@ -252,8 +277,8 @@ class TestIncidentAnalysisAuditFlow:
             "error_message": "Pod OOMKilled - integration test",
         }
 
-        # ACT: Trigger business operation (incident analysis) via TestClient
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        # ACT: Trigger business operation (incident analysis) via OpenAPI client
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
 
         # Verify business operation succeeded
         assert response is not None, "HAPI should return a response"
@@ -261,18 +286,25 @@ class TestIncidentAnalysisAuditFlow:
 
         # ASSERT: Verify audit events emitted as side effect (with retry)
         # ADR-038: Buffered audit store flushes asynchronously, so poll for events
-        events = query_audit_events_with_retry(
+        all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=2,  # llm_request + llm_response
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
 
-        # Should have at least llm_request and llm_response
-        assert len(events) >= 2, f"Expected at least 2 audit events (llm_request, llm_response), got {len(events)}"
+        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # Business logic now emits additional events (llm_tool_call, workflow_validation_attempt)
+        # Test focuses on BR-AUDIT-005 requirement: llm_request + llm_response must be emitted
+        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+
+        # Verify exactly 2 LLM events (request + response)
+        assert len(llm_events) == 2, \
+            f"Expected exactly 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
+            f"All events: {[e.event_type for e in all_events]}"
 
         # Extract event types
-        event_types = [e.event_type for e in events]
+        event_types = [e.event_type for e in llm_events]
 
         # Verify llm_request event emitted
         assert "llm_request" in event_types, \
@@ -282,14 +314,14 @@ class TestIncidentAnalysisAuditFlow:
         assert "llm_response" in event_types, \
             f"llm_response event not found in {event_types}"
 
-        # Verify all events have same correlation_id
-        for event in events:
+        # Verify all LLM events have same correlation_id
+        for event in llm_events:
             assert event.correlation_id == remediation_id, \
                 f"Event correlation_id mismatch: expected {remediation_id}, got {event.correlation_id}"
 
     def test_incident_analysis_emits_llm_tool_call_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_tool_call events for workflow searches.
@@ -319,7 +351,7 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
         assert response is not None
 
         # ASSERT: Verify tool call events emitted (with retry polling)
@@ -337,7 +369,7 @@ class TestIncidentAnalysisAuditFlow:
 
     def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Workflow validation MUST emit workflow_validation_attempt events.
@@ -367,7 +399,7 @@ class TestIncidentAnalysisAuditFlow:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
         assert response is not None
 
         # ASSERT: Verify validation attempt events emitted (with retry polling)
@@ -395,7 +427,7 @@ class TestRecoveryAnalysisAuditFlow:
 
     def test_recovery_analysis_emits_llm_request_and_response_events(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         BR-AUDIT-005: Recovery analysis MUST emit llm_request and llm_response audit events.
@@ -418,19 +450,27 @@ class TestRecoveryAnalysisAuditFlow:
         }
 
         # ACT: Trigger recovery analysis
-        response = call_hapi_recovery_analyze(hapi_client, recovery_request)
+        response = call_hapi_recovery_analyze(hapi_url, recovery_request)
         assert response is not None
 
         # ASSERT: Verify audit events emitted (with retry polling)
-        events = query_audit_events_with_retry(
+        all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=2,  # llm_request + llm_response
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
-        assert len(events) >= 2, f"Expected at least 2 audit events, got {len(events)}"
 
-        event_types = [e.event_type for e in events]
+        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # Recovery analysis may also emit additional events (tool calls, validation attempts)
+        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+
+        # Verify exactly 2 LLM events (request + response)
+        assert len(llm_events) == 2, \
+            f"Expected exactly 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
+            f"All events: {[e.event_type for e in all_events]}"
+
+        event_types = [e.event_type for e in llm_events]
         assert "llm_request" in event_types, f"llm_request not found in {event_types}"
         assert "llm_response" in event_types, f"llm_response not found in {event_types}"
 
@@ -446,7 +486,7 @@ class TestAuditEventSchemaValidation:
 
     def test_audit_events_have_required_adr034_fields(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url, unique_test_id):
         """
         ADR-034: Audit events MUST include required fields per ADR-034 spec.
@@ -476,7 +516,7 @@ class TestAuditEventSchemaValidation:
         }
 
         # ACT: Trigger business operation
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
         assert response is not None
 
         # ASSERT: Verify all audit events have ADR-034 required fields (with retry polling)
@@ -531,7 +571,7 @@ class TestErrorScenarioAuditFlow:
 
     def test_workflow_not_found_emits_audit_with_error_context(
         self,
-        hapi_client,
+        hapi_url,
         data_storage_url,
         unique_test_id):
         """
@@ -568,7 +608,7 @@ class TestErrorScenarioAuditFlow:
         }
 
         # ACT: Trigger business operation that will fail gracefully
-        response = call_hapi_incident_analyze(hapi_client, incident_request)
+        response = call_hapi_incident_analyze(hapi_url, incident_request)
 
         # Verify business operation completed (even if no workflow found)
         assert response is not None, "HAPI should return a response"
@@ -576,24 +616,29 @@ class TestErrorScenarioAuditFlow:
         # Mock mode returns a deterministic response even for non-existent workflows
 
         # ASSERT: Verify audit events were generated despite business failure
-        events = query_audit_events_with_retry(
+        all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=2,  # At minimum: llm_request + llm_response
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
 
-        # Should have audit events even though no workflow matched
-        assert len(events) >= 2, \
-            f"Expected audit events even for failed workflow search, got {len(events)}"
+        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # Even failed workflows may emit additional events (tool calls, validation attempts)
+        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+
+        # Verify exactly 2 LLM events even for failed workflow search
+        assert len(llm_events) == 2, \
+            f"Expected exactly 2 LLM events (llm_request, llm_response) even for failed workflow search, got {len(llm_events)}. " \
+            f"All events: {[e.event_type for e in all_events]}"
 
         # Verify events include the remediation_id (correlation)
-        for event in events:
+        for event in llm_events:
             assert event.correlation_id == remediation_id, \
                 f"Event correlation_id mismatch: {event.correlation_id} != {remediation_id}"
 
         # Business failure context should be captured in audit events
-        event_types = [e.event_type for e in events]
+        event_types = [e.event_type for e in llm_events]
         assert "llm_request" in event_types, "Should audit LLM request even when workflow not found"
         assert "llm_response" in event_types, "Should audit LLM response even when workflow not found"
 

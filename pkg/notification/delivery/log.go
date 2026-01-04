@@ -47,8 +47,8 @@ import (
 // LogDeliveryService delivers notifications as structured JSON logs to stdout
 type LogDeliveryService struct{}
 
-// Ensure LogDeliveryService implements DeliveryService interface at compile-time
-var _ DeliveryService = (*LogDeliveryService)(nil)
+// Ensure LogDeliveryService implements Service interface at compile-time
+var _ Service = (*LogDeliveryService)(nil)
 
 // NewLogDeliveryService creates a new log-based delivery service
 func NewLogDeliveryService() *LogDeliveryService {

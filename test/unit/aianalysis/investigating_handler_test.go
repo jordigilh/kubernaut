@@ -45,6 +45,10 @@ func (n *noopAuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aia
 	// No-op: Unit tests don't need audit recording
 }
 
+func (n *noopAuditClient) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
+	// No-op: Unit tests don't need audit recording
+}
+
 // ========================================
 // InvestigatingHandler Unit Tests
 // BR-AI-007: HolmesGPT-API integration and error handling

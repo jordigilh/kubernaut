@@ -69,6 +69,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -141,6 +142,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -236,6 +238,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
 					Type:     notificationv1alpha1.NotificationTypeSimple,

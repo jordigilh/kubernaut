@@ -330,16 +330,14 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 	migrationsDir := filepath.Join(projectRoot, defaultMigrationsPath)
 
 	// Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
-	// Skip vector-dependent migrations (001-008) as pgvector removed for V1.0
+	// NOTE: Migrations 001-008 (001,002,003,004,006) do NOT use pgvector - they are core schema
+	// The pgvector-dependent migrations (005,007,008) were removed in V1.0 and no longer exist
 	migrationScript := `
 		set -e
-		echo "Applying migrations (Up sections only, skipping 001-008 vector migrations)..."
+		echo "Creating slm_user role (required by migrations)..."
+		psql -c "CREATE ROLE slm_user LOGIN PASSWORD 'slm_user';" || echo "Role slm_user already exists"
+		echo "Applying migrations (Up sections only)..."
 		find /migrations -maxdepth 1 -name "*.sql" -type f | sort | while read f; do
-			# Skip vector-dependent migrations (001-008)
-			if echo "$f" | grep -qE "/00[1-8]_"; then
-				echo "Skipping vector migration: $f"
-				continue
-			fi
 			echo "Applying $f..."
 			sed -n "1,/^-- +goose Down/p" "$f" | grep -v "^-- +goose Down" | psql
 		done
@@ -412,15 +410,15 @@ func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer
 	// Check if DataStorage image exists, build if not
 	checkCmd := exec.Command("podman", "image", "exists", imageName)
 	if checkCmd.Run() != nil {
-		fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
-		buildCmd := exec.Command("podman", "build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+	fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
+	buildCmd := exec.Command("podman", "build",
+	"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
 
-			"-t", imageName,
-			"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
-			"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
-			projectRoot,
-		)
+		"-t", imageName,
+		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
+		projectRoot,
+	)
 		buildCmd.Stdout = writer
 		buildCmd.Stderr = writer
 		if err := buildCmd.Run(); err != nil {
@@ -514,7 +512,7 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 //	    BuildContext:    ".",                     // Optional: build if needed
 //	    BuildDockerfile: "holmesgpt-api/Dockerfile",
 //	    HealthCheck: &HealthCheckConfig{
-//	        URL:     "http://localhost:18120/health",
+//	        URL:     "http://127.0.0.1:18120/health",
 //	        Timeout: 30 * time.Second,
 //	    },
 //	}
@@ -539,7 +537,7 @@ type GenericContainerConfig struct {
 
 // HealthCheckConfig defines how to verify container health
 type HealthCheckConfig struct {
-	URL     string        // HTTP endpoint to check (e.g., "http://localhost:8080/health")
+	URL     string        // HTTP endpoint to check (e.g., "http://127.0.0.1:8080/health")
 	Timeout time.Duration // Maximum time to wait for health check to pass
 }
 
@@ -742,7 +740,7 @@ func waitForContainerHealth(check *HealthCheckConfig, writer io.Writer) error {
 type E2EImageConfig struct {
 	ServiceName      string // Service name (e.g., "gateway", "aianalysis")
 	ImageName        string // Base image name (e.g., "kubernaut/datastorage")
-	DockerfilePath   string // Relative to project root (e.g., "cmd/datastorage/Dockerfile")
+	DockerfilePath   string // Relative to project root (e.g., "docker/data-storage.Dockerfile")
 	KindClusterName  string // Kind cluster name to load image into
 	BuildContextPath string // Build context path, default: "." (project root)
 	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
@@ -833,6 +831,19 @@ func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, erro
 	// Clean up tar file
 	if err := os.Remove(tmpFile); err != nil {
 		fmt.Fprintf(writer, "   ⚠️  Failed to remove temp file %s: %v\n", tmpFile, err)
+	}
+
+	// CRITICAL: Delete Podman image immediately after Kind load to free disk space
+	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
+	// Solution: Once in Kind, we don't need the Podman copy anymore
+	fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", localImageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", localImageName)
 	}
 
 	fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")

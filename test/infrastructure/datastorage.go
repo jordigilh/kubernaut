@@ -1288,6 +1288,18 @@ func loadDataStorageImage(clusterName string, writer io.Writer) error {
 	// Clean up tar file
 	_ = os.Remove("/tmp/datastorage-e2e.tar")
 
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
+	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-datastorage:e2e-test-datastorage")
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-datastorage:e2e-test-datastorage")
+	}
+
 	fmt.Fprintln(writer, "   Data Storage image loaded into Kind cluster")
 	return nil
 }
@@ -1911,6 +1923,18 @@ func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer)
 
 	// Clean up tar file
 	_ = exec.Command("rm", "-f", "/tmp/datastorage-e2e.tar").Run()
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(writer, "     🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageTag)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "     ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "     ✅ Podman image removed: %s\n", imageTag)
+	}
 
 	fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
 	return nil

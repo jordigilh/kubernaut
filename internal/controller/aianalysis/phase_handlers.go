@@ -55,13 +55,23 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	now := metav1.Now()
 	analysis.Status.StartedAt = &now
 
+	// Capture phase BEFORE transition for audit
+	phaseBefore := analysis.Status.Phase
+
 	// Transition to Investigating phase (first processing phase per CRD schema)
+	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Investigating handler after processing
 	analysis.Status.Phase = PhaseInvestigating
 	analysis.Status.Message = "AIAnalysis created, starting investigation"
 
 	if err := r.Status().Update(ctx, analysis); err != nil {
 		log.Error(err, "Failed to update status to Investigating")
 		return ctrl.Result{}, err
+	}
+
+	// DD-AUDIT-003: Record phase transition AFTER status update (ensures audit reflects committed state)
+	// IDEMPOTENCY: Only record if phase actually changed (prevents duplicate events in race conditions)
+	if r.AuditClient != nil && phaseBefore != PhaseInvestigating {
+		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, PhaseInvestigating)
 	}
 
 	r.Recorder.Event(analysis, "Normal", "AIAnalysisCreated", "AIAnalysis processing started")
@@ -116,6 +126,10 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 		// (GenerationChangedPredicate doesn't trigger on status-only updates)
 		if analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
+
+			// DD-AUDIT-003: Phase transition already recorded INSIDE handler
+			// (investigating.go:142, 177 - no duplicate recording needed here)
+
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
@@ -173,6 +187,10 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		// (GenerationChangedPredicate doesn't trigger on status-only updates)
 		if analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
+
+			// DD-AUDIT-003: Phase transition already recorded INSIDE handler
+			// (analyzing.go:97, 134, 220 - no duplicate recording needed here)
+
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil

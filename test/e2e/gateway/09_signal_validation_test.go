@@ -75,7 +75,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		resp1, err := httpClient.Do(req1)
 		Expect(err).ToNot(HaveOccurred())
 		body1, _ := io.ReadAll(resp1.Body)
-		resp1.Body.Close()
+		_ = resp1.Body.Close()
 
 		// CORRECTNESS: Invalid JSON must return 400
 		Expect(resp1.StatusCode).To(Equal(http.StatusBadRequest),
@@ -96,7 +96,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		resp2, err := httpClient.Do(req2)
 		Expect(err).ToNot(HaveOccurred())
 		body2, _ := io.ReadAll(resp2.Body)
-		resp2.Body.Close()
+		_ = resp2.Body.Close()
 
 		// CORRECTNESS: Empty payload must return 400
 		Expect(resp2.StatusCode).To(Equal(http.StatusBadRequest),
@@ -120,7 +120,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		resp3, err := httpClient.Do(req3)
 		Expect(err).ToNot(HaveOccurred())
 		body3, _ := io.ReadAll(resp3.Body)
-		resp3.Body.Close()
+		_ = resp3.Body.Close()
 
 		// CORRECTNESS: Empty alerts array must return 400
 		Expect(resp3.StatusCode).To(Equal(http.StatusBadRequest),
@@ -157,7 +157,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 			return err
 		}, 10*time.Second, 1*time.Second).Should(Succeed())
 		body4, _ := io.ReadAll(resp4.Body)
-		resp4.Body.Close()
+		_ = resp4.Body.Close()
 
 		// CORRECTNESS: Valid payload must return 201 or 202
 		Expect(resp4.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),

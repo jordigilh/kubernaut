@@ -387,6 +387,12 @@ type RemediationRequestStatus struct {
 	// ║  Remediation Orchestrator has exclusive write access           ║
 	// ╚════════════════════════════════════════════════════════════════╝
 
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// Used to prevent duplicate reconciliations and ensure idempotency.
+	// Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Phase tracking for orchestration.
 	// Uses typed RemediationPhase constants for type safety and cross-service integration.
 	//

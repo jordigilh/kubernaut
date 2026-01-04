@@ -58,14 +58,13 @@ import (
 //
 // ========================================
 
-var _ = Describe("AuditEventsRepository Integration Tests", Serial, func() {
+var _ = Describe("AuditEventsRepository Integration Tests",  func() {
 	var (
 		auditRepo *repository.AuditEventsRepository
 		testID    string
 	)
 
 	BeforeEach(func() {
-		usePublicSchema()
 
 		// Create repository with real database
 		// Note: db is *sqlx.DB, but repository expects *sql.DB

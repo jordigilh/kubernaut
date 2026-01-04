@@ -203,7 +203,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", WEIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", WEIntegrationDataStoragePort),
 		30*time.Second,
 		writer,
 	); err != nil {
@@ -287,26 +287,18 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 	return cmd.Run()
 }
 
-
 func startWEDataStorage(projectRoot string, writer io.Writer) error {
 	// DD-TEST-001 v1.3: Use infrastructure image format for parallel test isolation
 	// Format: localhost/{infrastructure}:{consumer}-{uuid}
 	// Example: localhost/datastorage:workflowexecution-1884d074
 	dsImage := GenerateInfraImageName("datastorage", "workflowexecution")
 
-	fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", dsImage)
-	buildCmd := exec.Command("podman", "build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-		"-t", dsImage,
-		"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
-		projectRoot,
-	)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
+	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", dsImage)
+	// Use shared build function (includes --no-cache and coverage support)
+	if err := buildDataStorageImageWithTag(dsImage, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", dsImage)
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// Mount config directory and set CONFIG_PATH (per ADR-030)
 	configDir := filepath.Join(projectRoot, "test", "integration", "workflowexecution", "config")
@@ -338,5 +330,3 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 	cmd.Stderr = writer
 	return cmd.Run()
 }
-
-

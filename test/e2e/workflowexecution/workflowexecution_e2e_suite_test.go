@@ -254,8 +254,8 @@ var _ = SynchronizedAfterSuite(
 			// 2. Copy coverage data from Kind node
 			logger.Info("  Copying coverage data from Kind node...")
 			coverageDir := "test/e2e/workflowexecution/coverdata"
-			os.RemoveAll(coverageDir) // Clean old coverage
-			os.MkdirAll(coverageDir, 0755)
+			_ = os.RemoveAll(coverageDir) // Clean old coverage
+			_ = os.MkdirAll(coverageDir, 0755)
 
 			// Get Kind node container name
 			nodeListCmd := exec.Command("podman", "ps", "--filter",

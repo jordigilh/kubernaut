@@ -83,9 +83,9 @@ var (
 	cfg                *rest.Config
 	k8sClient          client.Client
 	k8sManager         ctrl.Manager
-	dataStorageBaseURL string = fmt.Sprintf("http://localhost:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port per DD-TEST-001
-	realAuditStore     audit.AuditStore                                                                          // REAL audit store (DD-AUDIT-003 compliance)
-	reconciler         *workflowexecution.WorkflowExecutionReconciler                                            // Controller instance for metrics access
+	dataStorageBaseURL string = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
+	realAuditStore     audit.AuditStore                                                                             // REAL audit store (DD-AUDIT-003 compliance)
+	reconciler         *workflowexecution.WorkflowExecutionReconciler                                               // Controller instance for metrics access
 )
 
 // Test namespaces (unique per test run for parallel safety)
@@ -109,18 +109,26 @@ func TestWorkflowExecutionIntegration(t *testing.T) {
 	RunSpecs(t, "WorkflowExecution Controller Integration Suite (EnvTest + Tekton CRDs)")
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// Phase 1: Runs ONCE on parallel process #1
+	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
+	// This runs once to avoid container name collisions when TEST_PROCS > 1
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	By("Starting WorkflowExecution integration infrastructure (Process #1 only, DD-TEST-002)")
+	err := infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
+
+	return []byte{} // No data to share between processes
+}, func(data []byte) {
+	// Phase 2: Runs on ALL parallel processes (receives data from phase 1)
+	// Set up envtest, K8s client, and controller manager per process
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
-
-	// DD-TEST-002: Start WorkflowExecution integration infrastructure (sequential startup)
-	By("Starting WorkflowExecution integration infrastructure (DD-TEST-002)")
-	err = infrastructure.StartWEIntegrationInfrastructure(GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
 
 	By("Registering CRD schemes")
 	err = workflowexecutionv1alpha1.AddToScheme(scheme.Scheme)
@@ -323,6 +331,7 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: DefaultNamespace,
+			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			RemediationRequestRef: corev1.ObjectReference{

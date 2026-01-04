@@ -27,7 +27,6 @@ Tests validate BUSINESS OUTCOMES:
 - warnings[] is populated for low confidence and no workflow scenarios
 """
 
-import pytest
 from unittest.mock import MagicMock
 
 

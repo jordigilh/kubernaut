@@ -12,12 +12,8 @@ SDK Registration Strategy:
 """
 
 import pytest
-import os
-from typing import Dict, Any
-from unittest.mock import Mock
 
 from holmes.config import Config
-from holmes.core.toolset_manager import ToolsetManager
 
 from src.toolsets.workflow_catalog import WorkflowCatalogToolset
 from src.extensions.llm_config import (
@@ -110,11 +106,11 @@ class TestSDKRegistrationFix:
 
         # Act - call the monkey-patched method
         try:
-            toolsets = config.toolset_manager.list_server_toolsets(dal=None, refresh_status=True)
+            _ = config.toolset_manager.list_server_toolsets(dal=None, refresh_status=True)
         except Exception:
             # Expected: might fail without k8s cluster
             # But shouldn't fail with AttributeError about 'get'
-            toolsets = []
+            pass
 
         # Assert - workflow catalog should be injected (or at least not crash)
         # The key test is that it doesn't raise AttributeError: 'get'
@@ -219,7 +215,7 @@ class TestSDKRegistrationFix:
         try:
             # This iterates over toolsets and calls .get() on each
             # If workflow/catalog is in dict as instance, this fails
-            toolsets = config.toolset_manager.list_server_toolsets(dal=None)
+            _ = config.toolset_manager.list_server_toolsets(dal=None)
         except AttributeError as e:
             if "'WorkflowCatalogToolset' object has no attribute 'get'" in str(e):
                 pytest.fail(

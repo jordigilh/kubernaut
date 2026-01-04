@@ -327,9 +327,32 @@ if [[ "$LOAD_TO_KIND" == true ]]; then
     log_info ""
     log_info "📦 Loading image into Kind cluster: $KIND_CLUSTER_NAME"
 
-    # Check if Kind cluster exists
-    if ! kind get clusters 2>/dev/null | grep -q "^${KIND_CLUSTER_NAME}$"; then
-        log_warn "Kind cluster '$KIND_CLUSTER_NAME' does not exist"
+    # Set KIND_EXPERIMENTAL_PROVIDER for Podman support (if not already set)
+    # This is critical for Kind to use Podman instead of Docker
+    export KIND_EXPERIMENTAL_PROVIDER=${KIND_EXPERIMENTAL_PROVIDER:-podman}
+
+    # Check if Kind cluster exists (with retry for race conditions)
+    # Race condition: In parallel tests, cluster may be created by another goroutine
+    # and not immediately visible to `kind get clusters`
+    log_debug "Checking if Kind cluster exists (with 30s retry window)..."
+    CLUSTER_FOUND=false
+    for i in {1..6}; do
+        if kind get clusters 2>/dev/null | grep -q "^${KIND_CLUSTER_NAME}$"; then
+            CLUSTER_FOUND=true
+            log_debug "✅ Cluster found: $KIND_CLUSTER_NAME (attempt $i)"
+            break
+        fi
+        if [[ $i -lt 6 ]]; then
+            log_debug "⏳ Cluster not found yet, waiting 5s (attempt $i/6)..."
+            sleep 5
+        fi
+    done
+
+    if [[ "$CLUSTER_FOUND" == false ]]; then
+        log_error "Kind cluster '$KIND_CLUSTER_NAME' does not exist after 30s"
+        log_info "Available clusters:"
+        kind get clusters 2>/dev/null || log_info "  (none)"
+        log_info ""
         log_info "Create it with: kind create cluster --name $KIND_CLUSTER_NAME"
         exit 1
     fi
@@ -346,11 +369,25 @@ if [[ "$LOAD_TO_KIND" == true ]]; then
             exit 1
         fi
 
+        # Load image into Kind (KIND_EXPERIMENTAL_PROVIDER already set above)
         kind load image-archive "$TEMP_TAR" --name "$KIND_CLUSTER_NAME"
         LOAD_RESULT=$?
 
         rm -f "$TEMP_TAR"
         log_debug "Cleaned up temporary tar file"
+
+        # CRITICAL: Remove Podman image immediately after Kind load to free disk space
+        # Problem: Image exists in both Podman storage AND Kind = 2x disk usage
+        # Solution: Once in Kind, we don't need the Podman copy anymore
+        if [[ $LOAD_RESULT -eq 0 ]]; then
+            log_info "🗑️  Removing Podman image to free disk space..."
+            $CONTAINER_TOOL rmi -f "$FULL_IMAGE" 2>/dev/null
+            if [[ $? -eq 0 ]]; then
+                log_info "✅ Podman image removed: $FULL_IMAGE"
+            else
+                log_warn "⚠️  Failed to remove Podman image (non-fatal)"
+            fi
+        fi
     else
         # Docker can load directly
         kind load docker-image "$FULL_IMAGE" --name "$KIND_CLUSTER_NAME"

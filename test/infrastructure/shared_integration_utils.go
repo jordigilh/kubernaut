@@ -157,32 +157,78 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 	return cmd.Run()
 }
 
-// WaitForPostgreSQLReady waits for PostgreSQL to be ready to accept connections
-// Uses pg_isready command to check PostgreSQL availability
+// WaitForPostgreSQLReady waits for PostgreSQL to be ready to accept connections AND execute queries
+// Uses two-phase verification to prevent "database system is starting up" errors during migrations
+//
+// Phase 1: Connection Check (pg_isready)
+// - Verifies PostgreSQL accepts connections
+// - 30 attempts with 1 second intervals
+//
+// Phase 2: Queryability Check (SELECT 1)
+// - Verifies database is fully initialized and can execute queries
+// - 10 attempts with 1 second intervals
+// - CRITICAL: pg_isready only checks connections, not full initialization
 //
 // Pattern: DD-TEST-002 Health Check
-// - 30 attempts with 1 second intervals
-// - Logs progress for debugging
-// - Returns error if not ready after timeout
+// - Prevents race condition: migrations running before DB is queryable
+// - Root cause fix for "FATAL: the database system is starting up"
 //
 // Usage:
 //   if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //       return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 //   }
 func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writer) error {
+	// ============================================================================
+	// PHASE 1: Wait for PostgreSQL to accept connections (pg_isready)
+	// ============================================================================
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
 		cmd := exec.Command("podman", "exec", containerName,
 			"pg_isready", "-U", dbUser, "-d", dbName)
 		if cmd.Run() == nil {
-			fmt.Fprintf(writer, "   ✅ PostgreSQL ready (attempt %d/%d)\n", i, maxAttempts)
-			return nil
+			fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
+			break
+		}
+		if i == maxAttempts {
+			return fmt.Errorf("PostgreSQL failed to accept connections after %d attempts", maxAttempts)
 		}
 		if i < maxAttempts {
 			time.Sleep(1 * time.Second)
 		}
 	}
-	return fmt.Errorf("PostgreSQL failed to become ready after %d attempts", maxAttempts)
+
+	// ============================================================================
+	// PHASE 2: Verify database is queryable (not just accepting connections)
+	// ============================================================================
+	// CRITICAL: pg_isready only checks if PostgreSQL accepts connections.
+	// It does NOT verify the database is fully initialized and ready for queries.
+	// Without this check, migrations can fail with:
+	//   "FATAL: the database system is starting up"
+	//
+	// This race condition was discovered in:
+	// - AIAnalysis integration tests (Jan 2, 2026)
+	// - Fixed by adding queryability verification
+	fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
+	maxQueryAttempts := 10
+	for i := 1; i <= maxQueryAttempts; i++ {
+		testQueryCmd := exec.Command("podman", "exec", containerName,
+			"psql", "-U", dbUser, "-d", dbName, "-c", "SELECT 1;")
+		testQueryCmd.Stdout = writer
+		testQueryCmd.Stderr = writer
+		if testQueryCmd.Run() == nil {
+			fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n\n", i, maxQueryAttempts)
+			return nil
+		}
+		if i == maxQueryAttempts {
+			return fmt.Errorf("database failed to become queryable after %d attempts (accepting connections but not fully initialized)", maxQueryAttempts)
+		}
+		if i < maxQueryAttempts {
+			fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxQueryAttempts)
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	return fmt.Errorf("PostgreSQL readiness check failed unexpectedly")
 }
 
 // RedisConfig holds configuration for starting a Redis container
@@ -265,7 +311,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 // - Returns detailed error with attempt count
 //
 // Usage:
-//   if err := WaitForHTTPHealth("http://localhost:18096/health", 30*time.Second, writer); err != nil {
+//   if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
 //       return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 //   }
 func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
@@ -435,7 +481,7 @@ type IntegrationDataStorageConfig struct {
 //   }
 //
 //   // Wait for health check
-//   if err := WaitForHTTPHealth("http://localhost:18091/health", 60*time.Second, writer); err != nil {
+//   if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
 //       return err
 //   }
 func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error {
@@ -464,24 +510,13 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	}
 	fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
 
-	// STEP 2: Build DataStorage image
+	// STEP 2: Build DataStorage image using shared utility
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
-	fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", cfg.ImageTag)
-	buildArgs := []string{
-		"build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-		"-t", cfg.ImageTag,
-		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-		projectRoot, // Build context is the project root
-	}
-
-	buildCmd := exec.Command("podman", buildArgs...)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
+	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", cfg.ImageTag)
+	if err := buildDataStorageImageWithTag(cfg.ImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", cfg.ImageTag)
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// STEP 3: Start DataStorage container
 	runArgs := []string{"run", "-d",
@@ -682,7 +717,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 8: Wait for DataStorage HTTP health
-//       if err := WaitForHTTPHealth("http://localhost:18096/health", 60*time.Second, writer); err != nil {
+//       if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
 //           return err
 //       }
 //

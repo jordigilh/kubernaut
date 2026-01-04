@@ -126,6 +126,9 @@ func (m *Manager) AtomicStatusUpdate(
 			}
 		}
 
+		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
+		notification.Status.ObservedGeneration = notification.Generation
+
 		// 4. SINGLE ATOMIC UPDATE: All changes committed together
 		if err := m.client.Status().Update(ctx, notification); err != nil {
 			return fmt.Errorf("failed to atomically update status: %w", err)
@@ -165,6 +168,9 @@ func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1a
 			now := metav1.Now()
 			notification.Status.CompletionTime = &now
 		}
+
+		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
+		notification.Status.ObservedGeneration = notification.Generation
 
 		// 5. Update status using status subresource
 		if err := m.client.Status().Update(ctx, notification); err != nil {

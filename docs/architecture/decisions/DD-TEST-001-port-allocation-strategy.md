@@ -645,13 +645,13 @@ var _ = SynchronizedBeforeSuite(
 | **SignalProcessing (CRD)** | 15436 | 16382 | N/A | Data Storage: 18094 |
 | **RemediationOrchestrator (CRD)** | 15435 | 16381 | N/A | Data Storage: 18140 |
 | **AIAnalysis (CRD)** | 15438 | 16384 | N/A | Data Storage: 18095 |
-| **Notification (CRD)** | 15439 | 16385 | N/A | Data Storage: 18096 |
+| **Notification (CRD)** | 15440 | 16385 | N/A | Data Storage: 18096 |
 | **WorkflowExecution (CRD)** | 15441 | 16388 | N/A | Data Storage: 18097 |
 | **HolmesGPT API (Python)** | 15439 | 16387 | 18120 | Data Storage: 18098 |
 
 ✅ **No Conflicts** - All services can run integration tests in parallel
 
-**Note**: HAPI (HolmesGPT API) shares PostgreSQL (15439) with Notification for simplicity (Python service). WorkflowExecution uses unique ports (15441/16388) to enable parallel testing.
+**Note**: All services now have unique port allocations to enable true parallel testing. Notification PostgreSQL moved from 15439 (conflicted with HAPI) to 15440 (unique).
 
 ### **E2E Tests** (Can run simultaneously)
 
@@ -713,6 +713,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.0 | 2026-01-01 | AI Assistant | **CRITICAL FIX**: Resolved Notification/HAPI PostgreSQL port conflict - migrated Notification PostgreSQL from 15439 (shared with HAPI) to 15440 (unique); **TRUE PARALLEL TESTING NOW ENABLED** - all 8 services can run integration tests simultaneously without port conflicts; removed shared port design flaw |
 | 1.9 | 2025-12-25 | AI Assistant | **CRITICAL FIX**: Resolved WE/HAPI Redis port conflict - migrated WorkflowExecution Redis from 16387 (shared with HAPI) to 16388 (unique); enables parallel integration testing for WE and HAPI; updated note to clarify only PostgreSQL is shared between HAPI and Notification |
 | 1.8 | 2025-12-25 | AI Assistant | **CRITICAL FIX**: Resolved HAPI port conflict - migrated HAPI Data Storage from 18094 (SignalProcessing) to 18098; added complete integration test port allocation table including all CRD controllers; documented HAPI integration test ports (PostgreSQL: 15439, Redis: 16387, HAPI API: 18120, Data Storage dependency: 18098) |
 | 1.7 | 2025-12-22 | AI Assistant | Port allocation fixes complete - all services documented in authoritative table |

@@ -35,8 +35,6 @@ Key Distinction (per SignalProcessing team):
 "Resource doesn't exist" ≠ detection failure - it's a successful detection with result `false`.
 """
 
-import pytest
-import json
 
 from src.models.incident_models import DetectedLabels
 
@@ -314,9 +312,9 @@ class TestSearchWorkflowsFailedDetections:
         # Business outcome: Failed detection field removed
         assert "pdbProtected" not in clean_dict
         # But other fields preserved
-        assert clean_dict.get("gitOpsManaged") == True
+        assert clean_dict.get("gitOpsManaged") is True
         assert clean_dict.get("gitOpsTool") == "argocd"
-        assert clean_dict.get("stateful") == True
+        assert clean_dict.get("stateful") is True
         # failedDetections itself should also be stripped (not needed by DS)
         assert "failedDetections" not in clean_dict
 
@@ -344,9 +342,9 @@ class TestSearchWorkflowsFailedDetections:
         assert "hpaEnabled" not in clean_dict
         assert "networkIsolated" not in clean_dict
         # Reliable fields preserved
-        assert clean_dict.get("gitOpsManaged") == True
-        assert clean_dict.get("stateful") == True
-        assert clean_dict.get("helmManaged") == True
+        assert clean_dict.get("gitOpsManaged") is True
+        assert clean_dict.get("stateful") is True
+        assert clean_dict.get("helmManaged") is True
 
     def test_search_workflows_preserves_all_when_no_failures(self):
         """
@@ -365,10 +363,10 @@ class TestSearchWorkflowsFailedDetections:
         clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
 
         # Business outcome: All fields preserved (except failedDetections meta field)
-        assert clean_dict.get("gitOpsManaged") == True
-        assert clean_dict.get("pdbProtected") == True
+        assert clean_dict.get("gitOpsManaged") is True
+        assert clean_dict.get("pdbProtected") is True
         # stateful is False, which is the default, so it won't be in clean_dict when using exclude_defaults
-        assert clean_labels.stateful == False  # Check the model attribute directly
+        assert clean_labels.stateful is False  # Check the model attribute directly
         assert "failedDetections" not in clean_dict
 
     def test_search_workflows_handles_missing_failed_detections_key(self):
@@ -387,9 +385,9 @@ class TestSearchWorkflowsFailedDetections:
         clean_dict = clean_labels.model_dump(exclude_defaults=True, exclude_none=True)
 
         # Business outcome: All fields preserved
-        assert clean_dict.get("gitOpsManaged") == True
+        assert clean_dict.get("gitOpsManaged") is True
         # pdbProtected is False, which is the default, so it won't be in clean_dict when using exclude_defaults
-        assert clean_labels.pdbProtected == False  # Check the model attribute directly
+        assert clean_labels.pdbProtected is False  # Check the model attribute directly
 
 
 class TestRecoveryMCPFilterFailedDetections:

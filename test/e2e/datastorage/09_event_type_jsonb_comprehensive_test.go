@@ -568,7 +568,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 
 	AfterAll(func() {
 		if db != nil {
-			db.Close()
+			_ = db.Close()
 		}
 	})
 
@@ -646,7 +646,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 						bytes.NewReader(payloadBytes),
 					)
 					Expect(err).ToNot(HaveOccurred())
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					// ASSERT: HTTP 201 Created
 					Expect(resp.StatusCode).To(SatisfyAny(
@@ -745,7 +745,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 
 			rows, err := db.QueryContext(ctx, explainQuery)
 			Expect(err).ToNot(HaveOccurred())
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 
 			Expect(rows.Next()).To(BeTrue(), "EXPLAIN should return results")
 

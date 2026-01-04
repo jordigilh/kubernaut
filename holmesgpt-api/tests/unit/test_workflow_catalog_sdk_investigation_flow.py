@@ -12,9 +12,7 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-"""
 
-"""
 Integration Tests for Workflow Catalog Toolset in SDK Investigation Flow
 
 Business Requirement: BR-HAPI-250 - Workflow Catalog Search Tool
@@ -36,11 +34,8 @@ Test Coverage:
 """
 
 import pytest
-from unittest.mock import Mock
 
 from holmes.config import Config
-from holmes.core.investigation import InvestigateRequest
-from holmes.core.supabase_dal import SupabaseDal
 
 from src.extensions.incident import MinimalDAL
 from src.extensions.llm_config import (
@@ -107,7 +102,7 @@ class TestWorkflowCatalogInSDKInvestigationFlow:
         # SDK's create_tool_executor() calls list_server_toolsets() which calls
         # _load_toolsets_from_config() which expects dicts with .get() method
         try:
-            tool_executor = config.create_tool_executor(dal)
+            config.create_tool_executor(dal)
             creation_succeeded = True
             error_message = None
         except AttributeError as e:
@@ -171,7 +166,7 @@ class TestWorkflowCatalogInSDKInvestigationFlow:
 
         # CRITICAL TEST: List server toolsets (this is what investigation flow does)
         try:
-            toolsets = config.toolset_manager.list_server_toolsets(dal=dal)
+            config.toolset_manager.list_server_toolsets(dal=dal)
             list_succeeded = True
             error_message = None
         except AttributeError as e:
@@ -231,7 +226,7 @@ class TestWorkflowCatalogInSDKInvestigationFlow:
         # CRITICAL TEST: Create issue investigator (exact production failure point)
         # This calls create_tool_executor() which calls list_server_toolsets()
         try:
-            investigator = config.create_issue_investigator(dal=dal)
+            config.create_issue_investigator(dal=dal)
             creation_succeeded = True
             error_message = None
         except AttributeError as e:
@@ -316,7 +311,7 @@ class TestWorkflowCatalogProductionScenario:
         # investigate_issues() -> config.create_issue_investigator()
         try:
             # Try to create the investigator (first step of investigate_issues)
-            investigator = config.create_issue_investigator(dal=dal)
+            config.create_issue_investigator(dal=dal)
             flow_succeeded = True
             error_message = None
         except AttributeError as e:

@@ -1,6 +1,6 @@
 database:
-  host: workflowexecution_postgres_1
-  port: 5432
+  host: host.containers.internal
+  port: 15441
   user: slm_user
   name: action_history
   sslmode: disable
@@ -9,7 +9,7 @@ database:
   passwordKey: password
 
 redis:
-  addr: workflowexecution_redis_1:6379
+  addr: host.containers.internal:16388
   secretsFile: /etc/datastorage/redis-secrets.yaml
   passwordKey: password
 

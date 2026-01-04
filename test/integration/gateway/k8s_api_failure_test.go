@@ -19,12 +19,14 @@ package gateway
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap"
 
 	// DD-GATEWAY-004: kubernetes import removed - no longer needed
@@ -418,4 +420,250 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			})
 		})
 	*/
+
+	// ========================================
+	// BR-GATEWAY-093: Circuit Breaker TDD Implementation Roadmap
+	// ========================================
+	// Current Status: TDD RED Phase (documentation + implementation complete)
+	// Next Step: TDD GREEN Phase (wire into server + write passing tests)
+	//
+	// Phase 1 (COMPLETE):
+	// - ✅ BR-GATEWAY-093 updated in BUSINESS_REQUIREMENTS.md
+	// - ✅ BR_MAPPING.md updated
+	// - ✅ DD-GATEWAY-015 created (comprehensive design decision)
+	// - ✅ ClientWithCircuitBreaker implemented (pkg/gateway/k8s/client_with_circuit_breaker.go)
+	// - ✅ Circuit breaker metrics defined (pkg/gateway/metrics/metrics.go)
+	// - ✅ Shared circuitbreaker.Manager created (pkg/shared/circuitbreaker/manager.go)
+	//
+	// Phase 2 (TODO - TDD GREEN):
+	// - ⏳ Wire ClientWithCircuitBreaker into Gateway server (pkg/gateway/server.go)
+	// - ⏳ Refactor CRDCreator to use circuit-breaker-protected client
+	// - ⏳ Write integration tests that verify circuit breaker behavior
+	// - ⏳ Run all Gateway tests to validate
+	//
+	// Phase 3 (TODO - TDD REFACTOR):
+	// - ⏳ Optimize circuit breaker integration
+	// - ⏳ Add E2E tests for circuit breaker scenarios
+	// - ⏳ Performance testing under K8s API degradation
+	//
+	// Design Decision: DD-GATEWAY-015 (K8s API Circuit Breaker Implementation)
+	// ========================================
+
+	Context("BR-GATEWAY-093: Circuit Breaker for K8s API (TDD GREEN)", func() {
+		// TDD GREEN PHASE: Circuit breaker wired into Gateway server
+		// These tests validate circuit breaker behavior through CRDCreator integration
+		//
+		// Design Decision: DD-GATEWAY-015 (K8s API Circuit Breaker Implementation)
+		// Business Requirements: BR-GATEWAY-093-A/B/C
+
+		var (
+			cbTestMetrics      *metrics.Metrics
+			cbTestRegistry     *prometheus.Registry
+			cbFailingK8sClient *ErrorInjectableK8sClient
+			cbCrdCreator       *processing.CRDCreator
+			cbLogger           logr.Logger
+		)
+
+		BeforeEach(func() {
+			// Create isolated metrics registry for circuit breaker tests
+			cbTestRegistry = prometheus.NewRegistry()
+			cbTestMetrics = metrics.NewMetricsWithRegistry(cbTestRegistry)
+
+			// Create error-injectable K8s client
+			cbFailingK8sClient = &ErrorInjectableK8sClient{
+				Client:     suiteK8sClient.Client,
+				failCreate: false,
+				errorMsg:   "K8s API unavailable",
+			}
+
+			// Wrap with base k8s.Client
+			baseClient := k8s.NewClient(cbFailingK8sClient)
+
+			// Wrap with circuit breaker (BR-GATEWAY-093)
+			cbClient := k8s.NewClientWithCircuitBreaker(baseClient, cbTestMetrics)
+
+			// Create CRD creator with circuit-breaker-protected client
+			retryConfig := config.DefaultRetrySettings()
+			cbLogger = zapr.NewLogger(zap.NewNop())
+			cbCrdCreator = processing.NewCRDCreator(cbClient, cbLogger, cbTestMetrics, "default", &retryConfig)
+		})
+
+		It("BR-GATEWAY-093-A: should fail-fast when K8s API unavailable after consecutive failures", func() {
+			// BUSINESS SCENARIO: K8s API control plane degraded (consecutive failures)
+			// Expected: Circuit breaker opens, subsequent requests fail-fast (<10ms)
+
+			ctx := context.Background()
+
+			// Verify circuit breaker starts in CLOSED state (0)
+			Eventually(func() float64 {
+				metric := &dto.Metric{}
+				err := cbTestMetrics.CircuitBreakerState.WithLabelValues("k8s-api").Write(metric)
+				if err != nil {
+					return -1
+				}
+				return metric.Gauge.GetValue()
+			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0),
+				"Circuit breaker should start in CLOSED state")
+
+			// Simulate K8s API degradation (enable failures)
+			cbFailingK8sClient.failCreate = true
+
+			// Trigger 10 consecutive failures to trip circuit breaker
+			signal := &types.NormalizedSignal{
+				AlertName: "HighCPU",
+				Namespace: "default",
+				Resource: types.ResourceIdentifier{
+					Kind: "Pod",
+					Name: "test-pod",
+				},
+				Severity: "critical",
+			}
+
+			failureCount := 0
+			for i := 0; i < 10; i++ {
+				signal.Fingerprint = "cb-test-093a-" + string(rune(i))
+				_, err := cbCrdCreator.CreateRemediationRequest(ctx, signal)
+				if err != nil {
+					failureCount++
+				}
+			}
+
+			Expect(failureCount).To(Equal(10),
+				"All 10 requests should fail when K8s API unavailable")
+
+			// Verify circuit breaker opened (state = 2)
+			Eventually(func() float64 {
+				metric := &dto.Metric{}
+				err := cbTestMetrics.CircuitBreakerState.WithLabelValues("k8s-api").Write(metric)
+				if err != nil {
+					return -1
+				}
+				return metric.Gauge.GetValue()
+			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0),
+				"Circuit breaker should be OPEN (state=2) after 10 consecutive failures")
+
+			// Verify next request fails fast (no K8s API call)
+			signal.Fingerprint = "cb-test-093a-failfast"
+			startTime := time.Now()
+			_, err := cbCrdCreator.CreateRemediationRequest(ctx, signal)
+			duration := time.Since(startTime)
+
+			Expect(err).To(HaveOccurred(),
+				"Request should fail when circuit breaker is open")
+			Expect(duration).To(BeNumerically("<", 50*time.Millisecond),
+				"Fail-fast should be immediate (<50ms), not wait for K8s API timeout")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ Gateway fails-fast when K8s API degraded (BR-GATEWAY-093-A)
+			// ✅ Circuit breaker protects K8s control plane from repeated failed attempts
+			// ✅ Fail-fast is immediate, prevents request queue buildup
+		})
+
+		It("BR-GATEWAY-093-C: should expose observable metrics for circuit breaker state and operations", func() {
+			// BUSINESS SCENARIO: Operations team monitors Gateway health via Prometheus
+			// Expected: Circuit breaker metrics available for observability and alerting
+
+			ctx := context.Background()
+
+			signal := &types.NormalizedSignal{
+				AlertName: "DiskFull",
+				Namespace: "default",
+				Resource: types.ResourceIdentifier{
+					Kind: "Node",
+					Name: "test-node",
+				},
+				Severity: "critical",
+			}
+
+			// Initial state: Circuit closed (0)
+			Eventually(func() float64 {
+				metric := &dto.Metric{}
+				err := cbTestMetrics.CircuitBreakerState.WithLabelValues("k8s-api").Write(metric)
+				if err != nil {
+					return -1
+				}
+				return metric.Gauge.GetValue()
+			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0),
+				"Circuit breaker should start in CLOSED state (0)")
+
+			// Simulate successful operation
+			cbFailingK8sClient.failCreate = false
+			signal.Fingerprint = "cb-test-093c-success"
+			_, _ = cbCrdCreator.CreateRemediationRequest(ctx, signal)
+
+			// Verify success counter exists and increments
+			Eventually(func() float64 {
+				metricFamilies, err := cbTestRegistry.Gather()
+				if err != nil {
+					return -1
+				}
+				for _, mf := range metricFamilies {
+					if mf.GetName() == "gateway_circuit_breaker_operations_total" {
+						for _, m := range mf.GetMetric() {
+							resultLabel := ""
+							for _, label := range m.GetLabel() {
+								if label.GetName() == "result" {
+									resultLabel = label.GetValue()
+								}
+							}
+							if resultLabel == "success" {
+								return m.Counter.GetValue()
+							}
+						}
+					}
+				}
+				return -1
+			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1.0),
+				"Success operations counter should increment (BR-GATEWAY-093-C)")
+
+			// Simulate K8s API failures to open circuit
+			cbFailingK8sClient.failCreate = true
+			for i := 0; i < 10; i++ {
+				signal.Fingerprint = "cb-test-093c-fail-" + string(rune(i))
+				_, _ = cbCrdCreator.CreateRemediationRequest(ctx, signal)
+			}
+
+			// Verify circuit opened (state = 2)
+			Eventually(func() float64 {
+				metric := &dto.Metric{}
+				err := cbTestMetrics.CircuitBreakerState.WithLabelValues("k8s-api").Write(metric)
+				if err != nil {
+					return -1
+				}
+				return metric.Gauge.GetValue()
+			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0),
+				"Circuit breaker state metric should show OPEN (2)")
+
+			// Verify failure counter incremented
+			Eventually(func() float64 {
+				metricFamilies, err := cbTestRegistry.Gather()
+				if err != nil {
+					return -1
+				}
+				for _, mf := range metricFamilies {
+					if mf.GetName() == "gateway_circuit_breaker_operations_total" {
+						for _, m := range mf.GetMetric() {
+							resultLabel := ""
+							for _, label := range m.GetLabel() {
+								if label.GetName() == "result" {
+									resultLabel = label.GetValue()
+								}
+							}
+							if resultLabel == "failure" {
+								return m.Counter.GetValue()
+							}
+						}
+					}
+				}
+				return -1
+			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 5.0),
+				"Failure operations counter should increment (≥5 indicates circuit breaker triggered)")
+
+			// BUSINESS CAPABILITY VERIFIED:
+			// ✅ gateway_circuit_breaker_state metric exposed (0=closed, 1=half-open, 2=open)
+			// ✅ gateway_circuit_breaker_operations_total metric tracks success/failure ratio
+			// ✅ Metrics enable SRE response to K8s API degradation (BR-GATEWAY-093-C)
+			// ✅ Real-time observability for circuit breaker state transitions
+		})
+	})
 })

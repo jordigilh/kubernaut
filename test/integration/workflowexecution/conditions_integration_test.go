@@ -47,6 +47,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "wfe-condition-pipeline-created",
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
@@ -105,6 +106,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "wfe-condition-running",
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
@@ -161,6 +163,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "wfe-condition-complete-success",
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
@@ -237,6 +240,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "wfe-condition-audit",
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
@@ -284,6 +288,7 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "wfe-condition-full-lifecycle",
 					Namespace: DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{

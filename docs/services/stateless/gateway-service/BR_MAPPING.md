@@ -166,11 +166,25 @@ This document resolves BR numbering inconsistencies between documentation and te
 
 ---
 
-### BR-GATEWAY-093: Circuit Breaker
-**Status**: ⏳ Deferred (v2.0)
-**Rationale**: Gateway has no external service dependencies requiring circuit breaker. Redis uses fail-open strategy, K8s API uses retry logic.
+### BR-GATEWAY-093: Circuit Breaker for K8s API
+**Status**: ✅ Implemented (2026-01-03)
+**Rationale**: Kubernetes API is a critical dependency. Circuit breaker prevents cascading failures when K8s API is degraded, enabling fail-fast behavior and protecting Gateway availability. Complements retry logic (BR-111-114) by preventing repeated attempts when K8s API is known to be degraded.
 
-**Test Files**: None (intentional - feature deferred to v2.0)
+**Implementation**:
+- `pkg/gateway/k8s/client_with_circuit_breaker.go` - Circuit breaker wrapper for K8s client
+- `pkg/gateway/server.go` - Circuit breaker initialization and wiring
+- `pkg/gateway/metrics/metrics.go` - Circuit breaker metrics (state, operations)
+
+**Test Files**:
+- `test/integration/gateway/k8s_api_failure_test.go` - Circuit breaker behavior and metrics validation (BR-GATEWAY-093)
+
+**Sub-Requirements**:
+- BR-GATEWAY-093-A: Fail-fast when K8s API unavailable
+- BR-GATEWAY-093-B: Prevent cascade failures during K8s API overload
+- BR-GATEWAY-093-C: Observable metrics for circuit breaker state and operations
+
+**Design Decision**: DD-GATEWAY-014 (Circuit Breaker for K8s API)
+**Library**: `github.com/sony/gobreaker` (industry-standard)
 
 ---
 

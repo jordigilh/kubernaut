@@ -13,8 +13,6 @@ Acceptance Criteria (from BR-HAPI-192):
 - [ ] Unit tests cover recovery context scenarios
 """
 
-import pytest
-from pydantic import ValidationError
 
 from src.models.recovery_models import (
     PreviousExecution,

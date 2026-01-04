@@ -134,7 +134,7 @@ func StartGatewayIntegrationInfrastructure(writer io.Writer) error {
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", GatewayIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", GatewayIntegrationDataStoragePort),
 		30*time.Second,
 		writer,
 	); err != nil {
@@ -202,16 +202,14 @@ func runGatewayMigrations(projectRoot string, writer io.Writer) error {
 	migrationsDir := filepath.Join(projectRoot, "migrations")
 
 	// Apply migrations: extract only "Up" sections (stop at "-- +goose Down")
-	// Skip vector-dependent migrations (001-008) as pgvector removed for V1.0
+	// NOTE: Migrations 001-008 (001,002,003,004,006) do NOT use pgvector - they are core schema
+	// The pgvector-dependent migrations (005,007,008) were removed in V1.0 and no longer exist
 	migrationScript := `
 		set -e
-		echo "Applying migrations (Up sections only, skipping 001-008 vector migrations)..."
+		echo "Creating slm_user role (required by migrations)..."
+		psql -c "CREATE ROLE slm_user LOGIN PASSWORD 'slm_user';" || echo "Role slm_user already exists"
+		echo "Applying migrations (Up sections only)..."
 		find /migrations -maxdepth 1 -name "*.sql" -type f | sort | while read f; do
-			# Skip vector-dependent migrations (001-008)
-			if echo "$f" | grep -qE "/00[1-8]_"; then
-				echo "Skipping vector migration: $f"
-				continue
-			fi
 			echo "Applying $f..."
 			sed -n "1,/^-- +goose Down/p" "$f" | grep -v "^-- +goose Down" | psql
 		done
@@ -239,22 +237,13 @@ func runGatewayMigrations(projectRoot string, writer io.Writer) error {
 func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 	configDir := filepath.Join(projectRoot, "test", "integration", "gateway", "config")
 
-	// Check if DataStorage image exists, build if not
-	checkCmd := exec.Command("podman", "image", "exists", "kubernaut/datastorage:latest")
-	if checkCmd.Run() != nil {
-		fmt.Fprintf(writer, "   Building DataStorage image...\n")
-		buildCmd := exec.Command("podman", "build",
-			"-t", "kubernaut/datastorage:latest",
-			"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
-			projectRoot,
-		)
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			return fmt.Errorf("failed to build DataStorage image: %w", err)
-		}
-		fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	// Build DataStorage image using shared utility with GenerateInfraImageName
+	dsImageTag := GenerateInfraImageName("datastorage", "gateway")
+	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", dsImageTag)
+	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
+		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
+	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// Use port mapping (not --network host) for macOS compatibility
 	// macOS Podman runs in VM, so host network doesn't expose ports to Mac host
@@ -264,7 +253,7 @@ func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 		"-p", fmt.Sprintf("%d:18091", GatewayIntegrationDataStoragePort),
 		"-v", fmt.Sprintf("%s:/etc/datastorage:ro", configDir),
 		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"kubernaut/datastorage:latest",
+		dsImageTag,
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -384,6 +373,19 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	}
 
 	os.Remove(tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
 	return nil
 }

@@ -106,7 +106,9 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 	// Per DD-INFRA-001: Watch directory, not file directly
 	dir := filepath.Dir(w.path)
 	if err := w.watcher.Add(dir); err != nil {
-		w.watcher.Close()
+		if closeErr := w.watcher.Close(); closeErr != nil {
+			w.logger.Error(closeErr, "Failed to close watcher after Add error")
+		}
 		return fmt.Errorf("failed to watch directory %s: %w", dir, err)
 	}
 
@@ -126,7 +128,9 @@ func (w *FileWatcher) Stop() {
 	<-w.doneCh // Wait for watchLoop to finish
 
 	if w.watcher != nil {
-		w.watcher.Close()
+		if err := w.watcher.Close(); err != nil {
+			w.logger.Error(err, "Failed to close watcher during Stop")
+		}
 	}
 
 	w.logger.Info("File watcher stopped",

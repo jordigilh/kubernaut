@@ -95,7 +95,7 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Step 2: Validate CORS headers are present
 		testLogger.Info("Step 2: Validating CORS headers in response")
@@ -140,7 +140,7 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Step 2: Validate preflight response
 		testLogger.Info("Step 2: Validating preflight response")
@@ -180,7 +180,7 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Use Eventually() to handle Gateway startup timing (may return 503 initially)
 		var allowOrigin string
@@ -190,7 +190,7 @@ var _ = Describe("Test 18: CORS Enforcement (BR-HTTP-015)", Ordered, Label("e2e"
 			if err != nil {
 				return 0
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			allowOrigin = resp.Header.Get("Access-Control-Allow-Origin")
 			return resp.StatusCode
 		}, 30*time.Second, 2*time.Second).Should(Equal(http.StatusOK), "Gateway /ready endpoint should be available")

@@ -41,19 +41,23 @@ import (
 // These tests validate the complete HTTP → Repository → PostgreSQL flow
 // using a real Data Storage Service container (Podman, ADR-016)
 
-var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Serial, Ordered, func() {
+var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ordered, func() {
 	var (
 		client     *http.Client
 		validAudit *models.NotificationAudit
 	)
 
 	BeforeAll(func() {
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert/query data in test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		usePublicSchema()
+
 		client = &http.Client{Timeout: 10 * time.Second}
 	})
 
 	BeforeEach(func() {
-		// Serial tests MUST use public schema (HTTP API writes to public schema)
-		usePublicSchema()
 
 		// Create unique notification_id to avoid conflicts
 		// Use a fixed timestamp that's definitely in the past (2024-01-01)

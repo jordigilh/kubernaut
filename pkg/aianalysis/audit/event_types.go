@@ -103,6 +103,6 @@ type RegoEvaluationPayload struct {
 // - BR-AI-009: Error tracking and diagnosis
 // - DD-AUDIT-003: Comprehensive error audit trail
 type ErrorPayload struct {
-	Phase string `json:"phase"` // Phase in which error occurred
-	Error string `json:"error"` // Error message
+	Phase        string `json:"phase"`         // Phase in which error occurred
+	ErrorMessage string `json:"error_message"` // Error message (matches system standard pkg/audit/event.go)
 }

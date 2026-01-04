@@ -201,7 +201,7 @@ func waitForSPDataStorageReady(ctx context.Context, namespace, kubeconfigPath st
 			// Also check if service is accessible
 			healthCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 				"exec", "-n", namespace, "deploy/datastorage", "--",
-				"curl", "-sf", "http://localhost:8080/health")
+				"curl", "-sf", "http://127.0.0.1:8080/health")
 			if healthCmd.Run() == nil {
 				fmt.Fprintln(writer, "  ✅ DataStorage is ready and healthy")
 				return nil
@@ -1061,6 +1061,19 @@ func loadSignalProcessingImage(clusterName string, writer io.Writer) error {
 	// DD-TEST-001 v1.1: Cleanup tmp file immediately after load
 	os.Remove(tmpFile)
 	fmt.Fprintf(writer, "  ✅ Temp tar file cleaned: %s\n", tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	return nil
 }
 
@@ -1481,10 +1494,10 @@ func StartSignalProcessingIntegrationInfrastructure(writer io.Writer) error {
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", SignalProcessingIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", SignalProcessingIntegrationDataStoragePort),
 		60*time.Second,
 		writer,
-	); err != nil {
+	); err != nil{
 		// Print container logs for debugging
 		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", SignalProcessingIntegrationDataStorageContainer)
@@ -1583,7 +1596,7 @@ func startSPDataStorage(projectRoot string, writer io.Writer) error {
 	fmt.Fprintf(writer, "   Building DataStorage image: %s\n", dsImage)
 	buildCmd := exec.Command("podman", "build",
 		"-t", dsImage,
-		"-f", filepath.Join(projectRoot, "cmd", "datastorage", "Dockerfile"),
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
 		projectRoot,
 	)
 	buildCmd.Stdout = writer
@@ -1707,6 +1720,19 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	}
 
 	os.Remove(tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
 	return nil
 }

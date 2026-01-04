@@ -73,6 +73,7 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("tls-test-%d", time.Now().UnixNano()),
 				Namespace: testNamespace,
+				Generation: 1, // K8s increments on create/update
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{
 				Type:     notificationv1alpha1.NotificationTypeSimple,

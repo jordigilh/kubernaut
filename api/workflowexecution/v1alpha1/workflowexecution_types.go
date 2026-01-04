@@ -212,6 +212,12 @@ const (
 // Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for recovery flow
 // Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
 type WorkflowExecutionStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// Used to prevent duplicate reconciliations and ensure idempotency.
+	// Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Phase tracks current execution stage
 	// V1.0: Skipped phase removed - RO makes routing decisions before WFE creation
 	// +kubebuilder:validation:Enum=Pending;Running;Completed;Failed

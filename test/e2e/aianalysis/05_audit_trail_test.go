@@ -2,9 +2,7 @@ package aianalysis
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -13,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
@@ -28,62 +27,100 @@ import (
 //
 // Confidence: Integration (90%) + E2E (98%) = Full audit assurance
 
+// queryAuditEvents uses OpenAPI client to query DataStorage (DD-API-001 compliance)
+// Per ADR-034 v1.2: event_category is optional for queries (omit to query all categories)
+// Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN - use generated client
+//
+// Parameters:
+//   - correlationID: Correlation ID to filter events
+//   - eventType: Optional event type filter
+//
+// Returns: Array of audit events (OpenAPI-generated types)
+func queryAuditEvents(
+	correlationID string,
+	eventType *string,
+) ([]dsgen.AuditEvent, error) {
+	// Note: AIAnalysis uses event_category = "analysis" (NOT "aianalysis")
+	// However, we omit event_category to query all categories for this correlation_id
+	// This allows querying cross-service events (llm_request, workflow_validation, etc.)
+	limit := 100
+
+	params := &dsgen.QueryAuditEventsParams{
+		CorrelationId: &correlationID,
+		Limit:         &limit,
+	}
+
+	if eventType != nil {
+		params.EventType = eventType
+	}
+
+	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query DataStorage: %w", err)
+	}
+
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
+	}
+
+	if resp.JSON200.Data == nil {
+		return []dsgen.AuditEvent{}, nil
+	}
+
+	return *resp.JSON200.Data, nil
+}
+
+// countEventsByType counts occurrences of each event type in the given events
+// Returns: map[eventType]count
+func countEventsByType(events []dsgen.AuditEvent) map[string]int {
+	counts := make(map[string]int)
+	for _, event := range events {
+		counts[event.EventType]++
+	}
+	return counts
+}
+
 // waitForAuditEvents polls Data Storage until audit events appear or timeout.
 // This handles the async nature of BufferedAuditStore's background flush.
 //
 // Parameters:
-//   - httpClient: HTTP client for Data Storage API
-//   - remediationID: Correlation ID to filter events
+//   - correlationID: Correlation ID to filter events
 //   - eventType: Event type to query (e.g., "aianalysis.phase.transition")
 //   - minCount: Minimum number of events expected
 //
-// Returns: Array of audit events (as map[string]interface{})
+// Returns: Array of audit events (OpenAPI-generated types)
 //
 // Rationale: BufferedAuditStore flushes asynchronously, so tests must poll
 // rather than query immediately after reconciliation. Using Eventually()
 // makes tests faster (no fixed sleep) and more reliable (handles timing variance).
 func waitForAuditEvents(
-	httpClient *http.Client,
-	remediationID string,
+	correlationID string,
 	eventType string,
 	minCount int,
-) []map[string]interface{} {
-	var events []map[string]interface{}
+) []dsgen.AuditEvent {
+	var events []dsgen.AuditEvent
 
 	Eventually(func() int {
-		resp, err := httpClient.Get(fmt.Sprintf(
-			"http://localhost:8091/api/v1/audit/events?correlation_id=%s&event_type=%s",
-			remediationID, eventType,
-		))
+		var err error
+		events, err = queryAuditEvents(correlationID, &eventType)
 		if err != nil {
+			GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
 			return 0
 		}
-		defer resp.Body.Close()
-
-		var auditResponse struct {
-			Data []map[string]interface{} `json:"data"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&auditResponse); err != nil {
-			return 0
-		}
-
-		events = auditResponse.Data
 		return len(events)
-	}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", minCount),
-		fmt.Sprintf("Should have at least %d %s events for remediation %s", minCount, eventType, remediationID))
+	}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", minCount),
+		fmt.Sprintf("Should have at least %d %s events for correlation %s", minCount, eventType, correlationID))
 
 	return events
 }
 
 var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 	var (
-		httpClient *http.Client
-		ctx        context.Context
+		ctx context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		httpClient = &http.Client{Timeout: 10 * time.Second}
 	})
 
 	// ========================================
@@ -94,12 +131,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should create audit events in Data Storage for full reconciliation cycle", func() {
 			By("Creating AIAnalysis for production incident")
 			suffix := randomSuffix()
-		namespace := createTestNamespace("audit-test")
-		analysis := &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-audit-test-" + suffix,
-				Namespace: namespace,
-			},
+			namespace := createTestNamespace("audit-test")
+			analysis := &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-audit-test-" + suffix,
+					Namespace: namespace,
+				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-test-" + suffix,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -139,97 +176,98 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Querying Data Storage for audit events via NodePort")
-		// Data Storage NodePort: 30081 -> host port 8091 (per kind-aianalysis-config.yaml)
-		// NOTE: Using Eventually to handle async audit buffer flush (1s interval)
-		var events []map[string]interface{}
-		Eventually(func() []map[string]interface{} {
-			resp, err := httpClient.Get(fmt.Sprintf(
-				"http://localhost:8091/api/v1/audit/events?correlation_id=%s",
-				remediationID,
-			))
-			if err != nil {
-				return nil
-			}
-			defer resp.Body.Close()
+			By("Querying Data Storage for audit events via OpenAPI client (DD-API-001)")
+			// Per DD-API-001: MUST use OpenAPI generated client, NOT raw HTTP
+			// Using Eventually to handle async audit buffer flush (1s interval)
+			var events []dsgen.AuditEvent
+			Eventually(func() []dsgen.AuditEvent {
+				var err error
+				events, err = queryAuditEvents(remediationID, nil) // Query all event types
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return nil
+				}
+				return events
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeEmpty(), "Should have at least one audit event for completed analysis")
 
-			var auditResponse struct {
-				Data []map[string]interface{} `json:"data"`
-			}
-			if err := json.NewDecoder(resp.Body).Decode(&auditResponse); err != nil {
-				return nil
-			}
-			events = auditResponse.Data
-			return events
-		}, 3*time.Second, 200*time.Millisecond).ShouldNot(BeEmpty(), "Should have at least one audit event for completed analysis")
-
-			By("Verifying audit event types are present")
-			eventTypes := make(map[string]int)
-			for _, event := range events {
-				eventType, ok := event["event_type"].(string)
-				Expect(ok).To(BeTrue(), "event_type should be a string")
-				eventTypes[eventType]++
-			}
+			By("Verifying audit event types and counts are EXACTLY correct")
+			eventCounts := countEventsByType(events)
 
 			// Per DD-AUDIT-003: AIAnalysis records 6 event types
-			Expect(eventTypes).To(HaveKey("aianalysis.phase.transition"),
+			// CRITICAL: Use EXACT counts to detect duplicates and reconciliation issues
+			// Per TESTING_GUIDELINES.md: Be deterministic, not "at least"
+
+			Expect(eventCounts).To(HaveKey("aianalysis.phase.transition"),
 				"Should audit phase transitions (Pending→Investigating→Analyzing→Completed)")
-			Expect(eventTypes).To(HaveKey("aianalysis.holmesgpt.call"),
+			Expect(eventCounts["aianalysis.phase.transition"]).To(Equal(3),
+				"Should have EXACTLY 3 phase transitions: Pending→Investigating→Analyzing→Completed (no duplicates)")
+
+			Expect(eventCounts).To(HaveKey("aianalysis.holmesgpt.call"),
 				"Should audit HolmesGPT-API calls during investigation")
-			Expect(eventTypes).To(HaveKey("aianalysis.rego.evaluation"),
+			Expect(eventCounts["aianalysis.holmesgpt.call"]).To(Equal(1),
+				"Should have EXACTLY 1 HolmesGPT call in happy path (no retries/duplicates)")
+
+			Expect(eventCounts).To(HaveKey("aianalysis.rego.evaluation"),
 				"Should audit Rego policy evaluation for approval decision")
-			Expect(eventTypes).To(HaveKey("aianalysis.approval.decision"),
+			Expect(eventCounts["aianalysis.rego.evaluation"]).To(Equal(1),
+				"Should have EXACTLY 1 Rego evaluation during Analyzing phase (no duplicates)")
+
+			Expect(eventCounts).To(HaveKey("aianalysis.approval.decision"),
 				"Should audit approval decision outcome")
-			Expect(eventTypes).To(HaveKey("aianalysis.analysis.completed"),
+			Expect(eventCounts["aianalysis.approval.decision"]).To(Equal(1),
+				"Should have EXACTLY 1 approval decision after Rego evaluation (no duplicates)")
+
+			Expect(eventCounts).To(HaveKey("aianalysis.analysis.completed"),
 				"Should audit analysis completion with final status")
+			Expect(eventCounts["aianalysis.analysis.completed"]).To(Equal(1),
+				"Should have EXACTLY 1 analysis completion event (no duplicates)")
+
+			// Note: If this test starts failing due to legitimate retries or controller
+			// behavior changes, we should understand WHY before changing to >= comparisons.
+			// Unexpected duplicate events indicate bugs in the controller.
 
 			// Note: aianalysis.error.occurred may or may not be present (depends on reconciliation)
 
 			By("Validating correlation_id matches remediation_id")
 			for _, event := range events {
 				// P0: Use testutil validator for baseline field validation
-				typedEvent := convertJSONToAuditEvent(event)
-				testutil.ValidateAuditEventHasRequiredFields(typedEvent)
+				testutil.ValidateAuditEventHasRequiredFields(event) // ✅ OpenAPI type validation
 
-				correlationID, ok := event["correlation_id"].(string)
-				Expect(ok).To(BeTrue(), "correlation_id should be a string")
-				Expect(correlationID).To(Equal(remediationID),
+				Expect(event.CorrelationId).To(Equal(remediationID),
 					"All audit events must have correlation_id = remediation_id for traceability")
 			}
 
 			By("Validating event_data payloads are valid JSON")
 			for _, event := range events {
-				eventData, ok := event["event_data"]
-				Expect(ok).To(BeTrue(), "event_data field should exist")
-				Expect(eventData).NotTo(BeNil(), "event_data should not be null")
+				// ✅ OpenAPI types guarantee event_data is valid JSON
+				Expect(event.EventData).NotTo(BeNil(), "event_data should not be null")
 
-				// event_data should be a JSON object (map)
-				eventDataMap, ok := eventData.(map[string]interface{})
-				Expect(ok).To(BeTrue(), "event_data should be a JSON object")
-				Expect(eventDataMap).NotTo(BeEmpty(), "event_data should not be an empty object")
+				// event_data should be a non-empty JSON object
+				// OpenAPI generates this as map[string]interface{} automatically
+				Expect(event.EventData).NotTo(BeEmpty(), "event_data should not be an empty object")
 			}
 
-			By("Validating event timestamps are set")
-			for _, event := range events {
-				timestamp, ok := event["event_timestamp"].(string)
-				Expect(ok).To(BeTrue(), "event_timestamp should be a string")
-				Expect(timestamp).NotTo(BeEmpty(), "event_timestamp should not be empty")
+		By("Validating event timestamps are set")
+		for _, event := range events {
+			// ✅ OpenAPI type: EventTimestamp is time.Time (not pointer)
+			Expect(event.EventTimestamp).NotTo(BeZero(), "event_timestamp should be set")
 
-				// Verify timestamp is parseable as RFC3339
-				_, err := time.Parse(time.RFC3339, timestamp)
-				Expect(err).NotTo(HaveOccurred(), "event_timestamp should be valid RFC3339 format")
-			}
+			// Verify timestamp is parseable as RFC3339
+			timestampStr := event.EventTimestamp.Format(time.RFC3339)
+			_, err := time.Parse(time.RFC3339, timestampStr)
+			Expect(err).NotTo(HaveOccurred(), "event_timestamp should be valid RFC3339 format")
+		}
 		})
 
 		It("should audit phase transitions with correct old/new phase values", func() {
 			By("Creating AIAnalysis that will go through multiple phases")
 			suffix := randomSuffix()
-		namespace := createTestNamespace("audit-phases")
-		analysis := &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-audit-phases-" + suffix,
-				Namespace: namespace,
-			},
+			namespace := createTestNamespace("audit-phases")
+			analysis := &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-audit-phases-" + suffix,
+					Namespace: namespace,
+				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-phases-" + suffix,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -261,12 +299,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		remediationID := analysis.Spec.RemediationID
 
 		By("Waiting for phase transition events to appear in Data Storage")
-		phaseEvents := waitForAuditEvents(httpClient, remediationID, "aianalysis.phase.transition", 1)
+		phaseEvents := waitForAuditEvents(remediationID, "aianalysis.phase.transition", 1)
 
 		By("Validating phase transition event_data structure")
-			for _, event := range phaseEvents {
-				eventData, ok := event["event_data"].(map[string]interface{})
-				Expect(ok).To(BeTrue())
+		for _, event := range phaseEvents {
+			eventData, ok := event.EventData.(map[string]interface{})
+			Expect(ok).To(BeTrue())
 
 				// Per DD-AUDIT-004: PhaseTransitionPayload structure
 				Expect(eventData).To(HaveKey("old_phase"), "Should record old phase")
@@ -285,12 +323,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit HolmesGPT-API calls with correct endpoint and status", func() {
 			By("Creating AIAnalysis that will trigger HolmesGPT-API call")
 			suffix := randomSuffix()
-		namespace := createTestNamespace("audit-hapi")
-		analysis := &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-audit-hapi-" + suffix,
-				Namespace: namespace,
-			},
+			namespace := createTestNamespace("audit-hapi")
+			analysis := &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-audit-hapi-" + suffix,
+					Namespace: namespace,
+				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-hapi-" + suffix,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -322,22 +360,22 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		remediationID := analysis.Spec.RemediationID
 
 		By("Waiting for HolmesGPT-API call events to appear in Data Storage")
-		hapiEvents := waitForAuditEvents(httpClient, remediationID, "aianalysis.holmesgpt.call", 1)
+		hapiEvents := waitForAuditEvents(remediationID, "aianalysis.holmesgpt.call", 1)
 
 		By("Validating HolmesGPT-API call event_data structure")
-			for _, event := range hapiEvents {
-				eventData, ok := event["event_data"].(map[string]interface{})
-				Expect(ok).To(BeTrue())
+		for _, event := range hapiEvents {
+			eventData, ok := event.EventData.(map[string]interface{})
+			Expect(ok).To(BeTrue())
 
 				// Per DD-AUDIT-004: HolmesGPTCallPayload structure
 				Expect(eventData).To(HaveKey("endpoint"), "Should record API endpoint called")
 				Expect(eventData).To(HaveKey("http_status_code"), "Should record HTTP status code")
 				Expect(eventData).To(HaveKey("duration_ms"), "Should record call duration")
 
-			// Verify endpoint is valid
-			endpoint := eventData["endpoint"].(string)
-			Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
-				"Endpoint should be incident/analyze or recovery/investigate")
+				// Verify endpoint is valid
+				endpoint := eventData["endpoint"].(string)
+				Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
+					"Endpoint should be incident/analyze or recovery/investigate")
 
 				// Verify HTTP status is 2xx for successful calls
 				statusCode := int(eventData["http_status_code"].(float64))
@@ -349,12 +387,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit Rego policy evaluations with correct outcome", func() {
 			By("Creating AIAnalysis that will trigger Rego evaluation")
 			suffix := randomSuffix()
-		namespace := createTestNamespace("audit-rego")
-		analysis := &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-audit-rego-" + suffix,
-				Namespace: namespace,
-			},
+			namespace := createTestNamespace("audit-rego")
+			analysis := &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-audit-rego-" + suffix,
+					Namespace: namespace,
+				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-rego-" + suffix,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -391,23 +429,23 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		remediationID := analysis.Spec.RemediationID
 
 		By("Waiting for Rego evaluation events to appear in Data Storage")
-		regoEvents := waitForAuditEvents(httpClient, remediationID, "aianalysis.rego.evaluation", 1)
+		regoEvents := waitForAuditEvents(remediationID, "aianalysis.rego.evaluation", 1)
 
 		By("Validating Rego evaluation event_data structure")
-			event := regoEvents[0] // Should be only one Rego evaluation per analysis
-			eventData, ok := event["event_data"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+		event := regoEvents[0] // Should be only one Rego evaluation per analysis
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue())
 
-		// Per DD-AUDIT-004: RegoEvaluationPayload structure
-		Expect(eventData).To(HaveKey("outcome"), "Should record policy outcome (approved/requires_approval)")
-		Expect(eventData).To(HaveKey("degraded"), "Should record if policy ran in degraded mode")
-		Expect(eventData).To(HaveKey("duration_ms"), "Should record evaluation duration")
-		Expect(eventData).To(HaveKey("reason"), "Should record evaluation reason")
+			// Per DD-AUDIT-004: RegoEvaluationPayload structure
+			Expect(eventData).To(HaveKey("outcome"), "Should record policy outcome (approved/requires_approval)")
+			Expect(eventData).To(HaveKey("degraded"), "Should record if policy ran in degraded mode")
+			Expect(eventData).To(HaveKey("duration_ms"), "Should record evaluation duration")
+			Expect(eventData).To(HaveKey("reason"), "Should record evaluation reason")
 
-		// Verify outcome is valid
-		outcome := eventData["outcome"].(string)
-		Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
-			"Outcome should be 'approved' or 'requires_approval'")
+			// Verify outcome is valid
+			outcome := eventData["outcome"].(string)
+			Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
+				"Outcome should be 'approved' or 'requires_approval'")
 
 			// Verify degraded flag is boolean
 			degraded, ok := eventData["degraded"].(bool)
@@ -418,12 +456,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		It("should audit approval decisions with correct approval_required flag", func() {
 			By("Creating AIAnalysis for production (requires approval)")
 			suffix := randomSuffix()
-		namespace := createTestNamespace("audit-approval")
-		analysis := &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-audit-approval-" + suffix,
-				Namespace: namespace,
-			},
+			namespace := createTestNamespace("audit-approval")
+			analysis := &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-audit-approval-" + suffix,
+					Namespace: namespace,
+				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationID: "e2e-audit-approval-" + suffix,
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
@@ -465,12 +503,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 		remediationID := analysis.Spec.RemediationID
 
 		By("Waiting for approval decision events to appear in Data Storage")
-		approvalEvents := waitForAuditEvents(httpClient, remediationID, "aianalysis.approval.decision", 1)
+		approvalEvents := waitForAuditEvents(remediationID, "aianalysis.approval.decision", 1)
 
-			By("Validating approval decision event_data structure")
-			event := approvalEvents[0]
-			eventData, ok := event["event_data"].(map[string]interface{})
-			Expect(ok).To(BeTrue())
+		By("Validating approval decision event_data structure")
+		event := approvalEvents[0]
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue())
 
 			// Per DD-AUDIT-004: ApprovalDecisionPayload structure
 			Expect(eventData).To(HaveKey("approval_required"), "Should record if approval is required")

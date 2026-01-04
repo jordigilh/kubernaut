@@ -105,7 +105,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations", Ordered, Label("crd-lifecy
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
@@ -152,7 +152,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations", Ordered, Label("crd-lifecy
 
 		resp, err := httpClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		body, _ := io.ReadAll(resp.Body)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -205,7 +205,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations", Ordered, Label("crd-lifecy
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
@@ -239,7 +239,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations", Ordered, Label("crd-lifecy
 
 		resp, err := http.DefaultClient.Do(req)
 		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		// Gateway returns 400 Bad Request when JSON parsing fails due to wrong Content-Type
 		// This is acceptable behavior (400 vs 415) - both indicate client error

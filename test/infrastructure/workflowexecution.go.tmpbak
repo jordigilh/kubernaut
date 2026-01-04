@@ -631,7 +631,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 
 	// Build controller image with optional E2E coverage instrumentation (DD-TEST-007)
 	fmt.Fprintf(output, "  Building controller image...\n")
-	dockerfilePath := filepath.Join(projectRoot, "cmd/workflowexecution/Dockerfile")
+	dockerfilePath := filepath.Join(projectRoot, "docker/workflowexecution-controller.Dockerfile")
 	// DD-REGISTRY-001: Use localhost prefix for E2E test images
 	// DD-TEST-001: Use service-specific tag to avoid conflicts with other services
 	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"

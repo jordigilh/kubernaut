@@ -24,9 +24,7 @@ Phase 1.1 of HolmesGPT API Implementation Plan
 """
 
 import pytest
-import asyncio
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
+from datetime import datetime, timezone
 from src.errors import (
     HolmesGPTAPIError,
     AuthenticationError,
@@ -298,8 +296,9 @@ class TestCircuitBreaker:
         assert "Circuit breaker open" in exc_info.value.message
         assert exc_info.value.details["failure_count"] == 2
 
-    def test_half_open_after_recovery_timeout(self):
+    def test_half_open_after_recovery_timeout(self, wait_for):
         """Test circuit transitions to half-open after recovery timeout"""
+        import time
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=1)
 
         def failing_func():
@@ -311,10 +310,10 @@ class TestCircuitBreaker:
                 cb.call(failing_func)
 
         assert cb.state == "open"
+        trip_time = time.time()
 
-        # Wait for recovery timeout
-        import time
-        time.sleep(1.1)
+        # Wait for recovery timeout to elapse (typically <1.1s instead of blocking 1.1s)
+        wait_for(lambda: time.time() - trip_time >= 1.0, timeout=1.5, error_msg="Recovery timeout should elapse")
 
         # Next call should transition to half-open and then fail
         with pytest.raises(Exception):
@@ -323,8 +322,9 @@ class TestCircuitBreaker:
         # Circuit should have attempted half-open
         assert cb.failure_count >= 2
 
-    def test_half_open_to_closed_on_success(self):
+    def test_half_open_to_closed_on_success(self, wait_for):
         """Test circuit transitions from half-open to closed on success"""
+        import time
         cb = CircuitBreaker(failure_threshold=2, recovery_timeout=1)
 
         call_count = [0]
@@ -341,10 +341,10 @@ class TestCircuitBreaker:
                 cb.call(flaky_func)
 
         assert cb.state == "open"
+        trip_time = time.time()
 
-        # Wait for recovery timeout
-        import time
-        time.sleep(1.1)
+        # Wait for recovery timeout to elapse (typically <1.1s instead of blocking 1.1s)
+        wait_for(lambda: time.time() - trip_time >= 1.0, timeout=1.5, error_msg="Recovery timeout should elapse")
 
         # Next successful call should close the circuit
         result = cb.call(flaky_func)

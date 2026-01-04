@@ -322,7 +322,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Writer) error {
 	fmt.Fprintln(writer, "  🔨 Building WorkflowExecution controller image (with coverage)...")
 
-	dockerfilePath := filepath.Join(projectRoot, "cmd/workflowexecution/Dockerfile")
+	dockerfilePath := filepath.Join(projectRoot, "docker/workflowexecution-controller.Dockerfile")
 	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"
 
 	buildArgs := []string{

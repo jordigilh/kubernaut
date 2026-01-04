@@ -95,7 +95,7 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("service not ready: status %d", resp.StatusCode)
 			}
@@ -286,7 +286,7 @@ execution:
 					bytes.NewBuffer(reqBody),
 				)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				bodyBytes, _ := io.ReadAll(resp.Body)
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -332,7 +332,7 @@ execution:
 			)
 			searchDuration := time.Since(start)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			bodyBytes, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())

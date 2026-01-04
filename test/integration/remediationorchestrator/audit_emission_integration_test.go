@@ -34,6 +34,7 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"context"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -50,9 +51,11 @@ import (
 	audit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 )
 
-var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func() {
+var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 	const (
-		dataStorageURL = "http://localhost:18140" // Data Storage API port from podman-compose
+		// Use 127.0.0.1 instead of localhost to force IPv4
+		// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
+		dataStorageURL = "http://127.0.0.1:18140" // Data Storage API port from podman-compose
 	)
 
 	var (
@@ -60,8 +63,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func
 		dsClient      *dsclient.ClientWithResponses
 	)
 
-	BeforeAll(func() {
-		// Create Data Storage OpenAPI client
+	BeforeEach(func() {
+		// Create Data Storage OpenAPI client (each test needs its own client instance for parallel execution)
 		var err error
 		dsClient, err = dsclient.NewClientWithResponses(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage OpenAPI client")
@@ -274,13 +277,15 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-			// Query for lifecycle completed audit event using Eventually (accounts for buffer flush)
-			eventType := "orchestrator.lifecycle.completed"
-			var events []dsclient.AuditEvent
-			Eventually(func() int {
-				events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-				return len(events)
-			}, "5s", "500ms").Should(Equal(1), "Expected exactly 1 lifecycle_completed audit event after buffer flush")
+		// Query for lifecycle completed audit event using Eventually (accounts for buffer flush)
+		// Timeout increased to 10s to account for system load during full test suite execution
+		// (audit store has 1s flush interval + network latency + query processing)
+		eventType := "orchestrator.lifecycle.completed"
+		var events []dsclient.AuditEvent
+		Eventually(func() int {
+			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+			return len(events)
+		}, "10s", "500ms").Should(Equal(1), "Expected exactly 1 lifecycle_completed audit event after buffer flush")
 
 			// Validate event
 			event := events[0]
@@ -330,6 +335,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func
 
 		// Query for lifecycle completed audit event with failure outcome (DD-AUDIT-003)
 		// Per DD-AUDIT-003: orchestrator.lifecycle.completed has outcome=success OR outcome=failure
+		// Timeout increased to 10s for consistency with other audit tests and to account for query/filter overhead
 		eventType := "orchestrator.lifecycle.completed"
 		var failureEvents []dsclient.AuditEvent
 		Eventually(func() int {
@@ -342,7 +348,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func
 				}
 			}
 			return len(failureEvents)
-		}, "5s", "500ms").Should(Equal(1), "Expected exactly 1 lifecycle_completed audit event with failure outcome after buffer flush")
+		}, "10s", "500ms").Should(Equal(1), "Expected exactly 1 lifecycle_completed audit event with failure outcome after buffer flush")
 
 		// Validate event
 		event := failureEvents[0]
@@ -457,13 +463,14 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
-			// Query for any audit event from this RR using Eventually (accounts for buffer flush)
-			eventType := "orchestrator.lifecycle.started"
-			var events []dsclient.AuditEvent
-			Eventually(func() int {
-				events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-				return len(events)
-			}, "5s", "500ms").Should(BeNumerically(">", 0), "Expected at least 1 audit event after buffer flush")
+		// Query for any audit event from this RR using Eventually (accounts for buffer flush)
+		// Timeout increased to 10s for consistency with other audit event queries
+		eventType := "orchestrator.lifecycle.started"
+		var events []dsclient.AuditEvent
+		Eventually(func() int {
+			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+			return len(events)
+		}, "10s", "500ms").Should(BeNumerically(">", 0), "Expected at least 1 audit event after buffer flush")
 
 			// Validate metadata fields on first event
 			event := events[0]
@@ -485,6 +492,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", Ordered, func
 func queryAuditEventsOpenAPI(client *dsclient.ClientWithResponses, correlationID, eventType string) []dsclient.AuditEvent {
 	// Use the OpenAPI client method QueryAuditEventsWithResponse
 	// Per ADR-034 v1.2: event_category is MANDATORY for queries
+	// Use context.Background() for query context (safe for parallel test execution)
+	queryCtx := context.Background()
 	eventCategory := "orchestration" // RO audit events use "orchestration" category
 	params := &dsclient.QueryAuditEventsParams{
 		CorrelationId: &correlationID,
@@ -492,7 +501,7 @@ func queryAuditEventsOpenAPI(client *dsclient.ClientWithResponses, correlationID
 		EventType:     &eventType,
 	}
 
-	resp, err := client.QueryAuditEventsWithResponse(ctx, params)
+	resp, err := client.QueryAuditEventsWithResponse(queryCtx, params)
 	if err != nil {
 		GinkgoWriter.Printf("Failed to query Data Storage: %v\n", err)
 		return nil

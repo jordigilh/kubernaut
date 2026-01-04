@@ -30,8 +30,7 @@ current ADR-041 v3.3 format.
 """
 
 import pytest
-import json
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import patch
 from src.extensions.recovery import (
     MinimalDAL,
     _get_holmes_config,

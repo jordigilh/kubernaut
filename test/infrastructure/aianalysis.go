@@ -770,6 +770,89 @@ spec:
 	return cmd.Run()
 }
 
+// deployHolmesGPTAPIManifestOnly deploys HolmesGPT-API manifest assuming image is already in Kind
+// Used by hybrid flow: build → export → prune → load → deploy
+func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+	fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
+	// ADR-030: Deploy manifest with ConfigMap
+	manifest := fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmesgpt-api-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    llm:
+      provider: "mock"
+      model: "mock/test-model"
+      endpoint: "http://localhost:11434"
+    data_storage:
+      url: "http://datastorage:8080"
+    logging:
+      level: "INFO"
+    audit:
+      flush_interval_seconds: 0.1
+      buffer_size: 10000
+      batch_size: 50
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: holmesgpt-api
+  template:
+    metadata:
+      labels:
+        app: holmesgpt-api
+    spec:
+      containers:
+      - name: holmesgpt-api
+        image: %s
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        args:
+        - "-config"
+        - "/etc/holmesgpt/config.yaml"
+        env:
+        - name: MOCK_LLM_MODE
+          value: "true"
+        volumeMounts:
+        - name: config
+          mountPath: /etc/holmesgpt
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: holmesgpt-api-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmesgpt-api
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  selector:
+    app: holmesgpt-api
+  ports:
+  - port: 8080
+    targetPort: 8080
+    nodePort: 30088
+`, imageName)
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = stringReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
 // deployAIAnalysisControllerOnly deploys AIAnalysis controller using pre-built image (separation of build/deploy)
 func deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Load pre-built image into Kind
@@ -780,6 +863,161 @@ func deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, imageName strin
 		return fmt.Errorf("failed to load AIAnalysis image: %w", err)
 	}
 
+	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
+	manifest := `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      port: 8080
+      host: "0.0.0.0"
+      read_timeout: "30s"
+      write_timeout: "30s"
+    logging:
+      level: "info"
+      format: "json"
+    holmesgpt:
+      url: "http://holmesgpt-api:8080"
+      timeout: "60s"
+    datastorage:
+      url: "http://datastorage:8080"
+      timeout: "60s"
+    rego:
+      policy_path: "/etc/aianalysis/policies/approval.rego"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: aianalysis-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses/status"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aianalysis-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aianalysis-controller
+subjects:
+- kind: ServiceAccount
+  name: aianalysis-controller
+  namespace: kubernaut-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: aianalysis-controller
+  template:
+    metadata:
+      labels:
+        app: aianalysis-controller
+    spec:
+      serviceAccountName: aianalysis-controller
+      containers:
+      - name: aianalysis
+        image: localhost/kubernaut-aianalysis:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+        - containerPort: 9090
+        - containerPort: 8081
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        env:
+        - name: CONFIG_PATH
+          value: /etc/aianalysis/config.yaml
+        - name: REGO_POLICY_PATH
+          value: /etc/aianalysis/policies/approval.rego
+        - name: HOLMESGPT_API_URL
+          value: http://holmesgpt-api:8080
+        - name: DATASTORAGE_URL
+          value: http://datastorage:8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/aianalysis
+          readOnly: true
+        - name: rego-policies
+          mountPath: /etc/aianalysis/policies
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: aianalysis-config
+      - name: rego-policies
+        configMap:
+          name: aianalysis-policies
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: aianalysis-controller
+  namespace: kubernaut-system
+spec:
+  type: NodePort
+  selector:
+    app: aianalysis-controller
+  ports:
+  - name: api
+    port: 8080
+    targetPort: 8080
+    nodePort: 30084
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    nodePort: 30184
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30284
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = stringReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+
+	// Deploy Rego policy ConfigMap
+	return deployRegoPolicyConfigMap(kubeconfigPath, writer)
+}
+
+// deployAIAnalysisControllerManifestOnly deploys AIAnalysis controller manifest assuming image is already in Kind
+// Used by hybrid flow: build → export → prune → load → deploy
+func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+	fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
 	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
 	manifest := `
 apiVersion: v1
@@ -1270,6 +1508,18 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 		return fmt.Errorf("failed to load image %s: %w", imageName, err)
 	}
 
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
 	return nil
 }
 
@@ -1596,7 +1846,7 @@ func buildHAPIImage(writer io.Writer) error {
 
 // waitForHAPIHealth waits for HAPI health endpoint to respond
 func waitForHAPIHealth(port int, timeout time.Duration) error {
-	healthURL := fmt.Sprintf("http://localhost:%d/health", port)
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/health", port)
 	deadline := time.Now().Add(timeout)
 
 	for time.Now().Before(deadline) {
@@ -1698,20 +1948,25 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// ============================================================================
-	// STEP 2: Create custom network for internal communication
+	// STEP 2: Network strategy
 	// ============================================================================
-	fmt.Fprintf(writer, "🌐 Creating custom Podman network '%s'...\n", AIAnalysisIntegrationNetwork)
-	createNetworkCmd := exec.Command("podman", "network", "create", AIAnalysisIntegrationNetwork)
-	createNetworkCmd.Stdout = writer
-	createNetworkCmd.Stderr = writer
-	if err := createNetworkCmd.Run(); err != nil {
-		// Ignore if network already exists
-		if !strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("failed to create network '%s': %w", AIAnalysisIntegrationNetwork, err)
+	// Note: Using port mapping (-p) instead of custom podman network to avoid DNS resolution issues
+	// All services connect via host.containers.internal:PORT (same pattern as Gateway/Notification/WE)
+	fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
+
+	if false { // Skip network creation - using port mapping instead
+		createNetworkCmd := exec.Command("podman", "network", "create", AIAnalysisIntegrationNetwork)
+		createNetworkCmd.Stdout = writer
+		createNetworkCmd.Stderr = writer
+		if err := createNetworkCmd.Run(); err != nil {
+			// Ignore if network already exists
+			if !strings.Contains(err.Error(), "already exists") {
+				return fmt.Errorf("failed to create network '%s': %w", AIAnalysisIntegrationNetwork, err)
+			}
+			fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", AIAnalysisIntegrationNetwork)
 		}
-		fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", AIAnalysisIntegrationNetwork)
-	}
-	fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", AIAnalysisIntegrationNetwork)
+		fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", AIAnalysisIntegrationNetwork)
+	} // End of skipped network creation block
 
 	// ============================================================================
 	// STEP 3: Start PostgreSQL FIRST (DD-TEST-002 Sequential Pattern)
@@ -1722,7 +1977,7 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 		DBName:         AIAnalysisIntegrationDBName,
 		DBUser:         AIAnalysisIntegrationDBUser,
 		DBPassword:     AIAnalysisIntegrationDBPassword,
-		Network:        AIAnalysisIntegrationNetwork,
+		Network:        "", // Use port mapping instead of custom network
 		MaxConnections: 200,
 	}
 	if err := StartPostgreSQL(pgConfig, writer); err != nil {
@@ -1730,19 +1985,20 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	}
 
 	// CRITICAL: Wait for PostgreSQL to be ready before proceeding
+	// Uses enhanced shared function with two-phase verification:
+	//   1. Connection check (pg_isready)
+	//   2. Queryability check (SELECT 1) - prevents "database system is starting up" errors
 	if err := WaitForPostgreSQLReady(AIAnalysisIntegrationPostgresContainer, AIAnalysisIntegrationDBUser, AIAnalysisIntegrationDBName, writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
 
 	// ============================================================================
 	// STEP 4: Run migrations (inline approach - same as RO)
 	// ============================================================================
 	fmt.Fprintf(writer, "🔄 Running migrations...\n")
 	migrationsCmd := exec.Command("podman", "run", "--rm",
-		"--network", AIAnalysisIntegrationNetwork,
-		"-e", "PGHOST="+AIAnalysisIntegrationPostgresContainer,
-		"-e", "PGPORT=5432",
+		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
+		"-e", fmt.Sprintf("PGPORT=%d", AIAnalysisIntegrationPostgresPort),
 		"-e", "PGUSER="+AIAnalysisIntegrationDBUser,
 		"-e", "PGPASSWORD="+AIAnalysisIntegrationDBPassword,
 		"-e", "PGDATABASE="+AIAnalysisIntegrationDBName,
@@ -1769,7 +2025,7 @@ echo "Migrations complete!"`)
 	redisConfig := RedisConfig{
 		ContainerName: AIAnalysisIntegrationRedisContainer,
 		Port:          AIAnalysisIntegrationRedisPort,
-		Network:       AIAnalysisIntegrationNetwork,
+		Network:       "", // Use port mapping instead of custom network
 	}
 	if err := StartRedis(redisConfig, writer); err != nil {
 		return fmt.Errorf("failed to start Redis: %w", err)
@@ -1794,14 +2050,14 @@ echo "Migrations complete!"`)
 	if err := StartDataStorage(IntegrationDataStorageConfig{
 		ContainerName: AIAnalysisIntegrationDataStorageContainer,
 		Port:          AIAnalysisIntegrationDataStoragePort,
-		Network:       AIAnalysisIntegrationNetwork,
-		PostgresHost:  AIAnalysisIntegrationPostgresContainer, // Use container name for internal network
-		PostgresPort:  5432,                                   // Internal port
+		Network:       "",                                // Use port mapping instead of custom network
+		PostgresHost:  "host.containers.internal",        // Use host.containers.internal for port-mapped PostgreSQL
+		PostgresPort:  AIAnalysisIntegrationPostgresPort, // External mapped port
 		DBName:        AIAnalysisIntegrationDBName,
 		DBUser:        AIAnalysisIntegrationDBUser,
 		DBPassword:    AIAnalysisIntegrationDBPassword,
-		RedisHost:     AIAnalysisIntegrationRedisContainer, // Use container name for internal network
-		RedisPort:     6379,                                // Internal port
+		RedisHost:     "host.containers.internal",     // Use host.containers.internal for port-mapped Redis
+		RedisPort:     AIAnalysisIntegrationRedisPort, // External mapped port
 		LogLevel:      "info",
 		ImageTag:      dsImageTag, // DD-INTEGRATION-001 v2.0: Composite tag for collision avoidance
 	}, writer); err != nil {
@@ -1810,10 +2066,10 @@ echo "Migrations complete!"`)
 
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", AIAnalysisIntegrationDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", AIAnalysisIntegrationDataStoragePort),
 		60*time.Second,
 		writer,
-	); err != nil {
+	); err != nil{
 		// Print container logs for debugging
 		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", AIAnalysisIntegrationDataStorageContainer)
@@ -1845,7 +2101,7 @@ echo "Migrations complete!"`)
 	os.MkdirAll(hapiConfigDir, 0755)
 
 	hapiConfig := GetMinimalHAPIConfig(
-		"http://"+AIAnalysisIntegrationDataStorageContainer+":8080",
+		fmt.Sprintf("http://host.containers.internal:%d", AIAnalysisIntegrationDataStoragePort),
 		"INFO",
 	)
 	os.WriteFile(filepath.Join(hapiConfigDir, "config.yaml"), []byte(hapiConfig), 0644)
@@ -1854,7 +2110,6 @@ echo "Migrations complete!"`)
 	// ADR-030: Use -config flag (consistent with Go services)
 	hapiCmd := exec.Command("podman", "run", "-d",
 		"--name", AIAnalysisIntegrationHAPIContainer,
-		"--network", AIAnalysisIntegrationNetwork,
 		"-p", fmt.Sprintf("%d:8080", AIAnalysisIntegrationHAPIPort), // Map host port to container's 8080
 		"-v", fmt.Sprintf("%s:/etc/holmesgpt:ro", hapiConfigDir),
 		"-e", "MOCK_LLM_MODE=true",
@@ -1869,7 +2124,7 @@ echo "Migrations complete!"`)
 
 	// CRITICAL: Wait for HAPI HTTP endpoint to be ready
 	if err := WaitForHTTPHealth(
-		fmt.Sprintf("http://localhost:%d/health", AIAnalysisIntegrationHAPIPort),
+		fmt.Sprintf("http://127.0.0.1:%d/health", AIAnalysisIntegrationHAPIPort),
 		60*time.Second,
 		writer,
 	); err != nil {
@@ -2136,12 +2391,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	namespace := "kubernaut-system" // Infrastructure always in kubernaut-system; tests use dynamic namespaces
 
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL)")
+	fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL + DISK OPTIMIZATION)")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
-	fmt.Fprintln(writer, "  Benefits: Fast builds + No cluster timeout + Reliable")
+	fmt.Fprintln(writer, "  Strategy: Build → Export → Prune → Cluster → Load → Deploy")
+	fmt.Fprintln(writer, "  Benefits: Fast builds + Aggressive cleanup + Disk tracking")
 	fmt.Fprintln(writer, "  Per DD-TEST-002: Hybrid Parallel Setup Standard")
+	fmt.Fprintln(writer, "  Per DD-TEST-008: Disk Space Management")
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Track initial disk space
+	LogDiskSpace("START", writer)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
@@ -2200,11 +2459,21 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
 	}
 	fmt.Fprintln(writer, "\n✅ All images built! (~3-4 min parallel)")
+	LogDiskSpace("IMAGES_BUILT", writer)
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Create Kind cluster (AFTER builds complete)
+	// PHASE 2-3: Export images to .tar and aggressive Podman cleanup
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	// This frees ~5-9 GB of disk space by removing Podman cache and intermediate layers
+	tarFiles, err := ExportImagesAndPrune(builtImages, "/tmp", writer)
+	if err != nil {
+		return fmt.Errorf("failed to export images and prune: %w", err)
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
+	// ═══════════════════════════════════════════════════════════════════════
+	fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
 	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
@@ -2227,40 +2496,17 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Load images (parallel)
+	// PHASE 5-6: Load images from .tar into Kind and cleanup .tar files
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into cluster...")
-	type imageLoadResult struct {
-		name string
-		err  error
-	}
-	loadResults := make(chan imageLoadResult, 3)
-
-	go func() {
-		err := loadImageToKind(clusterName, builtImages["datastorage"], writer)
-		loadResults <- imageLoadResult{"DataStorage", err}
-	}()
-	go func() {
-		err := loadImageToKind(clusterName, builtImages["holmesgpt-api"], writer)
-		loadResults <- imageLoadResult{"HolmesGPT-API", err}
-	}()
-	go func() {
-		err := loadImageToKind(clusterName, builtImages["aianalysis"], writer)
-		loadResults <- imageLoadResult{"AIAnalysis", err}
-	}()
-
-	for i := 0; i < 3; i++ {
-		result := <-loadResults
-		if result.err != nil {
-			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
-		}
-		fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
+	// Uses shared helpers for efficient loading and cleanup
+	if err := LoadImagesAndCleanup(clusterName, tarFiles, writer); err != nil {
+		return fmt.Errorf("failed to load images and cleanup: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4: Deploy services IN PARALLEL (let Kubernetes reconcile)
+	// PHASE 7: Deploy services IN PARALLEL (let Kubernetes reconcile)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	fmt.Fprintln(writer, "\n📦 PHASE 7: Deploying services in parallel...")
 	fmt.Fprintln(writer, "  ├── Data Storage infrastructure (PostgreSQL + Redis + DataStorage + Migrations)")
 	fmt.Fprintln(writer, "  ├── HolmesGPT-API")
 	fmt.Fprintln(writer, "  └── AIAnalysis controller")
@@ -2280,14 +2526,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}()
 
 	// Deploy HAPI (AIAnalysis dependency)
+	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
-		err := deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, builtImages["holmesgpt-api"], writer)
+		err := deployHolmesGPTAPIManifestOnly(kubeconfigPath, builtImages["holmesgpt-api"], writer)
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
 
 	// Deploy AIAnalysis controller (service under test)
+	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
-		err := deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, builtImages["aianalysis"], writer)
+		err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, builtImages["aianalysis"], writer)
 		deployResults <- deployResult{"AIAnalysis", err}
 	}()
 
@@ -2315,7 +2563,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 Compliant)")
+	fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 + DD-TEST-008)")
+	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	LogDiskSpace("FINAL", writer)
 	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }

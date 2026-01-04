@@ -143,8 +143,6 @@ def test_inflight_request_completion(setup_test_config):
     This ensures zero request failures during rolling updates.
     """
     from src.main import app
-    from fastapi import APIRouter
-    import time
 
     # Create test client
     client = TestClient(app)

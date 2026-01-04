@@ -59,14 +59,18 @@ import (
 //
 // ========================================
 
-var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking", Serial, Ordered, func() {
+var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking",  Ordered, func() {
 	var (
 		client          *http.Client
 		adr033HistoryID int64 // Auto-generated history ID for test data
 	)
 
 	BeforeAll(func() {
-		// Serial tests must use public schema
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert data into test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		// This is NOT a parallel execution issue - it's an API server architecture decision.
 		usePublicSchema()
 
 		// Use 30-second timeout for HTTP requests

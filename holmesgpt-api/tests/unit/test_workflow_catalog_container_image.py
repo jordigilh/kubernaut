@@ -22,7 +22,7 @@ Test Coverage:
 
 import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 
 
 class TestWorkflowCatalogContainerImage:
@@ -321,7 +321,6 @@ class TestWorkflowCatalogContainerImage:
         TDD Phase: RED (this test should FAIL initially)
         """
         from src.toolsets.workflow_catalog import SearchWorkflowCatalogTool
-        from holmes.core.tools import StructuredToolResultStatus
 
         # ARRANGE
         tool = SearchWorkflowCatalogTool(data_storage_url="http://localhost:8080")

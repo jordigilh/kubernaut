@@ -11,8 +11,6 @@ import os
 import tempfile
 import time
 
-import pytest
-from fastapi.testclient import TestClient
 
 
 class TestHotReloadIntegration:
@@ -60,7 +58,7 @@ log_level: DEBUG
             if "HOT_RELOAD_ENABLED" in os.environ:
                 del os.environ["HOT_RELOAD_ENABLED"]
 
-    def test_config_reload_reflects_in_getters(self):
+    def test_config_reload_reflects_in_getters(self, wait_for):
         """
         BR-HAPI-199: Configuration changes should be reflected in getters.
         """
@@ -90,7 +88,6 @@ toolsets:
             assert "kubernetes/core" in manager.get_toolsets()
 
             # Update config
-            time.sleep(1.5)  # Wait for poll interval
             with open(config_path, 'w') as f:
                 f.write("""
 llm:
@@ -100,10 +97,11 @@ toolsets:
   kubernetes/core: {}
   workflow/catalog: {}
 """)
-            time.sleep(1.5)  # Wait for reload
+
+            # Wait for reload (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: manager.get_llm_model() == "claude-3-5-sonnet", timeout=2.0, error_msg="Config should reload")
 
             # Verify updated values
-            assert manager.get_llm_model() == "claude-3-5-sonnet"
             assert manager.get_llm_temperature() == 0.3
             assert "workflow/catalog" in manager.get_toolsets()
 
@@ -135,13 +133,14 @@ llm:
             assert manager.get_llm_model() == "static-model"
 
             # Update config
-            time.sleep(0.5)
             with open(config_path, 'w') as f:
                 f.write("""
 llm:
   model: changed-model
 """)
-            time.sleep(1.5)
+
+            # Brief wait to ensure no reload happens (reduced from 2s to 0.2s - hot reload disabled)
+            time.sleep(0.2)
 
             # Should NOT reload (hot-reload disabled)
             assert manager.get_llm_model() == "static-model"
@@ -150,7 +149,7 @@ llm:
         finally:
             os.unlink(config_path)
 
-    def test_graceful_degradation_on_invalid_yaml(self):
+    def test_graceful_degradation_on_invalid_yaml(self, wait_for):
         """
         BR-HAPI-199: Invalid YAML should not crash the service.
         """
@@ -175,16 +174,14 @@ llm:
             initial_error_count = manager.error_count
 
             # Write invalid YAML
-            time.sleep(1.5)
             with open(config_path, 'w') as f:
                 f.write("invalid: yaml: syntax: {{")
-            time.sleep(1.5)
+
+            # Wait for error to be detected (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: manager.error_count > initial_error_count, timeout=2.0, error_msg="Error should be detected")
 
             # Should keep previous config
             assert manager.get_llm_model() == "initial-model"
-
-            # Error count should increase
-            assert manager.error_count > initial_error_count
 
             # Service should still be functional
             # (verify by writing valid config again)
@@ -193,10 +190,9 @@ llm:
 llm:
   model: recovered-model
 """)
-            time.sleep(1.5)
 
-            # Should pick up the valid config
-            assert manager.get_llm_model() == "recovered-model"
+            # Wait for recovery (typically <100ms instead of 1.5s sleep)
+            wait_for(lambda: manager.get_llm_model() == "recovered-model", timeout=2.0, error_msg="Should recover with valid config")
 
             manager.stop()
         finally:

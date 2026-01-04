@@ -50,7 +50,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
-var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", Ordered, func() {
+var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", func() {
 	var testNamespace string
 
 	BeforeEach(func() {

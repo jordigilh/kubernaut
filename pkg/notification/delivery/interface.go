@@ -29,7 +29,7 @@ import (
 // See: docs/services/crd-controllers/06-notification/DD-NOT-002-FILE-BASED-E2E-TESTS_IMPLEMENTATION_PLAN_V3.0.md
 // ========================================
 //
-// DeliveryService defines the common interface for all notification delivery mechanisms.
+// Service defines the common interface for all notification delivery mechanisms.
 //
 // All delivery services (Console, Slack, File, future: Email, PagerDuty, Teams, etc.)
 // implement this interface for polymorphic usage in the notification controller.
@@ -51,7 +51,7 @@ import (
 // - BR-NOT-056: Priority-Based Routing (services respect priority from notification)
 //
 // ========================================
-type DeliveryService interface {
+type Service interface {
 	// Deliver sends a notification through this delivery mechanism.
 	//
 	// The notification is delivered as-is; sanitization should be applied

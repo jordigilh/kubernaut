@@ -73,6 +73,19 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		if testNamespace != "" && testClient != nil {
 			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 				client.InNamespace(testNamespace))
+
+			// Wait for all CRDs to be deleted before next test
+			// This prevents test pollution in parallel execution
+			Eventually(func() int {
+				rrList := &remediationv1alpha1.RemediationRequestList{}
+				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
+				if err != nil {
+					GinkgoWriter.Printf("Error during cleanup list: %v\n", err)
+					return -1
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
+				"All CRDs should be deleted before next test starts")
 		}
 	})
 
@@ -235,14 +248,19 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				"Gateway should process alerts even if audit fails (graceful degradation)")
 
 			// And: RemediationRequest CRD should be created
-			Eventually(func() bool {
+			// Use Eventually with better error reporting to diagnose cache sync issues
+			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
 				if err != nil {
-					return false
+					GinkgoWriter.Printf("⚠️  List query failed: %v\n", err)
+					return -1 // Distinct from 0 to show error vs empty list
 				}
-				return len(rrList.Items) > 0
-			}, 10*time.Second, 1*time.Second).Should(BeTrue(),
+				if len(rrList.Items) == 0 {
+					GinkgoWriter.Printf("📋 List query succeeded but found 0 items (waiting...)\n")
+				}
+				return len(rrList.Items)
+			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"RemediationRequest should be created despite DataStorage unavailability")
 		})
 

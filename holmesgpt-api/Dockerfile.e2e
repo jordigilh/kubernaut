@@ -1,7 +1,8 @@
-# HolmesGPT API - E2E Testing Dockerfile (Optimized for Size)
+# HolmesGPT API - E2E Test Dockerfile (Minimal Dependencies)
+# Purpose: Fast E2E builds without cloud provider SDKs (1.5GB google-cloud-aiplatform removed)
+# Use Case: E2E tests with MOCK_LLM_MODE=true
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy)
-# Optimizations: Slim dependencies, no dnf update, aggressive cleanup
 
 # Build stage - Red Hat UBI9 Python 3.12
 FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
@@ -10,7 +11,7 @@ FROM registry.access.redhat.com/ubi9/python-312:latest AS builder
 USER root
 
 # Install only essential build dependencies (skip dnf update to speed up build)
-RUN dnf install -y --setopt=install_weak_deps=False gcc gcc-c++ git && \
+RUN dnf install -y --setopt=install_weak_deps=False gcc gcc-c++ git ca-certificates tzdata && \
 	dnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum
 
@@ -20,72 +21,49 @@ USER 1001
 # Set working directory
 WORKDIR /opt/app-root/src
 
-# Copy HolmesGPT SDK dependencies (referenced in requirements.txt)
-COPY --chown=1001:0 dependencies/ ../dependencies/
+# Copy HolmesGPT SDK dependencies (referenced in requirements-e2e.txt)
+# NOTE: No trailing slash on source - copies directory itself, not just contents
+COPY --chown=1001:0 dependencies ../dependencies
 
-# Copy full requirements (size optimization comes from Dockerfile cleanup, not removed deps)
-COPY --chown=1001:0 holmesgpt-api/requirements.txt ./requirements.txt
+# Copy E2E requirements (minimal - no google-cloud-aiplatform 1.5GB)
+COPY --chown=1001:0 holmesgpt-api/requirements-e2e.txt ./requirements.txt
 
-# Upgrade pip first
-RUN pip install --no-cache-dir --upgrade pip
-
-# Install dependencies in chunks to reduce peak memory usage (prevents OOM in 7.4GB Podman VM)
-# Chunk 1: Core dependencies from HolmesGPT SDK (supabase, postgrest, httpx)
-RUN pip install --no-cache-dir \
-	'supabase>=2.5,<2.8' \
-	'postgrest==0.16.8' \
-	'httpx<0.28,>=0.24'
-
-# Chunk 2: HolmesGPT SDK from local copy
-RUN pip install --no-cache-dir ../dependencies/holmesgpt/
-
-# Chunk 3: Service-specific dependencies (smaller packages)
-RUN pip install --no-cache-dir \
-	'aiohttp>=3.9.1' \
-	'aiodns>=3.1.1' \
-	'prometheus-client>=0.19.0' \
-	'python-json-logger>=2.0.7' \
-	'PyYAML>=6.0' \
-	'watchdog>=3.0.0,<4.0.0'
-
-# Chunk 4: Large cloud provider SDK (install last, after smaller deps)
-RUN pip install --no-cache-dir 'google-cloud-aiplatform>=1.38'
-
-# Aggressive cleanup after all installations
-RUN find /opt/app-root/lib/python3.12/site-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-	find /opt/app-root/lib/python3.12/site-packages -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
-	find /opt/app-root/lib/python3.12/site-packages -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
-	find /opt/app-root/lib/python3.12/site-packages -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true && \
+# Upgrade pip and install Python dependencies
+# Remove unnecessary files after installation to reduce layer size
+RUN pip install --no-cache-dir --upgrade pip && \
+	pip install --no-cache-dir -r requirements.txt && \
+	find /opt/app-root/lib/python3.12/site-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -name "*.pyc" -delete && \
-	find /opt/app-root/lib/python3.12/site-packages -name "*.pyo" -delete && \
-	find /opt/app-root/lib/python3.12/site-packages -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+	find /opt/app-root/lib/python3.12/site-packages -name "*.pyo" -delete
 
-# Runtime stage - Red Hat UBI9 Python 3.12 minimal
+# Runtime stage - Red Hat UBI9 Python 3.12
 FROM registry.access.redhat.com/ubi9/python-312:latest
 
-# Install only essential runtime dependencies (no dnf update, no kubectl)
+# Install only essential runtime dependencies (skip dnf update to reduce size)
 USER root
 RUN dnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
 	dnf clean all && \
 	rm -rf /var/cache/dnf /var/cache/yum
 
-# Set working directory
+# Set working directory (UBI9 Python already has UID 1001 user)
 WORKDIR /opt/app-root/src
 
-# Copy Python dependencies from builder (cleaned up)
+# Copy Python dependencies from builder (includes HolmesGPT SDK in site-packages)
 COPY --from=builder /opt/app-root/lib/python3.12/site-packages /opt/app-root/lib/python3.12/site-packages
 COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
 # Copy application code
 COPY --chown=1001:0 holmesgpt-api/src/ ./src/
-COPY --chown=1001:0 holmesgpt-api/requirements.txt ./requirements.txt
+COPY --chown=1001:0 holmesgpt-api/requirements-e2e.txt ./requirements.txt
+COPY --chown=1001:0 holmesgpt-api/entrypoint.sh ./
 
-# Create necessary directories with correct permissions and final cleanup
+# Create necessary directories with correct permissions and clean up
 RUN mkdir -p /tmp /opt/app-root/.cache && \
 	chown -R 1001:0 /opt/app-root /tmp && \
 	chmod -R g=u /opt/app-root /tmp && \
-	# Final cleanup pass
+	chmod +x ./entrypoint.sh && \
+	# Additional cleanup to reduce image size
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -name "*.pyc" -delete 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -name "*.pyo" -delete 2>/dev/null || true
@@ -95,11 +73,13 @@ USER 1001
 
 # Environment variables
 # CRITICAL: PYTHONPATH ensures Python 3.12 finds packages in /opt/app-root/lib/python3.12/site-packages
+# MOCK_LLM_MODE: Enable mock LLM responses for E2E tests (BR-HAPI-212)
 ENV PYTHONUNBUFFERED=1 \
 	PYTHONDONTWRITEBYTECODE=1 \
 	PATH="/opt/app-root/bin:${PATH}" \
 	PYTHONPATH="/opt/app-root/lib/python3.12/site-packages:${PYTHONPATH}" \
-	HOME=/opt/app-root
+	HOME=/opt/app-root \
+	MOCK_LLM_MODE=true
 
 # Expose port
 EXPOSE 8080
@@ -108,20 +88,20 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
 	CMD python3.12 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')" || exit 1
 
-# Run FastAPI with uvicorn (use python3.12 explicitly - UBI9 python-312 image defaults to python3.9)
-CMD ["python3.12", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]
+# Use entrypoint script to handle --config flag (ADR-030 - matches Go services)
+ENTRYPOINT ["./entrypoint.sh"]
+CMD []
 
 # Red Hat UBI9 compatible metadata labels
 LABEL name="kubernaut-holmesgpt-api-e2e" \
 	vendor="Kubernaut" \
 	version="1.0.0-e2e" \
 	release="1" \
-	summary="HolmesGPT API - E2E Testing (Optimized)" \
-	description="Optimized E2E testing image for HolmesGPT API with reduced dependencies and aggressive size optimization." \
+	summary="HolmesGPT API - E2E Test Image (Minimal Dependencies)" \
+	description="Minimal build for E2E testing with mock LLM mode - no cloud providers (1.5GB saved)" \
 	maintainer="jgil@redhat.com" \
-	component="holmesgpt-api" \
+	component="holmesgpt-api-e2e" \
 	part-of="kubernaut" \
-	io.k8s.description="HolmesGPT API Service for Kubernaut (E2E)" \
+	io.k8s.description="HolmesGPT API E2E Test Service for Kubernaut" \
 	io.k8s.display-name="Kubernaut HolmesGPT API (E2E)" \
-	io.openshift.tags="kubernaut,holmesgpt,ai,llm,recovery,python,microservice,e2e"
-
+	io.openshift.tags="kubernaut,holmesgpt,ai,llm,e2e,testing,mock,python,microservice"

@@ -17,9 +17,7 @@ Tests verify:
 7. Label structures are preserved
 """
 
-import pytest
 from unittest.mock import patch, MagicMock
-import json
 
 from src.toolsets.workflow_catalog import SearchWorkflowCatalogTool, WorkflowCatalogToolset
 from src.models.incident_models import DetectedLabels

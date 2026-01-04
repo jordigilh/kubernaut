@@ -29,10 +29,9 @@ TIER 1: UNIT TESTS (70% Coverage)
 Infrastructure: None (mocked HTTP responses)
 """
 
-import pytest
 import json
 import uuid
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 from src.toolsets.workflow_catalog import (
     SearchWorkflowCatalogTool,
     WorkflowCatalogToolset
@@ -65,7 +64,7 @@ class TestInputValidation:
         tool = SearchWorkflowCatalogTool(data_storage_url="http://mock:8080")
 
         # ACT
-        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows') as mock_post:
+        with patch('src.clients.datastorage.api.workflow_catalog_api_api.WorkflowCatalogAPIApi.search_workflows'):
             result = tool.invoke(params={"query": "", "top_k": 5})
 
             # ASSERT - Query should be empty but tool continues (current behavior)
@@ -214,7 +213,7 @@ class TestInputValidation:
             mock_response.json.return_value = {"workflows": [], "total_results": 0}
             mock_post.return_value = mock_response
 
-            result = tool.invoke(params={"query": "OOMKilled critical", "top_k": 10000})
+            tool.invoke(params={"query": "OOMKilled critical", "top_k": 10000})
 
             # ASSERT - Verify top_k was capped in the request
             assert mock_post.called, "U1.7: Should call Data Storage"
@@ -493,7 +492,6 @@ class TestErrorHandling:
         Integration Outcome: HTTP errors produce structured ERROR
         """
         # ARRANGE - Mock OpenAPI ApiException (HTTP 500)
-        from src.clients.datastorage.exceptions import ApiException
 
         mock_search.side_effect = ApiException(status=500, reason="Internal Server Error")
 

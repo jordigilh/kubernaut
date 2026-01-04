@@ -20,7 +20,7 @@ Kubernaut automates the entire incident response lifecycle for Kubernetes:
 1. **Signal Ingestion**: Receives alerts from Prometheus AlertManager and Kubernetes Events
 2. **AI Analysis**: Uses HolmesGPT for root cause analysis and remediation recommendations
 3. **Workflow Orchestration**: Executes OCI-containerized remediation workflows via Tekton Pipelines
-4. **Continuous Learning**: Tracks effectiveness and improves recommendations over time
+4. **Continuous Learning**: Tracks effectiveness of worfklow executions and successful remediations over time
 
 ### Key Capabilities
 
@@ -49,7 +49,7 @@ Kubernaut follows a microservices architecture with 8 production-ready services 
    - **Workflow Execution**: Orchestrates Tekton Pipelines for multi-step workflows
    - **Notification Service**: Delivers multi-channel notifications (Slack, Email, etc.)
 3. **Data Storage Service** provides centralized PostgreSQL access (ADR-032)
-4. **Effectiveness Monitor** tracks outcomes and feeds learning back to AI (deferred to V1.1)
+4. **Effectiveness Monitor** tracks workflow remediation outcomes (deferred to V1.1)
 
 ### Communication Pattern
 

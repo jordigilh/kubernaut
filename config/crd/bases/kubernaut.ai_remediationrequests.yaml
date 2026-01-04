@@ -628,6 +628,13 @@ spec:
                 - Failed
                 - Cancelled
                 type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed by the controller.
+                  Used to prevent duplicate reconciliations and ensure idempotency.
+                  Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+                format: int64
+                type: integer
               outcome:
                 description: |-
                   Outcome indicates the remediation result when completed.

@@ -54,11 +54,14 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
+var _ = Describe("Audit Events Write API Integration Tests", func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
-		// Serial tests MUST use public schema (HTTP API writes to public schema)
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert/query data in test_process_X
+		// schemas, the API won't find the data and tests will fail.
 		usePublicSchema()
 
 		// Ensure service is ready before each test
@@ -509,10 +512,16 @@ var _ = Describe("Audit Events Write API Integration Tests", Serial, func() {
 				Expect(resp2.StatusCode).To(Equal(http.StatusCreated))
 
 				By("Verifying both events exist with same correlation_id")
-				var count int
-				err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(count).To(Equal(2))
+				// Use Eventually to handle async HTTP API processing and parallel execution timing
+				Eventually(func() int {
+					var count int
+					err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+					if err != nil {
+						return -1
+					}
+					return count
+				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2),
+					"Both events should be written with same correlation_id")
 			})
 		})
 

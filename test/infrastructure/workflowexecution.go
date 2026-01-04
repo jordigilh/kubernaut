@@ -578,7 +578,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 
 	// Build controller image with optional E2E coverage instrumentation (DD-TEST-007)
 	fmt.Fprintf(output, "  Building controller image...\n")
-	dockerfilePath := filepath.Join(projectRoot, "cmd/workflowexecution/Dockerfile")
+	dockerfilePath := filepath.Join(projectRoot, "docker/workflowexecution-controller.Dockerfile")
 	// DD-REGISTRY-001: Use localhost prefix for E2E test images
 	// DD-TEST-001: Use service-specific tag to avoid conflicts with other services
 	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"
@@ -632,6 +632,18 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	loadCmd.Stderr = output
 	if err := loadCmd.Run(); err != nil {
 		return fmt.Errorf("failed to load image into Kind: %w", err)
+	}
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	fmt.Fprintf(output, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = output
+	rmiCmd.Stderr = output
+	if err := rmiCmd.Run(); err != nil {
+		fmt.Fprintf(output, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		fmt.Fprintf(output, "  ✅ Podman image removed: %s\n", imageName)
 	}
 
 	// Apply static resources (Namespaces, ServiceAccounts, RBAC)

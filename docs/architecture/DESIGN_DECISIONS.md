@@ -104,6 +104,7 @@
 | DD-PROD-001 | Production Readiness Checklist Standard | ✅ Approved | 2025-12-07 | [DD-PROD-001-production-readiness-checklist-standard.md](decisions/DD-PROD-001-production-readiness-checklist-standard.md) |
 | DD-LLM-003 | Mock-First Development Strategy for LLM Integration | ✅ Approved | 2025-12-11 | [DD-LLM-003-mock-first-development-strategy.md](decisions/DD-LLM-003-mock-first-development-strategy.md) |
 | DD-AIANALYSIS-004 | Storm Context NOT Exposed to LLM | ✅ Approved | 2025-12-13 | [DD-AIANALYSIS-004-storm-context-not-exposed.md](decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) |
+| DD-TESTING-001 | Audit Event Validation Standards (Authoritative) | ✅ Approved | 2026-01-02 | [DD-TESTING-001-audit-event-validation-standards.md](decisions/DD-TESTING-001-audit-event-validation-standards.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
@@ -130,5 +131,5 @@ Create a new DD document for decisions that:
 
 ---
 
-**Last Updated**: December 13, 2025
+**Last Updated**: January 2, 2026
 **Maintained By**: Kubernaut Architecture Team

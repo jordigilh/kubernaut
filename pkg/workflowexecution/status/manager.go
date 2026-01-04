@@ -96,6 +96,7 @@ func (m *Manager) UpdatePhase(
 
 		// 2. Update phase field
 		wfe.Status.Phase = newPhase
+	wfe.Status.ObservedGeneration = wfe.Generation // DD-CONTROLLER-001
 
 		// 3. Set completion time for terminal phases
 		if isTerminalPhase(newPhase) {

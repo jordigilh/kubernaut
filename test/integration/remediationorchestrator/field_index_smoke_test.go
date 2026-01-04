@@ -28,14 +28,14 @@ import (
 // Field Index Smoke Test
 // This test verifies that the field index on spec.signalFingerprint works
 // It runs before other tests to catch setup issues early
-var _ = Describe("Field Index Smoke Test", Ordered, func() {
+var _ = Describe("Field Index Smoke Test", func() {
 	var testNamespace string
 
-	BeforeAll(func() {
+	BeforeEach(func() {
 		testNamespace = createTestNamespace("field-index-smoke")
 	})
 
-	AfterAll(func() {
+	AfterEach(func() {
 		deleteTestNamespace(testNamespace)
 	})
 

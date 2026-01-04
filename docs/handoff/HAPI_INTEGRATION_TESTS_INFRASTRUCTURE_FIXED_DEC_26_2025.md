@@ -75,12 +75,12 @@ python3 -m pytest tests/integration/ -v
 
 ### 4. ✅ **Requirements File Fixed**
 
-**Problem**: Makefile referenced `requirements-dev.txt` which doesn't exist
+**Problem**: Makefile referenced `requirements-test.txt` which doesn't exist
 
 **Solution**: Changed to `requirements-test.txt`
 ```makefile
 # Before
-python3 -m pip install -q -r requirements-dev.txt
+python3 -m pip install -q -r requirements-test.txt
 
 # After
 python3 -m pip install -q -r requirements-test.txt
@@ -234,7 +234,7 @@ make test-e2e-holmesgpt-api
 | **Pip Config** | Red Hat Nexus | Public PyPI | ✅ Fixed |
 | **MCP Version** | `v1.12.2` (invalid) | `1.12.2` (valid) | ✅ Fixed |
 | **Python Version** | Mixed (3.9/3.12) | Consistent (3.12) | ✅ Fixed |
-| **Requirements** | `requirements-dev.txt` (missing) | `requirements-test.txt` | ✅ Fixed |
+| **Requirements** | `requirements-test.txt` (missing) | `requirements-test.txt` | ✅ Fixed |
 | **Imports** | `datastorage_client` (wrong) | `src.clients.datastorage` | ✅ Fixed |
 | **Test Behavior** | N/A | Fails correctly | ✅ As Expected |
 

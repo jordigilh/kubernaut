@@ -43,8 +43,8 @@ type SignalProcessing struct {
 
 // SignalProcessingSpec defines the desired state of SignalProcessing.
 // Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
-// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ”",message="remediationRequestRef.name is required for audit trail correlation"
-type SignalProcessingSpec struct {
+// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ''",message="remediationRequestRef.name is required for audit trail correlation"
+type SignalProcessingSpec struct{
 	// Reference to parent RemediationRequest
 	RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
 
@@ -161,6 +161,12 @@ const (
 // SignalProcessingStatus defines the observed state of SignalProcessing.
 // Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
 type SignalProcessingStatus struct {
+	// ObservedGeneration is the most recent generation observed by the controller.
+	// Used to prevent duplicate reconciliations and ensure idempotency.
+	// Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Phase: Pending, Enriching, Classifying, Categorizing, Completed, Failed
 	Phase SignalProcessingPhase `json:"phase,omitempty"`
 

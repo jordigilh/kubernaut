@@ -62,12 +62,13 @@ Usage:
     audit_store.store_audit(event)
 """
 
-from datetime import datetime, timezone
-import uuid
-from typing import Dict, Any, List, Optional
+# Standard library imports
+import uuid  # noqa: E402
+from datetime import datetime, timezone  # noqa: E402
+from typing import Any, Dict, List, Optional  # noqa: E402
 
-# Import structured audit event data models (ADR-034 compliance)
-from src.models.audit_models import (
+# Local imports - structured audit event data models (ADR-034 compliance)
+from src.models.audit_models import (  # noqa: E402
     LLMRequestEventData,
     LLMResponseEventData,
     LLMToolCallEventData,

@@ -47,9 +47,8 @@ Reference: src/extensions/recovery.py (SDK integration patterns)
 Reference: tests/unit/test_recovery_analysis.py (test structure)
 """
 
-import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch
 from uuid import UUID
 from src.toolsets.workflow_catalog import (
     SearchWorkflowCatalogTool,

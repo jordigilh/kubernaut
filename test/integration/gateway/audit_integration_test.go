@@ -231,8 +231,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = *resp.JSON200.Pagination.Total
 				}
 				return total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-GATEWAY-190: Gateway MUST emit 'signal.received' audit event")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-GATEWAY-190: Gateway MUST emit exactly 1 'signal.received' audit event (DD-TESTING-001)")
 
 			// Convert to map format for compatibility with existing validation code
 			auditEventsMap := make([]map[string]interface{}, len(auditEvents))
@@ -440,8 +440,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = *resp.JSON200.Pagination.Total
 				}
 				return total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"BR-GATEWAY-191: Gateway MUST emit 'signal.deduplicated' audit event")
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-GATEWAY-191: Gateway MUST emit exactly 1 'signal.deduplicated' audit event (DD-TESTING-001)")
 
 			// Convert to map format for compatibility with existing validation code
 			auditEvents := make([]map[string]interface{}, len(auditEvents2))
@@ -545,8 +545,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"deduplication_status should be 'duplicate' for deduplicated signal")
 
 			// Field 18: occurrence_count
-			Expect(gatewayData["occurrence_count"]).To(BeNumerically(">=", 2),
-				"occurrence_count should be >= 2 for duplicate (first + duplicate)")
+			Expect(gatewayData["occurrence_count"]).To(Equal(float64(2)),
+				"occurrence_count should be exactly 2 for duplicate (first + one duplicate) (DD-TESTING-001)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME VALIDATION

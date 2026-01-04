@@ -79,6 +79,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelSkipReason:  routing.SkipReasonPreviousExecutionFailed,
 						routing.LabelEnvironment: routing.EnvironmentProduction,
@@ -154,6 +155,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notifName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 						Labels: map[string]string{
 							routing.LabelSkipReason: skipReason,
 							routing.LabelSeverity:   severity,
@@ -242,6 +244,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelSkipReason:         routing.SkipReasonPreviousExecutionFailed,
 						routing.LabelEnvironment:        routing.EnvironmentProduction,
@@ -303,6 +306,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelEnvironment: routing.EnvironmentStaging,
 						routing.LabelSeverity:    routing.SeverityMedium,
@@ -362,6 +366,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notifName,
 					Namespace: testNamespace,
+					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelSkipReason:         routing.SkipReasonExhaustedRetries,
 						routing.LabelNotificationType:   routing.NotificationTypeEscalation,
