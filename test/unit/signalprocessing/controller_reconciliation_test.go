@@ -220,11 +220,17 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					WithStatusSubresource(sp).
 					Build()
 
+		// Setup audit client (ADR-032: audit is MANDATORY)
+		mockStore := &mockAuditStore{}
+		auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
 		reconciler := &controller.SignalProcessingReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
 			StatusManager: spstatus.NewManager(fakeClient),
 			Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			AuditClient:   auditClient,
+			K8sEnricher:   newDefaultMockK8sEnricher(),
 		}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
