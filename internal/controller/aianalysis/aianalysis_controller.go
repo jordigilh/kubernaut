@@ -182,13 +182,18 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
-		return ctrl.Result{}, nil
+		// AA-BUG-005: Must call recordPhaseMetrics for terminal states to record analysis.completed event
+		result = ctrl.Result{}
+		err = nil
 	default:
 		log.Info("Unknown phase", "phase", currentPhase)
-		return ctrl.Result{}, nil
+		result = ctrl.Result{}
+		err = nil
 	}
 
 	// BR-AI-017: Record metrics and audit events after phase processing
+	// AA-BUG-005: This must run for ALL phases including terminal states (Completed/Failed)
+	// to record the analysis.completed audit event via RecordAnalysisComplete
 	r.recordPhaseMetrics(ctx, currentPhase, analysis, err)
 
 	return result, err
