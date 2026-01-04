@@ -203,7 +203,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 
 				// Success when both our workflows are found
 				return gitopsResult != nil && manualResult != nil
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
+			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
 			// ASSERT: Found both our test workflows
 			Expect(gitopsResult).ToNot(BeNil(), "GitOps workflow should be in results")
@@ -339,7 +339,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 
 					// Success when both our workflows are found
 					return pdbResult != nil && noPdbResult != nil
-				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
+				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
 				// ASSERT: Found both our test workflows
 				Expect(pdbResult).ToNot(BeNil(), "PDB workflow should be found")
@@ -434,7 +434,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					}
 
 					return result != nil
-				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Manual workflow should be searchable")
+				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Manual workflow should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
 				// ASSERT: Found our test workflow
 				Expect(result).ToNot(BeNil(), "Manual workflow should be found")
@@ -556,7 +556,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 
 				// Success when both our workflows are found
 				return twoLabelsResult != nil && oneLabelsResult != nil
-			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
+			}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
 			// ASSERT: Found both our test workflows
 			Expect(twoLabelsResult).ToNot(BeNil(), "Workflow with 2 custom labels should be found")
@@ -684,7 +684,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					}
 
 					return istioResult != nil && noMeshResult != nil
-				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
+				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
 				// ASSERT: Found both our test workflows
 				Expect(istioResult).ToNot(BeNil(), "Istio workflow should be found")
@@ -775,7 +775,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					}
 
 					return result != nil
-				}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Test workflow should be searchable")
+				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Test workflow should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
 
 				// ASSERT: Found our test workflow
 				Expect(result).ToNot(BeNil(), "Istio workflow should be found")

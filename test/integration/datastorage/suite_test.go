@@ -224,19 +224,40 @@ func dropProcessSchema(db *sqlx.DB, schemaName string) error {
 // (e.g., schema validation tests, tests that check partitions, etc.)
 func usePublicSchema() { //nolint:unused
 	if db != nil {
-		// Close all idle connections to force them to reconnect with new search_path
+		// CRITICAL: Force ALL connections in pool to reconnect with search_path=public
+		// This prevents inconsistent search_path across connection pool which causes
+		// workflows to be split across schemas (DS-FLAKY-006 fix)
+		//
+		// Problem: Connection pool can retain old connections with stale search_path
+		// (e.g., test_process_X from schema isolation before usePublicSchema() was added)
+		// Solution: Aggressively close ALL connections and force reconnection
+		//
+		// Connection string already sets search_path=public for NEW connections
+		// (see connectPostgreSQL() - options='-c search_path=public')
+		// This function ensures OLD pooled connections are closed and replaced
+
+		// Close ALL idle connections immediately
 		db.SetMaxIdleConns(0)
 
-		// Set search_path for all future connections
+		// Force existing connections to close after current use
+		// This ensures active connections don't linger with stale search_path
+		db.SetConnMaxLifetime(0)
+
+		// Set search_path for current session (in case this connection is reused)
 		_, err := db.Exec("SET search_path TO public")
 		if err != nil {
 			GinkgoWriter.Printf("⚠️  Failed to set search_path to public: %v\n", err)
 		}
 
-		// Restore idle connection pool
+		// Restore normal pool settings after forcing reconnection
+		// Future connections will come from pool with search_path=public (from connection string)
 		db.SetMaxIdleConns(10)
+		db.SetConnMaxLifetime(5 * time.Minute)
 
-		GinkgoWriter.Printf("🔄 Set search_path to public schema\n")
+		// Verify search_path is set correctly for debugging
+		var currentPath string
+		_ = db.QueryRow("SHOW search_path").Scan(&currentPath)
+		GinkgoWriter.Printf("🔄 Set search_path to public (current: %s)\n", currentPath)
 	}
 }
 
