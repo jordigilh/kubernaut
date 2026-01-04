@@ -1,6 +1,6 @@
 # CI Integration Tests - Final Triage Summary
-**Date**: January 3, 2026  
-**CI Run**: [#20684915082](https://github.com/jordigilh/kubernaut/actions/runs/20684915082)  
+**Date**: January 3, 2026
+**CI Run**: [#20684915082](https://github.com/jordigilh/kubernaut/actions/runs/20684915082)
 **Status**: ✅ IPv6/IPv4 issue identified and fixed, remaining failures are flaky/test logic issues
 
 ---
@@ -18,9 +18,9 @@
 
 ### **1. Signal Processing (SP)** ✅ **FIXED - IPv6/IPv4 Issue**
 
-**CI Status**: 2/81 tests failed  
-**Local Status**: Tests pass with fix  
-**Root Cause**: `localhost` → IPv6 in CI, port mapping IPv4 only  
+**CI Status**: 2/81 tests failed
+**Local Status**: Tests pass with fix
+**Root Cause**: `localhost` → IPv6 in CI, port mapping IPv4 only
 
 **Fix Applied**:
 ```go
@@ -29,16 +29,16 @@
 // After:  http://127.0.0.1:18094
 ```
 
-**Commit**: `d23ee5e23`  
+**Commit**: `d23ee5e23`
 **Ready to Push**: ✅ Yes
 
 ---
 
 ### **2. Remediation Orchestrator (RO)** ✅ **NO IPv6/IPv4 Issue**
 
-**CI Status**: 2/44 tests failed  
-**Local Status**: **44/44 passing** ✅  
-**Infrastructure**: Already uses `127.0.0.1` correctly  
+**CI Status**: 2/44 tests failed
+**Local Status**: **44/44 passing** ✅
+**Infrastructure**: Already uses `127.0.0.1` correctly
 
 **Evidence**:
 ```bash
@@ -56,9 +56,9 @@ $ grep "127\.0\.0\.1" test/integration/remediationorchestrator/suite_test.go
 
 ### **3. Notification (NT)** ✅ **NO IPv6/IPv4 Issue**
 
-**CI Status**: 1/124 tests failed  
-**Local Status**: **124/124 passing** (2 flaked) ✅  
-**Infrastructure**: Already uses `127.0.0.1` correctly  
+**CI Status**: 1/124 tests failed
+**Local Status**: **124/124 passing** (2 flaked) ✅
+**Infrastructure**: Already uses `127.0.0.1` correctly
 
 **Evidence**:
 ```bash
@@ -75,9 +75,9 @@ $ grep "127\.0\.0\.1" test/integration/notification/suite_test.go
 
 ### **4. HolmesGPT API (HAPI)** ❌ **Test Logic Issues (Unrelated)**
 
-**CI Status**: 1/60 tests failed (module import)  
-**Local Status**: **2/65 tests failing** (different failures)  
-**Infrastructure**: Uses `127.0.0.1` correctly  
+**CI Status**: 1/60 tests failed (module import)
+**Local Status**: **2/65 tests failing** (different failures)
+**Infrastructure**: Uses `127.0.0.1` correctly
 
 **Local Test Failures** (reproducible):
 1. `test_incident_analysis_emits_llm_request_and_response_events`
@@ -133,12 +133,12 @@ E   ModuleNotFoundError: No module named 'holmesgpt_api_client'
 2. ✅ **Document findings** - This file
 
 ### **Follow-Up** (Separate PRs/Issues)
-1. **RO CI flakiness**: 
+1. **RO CI flakiness**:
    - Monitor next 3-5 CI runs
    - If persistent, add `FlakeAttempts(3)` to failing tests
    - Investigate timing-sensitive assertions
 
-2. **NT CI stress test**: 
+2. **NT CI stress test**:
    - `BR-NOT-060` is already marked as stress test
    - Consider adding `FlakeAttempts(3)` or increasing timeouts
    - May need CI-specific timeout adjustments
@@ -190,7 +190,7 @@ E   ModuleNotFoundError: No module named 'holmesgpt_api_client'
 
 **Conclusion**: The IPv6/IPv4 issue was isolated to Signal Processing and has been fixed. Other service failures are either flaky tests (RO, NT) or unrelated test logic issues (HAPI), not infrastructure problems.
 
-**Priority**: P0 - Unblocks SP tests, documents other issues for follow-up  
-**Confidence**: 95% - Local verification confirms fix, RO/NT pass locally  
+**Priority**: P0 - Unblocks SP tests, documents other issues for follow-up
+**Confidence**: 95% - Local verification confirms fix, RO/NT pass locally
 **Risk**: Low - Single-line change, well-understood issue
 
