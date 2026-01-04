@@ -240,12 +240,40 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			}
 
 		// Validate expected event counts (DD-TESTING-001: Deterministic count validation)
-		// Phase transitions: At least 3 required transitions
-		// DD-TESTING-001: Use BeNumerically(">=") when business logic may emit additional internal transitions
-		// AI Analysis has 3 required transitions: Pending→Investigating, Investigating→Analyzing, Analyzing→Completed
-		// Business logic may emit additional internal transitions (e.g., sub-phase progressions)
-		Expect(eventTypeCounts[aiaudit.EventTypePhaseTransition]).To(BeNumerically(">=", 3),
-			"BR-AI-050: MUST emit at least 3 phase transitions (business logic may emit additional)")
+		// Per DD-TESTING-001 Pattern 4 (lines 256-299): Use Equal(N) for exact expected count
+		// AI Analysis business logic: Exactly 3 phase transitions (Pending→Investigating→Analyzing→Completed)
+		Expect(eventTypeCounts[aiaudit.EventTypePhaseTransition]).To(Equal(3),
+			"BR-AI-050: MUST emit exactly 3 phase transitions (Pending→Investigating→Analyzing→Completed)")
+
+		// DD-TESTING-001 Pattern 5 (lines 303-334): Validate structured event_data fields
+		// Extract actual phase transitions from event_data
+		phaseTransitions := make(map[string]bool)
+		for _, event := range events {
+			if event.EventType == aiaudit.EventTypePhaseTransition {
+				if eventData, ok := event.EventData.(map[string]interface{}); ok {
+					// FIXED: AI Analysis uses "old_phase"/"new_phase" (not "from_phase"/"to_phase")
+					// See: pkg/aianalysis/audit/event_types.go:54-57
+					oldPhase, hasOld := eventData["old_phase"].(string)
+					newPhase, hasNew := eventData["new_phase"].(string)
+					if hasOld && hasNew {
+						transitionKey := fmt.Sprintf("%s→%s", oldPhase, newPhase)
+						phaseTransitions[transitionKey] = true
+					}
+				}
+			}
+		}
+
+		// Validate required transitions (BR-AI-050)
+		requiredTransitions := []string{
+			"Pending→Investigating",
+			"Investigating→Analyzing",
+			"Analyzing→Completed",
+		}
+
+		for _, required := range requiredTransitions {
+			Expect(phaseTransitions).To(HaveKey(required),
+				fmt.Sprintf("BR-AI-050: Required phase transition missing: %s", required))
+		}
 
 			// HolmesGPT calls: Exactly 1 during investigation phase
 			Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1),
@@ -259,11 +287,16 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(eventTypeCounts[aiaudit.EventTypeAnalysisCompleted]).To(Equal(1),
 				"Should have exactly 1 analysis completion event")
 
-		// Total events: DD-TESTING-001: Validate business-critical event counts
-		// Minimum: 3 phase transitions + 1 HolmesGPT + 1 Rego + 1 approval + 1 completion = 7 events
-		// Business logic may emit additional events (e.g., internal phase transitions, retries)
-		Expect(len(events)).To(BeNumerically(">=", 7),
-			"Complete workflow should generate at least 7 audit events (business logic may emit additional)")
+		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
+		// Per DD-AUDIT-003: AIAnalysis emits exactly these events per successful workflow:
+		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
+		// - 1 HolmesGPT API call (during investigation)
+		// - 1 Rego evaluation (policy check)
+		// - 1 Approval decision (auto-approval or manual review)
+		// - 1 Analysis completion
+		// Total: 7 events (deterministic)
+		Expect(len(events)).To(Equal(7),
+			"Complete workflow should generate exactly 7 audit events: 3 phase transitions + 1 HolmesGPT + 1 Rego + 1 approval + 1 completion")
 		})
 	})
 
