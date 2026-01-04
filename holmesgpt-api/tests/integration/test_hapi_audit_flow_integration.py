@@ -263,18 +263,25 @@ class TestIncidentAnalysisAuditFlow:
 
         # ASSERT: Verify audit events emitted as side effect (with retry)
         # ADR-038: Buffered audit store flushes asynchronously, so poll for events
-        events = query_audit_events_with_retry(
+        all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=2,  # llm_request + llm_response
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
 
-        # DD-TESTING-001: Deterministic count validation - exactly 2 events for one LLM call
-        assert len(events) == 2, f"Expected exactly 2 audit events (llm_request, llm_response), got {len(events)}"
+        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # Business logic now emits additional events (llm_tool_call, workflow_validation_attempt)
+        # Test focuses on BR-AUDIT-005 requirement: llm_request + llm_response must be emitted
+        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+
+        # Verify exactly 2 LLM events (request + response)
+        assert len(llm_events) == 2, \
+            f"Expected exactly 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
+            f"All events: {[e.event_type for e in all_events]}"
 
         # Extract event types
-        event_types = [e.event_type for e in events]
+        event_types = [e.event_type for e in llm_events]
 
         # Verify llm_request event emitted
         assert "llm_request" in event_types, \
@@ -284,8 +291,8 @@ class TestIncidentAnalysisAuditFlow:
         assert "llm_response" in event_types, \
             f"llm_response event not found in {event_types}"
 
-        # Verify all events have same correlation_id
-        for event in events:
+        # Verify all LLM events have same correlation_id
+        for event in llm_events:
             assert event.correlation_id == remediation_id, \
                 f"Event correlation_id mismatch: expected {remediation_id}, got {event.correlation_id}"
 
@@ -424,16 +431,23 @@ class TestRecoveryAnalysisAuditFlow:
         assert response is not None
 
         # ASSERT: Verify audit events emitted (with retry polling)
-        events = query_audit_events_with_retry(
+        all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=2,  # llm_request + llm_response
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
-        # DD-TESTING-001: Deterministic count validation - exactly 2 events for one LLM call
-        assert len(events) == 2, f"Expected exactly 2 audit events (llm_request, llm_response), got {len(events)}"
 
-        event_types = [e.event_type for e in events]
+        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # Recovery analysis may also emit additional events (tool calls, validation attempts)
+        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+
+        # Verify exactly 2 LLM events (request + response)
+        assert len(llm_events) == 2, \
+            f"Expected exactly 2 LLM events (llm_request, llm_response), got {len(llm_events)}. " \
+            f"All events: {[e.event_type for e in all_events]}"
+
+        event_types = [e.event_type for e in llm_events]
         assert "llm_request" in event_types, f"llm_request not found in {event_types}"
         assert "llm_response" in event_types, f"llm_response not found in {event_types}"
 
@@ -579,24 +593,29 @@ class TestErrorScenarioAuditFlow:
         # Mock mode returns a deterministic response even for non-existent workflows
 
         # ASSERT: Verify audit events were generated despite business failure
-        events = query_audit_events_with_retry(
+        all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=2,  # At minimum: llm_request + llm_response
+            min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
 
-        # DD-TESTING-001: Deterministic count - exactly 2 events even for failed workflow search
-        assert len(events) == 2, \
-            f"Expected exactly 2 audit events (llm_request, llm_response) even for failed workflow search, got {len(events)}"
+        # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
+        # Even failed workflows may emit additional events (tool calls, validation attempts)
+        llm_events = [e for e in all_events if e.event_type in ['llm_request', 'llm_response']]
+
+        # Verify exactly 2 LLM events even for failed workflow search
+        assert len(llm_events) == 2, \
+            f"Expected exactly 2 LLM events (llm_request, llm_response) even for failed workflow search, got {len(llm_events)}. " \
+            f"All events: {[e.event_type for e in all_events]}"
 
         # Verify events include the remediation_id (correlation)
-        for event in events:
+        for event in llm_events:
             assert event.correlation_id == remediation_id, \
                 f"Event correlation_id mismatch: {event.correlation_id} != {remediation_id}"
 
         # Business failure context should be captured in audit events
-        event_types = [e.event_type for e in events]
+        event_types = [e.event_type for e in llm_events]
         assert "llm_request" in event_types, "Should audit LLM request even when workflow not found"
         assert "llm_response" in event_types, "Should audit LLM response even when workflow not found"
 

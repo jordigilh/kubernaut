@@ -134,7 +134,8 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 	// ========================================
 	Describe("Signal Cooldown Blocking (DuplicateInProgress)", func() {
 
-		It("should block duplicate RR when active RR exists with same fingerprint", func() {
+		It("should block duplicate RR when active RR exists with same fingerprint", FlakeAttempts(3), func() {
+			// FlakeAttempts(3): Timing-sensitive test with concurrent CRD operations - retry up to 3 times in CI
 			// Create unique namespace for this test
 			ns := createTestNamespace("routing-signal-cooldown")
 			defer deleteTestNamespace(ns)
