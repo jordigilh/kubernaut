@@ -1,8 +1,8 @@
 # AA-BUG-001: Phase Transition Audit Events Not Being Emitted - Investigation
 
-**Status**: In Progress 🔍  
-**Priority**: P0 (E2E Test Blocker)  
-**Date**: January 4, 2026  
+**Status**: In Progress 🔍
+**Priority**: P0 (E2E Test Blocker)
+**Date**: January 4, 2026
 **Affected Component**: AIAnalysis Controller - Audit Trail
 
 ---
@@ -45,16 +45,16 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
     if from == to {
         return
     }
-    
+
     payload := PhaseTransitionPayload{
         OldPhase: from,
         NewPhase: to,
     }
-    
+
     event := audit.NewAuditEventRequest()
     audit.SetEventType(event, EventTypePhaseTransition) // "aianalysis.phase.transition"
     // ... event configuration ...
-    
+
     c.store.StoreAudit(ctx, event)
 }
 ```
