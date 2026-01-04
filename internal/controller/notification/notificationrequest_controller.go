@@ -1053,6 +1053,18 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 		}
 
 		log.Info("✅ Phase transition to Sending persisted successfully (race condition resolved)")
+
+		// NT-BUG-014 Fix: Re-read notification from K8s to get latest resourceVersion
+		// After persisting Sending phase, we must re-read to ensure we have the latest state
+		// Otherwise, the next AtomicStatusUpdate will use stale resourceVersion and fail
+		if err := r.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+			log.Error(err, "Failed to re-read notification after Sending phase persistence")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("✅ Notification re-read after Sending phase persistence",
+			"phase", notification.Status.Phase,
+			"resourceVersion", notification.ResourceVersion)
 	}
 
 	// Calculate overall status
