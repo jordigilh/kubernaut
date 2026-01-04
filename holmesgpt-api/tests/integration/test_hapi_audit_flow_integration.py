@@ -47,16 +47,7 @@ import pytest
 import requests
 from typing import List, Dict, Any
 
-# DD-API-001: Import OpenAPI generated clients
-import sys
-from pathlib import Path
-# Add tests/clients to path (absolute path resolution for CI)
-sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
-from holmesgpt_api_client import ApiClient as HapiApiClient, Configuration as HapiConfiguration
-from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
-from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
-from holmesgpt_api_client.models.incident_request import IncidentRequest
-from holmesgpt_api_client.models.recovery_request import RecoveryRequest
+# Test uses FastAPI TestClient (in-process HAPI), not OpenAPI generated clients
 from src.clients.datastorage import ApiClient as DataStorageApiClient, Configuration as DataStorageConfiguration
 from src.clients.datastorage.api.audit_write_api_api import AuditWriteAPIApi
 from src.clients.datastorage.models.audit_event import AuditEvent
