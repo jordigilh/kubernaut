@@ -210,6 +210,14 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			Expect(resp.JSON200.Data).ToNot(BeNil(), "Audit data should be present")
 
 			events := *resp.JSON200.Data
+			
+			// DEBUG: Output all events to identify the extra event (AA-BUG-002 investigation)
+			GinkgoWriter.Printf("\n🔍 DEBUG: Retrieved %d audit events for correlation_id=%s:\n", len(events), correlationID)
+			for i, event := range events {
+				GinkgoWriter.Printf("  Event %d: type=%s, action=%s, correlation_id=%s\n", 
+					i+1, event.EventType, event.EventAction, event.CorrelationId)
+			}
+			GinkgoWriter.Printf("\n")
 
 			// Business Value: Complete audit trail for compliance
 			By("Verifying phase transition events are present")
