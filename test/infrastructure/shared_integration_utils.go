@@ -359,17 +359,35 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 //   }, writer)
 func CleanupContainers(containerNames []string, writer io.Writer) {
 	for _, container := range containerNames {
-		// Stop container (5-second timeout for graceful shutdown)
-		stopCmd := exec.Command("podman", "stop", "-t", "5", container)
+		// Stop container (immediate stop for faster cleanup)
+		// Use --time=0 to force immediate stop without waiting for graceful shutdown
+		stopCmd := exec.Command("podman", "stop", "--time=0", container)
 		stopCmd.Stdout = writer
 		stopCmd.Stderr = writer
 		_ = stopCmd.Run() // Ignore errors (container might not exist)
 
-		// Remove container (force)
+		// Remove container (force) - this should handle containers in any state
 		rmCmd := exec.Command("podman", "rm", "-f", container)
 		rmCmd.Stdout = writer
 		rmCmd.Stderr = writer
 		_ = rmCmd.Run() // Ignore errors (container might not exist)
+
+		// Verify container is gone (retry up to 3 times for race conditions)
+		for attempt := 0; attempt < 3; attempt++ {
+			checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+			output, _ := checkCmd.Output()
+			if len(output) == 0 || string(output) == "\n" {
+				break // Container successfully removed
+			}
+			// Container still exists, try removing again
+			if attempt < 2 {
+				time.Sleep(100 * time.Millisecond)
+				rmRetry := exec.Command("podman", "rm", "-f", container)
+				rmRetry.Stdout = writer
+				rmRetry.Stderr = writer
+				_ = rmRetry.Run()
+			}
+		}
 	}
 }
 
