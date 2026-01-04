@@ -325,20 +325,21 @@ clean-holmesgpt-api: ## Clean holmesgpt-api Python artifacts
 	@echo "✅ Cleaned holmesgpt-api artifacts"
 
 .PHONY: test-integration-holmesgpt-api
-test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (containerized - matches CI exactly)
+test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesgpt-api integration tests (direct business logic calls)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🐳 HolmesGPT API Integration Tests (Containerized)"
+	@echo "🐍 HolmesGPT API Integration Tests (Direct Business Logic)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (Containerized tests)"
-	@echo "🐍 Test Logic: Python in container, Go infrastructure on host"
-	@echo "⏱️  Expected Duration: ~5 minutes"
+	@echo "📋 Pattern: Direct business logic calls (matches Go service testing)"
+	@echo "🐍 Test Logic: Python calls src.extensions.*.llm_integration directly (no HTTP)"
+	@echo "⏱️  Expected Duration: ~2 minutes (no HAPI container needed)"
 	@echo ""
 	@echo "🔧 Phase 0: Generating HAPI OpenAPI client (DD-API-001)..."
 	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || (echo "❌ Client generation failed"; exit 1)
-	@echo "✅ OpenAPI client generated"
+	@echo "✅ OpenAPI client generated (used for Data Storage audit validation only)"
 	@echo ""
-	@# Start Go infrastructure in background
+	@# Start Go infrastructure in background (PostgreSQL, Redis, Data Storage only - no HAPI container)
 	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
+	@echo "   Note: HAPI business logic called directly (no container needed)"
 	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
 	GINKGO_PID=$$!; \
 	echo "   Infrastructure PID: $$GINKGO_PID"; \

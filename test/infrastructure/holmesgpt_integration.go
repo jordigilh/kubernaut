@@ -256,30 +256,34 @@ echo "Migrations complete!"`)
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready at %s\n\n", dataStorageURL)
 
 	// ============================================================================
-	// INTEGRATION TEST PATTERN: HAPI uses FastAPI TestClient (in-process)
+	// INTEGRATION TEST PATTERN: HAPI business logic called directly (no container)
 	// ============================================================================
-	// Architecture Decision (Dec 29, 2025):
-	// - Integration tests: HAPI runs via FastAPI TestClient (in-process)
-	// - E2E tests: HAPI runs in Kind cluster (external container)
+	// Architecture Decision (Jan 4, 2026):
+	// - Integration tests: Call HAPI business logic DIRECTLY (no HTTP, no container)
+	//   * Go pattern: controller.Reconcile(ctx, req)
+	//   * Python pattern: analyze_incident(request_data)
+	// - E2E tests: Use HTTP API + OpenAPI client (future implementation)
 	//
-	// Why TestClient for Integration Tests?
-	// ✅ Faster (~3 min vs ~7 min, no Docker builds)
-	// ✅ Reliable audit persistence (in-process config)
-	// ✅ Consistent with Python/FastAPI best practices
-	// ✅ Easier debugging (in-process, direct access to app state)
+	// Why Direct Business Logic Calls for Integration Tests?
+	// ✅ Consistent with Go service testing (no HTTP in integration tests)
+	// ✅ Faster (~2 min, no HTTP overhead or container startup)
+	// ✅ Focused on business logic behavior (not HTTP routing)
+	// ✅ Easier debugging (direct function calls, no network layer)
 	//
 	// External dependencies for integration tests:
 	// - PostgreSQL (for Data Storage persistence)
 	// - Redis (for Data Storage caching)
-	// - Data Storage (for audit event validation)
+	// - Data Storage (for audit event validation - external dependency)
 	//
-	// See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
+	// HTTP API testing deferred to E2E test suite (future implementation)
+	// See: docs/handoff/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_JAN_04_2026.md
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "ℹ️  HAPI Integration Test Pattern:\n")
-	_, _ = fmt.Fprintf(writer, "   • HAPI runs via FastAPI TestClient (in-process, no container)\n")
-	_, _ = fmt.Fprintf(writer, "   • Python tests import src.main:app directly\n")
+	_, _ = fmt.Fprintf(writer, "   • HAPI business logic called DIRECTLY (no HTTP, no container)\n")
+	_, _ = fmt.Fprintf(writer, "   • Python tests import src.extensions.incident.llm_integration directly\n")
 	_, _ = fmt.Fprintf(writer, "   • External dependencies: PostgreSQL, Redis, Data Storage only\n")
-	_, _ = fmt.Fprintf(writer, "   • See: holmesgpt-api/tests/integration/conftest.py\n\n")
+	_, _ = fmt.Fprintf(writer, "   • Pattern: Matches Go service testing (controller.Reconcile() direct calls)\n")
+	_, _ = fmt.Fprintf(writer, "   • See: holmesgpt-api/tests/integration/test_hapi_audit_flow_integration.py\n\n")
 
 	// ============================================================================
 	// Success Summary
@@ -290,9 +294,9 @@ echo "Migrations complete!"`)
 	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (ready)\n", HAPIIntegrationPostgresPort)
 	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d (ready)\n", HAPIIntegrationRedisPort)
 	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d (healthy)\n", HAPIIntegrationDataStoragePort)
-	_, _ = fmt.Fprintf(writer, "  HAPI:           FastAPI TestClient (in-process, no container)\n")
-	_, _ = fmt.Fprintf(writer, "  Duration:       ~2-3 minutes (no HAPI Docker build)\n")
-	_, _ = fmt.Fprintf(writer, "  Pattern:        DD-INTEGRATION-001 v2.0 (Go programmatic)\n")
+	_, _ = fmt.Fprintf(writer, "  HAPI:           Business logic called directly (no HTTP, no container)\n")
+	_, _ = fmt.Fprintf(writer, "  Duration:       ~2 minutes (no HAPI container needed)\n")
+	_, _ = fmt.Fprintf(writer, "  Pattern:        Direct business logic calls (matches Go service testing)\n")
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	return nil

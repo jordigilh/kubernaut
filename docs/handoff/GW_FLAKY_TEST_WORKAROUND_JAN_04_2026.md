@@ -1,7 +1,7 @@
 # Gateway Flaky Test Workaround - BR-GATEWAY-187
 
-**Date**: 2026-01-04  
-**Test**: `service_resilience_test.go:220`  
+**Date**: 2026-01-04
+**Test**: `service_resilience_test.go:220`
 **Status**: ⚠️ **WORKAROUND APPLIED**
 
 ---
@@ -14,7 +14,7 @@ Applied `FlakeAttempts(3)` to BR-GATEWAY-187 test to unblock CI pipeline. Test e
 
 ## 🔍 **Failure Pattern**
 
-**CI Run**: 20693665941  
+**CI Run**: 20693665941
 **Failure Rate**: Intermittent (passed in 20687479052, failed in 20693665941)
 
 **Observed Behavior**:
@@ -30,7 +30,7 @@ Applied `FlakeAttempts(3)` to BR-GATEWAY-187 test to unblock CI pipeline. Test e
 ❌ Test List() queries return 0 items
    - Polling duration: 15 seconds (30 attempts @ 500ms intervals)
    - All attempts: 📋 List query succeeded but found 0 items (waiting...)
-   
+
 [FAILED] Timed out after 15.000s
 Expected <int>: 0 to be > <int>: 0
 ```
@@ -48,7 +48,7 @@ It("BR-GATEWAY-187: should process alerts with degraded functionality when DataS
     // NOTE: FlakeAttempts(3) - See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
     // Gateway creates CRD successfully (confirmed in logs) but test List() queries
     // return 0 items. Likely cache synchronization issue between multiple K8s clients.
-    
+
     // ... test implementation ...
 })
 ```
@@ -77,7 +77,7 @@ It("BR-GATEWAY-187: should process alerts with degraded functionality when DataS
 3. **Compare envtest vs. real Kind cluster** behavior
 4. **Add debug logging** for K8s API List() calls to capture timing
 
-**Estimated Effort**: 4 hours  
+**Estimated Effort**: 4 hours
 **Priority**: P2 (after critical bugs fixed)
 
 ---
@@ -157,8 +157,8 @@ If multiple tests exhibit similar behavior (CRD created but List() returns 0), t
 
 ---
 
-**Status**: ⚠️ **WORKAROUND APPLIED - INVESTIGATION SCHEDULED**  
-**Blocking**: No (CI unblocked)  
-**Owner**: TBD  
+**Status**: ⚠️ **WORKAROUND APPLIED - INVESTIGATION SCHEDULED**
+**Blocking**: No (CI unblocked)
+**Owner**: TBD
 **Priority**: P2 (investigation), P0 (workaround)
 

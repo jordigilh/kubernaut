@@ -105,7 +105,11 @@ func TestAIAnalysisIntegration(t *testing.T) {
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
 // This follows Gateway/Notification pattern for automated infrastructure startup
-var _ = SynchronizedBeforeSuite(func() []byte {
+//
+// TIMEOUT NOTE: Infrastructure startup takes ~70-90 seconds (PostgreSQL, Redis, DataStorage, HAPI).
+// Default Ginkgo timeout (60s) is insufficient, causing INTERRUPTED in parallel mode.
+// NodeTimeout(3*time.Minute) ensures sufficient time for complete infrastructure startup.
+var _ = SynchronizedBeforeSuite(NodeTimeout(3*time.Minute), func(specCtx SpecContext) []byte {
 	// This runs ONCE on process 1 only - creates shared infrastructure
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
@@ -311,7 +315,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 
 	return configBytes
-}, func(data []byte) {
+}, func(specCtx SpecContext, data []byte) {
 	// This runs on ALL parallel processes (including process 1)
 	// Each process creates its own k8s client and context
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
