@@ -1027,20 +1027,32 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// NT-BUG-008: Handle race condition where phase is still Pending
+	// NT-BUG-008 & NT-BUG-013: Handle race condition where phase is still Pending
 	// If handlePendingToSendingTransition ran but the re-read returned a stale notification,
-	// we need to manually update to Sending first before making terminal transitions.
+	// we need to persist the transition to Sending first before making terminal transitions.
 	// This prevents invalid "Pending → Sent" transitions that violate the state machine.
 	if notification.Status.Phase == notificationv1alpha1.NotificationPhasePending {
 		log.Info("⚠️  RACE CONDITION DETECTED: Phase is still Pending after delivery loop",
 			"expectedPhase", "Sending",
 			"actualPhase", notification.Status.Phase,
-			"fix", "Transitioning to Sending before determining final state")
+			"fix", "Persisting transition to Sending before determining final state")
 
-		// Manually update phase to Sending to align with state machine
-		notification.Status.Phase = notificationv1alpha1.NotificationPhaseSending
-		notification.Status.Reason = "ProcessingDeliveries"
-		notification.Status.Message = "Processing delivery channels"
+		// NT-BUG-013 Fix: Persist the Sending phase transition to K8s API
+		// The local in-memory update is not enough - we must persist to K8s API
+		// Otherwise AtomicStatusUpdate will try to transition from Pending (K8s state) to Sent (new state)
+		if err := r.StatusManager.AtomicStatusUpdate(
+			ctx,
+			notification,
+			notificationv1alpha1.NotificationPhaseSending,
+			"ProcessingDeliveries",
+			"Processing delivery channels",
+			nil, // No delivery attempts yet
+		); err != nil {
+			log.Error(err, "Failed to persist Sending phase transition during race condition recovery")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("✅ Phase transition to Sending persisted successfully (race condition resolved)")
 	}
 
 	// Calculate overall status

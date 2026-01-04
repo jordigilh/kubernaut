@@ -10,6 +10,9 @@ mcp-server
 *.bak
 *.bak2
 
+# HolmesGPT API virtual environments (test venvs with pattern venv-*-test)
+holmesgpt-api/venv-*-test/
+
 # Compiled Go binaries (service executables - root directory only)
 /aianalysis
 /remediationorchestrator
