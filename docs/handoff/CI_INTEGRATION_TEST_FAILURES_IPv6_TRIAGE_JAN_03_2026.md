@@ -1,6 +1,6 @@
 # CI Integration Test Failures - IPv6/IPv4 Binding Triage
-**Date**: January 3, 2026  
-**Run**: [#20684915082](https://github.com/jordigilh/kubernaut/actions/runs/20684915082)  
+**Date**: January 3, 2026
+**Run**: [#20684915082](https://github.com/jordigilh/kubernaut/actions/runs/20684915082)
 **Status**: ⚠️  Critical IPv6/IPv4 inconsistency identified
 
 ---
@@ -89,7 +89,7 @@ dataStorageURL = "http://127.0.0.1:18094"
 ## 📝 **Fixes Applied**
 
 ### **Signal Processing** ✅ **FIXED**
-**File**: `test/integration/signalprocessing/audit_integration_test.go`  
+**File**: `test/integration/signalprocessing/audit_integration_test.go`
 **Change**: Line 73
 ```go
 // Before:
@@ -177,8 +177,8 @@ $ grep -r "localhost.*18[0-9]{3}" test/integration --include="*.go" | wc -l
 
 ---
 
-**Priority**: P0 - Blocks CI/CD pipeline  
-**Effort**: Low (1 line change per service)  
-**Risk**: Low (explicit IPv4 is more portable than `localhost`)  
+**Priority**: P0 - Blocks CI/CD pipeline
+**Effort**: Low (1 line change per service)
+**Risk**: Low (explicit IPv4 is more portable than `localhost`)
 **Impact**: High (unblocks all integration test failures)
 
