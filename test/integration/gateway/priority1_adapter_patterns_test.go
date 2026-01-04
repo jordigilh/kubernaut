@@ -81,7 +81,7 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// REFACTORED: Use helper function (TDD REFACTOR phase)
 			resp, err := SendPrometheusAlert(testCtx.TestServer.URL, alertJSON)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME 1: Request accepted
@@ -154,7 +154,7 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// REFACTORED: Use helper function (TDD REFACTOR phase)
 			resp, err := SendK8sEvent(testCtx.TestServer.URL, eventJSON)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME 1: Request accepted
@@ -242,13 +242,13 @@ var _ = Describe("Priority 1: Adapter Interaction Patterns - Integration Tests",
 			// REFACTORED: Use helper function (TDD REFACTOR phase)
 			prometheusResp, err := SendPrometheusAlert(testCtx.TestServer.URL, prometheusJSON)
 			Expect(err).ToNot(HaveOccurred())
-			defer prometheusResp.Body.Close()
+			defer func() { _ = prometheusResp.Body.Close() }()
 
 			// Send K8s Event
 			// REFACTORED: Use helper function (TDD REFACTOR phase)
 			k8sResp, err := SendK8sEvent(testCtx.TestServer.URL, k8sEventJSON)
 			Expect(err).ToNot(HaveOccurred())
-			defer k8sResp.Body.Close()
+			defer func() { _ = k8sResp.Body.Close() }()
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// BUSINESS OUTCOME 1: Both requests accepted

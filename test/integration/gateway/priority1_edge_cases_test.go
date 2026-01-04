@@ -95,7 +95,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 1: Request is rejected with client error
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -188,7 +188,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 1: Empty payload rejected immediately
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -285,7 +285,7 @@ var _ = Describe("Priority 1: Edge Cases - Integration Tests", func() {
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME: Gateway handles gracefully (doesn't crash)
 			// Two acceptable outcomes:

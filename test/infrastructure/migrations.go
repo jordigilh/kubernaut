@@ -262,8 +262,8 @@ var WorkflowCatalogTables = []string{
 //   - audit_events_y2026m01 partition
 //   - All audit indexes (correlation, event_type, timestamp, etc.)
 func ApplyAuditMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintf(writer, "📋 Applying AUDIT migrations (audit_events + partitions)...\n")
-	fmt.Fprintf(writer, "   This unblocks: WE, Gateway, AIAnalysis, Notification, RO, SP\n")
+	_, _ = fmt.Fprintf(writer, "📋 Applying AUDIT migrations (audit_events + partitions)...\n")
+	_, _ = fmt.Fprintf(writer, "   This unblocks: WE, Gateway, AIAnalysis, Notification, RO, SP\n")
 
 	config := DefaultMigrationConfig(namespace, kubeconfigPath)
 
@@ -287,7 +287,7 @@ func ApplyAllMigrations(ctx context.Context, namespace, kubeconfigPath string, w
 		return fmt.Errorf("failed to auto-discover migrations: %w", err)
 	}
 
-	fmt.Fprintf(writer, "📋 Applying ALL migrations (%d total, auto-discovered)...\n", len(allFiles))
+	_, _ = fmt.Fprintf(writer, "📋 Applying ALL migrations (%d total, auto-discovered)...\n", len(allFiles))
 
 	config := DefaultMigrationConfig(namespace, kubeconfigPath)
 	return applySpecificMigrations(ctx, config, allFiles, writer)
@@ -301,7 +301,7 @@ func ApplyMigrationsWithConfig(ctx context.Context, config MigrationConfig, writ
 		return ApplyAllMigrations(ctx, config.Namespace, config.KubeconfigPath, writer)
 	}
 
-	fmt.Fprintf(writer, "📋 Applying migrations for tables: %v\n", config.Tables)
+	_, _ = fmt.Fprintf(writer, "📋 Applying migrations for tables: %v\n", config.Tables)
 
 	// Find migrations that create the requested tables
 	var migrationFiles []string
@@ -351,7 +351,7 @@ func ApplyMigrationsWithConfig(ctx context.Context, config MigrationConfig, writ
 // Returns nil if all tables in config.Tables exist, error otherwise
 // If config.Tables is empty, verifies all critical tables
 func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Writer) error {
-	fmt.Fprintf(writer, "🔍 Verifying migrations...\n")
+	_, _ = fmt.Fprintf(writer, "🔍 Verifying migrations...\n")
 
 	tables := config.Tables
 	if len(tables) == 0 {
@@ -390,10 +390,10 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 			outputStr := string(output)
 			if strings.Contains(outputStr, "does not exist") {
 				missingTables = append(missingTables, table)
-				fmt.Fprintf(writer, "   ❌ Table %s: NOT FOUND\n", table)
+				_, _ = fmt.Fprintf(writer, "   ❌ Table %s: NOT FOUND\n", table)
 			}
 		} else {
-			fmt.Fprintf(writer, "   ✅ Table %s: EXISTS\n", table)
+			_, _ = fmt.Fprintf(writer, "   ✅ Table %s: EXISTS\n", table)
 		}
 	}
 
@@ -401,7 +401,7 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 		return fmt.Errorf("missing tables: %v", missingTables)
 	}
 
-	fmt.Fprintf(writer, "✅ All tables verified\n")
+	_, _ = fmt.Fprintf(writer, "✅ All tables verified\n")
 	return nil
 }
 
@@ -436,7 +436,7 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 		return fmt.Errorf("PostgreSQL pod not ready yet")
 	}, 3*time.Minute, 5*time.Second).Should(Succeed(), "PostgreSQL pod should be ready for migrations")
 
-	fmt.Fprintf(writer, "   📦 PostgreSQL pod ready: %s\n", podName)
+	_, _ = fmt.Fprintf(writer, "   📦 PostgreSQL pod ready: %s\n", podName)
 
 	// Read migration files from workspace
 	workspaceRoot, err := findWorkspaceRoot()
@@ -449,7 +449,7 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 		migrationPath := filepath.Join(workspaceRoot, "migrations", migration)
 		content, err := os.ReadFile(migrationPath)
 		if err != nil {
-			fmt.Fprintf(writer, "   ⚠️  Skipping migration %s (not found)\n", migration)
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Skipping migration %s (not found)\n", migration)
 			continue
 		}
 
@@ -475,18 +475,18 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 			if strings.Contains(outputStr, "already exists") ||
 				strings.Contains(outputStr, "duplicate key") ||
 				(strings.Contains(outputStr, "relation") && strings.Contains(outputStr, "already exists")) {
-				fmt.Fprintf(writer, "   ✅ Migration %s already applied\n", migration)
+				_, _ = fmt.Fprintf(writer, "   ✅ Migration %s already applied\n", migration)
 				continue
 			}
 			// Some migrations may have partial failures but still succeed overall
 			if !strings.Contains(outputStr, "ERROR:") {
-				fmt.Fprintf(writer, "   ✅ Applied %s (with notices)\n", migration)
+				_, _ = fmt.Fprintf(writer, "   ✅ Applied %s (with notices)\n", migration)
 				continue
 			}
-			fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, outputStr)
+			_, _ = fmt.Fprintf(writer, "   ❌ Migration %s failed: %s\n", migration, outputStr)
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
-		fmt.Fprintf(writer, "   ✅ Applied %s\n", migration)
+		_, _ = fmt.Fprintf(writer, "   ✅ Applied %s\n", migration)
 	}
 
 	// Grant permissions
@@ -501,7 +501,7 @@ func applySpecificMigrations(ctx context.Context, config MigrationConfig, migrat
 	grantCmd.Stdin = strings.NewReader(grantSQL)
 	_ = grantCmd.Run() // Ignore errors - permissions may already be granted
 
-	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n")
 	return nil
 }
 

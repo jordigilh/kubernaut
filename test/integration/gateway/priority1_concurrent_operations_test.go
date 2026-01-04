@@ -118,7 +118,7 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 					if err != nil {
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					mu.Lock()
 					defer mu.Unlock()
@@ -246,7 +246,7 @@ var _ = Describe("Priority 1: Concurrent Operations - Integration Tests", func()
 					if err != nil {
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					mu.Lock()
 					defer mu.Unlock()

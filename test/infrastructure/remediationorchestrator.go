@@ -100,20 +100,20 @@ const (
 // Returns:
 // - error: Any errors during infrastructure startup
 func StartROIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Starting RO Integration Test Infrastructure (DataStorage Team Pattern)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", ROIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:          localhost:%d\n", ROIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", ROIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  DS Metrics:     http://localhost:%d\n", ROIntegrationDataStorageMetricsPort)
-	fmt.Fprintf(writer, "  Pattern:        DD-TEST-002 Sequential Startup (DataStorage Team Implementation)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Starting RO Integration Test Infrastructure (DataStorage Team Pattern)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", ROIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d\n", ROIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", ROIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  DS Metrics:     http://localhost:%d\n", ROIntegrationDataStorageMetricsPort)
+	_, _ = fmt.Fprintf(writer, "  Pattern:        DD-TEST-002 Sequential Startup (DataStorage Team Implementation)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	projectRoot := getProjectRoot()
 
 	// Step 1: Cleanup existing containers (using shared utility)
-	fmt.Fprintf(writer, "🧹 Cleaning up any existing containers...\n")
+	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up any existing containers...\n")
 	CleanupContainers([]string{
 		ROIntegrationPostgresContainer,
 		ROIntegrationRedisContainer,
@@ -123,10 +123,10 @@ func StartROIntegrationInfrastructure(writer io.Writer) error {
 	// Step 2: Network strategy
 	// Note: Using port mapping (-p) instead of custom podman network to avoid DNS resolution issues
 	// All services connect via host.containers.internal:PORT (same pattern as Gateway/Notification/WE)
-	fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
+	_, _ = fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
 
 	// Step 3: Start PostgreSQL FIRST (using shared utility)
-	fmt.Fprintf(writer, "🔵 Starting PostgreSQL...\n")
+	_, _ = fmt.Fprintf(writer, "🔵 Starting PostgreSQL...\n")
 	if err := StartPostgreSQL(PostgreSQLConfig{
 		ContainerName:  ROIntegrationPostgresContainer,
 		Port:           ROIntegrationPostgresPort,
@@ -141,13 +141,13 @@ func StartROIntegrationInfrastructure(writer io.Writer) error {
 	// Step 4: WAIT for PostgreSQL to be ready (using enhanced shared utility)
 	// Uses two-phase verification: connection check + queryability check
 	// Prevents "database system is starting up" errors during migrations
-	fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
 	if err := WaitForPostgreSQLReady(ROIntegrationPostgresContainer, "slm_user", "action_history", writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
 
 	// Step 5: Run migrations (using host.containers.internal for port mapping)
-	fmt.Fprintf(writer, "🔄 Running migrations...\n")
+	_, _ = fmt.Fprintf(writer, "🔄 Running migrations...\n")
 	migrationsCmd := exec.Command("podman", "run", "--rm",
 		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
 		"-e", fmt.Sprintf("PGPORT=%d", ROIntegrationPostgresPort),
@@ -168,13 +168,13 @@ echo "Migrations complete!"`)
 	migrationsCmd.Stderr = writer
 	if err := migrationsCmd.Run(); err != nil {
 		// Include a hint about checking the test output above for actual migration errors
-		fmt.Fprintf(writer, "\n❌ Migration command failed - check output above for specific SQL errors\n")
+		_, _ = fmt.Fprintf(writer, "\n❌ Migration command failed - check output above for specific SQL errors\n")
 		return fmt.Errorf("migrations failed (check test output for details): %w", err)
 	}
-	fmt.Fprintf(writer, "✅ Migrations complete\n")
+	_, _ = fmt.Fprintf(writer, "✅ Migrations complete\n")
 
 	// Step 6: Start Redis SECOND (using shared utility)
-	fmt.Fprintf(writer, "🔵 Starting Redis...\n")
+	_, _ = fmt.Fprintf(writer, "🔵 Starting Redis...\n")
 	if err := StartRedis(RedisConfig{
 		ContainerName: ROIntegrationRedisContainer,
 		Port:          ROIntegrationRedisPort,
@@ -183,13 +183,13 @@ echo "Migrations complete!"`)
 	}
 
 	// Step 7: WAIT for Redis to be ready (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
 	if err := WaitForRedisReady(ROIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("Redis failed to become ready: %w", err)
 	}
 
 	// Step 8: Create DataStorage config files (DataStorage team pattern)
-	fmt.Fprintf(writer, "📝 Creating DataStorage config files...\n")
+	_, _ = fmt.Fprintf(writer, "📝 Creating DataStorage config files...\n")
 	configDir := filepath.Join(projectRoot, "test", "integration", "remediationorchestrator", "config")
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -256,18 +256,18 @@ password: test_password
 		return fmt.Errorf("failed to write redis-secrets.yaml: %w", err)
 	}
 
-	fmt.Fprintf(writer, "✅ Config files created\n")
+	_, _ = fmt.Fprintf(writer, "✅ Config files created\n")
 
 	// Step 9: Build DataStorage image (using shared utility with GenerateInfraImageName)
 	dsImageTag := GenerateInfraImageName("datastorage", "remediationorchestrator")
-	fmt.Fprintf(writer, "🏗️  Building DataStorage image (%s)...\n", dsImageTag)
+	_, _ = fmt.Fprintf(writer, "🏗️  Building DataStorage image (%s)...\n", dsImageTag)
 	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// Step 10: Start DataStorage LAST (DD-TEST-002 Sequential Pattern)
-	fmt.Fprintf(writer, "🔵 Starting DataStorage...\n")
+	_, _ = fmt.Fprintf(writer, "🔵 Starting DataStorage...\n")
 	// Mount config directory (DataStorage team pattern - ro, no :Z flag)
 	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
 	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
@@ -287,23 +287,23 @@ password: test_password
 	}
 
 	// Step 11: WAIT for DataStorage health check (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for DataStorage to be healthy (may take up to 60s for startup)...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage to be healthy (may take up to 60s for startup)...\n")
 	if err := WaitForHTTPHealth(
 		fmt.Sprintf("http://127.0.0.1:%d/health", ROIntegrationDataStoragePort),
 		60*time.Second,
 		writer,
 	); err != nil {
 		// Print container logs for debugging (DataStorage team pattern)
-		fmt.Fprintf(writer, "\n📋 DataStorage container logs (last 100 lines):\n")
+		_, _ = fmt.Fprintf(writer, "\n📋 DataStorage container logs (last 100 lines):\n")
 		logs, _ := exec.Command("podman", "logs", "--tail", "100", ROIntegrationDataStorageContainer).CombinedOutput()
-		fmt.Fprintf(writer, "%s\n", logs)
+		_, _ = fmt.Fprintf(writer, "%s\n", logs)
 		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 	}
-	fmt.Fprintf(writer, "✅ DataStorage is healthy\n")
+	_, _ = fmt.Fprintf(writer, "✅ DataStorage is healthy\n")
 
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "✅ RO Integration Infrastructure Ready (DataStorage Team Pattern)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ RO Integration Infrastructure Ready (DataStorage Team Pattern)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	return nil
 }
@@ -318,7 +318,7 @@ password: test_password
 // Returns:
 // - error: Any errors during infrastructure cleanup
 func StopROIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "🛑 Stopping RO Integration Infrastructure (DD-TEST-002)...\n")
+	_, _ = fmt.Fprintf(writer, "🛑 Stopping RO Integration Infrastructure (DD-TEST-002)...\n")
 
 	// Stop and remove containers (using shared utility)
 	CleanupContainers([]string{
@@ -331,6 +331,6 @@ func StopROIntegrationInfrastructure(writer io.Writer) error {
 	networkCmd := exec.Command("podman", "network", "rm", ROIntegrationNetwork)
 	_ = networkCmd.Run()
 
-	fmt.Fprintf(writer, "✅ RO Integration Infrastructure stopped and cleaned up\n")
+	_, _ = fmt.Fprintf(writer, "✅ RO Integration Infrastructure stopped and cleaned up\n")
 	return nil
 }

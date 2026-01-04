@@ -28,14 +28,14 @@ func TestGetConfig(t *testing.T) {
 	originalKubeconfig := os.Getenv("KUBECONFIG")
 	defer func() {
 		if originalKubeconfig != "" {
-			os.Setenv("KUBECONFIG", originalKubeconfig)
+			_ = os.Setenv("KUBECONFIG", originalKubeconfig)
 		} else {
-			os.Unsetenv("KUBECONFIG")
+			_ = os.Unsetenv("KUBECONFIG")
 		}
 	}()
 
 	t.Run("returns error when no config available", func(t *testing.T) {
-		os.Unsetenv("KUBECONFIG")
+		_ = os.Unsetenv("KUBECONFIG")
 		// In test environment, in-cluster config will fail
 		_, err := k8sutil.GetConfig()
 		if err == nil {
@@ -50,7 +50,7 @@ func TestGetConfig(t *testing.T) {
 			t.Skip("KUBECONFIG not set, skipping")
 		}
 
-		os.Setenv("KUBECONFIG", originalKubeconfig)
+		_ = os.Setenv("KUBECONFIG", originalKubeconfig)
 		config, err := k8sutil.GetConfig()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

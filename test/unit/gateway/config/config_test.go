@@ -61,13 +61,13 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Override critical settings via environment variables
-			os.Setenv("GATEWAY_LISTEN_ADDR", ":9090")
-			os.Setenv("GATEWAY_DATA_STORAGE_URL", "http://datastorage:8080")
-			os.Setenv("GATEWAY_DEDUP_TTL", "10m")
+			_ = os.Setenv("GATEWAY_LISTEN_ADDR", ":9090")
+			_ = os.Setenv("GATEWAY_DATA_STORAGE_URL", "http://datastorage:8080")
+			_ = os.Setenv("GATEWAY_DEDUP_TTL", "10m")
 			defer func() {
-				os.Unsetenv("GATEWAY_LISTEN_ADDR")
-				os.Unsetenv("GATEWAY_DATA_STORAGE_URL")
-				os.Unsetenv("GATEWAY_DEDUP_TTL")
+				_ = os.Unsetenv("GATEWAY_LISTEN_ADDR")
+				_ = os.Unsetenv("GATEWAY_DATA_STORAGE_URL")
+				_ = os.Unsetenv("GATEWAY_DEDUP_TTL")
 			}()
 
 			cfg.LoadFromEnv()

@@ -61,7 +61,7 @@ var _ = Describe("FileWatcher", func() {
 	AfterEach(func() {
 		cancel()
 		if tempDir != "" {
-			os.RemoveAll(tempDir)
+			_ = os.RemoveAll(tempDir)
 		}
 	})
 

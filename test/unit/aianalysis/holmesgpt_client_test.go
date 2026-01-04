@@ -42,7 +42,7 @@ var _ = Describe("HolmesGPTClient", func() {
 
 	AfterEach(func() {
 		if mockServer != nil {
-			mockServer.Close()
+			_ = mockServer.Close()
 		}
 	})
 

@@ -76,7 +76,7 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tes
 
 	AfterEach(func() {
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 		if cancel != nil {
 			cancel()

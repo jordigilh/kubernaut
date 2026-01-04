@@ -62,7 +62,7 @@ var _ = Describe("Redis Client", func() {
 			_ = client.Close()
 		}
 		if miniRedis != nil {
-			miniRedis.Close()
+			_ = miniRedis.Close()
 		}
 	})
 

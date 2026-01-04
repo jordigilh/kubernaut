@@ -112,7 +112,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 		// Cleanup
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 		k8sClient.Cleanup(ctx)
 		cancel()

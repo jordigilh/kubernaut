@@ -56,7 +56,7 @@ const (
 //
 // The bundles are built locally and loaded into the Kind cluster, no external registry needed.
 func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Writer) error {
-	fmt.Fprintf(output, "\n📦 Building Tekton Pipeline bundles for E2E tests...\n")
+	_, _ = fmt.Fprintf(output, "\n📦 Building Tekton Pipeline bundles for E2E tests...\n")
 
 	// Find project root for accessing test fixtures
 	projectRoot, err := findProjectRoot()
@@ -87,7 +87,7 @@ func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Write
 	}
 
 	// Load bundles into Kind cluster
-	fmt.Fprintf(output, "\n📥 Loading bundles into Kind cluster...\n")
+	_, _ = fmt.Fprintf(output, "\n📥 Loading bundles into Kind cluster...\n")
 	if err := loadBundleToKind(clusterName, helloWorldBundle, output); err != nil {
 		return fmt.Errorf("failed to load hello-world bundle: %w", err)
 	}
@@ -95,16 +95,16 @@ func BuildAndLoadTestBundles(clusterName, kubeconfigPath string, output io.Write
 		return fmt.Errorf("failed to load failing bundle: %w", err)
 	}
 
-	fmt.Fprintf(output, "✅ Tekton bundles built and loaded successfully\n")
-	fmt.Fprintf(output, "   • %s\n", helloWorldBundle)
-	fmt.Fprintf(output, "   • %s\n", failingBundle)
+	_, _ = fmt.Fprintf(output, "✅ Tekton bundles built and loaded successfully\n")
+	_, _ = fmt.Fprintf(output, "   • %s\n", helloWorldBundle)
+	_, _ = fmt.Fprintf(output, "   • %s\n", failingBundle)
 	return nil
 }
 
 // buildTektonBundle builds a Tekton Pipeline bundle using tkn CLI
 // The bundle is pushed to a local OCI registry (localhost/)
 func buildTektonBundle(bundleRef, pipelineYAML string, output io.Writer) error {
-	fmt.Fprintf(output, "  Building bundle: %s\n", bundleRef)
+	_, _ = fmt.Fprintf(output, "  Building bundle: %s\n", bundleRef)
 
 	// Verify tkn CLI is installed
 	if _, err := exec.LookPath("tkn"); err != nil {
@@ -135,7 +135,7 @@ func buildTektonBundle(bundleRef, pipelineYAML string, output io.Writer) error {
 // loadBundleToKind loads a Tekton bundle OCI image into the Kind cluster
 // Uses the same pattern as other E2E image loading: podman save + kind load image-archive
 func loadBundleToKind(clusterName, bundleRef string, output io.Writer) error {
-	fmt.Fprintf(output, "  Loading bundle: %s\n", bundleRef)
+	_, _ = fmt.Fprintf(output, "  Loading bundle: %s\n", bundleRef)
 
 	// Create temp file for image archive
 	tmpFile, err := os.CreateTemp("", "tekton-bundle-*.tar")
@@ -143,7 +143,7 @@ func loadBundleToKind(clusterName, bundleRef string, output io.Writer) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Save bundle image to tar file
 	// Note: Bundles are OCI images, so we use podman save

@@ -65,7 +65,7 @@ var _ = Describe("Redis Cache", func() {
 			_ = client.Close()
 		}
 		if miniRedis != nil {
-			miniRedis.Close()
+			_ = miniRedis.Close()
 		}
 	})
 

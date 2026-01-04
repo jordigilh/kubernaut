@@ -724,7 +724,7 @@ var _ = Describe("BufferedAuditStore", func() {
 			// Store events (will fail after retries and be dropped)
 			for i := 0; i < 20; i++ {
 				event := createTestEvent()
-				store.StoreAudit(ctx, event)
+				_ = store.StoreAudit(ctx, event)
 			}
 
 			// Wait for retries to complete and batches to fail

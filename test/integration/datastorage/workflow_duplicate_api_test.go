@@ -60,7 +60,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 
 			resp1, err := createWorkflowHTTP(httpClient, datastorageURL, workflow)
 			Expect(err).ToNot(HaveOccurred(), "First workflow creation should not error")
-			defer resp1.Body.Close()
+			defer func() { _ = resp1.Body.Close() }()
 
 			// Verify first creation succeeds
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
@@ -75,7 +75,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("\n🔄 Creating duplicate workflow (expecting 409 Conflict)...\n")
 			resp2, err := createWorkflowHTTP(httpClient, datastorageURL, workflow)
 			Expect(err).ToNot(HaveOccurred(), "Second workflow creation should not error at HTTP level")
-			defer resp2.Body.Close()
+			defer func() { _ = resp2.Body.Close() }()
 
 			// DS-BUG-001 FIX VERIFICATION: Should return 409, not 500
 			Expect(resp2.StatusCode).To(Equal(http.StatusConflict),
@@ -144,7 +144,7 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 
 			resp, err := createWorkflowHTTP(httpClient, datastorageURL, invalidWorkflow)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should return 500 for non-duplicate database errors
 			// (or 400 if validation catches it first, which is also acceptable)

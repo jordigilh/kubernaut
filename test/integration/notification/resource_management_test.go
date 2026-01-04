@@ -401,7 +401,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				// Count successes
 				notif := &notificationv1alpha1.NotificationRequest{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}

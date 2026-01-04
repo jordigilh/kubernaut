@@ -55,7 +55,7 @@ var _ = Describe("Config Integration Tests (ADR-030)", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	})
 
 	Context("Main Application Config Loading", func() {
@@ -119,7 +119,7 @@ logging:
 
 			// Cleanup: kill the process
 			Expect(cmd.Process.Kill()).ToNot(HaveOccurred())
-			cmd.Wait()
+			_ = cmd.Wait()
 		})
 
 		It("should fail to start if CONFIG_PATH is not set", func() {

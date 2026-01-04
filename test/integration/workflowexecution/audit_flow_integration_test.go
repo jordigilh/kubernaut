@@ -75,7 +75,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				dataStorageURL))
 		}
 		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		// ✅ DD-API-001: Use OpenAPI generated client (MANDATORY)

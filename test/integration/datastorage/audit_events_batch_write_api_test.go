@@ -66,7 +66,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 			if err != nil || resp == nil {
 				return 0
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode
 		}, "10s", "500ms").Should(Equal(200), "Data Storage Service should be ready")
 
@@ -151,7 +151,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				By("Verifying 201 Created response")
 				if resp.StatusCode != http.StatusCreated {
@@ -242,7 +242,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				By("Verifying 400 Bad Request response")
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -294,12 +294,12 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
 				var problem map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&problem)
+				_ = json.NewDecoder(resp.Body).Decode(&problem)
 				detail, _ := problem["detail"].(string)
 				Expect(detail).To(ContainSubstring("array"), "Error should mention array requirement")
 			})
@@ -319,12 +319,12 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
 				var problem map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&problem)
+				_ = json.NewDecoder(resp.Body).Decode(&problem)
 				detail, _ := problem["detail"].(string)
 				Expect(detail).To(ContainSubstring("empty"), "Error should mention empty batch")
 			})
@@ -359,14 +359,14 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 				resp, err := http.DefaultClient.Do(req)
 				duration := time.Since(start)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				By("Verifying 201 Created response")
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 				By("Verifying response contains 100 event_ids")
 				var response map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&response)
+				_ = json.NewDecoder(resp.Body).Decode(&response)
 				eventIDs, _ := response["event_ids"].([]interface{})
 				Expect(eventIDs).To(HaveLen(100))
 

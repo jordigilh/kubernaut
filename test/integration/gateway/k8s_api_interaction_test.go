@@ -74,7 +74,7 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 
 	AfterEach(func() {
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 		if cancel != nil {
 			cancel()

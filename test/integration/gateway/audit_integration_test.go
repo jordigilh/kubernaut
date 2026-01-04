@@ -129,7 +129,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					"  Start with: podman-compose -f test/infrastructure/podman-compose.test.yml up -d\n\n"+
 					"  Error: %v", dataStorageURL, err))
 		}
-		defer healthResp.Body.Close()
+		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage health check failed at %s\n"+
@@ -168,7 +168,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 	AfterEach(func() {
 		if server != nil {
-			server.Close()
+			_ = server.Close()
 		}
 	})
 
@@ -239,7 +239,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			for i, evt := range auditEvents {
 				eventJSON, _ := json.Marshal(evt)
 				var eventMap map[string]interface{}
-				json.Unmarshal(eventJSON, &eventMap)
+				_ = json.Unmarshal(eventJSON, &eventMap)
 				auditEventsMap[i] = eventMap
 			}
 
@@ -448,7 +448,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			for i, evt := range auditEvents2 {
 				eventJSON, _ := json.Marshal(evt)
 				var eventMap map[string]interface{}
-				json.Unmarshal(eventJSON, &eventMap)
+				_ = json.Unmarshal(eventJSON, &eventMap)
 				auditEvents[i] = eventMap
 			}
 
@@ -622,7 +622,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			for i, evt := range auditEvents3 {
 				eventJSON, _ := json.Marshal(evt)
 				var eventMap map[string]interface{}
-				json.Unmarshal(eventJSON, &eventMap)
+				_ = json.Unmarshal(eventJSON, &eventMap)
 				auditEvents[i] = eventMap
 			}
 

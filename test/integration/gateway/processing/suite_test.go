@@ -79,7 +79,7 @@ var _ = BeforeSuite(func() {
 			Expect(err).ToNot(HaveOccurred(), "Should get KUBEBUILDER_ASSETS path from setup-envtest")
 		}
 		assetsPath := strings.TrimSpace(string(output))
-		os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
+		_ = os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
 		suiteLogger.Info("   📍 Set KUBEBUILDER_ASSETS", "path", assetsPath)
 	}
 
