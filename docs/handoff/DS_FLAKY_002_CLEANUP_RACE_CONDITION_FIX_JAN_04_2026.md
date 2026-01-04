@@ -1,10 +1,10 @@
 # DS-FLAKY-002: ADR-033 Repository Test Cleanup Race Condition
 
-**Bug ID**: DS-FLAKY-002  
-**Date Discovered**: January 4, 2026  
-**Date Fixed**: January 4, 2026  
-**Severity**: Medium  
-**Component**: Data Storage Repository Integration Tests  
+**Bug ID**: DS-FLAKY-002
+**Date Discovered**: January 4, 2026
+**Date Fixed**: January 4, 2026
+**Severity**: Medium
+**Component**: Data Storage Repository Integration Tests
 **Related**: DS-FLAKY-001 (pagination race), similar pattern to SP-BUG-002
 
 ---
@@ -13,9 +13,9 @@
 
 Fixed a race condition in ADR-033 repository integration tests where parallel test processes deleted each other's test data during cleanup, causing non-deterministic test failures.
 
-**Impact**: Test stability compromised (flaky failures)  
-**Root Cause**: Cleanup queries deleted ALL `test-pod-*` resources across ALL parallel processes  
-**Solution**: Scoped resource names and cleanup to include `testID`  
+**Impact**: Test stability compromised (flaky failures)
+**Root Cause**: Cleanup queries deleted ALL `test-pod-*` resources across ALL parallel processes
+**Solution**: Scoped resource names and cleanup to include `testID`
 **Verification**: All 157 DS tests pass ✅
 
 ---
@@ -44,13 +44,13 @@ Each parallel test process should:
 
 ### The User's Key Insight
 
-**Question from User**: 
+**Question from User**:
 > "Why can't we make the test filter only the data it knows it owns?"
 
-**Initial (Incorrect) Analysis**: 
+**Initial (Incorrect) Analysis**:
 I thought the queries weren't filtering properly.
 
-**Actual Problem**: 
+**Actual Problem**:
 The queries WERE filtering correctly, but the **cleanup was not**!
 
 ### Race Condition Sequence
@@ -75,12 +75,12 @@ T6    | Query incident-type-abc          | -                                | 0 
 **BEFORE (Buggy Cleanup)**:
 ```go
 // BeforeEach and AfterEach cleanup
-_, err := db.ExecContext(testCtx, 
+_, err := db.ExecContext(testCtx,
     "DELETE FROM action_histories WHERE resource_id IN "+
     "(SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")
 //                                                             ^^^^^^^^^ Deletes ALL processes!
 
-_, err = db.ExecContext(testCtx, 
+_, err = db.ExecContext(testCtx,
     "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
 //                                                    ^^^^^^^^^ Deletes ALL processes!
 ```
@@ -132,20 +132,20 @@ INSERT INTO resource_references (...) VALUES (
 
 ```go
 // BEFORE:
-_, err := db.ExecContext(testCtx, 
+_, err := db.ExecContext(testCtx,
     "DELETE FROM action_histories WHERE resource_id IN "+
     "(SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")
-_, err = db.ExecContext(testCtx, 
+_, err = db.ExecContext(testCtx,
     "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
 
 // AFTER:
 resourcePattern := fmt.Sprintf("test-pod-%s-%%", testID)  // ← testID-specific pattern
-_, err := db.ExecContext(testCtx, 
+_, err := db.ExecContext(testCtx,
     "DELETE FROM action_histories WHERE resource_id IN "+
-    "(SELECT id FROM resource_references WHERE name LIKE $1)", 
+    "(SELECT id FROM resource_references WHERE name LIKE $1)",
     resourcePattern)  // ← Only deletes this test's resources
-_, err = db.ExecContext(testCtx, 
-    "DELETE FROM resource_references WHERE name LIKE $1", 
+_, err = db.ExecContext(testCtx,
+    "DELETE FROM resource_references WHERE name LIKE $1",
     resourcePattern)  // ← Only deletes this test's resources
 ```
 
@@ -154,12 +154,12 @@ _, err = db.ExecContext(testCtx,
 ```go
 // AFTER: (same fix as BeforeEach)
 resourcePattern := fmt.Sprintf("test-pod-%s-%%", testID)
-_, err := db.ExecContext(testCtx, 
+_, err := db.ExecContext(testCtx,
     "DELETE FROM action_histories WHERE resource_id IN "+
-    "(SELECT id FROM resource_references WHERE name LIKE $1)", 
+    "(SELECT id FROM resource_references WHERE name LIKE $1)",
     resourcePattern)
-_, err = db.ExecContext(testCtx, 
-    "DELETE FROM resource_references WHERE name LIKE $1", 
+_, err = db.ExecContext(testCtx,
+    "DELETE FROM resource_references WHERE name LIKE $1",
     resourcePattern)
 ```
 
@@ -235,8 +235,8 @@ This forced me to re-examine my assumptions and discover the **real** bug (clean
 
 ### 4. Similar to Other Bugs
 
-**DS-FLAKY-001**: Async audit buffer race (fixed with `Eventually`)  
-**SP-BUG-002**: Phase transition audit race (fixed with idempotency check)  
+**DS-FLAKY-001**: Async audit buffer race (fixed with `Eventually`)
+**SP-BUG-002**: Phase transition audit race (fixed with idempotency check)
 **DS-FLAKY-002**: Cleanup race (fixed with testID scoping)
 
 **Common Thread**: Parallel execution + shared state = race conditions
@@ -252,10 +252,10 @@ var testID string
 
 BeforeEach(func() {
     testID = generateTestID()  // Unique per test
-    
+
     // Create resources with testID
     resourceName := fmt.Sprintf("resource-type-%s-%s", testID, uuid.New())
-    
+
     // Cleanup ONLY this test's resources
     pattern := fmt.Sprintf("resource-type-%s-%%", testID)
     _, _ = db.Exec("DELETE FROM table WHERE name LIKE $1", pattern)
@@ -338,8 +338,8 @@ When reviewing integration tests with parallel execution:
 
 ---
 
-**Status**: ✅ Fixed and Verified  
-**Branch**: `fix/ci-python-dependencies-path`  
-**Commit**: To be pushed  
+**Status**: ✅ Fixed and Verified
+**Branch**: `fix/ci-python-dependencies-path`
+**Commit**: To be pushed
 **Verification**: All 157 DS integration tests pass (100% success rate)
 
