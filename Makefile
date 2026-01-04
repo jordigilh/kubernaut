@@ -333,6 +333,10 @@ test-integration-holmesgpt-api: ginkgo clean-holmesgpt-test-ports ## Run holmesg
 	@echo "🐍 Test Logic: Python in container, Go infrastructure on host"
 	@echo "⏱️  Expected Duration: ~5 minutes"
 	@echo ""
+	@echo "🔧 Phase 0: Generating HAPI OpenAPI client (DD-API-001)..."
+	@cd holmesgpt-api/tests/integration && bash generate-client.sh && cd ../../.. || (echo "❌ Client generation failed"; exit 1)
+	@echo "✅ OpenAPI client generated"
+	@echo ""
 	@# Start Go infrastructure in background
 	@echo "🏗️  Phase 1: Starting Go infrastructure (PostgreSQL, Redis, Data Storage)..."
 	@cd test/integration/holmesgptapi && $(GINKGO) --keep-going --timeout=20m > /tmp/hapi-infra.log 2>&1 & \
