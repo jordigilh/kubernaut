@@ -1,8 +1,8 @@
 # Data Storage Integration Test Flakiness - Complete Triage Summary
 
-**Date**: January 4, 2026  
-**Scope**: All 5 flaky Data Storage integration tests  
-**Status**: 2 Fixed ✅, 3 Triaged with Implementation Plan ⏳  
+**Date**: January 4, 2026
+**Scope**: All 5 flaky Data Storage integration tests
+**Status**: 2 Fixed ✅, 3 Triaged with Implementation Plan ⏳
 **Test Suite Size**: 157 total integration tests
 
 ---
@@ -147,7 +147,7 @@ Test Success Rate: Expected 80.0%, Got 65.3%
 **Fix Applied**:
 ```go
 // BEFORE: Cleanup deleted ALL processes' resources
-_, err := db.ExecContext(testCtx, 
+_, err := db.ExecContext(testCtx,
     "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
 //                                                    ^^^^^^^^^ ALL processes!
 
@@ -164,8 +164,8 @@ INSERT INTO resource_references (...) VALUES (
 
 // Cleanup only deletes this test's resources
 resourcePattern := fmt.Sprintf("test-pod-%s-%%", testID)
-_, err := db.ExecContext(testCtx, 
-    "DELETE FROM resource_references WHERE name LIKE $1", 
+_, err := db.ExecContext(testCtx,
+    "DELETE FROM resource_references WHERE name LIKE $1",
     resourcePattern)  // ← Only this test's data
 ```
 
@@ -223,7 +223,7 @@ var testDLQStream string
 BeforeEach(func() {
     testID := generateTestID()
     testDLQStream = fmt.Sprintf("kubernaut:dlq:events:test:%s", testID)
-    
+
     // Create DLQ client with test-specific stream
     dlqClient = dlq.NewClient(redisClient, testDLQStream, logger)
 })
@@ -327,11 +327,11 @@ func filterWorkflowsByTestRunID(workflows []*models.RemediationWorkflow, testRun
 BeforeSuite(func() {
     processID := os.Getpid()
     schemaName := fmt.Sprintf("test_process_%d", processID)
-    
+
     // Create process-specific schema
     _, err := db.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", schemaName))
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Set search path to use process-specific schema
     _, err = db.Exec(fmt.Sprintf("SET search_path TO %s, public", schemaName))
     Expect(err).ToNot(HaveOccurred())
@@ -464,8 +464,8 @@ SUCCESS! -- 157 Passed | 0 Failed | 0 Pending | 0 Skipped
 
 ---
 
-**Status**: 2/5 Fixed ✅, 3/5 Triaged with Implementation Plan ⏳  
-**Next Steps**: Awaiting user guidance on implementation priority  
-**Branch**: `fix/ci-python-dependencies-path`  
+**Status**: 2/5 Fixed ✅, 3/5 Triaged with Implementation Plan ⏳
+**Next Steps**: Awaiting user guidance on implementation priority
+**Branch**: `fix/ci-python-dependencies-path`
 **Current Test Status**: 157/157 passing (100% with DS-FLAKY-001 and DS-FLAKY-002 fixes)
 
