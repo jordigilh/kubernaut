@@ -54,7 +54,7 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 	BeforeEach(func() {
 		// Create metrics with test registry for isolation
 		m = metrics.NewMetrics()
-		processor = handlers.NewResponseProcessor(logr.Discard(), m, &noopAuditClient{})
+		processor = handlers.NewResponseProcessor(logr.Discard(), m)
 		ctx = context.Background()
 	})
 

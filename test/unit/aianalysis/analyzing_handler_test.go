@@ -52,6 +52,10 @@ func (n *noopAnalyzingAuditClient) RecordPhaseTransition(ctx context.Context, an
 	// No-op: Unit tests don't need audit recording
 }
 
+func (n *noopAnalyzingAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+	// No-op: Unit tests don't need audit recording
+}
+
 // BR-AI-012: AnalyzingHandler tests
 var _ = Describe("AnalyzingHandler", func() {
 	var (
