@@ -29,7 +29,11 @@ SERVICES := $(filter-out README.md, $(notdir $(wildcard cmd/*)))
 # Result: aianalysis datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
 
 # Test configuration
-TEST_PROCS ?= 4
+# Dynamically detect CPU cores (works on Linux and macOS)
+# Linux (GitHub Actions): nproc
+# macOS: sysctl -n hw.ncpu
+# Fallback to 4 if detection fails
+TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 TEST_TIMEOUT_UNIT ?= 5m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 30m
