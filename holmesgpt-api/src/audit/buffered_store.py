@@ -304,7 +304,17 @@ class BufferedAuditStore:
                 # Check for explicit flush requests (non-blocking)
                 try:
                     done_event = self._flush_queue.get_nowait()
-                    # Flush current batch
+                    
+                    # Drain ALL remaining events from queue into batch before flushing
+                    # This ensures flush() writes ALL buffered events, not just current batch
+                    while not self._queue.empty():
+                        try:
+                            event = self._queue.get_nowait()
+                            batch.append(event)
+                        except queue.Empty:
+                            break
+                    
+                    # Flush complete batch (includes all queued events)
                     if batch:
                         self._write_batch_with_retry(batch)
                         batch = []

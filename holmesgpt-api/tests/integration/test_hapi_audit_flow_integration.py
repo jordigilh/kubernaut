@@ -331,10 +331,11 @@ class TestIncidentAnalysisAuditFlow:
         assert response is not None
 
         # ASSERT: Verify tool call events emitted
+        # Expect 4 events: llm_request, llm_tool_call, llm_response, workflow_validation_attempt
         events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
-            min_expected_events=1,  # At least llm_tool_call
+            min_expected_events=4,  # All 4 audit events from mock mode
             audit_store=audit_store,
             timeout_seconds=10
         )
