@@ -121,6 +121,8 @@ REDIS_PORT = int(os.getenv("REDIS_INTEGRATION_PORT", "16387"))
 
 # Service URLs (use 127.0.0.1 to force IPv4, avoid IPv6 resolution issues in CI)
 DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://127.0.0.1:{DATA_STORAGE_PORT}")
+# Note: HAPI integration tests use direct business logic calls (no HTTP), but this URL is kept for backward compatibility
+HAPI_URL = os.getenv("HAPI_URL", "http://127.0.0.1:18120")
 
 
 # ========================================

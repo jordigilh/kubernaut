@@ -178,22 +178,20 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				// Handle async workflow indexing/search - allow time for workflows to become searchable
-				var response *models.WorkflowSearchResponse
-				Eventually(func() int {
-					var err error
-					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
-					if err != nil {
-						return -1
-					}
-					return len(response.Workflows)
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
+			// DS-FLAKY-004 FIX: Handle async workflow indexing/search - filter by workflow name to avoid parallel test pollution
+			// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
+			var response *models.WorkflowSearchResponse
+			var gitopsResult, manualResult *models.WorkflowSearchResult
+			Eventually(func() bool {
+				var err error
+				response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+				if err != nil {
+					return false
+				}
 
-				// ASSERT: GitOps workflow should be ranked first with 0.10 boost
-				Expect(response.Workflows).To(HaveLen(2), "Should return both workflows")
-
-				// Find our test workflows in results
-				var gitopsResult, manualResult *models.WorkflowSearchResult
+				// Filter to find OUR test workflows (by name which includes testID)
+				gitopsResult = nil
+				manualResult = nil
 				for i := range response.Workflows {
 					if response.Workflows[i].Title == gitopsWorkflow.Name {
 						gitopsResult = &response.Workflows[i]
@@ -203,8 +201,13 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					}
 				}
 
-				Expect(gitopsResult).ToNot(BeNil(), "GitOps workflow should be in results")
-				Expect(manualResult).ToNot(BeNil(), "Manual workflow should be in results")
+				// Success when both our workflows are found
+				return gitopsResult != nil && manualResult != nil
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
+
+			// ASSERT: Found both our test workflows
+			Expect(gitopsResult).ToNot(BeNil(), "GitOps workflow should be in results")
+			Expect(manualResult).ToNot(BeNil(), "Manual workflow should be in results")
 
 				// BUSINESS VALUE ASSERTIONS:
 				// 1. GitOps workflow should have higher LabelBoost
@@ -528,21 +531,20 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					TopK: 10,
 				}
 
-				// Handle async workflow indexing/search - allow time for workflows to become searchable
-				var response *models.WorkflowSearchResponse
-				Eventually(func() int {
-					var err error
-					response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
-					if err != nil {
-						return -1
-					}
-					return len(response.Workflows)
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(2), "Both workflows should be searchable")
+			// DS-FLAKY-005 FIX: Handle async workflow indexing/search - filter by workflow name to avoid parallel test pollution
+			// NOTE: Parallel tests may create other workflows, so filter by WorkflowName (includes testID)
+			var response *models.WorkflowSearchResponse
+			var twoLabelsResult, oneLabelsResult *models.WorkflowSearchResult
+			Eventually(func() bool {
+				var err error
+				response, err = workflowRepo.SearchByLabels(ctx, searchRequest)
+				if err != nil {
+					return false
+				}
 
-				// ASSERT: Workflow matching more custom labels should have higher boost
-				Expect(response.Workflows).To(HaveLen(2))
-
-				var twoLabelsResult, oneLabelsResult *models.WorkflowSearchResult
+				// Filter to find OUR test workflows (by name which includes testID)
+				twoLabelsResult = nil
+				oneLabelsResult = nil
 				for i := range response.Workflows {
 					if response.Workflows[i].Title == twoLabelsWorkflow.Name {
 						twoLabelsResult = &response.Workflows[i]
@@ -552,8 +554,13 @@ var _ = Describe("Workflow Label Scoring Integration Tests",  func() {
 					}
 				}
 
-				Expect(twoLabelsResult).ToNot(BeNil())
-				Expect(oneLabelsResult).ToNot(BeNil())
+				// Success when both our workflows are found
+				return twoLabelsResult != nil && oneLabelsResult != nil
+			}, 5*time.Second, 100*time.Millisecond).Should(BeTrue(), "Both test workflows should be searchable")
+
+			// ASSERT: Found both our test workflows
+			Expect(twoLabelsResult).ToNot(BeNil(), "Workflow with 2 custom labels should be found")
+			Expect(oneLabelsResult).ToNot(BeNil(), "Workflow with 1 custom label should be found")
 
 				// BUSINESS VALUE ASSERTIONS:
 				// Workflow with 2 matching custom label keys should have 0.10 boost (2 * 0.05)
