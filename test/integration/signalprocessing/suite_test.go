@@ -657,20 +657,18 @@ var _ = SynchronizedAfterSuite(
 		if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
 		}
+
+		// DD-TEST-002 + DD-INTEGRATION-001 v2.0: Clean up composite-tagged images
+		By("Cleaning up infrastructure images to prevent disk space issues")
+		// Prune dangling images (composite tags from this test run)
+		pruneCmd := exec.Command("podman", "image", "prune", "-f")
+		if pruneErr := pruneCmd.Run(); pruneErr != nil {
+			GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n", pruneErr)
+		} else {
+			GinkgoWriter.Println("✅ Infrastructure images pruned")
+		}
 	},
 )
-	// DD-TEST-002 + DD-INTEGRATION-001 v2.0: Clean up composite-tagged images
-	By("Cleaning up infrastructure images to prevent disk space issues")
-	// Prune dangling images (composite tags from this test run)
-	pruneCmd := exec.Command("podman", "image", "prune", "-f")
-	if pruneErr := pruneCmd.Run(); pruneErr != nil {
-		GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n", pruneErr)
-	} else {
-		GinkgoWriter.Println("✅ Infrastructure images pruned")
-	}
-
-	GinkgoWriter.Println("✅ Cleanup complete")
-})
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 // ENVTEST-based tests depend on specific binaries, usually located in paths set by
