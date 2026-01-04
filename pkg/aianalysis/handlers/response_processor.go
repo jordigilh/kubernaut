@@ -156,14 +156,11 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 
 	// Transition to Analyzing phase
 	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
-	oldPhase := analysis.Status.Phase
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Investigation complete, starting analysis"
 
-	// DD-AUDIT-003: Record phase transition (AA-BUG-001 fix)
-	if p.auditClient != nil && oldPhase != aianalysis.PhaseAnalyzing {
-		p.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(aianalysis.PhaseAnalyzing))
-	}
+	// DD-AUDIT-003: Phase transition audit recorded by InvestigatingHandler (investigating.go:177)
+	// NOT recorded here to avoid duplicates - handler records after status is committed
 
 	return ctrl.Result{Requeue: true}, nil
 }
