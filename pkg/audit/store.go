@@ -450,7 +450,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				batchSizeBeforeFlush := len(batch)
 				bufferUtilizationBeforeFlush := len(s.buffer)
 				timeSinceLastFlush := time.Since(lastFlushTime)
-				
+
 				s.logger.V(1).Info("📦 Batch-full flush triggered",
 					"batch_size", batchSizeBeforeFlush,
 					"buffer_utilization", bufferUtilizationBeforeFlush,

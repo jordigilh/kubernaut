@@ -69,6 +69,11 @@ func (m *mockAuditStore) StoreAudit(_ context.Context, event *dsgen.AuditEventRe
 	return nil
 }
 
+func (m *mockAuditStore) Flush(ctx context.Context) error {
+	// Mock: no-op - events already stored synchronously
+	return nil
+}
+
 func (m *mockAuditStore) Close() error {
 	return nil
 }

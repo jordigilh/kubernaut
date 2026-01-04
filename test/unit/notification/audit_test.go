@@ -762,6 +762,12 @@ func (m *MockAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEvent
 	return nil
 }
 
+// Flush forces immediate flush of buffered events (no-op in mock)
+func (m *MockAuditStore) Flush(ctx context.Context) error {
+	// Mock: no-op - events already stored synchronously
+	return nil
+}
+
 // Close closes the mock audit store
 func (m *MockAuditStore) Close() error {
 	m.mu.Lock()

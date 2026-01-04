@@ -125,15 +125,16 @@ def query_audit_events_with_retry(
     correlation_id: str,
     min_expected_events: int = 1,
     timeout_seconds: int = 10,
-    poll_interval: float = 0.5
+    poll_interval: float = 0.5,
+    audit_store=None
 ) -> List[AuditEvent]:
     """
-    Query Data Storage for audit events with retry logic (Eventually pattern).
+    Query Data Storage for audit events with explicit flush support.
 
-    ADR-038: Buffered audit store flushes asynchronously every 0.1s.
-    Tests must poll for events rather than assuming immediate availability.
+    This function eliminates async race conditions by flushing the audit buffer
+    before querying, similar to Go integration tests.
 
-    Pattern: Similar to Ginkgo's Eventually() - poll with timeout until events appear
+    Pattern: flush() → query() → assert (deterministic, no polling needed)
 
     Args:
         data_storage_url: Data Storage service URL
@@ -141,6 +142,7 @@ def query_audit_events_with_retry(
         min_expected_events: Minimum number of events expected (default 1)
         timeout_seconds: Maximum time to wait for events (default 10s)
         poll_interval: Time between polling attempts (default 0.5s)
+        audit_store: Optional BufferedAuditStore instance for explicit flush
 
     Returns:
         List of AuditEvent Pydantic models
@@ -148,6 +150,23 @@ def query_audit_events_with_retry(
     Raises:
         AssertionError: If events don't appear within timeout
     """
+    # Explicit flush to eliminate async race conditions (like Go tests)
+    # ADR-032: Audit is MANDATORY - fail if audit_store not provided
+    if audit_store is None:
+        raise AssertionError(
+            "audit_store is required (ADR-032: Audit is MANDATORY). "
+            "Ensure audit_store fixture is provided to test."
+        )
+
+    print(f"🔄 Flushing audit buffer before querying...")
+    success = audit_store.flush(timeout=5.0)
+    if not success:
+        raise AssertionError(
+            "Audit flush timeout - events may not be persisted. "
+            "This indicates a problem with the audit buffer."
+        )
+    print(f"✅ Audit buffer flushed")
+
     start_time = time.time()
     attempts = 0
 
@@ -200,6 +219,7 @@ class TestIncidentAnalysisAuditFlow:
     async def test_incident_analysis_emits_llm_request_and_response_events(
         self,
         data_storage_url,
+        audit_store,
         unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_request and llm_response audit events.
@@ -237,11 +257,12 @@ class TestIncidentAnalysisAuditFlow:
         assert response is not None, "Business logic should return a response"
         assert "incident_id" in response, "Response should contain incident_id"
 
-        # ASSERT: Verify audit events emitted as side effect (with retry)
-        # ADR-038: Buffered audit store flushes asynchronously, so poll for events
+        # ASSERT: Verify audit events emitted as side effect
+        # Uses explicit flush to eliminate async race conditions
         all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
+            audit_store=audit_store,
             min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
             timeout_seconds=10
         )
@@ -276,6 +297,7 @@ class TestIncidentAnalysisAuditFlow:
     async def test_incident_analysis_emits_llm_tool_call_events(
         self,
         data_storage_url,
+        audit_store,
         unique_test_id):
         """
         BR-AUDIT-005: Incident analysis MUST emit llm_tool_call events for workflow searches.
@@ -308,11 +330,12 @@ class TestIncidentAnalysisAuditFlow:
         response = await analyze_incident(incident_request)
         assert response is not None
 
-        # ASSERT: Verify tool call events emitted (with retry polling)
+        # ASSERT: Verify tool call events emitted
         events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
             min_expected_events=1,  # At least llm_tool_call
+            audit_store=audit_store
             timeout_seconds=10
         )
         event_types = [e.event_type for e in events]
@@ -325,6 +348,7 @@ class TestIncidentAnalysisAuditFlow:
     async def test_incident_analysis_workflow_validation_emits_validation_attempt_events(
         self,
         data_storage_url,
+        audit_store,
         unique_test_id):
         """
         BR-AUDIT-005: Workflow validation MUST emit workflow_validation_attempt events.
@@ -362,6 +386,7 @@ class TestIncidentAnalysisAuditFlow:
             data_storage_url,
             remediation_id,
             min_expected_events=1,  # At least workflow_validation_attempt
+            audit_store=audit_store
             timeout_seconds=10
         )
         event_types = [e.event_type for e in events]
@@ -386,6 +411,7 @@ class TestRecoveryAnalysisAuditFlow:
     async def test_recovery_analysis_emits_llm_request_and_response_events(
         self,
         data_storage_url,
+        audit_store,
         unique_test_id):
         """
         BR-AUDIT-005: Recovery analysis MUST emit llm_request and llm_response audit events.
@@ -411,11 +437,12 @@ class TestRecoveryAnalysisAuditFlow:
         response = await analyze_recovery(recovery_request)
         assert response is not None
 
-        # ASSERT: Verify audit events emitted (with retry polling)
+        # ASSERT: Verify audit events emitted
         all_events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
             min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
+            audit_store=audit_store
             timeout_seconds=10
         )
 
@@ -446,6 +473,7 @@ class TestAuditEventSchemaValidation:
     async def test_audit_events_have_required_adr034_fields(
         self,
         data_storage_url,
+        audit_store,
         unique_test_id):
         """
         ADR-034: Audit events MUST include required fields per ADR-034 spec.
@@ -478,11 +506,12 @@ class TestAuditEventSchemaValidation:
         response = await analyze_incident(incident_request)
         assert response is not None
 
-        # ASSERT: Verify all audit events have ADR-034 required fields (with retry polling)
+        # ASSERT: Verify all audit events have ADR-034 required fields
         events = query_audit_events_with_retry(
             data_storage_url,
             remediation_id,
             min_expected_events=1,
+            audit_store=audit_store
             timeout_seconds=10
         )
         assert len(events) > 0, "No audit events found"
@@ -532,6 +561,7 @@ class TestErrorScenarioAuditFlow:
     async def test_workflow_not_found_emits_audit_with_error_context(
         self,
         data_storage_url,
+        audit_store,
         unique_test_id):
         """
         BR-AUDIT-005: HAPI MUST emit audit events even when business operations fail.
@@ -579,7 +609,8 @@ class TestErrorScenarioAuditFlow:
             data_storage_url,
             remediation_id,
             min_expected_events=2,  # Minimum 2 events (may have more due to tool calls/validation)
-            timeout_seconds=10
+            timeout_seconds=10,
+            audit_store=audit_store
         )
 
         # DD-TESTING-001: Filter for specific event types to make test resilient to business logic evolution
