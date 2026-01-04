@@ -121,8 +121,6 @@ REDIS_PORT = int(os.getenv("REDIS_INTEGRATION_PORT", "16387"))
 
 # Service URLs (use 127.0.0.1 to force IPv4, avoid IPv6 resolution issues in CI)
 DATA_STORAGE_URL = os.getenv("DATA_STORAGE_URL", f"http://127.0.0.1:{DATA_STORAGE_PORT}")
-# Note: HAPI integration tests use direct business logic calls (no HTTP), but this URL is kept for backward compatibility
-HAPI_URL = os.getenv("HAPI_URL", "http://127.0.0.1:18120")
 
 
 # ========================================
@@ -153,33 +151,33 @@ def data_storage_url():
 def audit_store(data_storage_url):
     """
     BufferedAuditStore instance for explicit flush() in tests.
-    
+
     This fixture provides access to the HAPI audit store singleton,
     allowing tests to explicitly flush buffered events before querying
     Data Storage. This eliminates async race conditions in audit tests.
-    
+
     Pattern (matching Go integration tests):
     1. Call business logic (emits audit events)
     2. audit_store.flush() - force write to Data Storage
     3. Query Data Storage API - events now visible
     4. Assert audit event content
-    
+
     Returns:
         BufferedAuditStore: HAPI audit store singleton
     """
     # Import here to avoid circular dependencies
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
     from src.audit.factory import get_audit_store
-    
+
     # Get singleton instance (initializes if needed)
     store = get_audit_store(data_storage_url=data_storage_url)
-    
+
     print(f"\n✅ Audit store singleton accessed for tests")
     print(f"   Data Storage URL: {data_storage_url}")
     print(f"   Flush support: Enabled (eliminates async race conditions)")
-    
+
     yield store
-    
+
     # Cleanup: flush and close at end of session
     print(f"\n🔄 Flushing and closing audit store...")
     store.close()
@@ -236,18 +234,18 @@ def integration_infrastructure():
     """
     Integration infrastructure URLs (services started by Go infrastructure).
 
-    This fixture provides backward compatibility with existing tests that
-    expect a dictionary with service URLs.
+    This fixture provides service URLs for tests that need them.
+    
+    Note: HAPI integration tests use direct business logic calls (no HTTP),
+    so hapi_url is not included.
 
     Returns:
         dict: Service URLs
             {
-                "hapi_url": "http://localhost:18120",
                 "data_storage_url": "http://localhost:18098",
             }
     """
     return {
-        "hapi_url": HAPI_URL,
         "data_storage_url": DATA_STORAGE_URL,
     }
 
@@ -365,6 +363,61 @@ def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, r
             time.sleep(retry_delay)
 
     return False
+
+
+def is_integration_infra_available() -> bool:
+    """
+    Check if HAPI integration infrastructure is available.
+
+    Returns:
+        bool: True if all required services are available
+    """
+    hapi_available = is_service_available(f"{HAPI_URL}/health")
+    ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
+
+    return hapi_available and ds_available
+
+
+# ========================================
+# PYTEST MARKERS
+# ========================================
+
+def pytest_configure(config):
+    """Register custom pytest markers."""
+    config.addinivalue_line(
+        "markers",
+        "requires_data_storage: mark test as requiring Data Storage service"
+    )
+    config.addinivalue_line(
+        "markers",
+        "requires_hapi: mark test as requiring HAPI service"
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """
+    Auto-skip tests if required infrastructure is not available.
+
+    This is a safety mechanism. In practice, tests should fail (not skip)
+    if infrastructure is missing, per TESTING_GUIDELINES.md.
+
+    Note: HAPI runs in-process with tests (FastAPI TestClient), so we only
+    check DataStorage availability for @pytest.mark.requires_data_storage tests.
+    """
+    if config.getoption("--collect-only"):
+        return
+
+    # Check infrastructure availability based on test requirements
+    ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
+    # NOTE: HAPI tests use direct business logic calls (no HTTP service), so no availability check needed
+
+    for item in items:
+        # Skip tests that require DataStorage if it's not available
+        if "requires_data_storage" in item.keywords and not ds_available:
+            skip_ds = pytest.mark.skip(reason="Data Storage not available (start via Go: ginkgo run ./test/integration/holmesgptapi/)")
+            item.add_marker(skip_ds)
+
+        # NOTE: "requires_hapi" marker no longer needed - HAPI tests use direct business logic calls (in-process)
 
 
 def is_integration_infra_available() -> bool:

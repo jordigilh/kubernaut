@@ -230,7 +230,10 @@ func NewServer(
 		WithWorkflowRepository(workflowRepo),
 		WithAuditStore(auditStore))
 
-	return &Server{
+	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
+	// This allows graceful shutdown to work in both Start() and httptest scenarios
+	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
+	srv := &Server{
 		handler: handler,
 		db:      db,
 		logger:  logger,
@@ -245,7 +248,12 @@ func NewServer(
 		auditEventsRepo: auditEventsRepo,
 		auditStore:      auditStore,
 		metrics:         metrics,
-	}, nil
+	}
+
+	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
+	srv.httpServer.Handler = srv.Handler()
+
+	return srv, nil
 }
 
 // Handler returns the configured HTTP handler for the server
@@ -366,10 +374,8 @@ func (s *Server) Handler() http.Handler {
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
-	// Get configured handler (routes already set up)
-	r := s.Handler()
-	s.httpServer.Handler = r
-
+	// DS-FLAKY-003 FIX: Handler is now assigned in NewServer(), so just start the server
+	// Previously: Handler was assigned here, causing httptest tests to fail graceful shutdown
 	s.logger.Info("Starting Data Storage Service server",
 		"addr", s.httpServer.Addr,
 	)

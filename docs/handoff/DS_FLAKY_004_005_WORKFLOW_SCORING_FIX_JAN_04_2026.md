@@ -1,9 +1,9 @@
 # DS-FLAKY-004/005: Workflow Scoring Eventual Consistency Fix
 
-**Bug IDs**: DS-FLAKY-004, DS-FLAKY-005  
-**Date Fixed**: January 4, 2026  
-**Severity**: Medium  
-**Component**: Data Storage Workflow Label Scoring  
+**Bug IDs**: DS-FLAKY-004, DS-FLAKY-005
+**Date Fixed**: January 4, 2026
+**Severity**: Medium
+**Component**: Data Storage Workflow Label Scoring
 **Related**: DS-FLAKY-001 (pagination), DS-FLAKY-002 (cleanup race)
 
 ---
@@ -12,9 +12,9 @@
 
 Fixed eventual consistency race condition in workflow scoring integration tests where parallel test processes caused exact count assertions to fail by filtering results inside `Eventually` blocks.
 
-**Impact**: Test stability improved for parallel execution  
-**Root Cause**: Tests checked for exact workflow counts but parallel processes created additional workflows  
-**Solution**: Filter by workflow name (includes testID) inside `Eventually` blocks  
+**Impact**: Test stability improved for parallel execution
+**Root Cause**: Tests checked for exact workflow counts but parallel processes created additional workflows
+**Solution**: Filter by workflow name (includes testID) inside `Eventually` blocks
 **Verification**: All 157 DS integration tests pass ✅
 
 ---
@@ -22,7 +22,7 @@ Fixed eventual consistency race condition in workflow scoring integration tests 
 ## 🐛 **Bug Description**
 
 ### DS-FLAKY-004: GitOps DetectedLabel Weight Test
-**File**: `test/integration/datastorage/workflow_label_scoring_integration_test.go:108`  
+**File**: `test/integration/datastorage/workflow_label_scoring_integration_test.go:108`
 **Test**: `GitOps DetectedLabel Weight | should apply 0.10 boost for GitOps-managed workflows`
 
 **Symptom**:
@@ -32,7 +32,7 @@ Expected exactly 2 workflows, found: 3
 ```
 
 ### DS-FLAKY-005: Custom Label Boost Test
-**File**: `test/integration/datastorage/workflow_label_scoring_integration_test.go:464`  
+**File**: `test/integration/datastorage/workflow_label_scoring_integration_test.go:464`
 **Test**: `Custom Label Boost | should apply 0.05 boost per matching custom label key`
 
 **Symptom**:
@@ -394,13 +394,13 @@ Eventually(func() bool {
 
 ### 3. Exact Count Assertions Are Fragile in Parallel Tests
 
-**Problem**: `Equal(2)` assumes ONLY your 2 workflows exist  
-**Reality**: Parallel tests create more workflows  
+**Problem**: `Equal(2)` assumes ONLY your 2 workflows exist
+**Reality**: Parallel tests create more workflows
 **Solution**: Check for specific workflows, not total count
 
 ### 4. Learn from Existing Tests
 
-**PDB Test (line 238)** already had the correct pattern!  
+**PDB Test (line 238)** already had the correct pattern!
 **GitOps Penalty Test (line 365)** already had the correct pattern!
 
 **Takeaway**: When fixing flaky tests, look for similar tests that DON'T have `FlakeAttempts(3)` - they might have the solution.
@@ -458,9 +458,9 @@ When reviewing tests with eventual consistency and parallel execution:
 
 ---
 
-**Status**: ✅ Fixed and Verified  
-**Branch**: `fix/ci-python-dependencies-path`  
-**Commit**: To be pushed  
-**Verification**: All 157 DS integration tests pass (100% success rate)  
+**Status**: ✅ Fixed and Verified
+**Branch**: `fix/ci-python-dependencies-path`
+**Commit**: To be pushed
+**Verification**: All 157 DS integration tests pass (100% success rate)
 **Time to Fix**: 30 minutes (as estimated)
 
