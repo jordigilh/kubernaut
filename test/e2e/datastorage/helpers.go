@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"os/exec"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
@@ -117,5 +118,57 @@ func deleteNamespace(ctx context.Context, namespace, kubeconfigPath string) erro
 	}
 
 	GinkgoWriter.Printf("✅ Namespace deletion initiated: %s\n", namespace)
+	return nil
+}
+
+// createPostgresNetworkPartition creates a NetworkPolicy that blocks DataStorage → PostgreSQL traffic
+// This simulates a network partition / cross-AZ failure (more realistic than pod termination for HA scenarios)
+func createPostgresNetworkPartition(namespace, kubeconfigPath string) error {
+	networkPolicyYAML := fmt.Sprintf(`
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-datastorage-to-postgres
+  namespace: %s
+spec:
+  podSelector:
+    matchLabels:
+      app: postgresql
+  policyTypes:
+  - Ingress
+  ingress:
+  # Allow all traffic EXCEPT from DataStorage
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app
+          operator: NotIn
+          values:
+          - datastorage
+`, namespace)
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(networkPolicyYAML)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to create NetworkPolicy in %s: %w, output: %s", namespace, err, output)
+	}
+
+	GinkgoWriter.Printf("✅ NetworkPolicy created: DataStorage → PostgreSQL traffic blocked in %s\n", namespace)
+	return nil
+}
+
+// deletePostgresNetworkPartition deletes the NetworkPolicy that blocks DataStorage → PostgreSQL traffic
+func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "delete", "networkpolicy",
+		"-n", namespace,
+		"block-datastorage-to-postgres",
+		"--ignore-not-found=true")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to delete NetworkPolicy in %s: %w, output: %s", namespace, err, output)
+	}
+
+	GinkgoWriter.Printf("✅ NetworkPolicy deleted: DataStorage → PostgreSQL traffic restored in %s\n", namespace)
 	return nil
 }
