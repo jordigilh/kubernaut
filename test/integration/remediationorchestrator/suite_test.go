@@ -436,7 +436,7 @@ var _ = SynchronizedAfterSuite(func() {
 	// background writer tries to flush buffered events after DataStorage is stopped.
 	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
 	By("Flushing audit store before infrastructure shutdown")
-	
+
 	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer flushCancel()
 

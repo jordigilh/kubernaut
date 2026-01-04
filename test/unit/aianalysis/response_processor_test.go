@@ -43,25 +43,6 @@ import (
 	client "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 )
 
-// noopAuditClient is a no-op implementation of AuditClientInterface for unit tests.
-type noopAuditClient struct{}
-
-func (n *noopAuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
-	// No-op: Unit tests don't need audit recording
-}
-
-func (n *noopAuditClient) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
-	// No-op: Unit tests don't need audit recording
-}
-
-func (n *noopAuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, result string, degraded bool, durationMs int, reason string) {
-	// No-op: Unit tests don't need audit recording
-}
-
-func (n *noopAuditClient) RecordCompletion(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
-	// No-op: Unit tests don't need audit recording
-}
-
 var _ = Describe("ResponseProcessor Recovery Flow", func() {
 	var (
 		processor *handlers.ResponseProcessor
