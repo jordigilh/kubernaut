@@ -27,7 +27,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 )
 
-var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func() {
+// SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
+// See audit_flow_integration_test.go for detailed rationale.
+var _ = Describe("Rego Policy Integration", Serial, Label("integration", "rego"), func() {
 	var (
 		evaluator *rego.Evaluator
 		evalCtx   context.Context
