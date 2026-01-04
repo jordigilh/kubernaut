@@ -133,18 +133,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
-		oldPhase := analysis.Status.Phase
+		// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
 		result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
 		}
-
-		// DD-AUDIT-003: Record phase transition if phase changed (AA-BUG-001 fix)
-		// This is the CORRECT location - after processor completes and status is updated
-		if analysis.Status.Phase != oldPhase {
-			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
-		}
-
 		return result, err
 	} else {
 		req := h.builder.BuildIncidentRequest(analysis) // P1.2: Use request builder
@@ -171,18 +164,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
-		oldPhase := analysis.Status.Phase
+		// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
 		result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
 		}
-
-		// DD-AUDIT-003: Record phase transition if phase changed (AA-BUG-001 fix)
-		// This is the CORRECT location - after processor completes and status is updated
-		if analysis.Status.Phase != oldPhase {
-			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
-		}
-
 		return result, err
 	}
 }

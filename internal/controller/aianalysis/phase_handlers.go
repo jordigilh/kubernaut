@@ -134,6 +134,13 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 		// Only requeue if handler actually executed and changed phase
 		if handlerExecuted && analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
+			
+			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
+			// This is the CORRECT location - after AtomicStatusUpdate has persisted the phase change
+			if r.AuditClient != nil {
+				r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+			}
+			
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
@@ -203,6 +210,13 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		// Only requeue if handler actually executed and changed phase
 		if handlerExecuted && analysis.Status.Phase != phaseBefore {
 			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
+			
+			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
+			// This is the CORRECT location - after AtomicStatusUpdate has persisted the phase change
+			if r.AuditClient != nil {
+				r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+			}
+			
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
