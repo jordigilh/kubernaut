@@ -43,20 +43,18 @@ import (
 // BR-HAPI-197: Check needs_human_review before proceeding
 // BR-HAPI-200: Handle problem_resolved outcomes
 type ResponseProcessor struct {
-	log         logr.Logger
-	metrics     *metrics.Metrics
-	auditClient AuditClientInterface // DD-AUDIT-003: Injected audit client for phase transitions
+	log     logr.Logger
+	metrics *metrics.Metrics
 }
 
 // NewResponseProcessor creates a new ResponseProcessor
-func NewResponseProcessor(log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface) *ResponseProcessor {
+func NewResponseProcessor(log logr.Logger, m *metrics.Metrics) *ResponseProcessor {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
 	return &ResponseProcessor{
-		log:         log.WithName("response-processor"),
-		metrics:     m,
-		auditClient: auditClient,
+		log:     log.WithName("response-processor"),
+		metrics: m,
 	}
 }
 
@@ -241,14 +239,11 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 
 	// Transition to Analyzing phase
 	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
-	oldPhase := analysis.Status.Phase
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Recovery investigation complete, starting analysis"
 
-	// DD-AUDIT-003: Record phase transition (AA-BUG-001 fix)
-	if p.auditClient != nil && oldPhase != aianalysis.PhaseAnalyzing {
-		p.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(aianalysis.PhaseAnalyzing))
-	}
+	// DD-AUDIT-003: Phase transition audit recorded by InvestigatingHandler (investigating.go:177)
+	// NOT recorded here to avoid duplicates - handler records after status is committed
 
 	return ctrl.Result{Requeue: true}, nil
 }

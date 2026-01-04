@@ -190,13 +190,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				"Controller should complete full workflow within 90 seconds")
 
 		By("Verifying complete audit trail in Data Storage")
-		
+
 		// Flush audit buffer to ensure all events are persisted (eliminates race conditions)
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
-		
+
 		// Query ALL audit events for this remediation ID
 		correlationID := analysis.Spec.RemediationID
 		eventCategory := "analysis"
@@ -210,11 +210,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			Expect(resp.JSON200.Data).ToNot(BeNil(), "Audit data should be present")
 
 			events := *resp.JSON200.Data
-			
+
 			// DEBUG: Output all events to identify the extra event (AA-BUG-002 investigation)
 			GinkgoWriter.Printf("\n🔍 DEBUG: Retrieved %d audit events for correlation_id=%s:\n", len(events), correlationID)
 			for i, event := range events {
-				GinkgoWriter.Printf("  Event %d: type=%s, action=%s, correlation_id=%s\n", 
+				GinkgoWriter.Printf("  Event %d: type=%s, action=%s, correlation_id=%s\n",
 					i+1, event.EventType, event.EventAction, event.CorrelationId)
 			}
 			GinkgoWriter.Printf("\n")
@@ -278,6 +278,18 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			eventTypeCounts := make(map[string]int)
 			for _, event := range events {
 				eventTypeCounts[event.EventType]++
+			}
+
+			// DEBUG: Print actual phase transitions to diagnose extra transition
+			GinkgoWriter.Printf("🔍 DEBUG: Phase transitions found:\n")
+			for i, event := range events {
+				if event.EventType == aiaudit.EventTypePhaseTransition {
+					if eventData, ok := event.EventData.(map[string]interface{}); ok {
+						fromPhase := eventData["from_phase"]
+						toPhase := eventData["to_phase"]
+						GinkgoWriter.Printf("  Transition %d: %v → %v\n", i+1, fromPhase, toPhase)
+					}
+				}
 			}
 
 			// Validate expected event counts (DD-TESTING-001: Deterministic count validation)
@@ -405,13 +417,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			), "Controller should complete investigation within 60 seconds")
 
 		By("Verifying HolmesGPT call was automatically audited")
-		
+
 		// Flush audit buffer to ensure events are persisted (eliminates race conditions)
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
-		
+
 		correlationID := analysis.Spec.RemediationID
 		eventType := aiaudit.EventTypeHolmesGPTCall
 		eventCategory := "analysis"
@@ -499,13 +511,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			}()
 
 		By("Waiting for controller to process and generate audit events")
-		
+
 		// Flush audit buffer before polling (ensures events are available)
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		
+
 		correlationID := analysis.Spec.RemediationID
 		eventCategory := "analysis"
 
@@ -602,13 +614,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				"Controller should complete analysis within 60 seconds")
 
 		By("Verifying approval decision was automatically audited")
-		
+
 		// Flush audit buffer to ensure events are persisted
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		
+
 		correlationID := analysis.Spec.RemediationID
 		eventType := aiaudit.EventTypeApprovalDecision
 		eventCategory := "analysis"
@@ -702,13 +714,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				"Controller should complete analysis with Rego evaluation")
 
 		By("Verifying Rego evaluation was automatically audited")
-		
+
 		// Flush audit buffer before polling
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		
+
 		correlationID := analysis.Spec.RemediationID
 		eventType := aiaudit.EventTypeRegoEvaluation
 		eventCategory := "analysis"
@@ -728,13 +740,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			"AnalyzingHandler MUST automatically audit Rego evaluations")
 
 		By("Verifying Rego evaluation audit event contains policy decision")
-		
+
 		// Flush again to ensure latest events are visible
 		flushCtx2, flushCancel2 := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel2()
 		err = auditStore.Flush(flushCtx2)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		
+
 		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.JSON200).ToNot(BeNil())
@@ -816,13 +828,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"))
 
 		By("Verifying phase transitions were automatically audited")
-		
+
 		// Flush audit buffer to ensure all transitions are persisted
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		
+
 		correlationID := analysis.Spec.RemediationID
 		eventType := aiaudit.EventTypePhaseTransition
 		eventCategory := "analysis"
@@ -887,13 +899,13 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			}()
 
 		By("Waiting for controller to call HAPI and audit event (DD-TESTING-001: Eventually() instead of time.Sleep())")
-		
+
 		// Flush audit buffer before polling
 		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		
+
 		correlationID := analysis.Spec.RemediationID
 		eventType := aiaudit.EventTypeHolmesGPTCall
 		eventCategory := "analysis"
