@@ -254,12 +254,22 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 	// Transition to Enriching in single API call
 	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Enriching handler after processing
 	// ========================================
+	oldPhase := sp.Status.Phase
 	err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
 		return nil
 	})
 	if err != nil {
 		// DD-005: Track phase processing failure
+		r.Metrics.IncrementProcessingTotal("pending", "failure")
+		return ctrl.Result{}, err
+	}
+
+	// Record phase transition audit event (BR-SP-090)
+	// ADR-032: Audit is MANDATORY - return error if not configured
+	// FIX: SP-BUG-001 - Missing audit event for Pending→Enriching transition
+	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseEnriching)); err != nil {
+		// DD-005: Track phase processing failure (audit failure)
 		r.Metrics.IncrementProcessingTotal("pending", "failure")
 		return ctrl.Result{}, err
 	}
