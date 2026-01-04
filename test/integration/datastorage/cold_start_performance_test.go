@@ -62,7 +62,7 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 				if err != nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				return resp.StatusCode == http.StatusOK
 			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue(), "Service should become healthy within 10s")
 

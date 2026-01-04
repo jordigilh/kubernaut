@@ -50,8 +50,13 @@ import (
 //
 // TDD RED PHASE: Tests define contract, implementation will follow
 // ========================================
+//
+// Parallel Execution: ✅ ENABLED
+// - Each E2E process has isolated DataStorage service in unique namespace
+// - Connection pool (max_open_conns=25) is per-service, not global
+// - No shared resources that would require Serial execution
 
-var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Serial, Ordered, func() {
+var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts Without Degradation", Label("e2e", "gap-3.1", "p0"), Ordered, func() {
 
 	Describe("Burst Traffic Handling", func() {
 		Context("when 50 concurrent writes exceed max_open_conns (25)", func() {
@@ -125,7 +130,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 
 						if err == nil {
 							results[index].statusCode = resp.StatusCode
-							resp.Body.Close()
+							_ = resp.Body.Close()
 						}
 					}(i)
 				}
@@ -239,7 +244,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 						bytes.NewReader(payloadBytes),
 					)
 					if err == nil {
-						resp.Body.Close()
+						_ = resp.Body.Close()
 					}
 				}(i)
 			}
@@ -287,7 +292,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 				if err != nil || resp == nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// Connection pool recovered when: 201/202 response AND fast (<1s)
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {

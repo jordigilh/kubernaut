@@ -23,6 +23,23 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// ClientInterface defines operations for RemediationRequest CRD management
+//
+// TDD GREEN: This interface enables circuit breaker integration (DD-GATEWAY-015)
+// Both Client and ClientWithCircuitBreaker implement this interface
+//
+// Methods:
+// - CreateRemediationRequest: Create new RemediationRequest CRD
+// - GetRemediationRequest: Retrieve existing RemediationRequest CRD
+//
+// Implementations:
+// - Client: Direct Kubernetes API calls (no circuit breaker)
+// - ClientWithCircuitBreaker: Circuit breaker protected calls (BR-GATEWAY-093)
+type ClientInterface interface {
+	CreateRemediationRequest(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error
+	GetRemediationRequest(ctx context.Context, namespace, name string) (*remediationv1alpha1.RemediationRequest, error)
+}
+
 // Client wraps controller-runtime client for CRD operations
 //
 // This wrapper provides a thin abstraction over controller-runtime client,

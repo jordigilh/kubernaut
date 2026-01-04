@@ -140,7 +140,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 				return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

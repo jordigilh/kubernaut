@@ -7449,7 +7449,7 @@ Weighted Contribution = 89.5% × 0.10 = 9.0 points
 | **Package Naming** | Same module structure | No `_test` suffix, use `tests/` directory |
 | **Coverage Gates** | `pytest --cov=src --cov-fail-under=70` | Same 70% threshold |
 | **Linting** | `black`, `flake8`, `mypy` | Instead of `golangci-lint` |
-| **Dependencies** | `requirements.txt`, `requirements-dev.txt` | Instead of `go.mod` |
+| **Dependencies** | `requirements.txt`, `requirements-test.txt` | Instead of `go.mod` |
 | **Build** | `Dockerfile` with multi-stage build | For smaller images |
 
 **Python-Specific Sections to Add**:
@@ -7459,7 +7459,7 @@ Weighted Contribution = 89.5% × 0.10 = 9.0 points
 # Development environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements-dev.txt
+pip install -r requirements-test.txt
 ```
 
 ### **2. Docker Multi-Stage Build** (for smaller images)
@@ -7526,7 +7526,7 @@ service-name/
 │   └── integration/
 │       └── test_api.py         # Integration tests
 ├── requirements.txt            # Production dependencies
-├── requirements-dev.txt        # Development dependencies
+├── requirements-test.txt        # Development dependencies
 └── pytest.ini                  # Pytest configuration
 ```
 

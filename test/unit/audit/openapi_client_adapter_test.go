@@ -44,11 +44,11 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		ctx = context.Background()
 	})
 
-	AfterEach(func() {
-		if server != nil {
-			server.Close()
-		}
-	})
+AfterEach(func() {
+	if server != nil {
+		server.Close()
+	}
+})
 
 	Describe("NewOpenAPIClientAdapter", func() {
 		It("should create adapter with valid parameters", func() {
@@ -93,7 +93,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusCreated)
-					w.Write([]byte(`{"message": "Batch created successfully", "events_created": 2}`))
+					_, _ = w.Write([]byte(`{"message": "Batch created successfully", "events_created": 2}`))
 				}))
 
 				var err error
@@ -197,7 +197,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 			It("should return HTTPError for 400 Bad Request", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"message": "Invalid event data"}`))
+					_, _ = w.Write([]byte(`{"message": "Invalid event data"}`))
 				}))
 
 				var err error
@@ -226,7 +226,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 			It("should return HTTPError for 422 Unprocessable Entity", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusUnprocessableEntity)
-					w.Write([]byte(`{"message": "Validation failed"}`))
+					_, _ = w.Write([]byte(`{"message": "Validation failed"}`))
 				}))
 
 				var err error
@@ -257,7 +257,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 			It("should return HTTPError for 500 Internal Server Error", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusInternalServerError)
-					w.Write([]byte(`{"message": "Database connection failed"}`))
+					_, _ = w.Write([]byte(`{"message": "Database connection failed"}`))
 				}))
 
 				var err error
@@ -286,7 +286,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 			It("should return HTTPError for 503 Service Unavailable", func() {
 				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.WriteHeader(http.StatusServiceUnavailable)
-					w.Write([]byte(`{"message": "Service temporarily unavailable"}`))
+					_, _ = w.Write([]byte(`{"message": "Service temporarily unavailable"}`))
 				}))
 
 				var err error
@@ -329,7 +329,7 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				Expect(r.Body).ToNot(BeNil())
 
 				w.WriteHeader(http.StatusCreated)
-				w.Write([]byte(`{"message": "Success", "events_created": 1}`))
+				_, _ = w.Write([]byte(`{"message": "Success", "events_created": 1}`))
 			}))
 
 			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)

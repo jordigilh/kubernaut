@@ -230,7 +230,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
@@ -279,7 +279,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
 					return err
@@ -320,7 +320,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				metricsBody := string(body)
 
@@ -347,7 +347,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
 					return err
@@ -391,7 +391,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				if err != nil {
 					return false
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				body, _ := io.ReadAll(resp.Body)
 				metricsBody := string(body)
 
@@ -889,7 +889,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 })
 
 // Helper to check if metrics contain expected labels
-func metricsContainLabel(metrics, label string) bool {
+func metricsContainLabel(metrics, label string) bool { //nolint:unused
 	return strings.Contains(metrics, label)
 }
 
@@ -932,7 +932,7 @@ func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
 }
 
 // getPipelineRunForWFE finds the PipelineRun created by a WorkflowExecution
-func getPipelineRunForWFE(wfeName, wfeNamespace string) (*tektonv1.PipelineRun, error) {
+func getPipelineRunForWFE(wfeName, wfeNamespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
 	prList := &tektonv1.PipelineRunList{}
 	if err := k8sClient.List(ctx, prList); err != nil {
 		return nil, err

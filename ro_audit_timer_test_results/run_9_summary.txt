@@ -1,3 +1,0 @@
-[38;5;9m[1mRan 0 of 44 Specs in 32.810 seconds[0m
-[38;5;9m[1mFAIL![0m -- [38;5;14m[1mA BeforeSuite node failed so all tests were skipped.[0m
-

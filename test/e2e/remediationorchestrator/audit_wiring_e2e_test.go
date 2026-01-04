@@ -164,10 +164,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// ADR-032 §4: Audit functions MUST return error if audit store is nil
 			// This test validates the audit client is correctly wired in production deployment
 
-			By("Waiting for RO to emit audit events")
-			time.Sleep(20 * time.Second) // Allow time for event buffering and transmission
-
-			By("Querying DataStorage for audit events")
+			By("Querying DataStorage for audit events (DD-TESTING-001: Use Eventually() instead of time.Sleep())")
 			var events []dsgen.AuditEvent
 			var total int
 			var err error
@@ -206,14 +203,20 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// This test validates audit events are emitted continuously, not just at startup
 			// Per ADR-032 §1: All orchestration phase transitions must be audited
 
-			By("Waiting for multiple audit events across lifecycle")
-			time.Sleep(30 * time.Second) // Allow RR to progress through phases
+			By("Querying audit events and waiting for lifecycle progression (DD-TESTING-001)")
+			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+			var events []dsgen.AuditEvent
+			var total int
+			var err error
 
-			By("Querying all audit events for this remediation")
-			events, total, err := queryAuditEvents(correlationID)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(total).To(BeNumerically(">=", 2),
-				"Expected multiple audit events (lifecycle.started + phase transitions)")
+			Eventually(func() int {
+				events, total, err = queryAuditEvents(correlationID)
+				if err != nil {
+					return 0
+				}
+				return total
+			}, 2*time.Minute, 10*time.Second).Should(BeNumerically(">=", 2),
+				"Expected multiple audit events (lifecycle.started + phase transitions/completion)")
 
 			// Verify we have different event types (proves continuous emission)
 			eventTypes := make(map[string]bool)

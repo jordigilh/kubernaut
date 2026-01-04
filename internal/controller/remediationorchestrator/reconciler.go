@@ -37,13 +37,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	k8sretry "k8s.io/client-go/util/retry"
 	"k8s.io/client-go/tools/record"
+	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -226,6 +225,50 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		r.Metrics.ReconcileTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 	}()
 
+	// ========================================
+	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001 Pattern B - Phase-Aware)
+	// Per OBSERVED_GENERATION_DEEP_ANALYSIS_JAN_01_2026.md
+	// ========================================
+	// Phase-Aware Pattern: Parent Controllers with Active Orchestration
+	// - Remove GenerationChangedPredicate (allow child status updates) ✅ Already done
+	// - Add phase-aware ObservedGeneration check (balance idempotency with orchestration)
+	//
+	// The Challenge:
+	// - Annotation changes: Generation unchanged, should skip (wasteful)
+	// - Child status updates: Generation unchanged, MUST reconcile (critical!)
+	// - Polling checks: Generation unchanged, MUST reconcile (critical!)
+	// → Generation-based check CANNOT distinguish these events!
+	//
+	// The Solution: Phase-Aware Skip Logic
+	// Skip reconcile ONLY when we're NOT actively orchestrating:
+	// 1. Initial state (OverallPhase == "") → Allow (initialization)
+	// 2. Pending phase → Skip (not yet orchestrating, wasteful)
+	// 3. Processing/Analyzing/Executing → Allow (active orchestration of child CRDs)
+	// 4. Terminal phases (Completed/Failed) → Skip (orchestration complete)
+	//
+	// Tradeoff: Accepts extra reconciles during active phases (~150 vs 301 prevented)
+	// Benefit: Allows critical polling and child status update processing
+	if rr.Status.ObservedGeneration == rr.Generation &&
+		(rr.Status.OverallPhase == phase.Pending ||
+			phase.IsTerminal(phase.Phase(rr.Status.OverallPhase))) {
+		logger.V(1).Info("⏭️  SKIPPED: No orchestration needed in this phase",
+			"phase", rr.Status.OverallPhase,
+			"generation", rr.Generation,
+			"observedGeneration", rr.Status.ObservedGeneration,
+			"reason", "ObservedGeneration matches and phase not actively orchestrating")
+		return ctrl.Result{}, nil
+	}
+
+	// Log when we proceed during active orchestration (helps understand behavior)
+	if rr.Status.ObservedGeneration == rr.Generation &&
+		rr.Status.OverallPhase != "" &&
+		!phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
+		logger.V(1).Info("✅ PROCEEDING: Active orchestration phase",
+			"phase", rr.Status.OverallPhase,
+			"generation", rr.Generation,
+			"reason", "Child orchestration requires reconciliation")
+	}
+
 	// Initialize phase if empty (new RemediationRequest from Gateway)
 	// Per DD-GATEWAY-011: RO owns status.overallPhase, Gateway creates instances without status
 	if rr.Status.OverallPhase == "" {
@@ -238,6 +281,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
 		// Initialize phase + StartTime in single API call
+		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			rr.Status.OverallPhase = phase.Pending
@@ -602,11 +646,21 @@ func (r *Reconciler) handleAnalyzingPhase(ctx context.Context, rr *remediationv1
 				return result, err
 			}
 
-		// Per DD-AUDIT-003: Emit approval requested event
-		r.emitApprovalRequestedAudit(ctx, rr, ai.Status.SelectedWorkflow.Confidence, ai.Status.SelectedWorkflow.WorkflowID, ai.Status.ApprovalReason)
+			// Per DD-AUDIT-003: Emit approval requested event
+			// BUSINESS OUTCOME (BR-ORCH-001 AC-001-6): Exactly 1 audit event per approval request
+			// Idempotency: Capture old phase, only emit if actually transitioning
+			// This prevents duplicate emissions on reconcile retries
+			oldPhaseBeforeTransition := rr.Status.OverallPhase
 
-		// Transition to AwaitingApproval (RAR will be found by deterministic name)
-		return r.transitionPhase(ctx, rr, phase.AwaitingApproval)
+			// Transition to AwaitingApproval (RAR will be found by deterministic name)
+			transitionResult, transitionErr := r.transitionPhase(ctx, rr, phase.AwaitingApproval)
+
+			// Emit audit only if transition actually happened (wasn't already in AwaitingApproval)
+			if transitionErr == nil && oldPhaseBeforeTransition != phase.AwaitingApproval {
+				r.emitApprovalRequestedAudit(ctx, rr, ai.Status.SelectedWorkflow.Confidence, ai.Status.SelectedWorkflow.WorkflowID, ai.Status.ApprovalReason)
+			}
+
+			return transitionResult, transitionErr
 		}
 
 		// Normal completion - check routing conditions before creating WorkflowExecution
@@ -1044,9 +1098,24 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 
 	oldPhase := rr.Status.OverallPhase
 
+	// ========================================
+	// IDEMPOTENCY CHECK (Prevents Duplicate Audit Events)
+	// Per RO_AUDIT_DUPLICATION_RISK_ANALYSIS_JAN_01_2026.md - Option C
+	// ========================================
+	// Without GenerationChangedPredicate, controller reconciles on annotation/label changes.
+	// This check prevents duplicate audit emissions when phase hasn't actually changed.
+	// ADR-032 §1: Audit integrity requires exactly-once emission per state change.
+	if oldPhase == newPhase {
+		logger.V(1).Info("Phase transition skipped - already in target phase",
+			"currentPhase", oldPhase,
+			"requestedPhase", newPhase)
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 		// Update only RO-owned fields (preserves Gateway fields per DD-GATEWAY-011)
 		rr.Status.OverallPhase = newPhase
+		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track processed generation
 		now := metav1.Now()
 
 		// Set phase start times
@@ -1095,13 +1164,22 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 // transitionToCompleted transitions the RR to Completed phase.
 func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	oldPhase := rr.Status.OverallPhase
+	// IDEMPOTENCY: Check if already in Completed phase before attempting transition
+	// This prevents duplicate transitions and audit emissions when multiple reconciles happen simultaneously
+	if rr.Status.OverallPhase == phase.Completed {
+		logger.V(1).Info("Already in Completed phase, skipping transition")
+		return ctrl.Result{}, nil
+	}
+
+	// Capture old phase for metrics and audit
+	oldPhaseBeforeTransition := rr.Status.OverallPhase
 	startTime := rr.CreationTimestamp.Time
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Completed
 		rr.Status.Outcome = outcome
+		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
 		now := metav1.Now()
 		rr.Status.CompletedAt = &now
 
@@ -1130,12 +1208,17 @@ func (r *Reconciler) transitionToCompleted(ctx context.Context, rr *remediationv
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	if r.Metrics != nil {
-		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Completed), rr.Namespace).Inc()
+		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhaseBeforeTransition), string(phase.Completed), rr.Namespace).Inc()
 	}
 
 	// Emit audit event (DD-AUDIT-003)
-	durationMs := time.Since(startTime).Milliseconds()
-	r.emitCompletionAudit(ctx, rr, outcome, durationMs)
+	// IDEMPOTENCY: Only emit if phase actually changed (prevents duplicate events on reconcile retries)
+	// Race condition protection: oldPhaseBeforeTransition captured before status update ensures
+	// only the reconcile that successfully transitioned will emit the audit event
+	if oldPhaseBeforeTransition != phase.Completed {
+		durationMs := time.Since(startTime).Milliseconds()
+		r.emitCompletionAudit(ctx, rr, outcome, durationMs)
+	}
 
 	logger.Info("Remediation completed successfully", "outcome", outcome)
 	return ctrl.Result{}, nil
@@ -1168,12 +1251,21 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 	}
 
 	// Normal terminal Failed transition
-	oldPhase := rr.Status.OverallPhase
+	// IDEMPOTENCY: Check if already in Failed phase before attempting transition
+	// This prevents duplicate transitions and audit emissions when multiple reconciles happen simultaneously
+	if rr.Status.OverallPhase == phase.Failed {
+		logger.V(1).Info("Already in Failed phase, skipping transition")
+		return ctrl.Result{}, nil
+	}
+
+	// Capture old phase for metrics and audit
+	oldPhaseBeforeTransition := rr.Status.OverallPhase
 	startTime := rr.CreationTimestamp.Time
 
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, r.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = phase.Failed
+		rr.Status.ObservedGeneration = rr.Generation // DD-CONTROLLER-001: Track final generation
 		rr.Status.FailurePhase = &failurePhase
 		rr.Status.FailureReason = &failureReason
 
@@ -1211,12 +1303,17 @@ func (r *Reconciler) transitionToFailed(ctx context.Context, rr *remediationv1.R
 
 	// Labels order: from_phase, to_phase, namespace (per prometheus.go definition)
 	if r.Metrics != nil {
-		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhase), string(phase.Failed), rr.Namespace).Inc()
+		r.Metrics.PhaseTransitionsTotal.WithLabelValues(string(oldPhaseBeforeTransition), string(phase.Failed), rr.Namespace).Inc()
 	}
 
 	// Emit audit event (DD-AUDIT-003)
-	durationMs := time.Since(startTime).Milliseconds()
-	r.emitFailureAudit(ctx, rr, failurePhase, failureReason, durationMs)
+	// IDEMPOTENCY: Only emit if phase actually changed (prevents duplicate events on reconcile retries)
+	// Race condition protection: oldPhaseBeforeTransition captured before status update ensures
+	// only the reconcile that successfully transitioned will emit the audit event
+	if oldPhaseBeforeTransition != phase.Failed {
+		durationMs := time.Since(startTime).Milliseconds()
+		r.emitFailureAudit(ctx, rr, failurePhase, failureReason, durationMs)
+	}
 
 	logger.Info("Remediation failed", "failurePhase", failurePhase, "reason", failureReason)
 	return ctrl.Result{}, nil
@@ -1626,19 +1723,21 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 		"severity":         rr.Spec.Severity,
 	}
 
-	actorID := "remediation-orchestrator"
+	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	event.EventType = "orchestrator.approval.requested"
+	event.EventCategory = dsgen.AuditEventRequestEventCategoryOrchestration
+	event.EventAction = "approval_requested"
+	event.EventOutcome = audit.OutcomePending
+	// Use canonical service name constant (roaudit.ServiceName = "remediationorchestrator-controller")
+	// Pattern: CRD controllers use "<service>-controller", stateless services use "<service>"
+	actorID := roaudit.ServiceName
 	actorType := "service"
-	event := &dsgen.AuditEventRequest{
-		Version:       "1.0", // OpenAPI schema requires minLength: 1
-		EventType:     "orchestrator.approval.requested",
-		EventCategory: dsgen.AuditEventRequestEventCategoryOrchestration,
-		EventAction:   "approval_requested",
-		EventOutcome:  audit.OutcomePending,
-		ActorId:       &actorID,
-		ActorType:     &actorType,
-		CorrelationId: correlationID,
-		EventData:     approvalData,
-	}
+	event.ActorId = &actorID
+	event.ActorType = &actorType
+	event.CorrelationId = correlationID
+	event.EventData = approvalData
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store approval requested audit event")
@@ -1816,8 +1915,11 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&aianalysisv1.AIAnalysis{}).
 		Owns(&workflowexecutionv1.WorkflowExecution{}).
 		Owns(&remediationv1.RemediationApprovalRequest{}).
-		Owns(&notificationv1.NotificationRequest{}).             // BR-ORCH-029/030: Watch notification lifecycle
-		WithEventFilter(predicate.GenerationChangedPredicate{}). // V1.0 P1: Reduce unnecessary reconciliations (SERVICE_MATURITY_REQUIREMENTS.md)
+		Owns(&notificationv1.NotificationRequest{}). // BR-ORCH-029/030: Watch notification lifecycle
+		// V1.0 P1 FIX: GenerationChangedPredicate removed to allow child CRD status changes
+		// Previous optimization filtered status updates, breaking integration tests (RO_INTEGRATION_CRITICAL_BUG_JAN_01_2026.md)
+		// Rationale: Correctness > Performance for P0 orchestration service
+		// WithEventFilter(predicate.GenerationChangedPredicate{}). // ❌ REMOVED - breaks integration tests
 		Complete(r)
 }
 
@@ -2149,7 +2251,7 @@ func (r *Reconciler) getConsecutiveFailureThreshold() int {
 }
 
 // safeStringValue safely dereferences a string pointer.
-func safeStringValue(s *string) string {
+func safeStringValue(s *string) string { //nolint:unused
 	if s == nil {
 		return ""
 	}

@@ -157,32 +157,78 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 	return cmd.Run()
 }
 
-// WaitForPostgreSQLReady waits for PostgreSQL to be ready to accept connections
-// Uses pg_isready command to check PostgreSQL availability
+// WaitForPostgreSQLReady waits for PostgreSQL to be ready to accept connections AND execute queries
+// Uses two-phase verification to prevent "database system is starting up" errors during migrations
+//
+// Phase 1: Connection Check (pg_isready)
+// - Verifies PostgreSQL accepts connections
+// - 30 attempts with 1 second intervals
+//
+// Phase 2: Queryability Check (SELECT 1)
+// - Verifies database is fully initialized and can execute queries
+// - 10 attempts with 1 second intervals
+// - CRITICAL: pg_isready only checks connections, not full initialization
 //
 // Pattern: DD-TEST-002 Health Check
-// - 30 attempts with 1 second intervals
-// - Logs progress for debugging
-// - Returns error if not ready after timeout
+// - Prevents race condition: migrations running before DB is queryable
+// - Root cause fix for "FATAL: the database system is starting up"
 //
 // Usage:
 //   if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //       return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 //   }
 func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writer) error {
+	// ============================================================================
+	// PHASE 1: Wait for PostgreSQL to accept connections (pg_isready)
+	// ============================================================================
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
 		cmd := exec.Command("podman", "exec", containerName,
 			"pg_isready", "-U", dbUser, "-d", dbName)
 		if cmd.Run() == nil {
-			fmt.Fprintf(writer, "   ✅ PostgreSQL ready (attempt %d/%d)\n", i, maxAttempts)
-			return nil
+			_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
+			break
+		}
+		if i == maxAttempts {
+			return fmt.Errorf("PostgreSQL failed to accept connections after %d attempts", maxAttempts)
 		}
 		if i < maxAttempts {
 			time.Sleep(1 * time.Second)
 		}
 	}
-	return fmt.Errorf("PostgreSQL failed to become ready after %d attempts", maxAttempts)
+
+	// ============================================================================
+	// PHASE 2: Verify database is queryable (not just accepting connections)
+	// ============================================================================
+	// CRITICAL: pg_isready only checks if PostgreSQL accepts connections.
+	// It does NOT verify the database is fully initialized and ready for queries.
+	// Without this check, migrations can fail with:
+	//   "FATAL: the database system is starting up"
+	//
+	// This race condition was discovered in:
+	// - AIAnalysis integration tests (Jan 2, 2026)
+	// - Fixed by adding queryability verification
+	_, _ = fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
+	maxQueryAttempts := 10
+	for i := 1; i <= maxQueryAttempts; i++ {
+		testQueryCmd := exec.Command("podman", "exec", containerName,
+			"psql", "-U", dbUser, "-d", dbName, "-c", "SELECT 1;")
+		testQueryCmd.Stdout = writer
+		testQueryCmd.Stderr = writer
+		if testQueryCmd.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n\n", i, maxQueryAttempts)
+			return nil
+		}
+		if i == maxQueryAttempts {
+			return fmt.Errorf("database failed to become queryable after %d attempts (accepting connections but not fully initialized)", maxQueryAttempts)
+		}
+		if i < maxQueryAttempts {
+			_, _ = fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxQueryAttempts)
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	return fmt.Errorf("PostgreSQL readiness check failed unexpectedly")
 }
 
 // RedisConfig holds configuration for starting a Redis container
@@ -245,7 +291,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 		cmd := exec.Command("podman", "exec", containerName, "redis-cli", "ping")
 		output, err := cmd.CombinedOutput()
 		if err == nil && string(output) == "PONG\n" {
-			fmt.Fprintf(writer, "   ✅ Redis ready (attempt %d/%d)\n", i, maxAttempts)
+			_, _ = fmt.Fprintf(writer, "   ✅ Redis ready (attempt %d/%d)\n", i, maxAttempts)
 			return nil
 		}
 		if i < maxAttempts {
@@ -265,7 +311,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 // - Returns detailed error with attempt count
 //
 // Usage:
-//   if err := WaitForHTTPHealth("http://localhost:18096/health", 30*time.Second, writer); err != nil {
+//   if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
 //       return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 //   }
 func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
@@ -277,19 +323,19 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 		attempt++
 		resp, err := client.Get(healthURL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Fprintf(writer, "   ✅ Health check passed (attempt %d)\n", attempt)
+				_, _ = fmt.Fprintf(writer, "   ✅ Health check passed (attempt %d)\n", attempt)
 				return nil
 			}
 			// Log every 5th non-OK status for debugging
 			if attempt%5 == 0 {
-				fmt.Fprintf(writer, "   ⏳ Attempt %d: Status %d (waiting for 200 OK)...\n", attempt, resp.StatusCode)
+				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Status %d (waiting for 200 OK)...\n", attempt, resp.StatusCode)
 			}
 		} else {
 			// Log every 5th connection error for debugging
 			if attempt%5 == 0 {
-				fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
+				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
 			}
 		}
 		time.Sleep(1 * time.Second)
@@ -313,17 +359,35 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 //   }, writer)
 func CleanupContainers(containerNames []string, writer io.Writer) {
 	for _, container := range containerNames {
-		// Stop container (5-second timeout for graceful shutdown)
-		stopCmd := exec.Command("podman", "stop", "-t", "5", container)
+		// Stop container (immediate stop for faster cleanup)
+		// Use --time=0 to force immediate stop without waiting for graceful shutdown
+		stopCmd := exec.Command("podman", "stop", "--time=0", container)
 		stopCmd.Stdout = writer
 		stopCmd.Stderr = writer
 		_ = stopCmd.Run() // Ignore errors (container might not exist)
 
-		// Remove container (force)
+		// Remove container (force) - this should handle containers in any state
 		rmCmd := exec.Command("podman", "rm", "-f", container)
 		rmCmd.Stdout = writer
 		rmCmd.Stderr = writer
 		_ = rmCmd.Run() // Ignore errors (container might not exist)
+
+		// Verify container is gone (retry up to 3 times for race conditions)
+		for attempt := 0; attempt < 3; attempt++ {
+			checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+			output, _ := checkCmd.Output()
+			if len(output) == 0 || string(output) == "\n" {
+				break // Container successfully removed
+			}
+			// Container still exists, try removing again
+			if attempt < 2 {
+				time.Sleep(100 * time.Millisecond)
+				rmRetry := exec.Command("podman", "rm", "-f", container)
+				rmRetry.Stdout = writer
+				rmRetry.Stderr = writer
+				_ = rmRetry.Run()
+			}
+		}
 	}
 }
 
@@ -435,7 +499,7 @@ type IntegrationDataStorageConfig struct {
 //   }
 //
 //   // Wait for health check
-//   if err := WaitForHTTPHealth("http://localhost:18091/health", 60*time.Second, writer); err != nil {
+//   if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
 //       return err
 //   }
 func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error {
@@ -457,31 +521,20 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	}
 
 	// STEP 1: Generate config files from template (ADR-030 requirement)
-	fmt.Fprintf(writer, "   Generating DataStorage config and secrets (ADR-030)...\n")
+	_, _ = fmt.Fprintf(writer, "   Generating DataStorage config and secrets (ADR-030)...\n")
 	configDir, err := generateDataStorageConfig(cfg, projectRoot)
 	if err != nil {
 		return fmt.Errorf("failed to generate config files: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
+	_, _ = fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
 
-	// STEP 2: Build DataStorage image
+	// STEP 2: Build DataStorage image using shared utility
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
-	fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", cfg.ImageTag)
-	buildArgs := []string{
-		"build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-		"-t", cfg.ImageTag,
-		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-		projectRoot, // Build context is the project root
-	}
-
-	buildCmd := exec.Command("podman", buildArgs...)
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-	if err := buildCmd.Run(); err != nil {
+	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", cfg.ImageTag)
+	if err := buildDataStorageImageWithTag(cfg.ImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", cfg.ImageTag)
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// STEP 3: Start DataStorage container
 	runArgs := []string{"run", "-d",
@@ -682,7 +735,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 8: Wait for DataStorage HTTP health
-//       if err := WaitForHTTPHealth("http://localhost:18096/health", 60*time.Second, writer); err != nil {
+//       if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
 //           return err
 //       }
 //

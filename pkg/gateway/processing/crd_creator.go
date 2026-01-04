@@ -49,7 +49,7 @@ import (
 // - Example: rr-a1b2c3d4e5f6789
 // - Reason: Unique, deterministic, short (Kubernetes name limit: 253 chars)
 type CRDCreator struct {
-	k8sClient         *k8s.Client
+	k8sClient         k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
 	logger            logr.Logger           // DD-005: logr.Logger for unified logging
 	metrics           *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
 	fallbackNamespace string                // Configurable fallback namespace for CRD creation
@@ -60,13 +60,15 @@ type CRDCreator struct {
 // NewCRDCreator creates a new CRD creator
 // BR-GATEWAY-111: Accepts retry configuration for K8s API retry logic
 // DD-005: Uses logr.Logger for unified logging
-func NewCRDCreator(k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
+func NewCRDCreator(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings) *CRDCreator {
 	return NewCRDCreatorWithClock(k8sClient, logger, metricsInstance, fallbackNamespace, retryConfig, nil)
 }
 
 // NewCRDCreatorWithClock creates a new CRD creator with a custom clock
 // This variant enables testing with MockClock for time-dependent behavior
-func NewCRDCreatorWithClock(k8sClient *k8s.Client, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, clock Clock) *CRDCreator {
+//
+// TDD GREEN: Accepts ClientInterface to support circuit breaker (BR-GATEWAY-093)
+func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, metricsInstance *metrics.Metrics, fallbackNamespace string, retryConfig *config.RetrySettings, clock Clock) *CRDCreator {
 	// Metrics are mandatory for observability
 	if metricsInstance == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
@@ -415,8 +417,32 @@ func (c *CRDCreator) CreateRemediationRequest(
 
 			// Fetch existing CRD and return it
 			// This allows deduplication metadata to be updated in Redis
-			existing, err := c.k8sClient.GetRemediationRequest(ctx, signal.Namespace, crdName)
-			if err != nil {
+			//
+			// Note: Use retry logic here because in concurrent scenarios, another goroutine
+			// may have just created the CRD, and K8s API might not have fully committed it yet.
+			// Retry with exponential backoff to allow K8s API time to sync.
+			var existing *remediationv1alpha1.RemediationRequest
+			var fetchErr error
+			maxFetchAttempts := 3
+			for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+				existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, signal.Namespace, crdName)
+				if fetchErr == nil {
+					break // Successfully fetched
+				}
+
+				if attempt < maxFetchAttempts {
+					// Exponential backoff: 50ms, 100ms, 200ms
+					backoff := time.Duration(50*attempt) * time.Millisecond
+					c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
+						"name", crdName,
+						"attempt", attempt,
+						"backoff_ms", backoff.Milliseconds(),
+						"error", fetchErr)
+					time.Sleep(backoff)
+				}
+			}
+
+			if fetchErr != nil {
 				c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
 				// GAP-10: Wrap error with full context
 				return nil, NewCRDCreationError(
@@ -425,9 +451,9 @@ func (c *CRDCreator) CreateRemediationRequest(
 					crdName,
 					signal.SourceType,
 					signal.AlertName,
-					1, // Single attempt to fetch
+					maxFetchAttempts,
 					startTime,
-					fmt.Errorf("CRD exists but failed to fetch: %w", err),
+					fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
 				)
 			}
 

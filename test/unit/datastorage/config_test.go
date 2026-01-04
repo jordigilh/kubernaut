@@ -49,7 +49,7 @@ var _ = Describe("Config Loading (ADR-030)", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	})
 
 	Context("LoadFromFile", func() {

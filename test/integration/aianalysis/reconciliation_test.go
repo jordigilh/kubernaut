@@ -30,7 +30,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
-var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integration", "reconciliation"), func() {
+// SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
+// See audit_flow_integration_test.go for detailed rationale.
+var _ = Describe("AIAnalysis Full Reconciliation Integration", Serial, Label("integration", "reconciliation"), func() {
 	const (
 		timeout  = 2 * time.Minute
 		interval = time.Second
@@ -44,16 +46,16 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			analysis = &aianalysisv1alpha1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutil.UniqueTestName("integration-test"),
-					Namespace: "default",
+		analysis = &aianalysisv1alpha1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testutil.UniqueTestName("integration-test"),
+				Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+			},
+			Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      "test-remediation",
+					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-remediation",
-						Namespace: "default",
-					},
 					RemediationID: "test-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -62,20 +64,20 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
-								Name:      "test-pod",
-								Namespace: "default",
+						TargetResource: aianalysisv1alpha1.TargetResource{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+						},
+						EnrichmentResults: sharedtypes.EnrichmentResults{
+							DetectedLabels: &sharedtypes.DetectedLabels{
+								GitOpsManaged: true,
+								PDBProtected:  true,
 							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{
-								DetectedLabels: &sharedtypes.DetectedLabels{
-									GitOpsManaged: true,
-									PDBProtected:  true,
-								},
-								OwnerChain: []sharedtypes.OwnerChainEntry{
-									{Namespace: "default", Kind: "Deployment", Name: "test-app"},
-								},
+							OwnerChain: []sharedtypes.OwnerChainEntry{
+								{Namespace: testNamespace, Kind: "Deployment", Name: "test-app"}, // DD-TEST-002
 							},
+						},
 						},
 						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},
@@ -165,16 +167,16 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-			analysis = &aianalysisv1alpha1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutil.UniqueTestName("error-recovery"),
-					Namespace: "default",
+		analysis = &aianalysisv1alpha1.AIAnalysis{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testutil.UniqueTestName("error-recovery"),
+				Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+			},
+			Spec: aianalysisv1alpha1.AIAnalysisSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					Name:      "test-remediation",
+					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
-				Spec: aianalysisv1alpha1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-remediation",
-						Namespace: "default",
-					},
 					RemediationID: "test-rem-002",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -183,13 +185,13 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-							TargetResource: aianalysisv1alpha1.TargetResource{
-								Kind:      "Pod",
-								Name:      "test-pod",
-								Namespace: "default",
-							},
-							EnrichmentResults: sharedtypes.EnrichmentResults{},
+						TargetResource: aianalysisv1alpha1.TargetResource{
+							Kind:      "Pod",
+							Name:      "test-pod",
+							Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 						},
+						EnrichmentResults: sharedtypes.EnrichmentResults{},
+					},
 						AnalysisTypes: []string{"investigation"},
 					},
 				},

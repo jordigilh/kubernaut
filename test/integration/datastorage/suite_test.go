@@ -20,7 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +39,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -78,22 +79,23 @@ var (
 	cancel            context.CancelFunc
 	postgresContainer = "datastorage-postgres-test"
 	redisContainer    = "datastorage-redis-test"
-	serviceContainer  = "datastorage-service-test"
 	datastorageURL    string
-	configDir         string // ADR-030: Directory for config and secret files
-	schemaName        string // Schema name for this parallel process (for isolation)
+	configDir         string           // ADR-030: Directory for config and secret files
+	schemaName        string           // Schema name for this parallel process (for isolation)
+	testServer        *httptest.Server // In-process HTTP server for DataStorage API
+	dsServer          *server.Server   // DataStorage server instance (for graceful shutdown)
 )
 
 // generateTestID creates a unique test identifier for data isolation
 // Format: test-{process}-{timestamp}
 // This enables parallel test execution by ensuring each test has unique data
-func generateTestID() string {
+func generateTestID() string { //nolint:unused
 	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 }
 
 // generateTestUUID creates a unique UUID for test data isolation
 // Used for audit events and other UUID-based records
-func generateTestUUID() uuid.UUID {
+func generateTestUUID() uuid.UUID { //nolint:unused
 	return uuid.New()
 }
 
@@ -140,7 +142,7 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to list tables: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var tables []string
 	for rows.Next() {
@@ -164,6 +166,32 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 		}
 		GinkgoWriter.Printf("  ✅ [Process %d] Copied table: %s\n", processNum, tableName)
 	}
+
+	// ========================================
+	// CRITICAL: Recreate Foreign Key Constraints
+	// ========================================
+	// PostgreSQL's "LIKE ... INCLUDING ALL" copies table structure, indexes, constraints,
+	// BUT it does NOT copy foreign key constraints! We must recreate them manually.
+	//
+	// Reference: Migration 013 (fk_audit_events_parent constraint)
+	// BR-STORAGE-032: Event sourcing immutability enforcement
+	GinkgoWriter.Printf("🔗 [Process %d] Recreating foreign key constraints...\n", processNum)
+
+	// FK constraint: audit_events parent-child relationship (ADR-034)
+	// Prevents deletion of parent events with children (event sourcing immutability)
+	fkConstraintSQL := fmt.Sprintf(`
+		ALTER TABLE %s.audit_events
+		ADD CONSTRAINT fk_audit_events_parent
+		FOREIGN KEY (parent_event_id, parent_event_date)
+		REFERENCES %s.audit_events(event_id, event_date)
+		ON DELETE RESTRICT
+	`, schemaName, schemaName)
+
+	_, err = db.Exec(fkConstraintSQL)
+	if err != nil {
+		return "", fmt.Errorf("failed to create FK constraint fk_audit_events_parent: %w", err)
+	}
+	GinkgoWriter.Printf("  ✅ [Process %d] Created FK constraint: fk_audit_events_parent\n", processNum)
 
 	// Set search_path to use this schema
 	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", schemaName))
@@ -193,23 +221,43 @@ func dropProcessSchema(db *sqlx.DB, schemaName string) error {
 }
 
 // usePublicSchema sets the search_path to public schema
-// This is used by Serial tests that need to access data in the public schema
 // (e.g., schema validation tests, tests that check partitions, etc.)
-func usePublicSchema() {
+func usePublicSchema() { //nolint:unused
 	if db != nil {
-		// Close all idle connections to force them to reconnect with new search_path
+		// CRITICAL: Force ALL connections in pool to reconnect with search_path=public
+		// This prevents inconsistent search_path across connection pool which causes
+		// workflows to be split across schemas (DS-FLAKY-006 fix)
+		//
+		// Problem: Connection pool can retain old connections with stale search_path
+		// (e.g., test_process_X from schema isolation before usePublicSchema() was added)
+		// Solution: Aggressively close ALL connections and force reconnection
+		//
+		// Connection string already sets search_path=public for NEW connections
+		// (see connectPostgreSQL() - options='-c search_path=public')
+		// This function ensures OLD pooled connections are closed and replaced
+
+		// Close ALL idle connections immediately
 		db.SetMaxIdleConns(0)
 
-		// Set search_path for all future connections
+		// Force existing connections to close after current use
+		// This ensures active connections don't linger with stale search_path
+		db.SetConnMaxLifetime(0)
+
+		// Set search_path for current session (in case this connection is reused)
 		_, err := db.Exec("SET search_path TO public")
 		if err != nil {
 			GinkgoWriter.Printf("⚠️  Failed to set search_path to public: %v\n", err)
 		}
 
-		// Restore idle connection pool
+		// Restore normal pool settings after forcing reconnection
+		// Future connections will come from pool with search_path=public (from connection string)
 		db.SetMaxIdleConns(10)
+		db.SetConnMaxLifetime(5 * time.Minute)
 
-		GinkgoWriter.Printf("🔄 Set search_path to public schema\n")
+		// Verify search_path is set correctly for debugging
+		var currentPath string
+		_ = db.QueryRow("SHOW search_path").Scan(&currentPath)
+		GinkgoWriter.Printf("🔄 Set search_path to public (current: %s)\n", currentPath)
 	}
 }
 
@@ -274,8 +322,8 @@ func cleanupContainers() {
 
 	GinkgoWriter.Println("🧹 Cleaning up test infrastructure...")
 
-	// Stop and remove integration test containers
-	containers := []string{serviceContainer, postgresContainer, redisContainer}
+	// Stop and remove integration test containers (PostgreSQL and Redis only - service runs in-process)
+	containers := []string{postgresContainer, redisContainer}
 	for _, container := range containers {
 		// Stop container
 		cmd := exec.Command("podman", "stop", container)
@@ -299,8 +347,8 @@ func cleanupContainers() {
 		for _, container := range staleContainers {
 			if container != "" {
 				GinkgoWriter.Printf("  🧹 Cleaning up stale container: %s\n", container)
-				exec.Command("podman", "stop", container).Run()
-				exec.Command("podman", "rm", "-f", container).Run()
+				_ = exec.Command("podman", "stop", container).Run()
+				_ = exec.Command("podman", "rm", "-f", container).Run()
 			}
 		}
 	}
@@ -320,7 +368,7 @@ func cleanupContainers() {
 		for _, cluster := range clusters {
 			if strings.HasPrefix(cluster, "datastorage-e2e-") {
 				GinkgoWriter.Printf("  🧹 Deleting Kind cluster: %s\n", cluster)
-				exec.Command("kind", "delete", "cluster", "--name", cluster).Run()
+				_ = exec.Command("kind", "delete", "cluster", "--name", cluster).Run()
 			}
 		}
 	}
@@ -392,7 +440,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Note: We keep the connection open for parallel processes to use
 		// Each parallel process will create its own schema and copy the table structure
-		tempDB.Close()
+		_ = tempDB.Close()
 
 		// 6. Setup Data Storage Service
 		var serviceURL string
@@ -401,40 +449,46 @@ var _ = SynchronizedBeforeSuite(
 			serviceURL = os.Getenv("DATASTORAGE_URL")
 			GinkgoWriter.Printf("🐳 Using external Data Storage Service at %s\n", serviceURL)
 		} else {
-			// Local execution - build and start our own container
-			GinkgoWriter.Println("📝 Creating ADR-030 config and secret files...")
-			createConfigFiles()
+			// Local execution - start in-process HTTP server (like other services)
+			GinkgoWriter.Println("🚀 Starting in-process Data Storage server...")
 
-			GinkgoWriter.Println("🏗️  Building Data Storage Service image (ADR-027)...")
-			buildDataStorageService()
+			// Build connection strings for in-process server
+			// Must match PostgreSQL container credentials (see startPostgreSQL function)
+			dbConnStr := "host=localhost port=15433 user=slm_user password=test_password dbname=action_history sslmode=disable"
+			redisAddr := "localhost:16379"
 
-			GinkgoWriter.Println("🚀 Starting Data Storage Service container...")
-			startDataStorageService()
-
-			GinkgoWriter.Println("⏳ Waiting for Data Storage Service to be ready...")
-			waitForServiceReady()
-
-			// Determine service URL based on environment (DD-TEST-001)
-			port := "18090"
-			if p := os.Getenv("DATASTORAGE_PORT"); p != "" {
-				port = p
+			// Create server configuration
+			serverCfg := &server.Config{
+				Port:         0, // Use dynamic port for test server
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 30 * time.Second,
 			}
-			serviceURL = fmt.Sprintf("http://localhost:%s", port)
+
+			// Create Data Storage server instance
+			var err error
+			dsServer, err = server.NewServer(
+				dbConnStr,
+				redisAddr,
+				"", // No Redis password in test
+				logger,
+				serverCfg,
+				10000, // DLQ max length
+			)
+			if err != nil {
+				Fail(fmt.Sprintf("Failed to create Data Storage server: %v", err))
+			}
+
+			// Create test HTTP server with server's handler
+			testServer = httptest.NewServer(dsServer.Handler())
+			serviceURL = testServer.URL
+
+			GinkgoWriter.Printf("✅ In-process server started at %s\n", serviceURL)
 		}
 
 		GinkgoWriter.Println("✅ Infrastructure ready!")
 
-		// Export environment variables for tests that create their own connections
-		// This ensures all tests use the correct ports (e.g., graceful shutdown tests)
-		if os.Getenv("POSTGRES_HOST") == "" {
-			os.Setenv("POSTGRES_HOST", "localhost")
-			os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
-			os.Setenv("REDIS_HOST", "localhost")
-			os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
-			GinkgoWriter.Println("📌 Exported environment variables for test infrastructure")
-		}
-
 		// Return connection info to all processes
+		// Include port info in the payload so all processes can set env vars
 		return []byte(serviceURL)
 	},
 	// All processes: Connect to shared infrastructure
@@ -450,6 +504,20 @@ var _ = SynchronizedBeforeSuite(
 		// Declare err for use in subsequent operations
 		var err error
 		_ = err // Suppress unused warning until used
+
+		// ========================================
+		// CRITICAL: Set environment variables in ALL parallel processes
+		// ========================================
+		// Env vars set in process 1 don't propagate to processes 2, 3, 4
+		// Each parallel process needs these vars for tests that create their own
+		// connections (e.g., graceful shutdown tests)
+		if os.Getenv("POSTGRES_HOST") == "" {
+			_ = os.Setenv("POSTGRES_HOST", "localhost")
+			_ = os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
+			_ = os.Setenv("REDIS_HOST", "localhost")
+			_ = os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
+			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
+		}
 
 		// Parse service URL from process 1
 		datastorageURL = string(data)
@@ -495,19 +563,18 @@ var _ = AfterSuite(func() {
 		}
 	}
 
-	// Capture service logs before cleanup for debugging (only process 1)
-	if processNum == 1 && serviceContainer != "" {
-		logs, err := exec.Command("podman", "logs", "--tail", "200", serviceContainer).CombinedOutput()
-		if err == nil && len(logs) > 0 {
-			GinkgoWriter.Printf("\n📋 Final Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
-		} else {
-			GinkgoWriter.Printf("\n⚠️  Failed to get final service logs: %v\n", err)
-		}
+	// Shutdown in-process test server (only process 1)
+	if processNum == 1 && testServer != nil {
+		GinkgoWriter.Println("🛑 Shutting down in-process server...")
+		testServer.Close()
 
-		// Check container status
-		status, err := exec.Command("podman", "inspect", "-f", "{{.State.Status}}", serviceContainer).CombinedOutput()
-		if err == nil {
-			GinkgoWriter.Printf("📊 Container status: %s\n", strings.TrimSpace(string(status)))
+		// Gracefully shutdown DataStorage server
+		if dsServer != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := dsServer.Shutdown(shutdownCtx); err != nil {
+				GinkgoWriter.Printf("⚠️  Server shutdown error: %v\n", err)
+			}
 		}
 	}
 
@@ -516,11 +583,11 @@ var _ = AfterSuite(func() {
 	}
 
 	if db != nil {
-		db.Close()
+		_ = db.Close()
 	}
 
 	if redisClient != nil {
-		redisClient.Close()
+		_ = redisClient.Close()
 	}
 
 	// Use centralized cleanup function (only process 1)
@@ -553,12 +620,12 @@ var _ = AfterSuite(func() {
 
 	// Remove network (only for local execution)
 	if os.Getenv("POSTGRES_HOST") == "" {
-		exec.Command("podman", "network", "rm", "datastorage-test").Run()
+		_ = exec.Command("podman", "network", "rm", "datastorage-test").Run()
 	}
 
 	// Remove config directory
 	if configDir != "" {
-		os.RemoveAll(configDir)
+		_ = os.RemoveAll(configDir)
 	}
 
 	GinkgoWriter.Println("✅ Cleanup complete")
@@ -569,8 +636,7 @@ var _ = AfterSuite(func() {
 // Works on both Linux and macOS (Podman Machine)
 func createNetwork() {
 	// Remove existing network if it exists
-	exec.Command("podman", "network", "rm", "datastorage-test").Run()
-
+	_ = exec.Command("podman", "network", "rm", "datastorage-test").Run()
 	// Create new network
 	cmd := exec.Command("podman", "network", "create", "datastorage-test")
 	output, err := cmd.CombinedOutput()
@@ -597,12 +663,13 @@ func startPostgreSQL() {
 
 		GinkgoWriter.Printf("⏳ Waiting for PostgreSQL at %s:%s to be ready...\n", host, port)
 		Eventually(func() error {
-			connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+			// Fix: Set search_path at connection level for consistency
+			connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
 			testDB, err := sql.Open("pgx", connStr)
 			if err != nil {
 				return err
 			}
-			defer testDB.Close()
+			defer func() { _ = testDB.Close() }()
 			return testDB.Ping()
 		}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
 
@@ -614,13 +681,12 @@ func startPostgreSQL() {
 	GinkgoWriter.Println("🏠 Starting local PostgreSQL container...")
 
 	// Cleanup existing container
-	exec.Command("podman", "stop", postgresContainer).Run()
-	exec.Command("podman", "rm", postgresContainer).Run()
-
+	_ = exec.Command("podman", "stop", postgresContainer).Run()
+	_ = exec.Command("podman", "rm", postgresContainer).Run()
 	// Force remove any existing container to ensure fresh state
 	// This prevents data contamination from previous test runs
 	GinkgoWriter.Println("🧹 Removing any existing PostgreSQL container...")
-	exec.Command("podman", "rm", "-f", postgresContainer).Run()
+	_ = exec.Command("podman", "rm", "-f", postgresContainer).Run()
 	// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
 	Eventually(func() bool {
 		cmd := exec.Command("podman", "ps", "-a", "--filter", fmt.Sprintf("name=%s", postgresContainer), "--format", "{{.Names}}")
@@ -679,7 +745,7 @@ func startRedis() {
 			testClient := redis.NewClient(&redis.Options{
 				Addr: addr,
 			})
-			defer testClient.Close()
+			defer func() { _ = testClient.Close() }()
 			return testClient.Ping(ctx).Err()
 		}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
 
@@ -691,9 +757,8 @@ func startRedis() {
 	GinkgoWriter.Println("🏠 Starting local Redis container...")
 
 	// Cleanup existing container
-	exec.Command("podman", "stop", redisContainer).Run()
-	exec.Command("podman", "rm", redisContainer).Run()
-
+	_ = exec.Command("podman", "stop", redisContainer).Run()
+	_ = exec.Command("podman", "rm", redisContainer).Run()
 	// Start Redis
 	// Use --network=datastorage-test for container-to-container communication
 	cmd := exec.Command("podman", "run", "-d",
@@ -737,7 +802,9 @@ func mustConnectPostgreSQL() *sqlx.DB {
 		port = "15433" // DD-TEST-001
 	}
 
-	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+	// Fix: Set search_path at connection level so ALL connections use public schema
+	// This prevents connection pool issues where new connections don't inherit SET search_path
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
 	tempDB, err := sqlx.Connect("pgx", connStr)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -765,7 +832,9 @@ func connectPostgreSQL() {
 		port = "15433" // DD-TEST-001
 	}
 
-	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+	// Fix: Set search_path at connection level so ALL connections use public schema
+	// This prevents connection pool issues where new connections don't inherit SET search_path
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
 	var err error
 	db, err = sqlx.Connect("pgx", connStr) // DD-010: Using pgx driver with sqlx
 	Expect(err).ToNot(HaveOccurred())
@@ -874,7 +943,7 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 }
 
 // createConfigFiles creates ADR-030 compliant config and secret files
-func createConfigFiles() {
+func createConfigFiles() { //nolint:unused
 	var err error
 	configDir, err = os.MkdirTemp("", "datastorage-config-*")
 	Expect(err).ToNot(HaveOccurred())
@@ -964,86 +1033,9 @@ password: test_password
 	GinkgoWriter.Printf("  ✅ Config files created in %s\n", configDir)
 }
 
-// buildDataStorageService builds the Data Storage Service container image
-// Note: Builds for ARM64 (Apple Silicon) for local integration tests
-// Production multi-arch builds handled separately
-func buildDataStorageService() {
-	// Cleanup any existing image
-	exec.Command("podman", "rmi", "-f", "data-storage:test").Run()
-
-	// Build image for ARM64 (local testing on Apple Silicon)
-	buildCmd := exec.Command("podman", "build",
-		"--build-arg", "GOARCH=arm64",
-		"-t", "data-storage:test",
-		"-f", "docker/data-storage.Dockerfile",
-		".")
-	buildCmd.Dir = "../../../" // Run from workspace root
-
-	output, err := buildCmd.CombinedOutput()
-	if err != nil {
-		GinkgoWriter.Printf("❌ Build output:\n%s\n", string(output))
-		Fail(fmt.Sprintf("Failed to build Data Storage Service image: %v", err))
-	}
-
-	GinkgoWriter.Println("  ✅ Data Storage Service image built successfully")
-}
-
-// startDataStorageService starts the Data Storage Service container
-func startDataStorageService() {
-	// Cleanup existing container
-	exec.Command("podman", "stop", serviceContainer).Run()
-	exec.Command("podman", "rm", serviceContainer).Run()
-
-	// Mount config files (ADR-030)
-	// Note: On macOS with Podman, :Z flag doesn't apply (SELinux is Linux-only)
-	// Instead, ensure files have world-readable permissions before mounting
-	configMount := fmt.Sprintf("%s/config.yaml:/etc/datastorage/config.yaml:ro", configDir)
-	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", configDir)
-
-	// Start service container with ADR-030 config
-	// Use --network=datastorage-test for container-to-container communication
-	// Port mapping allows host to access service on localhost:8080
-	startCmd := exec.Command("podman", "run", "-d",
-		"--name", serviceContainer,
-		"--network", "datastorage-test",
-		"-p", "18090:8080", // DD-TEST-001
-		"-v", configMount,
-		"-v", secretsMount,
-		"-e", "CONFIG_PATH=/etc/datastorage/config.yaml",
-		"data-storage:test")
-
-	output, err := startCmd.CombinedOutput()
-	if err != nil {
-		GinkgoWriter.Printf("❌ Start output:\n%s\n", string(output))
-		Fail(fmt.Sprintf("Failed to start Data Storage Service container: %v", err))
-	}
-
-	GinkgoWriter.Println("  ✅ Data Storage Service container started")
-}
-
-// waitForServiceReady waits for the Data Storage Service health endpoint to respond
-func waitForServiceReady() {
-	datastorageURL = "http://localhost:18090" // DD-TEST-001
-
-	// Wait up to 60 seconds for service to be ready (increased for parallel execution)
-	Eventually(func() int {
-		resp, err := http.Get(datastorageURL + "/health")
-		if err != nil || resp == nil {
-			GinkgoWriter.Printf("  ⏳ Waiting for service... (error: %v)\n", err)
-			return 0
-		}
-		defer resp.Body.Close()
-		return resp.StatusCode
-	}, "60s", "2s").Should(Equal(200), "Data Storage Service should be healthy")
-
-	// Print container logs for debugging (first 100 lines)
-	logs, logErr := exec.Command("podman", "logs", "--tail", "100", serviceContainer).CombinedOutput()
-	if logErr == nil {
-		GinkgoWriter.Printf("\n📋 Data Storage Service logs:\n%s\n", string(logs))
-	}
-
-	GinkgoWriter.Printf("  ✅ Data Storage Service ready at %s\n", datastorageURL)
-}
+// NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)
+// removed as part of refactoring to in-process testing pattern (consistent with other services).
+// DataStorage now runs via httptest.Server with server.NewServer() for integration tests.
 
 // DBExecutor is an interface that both *sql.DB and *sqlx.DB satisfy
 // Used for dynamic partition creation in tests

@@ -117,7 +117,7 @@ var _ = Describe("GAP 4.1: Audit Write Burst Handling", Label("performance", "da
 						results <- 0 // Error indicator
 						return
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					results <- resp.StatusCode
 				}(i)
@@ -221,7 +221,7 @@ var _ = Describe("GAP 4.1: Audit Write Burst Handling", Label("performance", "da
 							results <- 0
 							return
 						}
-						defer resp.Body.Close()
+						defer func() { _ = resp.Body.Close() }()
 						results <- resp.StatusCode
 					}(i)
 				}
@@ -284,6 +284,6 @@ func isServiceHealthy(client *http.Client, baseURL string) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }

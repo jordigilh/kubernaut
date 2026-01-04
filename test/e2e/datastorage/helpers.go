@@ -30,14 +30,14 @@ import (
 // generateUniqueNamespace creates a unique namespace for parallel test execution
 // Format: datastorage-e2e-p{process}-{timestamp}
 // This enables parallel E2E tests by providing complete namespace isolation
-func generateUniqueNamespace() string {
+func generateUniqueNamespace() string { //nolint:unused
 	return fmt.Sprintf("datastorage-e2e-p%d-%d",
 		GinkgoParallelProcess(),
 		time.Now().Unix())
 }
 
 // waitForPodReady waits for a pod to be ready in the specified namespace
-func waitForPodReady(namespace, labelSelector, kubeconfigPath string, timeout time.Duration) error {
+func waitForPodReady(namespace, labelSelector, kubeconfigPath string, timeout time.Duration) error { //nolint:unused
 	GinkgoWriter.Printf("⏳ Waiting for pod with label %s in namespace %s to be ready...\n", labelSelector, namespace)
 
 	Eventually(func() bool {
@@ -60,7 +60,7 @@ func waitForPodReady(namespace, labelSelector, kubeconfigPath string, timeout ti
 
 // portForwardService starts port-forwarding for a service in the background
 // Returns a context cancel function to stop port-forwarding
-func portForwardService(ctx context.Context, namespace, serviceName, kubeconfigPath string, localPort, remotePort int) (context.CancelFunc, error) {
+func portForwardService(ctx context.Context, namespace, serviceName, kubeconfigPath string, localPort, remotePort int) (context.CancelFunc, error) { //nolint:unused
 	portForwardCtx, cancel := context.WithCancel(ctx)
 
 	cmd := exec.CommandContext(portForwardCtx, "kubectl", "--kubeconfig", kubeconfigPath, "port-forward",
@@ -82,7 +82,7 @@ func portForwardService(ctx context.Context, namespace, serviceName, kubeconfigP
 		if err != nil {
 			return false
 		}
-		conn.Close()
+		_ = conn.Close()
 		return true
 	}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 
@@ -109,7 +109,7 @@ func scalePod(namespace, deploymentName, kubeconfigPath string, replicas int) er
 }
 
 // deleteNamespace deletes a namespace
-func deleteNamespace(ctx context.Context, namespace, kubeconfigPath string) error {
+func deleteNamespace(ctx context.Context, namespace, kubeconfigPath string) error { //nolint:unused
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "delete", "namespace", namespace, "--wait=false")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

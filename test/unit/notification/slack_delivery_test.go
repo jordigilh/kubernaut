@@ -196,11 +196,11 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 
 	Context("when context is cancelled", func() {
 		It("should respect context cancellation", func() {
-			// Create a server that responds slowly - but we cancel before it responds
+			// Create a server that blocks until request context is cancelled
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Short delay - test cancels immediately so this won't complete
-				time.Sleep(100 * time.Millisecond)
-				w.WriteHeader(http.StatusOK)
+				// Block on request context instead of sleeping
+				<-r.Context().Done()
+				// Context cancelled, return error
 			}))
 			defer server.Close()
 
@@ -231,19 +231,19 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			It("should classify webhook timeout as retryable error (BR-NOT-052: Retry on Timeout)", func() {
 				// TDD RED: Test that timeout is classified as retryable
 
-				// Create mock server that delays response beyond client timeout
-				// Use time.Sleep instead of blocking on context to ensure clean shutdown
+				// Create mock server that simulates slow external service
+				// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// Sleep longer than client timeout (1s), but not too long
-					time.Sleep(2 * time.Second)
+					// Simulate slow webhook (longer than client timeout)
+					time.Sleep(100 * time.Millisecond)
 					w.WriteHeader(http.StatusOK)
 				}))
 				defer server.Close()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
-				// Create context with short timeout (1 second)
-				ctxWithTimeout, cancel := context.WithTimeout(ctx, 1*time.Second)
+				// Create context with very short timeout (triggers before server responds)
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 				defer cancel()
 
 				notification := &notificationv1alpha1.NotificationRequest{
@@ -279,18 +279,19 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 			It("should handle webhook timeout and preserve error details for audit trail (BR-NOT-051: Audit Trail)", func() {
 				// TDD RED: Test that timeout errors include actionable details
 
-				// Create mock server that delays response beyond client timeout
+				// Create mock server that simulates slow external service
+				// Note: time.Sleep() here is VALID - simulating external delay, not synchronizing tests
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// Sleep longer than client timeout (500ms)
-					time.Sleep(1 * time.Second)
+					// Simulate slow webhook (longer than client timeout)
+					time.Sleep(100 * time.Millisecond)
 					w.WriteHeader(http.StatusOK)
 				}))
 				defer server.Close()
 
 				service = delivery.NewSlackDeliveryService(server.URL)
 
-				// Create context with 500ms timeout
-				ctxWithTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+				// Create context with very short timeout (triggers before server responds)
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, 10*time.Millisecond)
 				defer cancel()
 
 				notification := &notificationv1alpha1.NotificationRequest{
@@ -342,7 +343,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 					w.WriteHeader(http.StatusOK)
 					w.Header().Set("Content-Type", "application/json")
 					// Invalid JSON response
-					w.Write([]byte(`{"status": "ok", "invalid_json: missing_quote}`))
+					_, _ = w.Write([]byte(`{"status": "ok", "invalid_json: missing_quote}`))
 				}))
 				defer server.Close()
 
@@ -380,7 +381,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Retry-After", "60")       // Slack's rate limit header
 					w.WriteHeader(http.StatusTooManyRequests) // 429
-					w.Write([]byte(`{"ok": false, "error": "rate_limited"}`))
+					_, _ = w.Write([]byte(`{"ok": false, "error": "rate_limited"}`))
 				}))
 				defer server.Close()
 
@@ -426,7 +427,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 					w.Header().Set("Retry-After", retryAfterValue)
 					w.Header().Set("X-Rate-Limit-Remaining", "0")
 					w.WriteHeader(http.StatusTooManyRequests) // 429
-					w.Write([]byte(`{"ok": false, "error": "rate_limited", "retry_after": 120}`))
+					_, _ = w.Write([]byte(`{"ok": false, "error": "rate_limited", "retry_after": 120}`))
 				}))
 				defer server.Close()
 

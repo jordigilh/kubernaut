@@ -1,6 +1,6 @@
 database:
-  host: notification_postgres_1
-  port: 5432
+  host: host.containers.internal
+  port: 15440  # Changed from 15439 to resolve conflict with HAPI (DD-TEST-001 v2.0)
   user: slm_user
   name: action_history
   sslmode: disable
@@ -9,7 +9,7 @@ database:
   passwordKey: password
 
 redis:
-  addr: notification_redis_1:6379
+  addr: host.containers.internal:16385
   secretsFile: /etc/datastorage/redis-secrets.yaml
   passwordKey: password
 

@@ -37,7 +37,7 @@ func BenchmarkListIncidentsLatency(b *testing.B) {
 		if err != nil {
 			b.Fatalf("Request failed: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			b.Fatalf("Unexpected status code: %d", resp.StatusCode)
@@ -95,14 +95,14 @@ func BenchmarkLargeResultSet(b *testing.B) {
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			b.Fatalf("Unexpected status code: %d", resp.StatusCode)
 		}
 
 		// Verify we actually got data
 		var response map[string]interface{}
 		err = json.NewDecoder(resp.Body).Decode(&response)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 
 		if err != nil {
 			b.Fatalf("Failed to decode response: %v", err)
@@ -164,7 +164,7 @@ func BenchmarkConcurrentRequests(b *testing.B) {
 				if err != nil {
 					continue
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 			done <- time.Since(workerStart)
 		}()
@@ -217,7 +217,7 @@ func BenchmarkFilteredQueries(b *testing.B) {
 				if err != nil {
 					b.Fatalf("Request failed: %v", err)
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 
 				if resp.StatusCode != http.StatusOK {
 					b.Fatalf("Unexpected status code: %d", resp.StatusCode)
@@ -265,7 +265,7 @@ func TestPerformanceReport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	sort.Slice(latencies, func(i, j int) bool {
@@ -294,7 +294,7 @@ func TestPerformanceReport(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Request failed: %v", err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	sort.Slice(largeLatencies, func(i, j int) bool {
@@ -360,7 +360,7 @@ func init() {
 		fmt.Println("   Start service: cd cmd/datastorage && go run main.go")
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode == http.StatusOK {
 		fmt.Printf("✅ Data Storage Service detected at %s\n", baseURL)

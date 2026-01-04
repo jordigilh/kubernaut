@@ -93,6 +93,7 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      notificationName,
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -210,6 +211,7 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      notificationName,
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -325,6 +327,7 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      notificationName,
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,

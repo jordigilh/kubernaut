@@ -44,7 +44,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			client := &http.Client{Timeout: 10 * time.Second}
 			resp, err := client.Get(testServer.URL + "/health")
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Assert: Should return 200 with healthy status
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -68,7 +68,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			client := &http.Client{Timeout: 10 * time.Second}
 			resp, err := client.Get(testServer.URL + "/ready")
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Assert: Should return 200 with ready status
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -91,7 +91,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			client := &http.Client{Timeout: 10 * time.Second}
 			resp, err := client.Get(testServer.URL + "/health")
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Assert: Should return 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -112,7 +112,7 @@ var _ = Describe("Health Endpoints Integration Tests", func() {
 			for endpoint, expectedField := range endpoints {
 				resp, err := client.Get(testServer.URL + endpoint)
 				Expect(err).ToNot(HaveOccurred(), "Should successfully call "+endpoint)
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// Should return valid JSON
 				var result map[string]interface{}

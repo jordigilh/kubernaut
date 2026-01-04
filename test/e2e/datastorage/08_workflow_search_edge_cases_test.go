@@ -94,7 +94,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			if err != nil {
 				return err
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("service not ready: status %d", resp.StatusCode)
 			}
@@ -158,7 +158,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(payloadBytes),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: HTTP 200 OK (not 404 Not Found)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),
@@ -223,7 +223,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(payloadBytes),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -284,7 +284,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(mustMarshal(workflow1)))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
-			resp1.Body.Close()
+			_ = resp1.Body.Close()
 
 			time.Sleep(100 * time.Millisecond) // Ensure different created_at
 
@@ -306,7 +306,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(mustMarshal(workflow2)))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp2.StatusCode).To(Equal(http.StatusCreated))
-			resp2.Body.Close()
+			_ = resp2.Body.Close()
 
 			time.Sleep(100 * time.Millisecond)
 
@@ -328,7 +328,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(mustMarshal(workflow3)))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp3.StatusCode).To(Equal(http.StatusCreated))
-			resp3.Body.Close()
+			_ = resp3.Body.Close()
 
 			testLogger.Info("✅ Created 3 workflows with identical labels")
 		})
@@ -372,7 +372,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				Expect(err).ToNot(HaveOccurred())
 
 				bodyBytes, err := io.ReadAll(resp.Body)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -442,8 +442,8 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
 			// Extract workflow_id from response
 			var createResp1 map[string]interface{}
-			json.NewDecoder(resp1.Body).Decode(&createResp1)
-			resp1.Body.Close()
+			_ = json.NewDecoder(resp1.Body).Decode(&createResp1)
+			_ = resp1.Body.Close()
 			wildcardWorkflowID = createResp1["workflow_id"].(string)
 
 			// Workflow with specific: component="deployment"
@@ -471,8 +471,8 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			Expect(resp2.StatusCode).To(Equal(http.StatusCreated))
 			// Extract workflow_id from response
 			var createResp2 map[string]interface{}
-			json.NewDecoder(resp2.Body).Decode(&createResp2)
-			resp2.Body.Close()
+			_ = json.NewDecoder(resp2.Body).Decode(&createResp2)
+			_ = resp2.Body.Close()
 			specificWorkflowID = createResp2["workflow_id"].(string)
 
 			testLogger.Info("✅ Created workflows with wildcard and specific component labels")
@@ -512,7 +512,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(payloadBytes),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			bodyBytes, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())
@@ -564,7 +564,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				bytes.NewReader(payloadBytes),
 			)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			bodyBytes, err := io.ReadAll(resp.Body)
 			Expect(err).ToNot(HaveOccurred())

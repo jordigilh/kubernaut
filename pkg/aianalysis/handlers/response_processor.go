@@ -153,8 +153,12 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API investigation completed successfully")
 
 	// Transition to Analyzing phase
+	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Investigation complete, starting analysis"
+
+	// DD-AUDIT-003: Phase transition audit recorded by InvestigatingHandler (investigating.go:177)
+	// NOT recorded here to avoid duplicates - handler records after status is committed
 
 	return ctrl.Result{Requeue: true}, nil
 }
@@ -234,8 +238,12 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API recovery investigation completed successfully")
 
 	// Transition to Analyzing phase
+	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after processing
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Recovery investigation complete, starting analysis"
+
+	// DD-AUDIT-003: Phase transition audit recorded by InvestigatingHandler (investigating.go:177)
+	// NOT recorded here to avoid duplicates - handler records after status is committed
 
 	return ctrl.Result{Requeue: true}, nil
 }
@@ -293,6 +301,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	// Set structured failure with timestamp
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 	analysis.Status.InvestigationID = resp.IncidentID
@@ -391,6 +400,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseCompleted
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = "WorkflowNotNeeded"
 	analysis.Status.SubReason = "ProblemResolved"
@@ -441,6 +451,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 	// Set structured failure with timestamp
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 	analysis.Status.InvestigationID = resp.IncidentID
@@ -490,6 +501,7 @@ func (p *ResponseProcessor) handleRecoveryNotPossible(ctx context.Context, analy
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = "RecoveryNotPossible"
 	analysis.Status.SubReason = "NoRecoveryStrategy"

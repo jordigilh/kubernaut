@@ -73,16 +73,16 @@ func GetE2EFileOutputDir() (string, error) {
 //
 // Time: ~2-3 minutes (with optimized Dockerfile)
 func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// 0. Create E2E file output directory (platform-specific)
 	e2eDir, err := GetE2EFileOutputDir()
 	if err != nil {
 		return fmt.Errorf("failed to get E2E file output directory: %w", err)
 	}
-	fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
+	_, _ = fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
 	if err := os.MkdirAll(e2eDir, 0755); err != nil {
 		return fmt.Errorf("failed to create E2E file output directory: %w", err)
 	}
@@ -90,21 +90,21 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// ============================================================
 	// PHASE 1: Build Docker image (BEFORE cluster creation)
 	// ============================================================
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "PHASE 1: Building Notification Controller Docker image...")
-	fmt.Fprintln(writer, "  • This ensures fresh build with latest code changes")
-	fmt.Fprintln(writer, "  • Prevents stale image caching issues")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "PHASE 1: Building Notification Controller Docker image...")
+	_, _ = fmt.Fprintln(writer, "  • This ensures fresh build with latest code changes")
+	_, _ = fmt.Fprintln(writer, "  • Prevents stale image caching issues")
 	if err := buildNotificationImageOnly(writer); err != nil {
 		return fmt.Errorf("failed to build Notification Controller image: %w", err)
 	}
-	fmt.Fprintln(writer, "✅ PHASE 1 Complete: Image built successfully")
+	_, _ = fmt.Fprintln(writer, "✅ PHASE 1 Complete: Image built successfully")
 
 	// ============================================================
 	// PHASE 2: Create Kind cluster (after build completes)
 	// ============================================================
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "PHASE 2: Creating Kind cluster...")
-	fmt.Fprintln(writer, "  • Cluster created AFTER build prevents idle timeout")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "PHASE 2: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  • Cluster created AFTER build prevents idle timeout")
 	extraMounts := []ExtraMount{
 		{
 			HostPath:      e2eDir,
@@ -121,32 +121,32 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
-	fmt.Fprintln(writer, "✅ PHASE 2 Complete: Cluster created")
+	_, _ = fmt.Fprintln(writer, "✅ PHASE 2 Complete: Cluster created")
 
 	// ============================================================
 	// PHASE 3: Load image into cluster
 	// ============================================================
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "PHASE 3: Loading Notification Controller image into Kind cluster...")
-	fmt.Fprintln(writer, "  • Fresh cluster + fresh image = reliable loading")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "PHASE 3: Loading Notification Controller image into Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  • Fresh cluster + fresh image = reliable loading")
 	if err := loadNotificationImageOnly(clusterName, writer); err != nil {
 		return fmt.Errorf("failed to load Notification Controller image: %w", err)
 	}
-	fmt.Fprintln(writer, "✅ PHASE 3 Complete: Image loaded")
+	_, _ = fmt.Fprintln(writer, "✅ PHASE 3 Complete: Image loaded")
 
 	// ============================================================
 	// PHASE 4: Install CRDs
 	// ============================================================
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "PHASE 4: Installing NotificationRequest CRD...")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "PHASE 4: Installing NotificationRequest CRD...")
 	if err := installNotificationCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install NotificationRequest CRD: %w", err)
 	}
-	fmt.Fprintln(writer, "✅ PHASE 4 Complete: CRDs installed")
+	_, _ = fmt.Fprintln(writer, "✅ PHASE 4 Complete: CRDs installed")
 
-	fmt.Fprintln(writer, "")
-	fmt.Fprintln(writer, "✅ Hybrid Parallel Setup Complete - tests can now deploy controller")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "")
+	_, _ = fmt.Fprintln(writer, "✅ Hybrid Parallel Setup Complete - tests can now deploy controller")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -164,53 +164,53 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 //
 // Time: ~10 seconds
 func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Deploying Notification Controller in Namespace: %s\n", namespace)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Deploying Notification Controller in Namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// 1. Create test namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// 2. Create default namespace (E2E tests create NotificationRequests here)
-	fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
+	_, _ = fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
 	if err := createTestNamespace("default", kubeconfigPath, writer); err != nil {
 		// Ignore error if namespace already exists (case-insensitive check for different K8s error formats)
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "alreadyexists") && !strings.Contains(errMsg, "already exists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)
 		}
-		fmt.Fprintf(writer, "   ℹ️  default namespace already exists\n")
+		_, _ = fmt.Fprintf(writer, "   ℹ️  default namespace already exists\n")
 	}
 
 	// 2. Deploy RBAC
-	fmt.Fprintf(writer, "🔐 Deploying RBAC (ServiceAccount, Role, RoleBinding)...\n")
+	_, _ = fmt.Fprintf(writer, "🔐 Deploying RBAC (ServiceAccount, Role, RoleBinding)...\n")
 	if err := deployNotificationRBAC(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy RBAC: %w", err)
 	}
 
 	// 3. Deploy ConfigMap (if needed for configuration)
-	fmt.Fprintf(writer, "📄 Deploying ConfigMap...\n")
+	_, _ = fmt.Fprintf(writer, "📄 Deploying ConfigMap...\n")
 	if err := deployNotificationConfigMap(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy ConfigMap: %w", err)
 	}
 
 	// 3.5 Deploy NodePort Service for metrics (E2E test access)
-	fmt.Fprintf(writer, "🌐 Deploying NodePort Service for metrics...\n")
+	_, _ = fmt.Fprintf(writer, "🌐 Deploying NodePort Service for metrics...\n")
 	if err := deployNotificationService(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy NodePort Service: %w", err)
 	}
 
 	// 4. Deploy Notification Controller
-	fmt.Fprintf(writer, "🚀 Deploying Notification Controller...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification Controller...\n")
 	if err := deployNotificationControllerOnly(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Notification Controller: %w", err)
 	}
 
 	// 5. Wait for controller pod ready (use kubectl wait like gateway does)
-	fmt.Fprintf(writer, "⏳ Waiting for controller pod to be created...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for controller pod to be created...\n")
 	// First wait for pod to exist (kubectl wait fails if resource doesn't exist yet)
 	podCreatedCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -225,7 +225,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		output, err := checkCmd.CombinedOutput()
 
 		if err == nil && len(output) > 0 {
-			fmt.Fprintf(writer, "   ✅ Controller pod created\n")
+			_, _ = fmt.Fprintf(writer, "   ✅ Controller pod created\n")
 			break
 		}
 
@@ -237,7 +237,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		}
 	}
 
-	fmt.Fprintf(writer, "⏳ Waiting for controller pod ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for controller pod ready...\n")
 	waitCmd := exec.CommandContext(ctx, "kubectl", "wait",
 		"-n", namespace,
 		"--for=condition=ready",
@@ -250,10 +250,10 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	if err := waitCmd.Run(); err != nil {
 		return fmt.Errorf("controller pod did not become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Controller pod ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Controller pod ready\n")
 
-	fmt.Fprintf(writer, "✅ Notification Controller deployed and ready in namespace: %s\n", namespace)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ Notification Controller deployed and ready in namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
 
@@ -265,9 +265,9 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 // - kubeconfigPath: Path to kubeconfig file (e.g., ~/.kube/notification-e2e-config)
 // - writer: Output writer for progress messages
 func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "Cleaning up Notification E2E Cluster")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "Cleaning up Notification E2E Cluster")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Check if cluster exists before attempting deletion
 	// This prevents podman provider hang when cluster doesn't exist
@@ -279,7 +279,7 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	clusterExists := false
 
 	if err != nil {
-		fmt.Fprintf(writer, "⚠️  Warning: Failed to check for existing clusters: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to check for existing clusters: %v\n", err)
 		// Assume cluster might exist, attempt deletion anyway
 		clusterExists = true
 	} else {
@@ -292,7 +292,7 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	}
 
 	if !clusterExists {
-		fmt.Fprintf(writer, "ℹ️  Cluster %s does not exist, skipping deletion\n", clusterName)
+		_, _ = fmt.Fprintf(writer, "ℹ️  Cluster %s does not exist, skipping deletion\n", clusterName)
 	} else {
 		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer deleteCancel()
@@ -302,21 +302,21 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 		deleteCmd.Stderr = writer
 
 		if err := deleteCmd.Run(); err != nil {
-			fmt.Fprintf(writer, "⚠️  Warning: Failed to delete Kind cluster %s: %v\n", clusterName, err)
+			_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to delete Kind cluster %s: %v\n", clusterName, err)
 			// Don't return error - best effort cleanup
 		} else {
-			fmt.Fprintf(writer, "✅ Kind cluster %s deleted\n", clusterName)
+			_, _ = fmt.Fprintf(writer, "✅ Kind cluster %s deleted\n", clusterName)
 		}
 	}
 
 	// Clean up kubeconfig file (uses passed path for consistency with Gateway pattern)
 	if err := os.Remove(kubeconfigPath); err != nil && !os.IsNotExist(err) {
-		fmt.Fprintf(writer, "⚠️  Warning: Failed to remove kubeconfig: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to remove kubeconfig: %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "✅ Kubeconfig removed: %s\n", kubeconfigPath)
+		_, _ = fmt.Fprintf(writer, "✅ Kubeconfig removed: %s\n", kubeconfigPath)
 	}
 
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -336,35 +336,35 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 //	// In E2E test BeforeSuite or BeforeEach:
 //	err := infrastructure.DeployNotificationAuditInfrastructure(ctx, namespace, kubeconfigPath, GinkgoWriter)
 func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Deploying Audit Infrastructure in Namespace: %s\n", namespace)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Deploying Audit Infrastructure in Namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// Generate consistent image name for build, load, and deploy
 	// DD-TEST-001: Use composite tag (service-uuid) for parallel test isolation
 	dataStorageImage := GenerateInfraImageName("datastorage", "notification")
-	fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
 	// 1. Build Data Storage image with dynamic tag
-	fmt.Fprintf(writer, "🔨 Building Data Storage image...\n")
+	_, _ = fmt.Fprintf(writer, "🔨 Building Data Storage image...\n")
 	if err := buildDataStorageImageWithTag(dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to build Data Storage image: %w", err)
 	}
 
 	// 2. Load Data Storage image into Kind cluster with same tag
 	clusterName := "notification-e2e" // Matches CreateNotificationCluster
-	fmt.Fprintf(writer, "📦 Loading Data Storage image into Kind cluster...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Loading Data Storage image into Kind cluster...\n")
 	if err := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to load Data Storage image: %w", err)
 	}
 
 	// 3. Deploy shared Data Storage infrastructure with Notification-specific NodePort 30090
 	// CRITICAL: Must match kind-notification-config.yaml port mapping
-	fmt.Fprintf(writer, "📦 Deploying Data Storage infrastructure (NodePort 30090)...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Deploying Data Storage infrastructure (NodePort 30090)...\n")
 	if err := DeployNotificationDataStorageServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
-	fmt.Fprintf(writer, "✅ Data Storage infrastructure deployed\n")
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage infrastructure deployed\n")
 
 	// 4. Wait for DataStorage to be fully ready before tests emit audit events
 	// CRITICAL: DD-E2E-001 - Prevents connection reset by peer errors
@@ -374,21 +374,21 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	// audit handler) are ready, resulting in RST/EOF errors (see NT_E2E_AUDIT_CLIENT_LOGS_EVIDENCE_DEC_27_2025.md)
 	//
 	// Solution: Add readiness delay + health check to ensure DataStorage is truly ready
-	fmt.Fprintf(writer, "\n⏳ Waiting for DataStorage to be ready...\n")
-	fmt.Fprintf(writer, "   (Adding 5s startup buffer for internal component initialization)\n")
+	_, _ = fmt.Fprintf(writer, "\n⏳ Waiting for DataStorage to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   (Adding 5s startup buffer for internal component initialization)\n")
 	time.Sleep(5 * time.Second)
 
 	// Verify DataStorage health endpoint is responding
 	// NodePort 30090 is exposed by kind-notification-config.yaml for E2E tests
-	dataStorageHealthURL := "http://localhost:30090/health"
-	fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
+	dataStorageHealthURL := "http://127.0.0.1:30090/health"
+	_, _ = fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
 	if err := WaitForHTTPHealth(dataStorageHealthURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage health check failed: %w", err)
 	}
-	fmt.Fprintf(writer, "✅ DataStorage ready and healthy\n")
+	_, _ = fmt.Fprintf(writer, "✅ DataStorage ready and healthy\n")
 
-	fmt.Fprintf(writer, "\n✅ Audit infrastructure ready in namespace %s\n", namespace)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "\n✅ Audit infrastructure ready in namespace %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
 
@@ -424,7 +424,7 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("failed to apply NotificationRequest CRD: %w", err)
 	}
 
-	fmt.Fprintln(writer, "   NotificationRequest CRD installed")
+	_, _ = fmt.Fprintln(writer, "   NotificationRequest CRD installed")
 	return nil
 }
 
@@ -449,7 +449,7 @@ func buildNotificationImageOnly(writer io.Writer) error {
 		return fmt.Errorf("podman build failed: %w", err)
 	}
 
-	fmt.Fprintln(writer, "   Notification Controller image built: localhost/kubernaut-notification:e2e-test")
+	_, _ = fmt.Fprintln(writer, "   Notification Controller image built: localhost/kubernaut-notification:e2e-test")
 	return nil
 }
 
@@ -476,7 +476,19 @@ func loadNotificationImageOnly(clusterName string, writer io.Writer) error {
 	// Clean up tar file
 	_ = os.Remove("/tmp/notification-e2e.tar")
 
-	fmt.Fprintln(writer, "   Notification Controller image loaded into Kind cluster")
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
+	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-notification:e2e-test")
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-notification:e2e-test")
+	}
+
+	_, _ = fmt.Fprintln(writer, "   Notification Controller image loaded into Kind cluster")
 	return nil
 }
 
@@ -503,7 +515,7 @@ func deployNotificationRBAC(namespace, kubeconfigPath string, writer io.Writer) 
 		return fmt.Errorf("failed to apply RBAC: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   RBAC deployed (ClusterRole + ClusterRoleBinding) in namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "   RBAC deployed (ClusterRole + ClusterRoleBinding) in namespace: %s\n", namespace)
 	return nil
 }
 
@@ -517,7 +529,7 @@ func deployNotificationConfigMap(namespace, kubeconfigPath string, writer io.Wri
 	configMapPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-configmap.yaml")
 	if _, err := os.Stat(configMapPath); os.IsNotExist(err) {
 		// ConfigMap is optional - controller may use defaults
-		fmt.Fprintf(writer, "   ConfigMap manifest not found (optional): %s\n", configMapPath)
+		_, _ = fmt.Fprintf(writer, "   ConfigMap manifest not found (optional): %s\n", configMapPath)
 		return nil
 	}
 
@@ -530,7 +542,7 @@ func deployNotificationConfigMap(namespace, kubeconfigPath string, writer io.Wri
 		return fmt.Errorf("failed to apply ConfigMap: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   ConfigMap deployed in namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "   ConfigMap deployed in namespace: %s\n", namespace)
 	return nil
 }
 
@@ -555,7 +567,7 @@ func deployNotificationService(namespace, kubeconfigPath string, writer io.Write
 		return fmt.Errorf("failed to apply service: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   NodePort Service deployed (metrics: localhost:8081 → NodePort 30081)\n")
+	_, _ = fmt.Fprintf(writer, "   NodePort Service deployed (metrics: localhost:8081 → NodePort 30081)\n")
 	return nil
 }
 
@@ -580,12 +592,12 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath string, writer i
 		return fmt.Errorf("failed to apply deployment: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   Notification Controller deployment applied in namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "   Notification Controller deployment applied in namespace: %s\n", namespace)
 	return nil
 }
 
 // waitForNotificationControllerReady waits for the Notification Controller pod to become ready
-func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	timeout := 60 * time.Second
 	interval := 2 * time.Second
 	deadline := time.Now().Add(timeout)
@@ -608,7 +620,7 @@ func waitForNotificationControllerReady(ctx context.Context, namespace, kubeconf
 
 			readyOutput, readyErr := readyCmd.Output()
 			if readyErr == nil && string(readyOutput) == "True" {
-				fmt.Fprintf(writer, "   Controller pod ready (Phase=Running, Ready=True)\n")
+				_, _ = fmt.Fprintf(writer, "   Controller pod ready (Phase=Running, Ready=True)\n")
 				return nil
 			}
 		}
@@ -636,7 +648,7 @@ func DeployNotificationDataStorageServices(ctx context.Context, namespace, kubec
 // Notification E2E tests use a different port (30090) than other services (30081)
 // per kind-notification-config.yaml extraPortMappings
 // DEPRECATED: Use DeployNotificationDataStorageServices instead
-func deployDataStorageServiceForNotification(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func deployDataStorageServiceForNotification(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return err
@@ -868,7 +880,7 @@ password: test_password`,
 		return fmt.Errorf("failed to create Data Storage Deployment: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   Data Storage Service deployed (NodePort 30090 → localhost:30090)\n")
+	_, _ = fmt.Fprintf(writer, "   Data Storage Service deployed (NodePort 30090 → localhost:30090)\n")
 	return nil
 }
 
@@ -883,19 +895,19 @@ password: test_password`,
 func SetupNotificationInfrastructureHybrid(clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
 	ctx := context.Background()
 
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 Notification E2E Infrastructure (HYBRID PARALLEL - DD-TEST-002)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
-	fmt.Fprintln(writer, "  Consolidates: CreateCluster + DeployController + DeployAudit")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 Notification E2E Infrastructure (HYBRID PARALLEL - DD-TEST-002)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
+	_, _ = fmt.Fprintln(writer, "  Consolidates: CreateCluster + DeployController + DeployAudit")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// 0. Create E2E file output directory (platform-specific)
 	e2eDir, err := GetE2EFileOutputDir()
 	if err != nil {
 		return fmt.Errorf("failed to get E2E file output directory: %w", err)
 	}
-	fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
+	_, _ = fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
 	if err := os.MkdirAll(e2eDir, 0755); err != nil {
 		return fmt.Errorf("failed to create E2E file output directory: %w", err)
 	}
@@ -907,15 +919,15 @@ func SetupNotificationInfrastructureHybrid(clusterName, kubeconfigPath, namespac
 	// This ensures each service builds its OWN DataStorage with LATEST code
 	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 	dataStorageImageName := GenerateInfraImageName("datastorage", "notification")
-	fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
-	fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
+	_, _ = fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
+	_, _ = fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
-	fmt.Fprintln(writer, "  ├── Notification Controller")
-	fmt.Fprintln(writer, "  └── DataStorage (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Notification Controller")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage (WITH DYNAMIC TAG)")
 
 	type imageBuildResult struct {
 		name string
@@ -938,14 +950,14 @@ func SetupNotificationInfrastructureHybrid(clusterName, kubeconfigPath, namespac
 		if result.err != nil {
 			return fmt.Errorf("failed to build %s image: %w", result.name, result.err)
 		}
-		fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
 	}
-	fmt.Fprintln(writer, "\n✅ All images built!")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster (AFTER builds complete)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
 	extraMounts := []ExtraMount{
 		{
 			HostPath:      e2eDir,
@@ -966,9 +978,9 @@ func SetupNotificationInfrastructureHybrid(clusterName, kubeconfigPath, namespac
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images in parallel
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
-	fmt.Fprintln(writer, "  ├── Notification Controller")
-	fmt.Fprintln(writer, "  └── DataStorage (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Notification Controller")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage (with dynamic tag)")
 	type imageLoadResult struct {
 		name string
 		err  error
@@ -989,15 +1001,15 @@ func SetupNotificationInfrastructureHybrid(clusterName, kubeconfigPath, namespac
 		if result.err != nil {
 			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
 		}
-		fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
 	}
-	fmt.Fprintln(writer, "✅ All images loaded!")
+	_, _ = fmt.Fprintln(writer, "✅ All images loaded!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
-	fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
 
 	type deployResult struct {
 		name string
@@ -1045,34 +1057,34 @@ func SetupNotificationInfrastructureHybrid(clusterName, kubeconfigPath, namespac
 	for i := 0; i < 8; i++ {
 		result := <-deployResults
 		if result.err != nil {
-			fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
 			deployErrors = append(deployErrors, result.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
 		}
 	}
 
 	if len(deployErrors) > 0 {
 		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
 	}
-	fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
 
 	// Deploy DataStorage after migrations complete
-	fmt.Fprintln(writer, "\n📦 Deploying DataStorage service...")
-	fmt.Fprintf(writer, "   Using dynamic tag from Phase 0: %s\n", dataStorageImageName)
+	_, _ = fmt.Fprintln(writer, "\n📦 Deploying DataStorage service...")
+	_, _ = fmt.Fprintf(writer, "   Using dynamic tag from Phase 0: %s\n", dataStorageImageName)
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
 	// Single wait for ALL services ready (Kubernetes handles dependencies)
-	fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
 	if err := waitForNotificationServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ Notification E2E Infrastructure Ready (DD-TEST-002 Compliant)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Notification E2E Infrastructure Ready (DD-TEST-002 Compliant)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -1091,7 +1103,7 @@ func waitForNotificationServicesReady(ctx context.Context, namespace, kubeconfig
 	}
 
 	// Wait for DataStorage pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=datastorage",
@@ -1110,10 +1122,10 @@ func waitForNotificationServicesReady(ctx context.Context, namespace, kubeconfig
 		}
 		return false
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
-	fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
 	// Wait for Notification Controller pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for Notification Controller pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Notification Controller pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=notification-controller",
@@ -1132,7 +1144,7 @@ func waitForNotificationServicesReady(ctx context.Context, namespace, kubeconfig
 		}
 		return false
 	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "Notification Controller pod should become ready")
-	fmt.Fprintf(writer, "   ✅ Notification Controller ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Notification Controller ready\n")
 
 	return nil
 }

@@ -69,6 +69,11 @@ func (m *mockAuditStore) StoreAudit(_ context.Context, event *dsgen.AuditEventRe
 	return nil
 }
 
+func (m *mockAuditStore) Flush(ctx context.Context) error {
+	// Mock: no-op - events already stored synchronously
+	return nil
+}
+
 func (m *mockAuditStore) Close() error {
 	return nil
 }
@@ -97,14 +102,15 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 	// ========================================
 	Describe("Phase Initialization", func() {
 		Context("when SignalProcessing is created without status", func() {
-			It("CTRL-INIT-01: should initialize phase to Pending", func() {
-				// Given: SignalProcessing with empty status
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-sp",
-						Namespace: "default",
-					},
-					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+		It("CTRL-INIT-01: should initialize phase to Pending", func() {
+			// Given: SignalProcessing with empty status
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-001",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -188,14 +194,15 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 	// ========================================
 	Describe("reconcilePending", func() {
 		Context("when SignalProcessing is in Pending phase", func() {
-			It("CTRL-PEND-01: should transition to Enriching phase", func() {
-				// Given: SignalProcessing in Pending phase
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-sp-pending",
-						Namespace: "default",
-					},
-					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+		It("CTRL-PEND-01: should transition to Enriching phase", func() {
+			// Given: SignalProcessing in Pending phase
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-sp-pending",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-002",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -218,11 +225,17 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					WithStatusSubresource(sp).
 					Build()
 
+		// Setup audit client (ADR-032: audit is MANDATORY)
+		mockStore := &mockAuditStore{}
+		auditClient := spaudit.NewAuditClient(mockStore, logr.Discard())
+
 		reconciler := &controller.SignalProcessingReconciler{
 			Client:        fakeClient,
 			Scheme:        scheme,
 			StatusManager: spstatus.NewManager(fakeClient),
 			Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+			AuditClient:   auditClient,
+			K8sEnricher:   newDefaultMockK8sEnricher(),
 		}
 
 				result, err := reconciler.Reconcile(context.Background(), reconcile.Request{
@@ -256,12 +269,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		Context("when SignalProcessing is in Completed phase", func() {
 			It("CTRL-TERM-01: should not reprocess Completed signals", func() {
 				// Given: Completed SignalProcessing
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "completed-sp",
-						Namespace: "default",
-					},
-					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "completed-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-complete",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -317,12 +331,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		Context("when SignalProcessing is in Failed phase", func() {
 			It("CTRL-TERM-02: should not reprocess Failed signals", func() {
 				// Given: Failed SignalProcessing
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "failed-sp",
-						Namespace: "default",
-					},
-					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "failed-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-failed",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -417,11 +432,12 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					},
 				}
 
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "enrich-pod-sp",
-						Namespace: "default",
-					},
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "enrich-pod-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-enrich",
@@ -482,13 +498,14 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		})
 
 		Context("when namespace does not exist", func() {
-			It("CTRL-ENRICH-02: should handle missing namespace gracefully", func() {
-				// Given: SignalProcessing targeting non-existent namespace
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "enrich-missing-ns",
-						Namespace: "default",
-					},
+		It("CTRL-ENRICH-02: should handle missing namespace gracefully", func() {
+			// Given: SignalProcessing targeting non-existent namespace
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "enrich-missing-ns",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-missing-ns",
@@ -561,13 +578,14 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		})
 
 		Context("when SignalProcessing is in Classifying phase", func() {
-			It("CTRL-CLASS-01: should attempt classification and transition", func() {
-				// Given: SignalProcessing in Classifying phase with enriched context
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "classify-sp",
-						Namespace: "default",
-					},
+		It("CTRL-CLASS-01: should attempt classification and transition", func() {
+			// Given: SignalProcessing in Classifying phase with enriched context
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "classify-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-classify",
@@ -640,13 +658,14 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 		})
 
 		Context("when SignalProcessing is in Categorizing phase", func() {
-			It("CTRL-CAT-01: should transition to Completed", func() {
-				// Given: SignalProcessing in Categorizing phase with classifications
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "categorize-sp",
-						Namespace: "default",
-					},
+		It("CTRL-CAT-01: should transition to Completed", func() {
+			// Given: SignalProcessing in Categorizing phase with classifications
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "categorize-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-categorize",
@@ -775,14 +794,15 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						},
 					}
 
-					sp := &signalprocessingv1alpha1.SignalProcessing{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "detect-pdb-sp",
-							Namespace: "default",
-						},
-						Spec: signalprocessingv1alpha1.SignalProcessingSpec{
-							Signal: signalprocessingv1alpha1.SignalData{
-								Fingerprint: "pdb-test",
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "detect-pdb-sp",
+						Namespace:  "default",
+						Generation: 1, // K8s increments on create/update
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+						Signal: signalprocessingv1alpha1.SignalData{
+							Fingerprint: "pdb-test",
 								TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 									Kind:      "Pod",
 									Name:      "test-pod-pdb",
@@ -949,12 +969,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						},
 					}
 
-					sp := &signalprocessingv1alpha1.SignalProcessing{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "detect-hpa-sp",
-							Namespace: "default",
-						},
-						Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "detect-hpa-sp",
+						Namespace:  "default",
+						Generation: 1, // K8s increments on create/update
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 							Signal: signalprocessingv1alpha1.SignalData{
 								Fingerprint: "hpa-test",
 								TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1117,12 +1138,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						},
 					}
 
-					sp := &signalprocessingv1alpha1.SignalProcessing{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "detect-netpol-sp",
-							Namespace: "default",
-						},
-						Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "detect-netpol-sp",
+						Namespace:  "default",
+						Generation: 1, // K8s increments on create/update
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 							Signal: signalprocessingv1alpha1.SignalData{
 								Fingerprint: "netpol-test",
 								TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1264,12 +1286,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						},
 					}
 
-					sp := &signalprocessingv1alpha1.SignalProcessing{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      "detect-prod-sp",
-							Namespace: "default",
-						},
-						Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+				sp := &signalprocessingv1alpha1.SignalProcessing{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "detect-prod-sp",
+						Namespace:  "default",
+						Generation: 1, // K8s increments on create/update
+					},
+					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 							Signal: signalprocessingv1alpha1.SignalData{
 								Fingerprint: "prod-test",
 								TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1334,12 +1357,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					},
 				}
 
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "detect-gitops-sp",
-						Namespace: "default",
-					},
-					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "detect-gitops-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "gitops-test",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1402,12 +1426,13 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					},
 				}
 
-				sp := &signalprocessingv1alpha1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "detect-flux-sp",
-						Namespace: "default",
-					},
-					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
+			sp := &signalprocessingv1alpha1.SignalProcessing{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "detect-flux-sp",
+					Namespace:  "default",
+					Generation: 1, // K8s increments on create/update
+				},
+				Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "flux-test",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

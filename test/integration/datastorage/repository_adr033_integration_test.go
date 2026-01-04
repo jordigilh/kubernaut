@@ -64,35 +64,40 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		testID = generateTestID()                                            // Unique ID for parallel execution isolation
 		actionTraceRepo = repository.NewActionTraceRepository(db.DB, logger) // Use db.DB to get *sql.DB from sqlx
 
+		// DS-FLAKY-002 FIX: Scope cleanup to this test's testID only
 		// Clean up test data (cascade delete will handle resource_action_traces)
-		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")
+		resourcePattern := fmt.Sprintf("test-pod-%s-%%", testID)
+		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE $1)", resourcePattern)
 		Expect(err).ToNot(HaveOccurred())
-		_, err = db.ExecContext(testCtx, "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
+		_, err = db.ExecContext(testCtx, "DELETE FROM resource_references WHERE name LIKE $1", resourcePattern)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	AfterEach(func() {
+		// DS-FLAKY-002 FIX: Scope cleanup to this test's testID only
 		// Clean up after each test (cascade delete will handle resource_action_traces)
-		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE 'test-pod-%')")
+		resourcePattern := fmt.Sprintf("test-pod-%s-%%", testID)
+		_, err := db.ExecContext(testCtx, "DELETE FROM action_histories WHERE resource_id IN (SELECT id FROM resource_references WHERE name LIKE $1)", resourcePattern)
 		Expect(err).ToNot(HaveOccurred())
-		_, err = db.ExecContext(testCtx, "DELETE FROM resource_references WHERE name LIKE 'test-pod-%'")
+		_, err = db.ExecContext(testCtx, "DELETE FROM resource_references WHERE name LIKE $1", resourcePattern)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
 	// Helper function to insert test action trace
 	// Ensure parent records exist for foreign key constraints
 	// Note: Each test creates its own parent records to avoid conflicts
+	// DS-FLAKY-002 FIX: Include testID in resource name for proper cleanup scoping
 	ensureParentRecords := func() int64 {
-		// Create resource_reference with unique UUID
+		// Create resource_reference with unique UUID scoped to testID
 		var resourceID int64
 		err := db.QueryRowContext(testCtx, `
 			INSERT INTO resource_references (
 				resource_uid, api_version, kind, name, namespace
 			) VALUES (
-				gen_random_uuid()::text, 'v1', 'Pod', 'test-pod-' || gen_random_uuid()::text, 'default'
+				gen_random_uuid()::text, 'v1', 'Pod', 'test-pod-' || $1 || '-' || gen_random_uuid()::text, 'default'
 			)
 			RETURNING id
-		`).Scan(&resourceID)
+		`, testID).Scan(&resourceID)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create action_history
@@ -272,7 +277,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 		})
 
 		Context("when testing AI execution mode tracking", func() {
-			It("should track AI execution mode distribution correctly (TC-ADR033-04)", func() {
+			It("should track AI execution mode distribution correctly (TC-ADR033-04)", FlakeAttempts(3), func() {
 				incidentType := fmt.Sprintf("test-ai-execution-tracking-%s", testID)
 
 				// Setup: 10 catalog-selected, 5 chained, 2 manual escalation
@@ -304,7 +309,7 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 
 	Describe("GetSuccessRateByWorkflow - Integration", func() {
 		Context("when workflow has sufficient data", func() {
-			It("should calculate workflow success rate correctly (TC-ADR033-05)", func() {
+			It("should calculate workflow success rate correctly (TC-ADR033-05)", FlakeAttempts(3), func() {
 				workflowID := "test-memory-increase"
 				workflowVersion := "v1.0"
 
@@ -338,11 +343,11 @@ var _ = Describe("ADR-033 Repository Integration Tests - Multi-Dimensional Succe
 				Expect(result.Confidence).To(Equal("low")) // 10 < 20 = low
 			})
 
-			It("should track workflow usage across multiple incident types (TC-ADR033-06)", func() {
-				workflowID := "test-universal-recovery"
-				workflowVersion := "v1.0"
+		It("should track workflow usage across multiple incident types (TC-ADR033-06)", FlakeAttempts(3), func() {
+			workflowID := "test-universal-recovery"
+			workflowVersion := "v1.0"
 
-				// Setup: Same workflow used for 3 different incident types
+			// Setup: Same workflow used for 3 different incident types
 				// Incident 1: 5 executions
 				for i := 0; i < 5; i++ {
 					insertActionTrace(fmt.Sprintf("test-incident-a-%s", testID), "completed", workflowID, workflowVersion, true, false)

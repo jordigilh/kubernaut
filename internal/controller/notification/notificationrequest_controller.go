@@ -40,9 +40,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationphase "github.com/jordigilh/kubernaut/pkg/notification/phase"
-	"github.com/jordigilh/kubernaut/pkg/notification/retry"
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
+	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
@@ -91,7 +91,9 @@ type NotificationRequestReconciler struct {
 	Sanitizer *sanitization.Sanitizer
 
 	// v3.1: Circuit breaker for graceful degradation (Category B)
-	CircuitBreaker *retry.CircuitBreaker
+	// Migrated to github.com/sony/gobreaker via shared Manager wrapper
+	// Provides per-channel isolation (Slack, console, webhooks)
+	CircuitBreaker *circuitbreaker.Manager
 
 	// v1.1: Audit integration for unified audit table (ADR-034)
 	// BR-NOT-062: Unified Audit Table Integration
@@ -204,6 +206,22 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 		"failedDeliveries", notification.Status.FailedDeliveries,
 		"totalAttempts", notification.Status.TotalAttempts,
 		"deliveryAttemptCount", len(notification.Status.DeliveryAttempts))
+
+	// NT-BUG-008: Prevent duplicate reconciliations from processing same generation twice
+	// Bug: Status updates (Pending→Sending) trigger immediate reconciles that race with original reconcile
+	// Symptom: 2x audit events per notification (discovered in E2E test 02_audit_correlation_test.go)
+	// Fix: Skip reconcile if this generation was already processed (has delivery attempts) AND in terminal phase
+	// CRITICAL: Must allow reconciliation for non-terminal phases (e.g., Sending → Failed transition)
+	if notification.Generation == notification.Status.ObservedGeneration &&
+		len(notification.Status.DeliveryAttempts) > 0 &&
+		notificationphase.IsTerminal(notification.Status.Phase) {
+		log.Info("✅ DUPLICATE RECONCILE PREVENTED: Generation already processed",
+			"generation", notification.Generation,
+			"observedGeneration", notification.Status.ObservedGeneration,
+			"deliveryAttempts", len(notification.Status.DeliveryAttempts),
+			"phase", notification.Status.Phase)
+		return ctrl.Result{}, nil
+	}
 
 	// Phase 1: Initialize status if first reconciliation
 	initialized, err := r.handleInitialization(ctx, notification)
@@ -339,7 +357,7 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 }
 
 // deliverToConsole delivers notification to console (stdout)
-func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error { //nolint:unused
 	if r.ConsoleService == nil {
 		return fmt.Errorf("console service not initialized")
 	}
@@ -350,7 +368,7 @@ func (r *NotificationRequestReconciler) deliverToConsole(ctx context.Context, no
 }
 
 // deliverToSlack delivers notification to Slack webhook
-func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error { //nolint:unused
 	if r.SlackService == nil {
 		return fmt.Errorf("slack service not initialized")
 	}
@@ -377,7 +395,7 @@ func (r *NotificationRequestReconciler) deliverToSlack(ctx context.Context, noti
 }
 
 // sanitizeNotification creates a sanitized copy of the notification
-func (r *NotificationRequestReconciler) sanitizeNotification(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest {
+func (r *NotificationRequestReconciler) sanitizeNotification(notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest { //nolint:unused
 	// Create a shallow copy to avoid mutating the original
 	sanitized := notification.DeepCopy()
 
@@ -698,6 +716,7 @@ func (r *NotificationRequestReconciler) ExportedAuditMessageAcknowledged(ctx con
 func (r *NotificationRequestReconciler) ExportedAuditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	return r.auditMessageEscalated(ctx, notification)
 }
+
 // ========================================
 // AUDIT EVENT IDEMPOTENCY (NT-BUG-001 Fix)
 // ========================================
@@ -788,6 +807,7 @@ func (r *NotificationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error
 		).
 		Complete(r)
 }
+
 // ========================================
 // PHASE HANDLERS (P2 Refactoring - Complexity Reduction)
 // ========================================
@@ -1007,20 +1027,44 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 ) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 
-	// NT-BUG-008: Handle race condition where phase is still Pending
+	// NT-BUG-008 & NT-BUG-013: Handle race condition where phase is still Pending
 	// If handlePendingToSendingTransition ran but the re-read returned a stale notification,
-	// we need to manually update to Sending first before making terminal transitions.
+	// we need to persist the transition to Sending first before making terminal transitions.
 	// This prevents invalid "Pending → Sent" transitions that violate the state machine.
 	if notification.Status.Phase == notificationv1alpha1.NotificationPhasePending {
 		log.Info("⚠️  RACE CONDITION DETECTED: Phase is still Pending after delivery loop",
 			"expectedPhase", "Sending",
 			"actualPhase", notification.Status.Phase,
-			"fix", "Transitioning to Sending before determining final state")
+			"fix", "Persisting transition to Sending before determining final state")
 
-		// Manually update phase to Sending to align with state machine
-		notification.Status.Phase = notificationv1alpha1.NotificationPhaseSending
-		notification.Status.Reason = "ProcessingDeliveries"
-		notification.Status.Message = "Processing delivery channels"
+		// NT-BUG-013 Fix: Persist the Sending phase transition to K8s API
+		// The local in-memory update is not enough - we must persist to K8s API
+		// Otherwise AtomicStatusUpdate will try to transition from Pending (K8s state) to Sent (new state)
+		if err := r.StatusManager.AtomicStatusUpdate(
+			ctx,
+			notification,
+			notificationv1alpha1.NotificationPhaseSending,
+			"ProcessingDeliveries",
+			"Processing delivery channels",
+			nil, // No delivery attempts yet
+		); err != nil {
+			log.Error(err, "Failed to persist Sending phase transition during race condition recovery")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("✅ Phase transition to Sending persisted successfully (race condition resolved)")
+
+		// NT-BUG-014 Fix: Re-read notification from K8s to get latest resourceVersion
+		// After persisting Sending phase, we must re-read to ensure we have the latest state
+		// Otherwise, the next AtomicStatusUpdate will use stale resourceVersion and fail
+		if err := r.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+			log.Error(err, "Failed to re-read notification after Sending phase persistence")
+			return ctrl.Result{}, err
+		}
+
+		log.Info("✅ Notification re-read after Sending phase persistence",
+			"phase", notification.Status.Phase,
+			"resourceVersion", notification.ResourceVersion)
 	}
 
 	// Calculate overall status
@@ -1150,18 +1194,18 @@ func (r *NotificationRequestReconciler) determinePhaseTransition(
 				}
 			}
 
-		backoff := r.calculateBackoffWithPolicy(notification, maxAttemptCount)
+			backoff := r.calculateBackoffWithPolicy(notification, maxAttemptCount)
 
-		log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
-			"successful", totalSuccessful,
-			"failed", result.failureCount,
-			"total", totalChannels,
-			"backoff", backoff,
-			"maxAttemptCount", maxAttemptCount,
-			"currentPhase", notification.Status.Phase,
-			"nextPhase", notificationv1alpha1.NotificationPhaseRetrying)
+			log.Info("⏰ PARTIAL SUCCESS WITH FAILURES → TRANSITIONING TO RETRYING",
+				"successful", totalSuccessful,
+				"failed", result.failureCount,
+				"total", totalChannels,
+				"backoff", backoff,
+				"maxAttemptCount", maxAttemptCount,
+				"currentPhase", notification.Status.Phase,
+				"nextPhase", notificationv1alpha1.NotificationPhaseRetrying)
 
-		return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
+			return r.transitionToRetrying(ctx, notification, backoff, result.deliveryAttempts)
 		}
 		// All channels failed, retries remain → Failed (temporary, will retry)
 		log.Info("🔍 ALL CHANNELS FAILED BRANCH",

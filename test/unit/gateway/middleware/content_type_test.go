@@ -50,7 +50,7 @@ var _ = Describe("BR-042: Content-Type Validation", func() {
 		// Next handler that should only be called for valid requests
 		nextHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("success"))
+			_, _ = w.Write([]byte("success"))
 		})
 
 		validRequest = httptest.NewRequest(http.MethodPost, "/api/v1/signals/prometheus", nil)

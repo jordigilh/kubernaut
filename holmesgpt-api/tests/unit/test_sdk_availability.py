@@ -47,10 +47,9 @@ class TestSDKAvailability:
 
             # Try importing (may fail if SDK not set up)
             # This is expected in GREEN phase
-            success = True
-        except ImportError as e:
+        except ImportError:
             # Expected in GREEN phase if SDK not fully set up
-            success = False
+            pass
 
         # GREEN phase: We just check if the path exists
         assert sdk_path.exists(), "SDK path should exist"

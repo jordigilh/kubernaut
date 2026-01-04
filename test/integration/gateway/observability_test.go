@@ -81,7 +81,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/plain"),
 				"Metrics should be in Prometheus text format")
 
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can scrape Gateway metrics into Prometheus
@@ -477,7 +477,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Parse response body
 			var healthResp map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&healthResp)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			Expect(err).ToNot(HaveOccurred(), "Health response should be valid JSON")
 			Expect(healthResp["status"]).To(Equal("healthy"), "Status should be 'healthy'")
@@ -500,7 +500,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Parse response body
 			var readyResp map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&readyResp)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			Expect(err).ToNot(HaveOccurred(), "Readiness response should be valid JSON")
 			Expect(readyResp["status"]).To(Equal("ready"), "Status should be 'ready'")
@@ -519,7 +519,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred(), "Healthz endpoint should be accessible")
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Healthz endpoint should return 200 OK")
 
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Gateway follows Kubernetes conventions

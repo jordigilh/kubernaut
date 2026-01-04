@@ -80,6 +80,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notificationName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -159,6 +160,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notificationName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 						Labels: map[string]string{
 							"cycle": fmt.Sprintf("%d", cycle),
 						},
@@ -244,6 +246,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      notificationName,
 						Namespace: testNamespace,
+						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
 						Type:     notificationv1alpha1.NotificationTypeSimple,
@@ -322,6 +325,7 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      notificationName,
 							Namespace: testNamespace,
+							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
 							Type:     notificationv1alpha1.NotificationTypeSimple,

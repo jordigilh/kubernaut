@@ -20,8 +20,8 @@ import (
 	"context"
 	"time"
 
-	ctrl "sigs.k8s.io/controller-runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 )
@@ -55,13 +55,24 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 	now := metav1.Now()
 	analysis.Status.StartedAt = &now
 
+	// Capture phase BEFORE transition for audit
+	phaseBefore := analysis.Status.Phase
+
 	// Transition to Investigating phase (first processing phase per CRD schema)
+	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Investigating handler after processing
 	analysis.Status.Phase = PhaseInvestigating
 	analysis.Status.Message = "AIAnalysis created, starting investigation"
 
 	if err := r.Status().Update(ctx, analysis); err != nil {
 		log.Error(err, "Failed to update status to Investigating")
 		return ctrl.Result{}, err
+	}
+
+	// DD-AUDIT-003: Record phase transition AFTER status update (ensures audit reflects committed state)
+	// IDEMPOTENCY: Only record if phase actually changed (prevents duplicate events in race conditions)
+	// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+	if phaseBefore != PhaseInvestigating {
+		r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, PhaseInvestigating)
 	}
 
 	r.Recorder.Event(analysis, "Normal", "AIAnalysisCreated", "AIAnalysis processing started")
@@ -86,23 +97,41 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.InvestigatingHandler != nil {
-		// Capture phase before handler for requeue detection
+		// AA-BUG-007: Use optimistic locking with idempotency check
+		// Handler runs INSIDE updateFunc, checked AFTER each atomic refetch
+
 		var phaseBefore string
 		var result ctrl.Result
 		var handlerErr error
+		var handlerExecuted bool
 
 		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Handler modifies status fields, then atomic update commits all changes
-		// BEFORE: Handler modifies → Status().Update() (separate API call)
-		// AFTER: Atomic refetch → Handler modifies → Single Status().Update()
+		// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
-			// Capture phase after refetch
+			// Capture phase after ATOMIC refetch
 			phaseBefore = analysis.Status.Phase
 
-			// Execute handler (modifies analysis.Status in memory after refetch)
+			// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
+			// InvestigationTime > 0 means handler already executed for this Investigating phase
+			// This prevents duplicate holmesgpt.call audit events from concurrent reconciles
+			if phaseBefore != PhaseInvestigating {
+				log.V(1).Info("Phase already changed, skipping handler",
+					"expected", PhaseInvestigating, "actual", phaseBefore)
+				handlerExecuted = false
+				return nil
+			}
+			
+			if analysis.Status.InvestigationTime > 0 {
+				log.V(1).Info("Handler already executed (InvestigationTime set), skipping handler",
+					"investigationTime", analysis.Status.InvestigationTime)
+				handlerExecuted = false
+				return nil
+			}
+
+			// Execute handler ONLY if phase check passed AND not already executed
 			result, handlerErr = r.InvestigatingHandler.Handle(ctx, analysis)
+			handlerExecuted = true
 			if handlerErr != nil {
 				return handlerErr
 			}
@@ -112,10 +141,14 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			return ctrl.Result{}, err
 		}
 
-		// Requeue if phase changed to ensure next phase is processed
-		// (GenerationChangedPredicate doesn't trigger on status-only updates)
-		if analysis.Status.Phase != phaseBefore {
-			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
+		// Only requeue if handler actually executed and changed phase
+		if handlerExecuted && analysis.Status.Phase != phaseBefore {
+			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
+
+			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
+			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
@@ -143,23 +176,36 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 
 	// Use handler if wired in, otherwise stub for backward compatibility
 	if r.AnalyzingHandler != nil {
-		// Capture phase before handler for requeue detection
+		// AA-BUG-007: Use optimistic locking with idempotency check
+		// The key insight: Move handler execution BEFORE AtomicStatusUpdate's refetch
+		// so we can check the phase ONCE and decide whether to proceed
+
 		var phaseBefore string
 		var result ctrl.Result
 		var handlerErr error
+		var handlerExecuted bool
 
 		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Handler modifies status fields, then atomic update commits all changes
-		// BEFORE: Handler modifies → Status().Update() (separate API call)
-		// AFTER: Atomic refetch → Handler modifies → Single Status().Update()
+		// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
+		// Handler runs INSIDE updateFunc, but ONLY ONCE per phase value
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
-			// Capture phase after refetch
+			// Capture phase after ATOMIC refetch (part of AtomicStatusUpdate)
 			phaseBefore = analysis.Status.Phase
 
-			// Execute handler (modifies analysis.Status in memory after refetch)
+			// AA-BUG-007: Idempotency - skip handler if phase already changed
+			// This check happens AFTER each refetch, preventing duplicate execution
+			if phaseBefore != PhaseAnalyzing {
+				log.V(1).Info("Phase already changed, skipping handler",
+					"expected", PhaseAnalyzing, "actual", phaseBefore)
+				handlerExecuted = false
+				return nil // No-op, phase already processed
+			}
+
+			// AA-BUG-007: Execute handler ONLY if phase check passed
+			// Handler modifies analysis.Status in memory
 			result, handlerErr = r.AnalyzingHandler.Handle(ctx, analysis)
+			handlerExecuted = true
 			if handlerErr != nil {
 				return handlerErr
 			}
@@ -169,10 +215,14 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			return ctrl.Result{}, err
 		}
 
-		// Requeue if phase changed to ensure next phase is processed
-		// (GenerationChangedPredicate doesn't trigger on status-only updates)
-		if analysis.Status.Phase != phaseBefore {
-			log.Info("Phase changed, requeuing (atomic update)", "from", phaseBefore, "to", analysis.Status.Phase)
+		// Only requeue if handler actually executed and changed phase
+		if handlerExecuted && analysis.Status.Phase != phaseBefore {
+			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
+
+			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
+			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
+
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return result, nil
@@ -182,5 +232,3 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 	log.Info("No AnalyzingHandler configured - using stub")
 	return ctrl.Result{}, nil
 }
-
-

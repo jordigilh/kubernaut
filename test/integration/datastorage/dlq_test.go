@@ -53,6 +53,28 @@ import (
 //
 // ========================================
 
+// ARCHITECTURAL NOTE: Serial Execution Required
+// These tests MUST run serially because they use hardcoded DLQ stream names
+// shared across all parallel processes.
+//
+// Why Serial is necessary:
+// 1. Stream names are hardcoded: "audit:dlq:notifications", "audit:dlq:events"
+// 2. All 4 parallel processes share the same Redis instance
+// 3. Tests verify exact message counts (e.g., Expect(length).To(Equal(1)))
+// 4. BeforeEach cleanup (Del stream) + Enqueue + Verify creates race conditions
+//
+// Example race condition:
+// - Process 1: Del stream → Enqueue 1 message → Verify count=1 ✓
+// - Process 2: Del stream (during P1's verify) → Count becomes 0 → P1 fails
+// OR
+// - Process 1: Del stream → Enqueue 1 message
+// - Process 2: Enqueue 1 message (before P1 verifies) → P1 expects 1, finds 2 ❌
+//
+// Decision: Serial execution is the correct architectural choice for DLQ integration
+// tests that verify exact message counts. Alternative would require per-process
+// stream names, but DLQ client API uses hardcoded names in production code.
+//
+// Impact: Minimal - DLQ tests complete quickly (< 3 seconds total)
 var _ = Describe("DLQ Client Integration", Serial, func() {
 	var audit *models.NotificationAudit
 	var testError error

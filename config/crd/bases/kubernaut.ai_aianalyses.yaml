@@ -936,6 +936,13 @@ spec:
                 type: integer
               message:
                 type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the most recent generation observed by the controller.
+                  Used to prevent duplicate reconciliations and ensure idempotency.
+                  Per DD-CONTROLLER-001: Standard pattern for all Kubernetes controllers.
+                format: int64
+                type: integer
               phase:
                 description: |-
                   Phase tracking (no "Approving" or "Recommending" phase - simplified 4-phase flow)

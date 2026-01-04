@@ -69,7 +69,7 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 		metrics:         m,
 		auditClient:     auditClient,
 		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor
+		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor (audit recorded by handler, not processor)
 		builder:         NewRequestBuilder(log),       // P1.2: Initialize request builder
 		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
@@ -102,9 +102,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			statusCode = 500 // Error case
 		}
-		if h.auditClient != nil {
-			h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
-		}
+		h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/recovery/investigate", statusCode, int(investigationTime))
 
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
@@ -135,6 +133,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
+		// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
 		result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
@@ -151,9 +150,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err != nil {
 			statusCode = 500 // Error case
 		}
-		if h.auditClient != nil {
-			h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
-		}
+		h.auditClient.RecordHolmesGPTCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
 
 		if err != nil {
 			return h.handleError(ctx, analysis, err)
@@ -167,6 +164,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
+		// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
 		result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
@@ -236,6 +234,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		// Transition to permanent failure after max retries
 		now := metav1.Now()
 		analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
@@ -255,6 +254,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	)
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
 	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
 	analysis.Status.Reason = "APIError"

@@ -24,8 +24,6 @@ Tests the LLM self-correction helper functions and constants.
 Integration testing of the full loop is done via E2E tests.
 """
 
-import pytest
-from typing import List
 
 
 class TestLLMSelfCorrectionConstants:

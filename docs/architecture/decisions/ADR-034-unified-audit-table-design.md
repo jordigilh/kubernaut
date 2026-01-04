@@ -187,6 +187,71 @@ audit.SetEventCategory(event, "orchestration")  // Service-level
 
 ---
 
+### 1.2. Actor ID Naming Convention
+
+**RULE**: `actor_id` MUST follow a consistent pattern based on service type.
+
+**Pattern**:
+1. **CRD Controllers** → `<service>-controller` (where `<service>` is lowercase, hyphenated)
+2. **Stateless Services** → `<service>` (no suffix)
+3. **Always** → `actor_type = "service"`
+
+**Rationale**:
+1. **Consistent Identification**: Clearly distinguishes CRD controllers from stateless services
+2. **Service Attribution**: Accurately tracks which service performed an action
+3. **Debugging**: Easily identify the source of audit events in logs and queries
+4. **Multi-Instance Support**: Future-proof for horizontal scaling scenarios
+
+**Standard Actor IDs** (All 8 Services):
+
+| Service Type | Service Name | actor_id | actor_type | Example Events |
+|--------------|--------------|----------|------------|----------------|
+| **Stateless Services** ||||
+| Gateway | Gateway Service | `gateway` | `service` | Signal reception, CRD creation |
+| Data Storage | Data Storage Service | `datastorage` | `service` | Self-audit for writes, workflow catalog |
+| **CRD Controllers** ||||
+| Signal Processing | SignalProcessing Controller | `signalprocessing-controller` | `service` | Signal enrichment, classification |
+| AI Analysis | AIAnalysis Controller | `aianalysis-controller` | `service` | HolmesGPT integration, recommendations |
+| Workflow Execution | WorkflowExecution Controller | `workflowexecution-controller` | `service` | Tekton workflow orchestration |
+| Remediation Orchestrator | RemediationOrchestrator Controller | `remediationorchestrator-controller` | `service` | Remediation lifecycle management |
+| Notification | Notification Controller | `notification-controller` | `service` | Alert delivery, acknowledgments |
+| Approval | RemediationApprovalRequest Controller | `remediationapprovalrequest-controller` | `service` | Approval workflow management |
+
+**Implementation Example**:
+```go
+// Stateless Service (Gateway)
+const ServiceName = "gateway"
+audit.SetActor(event, "service", ServiceName)
+
+// CRD Controller (RemediationOrchestrator)
+const ServiceName = "remediationorchestrator-controller"
+audit.SetActor(event, "service", ServiceName)
+```
+
+**Query Pattern**:
+```sql
+-- Get all events from RemediationOrchestrator controller
+SELECT * FROM audit_events
+WHERE actor_id = 'remediationorchestrator-controller'
+  AND event_timestamp > NOW() - INTERVAL '24 hours'
+ORDER BY event_timestamp DESC;
+
+-- Compare controller vs stateless service activity
+SELECT
+    CASE
+        WHEN actor_id LIKE '%-controller' THEN 'CRD Controller'
+        ELSE 'Stateless Service'
+    END AS service_type,
+    actor_id,
+    COUNT(*) AS event_count
+FROM audit_events
+WHERE event_timestamp > NOW() - INTERVAL '7 days'
+GROUP BY service_type, actor_id
+ORDER BY event_count DESC;
+```
+
+---
+
 ### 2. Event Data Format: Hybrid Approach (Common Envelope + Service-Specific Payload)
 
 ```json

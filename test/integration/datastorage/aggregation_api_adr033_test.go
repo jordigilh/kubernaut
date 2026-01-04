@@ -59,14 +59,18 @@ import (
 //
 // ========================================
 
-var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking", Serial, Ordered, func() {
+var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking",  Ordered, func() {
 	var (
 		client          *http.Client
 		adr033HistoryID int64 // Auto-generated history ID for test data
 	)
 
 	BeforeAll(func() {
-		// Serial tests must use public schema
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert data into test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		// This is NOT a parallel execution issue - it's an API server architecture decision.
 		usePublicSchema()
 
 		// Use 30-second timeout for HTTP requests
@@ -131,7 +135,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK),
@@ -204,7 +208,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -230,7 +234,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
 				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
@@ -252,7 +256,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
 				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
@@ -274,7 +278,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
 				Expect(json.NewDecoder(resp.Body).Decode(&result)).ToNot(HaveOccurred())
@@ -321,10 +325,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				_ = json.NewDecoder(resp.Body).Decode(&result)
 
 				// CORRECTNESS: Should only count recent data (5 records, not 6)
 				Expect(result.TotalExecutions).To(Equal(5),
@@ -339,13 +343,13 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR: Should return 200 OK even with no data
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				_ = json.NewDecoder(resp.Body).Decode(&result)
 
 				// CORRECTNESS: Zero values for no data
 				Expect(result.TotalExecutions).To(Equal(0))
@@ -366,10 +370,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				_ = json.NewDecoder(resp.Body).Decode(&result)
 
 				// CORRECTNESS: 100% success rate
 				Expect(result.TotalExecutions).To(Equal(10))
@@ -389,10 +393,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=5",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				_ = json.NewDecoder(resp.Body).Decode(&result)
 
 				// CORRECTNESS: 0% success rate
 				Expect(result.TotalExecutions).To(Equal(10))
@@ -407,7 +411,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?time_range=7d",
 					datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR: Should return 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -418,7 +422,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=test&time_range=invalid",
 					datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR: Should return 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -452,7 +456,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=%s&time_range=7d&min_samples=5",
 					datastorageURL, workflowID, workflowVersion))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK),
@@ -510,10 +514,10 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?workflow_id=%s&workflow_version=v1.0&time_range=7d&min_samples=1",
 					datastorageURL, workflowID))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.WorkflowSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				_ = json.NewDecoder(resp.Body).Decode(&result)
 
 				// CORRECTNESS: Should only count v1.0 (5 records, not 8)
 				Expect(result.TotalExecutions).To(Equal(5),
@@ -527,7 +531,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/workflow?time_range=7d",
 					datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// BEHAVIOR: Should return 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -561,7 +565,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK),
@@ -605,7 +609,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
 				err = json.NewDecoder(resp.Body).Decode(&result)
@@ -644,7 +648,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/incident-type?incident_type=%s&time_range=7d&min_samples=1",
 					datastorageURL, incidentType))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				var result models.IncidentTypeSuccessRateResponse
 				err = json.NewDecoder(resp.Body).Decode(&result)
@@ -717,7 +721,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query multi-dimensional endpoint with all 3 dimensions
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&action_type=increase_memory&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK),
@@ -796,7 +800,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query without action_type (should aggregate both actions)
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-pod-oom&workflow_id=pod-oom-recovery&workflow_version=v1.2&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -832,7 +836,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query with only incident_type
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-disk-full&time_range=1h", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 200 OK
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -857,7 +861,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query with invalid parameters
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&workflow_version=v1.0&time_range=7d", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -875,7 +879,7 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query with no dimension filters (only time_range)
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?time_range=7d", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest),
@@ -893,14 +897,14 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query with invalid time_range
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=test&time_range=invalid", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: HTTP 400 Bad Request
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 
 				// ASSERT: Error message
 				var problem map[string]interface{}
-				json.NewDecoder(resp.Body).Decode(&problem)
+				_ = json.NewDecoder(resp.Body).Decode(&problem)
 				Expect(problem["detail"]).To(ContainSubstring("time_range"))
 			})
 		})
@@ -913,11 +917,11 @@ var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success
 				// ACT: Query without time_range
 				resp, err := client.Get(fmt.Sprintf("%s/api/v1/success-rate/multi-dimensional?incident_type=integration-test-defaults", datastorageURL))
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// ASSERT: Response shows default time_range
 				var result models.MultiDimensionalSuccessRateResponse
-				json.NewDecoder(resp.Body).Decode(&result)
+				_ = json.NewDecoder(resp.Body).Decode(&result)
 				Expect(result.TimeRange).To(Equal("7d"),
 					"time_range should default to 7d")
 			})

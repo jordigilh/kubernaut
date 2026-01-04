@@ -139,7 +139,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// Should be accepted (201 or 202)
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
@@ -181,7 +181,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// Should be accepted (201 or 202)
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
@@ -259,7 +259,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 					return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -291,7 +291,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 					return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -360,7 +360,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 					if err != nil {
 						return err
 					}
-					defer resp.Body.Close()
+					defer func() { _ = resp.Body.Close() }()
 
 					if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusAccepted {
 						return fmt.Errorf("unexpected status code: %d", resp.StatusCode)

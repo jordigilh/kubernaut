@@ -48,6 +48,13 @@ func (n *noopAnalyzingAuditClient) RecordApprovalDecision(ctx context.Context, a
 	// No-op: Unit tests don't need audit recording
 }
 
+// AA-BUG-008: RecordPhaseTransition removed from AnalyzingAuditClientInterface
+// Phase transitions are recorded by controller only, not by handlers
+
+func (n *noopAnalyzingAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+	// No-op: Unit tests don't need audit recording
+}
+
 // BR-AI-012: AnalyzingHandler tests
 var _ = Describe("AnalyzingHandler", func() {
 	var (

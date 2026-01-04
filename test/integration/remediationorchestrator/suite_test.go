@@ -68,7 +68,7 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 
 	// Import RO controller
-	"github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
+	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
 	// Import audit infrastructure (ADR-032)
@@ -95,6 +95,7 @@ var (
 	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
+	auditStore audit.AuditStore
 )
 
 func TestRemediationOrchestratorIntegration(t *testing.T) {
@@ -231,7 +232,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		BatchSize:     5,
 		MaxRetries:    3,
 	}
-	auditStore, err := audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
+	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create audit store - ensure DataStorage is running at http://localhost:18140")
 
 	By("Initializing RemediationOrchestrator metrics (DD-METRICS-001)")
@@ -430,6 +431,30 @@ var _ = SynchronizedAfterSuite(func() {
 }, func() {
 	// This runs ONCE on the last parallel process - cleanup shared infrastructure
 	By("Tearing down the test environment")
+
+	// RO-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+	// This prevents "connection refused" errors during cleanup when the
+	// background writer tries to flush buffered events after DataStorage is stopped.
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	By("Flushing audit store before infrastructure shutdown")
+
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
+
+	err = auditStore.Close()
+	if err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
+	}
+
 	cancel()
 
 	if testEnv != nil {
@@ -437,8 +462,9 @@ var _ = SynchronizedAfterSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
+	// RO-SHUTDOWN-001: Safe to stop now - audit events already flushed
 	By("Stopping RO integration infrastructure")
-	err := infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
+	err = infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Cleaning up infrastructure images to prevent disk space issues (DD-TEST-001 v1.1)")
@@ -513,7 +539,7 @@ func deleteTestNamespace(ns string) {
 }
 
 // waitForRRPhase waits for a RemediationRequest to reach a specific phase.
-func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration) error {
+func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration) error { //nolint:unused
 	return wait.PollImmediate(interval, timeout, func() (bool, error) {
 		rr := &remediationv1.RemediationRequest{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr)
@@ -525,7 +551,7 @@ func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration
 }
 
 // waitForChildCRD waits for a child CRD to be created by RO.
-func waitForChildCRD(name, namespace string, obj client.Object, timeout time.Duration) error {
+func waitForChildCRD(name, namespace string, obj client.Object, timeout time.Duration) error { //nolint:unused
 	return wait.PollImmediate(interval, timeout, func() (bool, error) {
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj)
 		if err != nil {
@@ -574,7 +600,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 }
 
 // updateAIAnalysisStatus updates the AIAnalysis status to simulate completion.
-func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aianalysisv1.SelectedWorkflow) error {
+func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aianalysisv1.SelectedWorkflow) error { //nolint:unused
 	ai := &aianalysisv1.AIAnalysis{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, ai); err != nil {
 		return err
@@ -633,7 +659,7 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 
 // createSignalProcessingCRD manually creates a SignalProcessing CRD for a RemediationRequest.
 // Used in Phase 1 integration tests where child controllers are not running.
-func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRequest) *signalprocessingv1.SignalProcessing {
+func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRequest) *signalprocessingv1.SignalProcessing { //nolint:unused
 	return &signalprocessingv1.SignalProcessing{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "sp-" + rr.Name,
@@ -680,7 +706,7 @@ func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRe
 
 // createAIAnalysisCRD manually creates an AIAnalysis CRD for a RemediationRequest.
 // Used in Phase 1 integration tests where child controllers are not running.
-func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest) *aianalysisv1.AIAnalysis {
+func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest) *aianalysisv1.AIAnalysis { //nolint:unused
 	return &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ai-" + rr.Name,
@@ -726,7 +752,7 @@ func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest)
 
 // createWorkflowExecutionCRD manually creates a WorkflowExecution CRD for a RemediationRequest.
 // Used in Phase 1 integration tests where child controllers are not running.
-func createWorkflowExecutionCRD(namespace string, rr *remediationv1.RemediationRequest, workflowID string) *workflowexecutionv1.WorkflowExecution {
+func createWorkflowExecutionCRD(namespace string, rr *remediationv1.RemediationRequest, workflowID string) *workflowexecutionv1.WorkflowExecution { //nolint:unused
 	return &workflowexecutionv1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "wfe-" + rr.Name + "-",

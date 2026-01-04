@@ -38,7 +38,11 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 		It("should return 200 OK when controller is alive", func() {
 			resp, err := httpClient.Get(healthURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					GinkgoLogr.Error(err, "Failed to close response body")
+				}
+			}()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -57,7 +61,11 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 			duration := time.Since(start)
 
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					GinkgoLogr.Error(err, "Failed to close response body")
+				}
+			}()
 
 			Expect(duration).To(BeNumerically("<", time.Second))
 		})
@@ -67,7 +75,11 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 		It("should return 200 OK when controller is ready", func() {
 			resp, err := httpClient.Get(healthURL + "/readyz")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					GinkgoLogr.Error(err, "Failed to close response body")
+				}
+			}()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
@@ -75,7 +87,11 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 		It("should indicate HolmesGPT-API dependency status", func() {
 			resp, err := httpClient.Get(healthURL + "/readyz?verbose=true")
 			Expect(err).NotTo(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					GinkgoLogr.Error(err, "Failed to close response body")
+				}
+			}()
 
 			body, err := io.ReadAll(resp.Body)
 			Expect(err).NotTo(HaveOccurred())
@@ -96,7 +112,11 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 				resp, err = httpClient.Get("http://localhost:8088/health")
 				return err
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					GinkgoLogr.Error(err, "Failed to close response body")
+				}
+			}()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
@@ -111,7 +131,11 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 				resp, err = httpClient.Get("http://localhost:8091/health")
 				return err
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					GinkgoLogr.Error(err, "Failed to close response body")
+				}
+			}()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})

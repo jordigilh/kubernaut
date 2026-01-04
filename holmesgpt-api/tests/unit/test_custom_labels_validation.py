@@ -8,7 +8,6 @@ These are UNIT TESTS that validate Pydantic model validation and data structures
 No external services required.
 """
 
-import pytest
 
 
 class TestCustomLabelsModelValidation:

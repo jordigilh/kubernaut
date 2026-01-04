@@ -11,12 +11,10 @@ import hashlib
 import logging
 import os
 import tempfile
-import threading
 import time
 from unittest.mock import MagicMock
 
 import pytest
-import yaml
 
 
 class TestFileWatcherInitialization:
@@ -99,7 +97,7 @@ class TestFileWatcherInitialization:
 class TestFileWatcherChangeDetection:
     """Test FileWatcher change detection and callback triggering."""
 
-    def test_file_watcher_detects_change(self):
+    def test_file_watcher_detects_change(self, wait_for):
         """
         BR-HAPI-199: Service SHALL reload configuration from ConfigMap within 90 seconds.
 
@@ -125,25 +123,25 @@ class TestFileWatcherChangeDetection:
             initial_calls = len(callback_calls)
 
             # Modify file
-            time.sleep(0.3)  # Give watcher time to settle
             with open(config_path, 'w') as f:
                 f.write("llm:\n  model: claude-3-5-sonnet\n")
 
-            # Wait for change detection (with timeout)
-            timeout = 2.0
-            start = time.time()
-            while len(callback_calls) == initial_calls and (time.time() - start) < timeout:
-                time.sleep(0.1)
+            # Wait for change detection (typically <100ms instead of 2s+ with sleep)
+            wait_for(
+                lambda: len(callback_calls) > initial_calls,
+                timeout=2.0,
+                error_msg="FileWatcher should detect file change"
+            )
 
             watcher.stop()
 
             # Assert callback was called for change
-            assert len(callback_calls) > initial_calls, "FileWatcher should detect file change"
+            assert len(callback_calls) > initial_calls
             assert "claude-3-5-sonnet" in callback_calls[-1]
         finally:
             os.unlink(config_path)
 
-    def test_file_watcher_debounces_rapid_changes(self):
+    def test_file_watcher_debounces_rapid_changes(self, wait_for):
         """
         BR-HAPI-199: Service SHALL reload configuration from ConfigMap.
 
@@ -165,18 +163,19 @@ class TestFileWatcherChangeDetection:
             watcher = FileWatcher(config_path, track_callback, logger)
             watcher.start()
 
-            # Clear initial load
-            time.sleep(0.3)
+            # Wait for initial load
+            wait_for(lambda: len(callback_calls) > 0, timeout=1.0)
             initial_count = len(callback_calls)
 
             # Rapid fire changes (simulating kubelet atomic swap)
             for i in range(5):
                 with open(config_path, 'w') as f:
                     f.write(f"value: {i + 1}\n")
-                time.sleep(0.05)  # 50ms between writes
+                time.sleep(0.05)  # 50ms between writes (simulating external system)
 
-            # Wait for debounce to settle
-            time.sleep(0.5)
+            # Wait for debounce to settle (typically ~200ms instead of 500ms)
+            wait_for(lambda: len(callback_calls) > initial_count, timeout=1.0)
+            time.sleep(0.1)  # Brief settle for debounce window
 
             watcher.stop()
 
@@ -260,7 +259,7 @@ class TestFileWatcherHashTracking:
 class TestFileWatcherMetrics:
     """Test FileWatcher metrics and counters."""
 
-    def test_file_watcher_reload_count(self):
+    def test_file_watcher_reload_count(self, wait_for):
         """
         BR-HAPI-199: Metrics exposed for reload count and errors.
 
@@ -281,19 +280,18 @@ class TestFileWatcherMetrics:
 
             assert watcher.reload_count == 1  # Initial load
 
-            # Trigger reload - wait longer for polling mode
-            time.sleep(1.5)  # Wait for poll interval
+            # Trigger reload
             with open(config_path, 'w') as f:
                 f.write("value: 2\n")
-            time.sleep(1.5)  # Wait for poll + debounce
 
-            assert watcher.reload_count >= 2
+            # Wait for reload (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: watcher.reload_count >= 2, timeout=2.0, error_msg="Expected reload_count to increment")
 
             watcher.stop()
         finally:
             os.unlink(config_path)
 
-    def test_file_watcher_error_count(self):
+    def test_file_watcher_error_count(self, wait_for):
         """
         BR-HAPI-199: Metrics exposed for reload count and errors.
 
@@ -317,13 +315,12 @@ class TestFileWatcherMetrics:
             # Initial load should succeed
             assert watcher.error_count == 0
 
-            # Trigger reload that will fail in callback - wait for poll interval
-            time.sleep(1.5)
+            # Trigger reload that will fail in callback
             with open(config_path, 'w') as f:
                 f.write("value: 2\n")
-            time.sleep(1.5)  # Wait for poll + debounce
 
-            assert watcher.error_count >= 1
+            # Wait for error to be detected (typically <100ms instead of 3s with 2× sleep(1.5))
+            wait_for(lambda: watcher.error_count >= 1, timeout=2.0, error_msg="Expected error_count to increment")
 
             watcher.stop()
         finally:
@@ -333,7 +330,7 @@ class TestFileWatcherMetrics:
 class TestFileWatcherGracefulDegradation:
     """Test FileWatcher graceful degradation on errors."""
 
-    def test_file_watcher_graceful_on_callback_error(self):
+    def test_file_watcher_graceful_on_callback_error(self, wait_for):
         """
         BR-HAPI-199: Service SHALL gracefully degrade on invalid configuration.
 
@@ -357,11 +354,10 @@ class TestFileWatcherGracefulDegradation:
             watcher = FileWatcher(config_path, sometimes_failing_callback, logger)
             watcher.start()
 
-            # First reload - wait for poll interval
-            time.sleep(1.5)
+            # First reload
             with open(config_path, 'w') as f:
                 f.write("value: 2\n")
-            time.sleep(1.5)
+            wait_for(lambda: call_count[0] >= 2, timeout=2.0)
 
             # Second reload (will fail, but watcher should continue)
             # This is the callback that raises
@@ -369,12 +365,11 @@ class TestFileWatcherGracefulDegradation:
             # Third reload (should still work after error)
             with open(config_path, 'w') as f:
                 f.write("value: 3\n")
-            time.sleep(1.5)
+
+            # Wait for all 3 callbacks (typically <200ms instead of 4.5s with 3× sleep(1.5))
+            wait_for(lambda: call_count[0] >= 3, timeout=2.0, error_msg="Watcher should continue after callback error")
 
             watcher.stop()
-
-            # Watcher should have continued after error
-            assert call_count[0] >= 3, f"Watcher should continue after callback error, got {call_count[0]} calls"
         finally:
             os.unlink(config_path)
 

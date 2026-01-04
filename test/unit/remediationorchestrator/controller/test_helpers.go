@@ -89,6 +89,7 @@ func newRemediationRequest(name, namespace string, phase remediationv1.Remediati
 			Namespace:         namespace,
 			CreationTimestamp: now,
 			UID:               types.UID(name + "-uid"),
+			Generation:        1, // K8s increments on create/update
 		},
 		Spec: remediationv1.RemediationRequestSpec{
 			SignalName:        "test-signal",
@@ -381,6 +382,7 @@ func newRemediationRequestWithTimeout(name, namespace string, phase remediationv
 			Namespace:         namespace,
 			CreationTimestamp: creationTime,
 			UID:               types.UID(name + "-uid"),
+			Generation:        1, // K8s increments on create/update
 		},
 		Spec: remediationv1.RemediationRequestSpec{
 			SignalName:        "test-signal",

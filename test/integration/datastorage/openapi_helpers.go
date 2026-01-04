@@ -78,7 +78,7 @@ func createAuditEventRequest(
 
 // createAuditEventWithDefaults creates an audit event with common defaults
 // This is useful for tests that don't care about specific field values
-func createAuditEventWithDefaults(
+func createAuditEventWithDefaults( //nolint:unused
 	eventType string,
 	correlationID string,
 	eventData map[string]interface{},
@@ -123,7 +123,7 @@ func postAuditEvent(
 
 // postAuditEventBatch sends multiple audit events in a batch
 // Returns the list of event IDs and any error
-func postAuditEventBatch(
+func postAuditEventBatch( //nolint:unused
 	ctx context.Context,
 	client *dsgen.ClientWithResponses,
 	events []dsgen.AuditEventRequest,
@@ -157,7 +157,7 @@ func postAuditEventBatch(
 // ========================================
 
 // searchWorkflows performs a workflow search using the OpenAPI client
-func searchWorkflows(
+func searchWorkflows( //nolint:unused
 	ctx context.Context,
 	client *dsgen.ClientWithResponses,
 	searchRequest dsgen.WorkflowSearchRequest,
@@ -179,7 +179,7 @@ func searchWorkflows(
 }
 
 // createWorkflow creates a workflow using the OpenAPI client
-func createWorkflow(
+func createWorkflow( //nolint:unused
 	ctx context.Context,
 	client *dsgen.ClientWithResponses,
 	workflow dsgen.RemediationWorkflow,

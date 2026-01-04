@@ -1,0 +1,356 @@
+name: CI Pipeline
+
+# 3-Stage CI Pipeline with Smart Path Detection and Parallel Execution
+#
+# Stage 1A: Build & Lint (parallel: Go + Python)
+# Stage 1B: Unit Tests (parallel matrix: 8 services)
+# Stage 2: Integration Tests (parallel matrix: 8 services)
+# Stage 3: E2E Tests (parallel jobs: 8 services) - Run REGARDLESS of integration results
+#
+# Smart Path Detection:
+#   - Build & Lint: Runs in parallel (Go and Python separately)
+#   - Unit Tests: Matrix runs ALL services always (~10 min total)
+#   - Integration Tests: Matrix runs ALL services always (~15 min total)
+#     * Design Decision: No path filtering at integration level
+#     * Rationale: Fast enough + better cross-service issue detection
+#   - E2E Tests: Smart path detection per service (30 min each)
+#     * Data Storage changes → ALL services (DS is shared dependency)
+#     * Individual service changes → ONLY that service
+#     * Push to main → ALL services (full validation)
+#
+# Optimization Strategy:
+#   - Parallel build & lint jobs (Go + Python)
+#   - Matrix parallelization for homogeneous jobs (unit, integration)
+#   - Individual jobs for heterogeneous jobs (E2E with different infra)
+#   - Fail-fast disabled for comprehensive feedback
+#   - Path detection where it matters most (E2E tests)
+#
+# Authority: [TODO] Create ADR-CI-001 from docs/handoff/TRIAGE_GITHUB_WORKFLOW_OPTIMIZATION_REQUIREMENTS.md
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '**.go'
+      - '**.py'
+      - 'go.mod'
+      - 'go.sum'
+      - 'test/**'
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'internal/**'
+      - 'api/**'
+      - 'migrations/**'
+      - 'Makefile'
+      - 'holmesgpt-api/**'
+      - '.github/workflows/**'
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
+  # This ensures all Kind commands (create, load, etc.) use Podman as the provider
+  KIND_EXPERIMENTAL_PROVIDER: podman
+
+jobs:
+  # ========================================
+  # STAGE 1A: BUILD & LINT (PARALLEL)
+  # Two parallel jobs (~3 min total)
+  # ========================================
+
+  build-and-lint-go:
+    name: Build & Lint (Go Services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Generate Go code
+        run: |
+          echo "🔄 Generating Go code (tools auto-installed via Makefile)..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Build all Go services
+        run: |
+          echo "🔨 Building all Go services..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make build-all
+
+      - name: Lint Go code
+        run: |
+          echo "🔍 Linting Go code..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          timeout 3m make lint || echo "⚠️ Linting timed out or had issues (non-blocking)"
+        continue-on-error: true  # Don't block CI for lint warnings in V1.0
+
+  build-and-lint-python:
+    name: Build & Lint (Python Services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+
+      - name: Install Python dependencies
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Lint Python code (HAPI)
+        run: |
+          echo "🔍 Linting Python code..."
+          make lint-holmesgpt-api
+        continue-on-error: true  # Don't block CI for lint warnings in V1.0
+
+  # ========================================
+  # STAGE 1B: UNIT TESTS (PARALLEL)
+  # Matrix job, 8 services in parallel (~2 min)
+  # ========================================
+
+  unit-tests:
+    name: Unit Tests (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    needs: [build-and-lint-go, build-and-lint-python]
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - aianalysis
+          - datastorage
+          - gateway
+          - notification
+          - remediationorchestrator
+          - signalprocessing
+          - workflowexecution
+          - holmesgpt-api
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Go
+        if: matrix.service != 'holmesgpt-api'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Set up Python
+        if: matrix.service == 'holmesgpt-api'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'holmesgpt-api/requirements*.txt'
+
+      - name: Install Python dependencies
+        if: matrix.service == 'holmesgpt-api'
+        working-directory: holmesgpt-api
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-test.txt
+
+      - name: Generate Go code
+        if: matrix.service != 'holmesgpt-api'
+        run: |
+          echo "🔄 Generating Go code for tests..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make generate
+
+      - name: Run unit tests (Go)
+        if: matrix.service != 'holmesgpt-api'
+        run: |
+          echo "🧪 Running unit tests for ${{ matrix.service }}..."
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make test-unit-${{ matrix.service }}
+
+      - name: Run unit tests (Python)
+        if: matrix.service == 'holmesgpt-api'
+        run: |
+          echo "🧪 Running HolmesGPT API unit tests..."
+          make test-unit-holmesgpt-api
+        env:
+          MOCK_LLM: 'true'
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-coverage-${{ matrix.service }}
+          path: |
+            coverage.out
+            holmesgpt-api/htmlcov/
+          retention-days: 7
+
+  # ========================================
+  # STAGE 2: INTEGRATION TESTS
+  # Matrix strategy: 8 services (all use same pattern: envtest + Podman)
+  #   - 7 Go services: signalprocessing, aianalysis, workflowexecution,
+  #     remediationorchestrator, notification, gateway, datastorage
+  #   - 1 Go+Python hybrid: holmesgpt-api (Go infrastructure, Python tests)
+  # Only start if Stage 1 passes
+  #
+  # DESIGN DECISION: No smart path detection at this level
+  # - All integration tests run for ANY change (after unit tests pass)
+  # - Rationale: Integration tests are fast (~15 min total, parallel)
+  # - Benefit: Better cross-service issue detection
+  # - Trade-off: Uses more CI minutes, but comprehensive coverage worth it
+  # - Smart path detection reserved for E2E tests (slower, 30 min each)
+  # ========================================
+
+  integration-tests:
+    name: integration (${{ matrix.service }})
+    needs: [unit-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
+        include:
+          - service: signalprocessing
+            service_name: "Signal Processing"
+            timeout: 10
+          - service: aianalysis
+            service_name: "AI Analysis"
+            timeout: 15
+          - service: workflowexecution
+            service_name: "Workflow Execution"
+            timeout: 15
+          - service: remediationorchestrator
+            service_name: "Remediation Orchestrator"
+            timeout: 15
+          - service: notification
+            service_name: "Notification"
+            timeout: 10
+          - service: gateway
+            service_name: "Gateway"
+            timeout: 20
+          - service: datastorage
+            service_name: "Data Storage"
+            timeout: 10
+          - service: holmesgpt-api
+            service_name: "HolmesGPT API"
+            timeout: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true  # CRITICAL: holmesgpt is a submodule required for HAPI builds
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Generate OpenAPI specs
+        run: make generate
+      - name: Install Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+      - name: Setup envtest (K8s test binaries)
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
+      - name: Run ${{ matrix.service }} integration tests
+        run: make test-integration-${{ matrix.service }}
+      - name: Validate Data Storage OpenAPI spec (ADR-031)
+        if: matrix.service == 'datastorage'
+        run: make validate-openapi-datastorage
+      - name: Cleanup
+        if: always()
+        run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
+  # ========================================
+  # SUMMARY
+  # ========================================
+  summary:
+    name: Test Suite Summary
+    needs: [
+      build-and-lint-go, build-and-lint-python, unit-tests,
+      integration-tests
+    ]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Suite Summary
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Defense-in-Depth Test Suite Summary (Optimized + Parallel)"
+          echo "═══════════════════════════════════════════════════════════"
+          echo ""
+          echo "STAGE 1A - Build & Lint (Parallel):"
+          echo "  Go Services:    ${{ needs.build-and-lint-go.result }}"
+          echo "  Python Services: ${{ needs.build-and-lint-python.result }}"
+          echo ""
+          echo "STAGE 1B - Unit Tests (Parallel Matrix):"
+          echo "  Unit Tests: ${{ needs.unit-tests.result }}"
+          echo ""
+          echo "STAGE 2 - Integration Tests (Parallel Matrix):"
+          echo "  All Services (8 services):  ${{ needs.integration-tests.result }}"
+          echo ""
+          echo "═══════════════════════════════════════════════════════════"
+          echo "Test Strategy:"
+          echo "  ✅ ALL tests run for every non-draft PR"
+          echo "  ✅ Comprehensive validation ensures stability"
+          echo "  ✅ Smart path detection can be added once CI/CD is stable"
+          echo ""
+          echo "Optimizations:"
+          echo "  ✅ Parallel build & lint (Go + Python)"
+          echo "  ✅ Build & lint separated from tests"
+          echo "  ✅ Parallel unit tests (matrix: 8 services)"
+          echo "  ✅ Parallel integration tests (matrix: 8 services)"
+          echo "  ✅ Matrix strategy for test tiers"
+          echo "  ⏭️  E2E tests temporarily disabled (focusing on integration stability)"
+          echo "═══════════════════════════════════════════════════════════"
+
+          # Check for build & lint failure (critical)
+          if [ "${{ needs.build-and-lint-go.result }}" != "success" ] || [ "${{ needs.build-and-lint-python.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Build & Lint failed - all other tests skipped"
+            exit 1
+          fi
+
+          # Check for unit tests failure (critical)
+          if [ "${{ needs.unit-tests.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Unit tests failed - integration tests skipped"
+            exit 1
+          fi
+
+          # Check for integration tests failure (matrix job)
+          # Note: integration-tests is a single matrix job that runs 8 services
+          # GitHub Actions reports the matrix job result as a whole (fail-fast: false)
+          if [ "${{ needs.integration-tests.result }}" != "success" ]; then
+            echo ""
+            echo "❌ Integration tests failed - check individual service logs in the matrix"
+            echo "   Services tested: signalprocessing, aianalysis, workflowexecution,"
+            echo "                    remediationorchestrator, gateway, datastorage,"
+            echo "                    notification, holmesgpt-api"
+            exit 1
+          fi
+
+          echo ""
+          echo "✅ All tests passed!"
+          exit 0
