@@ -825,6 +825,109 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(finalSP.Status.Phase).ToNot(Equal(signalprocessingv1alpha1.PhasePending),
 				"ADR-038: Audit failures must not block reconciliation progress")
 		})
+
+		// SP-BUG-003/004: Test fatal enrichment error path (namespace not found)
+		// This test validates that error.occurred audit events are emitted for fatal enrichment errors
+		// (as opposed to degraded mode for missing target resources)
+		It("should emit 'error.occurred' event for fatal enrichment errors (namespace not found)", func() {
+			// BUSINESS SCENARIO:
+			// Fatal enrichment errors (namespace not found, API timeouts, RBAC denials)
+			// MUST emit error.occurred audit events before stopping reconciliation
+			//
+			// This is DIFFERENT from degraded mode (missing target Pod):
+			// - Missing Pod → degraded mode → continue processing → signal.processed
+			// - Missing namespace → fatal error → stop processing → error.occurred
+			//
+			// SP-BUG-003: Controller now emits error audit events before returning
+			// SP-BUG-004: Enricher properly propagates fatal errors (not silent success)
+
+			By("1. Creating parent RemediationRequest in EXISTING namespace")
+			existingNs := createTestNamespaceWithLabels("audit-test-fatal-error", map[string]string{
+				"kubernaut.ai/environment": "production",
+			})
+			defer deleteTestNamespace(existingNs)
+
+			rrName := "audit-test-rr-fatal-06"
+			targetResource := signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-pod-fatal",
+				Namespace: "non-existent-namespace-fatal", // This namespace does NOT exist
+			}
+			rr := CreateTestRemediationRequest(rrName, existingNs, ValidTestFingerprints["audit-006"], "critical", targetResource)
+			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+
+			correlationID := rrName
+
+			By("2. Creating SignalProcessing CR targeting NON-EXISTENT namespace")
+			sp := CreateTestSignalProcessingWithParent("audit-test-sp-fatal-06", existingNs, rr, ValidTestFingerprints["audit-006"], targetResource)
+			sp.Spec.Signal.Severity = "critical"
+			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+
+			By("3. Wait for enrichment to fail (namespace not found is fatal)")
+			// Controller should attempt reconciliation and fail during enrichment
+			time.Sleep(5 * time.Second)
+
+			By("4. Query Data Storage for audit events")
+			auditClient, err := dsgen.NewClientWithResponses(dataStorageURL)
+			Expect(err).ToNot(HaveOccurred())
+
+			eventCategory := "signalprocessing"
+			var auditEvents []dsgen.AuditEvent
+			Eventually(func() int {
+				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+					EventCategory: &eventCategory,
+					CorrelationId: &correlationID,
+				})
+				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+					return 0
+				}
+
+				if resp.JSON200.Data != nil {
+					auditEvents = *resp.JSON200.Data
+				}
+				return len(auditEvents)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Should have error.occurred audit event for fatal enrichment error")
+
+			By("5. Validate error.occurred event was emitted (DD-TESTING-001)")
+			eventCounts := make(map[string]int)
+			for _, event := range auditEvents {
+				eventCounts[event.EventType]++
+			}
+
+			// For fatal errors, we MUST have error.occurred (not signal.processed)
+			Expect(eventCounts["signalprocessing.error.occurred"]).To(BeNumerically(">=", 1),
+				"BR-SP-090: MUST emit error.occurred for fatal enrichment errors")
+
+			By("6. Validate error event structure contains namespace error details")
+			var errorEvent *dsgen.AuditEvent
+			for i := range auditEvents {
+				if auditEvents[i].EventType == "signalprocessing.error.occurred" {
+					errorEvent = &auditEvents[i]
+					break
+				}
+			}
+			Expect(errorEvent).ToNot(BeNil())
+
+			// Validate EventOutcome is Failure
+			Expect(errorEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeFailure),
+				"Fatal errors MUST have EventOutcome=Failure")
+
+			// Validate error_data contains namespace error information
+			eventData, ok := errorEvent.EventData.(map[string]interface{})
+			Expect(ok).To(BeTrue(), "event_data should be a JSON object")
+
+			Expect(eventData).To(HaveKey("phase"), "Error event should contain phase")
+			Expect(eventData["phase"]).To(Equal("Enriching"), "Error should occur during Enriching phase")
+
+			Expect(eventData).To(HaveKey("error"), "Error event should contain error message")
+			errorMsg := eventData["error"].(string)
+			Expect(errorMsg).To(ContainSubstring("non-existent-namespace-fatal"),
+				"Error message should reference the missing namespace")
+
+			GinkgoWriter.Printf("✅ Fatal enrichment error correctly emitted error.occurred audit event\n")
+			GinkgoWriter.Printf("   Error: %s\n", errorMsg)
+		})
 	})
 })
 
