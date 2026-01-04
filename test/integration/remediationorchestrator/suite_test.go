@@ -430,6 +430,30 @@ var _ = SynchronizedAfterSuite(func() {
 }, func() {
 	// This runs ONCE on the last parallel process - cleanup shared infrastructure
 	By("Tearing down the test environment")
+
+	// RO-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+	// This prevents "connection refused" errors during cleanup when the
+	// background writer tries to flush buffered events after DataStorage is stopped.
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	By("Flushing audit store before infrastructure shutdown")
+	
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
+
+	err = auditStore.Close()
+	if err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
+	}
+
 	cancel()
 
 	if testEnv != nil {
@@ -437,6 +461,7 @@ var _ = SynchronizedAfterSuite(func() {
 		Expect(err).NotTo(HaveOccurred())
 	}
 
+	// RO-SHUTDOWN-001: Safe to stop now - audit events already flushed
 	By("Stopping RO integration infrastructure")
 	err := infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred())

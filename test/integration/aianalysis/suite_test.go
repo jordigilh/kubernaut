@@ -382,18 +382,25 @@ var _ = SynchronizedAfterSuite(func() {
 
 	By("Flushing audit store before shutdown")
 	// Per DD-007: Graceful shutdown MUST flush all audit events
-	// This validates that audit buffer properly persists all events
-	if auditStore != nil {
-		GinkgoWriter.Println("📋 Flushing audit store...")
-		if err := auditStore.Close(); err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: audit store close error: %v\n", err)
-		}
+	// AA-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+	// This prevents "connection refused" errors during cleanup when the
+	// background writer tries to flush buffered events after DataStorage is stopped.
+	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+	GinkgoWriter.Println("📋 Flushing audit store...")
+	
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
 
-		// Wait for flush to complete
-		// Per TESTING_GUIDELINES.md: Use Eventually(), NEVER time.Sleep()
-		// However, Close() is synchronous, so a brief pause is acceptable here
-		time.Sleep(1 * time.Second)
-		GinkgoWriter.Println("✅ Audit store flushed")
+	if err := auditStore.Flush(flushCtx); err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: failed to flush audit store: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	}
+
+	if err := auditStore.Close(); err != nil {
+		GinkgoWriter.Printf("⚠️ Warning: audit store close error: %v\n", err)
+	} else {
+		GinkgoWriter.Println("✅ Audit store closed")
 	}
 
 	By("Tearing down the test environment")

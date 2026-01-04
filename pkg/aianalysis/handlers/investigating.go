@@ -69,7 +69,7 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 		metrics:         m,
 		auditClient:     auditClient,
 		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor
+		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor (AA-BUG-002: audit removed, handled by handler)
 		builder:         NewRequestBuilder(log),       // P1.2: Initialize request builder
 		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
