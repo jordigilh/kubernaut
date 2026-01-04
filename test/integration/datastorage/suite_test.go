@@ -642,7 +642,8 @@ func startPostgreSQL() {
 
 		GinkgoWriter.Printf("⏳ Waiting for PostgreSQL at %s:%s to be ready...\n", host, port)
 		Eventually(func() error {
-			connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+			// Fix: Set search_path at connection level for consistency
+			connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
 			testDB, err := sql.Open("pgx", connStr)
 			if err != nil {
 				return err
@@ -780,7 +781,9 @@ func mustConnectPostgreSQL() *sqlx.DB {
 		port = "15433" // DD-TEST-001
 	}
 
-	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+	// Fix: Set search_path at connection level so ALL connections use public schema
+	// This prevents connection pool issues where new connections don't inherit SET search_path
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
 	tempDB, err := sqlx.Connect("pgx", connStr)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -808,7 +811,9 @@ func connectPostgreSQL() {
 		port = "15433" // DD-TEST-001
 	}
 
-	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", host, port)
+	// Fix: Set search_path at connection level so ALL connections use public schema
+	// This prevents connection pool issues where new connections don't inherit SET search_path
+	connStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'", host, port)
 	var err error
 	db, err = sqlx.Connect("pgx", connStr) // DD-010: Using pgx driver with sqlx
 	Expect(err).ToNot(HaveOccurred())
