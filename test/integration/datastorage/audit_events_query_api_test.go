@@ -490,7 +490,40 @@ var _ = Describe("Audit Events Query API",  func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// ACT: Query page 1 (limit=50, offset=0)
+			// WAIT: Allow audit buffer to flush (async with 1s flush interval)
+			// DS-FLAKY-001: Audit events are buffered and flushed asynchronously
+			// Wait for all 150 events to be persisted before querying
+			var response map[string]interface{}
+			Eventually(func() float64 {
+				resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
+				if err != nil {
+					return 0
+				}
+				defer func() { _ = resp.Body.Close() }()
+
+				if resp.StatusCode != http.StatusOK {
+					return 0
+				}
+
+				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+					return 0
+				}
+
+				pagination, ok := response["pagination"].(map[string]interface{})
+				if !ok {
+					return 0
+				}
+
+				total, ok := pagination["total"].(float64)
+				if !ok {
+					return 0
+				}
+
+				return total
+			}, 5*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 150),
+				"should have at least 150 events after buffer flush")
+
+			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
 			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -499,7 +532,6 @@ var _ = Describe("Audit Events Query API",  func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			// ASSERT: Correct subset is returned
-			var response map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -512,8 +544,6 @@ var _ = Describe("Audit Events Query API",  func() {
 			Expect(ok).To(BeTrue())
 			Expect(pagination["limit"]).To(BeNumerically("==", 50))
 			Expect(pagination["offset"]).To(BeNumerically("==", 0))
-			// Note: Total may include events from previous test runs in the same suite
-			// The important validation is that pagination works correctly (limit/offset)
 			Expect(pagination["total"]).To(BeNumerically(">=", 150),
 				"should have at least 150 events for this correlation_id")
 			Expect(pagination["has_more"]).To(BeTrue())

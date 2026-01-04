@@ -80,13 +80,12 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 // ========================================
 // SERIAL EXECUTION RATIONALE (Jan 2026)
 // ========================================
-// This test suite is marked Serial due to inherent audit buffering race conditions
-// that cannot be reliably mitigated with FlakeAttempts alone.
+// This test suite is marked Serial to simplify infrastructure startup and test reliability.
 //
-// ROOT CAUSES:
+// RELIABILITY MEASURES:
 // 1. Audit events use buffered writes (100ms flush interval, DD-PERF-001)
-// 2. Parallel processes create timing windows where events not yet flushed
-// 3. Status updates and audit recording happen in rapid succession
+// 2. Tests use explicit auditStore.Flush() calls before querying to eliminate race conditions
+// 3. No FlakeAttempts needed - deterministic test execution with proper synchronization
 // 4. Infrastructure startup takes 70-90s (PostgreSQL, Redis, DataStorage, HAPI)
 //
 // RELIABILITY DATA:
@@ -132,21 +131,20 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 	// ========================================
 
 	Context("Complete Workflow Audit Trail - BR-AUDIT-001", func() {
-		It("should generate complete audit trail from Pending to Completed", FlakeAttempts(3), func() {
-			// ========================================
-			// TEST OBJECTIVE:
-			// Verify controller generates ALL audit events during full workflow:
-			// - Phase transitions: Pending → Investigating → Analyzing → Completed
-			// - HolmesGPT calls during Investigation
-			// - Rego evaluations during Analyzing
-			// - Approval decisions during Analyzing
-			// - Analysis complete event at Completed
-			// ========================================
-			//
-			// FLAKINESS NOTE (DD-TESTING-001):
-			// This test is marked FlakeAttempts(3) due to intermittent audit buffering
-			// race conditions in parallel execution. Expected: 3 phase transitions.
-			// Occasionally observes: 5 phase transitions (likely duplicate Pending→Investigating).
+	It("should generate complete audit trail from Pending to Completed", func() {
+		// ========================================
+		// TEST OBJECTIVE:
+		// Verify controller generates ALL audit events during full workflow:
+		// - Phase transitions: Pending → Investigating → Analyzing → Completed
+		// - HolmesGPT calls during Investigation
+		// - Rego evaluations during Analyzing
+		// - Approval decisions during Analyzing
+		// - Analysis complete event at Completed
+		// ========================================
+		//
+		// RELIABILITY (DD-TESTING-001):
+		// Uses explicit auditStore.Flush() calls before querying to eliminate
+		// async buffering race conditions. No FlakeAttempts needed.
 			// Root cause under investigation. See commit 08ba84723 for partial fix.
 
 			By("Creating AIAnalysis resource requiring full workflow")
@@ -191,15 +189,22 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete full workflow within 90 seconds")
 
-			By("Verifying complete audit trail in Data Storage")
-			// Query ALL audit events for this remediation ID
-			correlationID := analysis.Spec.RemediationID
-			eventCategory := "analysis"
-			params := &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventCategory: &eventCategory,
-			}
-			resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+		By("Verifying complete audit trail in Data Storage")
+		
+		// Flush audit buffer to ensure all events are persisted (eliminates race conditions)
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
+		
+		// Query ALL audit events for this remediation ID
+		correlationID := analysis.Spec.RemediationID
+		eventCategory := "analysis"
+		params := &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventCategory: &eventCategory,
+		}
+		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
 			Expect(err).ToNot(HaveOccurred(), "Audit query should succeed")
 			Expect(resp.JSON200).ToNot(BeNil(), "Audit response should be 200 OK")
 			Expect(resp.JSON200.Data).ToNot(BeNil(), "Audit data should be present")
@@ -334,16 +339,15 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 	// ========================================
 
 	Context("Investigation Phase Audit - BR-AI-023", func() {
-		It("should automatically audit HolmesGPT calls during investigation", FlakeAttempts(3), func() {
+		It("should automatically audit HolmesGPT calls during investigation", func() {
 			// ========================================
 			// TEST OBJECTIVE:
 			// Verify InvestigatingHandler automatically calls auditClient.RecordHolmesGPTCall()
 			// when it calls HolmesGPT-API during investigation phase
 			// ========================================
 			//
-			// FLAKINESS NOTE (DD-TESTING-001):
-			// This test is marked FlakeAttempts(3) due to intermittent audit buffering
-			// race conditions in parallel execution. Passes consistently in serial.
+			// RELIABILITY (DD-TESTING-001):
+			// Uses explicit auditStore.Flush() to ensure events are persisted before querying.
 
 			By("Creating AIAnalysis resource requiring investigation")
 			analysis := &aianalysisv1.AIAnalysis{
@@ -388,16 +392,23 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				Equal("Completed"),
 			), "Controller should complete investigation within 60 seconds")
 
-			By("Verifying HolmesGPT call was automatically audited")
-			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeHolmesGPTCall
-			eventCategory := "analysis"
-			params := &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventType:     &eventType,
-				EventCategory: &eventCategory,
-			}
-			resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+		By("Verifying HolmesGPT call was automatically audited")
+		
+		// Flush audit buffer to ensure events are persisted (eliminates race conditions)
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
+		
+		correlationID := analysis.Spec.RemediationID
+		eventType := aiaudit.EventTypeHolmesGPTCall
+		eventCategory := "analysis"
+		params := &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventType:     &eventType,
+			EventCategory: &eventCategory,
+		}
+		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.JSON200).ToNot(BeNil())
 			Expect(resp.JSON200.Data).ToNot(BeNil())
@@ -475,13 +486,20 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				Expect(k8sClient.Delete(ctx, analysis)).To(Succeed())
 			}()
 
-			By("Waiting for controller to process and generate audit events")
-			correlationID := analysis.Spec.RemediationID
-			eventCategory := "analysis"
+		By("Waiting for controller to process and generate audit events")
+		
+		// Flush audit buffer before polling (ensures events are available)
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		
+		correlationID := analysis.Spec.RemediationID
+		eventCategory := "analysis"
 
-			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-			var events []dsgen.AuditEvent
-			Eventually(func() int {
+		// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+		var events []dsgen.AuditEvent
+		Eventually(func() int {
 				params := &dsgen.QueryAuditEventsParams{
 					CorrelationId: &correlationID,
 					EventCategory: &eventCategory,
@@ -571,12 +589,19 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis within 60 seconds")
 
-			By("Verifying approval decision was automatically audited")
-			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeApprovalDecision
-			eventCategory := "analysis"
-			params := &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
+		By("Verifying approval decision was automatically audited")
+		
+		// Flush audit buffer to ensure events are persisted
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		
+		correlationID := analysis.Spec.RemediationID
+		eventType := aiaudit.EventTypeApprovalDecision
+		eventCategory := "analysis"
+		params := &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
 				EventType:     &eventType,
 				EventCategory: &eventCategory,
 			}
@@ -613,16 +638,15 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				"Decision should be either 'requires_approval' or 'auto_approved'")
 		})
 
-		It("should automatically audit Rego policy evaluations", FlakeAttempts(3), func() {
-			// ========================================
-			// TEST OBJECTIVE:
-			// Verify AnalyzingHandler automatically calls auditClient.RecordRegoEvaluation()
-			// after evaluating approval policy
-			// ========================================
-			//
-			// FLAKINESS NOTE (DD-TESTING-001):
-			// This test is marked FlakeAttempts(3) due to intermittent audit buffering
-			// race conditions in parallel execution. Passes consistently in serial.
+	It("should automatically audit Rego policy evaluations", func() {
+		// ========================================
+		// TEST OBJECTIVE:
+		// Verify AnalyzingHandler automatically calls auditClient.RecordRegoEvaluation()
+		// after evaluating approval policy
+		// ========================================
+		//
+		// RELIABILITY (DD-TESTING-001):
+		// Uses explicit auditStore.Flush() to ensure events are persisted before querying.
 
 			By("Creating AIAnalysis resource that triggers Rego evaluation")
 			analysis := &aianalysisv1.AIAnalysis{
@@ -665,27 +689,41 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis with Rego evaluation")
 
-			By("Verifying Rego evaluation was automatically audited")
-			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeRegoEvaluation
-			eventCategory := "analysis"
-			params := &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventType:     &eventType,
-				EventCategory: &eventCategory,
-			}
+		By("Verifying Rego evaluation was automatically audited")
+		
+		// Flush audit buffer before polling
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		
+		correlationID := analysis.Spec.RemediationID
+		eventType := aiaudit.EventTypeRegoEvaluation
+		eventCategory := "analysis"
+		params := &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventType:     &eventType,
+			EventCategory: &eventCategory,
+		}
 
-			Eventually(func() int {
+		Eventually(func() int {
 				resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
 				if err != nil || resp.JSON200 == nil || resp.JSON200.Data == nil {
 					return 0
 				}
 				return len(*resp.JSON200.Data)
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"AnalyzingHandler MUST automatically audit Rego evaluations")
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+			"AnalyzingHandler MUST automatically audit Rego evaluations")
 
-			By("Verifying Rego evaluation audit event contains policy decision")
-			resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+		By("Verifying Rego evaluation audit event contains policy decision")
+		
+		// Flush again to ensure latest events are visible
+		flushCtx2, flushCancel2 := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel2()
+		err = auditStore.Flush(flushCtx2)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		
+		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.JSON200).ToNot(BeNil())
 			Expect(resp.JSON200.Data).ToNot(BeNil())
@@ -715,16 +753,15 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 	// ========================================
 
 	Context("Phase Transition Audit - DD-AUDIT-003", func() {
-		It("should automatically audit all phase transitions", FlakeAttempts(3), func() {
+		It("should automatically audit all phase transitions", func() {
 			// ========================================
 			// TEST OBJECTIVE:
 			// Verify controller automatically calls auditClient.RecordPhaseTransition()
 			// every time analysis.Status.Phase changes
 			// ========================================
 			//
-			// FLAKINESS NOTE (DD-TESTING-001):
-			// This test is marked FlakeAttempts(3) due to intermittent audit buffering
-			// race conditions in parallel execution. Passes consistently in serial.
+			// RELIABILITY (DD-TESTING-001):
+			// Uses explicit auditStore.Flush() to ensure all transitions are persisted before querying.
 
 			By("Creating AIAnalysis resource to trigger phase transitions")
 			analysis := &aianalysisv1.AIAnalysis{
@@ -766,16 +803,23 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				return analysis.Status.Phase
 			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"))
 
-			By("Verifying phase transitions were automatically audited")
-			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypePhaseTransition
-			eventCategory := "analysis"
-			params := &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventType:     &eventType,
-				EventCategory: &eventCategory,
-			}
-			resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+		By("Verifying phase transitions were automatically audited")
+		
+		// Flush audit buffer to ensure all transitions are persisted
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		
+		correlationID := analysis.Spec.RemediationID
+		eventType := aiaudit.EventTypePhaseTransition
+		eventCategory := "analysis"
+		params := &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventType:     &eventType,
+			EventCategory: &eventCategory,
+		}
+		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp.JSON200).ToNot(BeNil())
 			Expect(resp.JSON200.Data).ToNot(BeNil())
@@ -830,14 +874,21 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 				Expect(k8sClient.Delete(ctx, analysis)).To(Succeed())
 			}()
 
-			By("Waiting for controller to call HAPI and audit event (DD-TESTING-001: Eventually() instead of time.Sleep())")
-			correlationID := analysis.Spec.RemediationID
-			eventType := aiaudit.EventTypeHolmesGPTCall
-			eventCategory := "analysis"
+		By("Waiting for controller to call HAPI and audit event (DD-TESTING-001: Eventually() instead of time.Sleep())")
+		
+		// Flush audit buffer before polling
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+		
+		correlationID := analysis.Spec.RemediationID
+		eventType := aiaudit.EventTypeHolmesGPTCall
+		eventCategory := "analysis"
 
-			// DD-TESTING-001: Use Eventually() for async event polling
-			var events []dsgen.AuditEvent
-			Eventually(func() int {
+		// DD-TESTING-001: Use Eventually() for async event polling
+		var events []dsgen.AuditEvent
+		Eventually(func() int {
 				params := &dsgen.QueryAuditEventsParams{
 					CorrelationId: &correlationID,
 					EventType:     &eventType,

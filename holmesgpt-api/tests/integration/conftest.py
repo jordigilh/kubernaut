@@ -148,6 +148,43 @@ def data_storage_url():
 
 
 @pytest.fixture(scope="session")
+def audit_store(data_storage_url):
+    """
+    BufferedAuditStore instance for explicit flush() in tests.
+    
+    This fixture provides access to the HAPI audit store singleton,
+    allowing tests to explicitly flush buffered events before querying
+    Data Storage. This eliminates async race conditions in audit tests.
+    
+    Pattern (matching Go integration tests):
+    1. Call business logic (emits audit events)
+    2. audit_store.flush() - force write to Data Storage
+    3. Query Data Storage API - events now visible
+    4. Assert audit event content
+    
+    Returns:
+        BufferedAuditStore: HAPI audit store singleton
+    """
+    # Import here to avoid circular dependencies
+    sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+    from src.audit.factory import get_audit_store
+    
+    # Get singleton instance (initializes if needed)
+    store = get_audit_store(data_storage_url=data_storage_url)
+    
+    print(f"\n✅ Audit store singleton accessed for tests")
+    print(f"   Data Storage URL: {data_storage_url}")
+    print(f"   Flush support: Enabled (eliminates async race conditions)")
+    
+    yield store
+    
+    # Cleanup: flush and close at end of session
+    print(f"\n🔄 Flushing and closing audit store...")
+    store.close()
+    print(f"✅ Audit store closed")
+
+
+@pytest.fixture(scope="session")
 def hapi_client():
     """
     FastAPI TestClient for HAPI service (in-process).

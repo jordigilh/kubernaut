@@ -89,7 +89,7 @@ Expect(goroutineGrowth).To(BeNumerically("<=", 20),
 ### **Test 2: "should release resources after notification delivery completes"**
 
 **Location**: Line 515
-**Original**: 
+**Original**:
 ```go
 }, 10*time.Second, 500*time.Millisecond).Should(BeNumerically("<=", 5),
 ```
@@ -205,7 +205,7 @@ Eventually(func() int {
 
 // Threshold guidelines:
 // - 10-30 notifications: +10 goroutines
-// - 30-50 notifications: +20 goroutines  
+// - 30-50 notifications: +20 goroutines
 // - 50-100 notifications: +50 goroutines
 // - 100+ notifications: +100 goroutines
 ```

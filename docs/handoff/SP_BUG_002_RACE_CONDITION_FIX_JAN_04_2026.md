@@ -1,10 +1,10 @@
 # SP-BUG-002: Duplicate Phase Transition Audit Events (Race Condition)
 
-**Bug ID**: SP-BUG-002  
-**Date Discovered**: January 4, 2026  
-**Date Fixed**: January 4, 2026  
-**Severity**: Medium  
-**Component**: Signal Processing Controller  
+**Bug ID**: SP-BUG-002
+**Date Discovered**: January 4, 2026
+**Date Fixed**: January 4, 2026
+**Severity**: Medium
+**Component**: Signal Processing Controller
 **Related**: DD-TESTING-001, SP-BUG-001
 
 ---
@@ -13,9 +13,9 @@
 
 Fixed a race condition in the Signal Processing controller that caused duplicate phase transition audit events when Kubernetes watch events triggered reconciliation before status updates fully propagated through the API cache.
 
-**Impact**: Audit event integrity compromised (5 events instead of 4)  
-**Root Cause**: Controller processed same phase twice due to stale object reads  
-**Solution**: Added idempotency check to skip audit when `oldPhase == newPhase`  
+**Impact**: Audit event integrity compromised (5 events instead of 4)
+**Root Cause**: Controller processed same phase twice due to stale object reads
+**Solution**: Added idempotency check to skip audit when `oldPhase == newPhase`
 **Verification**: All 81 SP integration tests pass
 
 ---
@@ -198,15 +198,15 @@ SUCCESS! -- 81 Passed | 0 Failed | 0 Pending | 0 Skipped
 ## 📚 **Lessons Learned**
 
 ### 1. Kubernetes Controller Patterns
-**Lesson**: Always assume K8s objects might be stale due to cache lag.  
+**Lesson**: Always assume K8s objects might be stale due to cache lag.
 **Prevention**: Add idempotency checks for side effects (audit, external API calls, etc.).
 
 ### 2. DD-TESTING-001 Effectiveness
-**Discovery**: DD-TESTING-001 compliant tests (`Equal(N)` instead of `BeNumerically(">=", N)`) caught this bug immediately.  
+**Discovery**: DD-TESTING-001 compliant tests (`Equal(N)` instead of `BeNumerically(">=", N)`) caught this bug immediately.
 **Result**: Strict deterministic validation prevents subtle race conditions from being masked.
 
 ### 3. Debug Instrumentation Strategy
-**Approach**: Added temporary debug output to see actual audit events, not just counts.  
+**Approach**: Added temporary debug output to see actual audit events, not just counts.
 **Value**: Revealed exact duplicate transition ("Classifying → Categorizing" appearing twice).
 
 ---
@@ -258,8 +258,8 @@ When reviewing audit-related controller code:
 
 ---
 
-**Status**: ✅ Fixed and Verified  
-**Branch**: `fix/ci-python-dependencies-path`  
-**Commit**: To be pushed  
+**Status**: ✅ Fixed and Verified
+**Branch**: `fix/ci-python-dependencies-path`
+**Commit**: To be pushed
 **Verification**: All 81 SP integration tests pass locally
 

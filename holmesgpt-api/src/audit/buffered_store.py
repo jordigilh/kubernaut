@@ -128,6 +128,9 @@ class BufferedAuditStore:
         # Shutdown coordination
         self._shutdown = threading.Event()
         self._closed = threading.Event()
+        
+        # Flush coordination (for explicit flush() calls)
+        self._flush_queue: queue.Queue = queue.Queue()
 
         # Metrics (thread-safe via atomic operations)
         self._buffered_count = 0
@@ -199,6 +202,44 @@ class BufferedAuditStore:
             )
             return False
 
+    def flush(self, timeout: float = 5.0) -> bool:
+        """
+        Explicitly flush all buffered events without closing the store
+        
+        This method forces the background worker to immediately write all
+        buffered events to Data Storage. Blocks until flush completes or timeout.
+        
+        Args:
+            timeout: Maximum seconds to wait for flush (default: 5.0)
+            
+        Returns:
+            True if flush completed successfully, False if timeout
+            
+        Note: This is useful for testing to ensure audit events are persisted
+        before querying Data Storage.
+        """
+        if self._shutdown.is_set():
+            logger.warning("⚠️ Audit store is shutting down, flush ignored")
+            return False
+            
+        # Create completion event
+        done_event = threading.Event()
+        
+        # Send flush request to background worker
+        try:
+            self._flush_queue.put_nowait(done_event)
+        except queue.Full:
+            logger.error("❌ Flush queue full, cannot request flush")
+            return False
+            
+        # Wait for completion
+        if done_event.wait(timeout=timeout):
+            logger.debug(f"✅ Audit flush completed - queue_size={self._queue.qsize()}")
+            return True
+        else:
+            logger.warning(f"⚠️ Audit flush timeout after {timeout}s")
+            return False
+
     def close(self) -> None:
         """
         Flush remaining events and stop background worker
@@ -251,6 +292,7 @@ class BufferedAuditStore:
         This worker:
         - Batches events for efficient writes (up to batch_size)
         - Flushes partial batches periodically (every flush_interval)
+        - Handles explicit flush requests from flush() method
         - Retries failed writes with exponential backoff
         - Stops when shutdown is signaled
         """
@@ -259,6 +301,19 @@ class BufferedAuditStore:
 
         while True:
             try:
+                # Check for explicit flush requests (non-blocking)
+                try:
+                    done_event = self._flush_queue.get_nowait()
+                    # Flush current batch
+                    if batch:
+                        self._write_batch_with_retry(batch)
+                        batch = []
+                        last_flush = time.time()
+                    # Signal completion
+                    done_event.set()
+                except queue.Empty:
+                    pass
+                
                 # Check for shutdown
                 if self._shutdown.is_set() and self._queue.empty():
                     # Flush remaining batch before exit
