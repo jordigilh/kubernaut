@@ -161,11 +161,6 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	analysis.Status.Message = "Investigation complete, starting analysis"
 
 	// DD-AUDIT-003: Record phase transition (AA-BUG-001 fix)
-	p.log.Info("🔍 [AA-BUG-001 DEBUG] ResponseProcessor recording phase transition (incident path)",
-		"from", string(oldPhase),
-		"to", "Analyzing",
-		"auditClientNil", p.auditClient == nil,
-		"willRecord", p.auditClient != nil && oldPhase != aianalysis.PhaseAnalyzing)
 	if p.auditClient != nil && oldPhase != aianalysis.PhaseAnalyzing {
 		p.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(aianalysis.PhaseAnalyzing))
 	}
