@@ -774,7 +774,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath string,
 	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
 		return fmt.Errorf("failed to write temp deployment: %w", err)
 	}
-	defer os.Remove(tmpDeployment)
+	defer func() { _ = os.Remove(tmpDeployment) }()
 
 	// Apply the modified deployment
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,

@@ -46,7 +46,7 @@ Expect(eventCounts["signalprocessing.phase.transition"]).To(Equal(4),
 
 **CI Log Evidence**:
 ```
-[FAILED] BR-SP-090: MUST emit exactly 4 phase transitions: 
+[FAILED] BR-SP-090: MUST emit exactly 4 phase transitions:
          Pending→Enriching→Classifying→Categorizing→Completed
 Expected <int>: 3 to equal <int>: 4
 ```
@@ -64,19 +64,19 @@ Expected <int>: 3 to equal <int>: 4
 **Phase Transitions Recorded** (3 of 4):
 1. ✅ **Enriching → Classifying** (line 450-456):
    ```go
-   if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), 
+   if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase),
        string(signalprocessingv1alpha1.PhaseClassifying)); err != nil {
    ```
 
 2. ✅ **Classifying → Categorizing** (line 523-530):
    ```go
-   if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), 
+   if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase),
        string(signalprocessingv1alpha1.PhaseCategorizing)); err != nil {
    ```
 
 3. ✅ **Categorizing → Completed** (line 592-599):
    ```go
-   if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), 
+   if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase),
        string(signalprocessingv1alpha1.PhaseCompleted)); err != nil {
    ```
 
@@ -84,13 +84,13 @@ Expected <int>: 3 to equal <int>: 4
 4. ❌ **Pending → Enriching** (line 246-270):
    ```go
    func (r *SignalProcessingReconciler) reconcilePending(...) {
-       // ... 
+       // ...
        err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
            sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
            return nil
        })
        // ❌ MISSING: recordPhaseTransitionAudit call!
-       
+
        r.Metrics.IncrementProcessingTotal("pending", "success")
        return ctrl.Result{Requeue: true}, nil  // Returns without audit!
    }
@@ -129,7 +129,7 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 	}
 
 	// ❌ MISSING: No audit call here!
-	
+
 	r.Metrics.IncrementProcessingTotal("pending", "success")
 	return ctrl.Result{Requeue: true}, nil  // ❌ Returns without recording audit
 }

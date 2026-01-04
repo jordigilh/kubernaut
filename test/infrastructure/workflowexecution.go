@@ -621,7 +621,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	if err := saveCmd.Run(); err != nil {
 		return fmt.Errorf("failed to save controller image: %w", err)
 	}
-	defer os.Remove(tarPath)
+	defer func() { _ = os.Remove(tarPath) }()
 
 	// Load image into Kind from tarball
 	_, _ = fmt.Fprintf(output, "  Loading image into Kind cluster...\n")

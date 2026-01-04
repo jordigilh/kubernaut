@@ -326,9 +326,7 @@ func cleanupContainers() {
 		for _, container := range staleContainers {
 			if container != "" {
 				GinkgoWriter.Printf("  🧹 Cleaning up stale container: %s\n", container)
-				exec.Command("podman", "stop", container).Run()
-				exec.Command("podman", "rm", "-f", container).Run()
-			}
+				exec.Command("podman", "stop", container).Run(); _ = err				exec.Command("podman", "rm", "-f", container).Run(); _ = err			}
 		}
 	}
 
@@ -347,8 +345,7 @@ func cleanupContainers() {
 		for _, cluster := range clusters {
 			if strings.HasPrefix(cluster, "datastorage-e2e-") {
 				GinkgoWriter.Printf("  🧹 Deleting Kind cluster: %s\n", cluster)
-				exec.Command("kind", "delete", "cluster", "--name", cluster).Run()
-			}
+				exec.Command("kind", "delete", "cluster", "--name", cluster).Run(); _ = err			}
 		}
 	}
 
@@ -599,8 +596,7 @@ var _ = AfterSuite(func() {
 
 	// Remove network (only for local execution)
 	if os.Getenv("POSTGRES_HOST") == "" {
-		exec.Command("podman", "network", "rm", "datastorage-test").Run()
-	}
+		exec.Command("podman", "network", "rm", "datastorage-test").Run(); _ = err	}
 
 	// Remove config directory
 	if configDir != "" {
@@ -615,8 +611,7 @@ var _ = AfterSuite(func() {
 // Works on both Linux and macOS (Podman Machine)
 func createNetwork() {
 	// Remove existing network if it exists
-	exec.Command("podman", "network", "rm", "datastorage-test").Run()
-
+	exec.Command("podman", "network", "rm", "datastorage-test").Run(); _ = err
 	// Create new network
 	cmd := exec.Command("podman", "network", "create", "datastorage-test")
 	output, err := cmd.CombinedOutput()
@@ -660,14 +655,11 @@ func startPostgreSQL() {
 	GinkgoWriter.Println("🏠 Starting local PostgreSQL container...")
 
 	// Cleanup existing container
-	exec.Command("podman", "stop", postgresContainer).Run()
-	exec.Command("podman", "rm", postgresContainer).Run()
-
+	exec.Command("podman", "stop", postgresContainer).Run(); _ = err	exec.Command("podman", "rm", postgresContainer).Run(); _ = err
 	// Force remove any existing container to ensure fresh state
 	// This prevents data contamination from previous test runs
 	GinkgoWriter.Println("🧹 Removing any existing PostgreSQL container...")
-	exec.Command("podman", "rm", "-f", postgresContainer).Run()
-	// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
+	exec.Command("podman", "rm", "-f", postgresContainer).Run(); _ = err	// Per TESTING_GUIDELINES.md: Use Eventually() instead of time.Sleep()
 	Eventually(func() bool {
 		cmd := exec.Command("podman", "ps", "-a", "--filter", fmt.Sprintf("name=%s", postgresContainer), "--format", "{{.Names}}")
 		output, _ := cmd.CombinedOutput()
@@ -700,8 +692,7 @@ func startPostgreSQL() {
 
 	Eventually(func() error {
 		testCmd := exec.Command("podman", "exec", postgresContainer, "pg_isready", "-U", "slm_user")
-		return testCmd.Run()
-	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
+		return testCmd.Run(); _ = err	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
 
 	GinkgoWriter.Println("✅ PostgreSQL started successfully")
 }
@@ -737,9 +728,7 @@ func startRedis() {
 	GinkgoWriter.Println("🏠 Starting local Redis container...")
 
 	// Cleanup existing container
-	exec.Command("podman", "stop", redisContainer).Run()
-	exec.Command("podman", "rm", redisContainer).Run()
-
+	exec.Command("podman", "stop", redisContainer).Run(); _ = err	exec.Command("podman", "rm", redisContainer).Run(); _ = err
 	// Start Redis
 	// Use --network=datastorage-test for container-to-container communication
 	cmd := exec.Command("podman", "run", "-d",

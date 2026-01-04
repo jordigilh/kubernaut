@@ -366,7 +366,7 @@ func LoadWorkflowExecutionCoverageImage(clusterName, projectRoot string, writer 
 	if err := saveCmd.Run(); err != nil {
 		return fmt.Errorf("failed to save controller image: %w", err)
 	}
-	defer os.Remove(tarPath)
+	defer func() { _ = os.Remove(tarPath) }()
 
 	// Load image into Kind from tarball
 	loadCmd := exec.Command("kind", "load", "image-archive", tarPath,
