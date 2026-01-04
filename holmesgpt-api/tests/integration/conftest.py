@@ -368,14 +368,15 @@ def is_service_available(url: str, timeout: float = 2.0, max_retries: int = 5, r
 def is_integration_infra_available() -> bool:
     """
     Check if HAPI integration infrastructure is available.
+    
+    Note: HAPI integration tests use direct business logic calls (no HTTP),
+    so we only check Data Storage availability.
 
     Returns:
         bool: True if all required services are available
     """
-    hapi_available = is_service_available(f"{HAPI_URL}/health")
     ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
-
-    return hapi_available and ds_available
+    return ds_available
 
 
 # ========================================
@@ -418,24 +419,6 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_ds)
 
         # NOTE: "requires_hapi" marker no longer needed - HAPI tests use direct business logic calls (in-process)
-
-
-def is_integration_infra_available() -> bool:
-    """
-    Check if HAPI integration infrastructure is available.
-
-    Returns:
-        bool: True if all required services are available
-    """
-    hapi_available = is_service_available(f"{HAPI_URL}/health")
-    ds_available = is_service_available(f"{DATA_STORAGE_URL}/health")
-
-    return hapi_available and ds_available
-
-
-# ========================================
-# PYTEST MARKERS
-# ========================================
 
 def pytest_configure(config):
     """Register custom pytest markers."""
