@@ -94,35 +94,10 @@ var _ = Describe("Audit Events Query API",  func() {
 	var baseURL string
 
 	BeforeEach(func() {
-
 		baseURL = datastorageURL + "/api/v1/audit/events"
-
-		// DD-TEST-001: Clean up any leftover audit events from previous test runs
-		// This ensures test isolation even if AfterEach failed
-		// Fix: Use fmt.Sprintf to convert int to string to avoid PostgreSQL encoding error
-		if db != nil {
-			_, err := db.ExecContext(context.Background(),
-				"DELETE FROM audit_events WHERE correlation_id LIKE $1",
-				fmt.Sprintf("test-%d-%%", GinkgoParallelProcess()))
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Failed to clean up stale audit events: %v\n", err)
-			}
-		}
-	})
-
-	AfterEach(func() {
-		// Clean up test data to prevent pollution between test runs
-		// This is critical for CI/CD where tests must be deterministic
-		// DD-TEST-001: Clean up audit events created by this test process
-		// Fix: Use fmt.Sprintf to convert int to string to avoid PostgreSQL encoding error
-		if db != nil {
-			_, err := db.ExecContext(context.Background(),
-				"DELETE FROM audit_events WHERE correlation_id LIKE $1",
-				fmt.Sprintf("test-%d-%%", GinkgoParallelProcess()))
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Failed to clean up audit events: %v\n", err)
-			}
-		}
+		// Note: No cleanup needed - schema-level isolation provides complete data isolation
+		// Each parallel process runs in its own schema (test_process_N)
+		// AfterSuite drops entire schema with DROP SCHEMA CASCADE
 	})
 
 	Context("Query by correlation_id", func() {
