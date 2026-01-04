@@ -99,10 +99,11 @@ var _ = Describe("Audit Events Query API",  func() {
 
 		// DD-TEST-001: Clean up any leftover audit events from previous test runs
 		// This ensures test isolation even if AfterEach failed
+		// Fix: Use fmt.Sprintf to convert int to string to avoid PostgreSQL encoding error
 		if db != nil {
 			_, err := db.ExecContext(context.Background(),
-				"DELETE FROM audit_events WHERE correlation_id LIKE 'test-' || $1 || '-%'",
-				GinkgoParallelProcess())
+				"DELETE FROM audit_events WHERE correlation_id LIKE $1",
+				fmt.Sprintf("test-%d-%%", GinkgoParallelProcess()))
 			if err != nil {
 				GinkgoWriter.Printf("⚠️  Failed to clean up stale audit events: %v\n", err)
 			}
@@ -113,10 +114,11 @@ var _ = Describe("Audit Events Query API",  func() {
 		// Clean up test data to prevent pollution between test runs
 		// This is critical for CI/CD where tests must be deterministic
 		// DD-TEST-001: Clean up audit events created by this test process
+		// Fix: Use fmt.Sprintf to convert int to string to avoid PostgreSQL encoding error
 		if db != nil {
 			_, err := db.ExecContext(context.Background(),
-				"DELETE FROM audit_events WHERE correlation_id LIKE 'test-' || $1 || '-%'",
-				GinkgoParallelProcess())
+				"DELETE FROM audit_events WHERE correlation_id LIKE $1",
+				fmt.Sprintf("test-%d-%%", GinkgoParallelProcess()))
 			if err != nil {
 				GinkgoWriter.Printf("⚠️  Failed to clean up audit events: %v\n", err)
 			}
