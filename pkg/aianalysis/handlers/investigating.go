@@ -133,14 +133,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
-		oldPhase := analysis.Status.Phase
+		// NOTE: Phase transition audit is now recorded INSIDE ResponseProcessor (AA-BUG-001 fix)
+		// to ensure it's recorded even if handler returns early. Removed duplicate call here.
 		result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
-			// DD-AUDIT-003: Record phase transition if phase changed
-			if analysis.Status.Phase != oldPhase {
-				h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
-			}
 		}
 		return result, err
 	} else {
@@ -168,18 +165,11 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
-		oldPhase := analysis.Status.Phase
+		// NOTE: Phase transition audit is now recorded INSIDE ResponseProcessor (AA-BUG-001 fix)
+		// to ensure it's recorded even if handler returns early. Removed duplicate call here.
 		result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
-			// DD-AUDIT-003: Record phase transition if phase changed
-			if analysis.Status.Phase != oldPhase {
-				h.log.Info("🔍 [AA-BUG-001 DEBUG] Investigating handler recording phase transition",
-					"from", string(oldPhase),
-					"to", string(analysis.Status.Phase),
-					"auditClientNil", h.auditClient == nil)
-				h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
-			}
 		}
 		return result, err
 	}
