@@ -46,11 +46,10 @@ func (r *AIAnalysisReconciler) handleDeletion(ctx context.Context, analysis *aia
 	// Cleanup logic: Record deletion audit event
 	// Note: Audit writes blocked by Data Storage batch endpoint (NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md)
 	// When unblocked, add: r.AuditClient.RecordDeletion(ctx, analysis)
-	if r.AuditClient != nil {
-		// Audit client available but batch endpoint not implemented by Data Storage
-		// Events will be logged locally until Data Storage implements /api/v1/audit/events batch endpoint
-		log.V(1).Info("Audit deletion event (batch endpoint pending)", "analysis", analysis.Name)
-	}
+	// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+	// Audit client available but batch endpoint not implemented by Data Storage
+	// Events will be logged locally until Data Storage implements /api/v1/audit/events batch endpoint
+	log.V(1).Info("Audit deletion event (batch endpoint pending)", "analysis", analysis.Name)
 
 	// Remove finalizer
 	controllerutil.RemoveFinalizer(analysis, FinalizerName)

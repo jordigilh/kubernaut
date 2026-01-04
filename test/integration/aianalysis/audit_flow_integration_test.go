@@ -192,7 +192,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Ser
 		By("Verifying complete audit trail in Data Storage")
 
 		// Flush audit buffer to ensure all events are persisted (eliminates race conditions)
-		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Second)
+		// Timeout increased from 2s → 10s to accommodate realistic flush chain latency:
+		// AIAnalysis → HTTP → Data Storage → PostgreSQL → Response (~2-5s under parallel test load)
+		flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed before querying")
