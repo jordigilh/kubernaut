@@ -29,7 +29,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // Scenario 2: DLQ Fallback - Service Outage Response (P0)
