@@ -98,7 +98,7 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 	if r.InvestigatingHandler != nil {
 		// AA-BUG-007: Use optimistic locking with idempotency check
 		// Handler runs INSIDE updateFunc, checked AFTER each atomic refetch
-		
+
 		var phaseBefore string
 		var result ctrl.Result
 		var handlerErr error
@@ -164,7 +164,7 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 		// AA-BUG-007: Use optimistic locking with idempotency check
 		// The key insight: Move handler execution BEFORE AtomicStatusUpdate's refetch
 		// so we can check the phase ONCE and decide whether to proceed
-		
+
 		var phaseBefore string
 		var result ctrl.Result
 		var handlerErr error

@@ -69,9 +69,9 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 		metrics:         m,
 		auditClient:     auditClient,
 		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m, auditClient), // P1.1: Initialize response processor with audit client (AA-BUG-001 fix)
-		builder:         NewRequestBuilder(log),                    // P1.2: Initialize request builder
-		errorClassifier: NewErrorClassifier(handlerLog),            // P2.1: Initialize error classifier
+		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor (audit recorded by handler, not processor)
+		builder:         NewRequestBuilder(log),       // P1.2: Initialize request builder
+		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
 }
 
@@ -133,12 +133,18 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 			return h.handleError(ctx, analysis, fmt.Errorf("received nil recovery response from HolmesGPT-API"))
 		}
 		// P1.1: Delegate to processor, reset retry count after success
-		// NOTE: Phase transition audit is now recorded INSIDE ResponseProcessor (AA-BUG-001 fix)
-		// to ensure it's recorded even if handler returns early. Removed duplicate call here.
+		oldPhase := analysis.Status.Phase
 		result, err := h.processor.ProcessRecoveryResponse(ctx, analysis, recoveryResp)
 		if err == nil {
 			h.setRetryCount(analysis, 0)
 		}
+
+		// DD-AUDIT-003: Record phase transition if phase changed (AA-BUG-001 fix)
+		// This is the CORRECT location - after processor completes and status is updated
+		if analysis.Status.Phase != oldPhase {
+			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
+		}
+
 		return result, err
 	} else {
 		req := h.builder.BuildIncidentRequest(analysis) // P1.2: Use request builder
@@ -170,13 +176,13 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		if err == nil {
 			h.setRetryCount(analysis, 0)
 		}
-		
+
 		// DD-AUDIT-003: Record phase transition if phase changed (AA-BUG-001 fix)
 		// This is the CORRECT location - after processor completes and status is updated
 		if analysis.Status.Phase != oldPhase {
 			h.auditClient.RecordPhaseTransition(ctx, analysis, string(oldPhase), string(analysis.Status.Phase))
 		}
-		
+
 		return result, err
 	}
 }
