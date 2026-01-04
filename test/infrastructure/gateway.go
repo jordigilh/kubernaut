@@ -47,38 +47,38 @@ const (
 func StartGatewayIntegrationInfrastructure(writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Gateway Integration Test Infrastructure Setup\n")
-	fmt.Fprintf(writer, "Per DD-TEST-002: Sequential Startup Pattern\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", GatewayIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:          localhost:%d\n", GatewayIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", GatewayIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Gateway Integration Test Infrastructure Setup\n")
+	_, _ = fmt.Fprintf(writer, "Per DD-TEST-002: Sequential Startup Pattern\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", GatewayIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d\n", GatewayIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", GatewayIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	// ============================================================================
 	// STEP 1: Cleanup existing containers (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
+	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
 	CleanupContainers([]string{
 		GatewayIntegrationPostgresContainer,
 		GatewayIntegrationRedisContainer,
 		GatewayIntegrationDataStorageContainer,
 		GatewayIntegrationMigrationsContainer,
 	}, writer)
-	fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// ============================================================================
 	// STEP 2: Network setup (SKIPPED - using host network for localhost connectivity)
 	// ============================================================================
 	// Note: Using host network instead of custom podman network to avoid DNS resolution issues
 	// All services connect via localhost:PORT (same pattern as other successful services)
-	fmt.Fprintf(writer, "🌐 Network: Using host network for localhost connectivity\n\n")
+	_, _ = fmt.Fprintf(writer, "🌐 Network: Using host network for localhost connectivity\n\n")
 
 	// ============================================================================
 	// STEP 3: Start PostgreSQL FIRST (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
+	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
 	if err := StartPostgreSQL(PostgreSQLConfig{
 		ContainerName: GatewayIntegrationPostgresContainer,
 		Port:          GatewayIntegrationPostgresPort,
@@ -90,25 +90,25 @@ func StartGatewayIntegrationInfrastructure(writer io.Writer) error {
 	}
 
 	// CRITICAL: Wait for PostgreSQL to be ready before proceeding (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
 	if err := WaitForPostgreSQLReady(GatewayIntegrationPostgresContainer, "kubernaut", "kubernaut", writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
 	// STEP 4: Run migrations
 	// ============================================================================
-	fmt.Fprintf(writer, "🔄 Running database migrations...\n")
+	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
 	if err := runGatewayMigrations(projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
 	// ============================================================================
 	// STEP 5: Start Redis SECOND (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "🔴 Starting Redis...\n")
+	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
 	if err := StartRedis(RedisConfig{
 		ContainerName: GatewayIntegrationRedisContainer,
 		Port:          GatewayIntegrationRedisPort,
@@ -117,48 +117,48 @@ func StartGatewayIntegrationInfrastructure(writer io.Writer) error {
 	}
 
 	// Wait for Redis to be ready (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
 	if err := WaitForRedisReady(GatewayIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("Redis failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
 	// STEP 6: Start DataStorage LAST
 	// ============================================================================
-	fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
 	if err := startGatewayDataStorage(projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
-	fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := WaitForHTTPHealth(
 		fmt.Sprintf("http://127.0.0.1:%d/health", GatewayIntegrationDataStoragePort),
 		30*time.Second,
 		writer,
 	); err != nil {
 		// Print container logs for debugging
-		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
+		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", GatewayIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
 		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 	}
-	fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// ============================================================================
 	// SUCCESS
 	// ============================================================================
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "✅ Gateway Integration Infrastructure Ready\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", GatewayIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:             localhost:%d\n", GatewayIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage HTTP:  http://localhost:%d\n", GatewayIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  DataStorage Metrics: http://localhost:%d\n", GatewayIntegrationMetricsPort)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ Gateway Integration Infrastructure Ready\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", GatewayIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:             localhost:%d\n", GatewayIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage HTTP:  http://localhost:%d\n", GatewayIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage Metrics: http://localhost:%d\n", GatewayIntegrationMetricsPort)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	return nil
 }
@@ -173,7 +173,7 @@ func StartGatewayIntegrationInfrastructure(writer io.Writer) error {
 // Returns:
 // - error: Any errors during infrastructure cleanup
 func StopGatewayIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "🛑 Stopping Gateway Integration Infrastructure...\n")
+	_, _ = fmt.Fprintf(writer, "🛑 Stopping Gateway Integration Infrastructure...\n")
 
 	// Stop and remove containers (using shared utility)
 	CleanupContainers([]string{
@@ -187,7 +187,7 @@ func StopGatewayIntegrationInfrastructure(writer io.Writer) error {
 	networkCmd := exec.Command("podman", "network", "rm", GatewayIntegrationNetwork)
 	_ = networkCmd.Run()
 
-	fmt.Fprintf(writer, "✅ Gateway Integration Infrastructure stopped and cleaned up\n")
+	_, _ = fmt.Fprintf(writer, "✅ Gateway Integration Infrastructure stopped and cleaned up\n")
 	return nil
 }
 
@@ -239,11 +239,11 @@ func startGatewayDataStorage(projectRoot string, writer io.Writer) error {
 
 	// Build DataStorage image using shared utility with GenerateInfraImageName
 	dsImageTag := GenerateInfraImageName("datastorage", "gateway")
-	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", dsImageTag)
+	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", dsImageTag)
 	if err := buildDataStorageImageWithTag(dsImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// Use port mapping (not --network host) for macOS compatibility
 	// macOS Podman runs in VM, so host network doesn't expose ports to Mac host
@@ -269,16 +269,16 @@ func waitForGatewayHTTPHealth(healthURL string, timeout time.Duration, writer io
 	for time.Now().Before(deadline) {
 		resp, err := client.Get(healthURL)
 		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return nil
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		// Log progress every 10 seconds
 		if time.Now().Unix()%10 == 0 {
-			fmt.Fprintf(writer, "   Still waiting for %s...\n", healthURL)
+			_, _ = fmt.Fprintf(writer, "   Still waiting for %s...\n", healthURL)
 		}
 
 		time.Sleep(2 * time.Second)
@@ -314,7 +314,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 	// Use unique image tag with coverage suffix
 	imageTag := "e2e-test-coverage"
 	imageName := fmt.Sprintf("localhost/kubernaut-gateway:%s", imageTag)
-	fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
+	_, _ = fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
 
 	// Build with GOFLAGS=-cover for E2E coverage
 	// Using go-toolset:1.25 (no dnf update) reduces build time from 10min to 2-3min
@@ -349,7 +349,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("kubernaut-gateway-%s.tar", imageTag))
 	imageName := GetGatewayCoverageFullImageName()
 
-	fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
+	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
 	saveCmd := exec.Command("podman", "save",
 		"-o", tmpFile,
 		imageName,
@@ -360,7 +360,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 		return fmt.Errorf("failed to save image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  Loading coverage image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
 	loadCmd := exec.Command("kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
@@ -368,25 +368,25 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 	if err := loadCmd.Run(); err != nil {
-		os.Remove(tmpFile)
+		_ = os.Remove(tmpFile)
 		return fmt.Errorf("failed to load image: %w", err)
 	}
 
-	os.Remove(tmpFile)
+	_ = os.Remove(tmpFile)
 
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
-	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
 	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
-		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+		_, _ = fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
 	}
 
-	fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
+	_, _ = fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
 	return nil
 }
 
@@ -651,14 +651,14 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, writer io.Writer) erro
 		return fmt.Errorf("failed to apply coverage Gateway manifest: %w", err)
 	}
 
-	fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled Gateway to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled Gateway to be ready...")
 	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
 }
 
 // ScaleDownGatewayForCoverage scales the Gateway deployment to 0 to trigger graceful shutdown
 // and flush coverage data to /coverdata
 func ScaleDownGatewayForCoverage(kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "📊 Scaling down Gateway for coverage flush...")
+	_, _ = fmt.Fprintln(writer, "📊 Scaling down Gateway for coverage flush...")
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"scale", "deployment", "gateway",
@@ -671,7 +671,7 @@ func ScaleDownGatewayForCoverage(kubeconfigPath string, writer io.Writer) error 
 	}
 
 	// Wait for pod to terminate using kubectl wait (blocks until pod is deleted)
-	fmt.Fprintln(writer, "⏳ Waiting for Gateway pod to terminate...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway pod to terminate...")
 	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=delete", "pod",
 		"-l", "app=gateway",
@@ -684,7 +684,7 @@ func ScaleDownGatewayForCoverage(kubeconfigPath string, writer io.Writer) error 
 	// Coverage data is written on SIGTERM before pod exits, no additional wait needed
 	// The kubectl wait --for=delete already blocks until pod is fully terminated
 
-	fmt.Fprintln(writer, "✅ Gateway scaled down, coverage data should be flushed")
+	_, _ = fmt.Fprintln(writer, "✅ Gateway scaled down, coverage data should be flushed")
 	return nil
 }
 

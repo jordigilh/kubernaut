@@ -87,7 +87,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 	AfterEach(func() {
 		if server != nil {
-			server.Close()
+			_ = server.Close()
 		}
 
 		// DD-GATEWAY-009: Clean up CRDs after each test to prevent interference
@@ -696,7 +696,7 @@ func sendWebhook(gatewayURL, path string, body []byte) *WebhookResponse {
 
 	resp, err := http.DefaultClient.Do(req)
 	Expect(err).ToNot(HaveOccurred())
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	Expect(err).ToNot(HaveOccurred())

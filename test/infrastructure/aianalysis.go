@@ -90,29 +90,29 @@ const (
 //
 // Time: ~2-3 minutes
 func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "AIAnalysis E2E Cluster Setup")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "Dependencies:")
-	fmt.Fprintln(writer, "  • PostgreSQL (port 5433) - Data Storage persistence")
-	fmt.Fprintln(writer, "  • Redis (port 6380) - Data Storage caching")
-	fmt.Fprintln(writer, "  • Data Storage (port 8081) - Audit trail")
-	fmt.Fprintln(writer, "  • HolmesGPT-API (port 8088) - AI analysis")
-	fmt.Fprintln(writer, "  • AIAnalysis (port 8084) - CRD controller")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "AIAnalysis E2E Cluster Setup")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "Dependencies:")
+	_, _ = fmt.Fprintln(writer, "  • PostgreSQL (port 5433) - Data Storage persistence")
+	_, _ = fmt.Fprintln(writer, "  • Redis (port 6380) - Data Storage caching")
+	_, _ = fmt.Fprintln(writer, "  • Data Storage (port 8081) - Audit trail")
+	_, _ = fmt.Fprintln(writer, "  • HolmesGPT-API (port 8088) - AI analysis")
+	_, _ = fmt.Fprintln(writer, "  • AIAnalysis (port 8084) - CRD controller")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Create context for infrastructure deployment
 	ctx := context.Background()
 	namespace := "kubernaut-system"
 
 	// 1. Create Kind cluster with AIAnalysis config
-	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
 	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// 2. Create namespace for deployments (ignore if already exists)
-	fmt.Fprintln(writer, "📁 Creating namespace...")
+	_, _ = fmt.Fprintln(writer, "📁 Creating namespace...")
 	createNsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"create", "namespace", namespace)
 	nsOutput := &strings.Builder{}
@@ -123,29 +123,29 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 		if !strings.Contains(nsOutput.String(), "AlreadyExists") {
 			return fmt.Errorf("failed to create namespace: %w", err)
 		}
-		fmt.Fprintln(writer, "  (namespace already exists, continuing...)")
+		_, _ = fmt.Fprintln(writer, "  (namespace already exists, continuing...)")
 	}
 
 	// 3. Install AIAnalysis CRD
-	fmt.Fprintln(writer, "📋 Installing AIAnalysis CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing AIAnalysis CRD...")
 	if err := installAIAnalysisCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install AIAnalysis CRD: %w", err)
 	}
 
 	// 4. Deploy PostgreSQL (using shared function from datastorage.go)
-	fmt.Fprintln(writer, "🐘 Deploying PostgreSQL...")
+	_, _ = fmt.Fprintln(writer, "🐘 Deploying PostgreSQL...")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
 	// 5. Deploy Redis (using shared function from datastorage.go)
-	fmt.Fprintln(writer, "🔴 Deploying Redis...")
+	_, _ = fmt.Fprintln(writer, "🔴 Deploying Redis...")
 	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
 	// 5. Wait for infrastructure to be ready
-	fmt.Fprintln(writer, "⏳ Waiting for PostgreSQL and Redis to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for PostgreSQL and Redis to be ready...")
 	if err := waitForAIAnalysisInfraReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("infrastructure not ready: %w", err)
 	}
@@ -154,10 +154,10 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 	// Per DD-E2E-001: Parallel Image Build Pattern
 	// Images are independent and can be built concurrently
 	// Measured times (Dec 16, 2025): DS 1:22, HAPI 2:30, AA 3:53 (slowest)
-	fmt.Fprintln(writer, "🔨 Building all images in parallel...")
-	fmt.Fprintln(writer, "  • Data Storage (1-2 min)")
-	fmt.Fprintln(writer, "  • HolmesGPT-API (2-3 min)")
-	fmt.Fprintln(writer, "  • AIAnalysis controller (3-4 min) - slowest, determines total")
+	_, _ = fmt.Fprintln(writer, "🔨 Building all images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  • Data Storage (1-2 min)")
+	_, _ = fmt.Fprintln(writer, "  • HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "  • AIAnalysis controller (3-4 min) - slowest, determines total")
 
 	// Build all images in parallel (DD-E2E-001 compliant)
 	type imageBuildResult struct {
@@ -188,7 +188,7 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 		// Check if E2E_COVERAGE is enabled (DD-TEST-007)
 		var err error
 		if os.Getenv("E2E_COVERAGE") == "true" {
-			fmt.Fprintf(writer, "   📊 Building AIAnalysis with coverage instrumentation (GOFLAGS=-cover)\n")
+			_, _ = fmt.Fprintf(writer, "   📊 Building AIAnalysis with coverage instrumentation (GOFLAGS=-cover)\n")
 			buildArgs := []string{"--build-arg", "GOFLAGS=-cover"}
 			err = buildImageWithArgs("AIAnalysis controller", "localhost/kubernaut-aianalysis:latest",
 				"docker/aianalysis.Dockerfile", projectRoot, buildArgs, writer)
@@ -207,24 +207,24 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 			return fmt.Errorf("parallel build failed for %s: %w", result.name, result.err)
 		}
 		builtImages[result.name] = result.image
-		fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
 	}
 
-	fmt.Fprintln(writer, "✅ All images built successfully (parallel - DD-E2E-001 compliant)")
+	_, _ = fmt.Fprintln(writer, "✅ All images built successfully (parallel - DD-E2E-001 compliant)")
 
 	// Now deploy in sequence (deployment has dependencies)
-	fmt.Fprintln(writer, "💾 Deploying Data Storage...")
+	_, _ = fmt.Fprintln(writer, "💾 Deploying Data Storage...")
 	if err := deployDataStorageOnly(clusterName, kubeconfigPath, builtImages["datastorage"], writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)
 	}
 
-	fmt.Fprintln(writer, "🤖 Deploying HolmesGPT-API...")
+	_, _ = fmt.Fprintln(writer, "🤖 Deploying HolmesGPT-API...")
 	// FIX: Use pre-built image from parallel build phase (saves 10-15 min)
 	if err := deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, builtImages["holmesgpt-api"], writer); err != nil {
 		return fmt.Errorf("failed to deploy HolmesGPT-API: %w", err)
 	}
 
-	fmt.Fprintln(writer, "🧠 Deploying AIAnalysis controller...")
+	_, _ = fmt.Fprintln(writer, "🧠 Deploying AIAnalysis controller...")
 	// FIX: Use pre-built image from parallel build phase (saves 3-4 min)
 	if err := deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, builtImages["aianalysis"], writer); err != nil {
 		return fmt.Errorf("failed to deploy AIAnalysis controller: %w", err)
@@ -233,24 +233,24 @@ func CreateAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 	// FIX: Wait for all services to be ready before returning
 	// NOTE: Coverage-instrumented binaries take longer to start (2-5 min vs 30s for production)
 	// This ensures test suite's health check succeeds immediately (suite_test.go:169-172)
-	fmt.Fprintln(writer, "⏳ Waiting for all services to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for all services to be ready...")
 	if err := waitForAllServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ AIAnalysis E2E cluster ready!")
-	fmt.Fprintf(writer, "  • AIAnalysis API: http://localhost:%d\n", AIAnalysisHostPort)
-	fmt.Fprintf(writer, "  • AIAnalysis Metrics: http://localhost:%d/metrics\n", 9184)
-	fmt.Fprintf(writer, "  • Data Storage: http://localhost:%d\n", DataStorageHostPort)
-	fmt.Fprintf(writer, "  • HolmesGPT-API: http://localhost:%d\n", HolmesGPTAPIHostPort)
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ AIAnalysis E2E cluster ready!")
+	_, _ = fmt.Fprintf(writer, "  • AIAnalysis API: http://localhost:%d\n", AIAnalysisHostPort)
+	_, _ = fmt.Fprintf(writer, "  • AIAnalysis Metrics: http://localhost:%d/metrics\n", 9184)
+	_, _ = fmt.Fprintf(writer, "  • Data Storage: http://localhost:%d\n", DataStorageHostPort)
+	_, _ = fmt.Fprintf(writer, "  • HolmesGPT-API: http://localhost:%d\n", HolmesGPTAPIHostPort)
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
 // DeleteAIAnalysisCluster deletes the Kind cluster
 func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "🗑️  Deleting AIAnalysis E2E cluster...")
+	_, _ = fmt.Fprintln(writer, "🗑️  Deleting AIAnalysis E2E cluster...")
 
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 	cmd.Stdout = writer
@@ -264,7 +264,7 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 		_ = os.Remove(kubeconfigPath)
 	}
 
-	fmt.Fprintln(writer, "✅ Cluster deleted")
+	_, _ = fmt.Fprintln(writer, "✅ Cluster deleted")
 	return nil
 }
 
@@ -283,13 +283,13 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 	checkCmd := exec.Command("kind", "get", "clusters")
 	output, _ := checkCmd.Output()
 	if containsCluster(string(output), clusterName) {
-		fmt.Fprintln(writer, "  Cluster already exists, reusing...")
+		_, _ = fmt.Fprintln(writer, "  Cluster already exists, reusing...")
 		return exportKubeconfig(clusterName, kubeconfigPath, writer)
 	}
 
 	// Clean up any leftover Podman containers from previous failed runs
 	// This fixes issues on macOS where Kind/Podman can leave orphaned containers
-	fmt.Fprintln(writer, "  Cleaning up any leftover containers...")
+	_, _ = fmt.Fprintln(writer, "  Cleaning up any leftover containers...")
 	cleanupContainers := []string{
 		clusterName + "-control-plane",
 		clusterName + "-worker",
@@ -406,13 +406,13 @@ func exportKubeconfig(clusterName, kubeconfigPath string, writer io.Writer) erro
 }
 
 func waitForClusterReady(kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
+	_, _ = fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
 	for i := 0; i < 60; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "nodes", "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
 		output, err := cmd.Output()
 		if err == nil && containsReady(string(output)) {
-			fmt.Fprintln(writer, "  Cluster nodes ready")
+			_, _ = fmt.Fprintln(writer, "  Cluster nodes ready")
 			return nil
 		}
 		time.Sleep(2 * time.Second)
@@ -440,7 +440,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 	}
 
 	// Wait for CRD to be established
-	fmt.Fprintln(writer, "  Waiting for CRD to be established...")
+	_, _ = fmt.Fprintln(writer, "  Waiting for CRD to be established...")
 	for i := 0; i < 30; i++ {
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "aianalyses.kubernaut.ai")
@@ -495,7 +495,7 @@ func buildImageOnly(name, imageTag, dockerfile, projectRoot string, writer io.Wr
 }
 
 func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArgs []string, writer io.Writer) error {
-	fmt.Fprintf(writer, "  🔨 Building %s...\n", name)
+	_, _ = fmt.Fprintf(writer, "  🔨 Building %s...\n", name)
 
 	// Build base command
 	cmdArgs := []string{"build", "--no-cache", "-t", imageTag}
@@ -538,25 +538,25 @@ func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) err
 // deployDataStorageOnly deploys Data Storage using pre-built image (separation of build/deploy)
 func deployDataStorageOnly(clusterName, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Apply database migrations BEFORE deploying Data Storage
-	fmt.Fprintln(writer, "  📋 Applying database migrations (shared library)...")
+	_, _ = fmt.Fprintln(writer, "  📋 Applying database migrations (shared library)...")
 	ctx := context.Background()
 
 	config := DefaultMigrationConfig("kubernaut-system", kubeconfigPath)
 	config.Tables = []string{"audit_events", "remediation_workflow_catalog"}
 	if err := ApplyMigrationsWithConfig(ctx, config, writer); err != nil {
-		fmt.Fprintf(writer, "  ⚠️  Migration warning (may already be applied): %v\n", err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Migration warning (may already be applied): %v\n", err)
 	}
 
 	verifyConfig := DefaultMigrationConfig("kubernaut-system", kubeconfigPath)
 	verifyConfig.Tables = []string{"audit_events"}
 	if err := VerifyMigrations(ctx, verifyConfig, writer); err != nil {
-		fmt.Fprintf(writer, "  ⚠️  Verification warning: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Verification warning: %v\n", err)
 	}
 
 	// Load pre-built image into Kind
 	// Strip localhost/ prefix if present (loadImageToKind adds it)
 	imageNameForKind := strings.TrimPrefix(imageName, "localhost/")
-	fmt.Fprintln(writer, "  Loading Data Storage image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading Data Storage image into Kind...")
 	if err := loadImageToKind(clusterName, imageNameForKind, writer); err != nil {
 		return fmt.Errorf("failed to load image: %w", err)
 	}
@@ -686,7 +686,7 @@ func deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, imageName string, write
 	// Load pre-built image into Kind
 	// Strip localhost/ prefix if present (loadImageToKind adds it)
 	imageNameForKind := strings.TrimPrefix(imageName, "localhost/")
-	fmt.Fprintln(writer, "  Loading HolmesGPT-API image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading HolmesGPT-API image into Kind...")
 	if err := loadImageToKind(clusterName, imageNameForKind, writer); err != nil {
 		return fmt.Errorf("failed to load HolmesGPT-API image: %w", err)
 	}
@@ -773,7 +773,7 @@ spec:
 // deployHolmesGPTAPIManifestOnly deploys HolmesGPT-API manifest assuming image is already in Kind
 // Used by hybrid flow: build → export → prune → load → deploy
 func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
-	fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
+	_, _ = fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
 	// ADR-030: Deploy manifest with ConfigMap
 	manifest := fmt.Sprintf(`
 apiVersion: v1
@@ -858,7 +858,7 @@ func deployAIAnalysisControllerOnly(clusterName, kubeconfigPath, imageName strin
 	// Load pre-built image into Kind
 	// Strip localhost/ prefix if present (loadImageToKind adds it)
 	imageNameForKind := strings.TrimPrefix(imageName, "localhost/")
-	fmt.Fprintln(writer, "  Loading AIAnalysis controller image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading AIAnalysis controller image into Kind...")
 	if err := loadImageToKind(clusterName, imageNameForKind, writer); err != nil {
 		return fmt.Errorf("failed to load AIAnalysis image: %w", err)
 	}
@@ -1017,7 +1017,7 @@ spec:
 // deployAIAnalysisControllerManifestOnly deploys AIAnalysis controller manifest assuming image is already in Kind
 // Used by hybrid flow: build → export → prune → load → deploy
 func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
-	fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
+	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
 	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
 	manifest := `
 apiVersion: v1
@@ -1174,11 +1174,11 @@ func deployHolmesGPTAPI(clusterName, kubeconfigPath string, writer io.Writer) er
 	projectRoot := getProjectRoot()
 
 	// Build HolmesGPT-API image
-	fmt.Fprintln(writer, "  Building HolmesGPT-API image...")
+	_, _ = fmt.Fprintln(writer, "  Building HolmesGPT-API image...")
 	// NOTE: This takes 10-15 minutes due to Python dependencies (UBI9 + pip packages)
 	// If timeout occurs, increase Makefile timeout (currently 30m, was 20m)
 	// Try podman build first (macOS)
-	fmt.Fprintln(writer, "  (Expected: 10-15 min for Python deps installation)")
+	_, _ = fmt.Fprintln(writer, "  (Expected: 10-15 min for Python deps installation)")
 	// FIX: Use localhost/ prefix and --no-cache to ensure fresh build
 	buildCmd := exec.Command("podman", "build",
 		"--no-cache", // Always build fresh for E2E tests
@@ -1192,7 +1192,7 @@ func deployHolmesGPTAPI(clusterName, kubeconfigPath string, writer io.Writer) er
 	}
 
 	// Load into Kind
-	fmt.Fprintln(writer, "  Loading HolmesGPT-API image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading HolmesGPT-API image into Kind...")
 	if err := loadImageToKind(clusterName, "kubernaut-holmesgpt-api:latest", writer); err != nil {
 		return fmt.Errorf("failed to load HolmesGPT-API image: %w", err)
 	}
@@ -1281,7 +1281,7 @@ func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Wr
 	projectRoot := getProjectRoot()
 
 	// Build AIAnalysis controller image
-	fmt.Fprintln(writer, "  Building AIAnalysis controller image...")
+	_, _ = fmt.Fprintln(writer, "  Building AIAnalysis controller image...")
 	// FIX: Use localhost/ prefix and --no-cache to ensure fresh build
 	buildCmd := exec.Command("podman", "build",
 		"--no-cache", // Always build fresh for E2E tests
@@ -1295,7 +1295,7 @@ func deployAIAnalysisController(clusterName, kubeconfigPath string, writer io.Wr
 	}
 
 	// Load into Kind
-	fmt.Fprintln(writer, "  Loading AIAnalysis image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  Loading AIAnalysis image into Kind...")
 	if err := loadImageToKind(clusterName, "kubernaut-aianalysis:latest", writer); err != nil {
 		return fmt.Errorf("failed to load AIAnalysis image: %w", err)
 	}
@@ -1445,7 +1445,7 @@ func deployRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
 	if err := cmd.Wait(); err != nil {
 		return err
 	}
-	pipeWriter2.Close()
+	_ = pipeWriter2.Close()
 	return applyCmd.Wait()
 }
 
@@ -1488,10 +1488,10 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Save image with podman (imageName already includes localhost/ prefix)
-	fmt.Fprintf(writer, "  Exporting image %s...\n", imageName)
+	_, _ = fmt.Fprintf(writer, "  Exporting image %s...\n", imageName)
 	saveCmd := exec.Command("podman", "save", "-o", tmpFile.Name(), imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
@@ -1500,7 +1500,7 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	}
 
 	// Load image archive into Kind
-	fmt.Fprintf(writer, "  Loading image archive into Kind...\n")
+	_, _ = fmt.Fprintf(writer, "  Loading image archive into Kind...\n")
 	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
@@ -1510,14 +1510,14 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
-	fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
 	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
-		fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+		_, _ = fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
 	}
 
 	return nil
@@ -1727,14 +1727,14 @@ func StartHAPIContainer(config HAPIContainerConfig, writer io.Writer) (int, erro
 		config.DataStorageURL = "http://host.containers.internal:18090"
 	}
 
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Starting HAPI Container for Integration Tests\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  Container: %s\n", config.ContainerName)
-	fmt.Fprintf(writer, "  Port: %d\n", config.Port)
-	fmt.Fprintf(writer, "  Data Storage: %s\n", config.DataStorageURL)
-	fmt.Fprintf(writer, "  Mock LLM: ENABLED\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Starting HAPI Container for Integration Tests\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  Container: %s\n", config.ContainerName)
+	_, _ = fmt.Fprintf(writer, "  Port: %d\n", config.Port)
+	_, _ = fmt.Fprintf(writer, "  Data Storage: %s\n", config.DataStorageURL)
+	_, _ = fmt.Fprintf(writer, "  Mock LLM: ENABLED\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// Check if port is available
 	if !isHAPIPortAvailable(config.Port) {
@@ -1745,7 +1745,7 @@ func StartHAPIContainer(config HAPIContainerConfig, writer io.Writer) (int, erro
 	checkCmd := exec.Command("podman", "ps", "--filter", fmt.Sprintf("name=%s", config.ContainerName), "--format", "{{.Names}}")
 	output, _ := checkCmd.CombinedOutput()
 	if strings.TrimSpace(string(output)) == config.ContainerName {
-		fmt.Fprintf(writer, "✅ HAPI container '%s' already running on port %d\n", config.ContainerName, config.Port)
+		_, _ = fmt.Fprintf(writer, "✅ HAPI container '%s' already running on port %d\n", config.ContainerName, config.Port)
 		return config.Port, nil
 	}
 
@@ -1754,21 +1754,21 @@ func StartHAPIContainer(config HAPIContainerConfig, writer io.Writer) (int, erro
 	stoppedOutput, _ := checkStoppedCmd.CombinedOutput()
 	if strings.TrimSpace(string(stoppedOutput)) == config.ContainerName {
 		// Container exists but stopped, remove it
-		fmt.Fprintf(writer, "🗑️  Removing stopped HAPI container '%s'...\n", config.ContainerName)
+		_, _ = fmt.Fprintf(writer, "🗑️  Removing stopped HAPI container '%s'...\n", config.ContainerName)
 		rmCmd := exec.Command("podman", "rm", config.ContainerName)
 		_ = rmCmd.Run()
 	}
 
 	// Build image if requested
 	if config.BuildImage {
-		fmt.Fprintf(writer, "🔨 Building HAPI image...\n")
+		_, _ = fmt.Fprintf(writer, "🔨 Building HAPI image...\n")
 		if err := buildHAPIImage(writer); err != nil {
 			return 0, fmt.Errorf("failed to build HAPI image: %w", err)
 		}
 	}
 
 	// Start container with mock LLM mode
-	fmt.Fprintf(writer, "🚀 Starting HAPI container...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Starting HAPI container...\n")
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", config.ContainerName,
 		"-p", fmt.Sprintf("%d:8080", config.Port),
@@ -1784,7 +1784,7 @@ func StartHAPIContainer(config HAPIContainerConfig, writer io.Writer) (int, erro
 	}
 
 	// Wait for HAPI to be ready
-	fmt.Fprintf(writer, "⏳ Waiting for HAPI to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for HAPI to be ready...\n")
 	if err := waitForHAPIHealth(config.Port, 60*time.Second); err != nil {
 		// Get container logs for debugging
 		logsCmd := exec.Command("podman", "logs", "--tail", "50", config.ContainerName)
@@ -1792,7 +1792,7 @@ func StartHAPIContainer(config HAPIContainerConfig, writer io.Writer) (int, erro
 		return 0, fmt.Errorf("HAPI not ready: %w\nContainer logs:\n%s", err, string(logs))
 	}
 
-	fmt.Fprintf(writer, "✅ HAPI container '%s' started on port %d\n", config.ContainerName, config.Port)
+	_, _ = fmt.Fprintf(writer, "✅ HAPI container '%s' started on port %d\n", config.ContainerName, config.Port)
 	return config.Port, nil
 }
 
@@ -1802,20 +1802,20 @@ func StopHAPIContainer(containerName string, writer io.Writer) error {
 		containerName = "aianalysis-hapi-integration"
 	}
 
-	fmt.Fprintf(writer, "🛑 Stopping HAPI container '%s'...\n", containerName)
+	_, _ = fmt.Fprintf(writer, "🛑 Stopping HAPI container '%s'...\n", containerName)
 
 	// Check if container exists
 	checkCmd := exec.Command("podman", "ps", "-a", "--filter", fmt.Sprintf("name=%s", containerName), "--format", "{{.Names}}")
 	output, _ := checkCmd.CombinedOutput()
 	if strings.TrimSpace(string(output)) != containerName {
-		fmt.Fprintf(writer, "✅ HAPI container '%s' does not exist (already cleaned up)\n", containerName)
+		_, _ = fmt.Fprintf(writer, "✅ HAPI container '%s' does not exist (already cleaned up)\n", containerName)
 		return nil
 	}
 
 	// Stop container
 	stopCmd := exec.Command("podman", "stop", containerName)
 	if err := stopCmd.Run(); err != nil {
-		fmt.Fprintf(writer, "⚠️  Warning: Failed to stop HAPI container '%s': %v\n", containerName, err)
+		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to stop HAPI container '%s': %v\n", containerName, err)
 	}
 
 	// Remove container
@@ -1824,7 +1824,7 @@ func StopHAPIContainer(containerName string, writer io.Writer) error {
 		return fmt.Errorf("failed to remove HAPI container: %w", err)
 	}
 
-	fmt.Fprintf(writer, "✅ HAPI container '%s' stopped and removed\n", containerName)
+	_, _ = fmt.Fprintf(writer, "✅ HAPI container '%s' stopped and removed\n", containerName)
 	return nil
 }
 
@@ -1852,7 +1852,7 @@ func waitForHAPIHealth(port int, timeout time.Duration) error {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get(healthURL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}
@@ -1869,7 +1869,7 @@ func isHAPIPortAvailable(port int) bool {
 	if err != nil {
 		return false
 	}
-	listener.Close()
+	_ = listener.Close()
 	return true
 }
 
@@ -1922,15 +1922,15 @@ const (
 // Returns:
 // - error: Any errors during infrastructure startup
 func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Starting AIAnalysis Integration Test Infrastructure\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", AIAnalysisIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:          localhost:%d\n", AIAnalysisIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", AIAnalysisIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  HolmesGPT API:  http://localhost:%d\n", AIAnalysisIntegrationHAPIPort)
-	fmt.Fprintf(writer, "  Pattern:        DD-TEST-002 Sequential Startup (Programmatic Go)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Starting AIAnalysis Integration Test Infrastructure\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", AIAnalysisIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d\n", AIAnalysisIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", AIAnalysisIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  HolmesGPT API:  http://localhost:%d\n", AIAnalysisIntegrationHAPIPort)
+	_, _ = fmt.Fprintf(writer, "  Pattern:        DD-TEST-002 Sequential Startup (Programmatic Go)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	projectRoot := getProjectRoot()
 
@@ -1945,14 +1945,14 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 		AIAnalysisIntegrationMigrationsContainer,
 	}, writer)
 	_ = exec.Command("podman", "network", "rm", AIAnalysisIntegrationNetwork).Run() // Ignore errors
-	fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// ============================================================================
 	// STEP 2: Network strategy
 	// ============================================================================
 	// Note: Using port mapping (-p) instead of custom podman network to avoid DNS resolution issues
 	// All services connect via host.containers.internal:PORT (same pattern as Gateway/Notification/WE)
-	fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
+	_, _ = fmt.Fprintf(writer, "🌐 Network: Using port mapping for localhost connectivity\n\n")
 
 	if false { // Skip network creation - using port mapping instead
 		createNetworkCmd := exec.Command("podman", "network", "create", AIAnalysisIntegrationNetwork)
@@ -1963,9 +1963,9 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 			if !strings.Contains(err.Error(), "already exists") {
 				return fmt.Errorf("failed to create network '%s': %w", AIAnalysisIntegrationNetwork, err)
 			}
-			fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", AIAnalysisIntegrationNetwork)
+			_, _ = fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", AIAnalysisIntegrationNetwork)
 		}
-		fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", AIAnalysisIntegrationNetwork)
+		_, _ = fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", AIAnalysisIntegrationNetwork)
 	} // End of skipped network creation block
 
 	// ============================================================================
@@ -1995,7 +1995,7 @@ func StartAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	// ============================================================================
 	// STEP 4: Run migrations (inline approach - same as RO)
 	// ============================================================================
-	fmt.Fprintf(writer, "🔄 Running migrations...\n")
+	_, _ = fmt.Fprintf(writer, "🔄 Running migrations...\n")
 	migrationsCmd := exec.Command("podman", "run", "--rm",
 		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
 		"-e", fmt.Sprintf("PGPORT=%d", AIAnalysisIntegrationPostgresPort),
@@ -2017,7 +2017,7 @@ echo "Migrations complete!"`)
 	if err := migrationsCmd.Run(); err != nil {
 		return fmt.Errorf("migrations failed: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
 	// ============================================================================
 	// STEP 5: Start Redis
@@ -2035,17 +2035,17 @@ echo "Migrations complete!"`)
 	if err := WaitForRedisReady(AIAnalysisIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("Redis failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
 
 	// ============================================================================
 	// STEP 6: Start DataStorage (using shared utility)
 	// ============================================================================
-	fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
 
 	// Generate composite image tag per DD-INTEGRATION-001 v2.0
 	// Format: localhost/datastorage:aianalysis-{uuid}
 	dsImageTag := GenerateInfraImageName("datastorage", "aianalysis")
-	fmt.Fprintf(writer, "   Using image tag: %s\n", dsImageTag)
+	_, _ = fmt.Fprintf(writer, "   Using image tag: %s\n", dsImageTag)
 
 	if err := StartDataStorage(IntegrationDataStorageConfig{
 		ContainerName: AIAnalysisIntegrationDataStorageContainer,
@@ -2071,19 +2071,19 @@ echo "Migrations complete!"`)
 		writer,
 	); err != nil{
 		// Print container logs for debugging
-		fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
+		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", AIAnalysisIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
 		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n\n")
 
 	// ============================================================================
 	// STEP 7: Start HolmesGPT API (HAPI)
 	// ============================================================================
-	fmt.Fprintf(writer, "🤖 Starting HolmesGPT API service...\n")
+	_, _ = fmt.Fprintf(writer, "🤖 Starting HolmesGPT API service...\n")
 	// Build the HAPI image with DD-INTEGRATION-001 compliant tag
 	hapiImage := GenerateInfraImageName("holmesgpt-api", "aianalysis")
 	hapiBuildCmd := exec.Command("podman", "build", "-t", hapiImage,
@@ -2098,13 +2098,13 @@ echo "Migrations complete!"`)
 
 	// ADR-030: Create minimal HAPI config file for integration tests
 	hapiConfigDir := filepath.Join(projectRoot, "test", "integration", "aianalysis", "hapi-config")
-	os.MkdirAll(hapiConfigDir, 0755)
+	_ = os.MkdirAll(hapiConfigDir, 0755)
 
 	hapiConfig := GetMinimalHAPIConfig(
 		fmt.Sprintf("http://host.containers.internal:%d", AIAnalysisIntegrationDataStoragePort),
 		"INFO",
 	)
-	os.WriteFile(filepath.Join(hapiConfigDir, "config.yaml"), []byte(hapiConfig), 0644)
+	_ = os.WriteFile(filepath.Join(hapiConfigDir, "config.yaml"), []byte(hapiConfig), 0644)
 
 	// Start HAPI container
 	// ADR-030: Use -config flag (consistent with Go services)
@@ -2129,26 +2129,26 @@ echo "Migrations complete!"`)
 		writer,
 	); err != nil {
 		// Print container logs for debugging
-		fmt.Fprintf(writer, "\n⚠️  HolmesGPT API failed to become healthy. Container logs:\n")
+		_, _ = fmt.Fprintf(writer, "\n⚠️  HolmesGPT API failed to become healthy. Container logs:\n")
 		logsCmd := exec.Command("podman", "logs", AIAnalysisIntegrationHAPIContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
 		return fmt.Errorf("HolmesGPT API failed to become healthy: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ HolmesGPT API ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ HolmesGPT API ready\n\n")
 
 	// ============================================================================
 	// SUCCESS
 	// ============================================================================
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "✅ AIAnalysis Integration Infrastructure Ready\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", AIAnalysisIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:             localhost:%d\n", AIAnalysisIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage HTTP:  http://localhost:%d\n", AIAnalysisIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  HolmesGPT API:     http://localhost:%d\n", AIAnalysisIntegrationHAPIPort)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ AIAnalysis Integration Infrastructure Ready\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", AIAnalysisIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:             localhost:%d\n", AIAnalysisIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage HTTP:  http://localhost:%d\n", AIAnalysisIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  HolmesGPT API:     http://localhost:%d\n", AIAnalysisIntegrationHAPIPort)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	return nil
 }
@@ -2163,7 +2163,7 @@ echo "Migrations complete!"`)
 // Returns:
 // - error: Any errors during infrastructure cleanup
 func StopAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "🛑 Stopping AIAnalysis Integration Infrastructure...\n")
+	_, _ = fmt.Fprintf(writer, "🛑 Stopping AIAnalysis Integration Infrastructure...\n")
 
 	containers := []string{
 		AIAnalysisIntegrationHAPIContainer,
@@ -2175,12 +2175,12 @@ func StopAIAnalysisIntegrationInfrastructure(writer io.Writer) error {
 	CleanupContainers(containers, writer)
 
 	// Remove network
-	fmt.Fprintf(writer, "Removing network '%s'...\n", AIAnalysisIntegrationNetwork)
+	_, _ = fmt.Fprintf(writer, "Removing network '%s'...\n", AIAnalysisIntegrationNetwork)
 	networkCmd := exec.Command("podman", "network", "rm", AIAnalysisIntegrationNetwork)
 	_ = networkCmd.Run() // Ignore errors, network may not exist
-	fmt.Fprintf(writer, "✅ Network '%s' removed\n", AIAnalysisIntegrationNetwork)
+	_, _ = fmt.Fprintf(writer, "✅ Network '%s' removed\n", AIAnalysisIntegrationNetwork)
 
-	fmt.Fprintf(writer, "✅ AIAnalysis Integration Infrastructure stopped and cleaned up\n")
+	_, _ = fmt.Fprintf(writer, "✅ AIAnalysis Integration Infrastructure stopped and cleaned up\n")
 	return nil
 }
 
@@ -2200,7 +2200,7 @@ func waitForAIAnalysisInfraReady(ctx context.Context, namespace, kubeconfigPath 
 	}
 
 	// Wait for PostgreSQL pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=postgresql",
@@ -2219,10 +2219,10 @@ func waitForAIAnalysisInfraReady(ctx context.Context, namespace, kubeconfigPath 
 		}
 		return false
 	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "PostgreSQL pod should become ready")
-	fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n")
 
 	// Wait for Redis pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=redis",
@@ -2241,7 +2241,7 @@ func waitForAIAnalysisInfraReady(ctx context.Context, namespace, kubeconfigPath 
 		}
 		return false
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "Redis pod should become ready")
-	fmt.Fprintf(writer, "   ✅ Redis ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n")
 
 	return nil
 }
@@ -2262,7 +2262,7 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 	}
 
 	// Wait for DataStorage pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=datastorage",
@@ -2281,10 +2281,10 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 		}
 		return false
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
-	fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
 	// Wait for HolmesGPT-API pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for HolmesGPT-API pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for HolmesGPT-API pod to be ready...\n")
 
 	// Track polling attempts for debugging
 	pollCount := 0
@@ -2296,25 +2296,25 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 			LabelSelector: "app=holmesgpt-api",
 		})
 		if err != nil {
-			fmt.Fprintf(writer, "      [Poll %d/%d] Error listing HAPI pods: %v\n", pollCount, maxPolls, err)
+			_, _ = fmt.Fprintf(writer, "      [Poll %d/%d] Error listing HAPI pods: %v\n", pollCount, maxPolls, err)
 			return false
 		}
 		if len(pods.Items) == 0 {
-			fmt.Fprintf(writer, "      [Poll %d/%d] No HAPI pods found\n", pollCount, maxPolls)
+			_, _ = fmt.Fprintf(writer, "      [Poll %d/%d] No HAPI pods found\n", pollCount, maxPolls)
 			return false
 		}
 
 		// Debug: Show pod status every 4 polls (~20 seconds)
 		for _, pod := range pods.Items {
 			if pollCount%4 == 0 {
-				fmt.Fprintf(writer, "      [Poll %d/%d] HAPI pod '%s': Phase=%s, Ready=",
+				_, _ = fmt.Fprintf(writer, "      [Poll %d/%d] HAPI pod '%s': Phase=%s, Ready=",
 					pollCount, maxPolls, pod.Name, pod.Status.Phase)
 				isReady := false
 				for _, condition := range pod.Status.Conditions {
 					if condition.Type == corev1.PodReady {
-						fmt.Fprintf(writer, "%s", condition.Status)
+						_, _ = fmt.Fprintf(writer, "%s", condition.Status)
 						if condition.Status != corev1.ConditionTrue {
-							fmt.Fprintf(writer, " (Reason: %s, Message: %s)", condition.Reason, condition.Message)
+							_, _ = fmt.Fprintf(writer, " (Reason: %s, Message: %s)", condition.Reason, condition.Message)
 						}
 						isReady = condition.Status == corev1.ConditionTrue
 						break
@@ -2324,20 +2324,20 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 					// Show container statuses for debugging
 					for _, containerStatus := range pod.Status.ContainerStatuses {
 						if !containerStatus.Ready {
-							fmt.Fprintf(writer, "\n         Container '%s': Ready=%t, RestartCount=%d",
+							_, _ = fmt.Fprintf(writer, "\n         Container '%s': Ready=%t, RestartCount=%d",
 								containerStatus.Name, containerStatus.Ready, containerStatus.RestartCount)
 							if containerStatus.State.Waiting != nil {
-								fmt.Fprintf(writer, ", Waiting: %s (%s)",
+								_, _ = fmt.Fprintf(writer, ", Waiting: %s (%s)",
 									containerStatus.State.Waiting.Reason, containerStatus.State.Waiting.Message)
 							}
 							if containerStatus.State.Terminated != nil {
-								fmt.Fprintf(writer, ", Terminated: ExitCode=%d, Reason=%s",
+								_, _ = fmt.Fprintf(writer, ", Terminated: ExitCode=%d, Reason=%s",
 									containerStatus.State.Terminated.ExitCode, containerStatus.State.Terminated.Reason)
 							}
 						}
 					}
 				}
-				fmt.Fprintf(writer, "\n")
+				_, _ = fmt.Fprintf(writer, "\n")
 			}
 
 			if pod.Status.Phase == corev1.PodRunning {
@@ -2350,11 +2350,11 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 		}
 		return false
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "HolmesGPT-API pod should become ready")
-	fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
 
 	// Wait for AIAnalysis controller pod to be ready
 	// Note: Coverage-instrumented binaries may take longer to start
-	fmt.Fprintf(writer, "   ⏳ Waiting for AIAnalysis controller pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for AIAnalysis controller pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=aianalysis-controller",
@@ -2373,7 +2373,7 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 		}
 		return false
 	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "AIAnalysis controller pod should become ready")
-	fmt.Fprintf(writer, "   ✅ AIAnalysis controller ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ AIAnalysis controller ready\n")
 
 	return nil
 }
@@ -2390,14 +2390,14 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	ctx := context.Background()
 	namespace := "kubernaut-system" // Infrastructure always in kubernaut-system; tests use dynamic namespaces
 
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL + DISK OPTIMIZATION)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Strategy: Build → Export → Prune → Cluster → Load → Deploy")
-	fmt.Fprintln(writer, "  Benefits: Fast builds + Aggressive cleanup + Disk tracking")
-	fmt.Fprintln(writer, "  Per DD-TEST-002: Hybrid Parallel Setup Standard")
-	fmt.Fprintln(writer, "  Per DD-TEST-008: Disk Space Management")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL + DISK OPTIMIZATION)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Build → Export → Prune → Cluster → Load → Deploy")
+	_, _ = fmt.Fprintln(writer, "  Benefits: Fast builds + Aggressive cleanup + Disk tracking")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-002: Hybrid Parallel Setup Standard")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-008: Disk Space Management")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Track initial disk space
 	LogDiskSpace("START", writer)
@@ -2405,10 +2405,10 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
-	fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
-	fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
-	fmt.Fprintln(writer, "  └── AIAnalysis controller (3-4 min)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
+	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller (3-4 min)")
 
 	type imageBuildResult struct {
 		name  string
@@ -2438,7 +2438,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	go func() {
 		var err error
 		if os.Getenv("E2E_COVERAGE") == "true" {
-			fmt.Fprintf(writer, "   📊 Building AIAnalysis with coverage (GOFLAGS=-cover)\n")
+			_, _ = fmt.Fprintf(writer, "   📊 Building AIAnalysis with coverage (GOFLAGS=-cover)\n")
 			buildArgs := []string{"--build-arg", "GOFLAGS=-cover"}
 			err = buildImageWithArgs("AIAnalysis controller", "localhost/kubernaut-aianalysis:latest",
 				"docker/aianalysis.Dockerfile", projectRoot, buildArgs, writer)
@@ -2456,9 +2456,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			return fmt.Errorf("failed to build %s image: %w", result.name, result.err)
 		}
 		builtImages[result.name] = result.image
-		fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
 	}
-	fmt.Fprintln(writer, "\n✅ All images built! (~3-4 min parallel)")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built! (~3-4 min parallel)")
 	LogDiskSpace("IMAGES_BUILT", writer)
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -2473,12 +2473,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
 	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
-	fmt.Fprintln(writer, "📁 Creating namespace...")
+	_, _ = fmt.Fprintln(writer, "📁 Creating namespace...")
 	createNsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
 		"create", "namespace", namespace)
 	nsOutput := &strings.Builder{}
@@ -2490,7 +2490,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		}
 	}
 
-	fmt.Fprintln(writer, "📋 Installing AIAnalysis CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing AIAnalysis CRD...")
 	if err := installAIAnalysisCRD(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install AIAnalysis CRD: %w", err)
 	}
@@ -2506,11 +2506,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 7: Deploy services IN PARALLEL (let Kubernetes reconcile)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 7: Deploying services in parallel...")
-	fmt.Fprintln(writer, "  ├── Data Storage infrastructure (PostgreSQL + Redis + DataStorage + Migrations)")
-	fmt.Fprintln(writer, "  ├── HolmesGPT-API")
-	fmt.Fprintln(writer, "  └── AIAnalysis controller")
-	fmt.Fprintln(writer, "  ⏱️  Kubernetes will handle dependencies via readiness probes")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7: Deploying services in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Data Storage infrastructure (PostgreSQL + Redis + DataStorage + Migrations)")
+	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API")
+	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Kubernetes will handle dependencies via readiness probes")
 
 	type deployResult struct {
 		name string
@@ -2540,15 +2540,15 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}()
 
 	// Collect deployment results (kubectl apply results)
-	fmt.Fprintln(writer, "\n⏳ Waiting for manifest applications...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for manifest applications...")
 	for i := 0; i < 3; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			return fmt.Errorf("failed to deploy %s: %w", result.name, result.err)
 		}
-		fmt.Fprintf(writer, "  ✅ %s deployed\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s deployed\n", result.name)
 	}
-	fmt.Fprintln(writer, "✅ All services deployed! (Kubernetes reconciling...)")
+	_, _ = fmt.Fprintln(writer, "✅ All services deployed! (Kubernetes reconciling...)")
 
 	// Wait for ALL services to be ready (handles dependencies via readiness probes)
 	// Per DD-TEST-002: Coverage-instrumented binaries take longer to start (2-5 min vs 30s)
@@ -2557,15 +2557,15 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// - HolmesGPT-API waits for PostgreSQL (retry logic + readiness probe)
 	// - AIAnalysis waits for HAPI + DataStorage (retry logic + readiness probe)
 	// This single wait point validates the entire dependency chain
-	fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
 	if err := waitForAllServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 + DD-TEST-008)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ AIAnalysis E2E Infrastructure Ready (DD-TEST-002 + DD-TEST-008)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	LogDiskSpace("FINAL", writer)
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }

@@ -343,7 +343,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 					w.WriteHeader(http.StatusOK)
 					w.Header().Set("Content-Type", "application/json")
 					// Invalid JSON response
-					w.Write([]byte(`{"status": "ok", "invalid_json: missing_quote}`))
+					_, _ = w.Write([]byte(`{"status": "ok", "invalid_json: missing_quote}`))
 				}))
 				defer server.Close()
 
@@ -381,7 +381,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Retry-After", "60")       // Slack's rate limit header
 					w.WriteHeader(http.StatusTooManyRequests) // 429
-					w.Write([]byte(`{"ok": false, "error": "rate_limited"}`))
+					_, _ = w.Write([]byte(`{"ok": false, "error": "rate_limited"}`))
 				}))
 				defer server.Close()
 
@@ -427,7 +427,7 @@ var _ = Describe("BR-NOT-053: Slack Delivery Service", func() {
 					w.Header().Set("Retry-After", retryAfterValue)
 					w.Header().Set("X-Rate-Limit-Remaining", "0")
 					w.WriteHeader(http.StatusTooManyRequests) // 429
-					w.Write([]byte(`{"ok": false, "error": "rate_limited", "retry_after": 120}`))
+					_, _ = w.Write([]byte(`{"ok": false, "error": "rate_limited", "retry_after": 120}`))
 				}))
 				defer server.Close()
 

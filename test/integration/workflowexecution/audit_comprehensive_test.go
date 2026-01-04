@@ -141,7 +141,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Waiting for Running phase")
 			Eventually(func() string {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
@@ -190,7 +190,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Waiting for Running phase")
 			Eventually(func() string {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
@@ -222,7 +222,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 
 			By("Waiting for Completed phase")
 			Eventually(func() string {
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
@@ -275,7 +275,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Waiting for Failed phase (pre-execution)")
 			Eventually(func() string {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
@@ -327,7 +327,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Step 1: Verify Pending phase (no audit event yet)")
 			Eventually(func() string {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 5*time.Second, 500*time.Millisecond).Should(Or(
 				Equal(workflowexecutionv1alpha1.PhasePending),
@@ -337,7 +337,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Step 2: Verify Running phase (workflow.started emitted)")
 			Eventually(func() string {
 				updated := &workflowexecutionv1alpha1.WorkflowExecution{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
@@ -361,7 +361,7 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
 
 			Eventually(func() string {
-				k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
 				return updated.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 

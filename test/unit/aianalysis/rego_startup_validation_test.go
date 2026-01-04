@@ -227,7 +227,7 @@ approval = result {
 				evaluator.Stop()
 			}
 			if tmpDir != "" {
-				os.RemoveAll(tmpDir)
+				_ = os.RemoveAll(tmpDir)
 			}
 		})
 
@@ -323,7 +323,7 @@ approval = result {
 			Expect(err).NotTo(HaveOccurred())
 			_, err = tempPolicy.Write(originalContent)
 			Expect(err).NotTo(HaveOccurred())
-			tempPolicy.Close()
+			_ = tempPolicy.Close()
 
 			// Use temp policy for this test
 			evaluator := rego.NewEvaluator(rego.Config{

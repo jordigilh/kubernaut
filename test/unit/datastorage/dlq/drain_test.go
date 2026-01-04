@@ -95,7 +95,7 @@ var _ = Describe("DLQ Drain During Graceful Shutdown (DD-008)", func() {
 			_ = redisClient.Close()
 		}
 		if miniRedis != nil {
-			miniRedis.Close()
+			_ = miniRedis.Close()
 		}
 	})
 

@@ -419,7 +419,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Note: We keep the connection open for parallel processes to use
 		// Each parallel process will create its own schema and copy the table structure
-		tempDB.Close()
+		_ = tempDB.Close()
 
 		// 6. Setup Data Storage Service
 		var serviceURL string
@@ -491,10 +491,10 @@ var _ = SynchronizedBeforeSuite(
 		// Each parallel process needs these vars for tests that create their own
 		// connections (e.g., graceful shutdown tests)
 		if os.Getenv("POSTGRES_HOST") == "" {
-			os.Setenv("POSTGRES_HOST", "localhost")
-			os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
-			os.Setenv("REDIS_HOST", "localhost")
-			os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
+			_ = os.Setenv("POSTGRES_HOST", "localhost")
+			_ = os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
+			_ = os.Setenv("REDIS_HOST", "localhost")
+			_ = os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
 			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
 		}
 
@@ -545,7 +545,7 @@ var _ = AfterSuite(func() {
 	// Shutdown in-process test server (only process 1)
 	if processNum == 1 && testServer != nil {
 		GinkgoWriter.Println("🛑 Shutting down in-process server...")
-		testServer.Close()
+		_ = testServer.Close()
 
 		// Gracefully shutdown DataStorage server
 		if dsServer != nil {
@@ -562,11 +562,11 @@ var _ = AfterSuite(func() {
 	}
 
 	if db != nil {
-		db.Close()
+		_ = db.Close()
 	}
 
 	if redisClient != nil {
-		redisClient.Close()
+		_ = redisClient.Close()
 	}
 
 	// Use centralized cleanup function (only process 1)
@@ -604,7 +604,7 @@ var _ = AfterSuite(func() {
 
 	// Remove config directory
 	if configDir != "" {
-		os.RemoveAll(configDir)
+		_ = os.RemoveAll(configDir)
 	}
 
 	GinkgoWriter.Println("✅ Cleanup complete")

@@ -155,7 +155,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 		// Cleanup test server
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 	})
 
@@ -194,7 +194,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 1: HTTP 201 Created
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -275,7 +275,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
@@ -335,7 +335,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp1, err := http.DefaultClient.Do(req1)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp1.Body.Close()
+			defer func() { _ = resp1.Body.Close() }()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First alert must create CRD (201 Created)")
 
@@ -365,7 +365,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp2, err := http.DefaultClient.Do(req2)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp2.Body.Close()
+			defer func() { _ = resp2.Body.Close() }()
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
 				"Duplicate alert must return 202 Accepted (not 201 Created)")
 
@@ -447,7 +447,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 
 			for _, tc := range testCases {
 				// Clean K8s namespace before each test case
-				k8sClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
+				_ = k8sClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
 					client.InNamespace(tc.namespace))
 
 				payload := []byte(fmt.Sprintf(`{
@@ -470,7 +470,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// Read response body for debugging
 				bodyBytes, _ := io.ReadAll(resp.Body)

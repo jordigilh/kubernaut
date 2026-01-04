@@ -66,7 +66,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	AfterEach(func() {
 		// Cleanup server
 		if server != nil {
-			server.Close()
+			_ = server.Close()
 		}
 
 		// Cleanup resources in namespace (but keep namespace alive for next test)
@@ -117,7 +117,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// If K8s API field selector fails, should return HTTP 500
 			// (not HTTP 200 with degraded deduplication)
@@ -160,7 +160,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Success path: field selector works, deduplication succeeds
 			// Failure path: field selector unavailable, explicit error (no fallback)
@@ -195,7 +195,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// If field selector fails, error should reference:
 			// - "field selector"
@@ -251,7 +251,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 					if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusAccepted {
 						successCount++
 					}
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 			}
 
@@ -306,7 +306,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// Verify initial request succeeded
 			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
@@ -348,7 +348,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 					resp, _ := http.DefaultClient.Do(req)
 					if resp != nil {
-						resp.Body.Close()
+						_ = resp.Body.Close()
 					}
 				}()
 			}
@@ -404,7 +404,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Should handle gracefully (either create new RR or return error)
 			// Should NOT panic or crash Gateway

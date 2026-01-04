@@ -72,7 +72,7 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			if err != nil || resp == nil {
 				return false
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			return resp.StatusCode == 200
 		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
 

@@ -44,7 +44,7 @@ var _ = Describe("HolmesGPT API Integration Infrastructure", func() {
 				if err != nil {
 					return err
 				}
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				if resp.StatusCode != http.StatusOK {
 					return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -66,7 +66,7 @@ var _ = Describe("HolmesGPT API Integration Infrastructure", func() {
 
 			resp, err := client.Get(dataStorageURL)
 			Expect(err).ToNot(HaveOccurred(), "Data Storage health check should not error")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK),
 				"Data Storage health check should return 200 (implies PostgreSQL connection)")

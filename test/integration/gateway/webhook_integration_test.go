@@ -107,7 +107,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 		// Cleanup
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 	})
 
@@ -146,7 +146,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 1: HTTP 201 Created
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -232,7 +232,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp1, err := http.DefaultClient.Do(req1)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp1.Body.Close()
+			defer func() { _ = resp1.Body.Close() }()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First alert must create CRD")
 
@@ -259,7 +259,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp2, err := http.DefaultClient.Do(req2)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp2.Body.Close()
+			defer func() { _ = resp2.Body.Close() }()
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
 				"Duplicate alert must return 202 Accepted")
 
@@ -283,7 +283,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp3, err := http.DefaultClient.Do(req3)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp3.Body.Close()
+			defer func() { _ = resp3.Body.Close() }()
 			Expect(resp3.StatusCode).To(Equal(http.StatusAccepted),
 				"Third duplicate must also return 202 Accepted")
 
@@ -332,7 +332,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp1, err := http.DefaultClient.Do(req1)
 			Expect(err).NotTo(HaveOccurred(), "Should send first alert")
-			defer resp1.Body.Close()
+			defer func() { _ = resp1.Body.Close() }()
 
 			// Parse response to get full fingerprint (before K8s label truncation)
 			var response map[string]interface{}
@@ -354,7 +354,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).NotTo(HaveOccurred(), "Should send duplicate alert")
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 
 			// DD-GATEWAY-012: Redis metadata check REMOVED - Gateway is now Redis-free
@@ -420,7 +420,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 1: HTTP 201 Created
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
@@ -484,7 +484,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"Alert should create CRD")
@@ -556,7 +556,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Warning events should create CRD
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),

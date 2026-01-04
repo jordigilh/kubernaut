@@ -82,7 +82,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 					"  Start with: podman-compose -f test/integration/signalprocessing/podman-compose.signalprocessing.test.yml up -d\n\n"+
 					"  Error: %v", dataStorageURL, err))
 		}
-		defer healthResp.Body.Close()
+		defer func() { _ = healthResp.Body.Close() }()
 		if healthResp.StatusCode != http.StatusOK {
 			Fail(fmt.Sprintf(
 				"REQUIRED: Data Storage health check failed at %s\n"+

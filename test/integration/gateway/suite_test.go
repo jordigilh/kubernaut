@@ -105,7 +105,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			Expect(err).ToNot(HaveOccurred(), "Should get KUBEBUILDER_ASSETS path from setup-envtest")
 		}
 		assetsPath := strings.TrimSpace(string(output))
-		os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
+		_ = os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
 		suiteLogger.Info(fmt.Sprintf("   📍 Set KUBEBUILDER_ASSETS: %s", assetsPath))
 	}
 
@@ -167,7 +167,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Fail(fmt.Sprintf("Data Storage health check failed at %s (status: %d, err: %v)", healthURL, healthResp.StatusCode, err))
 	}
 	if healthResp != nil {
-		healthResp.Body.Close()
+		_ = healthResp.Body.Close()
 	}
 	suiteLogger.Info("   ✅ Data Storage health re-validated")
 
@@ -219,7 +219,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal shared config from process 1")
 
 	// Set Data Storage URL for this process (critical for parallel execution)
-	os.Setenv("TEST_DATA_STORAGE_URL", sharedConfig.DataStorageURL)
+	_ = os.Setenv("TEST_DATA_STORAGE_URL", sharedConfig.DataStorageURL)
 
 	// Create Kubernetes client from shared kubeconfig
 	k8sConfig, err = clientcmd.RESTConfigFromKubeConfig(sharedConfig.Kubeconfig)

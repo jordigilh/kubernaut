@@ -210,7 +210,7 @@ var _ = Describe("LoadFromFile", func() {
 	})
 
 	AfterEach(func() {
-		os.RemoveAll(tempDir)
+		_ = os.RemoveAll(tempDir)
 	})
 
 	It("CFG-02: should load config from valid YAML file", func() {

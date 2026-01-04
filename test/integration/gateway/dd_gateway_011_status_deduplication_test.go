@@ -92,7 +92,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 
 	AfterEach(func() {
 		if server != nil {
-			server.Close()
+			_ = server.Close()
 		}
 
 		// DD-GATEWAY-011: Clean up CRDs after each test

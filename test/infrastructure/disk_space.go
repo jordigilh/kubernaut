@@ -94,11 +94,11 @@ func GetDiskSpaceInfo() (*DiskSpaceInfo, error) {
 func LogDiskSpace(stage string, writer io.Writer) {
 	info, err := GetDiskSpaceInfo()
 	if err != nil {
-		fmt.Fprintf(writer, "  ⚠️  [%s] Failed to get disk space: %v\n", stage, err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  [%s] Failed to get disk space: %v\n", stage, err)
 		return
 	}
 
-	fmt.Fprintf(writer, "  💾 [%s] Disk: %s total, %s used, %s available (%s used)\n",
+	_, _ = fmt.Fprintf(writer, "  💾 [%s] Disk: %s total, %s used, %s available (%s used)\n",
 		stage, info.Total, info.Used, info.Available, info.UsePercent)
 }
 
@@ -109,19 +109,19 @@ func LogDiskSpace(stage string, writer io.Writer) {
 func LogDiskSpaceWithComparison(stage string, previousInfo *DiskSpaceInfo, writer io.Writer) *DiskSpaceInfo {
 	currentInfo, err := GetDiskSpaceInfo()
 	if err != nil {
-		fmt.Fprintf(writer, "  ⚠️  [%s] Failed to get disk space: %v\n", stage, err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  [%s] Failed to get disk space: %v\n", stage, err)
 		return previousInfo
 	}
 
-	fmt.Fprintf(writer, "  💾 [%s] Disk: %s total, %s used, %s available (%s used)",
+	_, _ = fmt.Fprintf(writer, "  💾 [%s] Disk: %s total, %s used, %s available (%s used)",
 		stage, currentInfo.Total, currentInfo.Used, currentInfo.Available, currentInfo.UsePercent)
 
 	// Calculate change if previous info available
 	if previousInfo != nil {
 		// Simple comparison based on used space string (rough estimate)
-		fmt.Fprintf(writer, " [vs previous stage]")
+		_, _ = fmt.Fprintf(writer, " [vs previous stage]")
 	}
-	fmt.Fprintln(writer)
+	_, _ = fmt.Fprintln(writer)
 
 	return currentInfo
 }
@@ -137,7 +137,7 @@ func LogDiskSpaceWithComparison(stage string, previousInfo *DiskSpaceInfo, write
 //
 // Returns error if export fails
 func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
-	fmt.Fprintf(writer, "  📦 Exporting %s to %s...\n", imageName, tarPath)
+	_, _ = fmt.Fprintf(writer, "  📦 Exporting %s to %s...\n", imageName, tarPath)
 
 	saveCmd := exec.Command("podman", "save", "-o", tarPath, imageName)
 	saveCmd.Stdout = writer
@@ -159,7 +159,7 @@ func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
 	}
 
 	sizeMB := fileInfo.Size() / (1024 * 1024)
-	fmt.Fprintf(writer, "  ✅ Image exported successfully (%d MB)\n", sizeMB)
+	_, _ = fmt.Fprintf(writer, "  ✅ Image exported successfully (%d MB)\n", sizeMB)
 
 	return nil
 }
@@ -175,7 +175,7 @@ func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
 //
 // Returns error if load fails
 func LoadImageFromTar(clusterName, tarPath string, writer io.Writer) error {
-	fmt.Fprintf(writer, "  📦 Loading image from %s into Kind cluster %s...\n", tarPath, clusterName)
+	_, _ = fmt.Fprintf(writer, "  📦 Loading image from %s into Kind cluster %s...\n", tarPath, clusterName)
 
 	loadCmd := exec.Command("kind", "load", "image-archive", tarPath, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
@@ -186,7 +186,7 @@ func LoadImageFromTar(clusterName, tarPath string, writer io.Writer) error {
 		return fmt.Errorf("failed to load image from %s: %w", tarPath, err)
 	}
 
-	fmt.Fprintf(writer, "  ✅ Image loaded successfully\n")
+	_, _ = fmt.Fprintf(writer, "  ✅ Image loaded successfully\n")
 	return nil
 }
 
@@ -194,12 +194,12 @@ func LoadImageFromTar(clusterName, tarPath string, writer io.Writer) error {
 //
 // Non-fatal: If deletion fails, logs warning but doesn't return error
 func CleanupTarFile(tarPath string, writer io.Writer) {
-	fmt.Fprintf(writer, "  🗑️  Removing %s...\n", tarPath)
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing %s...\n", tarPath)
 
 	if err := os.Remove(tarPath); err != nil {
-		fmt.Fprintf(writer, "  ⚠️  Failed to remove .tar file (non-fatal): %v\n", err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove .tar file (non-fatal): %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "  ✅ .tar file removed\n")
+		_, _ = fmt.Fprintf(writer, "  ✅ .tar file removed\n")
 	}
 }
 
@@ -223,15 +223,15 @@ func CleanupTarFile(tarPath string, writer io.Writer) {
 //
 // Returns error if prune fails critically (non-fatal warnings are logged)
 func AggressivePodmanCleanup(writer io.Writer) error {
-	fmt.Fprintln(writer, "\n🗑️  AGGRESSIVE PODMAN CLEANUP")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  ⚠️  Removing ALL Podman data:")
-	fmt.Fprintln(writer, "     • ALL images (tagged and untagged)")
-	fmt.Fprintln(writer, "     • ALL build cache")
-	fmt.Fprintln(writer, "     • ALL intermediate layers")
-	fmt.Fprintln(writer, "  ✅ Safe: Images preserved as .tar files")
-	fmt.Fprintln(writer, "  💾 Expected: ~5-9 GB freed")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n🗑️  AGGRESSIVE PODMAN CLEANUP")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  ⚠️  Removing ALL Podman data:")
+	_, _ = fmt.Fprintln(writer, "     • ALL images (tagged and untagged)")
+	_, _ = fmt.Fprintln(writer, "     • ALL build cache")
+	_, _ = fmt.Fprintln(writer, "     • ALL intermediate layers")
+	_, _ = fmt.Fprintln(writer, "  ✅ Safe: Images preserved as .tar files")
+	_, _ = fmt.Fprintln(writer, "  💾 Expected: ~5-9 GB freed")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Run podman system prune with --all flag (removes everything)
 	pruneCmd := exec.Command("podman", "system", "prune", "-a", "-f", "--volumes")
@@ -239,17 +239,17 @@ func AggressivePodmanCleanup(writer io.Writer) error {
 
 	// Log the output regardless of error
 	if len(pruneOutput) > 0 {
-		fmt.Fprintf(writer, "%s\n", string(pruneOutput))
+		_, _ = fmt.Fprintf(writer, "%s\n", string(pruneOutput))
 	}
 
 	if err != nil {
 		// Log warning but don't fail the entire test suite
-		fmt.Fprintf(writer, "  ⚠️  Prune command failed (non-fatal): %v\n", err)
-		fmt.Fprintln(writer, "  ⚠️  Continuing with reduced disk space...")
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Prune command failed (non-fatal): %v\n", err)
+		_, _ = fmt.Fprintln(writer, "  ⚠️  Continuing with reduced disk space...")
 		return nil // Non-fatal
 	}
 
-	fmt.Fprintln(writer, "  ✅ Podman cleanup completed successfully")
+	_, _ = fmt.Fprintln(writer, "  ✅ Podman cleanup completed successfully")
 	return nil
 }
 
@@ -271,8 +271,8 @@ func AggressivePodmanCleanup(writer io.Writer) error {
 //	}
 //	// Later: LoadImageFromTar(clusterName, tarFiles["datastorage"], writer)
 func ExportImagesAndPrune(images map[string]string, tmpDir string, writer io.Writer) (map[string]string, error) {
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Exporting images to .tar files")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Exporting images to .tar files")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	LogDiskSpace("BEFORE_EXPORT", writer)
 
@@ -287,16 +287,16 @@ func ExportImagesAndPrune(images map[string]string, tmpDir string, writer io.Wri
 		tarFiles[name] = tarPath
 	}
 
-	fmt.Fprintln(writer, "✅ All images exported to .tar files")
+	_, _ = fmt.Fprintln(writer, "✅ All images exported to .tar files")
 	LogDiskSpace("AFTER_EXPORT", writer)
 
 	// Aggressive cleanup to free disk space
-	fmt.Fprintln(writer, "\n🗑️  PHASE 3: Aggressive Podman cleanup")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n🗑️  PHASE 3: Aggressive Podman cleanup")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	if err := AggressivePodmanCleanup(writer); err != nil {
 		// Non-fatal, but log it
-		fmt.Fprintf(writer, "  ⚠️  Cleanup warning: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Cleanup warning: %v\n", err)
 	}
 
 	LogDiskSpace("AFTER_PRUNE", writer)
@@ -316,32 +316,32 @@ func ExportImagesAndPrune(images map[string]string, tmpDir string, writer io.Wri
 //	    return err
 //	}
 func LoadImagesAndCleanup(clusterName string, tarFiles map[string]string, writer io.Writer) error {
-	fmt.Fprintln(writer, "\n📦 PHASE 5: Loading images into Kind cluster")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 5: Loading images into Kind cluster")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	LogDiskSpace("BEFORE_LOAD", writer)
 
 	// Load all images into Kind
 	for name, tarPath := range tarFiles {
-		fmt.Fprintf(writer, "\n  📦 Loading %s...\n", name)
+		_, _ = fmt.Fprintf(writer, "\n  📦 Loading %s...\n", name)
 		if err := LoadImageFromTar(clusterName, tarPath, writer); err != nil {
 			return fmt.Errorf("failed to load %s: %w", name, err)
 		}
 	}
 
-	fmt.Fprintln(writer, "\n✅ All images loaded into Kind cluster")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into Kind cluster")
 	LogDiskSpace("AFTER_LOAD", writer)
 
 	// Clean up .tar files
-	fmt.Fprintln(writer, "\n🗑️  PHASE 6: Cleaning up .tar files")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n🗑️  PHASE 6: Cleaning up .tar files")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	for name, tarPath := range tarFiles {
-		fmt.Fprintf(writer, "  🗑️  %s: ", name)
+		_, _ = fmt.Fprintf(writer, "  🗑️  %s: ", name)
 		CleanupTarFile(tarPath, writer)
 	}
 
-	fmt.Fprintln(writer, "✅ All .tar files cleaned up")
+	_, _ = fmt.Fprintln(writer, "✅ All .tar files cleaned up")
 	LogDiskSpace("AFTER_CLEANUP", writer)
 
 	return nil

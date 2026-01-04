@@ -79,7 +79,7 @@ var _ = Describe("ActionTraceRepository - ADR-033 Multi-Dimensional Success Trac
 	})
 
 	AfterEach(func() {
-		mockDB.Close()
+		_ = mockDB.Close()
 	})
 
 	// ========================================

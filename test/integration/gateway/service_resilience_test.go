@@ -66,7 +66,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	AfterEach(func() {
 		// Cleanup server
 		if server != nil {
-			server.Close()
+			_ = server.Close()
 		}
 
 		// Cleanup resources in namespace (but keep namespace alive for next test)
@@ -115,7 +115,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// For now, we validate the error handling path exists
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should handle gracefully
 			// Either:
@@ -166,7 +166,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// If K8s API failure occurs, validate backoff is reasonable
 			if resp.StatusCode == http.StatusServiceUnavailable {
@@ -200,7 +200,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Either succeeds (happy path) or returns HTTP 500 with K8s API error details
 			if resp.StatusCode == http.StatusInternalServerError {
@@ -240,7 +240,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should succeed despite DataStorage unavailability
 			// BR-GATEWAY-187: Graceful degradation - audit events dropped, not blocking
@@ -284,7 +284,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Request should succeed with CRD creation (graceful degradation)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -320,7 +320,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Processing succeeds with CRD creation
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -363,7 +363,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Validation depends on actual infrastructure state
 			// This test documents expected priority behavior

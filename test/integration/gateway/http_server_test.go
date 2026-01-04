@@ -75,7 +75,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 
 	AfterEach(func() {
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 		if cancel != nil {
 			cancel()
@@ -104,7 +104,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			Expect(elapsed).To(BeNumerically("<", 100*time.Millisecond),
 				"Server should respond within 100ms for fast readiness probe")
 
-			resp.Body.Close()
+			_ = resp.Body.Close()
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Gateway accepts connections immediately after startup
@@ -178,7 +178,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			// The request should fail due to timeout (connection reset or timeout error)
 			// Note: The exact error depends on how the server handles timeout
 			if err == nil {
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				// If we get a response, it should be an error status (timeout or bad request)
 				// The server may close the connection before sending a response
 				GinkgoWriter.Printf("Slow request returned status: %d\n", resp.StatusCode)
@@ -437,7 +437,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			httpClient := &http.Client{Timeout: 5 * time.Second}
 			resp, err := httpClient.Get(shutdownTestServer.URL + "/ready")
 			Expect(err).ToNot(HaveOccurred())
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Readiness should return 200 before shutdown")
 
 			// Trigger graceful shutdown in background (don't wait for completion)
@@ -453,7 +453,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			// Check readiness after shutdown initiated
 			resp2, err := httpClient.Get(shutdownTestServer.URL + "/ready")
 			if err == nil {
-				defer resp2.Body.Close()
+				defer func() { _ = resp2.Body.Close() }()
 				// During shutdown, readiness should return 503
 				Expect(resp2.StatusCode).To(Equal(http.StatusServiceUnavailable),
 					"Readiness should return 503 during shutdown")
@@ -528,7 +528,7 @@ var _ = Describe("HTTP Server Integration Tests", func() {
 			// Note: Default Go http.Server doesn't enforce body size limits
 			// This test documents expected behavior when MaxBodySize is implemented
 			if err == nil {
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 				// If server doesn't enforce limit, it will likely return 400 Bad Request
 				// due to invalid JSON, not 413
 				GinkgoWriter.Printf("Note: Server returned %d (expected 413 when MaxBodySize enforced)\n",

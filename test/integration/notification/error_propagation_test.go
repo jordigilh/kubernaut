@@ -343,7 +343,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 				), "Controller must continue processing despite panics and set terminal state (BR-NOT-014)")
 
 				notif := &notificationv1alpha1.NotificationRequest{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}
@@ -588,7 +588,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 				), "All concurrent notifications must be processed to terminal state (BR-NOT-014)")
 
 				notif := &notificationv1alpha1.NotificationRequest{}
-				k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}

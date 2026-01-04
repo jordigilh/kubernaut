@@ -42,13 +42,13 @@ import (
 // - PostgreSQL: NodePort 30439 → Container 5432
 // - Redis: NodePort 30387 → Container 6379
 func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 HAPI E2E Infrastructure Setup")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Strategy: Sequential builds → Create cluster → Deploy services")
-	fmt.Fprintln(writer, "  Duration: ~5-7 minutes (sequential to avoid Python build OOM)")
-	fmt.Fprintln(writer, "  Per DD-TEST-001 v1.8: Dedicated HAPI ports")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 HAPI E2E Infrastructure Setup")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Sequential builds → Create cluster → Deploy services")
+	_, _ = fmt.Fprintln(writer, "  Duration: ~5-7 minutes (sequential to avoid Python build OOM)")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v1.8: Dedicated HAPI ports")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	projectRoot := getProjectRoot()
 
@@ -56,41 +56,41 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	dataStorageImage := GenerateInfraImageName("datastorage", "holmesgpt-api")
 	hapiImage := GenerateInfraImageName("holmesgpt-api", "holmesgpt-api")
 
-	fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
-	fmt.Fprintf(writer, "  📦 HAPI image: %s\n", hapiImage)
+	_, _ = fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "  📦 HAPI image: %s\n", hapiImage)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images SEQUENTIALLY (Data Storage, then HAPI)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images sequentially...")
-	fmt.Fprintln(writer, "  (Sequential to avoid OOM - Python pip uses 2-3GB)")
-	fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
-	fmt.Fprintln(writer, "  └── HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images sequentially...")
+	_, _ = fmt.Fprintln(writer, "  (Sequential to avoid OOM - Python pip uses 2-3GB)")
+	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
+	_, _ = fmt.Fprintln(writer, "  └── HolmesGPT-API (2-3 min)")
 
 	// Build Data Storage
-	fmt.Fprintf(writer, "🔨 [%s] Building Data Storage...\n", time.Now().Format("15:04:05"))
+	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building Data Storage...\n", time.Now().Format("15:04:05"))
 	if err := buildImageOnly("Data Storage", dataStorageImage,
 		"docker/data-storage.Dockerfile", projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to build datastorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "✅ [%s] Data Storage image built: %s\n", time.Now().Format("15:04:05"), dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "✅ [%s] Data Storage image built: %s\n", time.Now().Format("15:04:05"), dataStorageImage)
 
 	// Build HAPI (using E2E Dockerfile with minimal dependencies)
 	// Uses requirements-e2e.txt (no google-cloud-aiplatform 1.5GB)
 	// Expected: 2-3 minutes (vs 5-15 minutes with full Dockerfile)
-	fmt.Fprintf(writer, "🔨 [%s] Building HolmesGPT-API (E2E - minimal deps)...\n", time.Now().Format("15:04:05"))
+	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building HolmesGPT-API (E2E - minimal deps)...\n", time.Now().Format("15:04:05"))
 	if err := buildImageOnly("HolmesGPT-API (E2E)", hapiImage,
 		"holmesgpt-api/Dockerfile.e2e", projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to build holmesgpt-api E2E image: %w", err)
 	}
-	fmt.Fprintf(writer, "✅ [%s] HolmesGPT-API image built: %s\n", time.Now().Format("15:04:05"), hapiImage)
+	_, _ = fmt.Fprintf(writer, "✅ [%s] HolmesGPT-API image built: %s\n", time.Now().Format("15:04:05"), hapiImage)
 
-	fmt.Fprintln(writer, "\n✅ All images built sequentially!")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built sequentially!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
 	if err := createHAPIKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
@@ -98,7 +98,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images in parallel...")
 	type imageLoadResult struct {
 		name string
 		err  error
@@ -119,18 +119,18 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		if result.err != nil {
 			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
 		}
-		fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image loaded\n", result.name)
 	}
-	fmt.Fprintln(writer, "✅ All images loaded!")
+	_, _ = fmt.Fprintln(writer, "✅ All images loaded!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
-	fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
 
 	// Create namespace FIRST (required for all subsequent deployments)
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
@@ -169,27 +169,27 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	for i := 0; i < 5; i++ {
 		result := <-deployResults
 		if result.err != nil {
-			fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
 			deployErrors = append(deployErrors, result.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
 		}
 	}
 
 	if len(deployErrors) > 0 {
 		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
 	}
-	fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
 
 	// Single wait for ALL services ready (Kubernetes handles dependencies)
-	fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
 	if err := waitForHAPIServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ HAPI E2E Infrastructure Ready")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ HAPI E2E Infrastructure Ready")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -348,7 +348,7 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 	}
 
 	// Wait for DataStorage pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=datastorage",
@@ -367,10 +367,10 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 		}
 		return false
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
-	fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
 	// Wait for HolmesGPT-API pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for HolmesGPT-API pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for HolmesGPT-API pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=holmesgpt-api",
@@ -389,7 +389,7 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 		}
 		return false
 	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "HolmesGPT-API pod should become ready")
-	fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
 
 	return nil
 }

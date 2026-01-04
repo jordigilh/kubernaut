@@ -275,7 +275,7 @@ else := {"environment": "development", "confidence": 0.80, "source": "configmap"
 else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	envPolicyFile.Close()
+	_ = 	envPolicyFile.Close()
 
 	priorityPolicyFile, err := os.CreateTemp("", "priority-*.rego")
 	Expect(err).ToNot(HaveOccurred())
@@ -335,7 +335,7 @@ else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if 
 else := {"priority": "P3", "confidence": 0.5, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	priorityPolicyFile.Close()
+	_ = 	priorityPolicyFile.Close()
 
 	By("Initializing classifiers (Day 10 integration)")
 	// Initialize Environment Classifier (BR-SP-051, BR-SP-052, BR-SP-053)
@@ -381,7 +381,7 @@ result := {
 }
 `)
 	Expect(err).ToNot(HaveOccurred())
-	businessPolicyFile.Close()
+	_ = 	businessPolicyFile.Close()
 
 	// Initialize Business Classifier (BR-SP-002, BR-SP-080, BR-SP-081)
 	businessClassifier, err := classifier.NewBusinessClassifier(
@@ -418,7 +418,7 @@ labels := result if {
 } else := {}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	labelsPolicyFile.Close()
+	_ = 	labelsPolicyFile.Close()
 
 	// BR-SP-072: Store policy file path for hot-reload testing
 	labelsPolicyFilePath = labelsPolicyFile.Name()
@@ -490,10 +490,10 @@ labels := result if {
 		}
 
 		// Remove temp policy files
-		os.Remove(envPolicyFile.Name())
-		os.Remove(priorityPolicyFile.Name())
-		os.Remove(businessPolicyFile.Name())
-		os.Remove(labelsPolicyFile.Name())
+		_ = os.Remove(envPolicyFile.Name())
+		_ = os.Remove(priorityPolicyFile.Name())
+		_ = os.Remove(businessPolicyFile.Name())
+		_ = os.Remove(labelsPolicyFile.Name())
 	})
 
 	By("Starting the controller manager")

@@ -131,7 +131,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			}))
 			defer func() {
 				close(blockChan)
-				slowServer.Close()
+				_ = slowServer.Close()
 			}()
 
 			By("Creating notification to timeout-prone endpoint")

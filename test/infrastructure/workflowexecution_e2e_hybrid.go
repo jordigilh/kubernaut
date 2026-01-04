@@ -46,14 +46,14 @@ import (
 //
 // Per DD-TEST-007: E2E Coverage Capture Standard
 func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 WorkflowExecution E2E Infrastructure (HYBRID PARALLEL + COVERAGE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
-	fmt.Fprintln(writer, "  Standard: DD-TEST-002 (Parallel Test Execution Standard)")
-	fmt.Fprintln(writer, "  Benefits: Fast builds + No cluster timeout + Reliable")
-	fmt.Fprintln(writer, "  Per DD-TEST-007: Coverage instrumentation enabled")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 WorkflowExecution E2E Infrastructure (HYBRID PARALLEL + COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Build parallel → Create cluster → Load → Deploy")
+	_, _ = fmt.Fprintln(writer, "  Standard: DD-TEST-002 (Parallel Test Execution Standard)")
+	_, _ = fmt.Fprintln(writer, "  Benefits: Fast builds + No cluster timeout + Reliable")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-007: Coverage instrumentation enabled")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// DD-TEST-007: Create coverdata directory BEFORE everything
 	projectRoot, err := findProjectRoot()
@@ -63,7 +63,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
-		fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
 		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
 			return fmt.Errorf("failed to create coverdata directory: %w", err)
 		}
@@ -76,16 +76,16 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// This ensures each service builds its OWN DataStorage with LATEST code
 	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 	dataStorageImageName := GenerateInfraImageName("datastorage", "workflowexecution")
-	fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
-	fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
+	_, _ = fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
+	_, _ = fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
-	fmt.Fprintln(writer, "  ├── WorkflowExecution controller (WITH COVERAGE)")
-	fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
-	fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (WITH COVERAGE)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
 
 	type buildResult struct {
 		name string
@@ -107,15 +107,15 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}()
 
 	// Wait for both builds to complete
-	fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
 	var buildErrors []error
 	for i := 0; i < 2; i++ {
 		result := <-buildResults
 		if result.err != nil {
-			fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
 			buildErrors = append(buildErrors, result.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
 		}
 	}
 
@@ -123,13 +123,13 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("image builds failed: %v", buildErrors)
 	}
 
-	fmt.Fprintln(writer, "\n✅ All images built successfully!")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Create Kind cluster (now that images are ready)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
-	fmt.Fprintln(writer, "  ⏱️  Expected: ~15-20 seconds")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~15-20 seconds")
 
 	// Find Kind config file
 	configPath, err := findKindConfig("kind-workflowexecution-config.yaml")
@@ -150,7 +150,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// Deploy WorkflowExecution CRD
-	fmt.Fprintln(writer, "📋 Installing WorkflowExecution CRD...")
+	_, _ = fmt.Fprintln(writer, "📋 Installing WorkflowExecution CRD...")
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
 	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
@@ -160,29 +160,29 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// Create namespaces
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", WorkflowExecutionNamespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", WorkflowExecutionNamespace)
 	nsCmd := exec.Command("kubectl", "create", "namespace", WorkflowExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	nsCmd.Stdout = writer
 	nsCmd.Stderr = writer
 	_ = nsCmd.Run() // May already exist
 
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
 	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	execNsCmd.Stdout = writer
 	execNsCmd.Stderr = writer
 	_ = execNsCmd.Run() // May already exist
 
-	fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
+	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images into fresh cluster (parallel)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
-	fmt.Fprintln(writer, "  ├── WorkflowExecution controller (coverage)")
-	fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
-	fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (coverage)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 
 	loadResults := make(chan buildResult, 2)
 
@@ -199,15 +199,15 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}()
 
 	// Wait for both loads to complete
-	fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
 	for i := 0; i < 2; i++ {
 		result := <-loadResults
 		if result.err != nil {
-			fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
 			loadErrors = append(loadErrors, result.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
 		}
 	}
 
@@ -215,15 +215,15 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("image loads failed: %v", loadErrors)
 	}
 
-	fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
+	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded into cluster!")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
 	// NOTE: Using dataStorageImageName from Phase 0 (generated BEFORE build)
 	// This ensures we deploy the SAME image we just built with latest code
-	fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
-	fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
+	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
 
 	type deployResult struct {
 		name string
@@ -265,20 +265,20 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	for i := 0; i < 6; i++ {
 		result := <-deployResults
 		if result.err != nil {
-			fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
 			deployErrors = append(deployErrors, result.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
 		}
 	}
 
 	if len(deployErrors) > 0 {
 		return fmt.Errorf("one or more service deployments failed: %v", deployErrors)
 	}
-	fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
 
 	// Single wait for ALL services ready (Kubernetes handles dependencies)
-	fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all services to be ready (Kubernetes reconciling dependencies)...")
 	if err := waitForWEServicesReady(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
@@ -286,41 +286,41 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// ═══════════════════════════════════════════════════════════════════════
 	// POST-DEPLOYMENT: Build workflow bundles & create pipeline (requires DataStorage ready)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n🎯 Building and registering test workflow bundles...")
+	_, _ = fmt.Fprintln(writer, "\n🎯 Building and registering test workflow bundles...")
 	dataStorageURL := "http://localhost:8081" // NodePort per DD-TEST-001
 	if _, err := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, writer); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n📋 Creating test pipeline...")
+	_, _ = fmt.Fprintln(writer, "\n📋 Creating test pipeline...")
 	if err := CreateSimpleTestPipeline(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create test pipeline: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n🔑 Creating image pull secret...")
+	_, _ = fmt.Fprintln(writer, "\n🔑 Creating image pull secret...")
 	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, writer); err != nil {
-		fmt.Fprintf(writer, "⚠️  Warning: Could not create quay.io pull secret: %v\n", err)
+		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Could not create quay.io pull secret: %v\n", err)
 		// Non-fatal - repos may be public
 	}
 
-	fmt.Fprintln(writer, "\n✅ All services ready and configured!")
+	_, _ = fmt.Fprintln(writer, "\n✅ All services ready and configured!")
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "✅ WorkflowExecution E2E Infrastructure Ready!")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
-	fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
-	fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8081")
-	fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
-	fmt.Fprintln(writer, "  ⏱️  Total time: ~5-6 minutes (per DD-TEST-002)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ WorkflowExecution E2E Infrastructure Ready!")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  🚀 Strategy: Hybrid parallel (build parallel → cluster → load)")
+	_, _ = fmt.Fprintln(writer, "  📊 Coverage: Enabled (GOCOVERDIR=/coverdata)")
+	_, _ = fmt.Fprintln(writer, "  🎯 DataStorage URL: http://localhost:8081")
+	_, _ = fmt.Fprintln(writer, "  📦 Namespace: kubernaut-system")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Total time: ~5-6 minutes (per DD-TEST-002)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
 }
 
 // BuildWorkflowExecutionImageWithCoverage builds the WorkflowExecution controller image with coverage instrumentation
 func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Writer) error {
-	fmt.Fprintln(writer, "  🔨 Building WorkflowExecution controller image (with coverage)...")
+	_, _ = fmt.Fprintln(writer, "  🔨 Building WorkflowExecution controller image (with coverage)...")
 
 	dockerfilePath := filepath.Join(projectRoot, "docker/workflowexecution-controller.Dockerfile")
 	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"
@@ -336,7 +336,7 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 	// DD-TEST-007: E2E Coverage Collection
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
-		fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
+		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
 	}
 
 	buildArgs = append(buildArgs, projectRoot)
@@ -348,13 +348,13 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 		return fmt.Errorf("failed to build WorkflowExecution controller image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "     ✅ WorkflowExecution controller image built")
+	_, _ = fmt.Fprintln(writer, "     ✅ WorkflowExecution controller image built")
 	return nil
 }
 
 // LoadWorkflowExecutionCoverageImage loads the WorkflowExecution controller image into Kind cluster
 func LoadWorkflowExecutionCoverageImage(clusterName, projectRoot string, writer io.Writer) error {
-	fmt.Fprintln(writer, "  📦 Loading WorkflowExecution controller image into Kind...")
+	_, _ = fmt.Fprintln(writer, "  📦 Loading WorkflowExecution controller image into Kind...")
 
 	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"
 
@@ -378,7 +378,7 @@ func LoadWorkflowExecutionCoverageImage(clusterName, projectRoot string, writer 
 		return fmt.Errorf("failed to load image into Kind: %w", err)
 	}
 
-	fmt.Fprintln(writer, "     ✅ WorkflowExecution controller image loaded")
+	_, _ = fmt.Fprintln(writer, "     ✅ WorkflowExecution controller image loaded")
 	return nil
 }
 
@@ -397,7 +397,7 @@ func waitForWEServicesReady(ctx context.Context, namespace, kubeconfigPath strin
 	}
 
 	// Wait for DataStorage pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for DataStorage pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=datastorage",
@@ -416,10 +416,10 @@ func waitForWEServicesReady(ctx context.Context, namespace, kubeconfigPath strin
 		}
 		return false
 	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "DataStorage pod should become ready")
-	fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n")
 
 	// Wait for WorkflowExecution controller pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for WorkflowExecution controller pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for WorkflowExecution controller pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=workflowexecution-controller",
@@ -438,7 +438,7 @@ func waitForWEServicesReady(ctx context.Context, namespace, kubeconfigPath strin
 		}
 		return false
 	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "WorkflowExecution controller pod should become ready")
-	fmt.Fprintf(writer, "   ✅ WorkflowExecution controller ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ WorkflowExecution controller ready\n")
 
 	return nil
 }

@@ -67,7 +67,7 @@ const (
 //
 // Returns the registered workflow bundle references for use in WorkflowExecution specs.
 func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL string, output io.Writer) (map[string]string, error) {
-	fmt.Fprintf(output, "\n📦 Setting up test workflows...\n")
+	_, _ = fmt.Fprintf(output, "\n📦 Setting up test workflows...\n")
 
 	bundles := make(map[string]string)
 
@@ -75,19 +75,19 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL s
 	helloWorldRef := fmt.Sprintf("%s/hello-world:%s", TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
 	failingRef := fmt.Sprintf("%s/failing:%s", TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
 
-	fmt.Fprintf(output, "  Checking for existing bundles on %s...\n", TestWorkflowBundleRegistry)
+	_, _ = fmt.Fprintf(output, "  Checking for existing bundles on %s...\n", TestWorkflowBundleRegistry)
 	helloWorldExists := checkBundleExists(helloWorldRef, output)
 	failingExists := checkBundleExists(failingRef, output)
 
 	if helloWorldExists && failingExists {
-		fmt.Fprintf(output, "  ✅ Using existing bundles from quay.io (no build needed)\n")
+		_, _ = fmt.Fprintf(output, "  ✅ Using existing bundles from quay.io (no build needed)\n")
 		bundles["test-hello-world"] = helloWorldRef
 		bundles["test-intentional-failure"] = failingRef
 	} else {
 		// Fallback: Build locally and load into Kind
-		fmt.Fprintf(output, "  ⚠️  Bundles not found on quay.io, building locally...\n")
-		fmt.Fprintf(output, "  💡 TIP: Pre-build and push bundles to skip this step:\n")
-		fmt.Fprintf(output, "      tkn bundle push %s/hello-world:%s -f test/fixtures/tekton/hello-world-pipeline.yaml\n",
+		_, _ = fmt.Fprintf(output, "  ⚠️  Bundles not found on quay.io, building locally...\n")
+		_, _ = fmt.Fprintf(output, "  💡 TIP: Pre-build and push bundles to skip this step:\n")
+		_, _ = fmt.Fprintf(output, "      tkn bundle push %s/hello-world:%s -f test/fixtures/tekton/hello-world-pipeline.yaml\n",
 			TestWorkflowBundleRegistry, TestWorkflowBundleVersion)
 
 		// Find project root for accessing test fixtures
@@ -126,7 +126,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL s
 	}
 
 	// Register workflows in DataStorage (fast HTTP POST)
-	fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage...\n")
+	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage...\n")
 	if err := registerWorkflowInDataStorage(
 		dataStorageURL,
 		"test-hello-world",
@@ -149,7 +149,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL s
 		return nil, fmt.Errorf("failed to register failing workflow: %w", err)
 	}
 
-	fmt.Fprintf(output, "✅ Test workflows ready\n")
+	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
 	return bundles, nil
 }
 
@@ -164,7 +164,7 @@ func checkBundleExists(bundleRef string, output io.Writer) bool {
 	err := cmd.Run()
 
 	if err == nil {
-		fmt.Fprintf(output, "    ✅ Found: %s\n", bundleRef)
+		_, _ = fmt.Fprintf(output, "    ✅ Found: %s\n", bundleRef)
 		return true
 	}
 
@@ -175,17 +175,17 @@ func checkBundleExists(bundleRef string, output io.Writer) bool {
 	err = cmd.Run()
 
 	if err == nil {
-		fmt.Fprintf(output, "    ✅ Found: %s\n", bundleRef)
+		_, _ = fmt.Fprintf(output, "    ✅ Found: %s\n", bundleRef)
 		return true
 	}
 
-	fmt.Fprintf(output, "    ❌ Not found: %s\n", bundleRef)
+	_, _ = fmt.Fprintf(output, "    ❌ Not found: %s\n", bundleRef)
 	return false
 }
 
 // buildAndLoadWorkflowBundle builds a Tekton Pipeline bundle and loads it into Kind
 func buildAndLoadWorkflowBundle(clusterName, workflowName, bundleRef, pipelineYAML string, output io.Writer) error {
-	fmt.Fprintf(output, "  Building workflow: %s\n", workflowName)
+	_, _ = fmt.Fprintf(output, "  Building workflow: %s\n", workflowName)
 
 	// Verify tkn CLI is installed
 	if _, err := exec.LookPath("tkn"); err != nil {
@@ -200,9 +200,9 @@ func buildAndLoadWorkflowBundle(clusterName, workflowName, bundleRef, pipelineYA
 	// Build Tekton bundle using tkn CLI
 	// NOTE: Tekton bundles contain ONLY Tekton resources (Pipeline, Task)
 	// workflow-schema.yaml is Kubernaut metadata registered separately in DataStorage
-	fmt.Fprintf(output, "    Bundling Tekton Pipeline:\n")
-	fmt.Fprintf(output, "      Pipeline: %s\n", filepath.Base(pipelineYAML))
-	fmt.Fprintf(output, "      Bundle:   %s\n", bundleRef)
+	_, _ = fmt.Fprintf(output, "    Bundling Tekton Pipeline:\n")
+	_, _ = fmt.Fprintf(output, "      Pipeline: %s\n", filepath.Base(pipelineYAML))
+	_, _ = fmt.Fprintf(output, "      Bundle:   %s\n", bundleRef)
 
 	buildCmd := exec.Command("tkn", "bundle", "push", bundleRef,
 		"-f", pipelineYAML,
@@ -216,7 +216,7 @@ func buildAndLoadWorkflowBundle(clusterName, workflowName, bundleRef, pipelineYA
 	}
 
 	// Load bundle OCI image into Kind cluster
-	fmt.Fprintf(output, "    Loading bundle into Kind...\n")
+	_, _ = fmt.Fprintf(output, "    Loading bundle into Kind...\n")
 	if err := loadBundleIntoKind(clusterName, bundleRef, output); err != nil {
 		return fmt.Errorf("failed to load bundle into Kind: %w", err)
 	}
@@ -233,7 +233,7 @@ func loadBundleIntoKind(clusterName, bundleRef string, output io.Writer) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// Save bundle image to tar file using podman
 	// Note: Tekton bundles are OCI images, so standard container tools work
@@ -259,7 +259,7 @@ func loadBundleIntoKind(clusterName, bundleRef string, output io.Writer) error {
 // POST /api/v1/workflows per DD-WORKFLOW-005 v1.0
 // Uses map[string]interface{} pattern matching working E2E tests
 func registerWorkflowInDataStorage(dataStorageURL, workflowName, version, containerImage, description string, output io.Writer) error {
-	fmt.Fprintf(output, "  Registering: %s (version %s)\n", workflowName, version)
+	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s)\n", workflowName, version)
 
 	// Generate ADR-043 compliant content
 	content := fmt.Sprintf("# Test workflow %s\nversion: %s\ndescription: %s", workflowName, version, description)
@@ -306,7 +306,7 @@ func registerWorkflowInDataStorage(dataStorageURL, workflowName, version, contai
 	if err != nil {
 		return fmt.Errorf("failed to POST workflow to DataStorage: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
@@ -314,6 +314,6 @@ func registerWorkflowInDataStorage(dataStorageURL, workflowName, version, contai
 		return fmt.Errorf("DataStorage returned status %d: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
+	_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s\n", workflowName)
 	return nil
 }

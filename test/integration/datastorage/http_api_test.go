@@ -239,7 +239,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ord
 			Expect(resp.StatusCode).To(Equal(202), "DLQ fallback should return 202 Accepted")
 
 			var respBody map[string]string
-			json.NewDecoder(resp.Body).Decode(&respBody)
+			_ = json.NewDecoder(resp.Body).Decode(&respBody)
 			Expect(respBody["status"]).To(Equal("accepted"))
 			Expect(respBody["message"]).To(ContainSubstring("queued"))
 

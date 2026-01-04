@@ -44,30 +44,30 @@ import (
 // - Kind cluster (2 nodes: control-plane + worker)
 // - Data Storage Service Docker image (build + load)
 func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "Data Storage E2E Cluster Setup (ONCE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "Data Storage E2E Cluster Setup (ONCE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// 1. Create Kind cluster
-	fmt.Fprintln(writer, "📦 Creating Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
 	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// 2. Build Data Storage Docker image
-	fmt.Fprintln(writer, "🔨 Building Data Storage Docker image...")
+	_, _ = fmt.Fprintln(writer, "🔨 Building Data Storage Docker image...")
 	if err := buildDataStorageImage(writer); err != nil {
 		return fmt.Errorf("failed to build Data Storage image: %w", err)
 	}
 
 	// 3. Load Data Storage image into Kind
-	fmt.Fprintln(writer, "📦 Loading Data Storage image into Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "📦 Loading Data Storage image into Kind cluster...")
 	if err := loadDataStorageImage(clusterName, writer); err != nil {
 		return fmt.Errorf("failed to load Data Storage image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "✅ Cluster ready - tests can now deploy services per-namespace")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "✅ Cluster ready - tests can now deploy services per-namespace")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	return nil
 }
 
@@ -76,7 +76,7 @@ func DeleteCluster(clusterName string, writer io.Writer) error {
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "❌ Failed to delete cluster: %s\n", output)
+		_, _ = fmt.Fprintf(writer, "❌ Failed to delete cluster: %s\n", output)
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
 	return nil
@@ -98,17 +98,17 @@ func DeleteCluster(clusterName string, writer io.Writer) error {
 //
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
 func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (PARALLEL MODE)")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintln(writer, "  Parallel optimization: ~1 min saved per E2E run (23% faster)")
-	fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (PARALLEL MODE)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "  Parallel optimization: ~1 min saved per E2E run (23% faster)")
+	_, _ = fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Create Kind cluster + namespace (Sequential - must be first)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + namespace...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + namespace...")
 
 	// Create Kind cluster
 	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
@@ -116,7 +116,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	}
 
 	// Create namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
@@ -124,10 +124,10 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 2: Parallel infrastructure setup
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
-	fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
-	fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
+	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
 
 	type result struct {
 		name string
@@ -166,22 +166,22 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	}()
 
 	// Wait for all parallel tasks to complete
-	fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
 	for i := 0; i < 3; i++ {
 		r := <-results
 		if r.err != nil {
 			return fmt.Errorf("parallel setup failed (%s): %w", r.name, r.err)
 		}
-		fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
 	}
 
-	fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded")
+	_, _ = fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3/4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	fmt.Fprintln(writer, "\n📦 PHASE 3/4: Deploying migrations + DataStorage service in parallel...")
-	fmt.Fprintln(writer, "  (Kubernetes will handle dependencies - DataStorage retries until migrations complete)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3/4: Deploying migrations + DataStorage service in parallel...")
+	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies - DataStorage retries until migrations complete)")
 
 	type deployResult struct {
 		name string
@@ -204,28 +204,28 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	for i := 0; i < 2; i++ {
 		result := <-deployResults
 		if result.err != nil {
-			fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
+			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
 			deployErrors = append(deployErrors, result.err)
 		} else {
-			fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s manifests applied\n", result.name)
 		}
 	}
 
 	if len(deployErrors) > 0 {
 		return fmt.Errorf("one or more deployments failed: %v", deployErrors)
 	}
-	fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
+	_, _ = fmt.Fprintln(writer, "  ✅ All manifests applied! (Kubernetes reconciling...)")
 
 	// Single wait for DataStorage to be ready (migrations complete first, then DataStorage connects)
-	fmt.Fprintln(writer, "\n⏳ Waiting for DataStorage to be ready (Kubernetes reconciling dependencies)...")
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for DataStorage to be ready (Kubernetes reconciling dependencies)...")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Fprintf(writer, "✅ DataStorage E2E infrastructure ready in namespace %s\n", namespace)
-	fmt.Fprintln(writer, "   Setup time optimized: ~23%% faster than sequential")
-	fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintf(writer, "✅ DataStorage E2E infrastructure ready in namespace %s\n", namespace)
+	_, _ = fmt.Fprintln(writer, "   Setup time optimized: ~23%% faster than sequential")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	return nil
 }
@@ -234,49 +234,49 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 // This is used by E2E tests to create isolated test environments
 // dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:holmesgpt-api-a1b2c3d4")
 func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
-	fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// 1. Create test namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// 2. Deploy PostgreSQL (V1.0: standard postgres, no pgvector)
-	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
 	// 3. Deploy Redis for DLQ
-	fmt.Fprintf(writer, "🚀 Deploying Redis for DLQ...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Redis for DLQ...\n")
 	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
 	// 4. Apply database migrations using shared migration library
-	fmt.Fprintf(writer, "📋 Applying database migrations...\n")
+	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
 	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
 	// 5. Deploy Data Storage Service
-	fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
 	// 6. Wait for all services ready
-	fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s\n", namespace)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
 
@@ -293,56 +293,56 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 //   // Gateway E2E: Uses NodePort 30081 (per kind-gateway-config.yaml)
 //   DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30081, writer)
 func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
-	fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
-	fmt.Fprintf(writer, "  🔌 NodePort: %d\n", nodePort)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
+	_, _ = fmt.Fprintf(writer, "  🔌 NodePort: %d\n", nodePort)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// 1. Create test namespace
-	fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// 2. Deploy PostgreSQL (V1.0: standard postgres, no pgvector)
-	fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy PostgreSQL: %w", err)
 	}
 
 	// 3. Deploy Redis for DLQ
-	fmt.Fprintf(writer, "🚀 Deploying Redis for DLQ...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Redis for DLQ...\n")
 	if err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
 	// 4. Apply database migrations using shared migration library
-	fmt.Fprintf(writer, "📋 Applying database migrations...\n")
+	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
 	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
 	// 5. Deploy Data Storage Service with custom NodePort
-	fmt.Fprintf(writer, "🚀 Deploying Data Storage Service (NodePort %d)...\n", nodePort)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service (NodePort %d)...\n", nodePort)
 	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, nodePort, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
 	// 6. Wait for all services ready
-	fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (NodePort %d)\n", namespace, nodePort)
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (NodePort %d)\n", namespace, nodePort)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
 
 // CleanupDataStorageTestNamespace deletes a test namespace and all resources
 func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
-	fmt.Fprintf(writer, "🧹 Cleaning up namespace %s...\n", namespace)
+	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up namespace %s...\n", namespace)
 
 	cmd := exec.Command("kubectl", "delete", "namespace", namespace,
 		"--kubeconfig", kubeconfigPath,
@@ -350,11 +350,11 @@ func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io
 		"--timeout=60s")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "⚠️  Failed to delete namespace: %s\n", output)
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to delete namespace: %s\n", output)
 		return fmt.Errorf("failed to delete namespace: %w", err)
 	}
 
-	fmt.Fprintf(writer, "✅ Namespace %s deleted\n", namespace)
+	_, _ = fmt.Fprintf(writer, "✅ Namespace %s deleted\n", namespace)
 	return nil
 }
 
@@ -378,13 +378,13 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		// Check for AlreadyExists error (case-insensitive for robustness)
 		errMsg := strings.ToLower(err.Error())
 		if strings.Contains(errMsg, "already exists") || strings.Contains(errMsg, "alreadyexists") {
-			fmt.Fprintf(writer, "   ✅ Namespace %s already exists (reusing)\n", namespace)
+			_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s already exists (reusing)\n", namespace)
 			return nil
 		}
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   ✅ Namespace %s created\n", namespace)
+	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s created\n", namespace)
 	return nil
 }
 
@@ -633,7 +633,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL deployment: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (ConfigMap + Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (ConfigMap + Secret + Service + Deployment)\n")
 	return nil
 }
 
@@ -749,7 +749,7 @@ func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath strin
 		return fmt.Errorf("failed to create Redis deployment: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   ✅ Redis deployed (Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Redis deployed (Service + Deployment)\n")
 	return nil
 }
 
@@ -954,15 +954,15 @@ password: test_password`,
 								// Only add GOCOVERDIR if E2E_COVERAGE=true
 								// MUST match Kind extraMounts path: /coverdata (not /tmp/coverage)
 								coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
-								fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
+								_, _ = fmt.Fprintf(writer, "   🔍 DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
 								if coverageEnabled {
-									fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
+									_, _ = fmt.Fprintf(writer, "   ✅ Adding GOCOVERDIR=/coverdata to DataStorage deployment\n")
 									envVars = append(envVars, corev1.EnvVar{
 										Name:  "GOCOVERDIR",
 										Value: "/coverdata",
 									})
 								} else {
-									fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
+									_, _ = fmt.Fprintf(writer, "   ⚠️  E2E_COVERAGE not set, skipping GOCOVERDIR\n")
 								}
 								return envVars
 							}(),
@@ -1073,7 +1073,7 @@ password: test_password`,
 		return fmt.Errorf("failed to create Data Storage Deployment: %w", err)
 	}
 
-	fmt.Fprintf(writer, "   ✅ Data Storage Service deployed (ConfigMap + Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage Service deployed (ConfigMap + Secret + Service + Deployment)\n")
 	return nil
 }
 
@@ -1084,7 +1084,7 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 	}
 
 	// Wait for PostgreSQL pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for PostgreSQL pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=postgresql",
@@ -1103,10 +1103,10 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 		}
 		return false
 	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "PostgreSQL pod should be ready")
-	fmt.Fprintf(writer, "   ✅ PostgreSQL pod ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL pod ready\n")
 
 	// Wait for Redis pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Redis pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=redis",
@@ -1125,10 +1125,10 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 		}
 		return false
 	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Redis pod should be ready")
-	fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Redis pod ready\n")
 
 	// Wait for Data Storage Service pod to be ready
-	fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage Service pod to be ready...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage Service pod to be ready...\n")
 	Eventually(func() bool {
 		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: "app=datastorage",
@@ -1147,7 +1147,7 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 		}
 		return false
 	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Data Storage Service pod should be ready")
-	fmt.Fprintf(writer, "   ✅ Data Storage Service pod ready\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage Service pod ready\n")
 
 	return nil
 }
@@ -1157,7 +1157,7 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 	checkCmd := exec.Command("kind", "get", "clusters")
 	checkOutput, _ := checkCmd.CombinedOutput()
 	if strings.Contains(string(checkOutput), clusterName) {
-		fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
+		_, _ = fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
 		_ = DeleteCluster(clusterName, writer)
 	}
 
@@ -1172,7 +1172,7 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 		return fmt.Errorf("kind config file not found: %s", configPath)
 	}
 
-	fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", configPath)
+	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", configPath)
 
 	cmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
@@ -1180,11 +1180,11 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 		"--kubeconfig", kubeconfigPath) // Isolated kubeconfig per TESTING_GUIDELINES.md
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "❌ Kind create output:\n%s\n", output)
+		_, _ = fmt.Fprintf(writer, "❌ Kind create output:\n%s\n", output)
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ Kind cluster created")
+	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created")
 
 	// Export kubeconfig to specified path
 	// Note: kind create --kubeconfig doesn't always work reliably, so we export explicitly
@@ -1207,7 +1207,7 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 		return fmt.Errorf("failed to write kubeconfig: %w", err)
 	}
 
-	fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
+	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
 	return nil
 }
 
@@ -1230,7 +1230,7 @@ func buildDataStorageImage(writer io.Writer) error {
 	// If E2E_COVERAGE=true, build with coverage instrumentation
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
-		fmt.Fprintln(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)")
+		_, _ = fmt.Fprintln(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)")
 	}
 
 	buildArgs = append(buildArgs, ".")
@@ -1252,14 +1252,14 @@ func buildDataStorageImage(writer io.Writer) error {
 		return fmt.Errorf("podman tag failed: %w", err)
 	}
 
-	fmt.Fprintln(writer, "   Data Storage image built: localhost/kubernaut-datastorage:e2e-test-datastorage")
-	fmt.Fprintln(writer, "   Data Storage image tagged: localhost/kubernaut-datastorage:e2e-test (SP E2E compatibility)")
+	_, _ = fmt.Fprintln(writer, "   Data Storage image built: localhost/kubernaut-datastorage:e2e-test-datastorage")
+	_, _ = fmt.Fprintln(writer, "   Data Storage image tagged: localhost/kubernaut-datastorage:e2e-test (SP E2E compatibility)")
 
 	// PROFILING: Get image size for optimization analysis
 	sizeCmd := exec.Command("podman", "images", "--format", "{{.Size}}", "localhost/kubernaut-datastorage:e2e-test-datastorage")
 	sizeOutput, err := sizeCmd.Output()
 	if err == nil {
-		fmt.Fprintf(writer, "   📊 Image size: %s\n", string(sizeOutput))
+		_, _ = fmt.Fprintf(writer, "   📊 Image size: %s\n", string(sizeOutput))
 	}
 
 	return nil
@@ -1290,17 +1290,17 @@ func loadDataStorageImage(clusterName string, writer io.Writer) error {
 
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
-	fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
+	_, _ = fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
 	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-datastorage:e2e-test-datastorage")
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
-		fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	} else {
-		fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-datastorage:e2e-test-datastorage")
+		_, _ = fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-datastorage:e2e-test-datastorage")
 	}
 
-	fmt.Fprintln(writer, "   Data Storage image loaded into Kind cluster")
+	_, _ = fmt.Fprintln(writer, "   Data Storage image loaded into Kind cluster")
 	return nil
 }
 
@@ -1352,76 +1352,76 @@ func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer io.Writer) (*
 		ServiceURL:        fmt.Sprintf("http://localhost:%s", cfg.ServicePort),
 	}
 
-	fmt.Fprintln(writer, "🔧 Setting up Data Storage Service infrastructure (ADR-016: Podman)")
+	_, _ = fmt.Fprintln(writer, "🔧 Setting up Data Storage Service infrastructure (ADR-016: Podman)")
 
 	// 1. Start PostgreSQL
-	fmt.Fprintln(writer, "📦 Starting PostgreSQL container...")
+	_, _ = fmt.Fprintln(writer, "📦 Starting PostgreSQL container...")
 	if err := startPostgreSQL(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
 	// 2. Start Redis
-	fmt.Fprintln(writer, "📦 Starting Redis container...")
+	_, _ = fmt.Fprintln(writer, "📦 Starting Redis container...")
 	if err := startRedis(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start Redis: %w", err)
 	}
 
 	// 3. Connect to PostgreSQL
-	fmt.Fprintln(writer, "🔌 Connecting to PostgreSQL...")
+	_, _ = fmt.Fprintln(writer, "🔌 Connecting to PostgreSQL...")
 	if err := connectPostgreSQL(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
 	// 4. Apply migrations
-	fmt.Fprintln(writer, "📋 Applying schema migrations...")
+	_, _ = fmt.Fprintln(writer, "📋 Applying schema migrations...")
 	if err := applyMigrations(infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
 	// 5. Connect to Redis
-	fmt.Fprintln(writer, "🔌 Connecting to Redis...")
+	_, _ = fmt.Fprintln(writer, "🔌 Connecting to Redis...")
 	if err := connectRedis(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	// 6. Create config files
-	fmt.Fprintln(writer, "📝 Creating ADR-030 config files...")
+	_, _ = fmt.Fprintln(writer, "📝 Creating ADR-030 config files...")
 	if err := createConfigFiles(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to create config files: %w", err)
 	}
 
 	// 7. Build Data Storage Service image
-	fmt.Fprintln(writer, "🏗️  Building Data Storage Service image...")
+	_, _ = fmt.Fprintln(writer, "🏗️  Building Data Storage Service image...")
 	if err := buildDataStorageService(writer); err != nil {
 		return nil, fmt.Errorf("failed to build service: %w", err)
 	}
 
 	// 8. Start Data Storage Service
-	fmt.Fprintln(writer, "🚀 Starting Data Storage Service container...")
+	_, _ = fmt.Fprintln(writer, "🚀 Starting Data Storage Service container...")
 	if err := startDataStorageService(infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
 	// 9. Wait for service to be ready
-	fmt.Fprintln(writer, "⏳ Waiting for Data Storage Service to be ready...")
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Data Storage Service to be ready...")
 	if err := waitForServiceReady(infra, writer); err != nil {
 		return nil, fmt.Errorf("service not ready: %w", err)
 	}
 
-	fmt.Fprintln(writer, "✅ Data Storage Service infrastructure ready!")
+	_, _ = fmt.Fprintln(writer, "✅ Data Storage Service infrastructure ready!")
 	return infra, nil
 }
 
 // StopDataStorageInfrastructure stops all Data Storage Service infrastructure
 func (infra *DataStorageInfrastructure) Stop(writer io.Writer) {
-	fmt.Fprintln(writer, "🧹 Cleaning up Data Storage Service infrastructure...")
+	_, _ = fmt.Fprintln(writer, "🧹 Cleaning up Data Storage Service infrastructure...")
 
 	// Close connections
 	if infra.DB != nil {
-		infra.DB.Close()
+		_ = infra.DB.Close()
 	}
 	if infra.RedisClient != nil {
-		infra.RedisClient.Close()
+		_ = infra.RedisClient.Close()
 	}
 
 	// Stop and remove containers
@@ -1434,10 +1434,10 @@ func (infra *DataStorageInfrastructure) Stop(writer io.Writer) {
 
 	// Remove config directory
 	if infra.ConfigDir != "" {
-		os.RemoveAll(infra.ConfigDir)
+		_ = os.RemoveAll(infra.ConfigDir)
 	}
 
-	fmt.Fprintln(writer, "✅ Data Storage Service infrastructure cleanup complete")
+	_, _ = fmt.Fprintln(writer, "✅ Data Storage Service infrastructure cleanup complete")
 }
 
 // Helper functions
@@ -1458,12 +1458,12 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "❌ Failed to start PostgreSQL: %s\n", output)
+		_, _ = fmt.Fprintf(writer, "❌ Failed to start PostgreSQL: %s\n", output)
 		return fmt.Errorf("PostgreSQL container failed to start: %w", err)
 	}
 
 	// Wait for PostgreSQL ready
-	fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL to be ready...")
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL to be ready...")
 	time.Sleep(3 * time.Second)
 
 	Eventually(func() error {
@@ -1471,7 +1471,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 		return testCmd.Run()
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
 
-	fmt.Fprintln(writer, "  ✅ PostgreSQL started successfully")
+	_, _ = fmt.Fprintln(writer, "  ✅ PostgreSQL started successfully")
 	return nil
 }
 
@@ -1488,7 +1488,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "❌ Failed to start Redis: %s\n", output)
+		_, _ = fmt.Fprintf(writer, "❌ Failed to start Redis: %s\n", output)
 		return fmt.Errorf("Redis container failed to start: %w", err)
 	}
 
@@ -1504,7 +1504,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
 
-	fmt.Fprintln(writer, "  ✅ Redis started successfully")
+	_, _ = fmt.Fprintln(writer, "  ✅ Redis started successfully")
 	return nil
 }
 
@@ -1523,13 +1523,13 @@ func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 		return infra.DB.Ping()
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be connectable")
 
-	fmt.Fprintln(writer, "  ✅ PostgreSQL connection established")
+	_, _ = fmt.Fprintln(writer, "  ✅ PostgreSQL connection established")
 	return nil
 }
 
 func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	// Drop and recreate schema
-	fmt.Fprintln(writer, "  🗑️  Dropping existing schema...")
+	_, _ = fmt.Fprintln(writer, "  🗑️  Dropping existing schema...")
 	_, err := infra.DB.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	if err != nil {
 		return fmt.Errorf("failed to drop schema: %w", err)
@@ -1539,7 +1539,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	// See: docs/handoff/RESPONSE_DS_PGVECTOR_CLEANUP_COMPLETE.md
 
 	// Apply migrations (V1.0 label-only, no vector migrations)
-	fmt.Fprintln(writer, "  📜 Applying V1.0 migrations (label-only, no embeddings)...")
+	_, _ = fmt.Fprintln(writer, "  📜 Applying V1.0 migrations (label-only, no embeddings)...")
 	// V1.0 Migration List (label-only architecture, no embeddings)
 	// Removed vector-dependent migrations per TRIAGE_DS_MIGRATION_DEPENDENCIES_V1.0.md:
 	// - 005_vector_schema.sql (creates action_patterns with embedding vector)
@@ -1577,7 +1577,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 
 		content, err := os.ReadFile(migrationPath)
 		if err != nil {
-			fmt.Fprintf(writer, "  ❌ Migration file not found at %s: %v\n", migrationPath, err)
+			_, _ = fmt.Fprintf(writer, "  ❌ Migration file not found at %s: %v\n", migrationPath, err)
 			return fmt.Errorf("migration file %s not found at %s: %w", migration, migrationPath, err)
 		}
 
@@ -1592,14 +1592,14 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 
 		_, err = infra.DB.Exec(migrationSQL)
 		if err != nil {
-			fmt.Fprintf(writer, "  ❌ Migration %s failed: %v\n", migration, err)
+			_, _ = fmt.Fprintf(writer, "  ❌ Migration %s failed: %v\n", migration, err)
 			return fmt.Errorf("migration %s failed: %w", migration, err)
 		}
-		fmt.Fprintf(writer, "  ✅ Applied %s\n", migration)
+		_, _ = fmt.Fprintf(writer, "  ✅ Applied %s\n", migration)
 	}
 
 	// Grant permissions
-	fmt.Fprintln(writer, "  🔐 Granting permissions...")
+	_, _ = fmt.Fprintln(writer, "  🔐 Granting permissions...")
 	_, err = infra.DB.Exec(`
 		GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
 		GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
@@ -1610,10 +1610,10 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	}
 
 	// Wait for schema propagation
-	fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL schema propagation (2s)...")
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for PostgreSQL schema propagation (2s)...")
 	time.Sleep(2 * time.Second)
 
-	fmt.Fprintln(writer, "  ✅ All migrations applied successfully")
+	_, _ = fmt.Fprintln(writer, "  ✅ All migrations applied successfully")
 	return nil
 }
 
@@ -1629,7 +1629,7 @@ func connectRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writ
 		return fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ Redis connection established")
+	_, _ = fmt.Fprintln(writer, "  ✅ Redis connection established")
 	return nil
 }
 
@@ -1707,7 +1707,7 @@ password: %s
 		return fmt.Errorf("failed to write redis-secrets.yaml: %w", err)
 	}
 
-	fmt.Fprintf(writer, "  ✅ Config files created in %s\n", infra.ConfigDir)
+	_, _ = fmt.Fprintf(writer, "  ✅ Config files created in %s\n", infra.ConfigDir)
 	return nil
 }
 
@@ -1733,11 +1733,11 @@ func buildDataStorageService(writer io.Writer) error {
 
 	output, err := buildCmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "❌ Build output:\n%s\n", string(output))
+		_, _ = fmt.Fprintf(writer, "❌ Build output:\n%s\n", string(output))
 		return fmt.Errorf("failed to build Data Storage Service image: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ Data Storage Service image built successfully")
+	_, _ = fmt.Fprintln(writer, "  ✅ Data Storage Service image built successfully")
 	return nil
 }
 
@@ -1782,11 +1782,11 @@ func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageC
 
 	output, err := startCmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintf(writer, "❌ Start output:\n%s\n", string(output))
+		_, _ = fmt.Fprintf(writer, "❌ Start output:\n%s\n", string(output))
 		return fmt.Errorf("failed to start Data Storage Service container: %w", err)
 	}
 
-	fmt.Fprintln(writer, "  ✅ Data Storage Service container started")
+	_, _ = fmt.Fprintln(writer, "  ✅ Data Storage Service container started")
 	return nil
 }
 
@@ -1800,42 +1800,42 @@ func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) err
 		if err != nil {
 			lastError = err
 			lastStatusCode = 0
-			fmt.Fprintf(writer, "    Health check attempt failed: %v\n", err)
+			_, _ = fmt.Fprintf(writer, "    Health check attempt failed: %v\n", err)
 			return 0
 		}
 		if resp == nil {
 			lastStatusCode = 0
 			return 0
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		lastStatusCode = resp.StatusCode
 		if lastStatusCode != 200 {
-			fmt.Fprintf(writer, "    Health check returned status %d (expected 200)\n", lastStatusCode)
+			_, _ = fmt.Fprintf(writer, "    Health check returned status %d (expected 200)\n", lastStatusCode)
 		}
 		return lastStatusCode
 	}, "30s", "1s").Should(Equal(200), "Data Storage Service should be healthy")
 
 	// If we got here and status is not 200, print diagnostics
 	if lastStatusCode != 200 {
-		fmt.Fprintf(writer, "\n❌ Data Storage Service health check failed\n")
-		fmt.Fprintf(writer, "  Last status code: %d\n", lastStatusCode)
+		_, _ = fmt.Fprintf(writer, "\n❌ Data Storage Service health check failed\n")
+		_, _ = fmt.Fprintf(writer, "  Last status code: %d\n", lastStatusCode)
 		if lastError != nil {
-			fmt.Fprintf(writer, "  Last error: %v\n", lastError)
+			_, _ = fmt.Fprintf(writer, "  Last error: %v\n", lastError)
 		}
 
 		// Print container logs for debugging
 		logs, logErr := exec.Command("podman", "logs", "--tail", "200", infra.ServiceContainer).CombinedOutput()
 		if logErr == nil {
-			fmt.Fprintf(writer, "\n📋 Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
+			_, _ = fmt.Fprintf(writer, "\n📋 Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
 		}
 
 		// Check if container is running
 		statusCmd := exec.Command("podman", "ps", "--filter", fmt.Sprintf("name=%s", infra.ServiceContainer), "--format", "{{.Status}}")
 		statusOutput, _ := statusCmd.CombinedOutput()
-		fmt.Fprintf(writer, "  Container status: %s\n", strings.TrimSpace(string(statusOutput)))
+		_, _ = fmt.Fprintf(writer, "  Container status: %s\n", strings.TrimSpace(string(statusOutput)))
 	}
 
-	fmt.Fprintf(writer, "  ✅ Data Storage Service ready at %s\n", infra.ServiceURL)
+	_, _ = fmt.Fprintf(writer, "  ✅ Data Storage Service ready at %s\n", infra.ServiceURL)
 	return nil
 }
 
@@ -1865,7 +1865,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	fmt.Fprintf(writer, "  🔨 Building DataStorage with tag: %s\n", imageTag)
+	_, _ = fmt.Fprintf(writer, "  🔨 Building DataStorage with tag: %s\n", imageTag)
 
 	// Build Data Storage image using Podman
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
@@ -1880,7 +1880,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 	// If E2E_COVERAGE=true, build with coverage instrumentation
 	if os.Getenv("E2E_COVERAGE") == "true" {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
-		fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
+		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
 	}
 
 	buildArgs = append(buildArgs, ".")
@@ -1894,14 +1894,14 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) error {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 
-	fmt.Fprintf(writer, "     ✅ DataStorage image built: %s\n", imageTag)
+	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image built: %s\n", imageTag)
 	return nil
 }
 
 // loadDataStorageImageWithTag loads DataStorage image into Kind cluster with specific tag
 // Per DD-TEST-001: Each service loads its own fresh-built DataStorage image
 func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer) error {
-	fmt.Fprintf(writer, "  📦 Loading DataStorage image: %s\n", imageTag)
+	_, _ = fmt.Fprintf(writer, "  📦 Loading DataStorage image: %s\n", imageTag)
 
 	// Save image to tar
 	saveCmd := exec.Command("podman", "save", imageTag, "-o", "/tmp/datastorage-e2e.tar")
@@ -1926,16 +1926,16 @@ func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer)
 
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
-	fmt.Fprintf(writer, "     🗑️  Removing Podman image to free disk space...\n")
+	_, _ = fmt.Fprintf(writer, "     🗑️  Removing Podman image to free disk space...\n")
 	rmiCmd := exec.Command("podman", "rmi", "-f", imageTag)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
-		fmt.Fprintf(writer, "     ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+		_, _ = fmt.Fprintf(writer, "     ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	} else {
-		fmt.Fprintf(writer, "     ✅ Podman image removed: %s\n", imageTag)
+		_, _ = fmt.Fprintf(writer, "     ✅ Podman image removed: %s\n", imageTag)
 	}
 
-	fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
+	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
 	return nil
 }

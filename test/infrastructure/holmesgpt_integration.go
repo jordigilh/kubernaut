@@ -95,16 +95,16 @@ const (
 //	Replaces holmesgpt-api/tests/integration/conftest.py start_infrastructure()
 //	which used subprocess.run() to call docker-compose.
 func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "Starting HolmesGPT API Integration Test Infrastructure\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", HAPIIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:          localhost:%d\n", HAPIIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", HAPIIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  HAPI:           http://localhost:%d\n", HAPIIntegrationServicePort)
-	fmt.Fprintf(writer, "  Pattern:        DD-INTEGRATION-001 v2.0 (Programmatic Go)\n")
-	fmt.Fprintf(writer, "  Migration:      From Python subprocess → Go shared utilities\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Starting HolmesGPT API Integration Test Infrastructure\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", HAPIIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d\n", HAPIIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d\n", HAPIIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  HAPI:           http://localhost:%d\n", HAPIIntegrationServicePort)
+	_, _ = fmt.Fprintf(writer, "  Pattern:        DD-INTEGRATION-001 v2.0 (Programmatic Go)\n")
+	_, _ = fmt.Fprintf(writer, "  Migration:      From Python subprocess → Go shared utilities\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	projectRoot := getProjectRoot()
 
@@ -119,12 +119,12 @@ func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 		HAPIIntegrationMigrationsContainer,
 	}, writer)
 	_ = exec.Command("podman", "network", "rm", HAPIIntegrationNetwork).Run() // Ignore errors
-	fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// ============================================================================
 	// STEP 2: Create custom network for internal communication
 	// ============================================================================
-	fmt.Fprintf(writer, "🌐 Creating custom Podman network '%s'...\n", HAPIIntegrationNetwork)
+	_, _ = fmt.Fprintf(writer, "🌐 Creating custom Podman network '%s'...\n", HAPIIntegrationNetwork)
 	createNetworkCmd := exec.Command("podman", "network", "create", HAPIIntegrationNetwork)
 	createNetworkCmd.Stdout = writer
 	createNetworkCmd.Stderr = writer
@@ -133,9 +133,9 @@ func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 		if !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("failed to create network '%s': %w", HAPIIntegrationNetwork, err)
 		}
-		fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", HAPIIntegrationNetwork)
+		_, _ = fmt.Fprintf(writer, "  (Network '%s' already exists, continuing...)\n", HAPIIntegrationNetwork)
 	}
-	fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", HAPIIntegrationNetwork)
+	_, _ = fmt.Fprintf(writer, "   ✅ Network '%s' created/ensured\n\n", HAPIIntegrationNetwork)
 
 	// ============================================================================
 	// STEP 3: Start PostgreSQL FIRST (DD-TEST-002 Sequential Pattern)
@@ -157,12 +157,12 @@ func StartHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	if err := WaitForPostgreSQLReady(HAPIIntegrationPostgresContainer, HAPIIntegrationDBUser, HAPIIntegrationDBName, writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
 
 	// ============================================================================
 	// STEP 4: Run migrations (inline approach - same as AIAnalysis/RO)
 	// ============================================================================
-	fmt.Fprintf(writer, "🔄 Running migrations...\n")
+	_, _ = fmt.Fprintf(writer, "🔄 Running migrations...\n")
 	migrationsCmd := exec.Command("podman", "run", "--rm",
 		"--network", HAPIIntegrationNetwork,
 		"-e", "PGHOST="+HAPIIntegrationPostgresContainer,
@@ -185,7 +185,7 @@ echo "Migrations complete!"`)
 	if err := migrationsCmd.Run(); err != nil {
 		return fmt.Errorf("migrations failed: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
 	// ============================================================================
 	// STEP 5: Start Redis
@@ -203,16 +203,16 @@ echo "Migrations complete!"`)
 	if err := WaitForRedisReady(HAPIIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("Redis failed to become ready: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
 
 	// ============================================================================
 	// STEP 6: Build and start DataStorage
 	// ============================================================================
-	fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
+	_, _ = fmt.Fprintf(writer, "🏗️  Building DataStorage image...\n")
 
 	// Use composite image tag per DD-INTEGRATION-001 v2.0 (collision avoidance)
 	dsImageTag := GenerateInfraImageName("datastorage", "holmesgptapi")
-	fmt.Fprintf(writer, "   Image tag: %s (composite per DD-INTEGRATION-001 v2.0)\n", dsImageTag)
+	_, _ = fmt.Fprintf(writer, "   Image tag: %s (composite per DD-INTEGRATION-001 v2.0)\n", dsImageTag)
 
 	buildCmd := exec.Command("podman", "build",
 		"-t", dsImageTag,
@@ -224,9 +224,9 @@ echo "Migrations complete!"`)
 	if err := buildCmd.Run(); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n\n", dsImageTag)
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n\n", dsImageTag)
 
-	fmt.Fprintf(writer, "🚀 Starting DataStorage container...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Starting DataStorage container...\n")
 
 	// ADR-030: Mount config directory and set CONFIG_PATH
 	// The same directory contains both config.yaml and secrets files
@@ -253,7 +253,7 @@ echo "Migrations complete!"`)
 	if err := WaitForHTTPHealth(dataStorageURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage ready at %s\n\n", dataStorageURL)
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready at %s\n\n", dataStorageURL)
 
 	// ============================================================================
 	// INTEGRATION TEST PATTERN: HAPI uses FastAPI TestClient (in-process)
@@ -275,25 +275,25 @@ echo "Migrations complete!"`)
 	//
 	// See: docs/shared/HAPI_INTEGRATION_TEST_ARCHITECTURE_FIX_DEC_29_2025.md
 	// ============================================================================
-	fmt.Fprintf(writer, "ℹ️  HAPI Integration Test Pattern:\n")
-	fmt.Fprintf(writer, "   • HAPI runs via FastAPI TestClient (in-process, no container)\n")
-	fmt.Fprintf(writer, "   • Python tests import src.main:app directly\n")
-	fmt.Fprintf(writer, "   • External dependencies: PostgreSQL, Redis, Data Storage only\n")
-	fmt.Fprintf(writer, "   • See: holmesgpt-api/tests/integration/conftest.py\n\n")
+	_, _ = fmt.Fprintf(writer, "ℹ️  HAPI Integration Test Pattern:\n")
+	_, _ = fmt.Fprintf(writer, "   • HAPI runs via FastAPI TestClient (in-process, no container)\n")
+	_, _ = fmt.Fprintf(writer, "   • Python tests import src.main:app directly\n")
+	_, _ = fmt.Fprintf(writer, "   • External dependencies: PostgreSQL, Redis, Data Storage only\n")
+	_, _ = fmt.Fprintf(writer, "   • See: holmesgpt-api/tests/integration/conftest.py\n\n")
 
 	// ============================================================================
 	// Success Summary
 	// ============================================================================
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "✅ HolmesGPT API Integration Infrastructure Ready\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (ready)\n", HAPIIntegrationPostgresPort)
-	fmt.Fprintf(writer, "  Redis:          localhost:%d (ready)\n", HAPIIntegrationRedisPort)
-	fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d (healthy)\n", HAPIIntegrationDataStoragePort)
-	fmt.Fprintf(writer, "  HAPI:           FastAPI TestClient (in-process, no container)\n")
-	fmt.Fprintf(writer, "  Duration:       ~2-3 minutes (no HAPI Docker build)\n")
-	fmt.Fprintf(writer, "  Pattern:        DD-INTEGRATION-001 v2.0 (Go programmatic)\n")
-	fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "✅ HolmesGPT API Integration Infrastructure Ready\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d (ready)\n", HAPIIntegrationPostgresPort)
+	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d (ready)\n", HAPIIntegrationRedisPort)
+	_, _ = fmt.Fprintf(writer, "  DataStorage:    http://localhost:%d (healthy)\n", HAPIIntegrationDataStoragePort)
+	_, _ = fmt.Fprintf(writer, "  HAPI:           FastAPI TestClient (in-process, no container)\n")
+	_, _ = fmt.Fprintf(writer, "  Duration:       ~2-3 minutes (no HAPI Docker build)\n")
+	_, _ = fmt.Fprintf(writer, "  Pattern:        DD-INTEGRATION-001 v2.0 (Go programmatic)\n")
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	return nil
 }
@@ -310,7 +310,7 @@ echo "Migrations complete!"`)
 //	Replaces holmesgpt-api/tests/integration/conftest.py cleanup_infrastructure_after_tests()
 //	which used subprocess.run() to call docker-compose down.
 func StopHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
-	fmt.Fprintf(writer, "\n🛑 Stopping HolmesGPT API Integration Infrastructure...\n")
+	_, _ = fmt.Fprintf(writer, "\n🛑 Stopping HolmesGPT API Integration Infrastructure...\n")
 
 	// Stop containers (no HAPI container for integration tests - uses TestClient)
 	// Note: HAPI container only exists for E2E tests in Kind
@@ -322,16 +322,16 @@ func StopHolmesGPTAPIIntegrationInfrastructure(writer io.Writer) error {
 	CleanupContainers(containers, writer)
 
 	// Remove network
-	fmt.Fprintf(writer, "   Removing network %s...\n", HAPIIntegrationNetwork)
+	_, _ = fmt.Fprintf(writer, "   Removing network %s...\n", HAPIIntegrationNetwork)
 	_ = exec.Command("podman", "network", "rm", HAPIIntegrationNetwork).Run() // Ignore errors
 
 	// Prune dangling images (DD-INTEGRATION-001 v2.0: composite tags cleanup)
-	fmt.Fprintf(writer, "   Pruning dangling images (composite tags)...\n")
+	_, _ = fmt.Fprintf(writer, "   Pruning dangling images (composite tags)...\n")
 	pruneCmd := exec.Command("podman", "image", "prune", "-f")
 	pruneCmd.Stdout = writer
 	pruneCmd.Stderr = writer
 	_ = pruneCmd.Run() // Ignore errors
 
-	fmt.Fprintf(writer, "✅ Infrastructure cleaned up\n\n")
+	_, _ = fmt.Fprintf(writer, "✅ Infrastructure cleaned up\n\n")
 	return nil
 }

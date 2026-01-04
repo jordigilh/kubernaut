@@ -866,7 +866,7 @@ func SendConcurrentRequests(url string, count int, payload []byte) []error {
 				resultCh <- result{err: err}
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Read body to ensure full response processing
 			_, _ = io.ReadAll(resp.Body)
@@ -916,7 +916,7 @@ func MeasureConcurrentLatency(url string, count int, payload []byte) ([]time.Dur
 				resultCh <- result{err: err}
 				return
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Read body to ensure full response processing
 			_, _ = io.ReadAll(resp.Body)
@@ -990,7 +990,7 @@ func GetPrometheusMetrics(metricsURL string) (PrometheusMetrics, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metrics: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("metrics endpoint returned %d", resp.StatusCode)

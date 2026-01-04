@@ -262,7 +262,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			GinkgoWriter.Printf("  DataStorage health check failed: %v\n", err)
 			return 0
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		return resp.StatusCode
 	}, "30s", "1s").Should(Equal(http.StatusOK),
 		"❌ DataStorage failed to become healthy after infrastructure startup at %s\n"+
@@ -393,7 +393,7 @@ var _ = AfterSuite(func() {
 	}
 
 	if mockSlackServer != nil {
-		mockSlackServer.Close()
+		_ = mockSlackServer.Close()
 		GinkgoWriter.Println("✅ Mock Slack server stopped")
 	}
 

@@ -81,7 +81,7 @@ func createTestAuditEvent(baseURL, service, eventType, correlationID string) err
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -168,7 +168,7 @@ var _ = Describe("Audit Events Query API",  func() {
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Failed to create audit event: %s", eventType)
-				resp.Body.Close()
+				_ = resp.Body.Close()
 
 				// Add small delay to ensure chronological ordering
 				// Per TESTING_GUIDELINES.md: ACCEPTABLE - testing timing behavior (chronological order)
@@ -178,7 +178,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query by correlation_id
 			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -258,7 +258,7 @@ var _ = Describe("Audit Events Query API",  func() {
 						GinkgoWriter.Printf("ERROR: Got status %d, body: %s\n", resp.StatusCode, string(bodyBytes))
 					}
 					Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 			}
 
@@ -266,7 +266,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			targetEventType := "gateway.signal.received"
 			resp, err := http.Get(fmt.Sprintf("%s?event_type=%s&correlation_id=%s", baseURL, targetEventType, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -310,7 +310,7 @@ var _ = Describe("Audit Events Query API",  func() {
 		targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
 		resp, err := http.Get(fmt.Sprintf("%s?event_category=%s&correlation_id=%s", baseURL, targetService, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -350,7 +350,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query with since=24h
 			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&since=24h", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -391,7 +391,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&since=%s&until=%s",
 				baseURL, correlationID, since, until))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -438,13 +438,13 @@ var _ = Describe("Audit Events Query API",  func() {
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-				resp.Body.Close()
+				_ = resp.Body.Close()
 			}
 
 			// ACT: Query with multiple filters (ADR-034 field names)
 			resp, err := http.Get(fmt.Sprintf("%s?event_category=gateway&event_outcome=failure", baseURL))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -493,7 +493,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query page 1 (limit=50, offset=0)
 			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -521,7 +521,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query page 2 (limit=50, offset=50)
 			resp2, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=50", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp2.Body.Close()
+			defer func() { _ = resp2.Body.Close() }()
 
 			// ASSERT: Page 2 returns next 50 events
 			var response2 map[string]interface{}
@@ -540,7 +540,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query page 3 (limit=50, offset=100)
 			resp3, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=100", baseURL, correlationID))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp3.Body.Close()
+			defer func() { _ = resp3.Body.Close() }()
 
 			// ASSERT: Page 3 returns last 50 events
 			var response3 map[string]interface{}
@@ -568,7 +568,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query with invalid limit=0
 			resp, err := http.Get(fmt.Sprintf("%s?limit=0", baseURL))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 400 Bad Request
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -591,7 +591,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query with invalid limit=1001
 			resp, err := http.Get(fmt.Sprintf("%s?limit=1001", baseURL))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 400 Bad Request
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -611,7 +611,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query with invalid offset=-1
 			resp, err := http.Get(fmt.Sprintf("%s?offset=-1", baseURL))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 400 Bad Request
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -633,7 +633,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query with invalid since format
 			resp, err := http.Get(fmt.Sprintf("%s?since=invalid", baseURL))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 400 Bad Request
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
@@ -656,7 +656,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ACT: Query for non-existent correlation_id
 			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=rr-9999-999", baseURL))
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// ASSERT: Response is 200 OK (not 404)
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))

@@ -80,7 +80,7 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 
 	AfterEach(func() {
 		if testServer != nil {
-			testServer.Close()
+			_ = testServer.Close()
 		}
 		if cancel != nil {
 			cancel()
@@ -293,7 +293,7 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			client := &http.Client{}
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS VALIDATION: HTTP 415 Unsupported Media Type
 			Expect(resp.StatusCode).To(Equal(415), "Wrong Content-Type should return 415")

@@ -186,7 +186,7 @@ func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writ
 		cmd := exec.Command("podman", "exec", containerName,
 			"pg_isready", "-U", dbUser, "-d", dbName)
 		if cmd.Run() == nil {
-			fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
+			_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
 			break
 		}
 		if i == maxAttempts {
@@ -208,7 +208,7 @@ func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writ
 	// This race condition was discovered in:
 	// - AIAnalysis integration tests (Jan 2, 2026)
 	// - Fixed by adding queryability verification
-	fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
+	_, _ = fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
 	maxQueryAttempts := 10
 	for i := 1; i <= maxQueryAttempts; i++ {
 		testQueryCmd := exec.Command("podman", "exec", containerName,
@@ -216,14 +216,14 @@ func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writ
 		testQueryCmd.Stdout = writer
 		testQueryCmd.Stderr = writer
 		if testQueryCmd.Run() == nil {
-			fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n\n", i, maxQueryAttempts)
+			_, _ = fmt.Fprintf(writer, "   ✅ Database queryable (attempt %d/%d)\n\n", i, maxQueryAttempts)
 			return nil
 		}
 		if i == maxQueryAttempts {
 			return fmt.Errorf("database failed to become queryable after %d attempts (accepting connections but not fully initialized)", maxQueryAttempts)
 		}
 		if i < maxQueryAttempts {
-			fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxQueryAttempts)
+			_, _ = fmt.Fprintf(writer, "   ⏳ Database not yet queryable, retrying... (attempt %d/%d)\n", i, maxQueryAttempts)
 			time.Sleep(1 * time.Second)
 		}
 	}
@@ -291,7 +291,7 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 		cmd := exec.Command("podman", "exec", containerName, "redis-cli", "ping")
 		output, err := cmd.CombinedOutput()
 		if err == nil && string(output) == "PONG\n" {
-			fmt.Fprintf(writer, "   ✅ Redis ready (attempt %d/%d)\n", i, maxAttempts)
+			_, _ = fmt.Fprintf(writer, "   ✅ Redis ready (attempt %d/%d)\n", i, maxAttempts)
 			return nil
 		}
 		if i < maxAttempts {
@@ -323,19 +323,19 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 		attempt++
 		resp, err := client.Get(healthURL)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				fmt.Fprintf(writer, "   ✅ Health check passed (attempt %d)\n", attempt)
+				_, _ = fmt.Fprintf(writer, "   ✅ Health check passed (attempt %d)\n", attempt)
 				return nil
 			}
 			// Log every 5th non-OK status for debugging
 			if attempt%5 == 0 {
-				fmt.Fprintf(writer, "   ⏳ Attempt %d: Status %d (waiting for 200 OK)...\n", attempt, resp.StatusCode)
+				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Status %d (waiting for 200 OK)...\n", attempt, resp.StatusCode)
 			}
 		} else {
 			// Log every 5th connection error for debugging
 			if attempt%5 == 0 {
-				fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
+				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
 			}
 		}
 		time.Sleep(1 * time.Second)
@@ -503,20 +503,20 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	}
 
 	// STEP 1: Generate config files from template (ADR-030 requirement)
-	fmt.Fprintf(writer, "   Generating DataStorage config and secrets (ADR-030)...\n")
+	_, _ = fmt.Fprintf(writer, "   Generating DataStorage config and secrets (ADR-030)...\n")
 	configDir, err := generateDataStorageConfig(cfg, projectRoot)
 	if err != nil {
 		return fmt.Errorf("failed to generate config files: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
+	_, _ = fmt.Fprintf(writer, "   ✅ Config and secrets generated: %s\n", configDir)
 
 	// STEP 2: Build DataStorage image using shared utility
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
-	fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", cfg.ImageTag)
+	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (%s)...\n", cfg.ImageTag)
 	if err := buildDataStorageImageWithTag(cfg.ImageTag, writer); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built\n")
 
 	// STEP 3: Start DataStorage container
 	runArgs := []string{"run", "-d",

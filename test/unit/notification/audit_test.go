@@ -570,7 +570,7 @@ var _ = Describe("Audit Helpers", func() {
 						Expect(err).ToNot(HaveOccurred())
 
 						// Non-blocking audit write
-						mockStore.StoreAudit(context.Background(), event)
+						_ = mockStore.StoreAudit(context.Background(), event)
 					}(i)
 				}
 
