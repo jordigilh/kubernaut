@@ -140,13 +140,6 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 //
 // Uses structured types per DD-AUDIT-004 for compile-time type safety.
 func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
-	// DEBUG AA-BUG-001: Log every call to understand why events aren't being created
-	c.log.Info("🔍 [AA-BUG-001 DEBUG] RecordPhaseTransition called",
-		"from", from,
-		"to", to,
-		"name", analysis.Name,
-		"correlationID", analysis.Spec.RemediationID)
-	
 	// Idempotency check: Only record if phase actually changed
 	if from == to {
 		c.log.V(1).Info("Skipping phase transition audit - phase unchanged",
