@@ -598,53 +598,67 @@ labels := result if {
 	GinkgoWriter.Printf("✅ Process setup complete (k8sClient initialized for this process)\n")
 })
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
+// SP-BUG-005: Use SynchronizedAfterSuite to make Process 1-only cleanup explicit
+// Function 1: Runs on ALL processes (per-process cleanup)
+// Function 2: Runs ONLY on Process 1 (shared infrastructure cleanup)
+var _ = SynchronizedAfterSuite(
+	func() {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// ALL PROCESSES: Per-process cleanup
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		By("Tearing down per-process test environment")
 
-	// Cancel context if it was created
-	if cancel != nil {
-		cancel()
-	}
-
-	// Clean up audit infrastructure (BR-SP-090)
-	// SP-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
-	// This prevents "connection refused" errors during cleanup when the
-	// background writer tries to flush buffered events after DataStorage is stopped.
-	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
-	GinkgoWriter.Println("🧹 Flushing audit store before infrastructure shutdown...")
-
-	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer flushCancel()
-
-	err := auditStore.Flush(flushCtx)
-	if err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
-	}
-
-	err = auditStore.Close()
-	if err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store closed")
-	}
-
-	// Stop testEnv if it was created
-	if testEnv != nil {
-		err := testEnv.Stop()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: Failed to stop testEnv: %v\n", err)
+		// Cancel context if it was created
+		if cancel != nil {
+			cancel()
 		}
-	}
 
-	// DD-TEST-002: Stop infrastructure using programmatic Go setup (NOT podman-compose)
-	// SP-SHUTDOWN-001: Safe to stop now - audit events already flushed
-	By("Stopping SignalProcessing infrastructure (programmatic Podman)")
-	if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
-		GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
-	}
+		// Stop testEnv if it was created (each process has its own)
+		if testEnv != nil {
+			err := testEnv.Stop()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️ Warning: Failed to stop testEnv: %v\n", err)
+			}
+		}
+	},
+	func() {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// PROCESS 1 ONLY: Shared infrastructure cleanup
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		By("Tearing down shared infrastructure (Process 1 only)")
 
+		// Clean up audit infrastructure (BR-SP-090)
+		// SP-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
+		// This prevents "connection refused" errors during cleanup when the
+		// background writer tries to flush buffered events after DataStorage is stopped.
+		// Integration tests MUST always use real DataStorage (DD-TESTING-001)
+		GinkgoWriter.Println("🧹 Flushing audit store before infrastructure shutdown...")
+
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer flushCancel()
+
+		err := auditStore.Flush(flushCtx)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+		}
+
+		err = auditStore.Close()
+		if err != nil {
+			GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Audit store closed")
+		}
+
+		// DD-TEST-002: Stop infrastructure using programmatic Go setup (NOT podman-compose)
+		// SP-SHUTDOWN-001: Safe to stop now - audit events already flushed
+		By("Stopping SignalProcessing infrastructure (programmatic Podman)")
+		if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
+		}
+	},
+)
 	// DD-TEST-002 + DD-INTEGRATION-001 v2.0: Clean up composite-tagged images
 	By("Cleaning up infrastructure images to prevent disk space issues")
 	// Prune dangling images (composite tags from this test run)
