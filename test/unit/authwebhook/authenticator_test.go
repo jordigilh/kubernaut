@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package authwebhook_test
+package authwebhook
 
 import (
 	"context"
@@ -28,7 +28,7 @@ import (
 )
 
 // TDD RED Phase: Authenticator Tests
-// BR-WE-013: Extract authenticated user identity from Kubernetes admission requests
+// BR-AUTH-001: Extract authenticated user identity from Kubernetes admission requests
 // SOC2 CC8.1 Requirement: Operator attribution for critical actions
 //
 // Per TESTING_GUIDELINES.md: Unit tests validate business behavior + implementation correctness
@@ -36,7 +36,7 @@ import (
 //
 // Tests written BEFORE implementation exists (TDD RED Phase)
 
-var _ = Describe("BR-WE-013: Authenticated User Extraction", func() {
+var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 	var (
 		authenticator *authwebhook.Authenticator
 		ctx           context.Context

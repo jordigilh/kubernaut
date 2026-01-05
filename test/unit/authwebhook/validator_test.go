@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package authwebhook_test
+package authwebhook
 
 import (
 	"time"
@@ -26,7 +26,7 @@ import (
 )
 
 // TDD RED Phase: Validator Tests
-// BR-WE-013: Validate operator justification and timing for audit completeness
+// BR-AUTH-001: Validate operator justification and timing for audit completeness
 // SOC2 CC7.4 Requirement: Audit completeness - ensure sufficient justification
 // SOC2 CC8.1 Requirement: Attribution - prevent replay attacks via timestamp validation
 //
@@ -35,7 +35,7 @@ import (
 //
 // Tests written BEFORE implementation exists (TDD RED Phase)
 
-var _ = Describe("BR-WE-013: Operator Justification Validation", func() {
+var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 	Describe("ValidateReason - SOC2 CC7.4 Audit Completeness", func() {
 		// Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
 		// Business Outcome: Prevent operators from bypassing audit completeness requirements
@@ -52,48 +52,48 @@ var _ = Describe("BR-WE-013: Operator Justification Validation", func() {
 
 			// BUSINESS PROTECTION: Accept sufficient documentation (SOC2 CC7.4 compliance)
 			Entry("accepts detailed operational justification for block clearance",
-				"Investigation complete after root cause analysis confirmed memory leak in payment service pod", 
+				"Investigation complete after root cause analysis confirmed memory leak in payment service pod",
 				10, true,
 				"Operators can document critical decisions with sufficient detail for audit completeness"),
 			Entry("accepts justification meeting minimum documentation standard",
-				"one two three four five six seven eight nine ten", 
+				"one two three four five six seven eight nine ten",
 				10, true,
 				"Enforces minimum documentation threshold for SOC2 compliance"),
 
 			// BUSINESS PROTECTION: Reject vague/insufficient justifications (SOC2 CC7.4 violation)
 			Entry("rejects vague justification lacking operational context",
-				"Fixed it now", 
+				"Fixed it now",
 				10, false,
 				"Prevents weak audit trails that fail to document operator intent"),
 			Entry("rejects single-word non-descriptive justification",
-				"Fixed", 
+				"Fixed",
 				10, false,
 				"Prevents audit records with no meaningful information for compliance review"),
 
 			// BUSINESS PROTECTION: Mandatory justification (no bypass)
 			Entry("rejects empty justification to enforce mandatory documentation",
-				"", 
+				"",
 				10, false,
 				"Prevents operators from bypassing audit documentation requirement"),
 			Entry("rejects whitespace-only justification to prevent circumvention",
-				"   ", 
+				"   ",
 				10, false,
 				"Prevents operators from using whitespace to bypass validation"),
 
 			// EDGE CASE PROTECTION: Configuration validation (defensive programming)
 			Entry("rejects negative minimum to prevent misconfiguration",
-				"valid reason text", 
+				"valid reason text",
 				-1, false,
 				"Fail-safe: Invalid configuration cannot weaken audit requirements"),
 			Entry("rejects zero minimum to ensure meaningful documentation",
-				"valid reason text", 
+				"valid reason text",
 				0, false,
 				"Fail-safe: Zero minimum would bypass audit completeness requirement"),
 		)
 	})
 
 	Describe("ValidateTimestamp - SOC2 CC8.1 Replay Attack Prevention", func() {
-		// Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios  
+		// Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
 		// Business Outcome: Prevent replay attacks on critical operations
 
 		DescribeTable("prevents replay attacks and ensures request freshness",
