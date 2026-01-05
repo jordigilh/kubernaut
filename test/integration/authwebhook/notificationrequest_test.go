@@ -195,27 +195,40 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
 				"Status update to Sending should succeed")
 
-			By("Operator cancels notification mid-processing")
-			deleteAndWaitForAnnotations(ctx, nr, "kubernaut.ai/cancelled-by")
+		By("Resetting mock audit manager for this test")
+		mockAuditMgr.events = []audit.AuditEvent{} // Clear events from previous tests
 
-			By("Verifying webhook captured attribution during processing")
-			fetchedNR := &notificationv1.NotificationRequest{}
-			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)
+		By("Operator cancels notification mid-processing")
+		// Per BR-AUTH-001: DELETE captures attribution via audit trail
+		Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
+			"DELETE should succeed and record audit event")
 
-			if err == nil {
-				Expect(fetchedNR.Status.Phase).To(Equal(notificationv1.NotificationPhaseSending),
-					"Phase should remain Sending (cancellation is async)")
-				annotations := fetchedNR.GetAnnotations()
-				Expect(annotations).ToNot(BeNil())
-				Expect(annotations["kubernaut.ai/cancelled-by"]).ToNot(BeEmpty(),
-					"Webhook should capture operator identity even during processing")
+		By("Verifying webhook captured attribution during processing via audit trail")
+		// Verify audit event was recorded
+		Eventually(func() int {
+			return len(mockAuditMgr.events)
+		}, 5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"Webhook should record audit event even during processing")
 
-				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-				GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation Attribution\n")
-				GinkgoWriter.Printf("   • Phase: %s (processing continues)\n", fetchedNR.Status.Phase)
-				GinkgoWriter.Printf("   • Cancelled by: %s\n", annotations["kubernaut.ai/cancelled-by"])
-				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		// Verify the audit event content
+		var deletionEvent *audit.AuditEvent
+		for i := range mockAuditMgr.events {
+			if mockAuditMgr.events[i].EventType == "notification.request.deleted" {
+				deletionEvent = &mockAuditMgr.events[i]
+				break
 			}
+		}
+
+		Expect(deletionEvent).ToNot(BeNil(),
+			"Audit trail should contain deletion event")
+		Expect(deletionEvent.ActorID).ToNot(BeEmpty(),
+			"ActorID should be captured even during processing")
+
+		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation via Audit\n")
+		GinkgoWriter.Printf("   • Cancelled by: %s\n", deletionEvent.ActorID)
+		GinkgoWriter.Printf("   • Audit captured during 'Sending' phase\n")
+		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
 })
