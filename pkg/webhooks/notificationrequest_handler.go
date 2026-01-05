@@ -89,7 +89,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 
 	// Note: Kubernetes API server does NOT allow mutating objects during DELETE operations.
 	// However, we CAN write audit traces to capture attribution for SOC2 compliance.
-	
+
 	// Write deletion audit event
 	eventData := map[string]interface{}{
 		"notification_id": nr.Name,
