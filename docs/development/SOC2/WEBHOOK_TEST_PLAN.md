@@ -117,27 +117,67 @@ go test -v -p 4 -cover ./test/integration/webhooks/... | grep "coverage:" | awk 
 
 ---
 
-## 🧪 **Unit Tests (70+ Tests, <1s Total)**
+## 🧪 **Unit Tests (28 Tests, <1s Total)**
 
 ### **Component: Common Auth (`test/unit/authwebhook/`)**
 
-**23 tests (10 planned + 13 additional), <100ms total**
+**28 tests total (10 original + 5 missing + 13 additional edge cases), <100ms total**
 
 **Framework**: Ginkgo/Gomega BDD (per project standard)
 **Pattern**: `DescribeTable` + `Entry` for similar scenarios
 
 ---
 
-### **📋 Test Case ID Reference - Authenticator**
+## **📊 Comprehensive Test Case ID Reference (AUTH-001 to AUTH-023)**
 
-| Test ID | Description | BR | SOC2 Control |
-|---------|-------------|----|--------------| 
-| AUTH-001 | Extract Valid User Info | BR-AUTH-001 | CC8.1 |
-| AUTH-002 | Reject Missing Username | BR-AUTH-001 | CC8.1 |
-| AUTH-003 | Reject Empty UID | BR-AUTH-001 | CC8.1 |
-| AUTH-004 | Extract Multiple Groups | BR-AUTH-001 | CC8.1 |
-| AUTH-009 | Extract User with No Groups | BR-AUTH-001 | CC8.1 |
-| AUTH-010 | Extract Service Account User | BR-AUTH-001 | CC8.1 |
+### **Authenticator Tests (AUTH-001 to AUTH-012)**
+
+| Test ID | Description | Category | BR | SOC2 | Status |
+|---------|-------------|----------|----|----|---|
+| **AUTH-001** | Extract Valid User Info | Authenticator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-002** | Reject Missing Username | Authenticator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-003** | Reject Empty UID | Authenticator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-004** | Extract Multiple Groups | Authenticator | BR-AUTH-001 | CC8.1 | ⬜ **To Implement** |
+| **AUTH-009** | Extract User with No Groups | Authenticator | BR-AUTH-001 | CC8.1 | ⬜ **To Implement** |
+| **AUTH-010** | Extract Service Account User | Authenticator | BR-AUTH-001 | CC8.1 | ⬜ **To Implement** |
+| **AUTH-011** | Format Operator Identity | Authenticator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-012** | Reject Malformed Requests | Authenticator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+
+### **Validator Tests - Reason (AUTH-005 to AUTH-016)**
+
+| Test ID | Description | Category | BR | SOC2 | Status |
+|---------|-------------|----------|----|----|---|
+| **AUTH-005** | ValidateReason - Accept Valid | Validator | BR-AUTH-001 | CC7.4 | ✅ Implemented |
+| **AUTH-006** | ValidateReason - Reject Empty | Validator | BR-AUTH-001 | CC7.4 | ✅ Implemented |
+| **AUTH-007** | ValidateReason - Reject Too Long | Validator | BR-AUTH-001 | CC7.4 | ⬜ **To Implement** |
+| **AUTH-008** | ValidateReason - Accept Max Length | Validator | BR-AUTH-001 | CC7.4 | ⬜ **To Implement** |
+| **AUTH-013** | ValidateReason - Reject Vague | Validator | BR-AUTH-001 | CC7.4 | ✅ Implemented |
+| **AUTH-014** | ValidateReason - Reject Single Word | Validator | BR-AUTH-001 | CC7.4 | ✅ Implemented |
+| **AUTH-015** | ValidateReason - Reject Negative Min | Validator | BR-AUTH-001 | CC7.4 | ✅ Implemented |
+| **AUTH-016** | ValidateReason - Reject Zero Min | Validator | BR-AUTH-001 | CC7.4 | ✅ Implemented |
+
+### **Validator Tests - Timestamp (AUTH-017 to AUTH-023)**
+
+| Test ID | Description | Category | BR | SOC2 | Status |
+|---------|-------------|----------|----|----|---|
+| **AUTH-017** | ValidateTimestamp - Accept Recent | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-018** | ValidateTimestamp - Accept Boundary | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-019** | ValidateTimestamp - Reject Future | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-020** | ValidateTimestamp - Reject Slightly Future | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-021** | ValidateTimestamp - Reject Stale | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-022** | ValidateTimestamp - Reject Very Old | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+| **AUTH-023** | ValidateTimestamp - Reject Zero | Validator | BR-AUTH-001 | CC8.1 | ✅ Implemented |
+
+### **Implementation Summary**
+
+| Category | Total | Implemented | To Implement |
+|----------|-------|-------------|--------------|
+| **Authenticator** | 8 | 5 | 3 (AUTH-004, 009, 010) |
+| **Validator (Reason)** | 8 | 6 | 2 (AUTH-007, 008) |
+| **Validator (Timestamp)** | 7 | 7 | 0 |
+| **TOTAL** | **23** | **18** | **5** |
+
+**Note**: AUTH-011 to AUTH-023 are additional tests discovered during implementation that provide critical edge case coverage for SOC2 compliance (CC7.4 audit completeness, CC8.1 replay attack prevention).
 
 ---
 
@@ -244,17 +284,6 @@ Context("when validating user extraction scenarios", func() {
     )
 })
 ```
-
----
-
-### **📋 Test Case ID Reference - Validator**
-
-| Test ID | Description | BR | SOC2 Control |
-|---------|-------------|----|--------------| 
-| AUTH-005 | ValidateReason - Accept Valid Input | BR-AUTH-001 | CC7.4 |
-| AUTH-006 | ValidateReason - Reject Empty Reason | BR-AUTH-001 | CC7.4 |
-| AUTH-007 | ValidateReason - Reject Overly Long | BR-AUTH-001 | CC7.4 |
-| AUTH-008 | ValidateReason - Accept at Max Length | BR-AUTH-001 | CC7.4 |
 
 ---
 
