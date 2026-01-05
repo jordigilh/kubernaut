@@ -11,24 +11,37 @@
 
 | Resource | Operation | Audit Event | Status Fields | Status |
 |----------|-----------|-------------|---------------|--------|
-| **WorkflowExecution** | UPDATE (block clear) | ⚠️ Partial | ✅ Implemented | ⚠️ **Needs Enhancement** |
-| **RemediationApprovalRequest** | UPDATE (decision) | ⚠️ Partial | ✅ Implemented | ⚠️ **Needs Enhancement** |
-| **NotificationRequest** | DELETE | ✅ Complete | ❌ N/A (DELETE) | ✅ **CORRECT** |
+| **WorkflowExecution** | UPDATE (block clear) | ⚠️ Missing | ✅ MANDATORY (populated) | ⚠️ **Needs Enhancement** |
+| **RemediationApprovalRequest** | UPDATE (decision) | ⚠️ Missing | ✅ MANDATORY (populated) | ⚠️ **Needs Enhancement** |
+| **NotificationRequest** | DELETE | ✅ Complete | ❌ Cannot populate | ✅ **CORRECT** |
 
 ---
 
 ## 🔍 Implementation Analysis
+
+### Status Field Policy (MANDATORY)
+
+**CRITICAL**: Status fields are **MANDATORY** for UPDATE operations, not optional:
+- ✅ **Always populate** status fields when operation allows mutation
+- ✅ Provide immediate "who did what" access (UI, API, debugging)
+- ✅ Immutable once set (operators cannot modify status fields)
+- ✅ Audit table remains compliance source of truth
+
+**Current Good Practice**: Both WorkflowExecution and RemediationApprovalRequest webhooks **correctly populate status fields** ✅
+
+**Missing**: Complete audit events (WHO + WHAT + ACTION details)
+
+---
 
 ### WorkflowExecution (UPDATE - Block Clearance)
 
 **Current Implementation**: `pkg/webhooks/workflowexecution_handler.go`
 
 ```go
+// ✅ CORRECT: Status fields populated (ClearedBy, ClearedAt)
 // ❌ MISSING: Complete audit event
-// Current: No audit event written
-// Status fields populated: ClearedBy, ClearedAt ✅
 
-// Should be:
+// Should add:
 h.auditManager.RecordEvent(ctx, audit.Event{
     EventType: "workflowexecution.block.cleared",
     ActorID:   authCtx.Username,
@@ -51,11 +64,10 @@ h.auditManager.RecordEvent(ctx, audit.Event{
 **Current Implementation**: `pkg/webhooks/remediationapprovalrequest_handler.go`
 
 ```go
+// ✅ CORRECT: Status fields populated (DecidedBy, DecidedAt)
 // ❌ MISSING: Complete audit event
-// Current: No audit event written
-// Status fields populated: DecidedBy, DecidedAt ✅
 
-// Should be:
+// Should add:
 h.auditManager.RecordEvent(ctx, audit.Event{
     EventType: "remediationapproval.decision.made",
     ActorID:   authCtx.Username,
