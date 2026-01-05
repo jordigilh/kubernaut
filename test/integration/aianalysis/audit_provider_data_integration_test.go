@@ -55,6 +55,7 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
 // ========================================
@@ -89,6 +90,62 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 		dsClient, err = dsgen.NewClientWithResponses(datastorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 	})
+
+	// ========================================
+	// SHARED HELPER FUNCTIONS (DD-TESTING-001 Compliance)
+	// ========================================
+
+	// queryAuditEvents queries Data Storage for audit events using OpenAPI client (DD-API-001).
+	// Returns: Array of audit events (OpenAPI-generated types)
+	queryAuditEvents := func(correlationID string, eventType *string) ([]dsgen.AuditEvent, error) {
+		limit := 100
+		params := &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			Limit:         &limit,
+		}
+		if eventType != nil {
+			params.EventType = eventType
+		}
+
+		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query DataStorage: %w", err)
+		}
+		if resp.JSON200 == nil {
+			return nil, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
+		}
+		if resp.JSON200.Data == nil {
+			return []dsgen.AuditEvent{}, nil
+		}
+		return *resp.JSON200.Data, nil
+	}
+
+	// waitForAuditEvents polls Data Storage until exact expected count appears (DD-TESTING-001 §256-300).
+	// MANDATORY: Uses Equal() for deterministic count validation, not BeNumerically(">=")
+	waitForAuditEvents := func(correlationID string, eventType string, expectedCount int) []dsgen.AuditEvent {
+		var events []dsgen.AuditEvent
+		Eventually(func() int {
+			var err error
+			events, err = queryAuditEvents(correlationID, &eventType)
+			if err != nil {
+				GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
+				return 0
+			}
+			return len(events)
+		}, 60*time.Second, 2*time.Second).Should(Equal(expectedCount),
+			fmt.Sprintf("DD-TESTING-001 violation: Should have EXACTLY %d %s events (controller idempotency)", expectedCount, eventType))
+		return events
+	}
+
+	// countEventsByType counts occurrences of each event type (DD-TESTING-001 helper pattern).
+	// Returns: map[eventType]count for deterministic validation
+	countEventsByType := func(events []dsgen.AuditEvent) map[string]int {
+		counts := make(map[string]int)
+		for _, event := range events {
+			counts[event.EventType]++
+		}
+		return counts
+	}
 
 	// ========================================
 	// TEST 1: Hybrid Capture Validation
@@ -171,43 +228,27 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 			// ========================================
 			// STEP 1: Verify HAPI audit event (provider perspective)
 			// ========================================
-			By("Querying Data Storage for HAPI audit event (holmesgpt.response.complete)")
-			hapiEventType := "holmesgpt.response.complete"
-			hapiResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventType:     &hapiEventType,
-			})
-			Expect(err).ToNot(HaveOccurred(), "HAPI event query should succeed")
-			Expect(hapiResp.JSON200).ToNot(BeNil(), "Should receive 200 response")
-			Expect(hapiResp.JSON200.Data).ToNot(BeNil(), "Response should contain data array")
-
-		hapiEvents := *hapiResp.JSON200.Data
-		// NOTE: AIAnalysis controller may make 1-2 HAPI calls per analysis due to controller
-		// reconciliation patterns (timing-dependent). We accept "at least 1" to validate
-		// hybrid audit capture is working correctly.
-		// TODO: Investigate inconsistent HAPI call count (potential cost/performance issue)
-		Expect(len(hapiEvents)).To(BeNumerically(">=", 1), "Should have at least 1 HAPI event")
-		GinkgoWriter.Printf("✅ Found HAPI audit events: holmesgpt.response.complete (count: %d)\n", len(hapiEvents))
-
-			// Validate HAPI event metadata
+			By("Waiting for HAPI audit event (holmesgpt.response.complete)")
+			hapiEvents := waitForAuditEvents(correlationID, "holmesgpt.response.complete", 1)
 			hapiEvent := hapiEvents[0]
-			Expect(string(hapiEvent.EventCategory)).To(Equal("analysis"),
-				"HAPI event_category should be 'analysis'")
-			Expect(hapiEvent.ActorId).ToNot(BeNil(), "HAPI actor_id should be set")
-			Expect(*hapiEvent.ActorId).To(Equal("holmesgpt-api"),
-				"HAPI actor_id should be 'holmesgpt-api'")
-			Expect(hapiEvent.CorrelationId).To(Equal(correlationID),
-				"HAPI correlation_id should match RemediationID")
-			Expect(string(hapiEvent.EventOutcome)).To(Equal("success"),
-				"HAPI event_outcome should be 'success'")
 
-			// Validate HAPI event data structure (provider perspective - full response)
-			Expect(hapiEvent.EventData).ToNot(BeNil(), "HAPI event_data should be set")
+			By("Validating HAPI event metadata with testutil")
+			actorID := "holmesgpt-api"
+			testutil.ValidateAuditEvent(hapiEvent, testutil.ExpectedAuditEvent{
+				EventType:     "holmesgpt.response.complete",
+				EventCategory: dsgen.AuditEventEventCategoryAnalysis,
+				EventAction:   "response_sent",
+				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				CorrelationID: correlationID,
+				ActorID:       &actorID,
+			})
+
+			By("Validating HAPI event_data structure (provider perspective - full response)")
 			hapiEventData, ok := hapiEvent.EventData.(map[string]interface{})
 			Expect(ok).To(BeTrue(), "HAPI event_data should be a map")
 
-			Expect(hapiEventData).To(HaveKey("response_data"),
-				"HAPI event_data should contain 'response_data' field")
+			// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
+			testutil.ValidateAuditEventDataNotEmpty(hapiEvent, "response_data")
 			responseData, ok := hapiEventData["response_data"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "response_data should be a map")
 
@@ -223,44 +264,34 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 			// ========================================
 			// STEP 2: Verify AA audit event (consumer perspective)
 			// ========================================
-			By("Querying Data Storage for AA audit event (aianalysis.analysis.completed)")
-			aaEventType := "aianalysis.analysis.completed"
-			aaResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventType:     &aaEventType,
-			})
-			Expect(err).ToNot(HaveOccurred(), "AA event query should succeed")
-			Expect(aaResp.JSON200).ToNot(BeNil(), "Should receive 200 response")
-			Expect(aaResp.JSON200.Data).ToNot(BeNil(), "Response should contain data array")
-
-		aaEvents := *aaResp.JSON200.Data
-		// NOTE: Controller may create 1-2 AA events due to reconciliation timing (same as HAPI)
-		Expect(len(aaEvents)).To(BeNumerically(">=", 1), "Should have at least 1 AA event")
-		GinkgoWriter.Printf("✅ Found AA audit event: aianalysis.analysis.completed (count: %d)\n", len(aaEvents))
-
-			// Validate AA event metadata
+			By("Waiting for AA audit event (aianalysis.analysis.completed)")
+			aaEvents := waitForAuditEvents(correlationID, "aianalysis.analysis.completed", 1)
 			aaEvent := aaEvents[0]
-			Expect(string(aaEvent.EventCategory)).To(Equal("analysis"),
-				"AA event_category should be 'analysis'")
-			Expect(aaEvent.ActorId).ToNot(BeNil(), "AA actor_id should be set")
-			Expect(*aaEvent.ActorId).To(Equal("aianalysis-controller"),
-				"AA actor_id should be 'aianalysis-controller'")
-			Expect(aaEvent.CorrelationId).To(Equal(correlationID),
-				"AA correlation_id should match RemediationID")
-			Expect(string(aaEvent.EventOutcome)).To(Equal("success"),
-				"AA event_outcome should be 'success'")
 
-			// Validate AA event data structure (consumer perspective - summary + business context)
-			Expect(aaEvent.EventData).ToNot(BeNil(), "AA event_data should be set")
-			aaEventData, ok := aaEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "AA event_data should be a map")
+			By("Validating AA event metadata with testutil")
+			aaActorID := "aianalysis-controller"
+			testutil.ValidateAuditEvent(aaEvent, testutil.ExpectedAuditEvent{
+				EventType:     "aianalysis.analysis.completed",
+				EventCategory: dsgen.AuditEventEventCategoryAnalysis,
+				EventAction:   "analysis_complete",
+				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				CorrelationID: correlationID,
+				ActorID:       &aaActorID,
+			})
 
-			// Validate provider_response_summary (consumer perspective on provider data)
-			Expect(aaEventData).To(HaveKey("provider_response_summary"),
-				"AA event_data should contain 'provider_response_summary' field")
-			summary, ok := aaEventData["provider_response_summary"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "provider_response_summary should be a map")
+			By("Validating AA event_data structure (consumer perspective - summary + business context)")
+			// DD-AUDIT-005: Validate provider_response_summary and business context fields
+			testutil.ValidateAuditEventDataNotEmpty(aaEvent, 
+				"provider_response_summary", 
+				"phase", 
+				"approval_required", 
+				"degraded_mode", 
+				"warnings_count")
 
+			aaEventData := aaEvent.EventData.(map[string]interface{})
+			summary := aaEventData["provider_response_summary"].(map[string]interface{})
+
+			// Validate provider_response_summary structure
 			Expect(summary).To(HaveKey("incident_id"), "Summary should have incident_id")
 			Expect(summary).To(HaveKey("analysis_preview"), "Summary should have analysis_preview")
 			Expect(summary).To(HaveKey("needs_human_review"), "Summary should have needs_human_review")
@@ -268,10 +299,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 			GinkgoWriter.Println("✅ AA event contains provider_response_summary")
 
 			// Validate AA business context (not in HAPI event)
-			Expect(aaEventData).To(HaveKey("phase"), "AA should have phase")
-			Expect(aaEventData).To(HaveKey("approval_required"), "AA should have approval_required")
-			Expect(aaEventData).To(HaveKey("degraded_mode"), "AA should have degraded_mode")
-			Expect(aaEventData).To(HaveKey("warnings_count"), "AA should have warnings_count")
+			Expect(aaEventData["phase"]).To(Equal("Completed"), "Phase should be Completed")
 			GinkgoWriter.Println("✅ AA event contains business context fields")
 
 			// ========================================
@@ -376,8 +404,9 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 		Expect(err).ToNot(HaveOccurred())
 		Expect(hapiResp.JSON200.Data).ToNot(BeNil())
 		hapiEvents := *hapiResp.JSON200.Data
-		// NOTE: Controller may make 1-2 HAPI calls (timing-dependent, see test 1 comment)
-		Expect(len(hapiEvents)).To(BeNumerically(">=", 1), "Should have at least 1 HAPI event")
+		// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
+		Expect(len(hapiEvents)).To(Equal(1), 
+			"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event")
 
 			// Extract response_data
 			hapiEventData := hapiEvents[0].EventData.(map[string]interface{})
@@ -501,14 +530,14 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 			By("Counting events by type")
 			eventCounts := countEventsByType(allEvents)
 
-		// Should have at least these 2 hybrid audit events
+		// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
 		hapiCount := eventCounts["holmesgpt.response.complete"]
 		aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
 
-		// NOTE: Controller may make 1-2 HAPI calls (timing-dependent, see test 1 comment)
-		// Same applies to AA events due to controller reconciliation patterns
-		Expect(hapiCount).To(BeNumerically(">=", 1), "Should have at least 1 HAPI event")
-		Expect(aaCompletedCount).To(BeNumerically(">=", 1), "Should have at least 1 AA completion event")
+		Expect(hapiCount).To(Equal(1), 
+			"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event (controller idempotency)")
+		Expect(aaCompletedCount).To(Equal(1), 
+			"DD-TESTING-001 violation: Should have EXACTLY 1 AA completion event (controller idempotency)")
 
 			GinkgoWriter.Printf("📊 Event counts for correlation_id %s:\n", correlationID)
 			for eventType, count := range eventCounts {
