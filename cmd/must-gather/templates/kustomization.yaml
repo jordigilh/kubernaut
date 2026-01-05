@@ -1,0 +1,25 @@
+---
+# Kubernaut Must-Gather - Kustomize deployment
+# Deploy RBAC resources for must-gather
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - serviceaccount.yaml
+  - clusterrole.yaml
+  - clusterrolebinding.yaml
+
+commonLabels:
+  app.kubernetes.io/name: must-gather
+  app.kubernetes.io/part-of: kubernaut
+  app.kubernetes.io/component: diagnostics
+  app.kubernetes.io/version: v1.0.0
+
+images:
+  - name: must-gather
+    newName: quay.io/kubernaut/must-gather
+    newTag: v1.0.0
+
