@@ -1163,6 +1163,49 @@ func (s *Server) parseCRDReference(ref string) (namespace, name string) {
 // DD-AUDIT-003: Audit Event Emission (P0 Compliance)
 // =============================================================================
 
+// extractRRReconstructionFields sanitizes signal fields for audit event storage
+//
+// ========================================
+// RR RECONSTRUCTION FIELD SANITIZATION (REFACTOR PHASE)
+// BR-AUDIT-005: Ensure PostgreSQL JSONB compatibility
+// ========================================
+//
+// WHY THIS HELPER?
+// - ✅ Eliminates code duplication (used by signal.received AND signal.deduplicated)
+// - ✅ PostgreSQL JSONB prefers empty maps over nil values
+// - ✅ Graceful handling of synthetic signals without RawPayload
+// - ✅ Consistent nil handling across all Gateway audit events
+//
+// RETURNS:
+// - labels: non-nil map[string]string (empty map if nil)
+// - annotations: non-nil map[string]string (empty map if nil)
+// - originalPayload: interface{} (nil if signal.RawPayload is nil)
+// ========================================
+func extractRRReconstructionFields(signal *types.NormalizedSignal) (
+	labels map[string]string,
+	annotations map[string]string,
+	originalPayload interface{},
+) {
+	// Gap #2: Signal labels (ensure non-nil for JSONB)
+	labels = signal.Labels
+	if labels == nil {
+		labels = make(map[string]string)
+	}
+
+	// Gap #3: Signal annotations (ensure non-nil for JSONB)
+	annotations = signal.Annotations
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	// Gap #1: Original payload (nil OK for synthetic signals)
+	if signal.RawPayload != nil {
+		originalPayload = signal.RawPayload
+	}
+
+	return labels, annotations, originalPayload
+}
+
 // emitSignalReceivedAudit emits 'gateway.signal.received' audit event (BR-GATEWAY-190)
 // This is called when a NEW signal is received and RR is created
 func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.NormalizedSignal, rrName, rrNamespace string) {
@@ -1184,8 +1227,37 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	audit.SetCorrelationID(event, rrName) // Use RR name as correlation
 	audit.SetNamespace(event, signal.Namespace)
 
-	// Event data with Gateway-specific fields
+	// Event data with Gateway-specific fields + RR reconstruction fields
+	//
+	// ========================================
+	// BR-AUDIT-005: RR Reconstruction Fields (DD-AUDIT-004)
+	// ========================================
+	// SOC2 Compliance: Gaps #1-3 for RemediationRequest reconstruction
+	// - Gap #1: original_payload (full signal payload for RR.Spec.OriginalPayload)
+	// - Gap #2: signal_labels (for RR.Spec.SignalLabels)
+	// - Gap #3: signal_annotations (for RR.Spec.SignalAnnotations)
+	// ========================================
+
+	// Extract RR reconstruction fields with defensive nil handling (REFACTOR phase)
+	labels, annotations, originalPayload := extractRRReconstructionFields(signal)
+
 	eventData := map[string]interface{}{
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+		// Gap #1: Full signal payload for RR.Spec.OriginalPayload reconstruction
+		"original_payload": originalPayload,
+
+		// Gap #2: Signal labels for RR.Spec.SignalLabels reconstruction
+		"signal_labels": labels,
+
+		// Gap #3: Signal annotations for RR.Spec.SignalAnnotations reconstruction
+		"signal_annotations": annotations,
+
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// Gateway-Specific Metadata (Nested for backward compatibility)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		"gateway": map[string]interface{}{
 			"signal_type":          signal.SourceType,
 			"alert_name":           signal.AlertName,
@@ -1228,7 +1300,21 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	audit.SetCorrelationID(event, rrName)
 	audit.SetNamespace(event, signal.Namespace)
 
+	// Event data with RR reconstruction fields (same as signal.received for consistency)
+	// Extract RR reconstruction fields with defensive nil handling (REFACTOR phase)
+	labels, annotations, originalPayload := extractRRReconstructionFields(signal)
+
 	eventData := map[string]interface{}{
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		"original_payload":   originalPayload, // Gap #1
+		"signal_labels":      labels,          // Gap #2
+		"signal_annotations": annotations,     // Gap #3
+
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// Gateway-Specific Metadata
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		"gateway": map[string]interface{}{
 			"signal_type":          signal.SourceType,
 			"alert_name":           signal.AlertName,
