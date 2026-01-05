@@ -74,7 +74,13 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
         logger.info(f"🔍 DD-AUDIT-005: audit_store={'INITIALIZED' if audit_store else 'NULL'}")
         if audit_store:
             # Convert IncidentResponse to dict for audit storage
-            response_dict = result.model_dump() if hasattr(result, 'model_dump') else result.dict()
+            # BR-HAPI-212: In mock mode, result is already a dict
+            if isinstance(result, dict):
+                response_dict = result
+            elif hasattr(result, 'model_dump'):
+                response_dict = result.model_dump()
+            else:
+                response_dict = result.dict()
             logger.info(f"🔍 DD-AUDIT-005: Creating audit event...")
             audit_event = create_hapi_response_complete_event(
                 incident_id=request.incident_id,
