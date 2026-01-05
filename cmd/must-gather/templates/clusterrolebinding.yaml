@@ -1,0 +1,21 @@
+---
+# Kubernaut Must-Gather - ClusterRoleBinding
+# BR-PLATFORM-001.3.2: Binds must-gather ClusterRole to ServiceAccount
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-must-gather
+  labels:
+    app.kubernetes.io/name: must-gather
+    app.kubernetes.io/part-of: kubernaut
+    app.kubernetes.io/component: diagnostics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-must-gather
+subjects:
+- kind: ServiceAccount
+  name: kubernaut-must-gather
+  namespace: default
+
