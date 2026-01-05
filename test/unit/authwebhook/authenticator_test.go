@@ -128,6 +128,59 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 					"", "", true,
 					"SOC2 CC8.1 violation: Critical operations require authenticated operator"),
 			)
+		})
+
+		Context("when handling special authentication scenarios", func() {
+			// Test Plan Reference: AUTH-004, AUTH-009, AUTH-010
+			DescribeTable("extracts identity from various user types",
+				func(username, uid string, groups []string, expectedGroupCount int, businessOutcome string) {
+					req := &admissionv1.AdmissionRequest{
+						UserInfo: authv1.UserInfo{
+							Username: username,
+							UID:      uid,
+							Groups:   groups,
+						},
+					}
+
+					authCtx, err := authenticator.ExtractUser(ctx, req)
+
+					Expect(err).ToNot(HaveOccurred(), businessOutcome)
+					Expect(authCtx).ToNot(BeNil())
+					Expect(authCtx.Username).To(Equal(username))
+					Expect(authCtx.UID).To(Equal(uid))
+					Expect(authCtx.Groups).To(HaveLen(expectedGroupCount))
+					
+					// Verify all groups are preserved
+					for _, group := range groups {
+						Expect(authCtx.Groups).To(ContainElement(group),
+							"All groups must be preserved for RBAC audit trail")
+					}
+				},
+
+				// AUTH-004: Extract Multiple Groups
+				Entry("AUTH-004: extracts user with multiple group memberships",
+					"operator@kubernaut.ai",
+					"k8s-user-123",
+					[]string{"system:authenticated", "operators", "admins", "sre-team"},
+					4,
+					"SOC2 CC8.1: All group memberships preserved for RBAC audit trail"),
+
+				// AUTH-009: Extract User with No Groups
+				Entry("AUTH-009: extracts user with empty groups list",
+					"operator@kubernaut.ai",
+					"k8s-user-123",
+					[]string{},
+					0,
+					"SOC2 CC8.1: Empty groups list is acceptable for audit attribution"),
+
+				// AUTH-010: Extract Service Account User
+				Entry("AUTH-010: extracts Kubernetes ServiceAccount user identity",
+					"system:serviceaccount:kubernaut-system:webhook-controller",
+					"sa-uid-789",
+					[]string{"system:serviceaccounts", "system:authenticated"},
+					2,
+					"SOC2 CC8.1: Service account identities supported for audit trail"),
+			)
 
 			It("AUTH-012: should reject malformed webhook requests to prevent bypass", func() {
 				// BUSINESS OUTCOME: Fail-safe rejection prevents authentication bypass

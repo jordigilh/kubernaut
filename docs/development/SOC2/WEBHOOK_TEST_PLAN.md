@@ -233,7 +233,7 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 ```go
 Context("when validating user extraction scenarios", func() {
     // Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
-    
+
     DescribeTable("AUTH-002 to AUTH-004: User extraction validation",
         func(testID, username, uid string, groups []string, shouldSucceed bool, businessOutcome string) {
             req := &admissionv1.AdmissionRequest{
@@ -292,7 +292,7 @@ Context("when validating user extraction scenarios", func() {
 ```go
 Describe("ValidateReason - SOC2 CC7.4 Audit Completeness", func() {
     // Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
-    
+
     DescribeTable("AUTH-005 to AUTH-006: Reason validation",
         func(testID, reason string, minWords int, shouldSucceed bool, businessOutcome string) {
             err := authwebhook.ValidateReason(reason, minWords)
@@ -379,7 +379,7 @@ Context("when handling special user scenarios", func() {
             if shouldSucceed {
                 Expect(err).ToNot(HaveOccurred(), businessOutcome)
                 Expect(authCtx).ToNot(BeNil())
-                
+
                 // Test-specific validations
                 if testID == "AUTH-009" {
                     Expect(authCtx.Groups).To(BeEmpty(), "Empty groups list preserved")
@@ -401,7 +401,7 @@ Context("when handling special user scenarios", func() {
             true,
             "SOC2 CC8.1: Empty groups list is acceptable for audit attribution"),
 
-        // AUTH-010: Extract Service Account User  
+        // AUTH-010: Extract Service Account User
         Entry("AUTH-010: Extract Kubernetes ServiceAccount user identity",
             "AUTH-010",
             "system:serviceaccount:kubernaut-system:webhook-controller",
