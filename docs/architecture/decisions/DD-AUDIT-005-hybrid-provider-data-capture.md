@@ -59,15 +59,15 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 
 ```sql
 -- Full provider response (authoritative)
-SELECT event_data->'response_data' 
-FROM audit_events 
-WHERE event_type = 'holmesgpt.response.complete' 
+SELECT event_data->'response_data'
+FROM audit_events
+WHERE event_type = 'holmesgpt.response.complete'
   AND correlation_id = 'req-2025-01-05-abc123';
 
 -- Business context (complementary)
-SELECT event_data 
-FROM audit_events 
-WHERE event_type = 'aianalysis.analysis.completed' 
+SELECT event_data
+FROM audit_events
+WHERE event_type = 'aianalysis.analysis.completed'
   AND correlation_id = 'req-2025-01-05-abc123';
 ```
 
@@ -137,7 +137,7 @@ def create_hapi_response_complete_event(
 ) -> Dict[str, Any]:
     """
     Create Holmes API response completion audit event
-    
+
     BR-AUDIT-005 Gap #4: Capture complete API response for SOC2 audit trail
     DD-AUDIT-005: Provider perspective audit (HAPI owns response data)
     """
@@ -146,7 +146,7 @@ def create_hapi_response_complete_event(
         incident_id=incident_id,
         response_data=response_data  # Full IncidentResponse
     )
-    
+
     return _create_adr034_event(
         event_type="holmesgpt.response.complete",
         operation="response_sent",
@@ -162,7 +162,7 @@ def create_hapi_response_complete_event(
 @router.post("/incident/analyze")
 async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentResponse:
     result = await analyze_incident(request_data)
-    
+
     # DD-AUDIT-005: Capture complete response for audit trail (provider perspective)
     audit_store = get_audit_store()
     audit_store.store_audit(create_hapi_response_complete_event(
@@ -170,7 +170,7 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
         remediation_id=request.remediation_id,
         response_data=result.model_dump()
     ))
-    
+
     return result
 ```
 
@@ -281,7 +281,7 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
     hapiEvents := waitForAuditEvents(correlationID, "holmesgpt.response.complete", 1)
     hapiEventData := hapiEvents[0].EventData.(map[string]interface{})
     Expect(hapiEventData).To(HaveKey("response_data"))
-    
+
     responseData := hapiEventData["response_data"].(map[string]interface{})
     Expect(responseData).To(HaveKey("root_cause_analysis"))
     Expect(responseData).To(HaveKey("selected_workflow"))
@@ -291,11 +291,11 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
     aaEvents := waitForAuditEvents(correlationID, "aianalysis.analysis.completed", 1)
     aaEventData := aaEvents[0].EventData.(map[string]interface{})
     Expect(aaEventData).To(HaveKey("provider_response_summary"))
-    
+
     summary := aaEventData["provider_response_summary"].(map[string]interface{})
     Expect(summary).To(HaveKey("analysis_preview"))
     Expect(summary).To(HaveKey("selected_workflow_id"))
-    
+
     // Verify AA business context (not in HAPI event)
     Expect(aaEventData).To(HaveKey("phase"))
     Expect(aaEventData).To(HaveKey("approval_required"))
