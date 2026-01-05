@@ -445,12 +445,12 @@ test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
 	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
 
 .PHONY: test-integration-authwebhook
-test-integration-authwebhook: ginkgo ## Run webhook integration tests (envtest + real CRDs)
+test-integration-authwebhook: ginkgo setup-envtest ## Run webhook integration tests (envtest + real CRDs)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + programmatic infrastructure)"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --cover --covermode=atomic --fail-fast ./test/integration/authwebhook/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --cover --covermode=atomic --fail-fast ./test/integration/authwebhook/...
 
 .PHONY: test-e2e-authwebhook
 test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
