@@ -105,6 +105,21 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 		payload.SubReason = analysis.Status.SubReason
 	}
 
+	// DD-AUDIT-005: Add provider response summary (consumer perspective)
+	// This complements the holmesgpt.response.complete event (provider perspective)
+	if analysis.Status.InvestigationID != "" {
+		summary := &ProviderResponseSummary{
+			IncidentID:       analysis.Status.InvestigationID,
+			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
+			NeedsHumanReview: determineNeedsHumanReview(analysis),
+			WarningsCount:    len(analysis.Status.Warnings),
+		}
+		if analysis.Status.SelectedWorkflow != nil {
+			summary.SelectedWorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+		}
+		payload.ProviderResponseSummary = summary
+	}
+
 	// Determine outcome
 	var apiOutcome dsgen.AuditEventRequestEventOutcome
 	if analysis.Status.Phase == "Failed" {
@@ -324,4 +339,58 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write Rego evaluation audit")
 	}
+}
+
+// ========================================
+// HELPER FUNCTIONS (DD-AUDIT-005)
+// ========================================
+
+// truncateString truncates a string to the specified length, adding "..." if truncated
+// Used for audit event preview fields to limit event payload size
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// determineNeedsHumanReview infers needs_human_review flag from AIAnalysis status
+//
+// DD-AUDIT-005: Consumer perspective on whether Holmes recommended human review
+// This is inferred from AIAnalysis status fields since we don't store the raw Holmes response
+//
+// Logic:
+// - Failed + SubReason set = needs human review
+// - ApprovalRequired + certain approval reasons = needs human review
+// - No selected workflow = needs human review
+func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
+	// Failed analyses typically need human review
+	if analysis.Status.Phase == "Failed" {
+		return true
+	}
+
+	// No workflow selected = needs human review
+	if analysis.Status.SelectedWorkflow == nil {
+		return true
+	}
+
+	// Approval required due to low confidence or validation issues
+	if analysis.Status.ApprovalRequired {
+		// High-severity approval reasons suggest human review needed
+		highSeverityReasons := map[string]bool{
+			"WorkflowNotFound":              true,
+			"NoMatchingWorkflows":           true,
+			"LowConfidence":                 true,
+			"LLMParsingError":               true,
+			"InvestigationInconclusive":     true,
+		}
+		if highSeverityReasons[analysis.Status.SubReason] {
+			return true
+		}
+	}
+
+	return false
 }
