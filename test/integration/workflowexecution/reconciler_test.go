@@ -460,10 +460,10 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for workflow.completed audit event via OpenAPI client")
-			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred())
+		By("Querying DataStorage API for workflow.completed audit event via OpenAPI client")
+		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
+		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred())
 
 		eventCategory := "workflow"
 		var completedEvent *dsgen.AuditEvent
@@ -474,24 +474,24 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				EventCategory: &eventCategory,
 				CorrelationId: &correlationID,
 			})
-				if err != nil {
-					return false
-				}
-
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-					return false
-				}
-
-				// Find workflow.completed event
-				for i := range *resp.JSON200.Data {
-					if (*resp.JSON200.Data)[i].EventType == "workflow.completed" {
-						completedEvent = &(*resp.JSON200.Data)[i]
-						return true
-					}
-				}
+			if err != nil {
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"workflow.completed audit event should be persisted in DataStorage")
+			}
+
+			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
+				return false
+			}
+
+			// Find workflow.completed event
+			for i := range *resp.JSON200.Data {
+				if (*resp.JSON200.Data)[i].EventType == "workflow.completed" {
+					completedEvent = &(*resp.JSON200.Data)[i]
+					return true
+				}
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"workflow.completed audit event should be persisted in DataStorage")
 
 		By("Verifying audit event field values")
 		Expect(completedEvent).ToNot(BeNil())
@@ -499,7 +499,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// WE-BUG-002: event_action contains short form ("completed" not "workflow.completed")
 		Expect(completedEvent.EventAction).To(Equal("completed"))
 
-			GinkgoWriter.Println("✅ workflow.completed audit event persisted with correct field values")
+		GinkgoWriter.Println("✅ workflow.completed audit event persisted with correct field values")
 		})
 
 		It("should persist workflow.failed audit event with failure details", func() {
@@ -522,10 +522,10 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for workflow.failed audit event via OpenAPI client")
-			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred())
+		By("Querying DataStorage API for workflow.failed audit event via OpenAPI client")
+		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
+		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred())
 
 		eventCategory := "workflow"
 		var failedEvent *dsgen.AuditEvent
@@ -536,24 +536,24 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				EventCategory: &eventCategory,
 				CorrelationId: &correlationID,
 			})
-				if err != nil {
-					return false
-				}
-
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-					return false
-				}
-
-				// Find workflow.failed event
-				for i := range *resp.JSON200.Data {
-					if (*resp.JSON200.Data)[i].EventType == "workflow.failed" {
-						failedEvent = &(*resp.JSON200.Data)[i]
-						return true
-					}
-				}
+			if err != nil {
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"workflow.failed audit event should be persisted in DataStorage")
+			}
+
+			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
+				return false
+			}
+
+			// Find workflow.failed event
+			for i := range *resp.JSON200.Data {
+				if (*resp.JSON200.Data)[i].EventType == "workflow.failed" {
+					failedEvent = &(*resp.JSON200.Data)[i]
+					return true
+				}
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"workflow.failed audit event should be persisted in DataStorage")
 
 		By("Verifying audit event field values including failure details")
 		Expect(failedEvent).ToNot(BeNil())
@@ -561,7 +561,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// WE-BUG-002: event_action contains short form ("failed" not "workflow.failed")
 		Expect(failedEvent.EventAction).To(Equal("failed"))
 
-			// Verify event_data contains failure details
+		// Verify event_data contains failure details
 			eventData, ok := failedEvent.EventData.(map[string]interface{})
 			Expect(ok).To(BeTrue(), "event_data should be an object")
 			Expect(eventData["failure_reason"]).ToNot(BeEmpty(), "failure_reason should be populated")
