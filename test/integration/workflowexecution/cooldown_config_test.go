@@ -22,7 +22,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -59,8 +58,8 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			ctx := context.Background()
 
 		By("Creating first WorkflowExecution for target resource")
-		// Use helper function from suite_test.go
-		wfe1 := createTestWorkflowExecution("cooldown-test-1", "default/deployment/cooldown-app-1")
+		// Use shared helper function from suite_test.go (consolidated per compliance triage)
+		wfe1 := createUniqueWFE("cooldown-test-1", "default/deployment/cooldown-app-1")
 		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 		By("Waiting for controller to complete initial reconciliation")
@@ -98,7 +97,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 		Expect(updated1.Status.CompletionTime).ToNot(BeNil(), "CompletionTime must be set for cooldown to work")
 
 		By("Creating second WorkflowExecution immediately for SAME resource (within cooldown)")
-		wfe2 := createTestWorkflowExecution("cooldown-test-2", "default/deployment/cooldown-app-1") // Same resource!
+		wfe2 := createUniqueWFE("cooldown-test-2", "default/deployment/cooldown-app-1") // Same resource!
 		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 		By("Waiting for second WorkflowExecution to reach Pending phase")
@@ -139,7 +138,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			ctx := context.Background()
 
 		By("Creating first WorkflowExecution for resource A")
-		wfe1 := createTestWorkflowExecution("cooldown-resource-a", "default/deployment/app-a")
+		wfe1 := createUniqueWFE("cooldown-resource-a", "default/deployment/app-a")
 		Expect(k8sClient.Create(ctx, wfe1)).To(Succeed())
 
 		By("Waiting for controller to complete initial reconciliation")
@@ -169,7 +168,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 		}, 3*time.Second, 100*time.Millisecond).Should(Succeed())
 
 		By("Creating second WorkflowExecution for resource B (DIFFERENT resource)")
-		wfe2 := createTestWorkflowExecution("cooldown-resource-b", "default/deployment/app-b") // Different resource!
+		wfe2 := createUniqueWFE("cooldown-resource-b", "default/deployment/app-b") // Different resource!
 		Expect(k8sClient.Create(ctx, wfe2)).To(Succeed())
 
 		By("Verifying second WorkflowExecution is NOT blocked (different resource)")
@@ -186,32 +185,6 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 	})
 })
 
-// createTestWorkflowExecution creates a WorkflowExecution for testing cooldown behavior.
-// Uses the same structure as the helper in suite_test.go.
-// DD-AUDIT-CORRELATION-001: MUST set RemediationRequestRef.Name for audit correlation
-func createTestWorkflowExecution(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
-	return &workflowexecutionv1alpha1.WorkflowExecution{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: DefaultNamespace,
-			Generation: 1, // K8s increments on create/update
-		},
-		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-			// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is REQUIRED for correlation ID
-			// OpenAPI validation requires correlation_id min length = 1
-			RemediationRequestRef: corev1.ObjectReference{
-				APIVersion: "remediation.kubernaut.ai/v1alpha1",
-				Kind:       "RemediationRequest",
-				Name:       "test-rr-" + name, // Correlation ID source!
-				Namespace:  DefaultNamespace,
-			},
-			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:     "test-workflow",
-				Version:        "v1.0.0",
-				ContainerImage: "quay.io/kubernaut/workflows/test:v1.0.0",
-			},
-			TargetResource: targetResource,
-		},
-	}
-}
+// Note: Duplicate createTestWorkflowExecution() helper removed (Day 3 compliance triage)
+// Now uses shared createUniqueWFE() from suite_test.go to prevent drift
 
