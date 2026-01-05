@@ -42,25 +42,31 @@ import (
 var _ = Describe("Conditions Integration", Label("integration", "conditions"), func() {
 	Context("TektonPipelineCreated condition", func() {
 		It("should be set after PipelineRun creation during reconciliation", func() {
-			// Create WorkflowExecution
-			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-pipeline-created",
-					Namespace: DefaultNamespace,
-					Generation: 1, // K8s increments on create/update
+		// Create WorkflowExecution
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "wfe-condition-pipeline-created",
+				Namespace: DefaultNamespace,
+				Generation: 1, // K8s increments on create/update
+			},
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				RemediationRequestRef: corev1.ObjectReference{
+					APIVersion: "remediation.kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       "test-rr-condition-pipeline-created",
+					Namespace:  DefaultNamespace,
 				},
-				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-					},
-					TargetResource: "default/deployment/condition-test-app",
-					Parameters: map[string]string{
-						"MESSAGE": "Testing TektonPipelineCreated condition",
-					},
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowID:     "test-workflow",
+					Version:        "v1.0.0",
+					ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 				},
-			}
+				TargetResource: "default/deployment/condition-test-app",
+				Parameters: map[string]string{
+					"MESSAGE": "Testing TektonPipelineCreated condition",
+				},
+			},
+		}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			// ✅ REQUIRED: Use Eventually() to wait for condition (NO time.Sleep())
@@ -109,6 +115,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-running",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -166,6 +178,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-complete-success",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -243,6 +261,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-audit",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
@@ -291,6 +315,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-full-lifecycle",
+						Namespace:  DefaultNamespace,
+					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:     "test-workflow",
 						Version:        "v1.0.0",
