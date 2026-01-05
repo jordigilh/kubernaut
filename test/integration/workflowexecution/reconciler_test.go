@@ -400,13 +400,15 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflow"
-			var startedEvent *dsgen.AuditEvent
-			Eventually(func() bool {
-				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &wfe.Name,
-				})
+		eventCategory := "workflow"
+		var startedEvent *dsgen.AuditEvent
+		// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+		correlationID := wfe.Spec.RemediationRequestRef.Name
+		Eventually(func() bool {
+			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+				EventCategory: &eventCategory,
+				CorrelationId: &correlationID,
+			})
 				if err != nil {
 					return false
 				}
@@ -432,7 +434,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// WE-BUG-002: event_action contains short form ("started" not "workflow.started")
 		Expect(startedEvent.EventAction).To(Equal("started"))
 		Expect(startedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeSuccess))
-			Expect(startedEvent.CorrelationId).To(Equal(wfe.Name))
+			// DD-AUDIT-CORRELATION-001: CorrelationId = RemediationRequestRef.Name
+			Expect(startedEvent.CorrelationId).To(Equal(wfe.Spec.RemediationRequestRef.Name))
 
 			GinkgoWriter.Println("✅ workflow.started audit event persisted with correct field values")
 		})
@@ -462,13 +465,15 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
 			Expect(err).ToNot(HaveOccurred())
 
-			eventCategory := "workflow"
-			var completedEvent *dsgen.AuditEvent
-			Eventually(func() bool {
-				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &wfe.Name,
-				})
+		eventCategory := "workflow"
+		var completedEvent *dsgen.AuditEvent
+		// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+		correlationID := wfe.Spec.RemediationRequestRef.Name
+		Eventually(func() bool {
+			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+				EventCategory: &eventCategory,
+				CorrelationId: &correlationID,
+			})
 				if err != nil {
 					return false
 				}
@@ -522,13 +527,15 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
 			Expect(err).ToNot(HaveOccurred())
 
-			eventCategory := "workflow"
-			var failedEvent *dsgen.AuditEvent
-			Eventually(func() bool {
-				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &wfe.Name,
-				})
+		eventCategory := "workflow"
+		var failedEvent *dsgen.AuditEvent
+		// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+		correlationID := wfe.Spec.RemediationRequestRef.Name
+		Eventually(func() bool {
+			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+				EventCategory: &eventCategory,
+				CorrelationId: &correlationID,
+			})
 				if err != nil {
 					return false
 				}
@@ -563,50 +570,48 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			GinkgoWriter.Println("✅ workflow.failed audit event persisted with failure details")
 		})
 
-		It("should include correlation ID in audit events when present", func() {
-			By("Creating a WorkflowExecution with correlation ID label")
-			wfe = createUniqueWFE("audit-corr", "default/deployment/audit-corr-test")
-			wfe.Labels = map[string]string{
-				"kubernaut.ai/correlation-id": "test-corr-12345",
-			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+	It("should include correlation ID in audit events from RemediationRequestRef (DD-AUDIT-CORRELATION-001)", func() {
+		By("Creating a WorkflowExecution (correlation ID = RemediationRequestRef.Name)")
+		wfe = createUniqueWFE("audit-corr", "default/deployment/audit-corr-test")
+		// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is the authoritative source
+		expectedCorrID := wfe.Spec.RemediationRequestRef.Name
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for Running phase")
-			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
-			Expect(err).ToNot(HaveOccurred())
+		By("Waiting for Running phase")
+		_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+		Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for audit events with correlation ID via OpenAPI client")
-			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred())
+		By("Querying DataStorage API for audit events with correlation ID via OpenAPI client")
+		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
+		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred())
 
-			eventCategory := "workflow"
-			corrID := "test-corr-12345"
-			Eventually(func() bool {
-				resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &corrID,
-				})
-				if err != nil {
-					return false
-				}
-
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-					return false
-				}
-
-				// Verify at least one event has the correlation ID
-				for _, event := range *resp.JSON200.Data {
-					if event.CorrelationId == "test-corr-12345" {
-						return true
-					}
-				}
+		eventCategory := "workflow"
+		Eventually(func() bool {
+			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+				EventCategory: &eventCategory,
+				CorrelationId: &expectedCorrID,
+			})
+			if err != nil {
 				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Audit events should include correlation ID from labels")
+			}
 
-			GinkgoWriter.Println("✅ Correlation ID included in audit events")
-		})
+			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
+				return false
+			}
+
+			// Verify at least one event has the correlation ID from RemediationRequestRef.Name
+			for _, event := range *resp.JSON200.Data {
+				if event.CorrelationId == expectedCorrID {
+					return true
+				}
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"Audit events should include correlation ID from RemediationRequestRef.Name per DD-AUDIT-CORRELATION-001")
+
+		GinkgoWriter.Println("✅ Correlation ID from RemediationRequestRef.Name included in audit events (DD-AUDIT-CORRELATION-001)")
+	})
 
 		// ========================================
 		// BR-WE-009: Resource Locking - Prevent Parallel Execution

@@ -128,13 +128,13 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					TargetResource: targetResource,
 				},
 			}
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
-			defer func() {
-				_ = k8sClient.Delete(ctx, wfe)
-			}()
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		defer func() {
+			_ = k8sClient.Delete(ctx, wfe)
+		}()
 
-			// Use WFE name as correlation ID (production pattern)
-			correlationID := wfeName
+		// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name, not WFE name
+		correlationID := "test-rr-" + wfeName
 
 			By("3. Wait for controller to process (BUSINESS LOGIC)")
 			Eventually(func() string {
@@ -252,7 +252,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			correlationID := wfeName
+			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name, not WFE name
+			correlationID := "test-rr-" + wfeName
 
 			By("3. Wait for controller to process and emit workflow.started event")
 			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
