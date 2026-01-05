@@ -1,13 +1,13 @@
 # DD-WEBHOOK-001: CRD Webhook Requirements Matrix
 
-**Date**: January 6, 2026 (v1.1 - Updated with NotificationRequest + RemediationWorkflow)
+**Date**: January 6, 2026 (v1.1 - Updated with NotificationRequest only)
 **Status**: ✅ **AUTHORITATIVE**
 **Purpose**: Define WHEN and WHY CRDs require webhooks for authenticated user operations
 **Authority**: Decision criteria for all CRD webhook implementations
 **Scope**: All Kubernetes CRDs in Kubernaut requiring user authentication
 
 **Version History**:
-- **v1.1** (January 6, 2026): Added NotificationRequest (DELETE attribution) + RemediationWorkflow (CRUD attribution)
+- **v1.1** (January 6, 2026): Added NotificationRequest (DELETE attribution). **Note**: Workflow CRUD uses HTTP middleware, not CRD webhook (see DD-AUTH-002)
 - **v1.0** (December 20, 2025): Initial version with WorkflowExecution + RemediationApprovalRequest
 
 ---
@@ -26,14 +26,15 @@
 
 ## 📊 **CRD Webhook Requirements Matrix**
 
-### **CRDs Requiring Webhooks** ✅
+### **CRDs Requiring Webhooks** ✅ (3 Total)
 
 | CRD | Use Case | Status Fields Requiring Auth | SOC2 Control | Implementation Owner | Priority | Target Version |
 |-----|----------|------------------------------|--------------|----------------------|----------|----------------|
 | **WorkflowExecution** | Block Clearance | `status.blockClearanceRequest` | CC8.1 (Attribution) | WE Team | P0 | v1.0 |
 | **RemediationApprovalRequest** | Approval Decisions | `status.approvalRequest` | CC8.1 (Attribution) | RO Team | P0 | v1.0 |
 | **NotificationRequest** | Cancellation Attribution | `metadata.deletionTimestamp` (DELETE) | CC8.1 (Attribution) | Notification Team | P0 | v1.1 |
-| **RemediationWorkflow** | Catalog CRUD Attribution | `metadata.annotations` (CREATE/UPDATE) | CC8.1 (Attribution) | Data Storage Team | P0 | v1.1 |
+
+**Note**: Workflow catalog CRUD operations use HTTP authentication middleware (REST API), not CRD webhooks. See `DD-AUTH-002-http-authentication-middleware.md` for workflow CRUD attribution.
 
 ### **CRDs NOT Requiring Webhooks** ❌
 
@@ -190,7 +191,7 @@
 3. ✅ **Override Action**: Operator cancels automated notification delivery
 4. ✅ **Operational Decision**: Cancellation requires human judgment
 
-**Operation**: 
+**Operation**:
 ```bash
 kubectl delete notificationrequest <nr-name> -n <namespace>
 ```
@@ -231,74 +232,6 @@ kubectl delete notificationrequest <nr-name> -n <namespace>
 **Timeline**: 1-2 days (reuses shared library)
 
 **Reference**: [TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md](../../development/SOC2/TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md)
-
----
-
-### **Use Case 4: RemediationWorkflow Catalog CRUD Attribution** (v1.1)
-
-**Business Requirement**: SOC2 CC8.1 Attribution for workflow catalog operations
-
-**Scenario**: Operator creates or modifies RemediationWorkflow CRD to add/update workflow catalog (e.g., new workflow for common incidents, workflow parameter updates).
-
-**Why Webhook Required**:
-1. ✅ **Manual Intervention**: Operator manually creates/updates RemediationWorkflow CRD
-2. ✅ **SOC2 CC8.1**: Must record WHO created/modified the workflow
-3. ✅ **Operational Decision**: Workflow CRUD affects system behavior
-4. ✅ **Compliance**: Track workflow lineage for audit purposes
-
-**Operations**: 
-```bash
-# Create workflow
-kubectl apply -f restart-pod-workflow.yaml
-
-# Update workflow
-kubectl apply -f restart-pod-workflow.yaml  # (modified)
-
-# Disable workflow (via Data Storage API)
-POST /api/v1/workflows/{id}/disable
-```
-
-**Metadata Fields Requiring Authentication**:
-- **Kubernetes Sets**: `metadata.creationTimestamp` (on CREATE)
-- **Webhook Populates**:
-  - `metadata.annotations["kubernaut.ai/created-by"]`: Authenticated user from K8s auth context
-  - `metadata.annotations["kubernaut.ai/modified-by"]`: Authenticated user on UPDATE
-
-**Audit Events** (already in DD-AUDIT-003 v1.2):
-- `datastorage.workflow.created`
-- `datastorage.workflow.updated` (includes disable operation)
-
-**Event Data**:
-```json
-{
-  "workflow_id": "restart-pod-workflow",
-  "workflow_version": "v1.2.3",
-  "operation": "created",  // or "updated" or "disabled"
-  "created_by": {
-    "username": "operator@example.com",
-    "uid": "k8s-user-uuid",
-    "groups": ["workflow-admins"]
-  },
-  "workflow_metadata": {
-    "title": "Restart Pod Workflow",
-    "labels": ["pod", "restart", "oomkill"]
-  }
-}
-```
-
-**Webhook Type**: **MutatingWebhookConfiguration** (CREATE/UPDATE operations)
-
-**Implementation Pattern**:
-1. Webhook intercepts CREATE/UPDATE operations
-2. Extract authenticated user from `req.UserInfo`
-3. Populate `metadata.annotations["kubernaut.ai/created-by"]` or `["modified-by"]`
-4. Controller emits audit event using annotation value
-
-**Implementation Owner**: Data Storage Team
-
-**Timeline**: 1-2 days (reuses shared library)
-
-**Reference**: [DD-WORKFLOW-009](./DD-WORKFLOW-009-workflow-catalog-storage.md), [TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md](../../development/SOC2/TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md)
 
 ---
 
@@ -468,10 +401,11 @@ Is this an approval workflow or override action?
 | **WorkflowExecution** | ✅ YES | WE Team | WE Team (creates shared lib) | 3-4 days | None (first implementation) |
 | **RemediationApprovalRequest** | ✅ YES | RO Team | WE Team (reuses shared lib) | 2-3 days | WE webhook complete |
 | **NotificationRequest** (v1.1) | ✅ YES | Notification Team | WE Team (reuses shared lib) | 1-2 days | WE webhook complete |
-| **RemediationWorkflow** (v1.1) | ✅ YES | Data Storage Team | WE Team (reuses shared lib) | 1-2 days | WE webhook complete |
 | **SignalProcessing** | ❌ NO | N/A | N/A | N/A | N/A (K8s enrichment automated) |
 | **AIAnalysis** | ❌ NO | N/A | N/A | N/A | N/A (AI investigation automated) |
 | **RemediationRequest** | ❌ NO | N/A | N/A | N/A | N/A (routing automated) |
+
+**Note**: Workflow CRUD attribution (Data Storage Team) uses HTTP middleware, not CRD webhook. See `DD-AUTH-002` for implementation.
 
 **Shared Library Ownership**:
 - **WE Team**: Implements `pkg/authwebhook` (Day 1 of WE webhook work)
@@ -482,7 +416,9 @@ Is this an approval workflow or override action?
 ## 📅 **Implementation Timeline - V1.1**
 
 **V1.0 (December 2025)**: WorkflowExecution + RemediationApprovalRequest  
-**V1.1 (January 2026)**: NotificationRequest + RemediationWorkflow (Week 2-3)
+**V1.1 (January 2026)**: NotificationRequest (Week 2-3)
+
+**Note**: Workflow CRUD attribution uses HTTP middleware (DD-AUTH-002), not CRD webhook
 
 ### **Sprint 1: WE Webhook Implementation** (3-4 days) - v1.0
 
@@ -543,22 +479,7 @@ Is this an approval workflow or override action?
 - Documentation
 - **Deliverable**: NotificationRequest webhook complete and documented ✅
 
-### **Sprint 4: RemediationWorkflow Webhook Implementation** (1-2 days) - v1.1
-
-**Day 1** (Data Storage Team):
-- Review `pkg/authwebhook` shared library
-- Scaffold RemediationWorkflow CREATE/UPDATE webhook (MutatingWebhookConfiguration)
-- Implement annotation population logic (`kubernaut.ai/created-by`, `kubernaut.ai/modified-by`)
-- Wire audit events (`datastorage.workflow.created`, `datastorage.workflow.updated`)
-- **Deliverable**: RemediationWorkflow webhook implementation ✅
-
-**Day 2** (Data Storage Team):
-- Write 12 unit tests for webhook
-- Write 2 integration tests
-- Write 1 E2E test
-- SOC2 compliance validation
-- Documentation
-- **Deliverable**: RemediationWorkflow webhook complete and documented ✅
+**Note**: Workflow CRUD attribution (Data Storage Team) requires HTTP middleware implementation instead of CRD webhook. See `DD-AUTH-002-http-authentication-middleware.md` for implementation plan.
 
 ---
 
