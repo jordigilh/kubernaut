@@ -43,6 +43,7 @@ package aianalysis
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"time"
 
 	"github.com/google/uuid"
@@ -181,9 +182,20 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 			Expect(hapiResp.JSON200).ToNot(BeNil(), "Should receive 200 response")
 			Expect(hapiResp.JSON200.Data).ToNot(BeNil(), "Response should contain data array")
 
-			hapiEvents := *hapiResp.JSON200.Data
-			Expect(hapiEvents).To(HaveLen(1), "Should have exactly 1 HAPI event (provider perspective)")
-			GinkgoWriter.Printf("✅ Found HAPI audit event: holmesgpt.response.complete\n")
+		hapiEvents := *hapiResp.JSON200.Data
+		if len(hapiEvents) == 0 {
+			// DIAGNOSTIC: Print HAPI container logs to debug why no events
+			GinkgoWriter.Println("🚨 NO HAPI EVENTS FOUND - Printing HAPI container logs for diagnosis...")
+			cmd := exec.Command("podman", "logs", "aianalysis_hapi_1", "--tail", "100")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to get HAPI logs: %v\n", err)
+			} else {
+				GinkgoWriter.Printf("=== HAPI Container Logs (last 100 lines) ===\n%s\n=== End HAPI Logs ===\n", string(output))
+			}
+		}
+		Expect(hapiEvents).To(HaveLen(1), "Should have exactly 1 HAPI event (provider perspective)")
+		GinkgoWriter.Printf("✅ Found HAPI audit event: holmesgpt.response.complete\n")
 
 			// Validate HAPI event metadata
 			hapiEvent := hapiEvents[0]
