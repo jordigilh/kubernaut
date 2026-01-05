@@ -8,3 +8,8 @@ llm:
 
 data_storage:
   url: "http://host.containers.internal:18095"
+
+audit:
+  flush_interval_seconds: 0.1
+  buffer_size: 10000
+  batch_size: 50

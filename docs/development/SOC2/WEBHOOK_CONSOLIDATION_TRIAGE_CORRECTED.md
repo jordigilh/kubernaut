@@ -1,37 +1,51 @@
-# Webhook Consolidation Triage - SOC2 Compliance (CORRECTED)
+# Webhook Consolidation Triage - SOC2 Compliance (FINAL CORRECTION)
 
-**Date**: January 6, 2026  
-**Status**: ✅ **ANALYSIS COMPLETE - CORRECTED**  
-**Purpose**: Evaluate consolidating multiple admission webhooks into a single implementation  
-**Correction**: Initial triage missed 2 CRDs - **4 CRDs total**, not 2  
+**Date**: January 6, 2026
+**Status**: ✅ **ANALYSIS COMPLETE - FINAL CORRECTION**
+**Purpose**: Evaluate consolidating multiple admission webhooks into a single implementation
+**Correction**: **3 CRDs** + **1 REST API** requiring authentication (not 2 CRDs, not 4 CRDs)
 **Authoritative Sources**:
-- `DD-AUTH-001`: Shared Authentication Webhook (AUTHORITATIVE)
-- `DD-WEBHOOK-001`: CRD Webhook Requirements Matrix (December 2025 - needs v1.1 update)
-- `TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md`: SOC2 Extension (January 2026)
-- `ADR-051`: Operator-SDK Webhook Scaffolding
+- `DD-AUTH-001`: Shared Authentication Webhook (AUTHORITATIVE for CRD webhooks)
+- `DD-AUTH-002`: HTTP Authentication Middleware (AUTHORITATIVE for REST APIs)
+- `DD-WEBHOOK-001 v1.1`: CRD Webhook Requirements Matrix (January 2026)
+- `DD-WORKFLOW-005 v2.0`: Workflow registration architecture (REST API only)
+- `WEBHOOK_WORKFLOW_CRUD_ATTRIBUTION_TRIAGE.md`: Authentication pattern triage
 
 ---
 
-## 🚨 **CORRECTION: 4 CRDs Require Webhooks, Not 2**
+## 🚨 **FINAL CORRECTION: 3 CRDs + 1 REST API, Not 4 CRDs**
 
-### **Initial Error**
+### **Second Correction (User Identified)**
 
-❌ **INCORRECT STATEMENT**: "Only 2 CRDs - Small scope, easy implementation"
+❌ **SECOND ERROR**: RemediationWorkflow is **REST API**, not CRD
 
-**Root Cause**: I only read DD-WEBHOOK-001 (December 20, 2025) which lists 2 CRDs. However, `TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md` (January 4, 2026) identified 2 additional CRDs requiring webhooks for Week 2-3 SOC2 extension.
+**Root Cause**: Assumed workflow catalog used CRD pattern, but `DD-WORKFLOW-005 v2.0` confirms V1.0 uses REST API only (`POST /api/v1/workflows`). V1.1 `WorkflowRegistration` CRD is future work.
+
+### **Evolution of Understanding**
+
+1. **Initial Triage**: "Only 2 CRDs" ❌ (missed NotificationRequest + RemediationWorkflow)
+2. **First Correction**: "4 CRDs total" ❌ (incorrectly assumed RemediationWorkflow is CRD)
+3. **Final Correction**: "3 CRDs + 1 REST API" ✅ (accurate per DD-WORKFLOW-005 v2.0)
 
 ---
 
-## 📋 **CORRECTED: CRD Webhook Requirements Matrix**
+## 📋 **FINAL CORRECTION: CRD Webhook + REST API Requirements**
 
-### **CRDs Requiring Webhooks** ✅ (4 TOTAL)
+### **CRDs Requiring Webhooks** ✅ (3 TOTAL)
 
 | CRD | Use Case | Operation Type | SOC2 Control | DD-WEBHOOK-001 Status | Priority |
 |-----|----------|----------------|--------------|----------------------|----------|
 | **WorkflowExecution** | Block Clearance | Status Update (manual) | CC8.1 (Attribution) | ✅ v1.0 (Dec 2025) | P0 |
 | **RemediationApprovalRequest** | Approval Decisions | Status Update (manual) | CC8.1 (Attribution) | ✅ v1.0 (Dec 2025) | P0 |
-| **NotificationRequest** | Cancellation Attribution | DELETE operation | CC8.1 (Attribution) | ⚠️  v1.1 (pending) | P0 |
-| **RemediationWorkflow** | Catalog CRUD Attribution | CREATE/UPDATE operations | CC8.1 (Attribution) | ⚠️  v1.1 (pending) | P0 |
+| **NotificationRequest** | Cancellation Attribution | DELETE operation | CC8.1 (Attribution) | ✅ v1.1 (Jan 2026) | P0 |
+
+### **REST APIs Requiring HTTP Middleware** ✅ (1 TOTAL)
+
+| REST API | Use Case | HTTP Method | SOC2 Control | DD-AUTH-002 Status | Priority |
+|----------|----------|-------------|--------------|-------------------|----------|
+| `/api/v1/workflows` | Workflow CRUD Attribution | POST/PATCH | CC8.1 (Attribution) | ✅ v1.0 (Jan 2026) | P0 |
+
+**Note**: RemediationWorkflow is **NOT a CRD** - workflows are managed via REST API only (DD-WORKFLOW-005 v2.0). V1.1 `WorkflowRegistration` CRD is future work.
 
 ### **CRDs NOT Requiring Webhooks** ❌
 
@@ -92,7 +106,7 @@
   - `decidedAt`: Server-side timestamp
   - `decisionMessage`: Copied from request
 
-**Audit Events**: 
+**Audit Events**:
 - `orchestrator.approval.approved` (already in DD-AUDIT-003 v1.2)
 - `orchestrator.approval.rejected` (already in DD-AUDIT-003 v1.2)
 
@@ -144,59 +158,38 @@
 
 ---
 
-### **CRD 4: RemediationWorkflow** ⚠️  (Missing from DD-WEBHOOK-001 - needs v1.1)
+### **REST API: Workflow CRUD** ✅ (Uses HTTP Middleware, not CRD Webhook)
 
 **Use Case**: Workflow Catalog CRUD Attribution
 
-**Why Webhook Required**:
-1. ✅ **Manual Intervention**: Operator creates/updates RemediationWorkflow CRD
-2. ✅ **SOC2 CC8.1**: Must record WHO created/modified the workflow
-3. ✅ **Operational Decision**: Workflow CRUD affects system behavior
-4. ✅ **Compliance**: Track workflow lineage for audit purposes
+**Why HTTP Middleware (not CRD Webhook)**:
+- ❌ RemediationWorkflow CRD does NOT exist (DD-WORKFLOW-005 v2.0: REST API only)
+- ✅ V1.0 uses `POST /api/v1/workflows` (REST API registration)
+- ⏳ V1.1 `WorkflowRegistration` CRD is future work (not now)
 
-**Operations**:
-- CREATE: `kubectl apply -f restart-pod-workflow.yaml`
-- UPDATE: `kubectl apply -f restart-pod-workflow.yaml` (modified)
-- DISABLE: `POST /api/v1/workflows/{id}/disable` (via Data Storage API)
+**Operations** (REST API):
+- CREATE: `POST /api/v1/workflows` + `Authorization: Bearer <K8s-JWT>`
+- UPDATE: `PATCH /api/v1/workflows/{workflowID}` + `Authorization: Bearer <K8s-JWT>`
+- DISABLE: `PATCH /api/v1/workflows/{workflowID}/disable` + `Authorization: Bearer <K8s-JWT>`
 
-**Metadata Fields**:
-- `metadata.creationTimestamp`: Kubernetes sets this on CREATE
-- `metadata.annotations["kubernaut.ai/created-by"]`: Webhook populates from `req.UserInfo`
-- `metadata.annotations["kubernaut.ai/modified-by"]`: Webhook populates on UPDATE
+**Authentication Method**: K8s ServiceAccount JWT + HTTP Middleware
+- Middleware validates JWT via K8s TokenReview API
+- Extract authenticated user from TokenReview response
+- Populate audit events with authenticated actor
 
 **Audit Events** (already in DD-AUDIT-003 v1.2):
 - `datastorage.workflow.created`
 - `datastorage.workflow.updated` (includes disable operation)
 
-**Event Data**:
-```json
-{
-  "workflow_id": "restart-pod-workflow",
-  "workflow_version": "v1.2.3",
-  "operation": "created", // or "disabled"
-  "created_by": {
-    "username": "operator@example.com",
-    "uid": "k8s-user-uuid",
-    "groups": ["workflow-admins"]
-  },
-  "workflow_metadata": {
-    "title": "Restart Pod Workflow",
-    "labels": ["pod", "restart", "oomkill"]
-  }
-}
-```
+**Implementation Reference**: `DD-AUTH-002-http-authentication-middleware.md`
 
-**Webhook Type**: **MutatingWebhookConfiguration** (CREATE/UPDATE operations)
-
-**Implementation Pattern**:
-1. Webhook intercepts CREATE/UPDATE operations
-2. Extract authenticated user from `req.UserInfo`
-3. Populate `metadata.annotations["kubernaut.ai/created-by"]` or `["modified-by"]`
-4. Controller emits audit event using annotation value
+**Timeline**: Week 2, Days 12-14 (Data Storage Team) - 2.5 days
 
 ---
 
-## 🏗️ **CORRECTED: Consolidated Architecture (4 CRDs)**
+## 🏗️ **FINAL CORRECTION: Two Authentication Patterns**
+
+### **Pattern 1: Kubernetes Admission Webhooks** (3 CRDs)
 
 ```
 ┌────────────────────────────────────────────────────────────┐
@@ -406,9 +399,9 @@
 
 ---
 
-**Status**: ✅ **ANALYSIS COMPLETE - CORRECTED**  
-**Correction Applied**: January 6, 2026  
-**User Feedback**: ✅ Acknowledged - triage corrected  
+**Status**: ✅ **ANALYSIS COMPLETE - CORRECTED**
+**Correction Applied**: January 6, 2026
+**User Feedback**: ✅ Acknowledged - triage corrected
 **Recommendation**: ✅ **CONSOLIDATED WEBHOOK** (DD-AUTH-001 mandated)
 
 **Compliance**: DD-AUTH-001, DD-WEBHOOK-001 v1.1, BR-WE-013, SOC2 CC8.1

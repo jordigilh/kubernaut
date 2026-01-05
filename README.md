@@ -62,8 +62,9 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**V1.0 Release** (Post-Merge): All Core Services Production-Ready
+**V1.0 Release** (In Development): All Core Services Production-Ready
 **Production-Ready Services**: 8 of 8 services (100%) ✅
+**SOC2 Compliance**: In active development (Week 1 of 3-week sprint - see [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md))
 **Timeline**: V1.0 Pre-release: January 2026
 
 | Service | Status | Purpose | BR Coverage |
@@ -79,15 +80,28 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **Must-Gather Diagnostic Tool** | 🔄 **In Development (Week 1-3)** | Enterprise diagnostic collection | BR-PLATFORM-001 (parallel to SOC2) |
 | **~~Effectiveness Monitor~~** | ❌ **Deferred to V1.1** | Continuous improvement (DD-017) | 10 BRs (requires 8+ weeks of data) |
 
-**V1.0 Completion** (Post-Merge):
-- ✅ **SOC2 Compliance**: Audit traces support 100% RR reconstruction (enterprise-ready)
+**V1.0 Completion** (In Development):
+- 🚧 **SOC2 Compliance**: In active development - targeting 100% SOC2 Type II compliance (enterprise-ready)
+  - **Scope**: RR reconstruction + operator attribution (16 days, 128-129 hours)
+  - **Week 1**: RR reconstruction from audit traces (Days 1-6, 48-49 hours)
+  - **Week 2-3**: Operator action auditing with webhooks (Days 7-16, 80 hours)
+  - **Plan**: [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md) (comprehensive work breakdown)
+  - **Test Plan**: [SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md](docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md) (Week 1)
+  - **Extension**: [TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md](docs/development/SOC2/TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md) (Week 2-3)
+  - **Authority**: DD-AUDIT-004 (field mapping), ADR-034 (unified audit table), DD-WEBHOOK-001 (operator attribution)
 - ✅ **All Services Production-Ready**: 8 of 8 core services (100%)
 - ⏳ **Next Phase**: Segmented E2E tests + Full system validation (Week 2-3 of sprint)
 - ⏳ **Pre-Release**: January 2026 (feedback solicitation)
 
-**Recent Updates** (December 28, 2025 - Post-Merge):
-- 🎉 **V1.0 Complete**: All 8 core services production-ready (100%)
-- ✅ **SOC2 Compliance**: Week 1 MVP complete - 100% RR reconstruction from audit traces (DD-AUDIT-004, ADR-034)
+**Recent Updates** (January 4, 2026):
+- 📋 **SOC2 Implementation Plans**: Created comprehensive 3-week implementation plan for 100% SOC2 Type II compliance
+  - **Week 1**: [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md) - RR reconstruction (6 days, 48-49 hours)
+  - **Week 1**: [SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md](docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md) - DD-TESTING-001 compliant tests
+  - **Week 2-3**: [TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md](docs/development/SOC2/TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md) - Operator attribution (10 days, 80 hours)
+  - **Total**: 16 days, 128-129 hours across 3 weeks (quality prioritized over speed)
+  - Plans in authoritative location: `docs/development/SOC2/`
+- ✅ **DD-AUDIT-003 v1.3**: Extended with SOC2-specific event types (`aianalysis.analysis.completed`, `workflow.selection.completed`)
+- 🎉 **V1.0 Core Services Complete**: All 8 services production-ready (December 28, 2025)
 - ✅ **Gateway v1.0**: 377 tests (222U+118I+37E2E), 20 BRs, 100% P0 compliance, K8s-native deduplication (DD-GATEWAY-012), unit tests refactored to eliminate anti-patterns
 - ✅ **Signal Processing v1.0**: SOC2-compliant audit traces (original_payload, signal_labels, signal_annotations)
 - ✅ **AI Analysis v1.0**: SOC2-compliant audit traces (provider_data for RR reconstruction)
