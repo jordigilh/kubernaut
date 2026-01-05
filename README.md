@@ -3,11 +3,10 @@
 **AI-Powered Kubernetes Operations Platform**
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/jordigilh/kubernaut)](https://goreportcard.com/report/github.com/jordigilh/kubernaut)
-[![Go Version](https://img.shields.io/badge/Go-1.24.6-blue.svg)](https://golang.org/dl/)
+[![Go Version](https://img.shields.io/badge/Go-1.25.3-blue.svg)](https://golang.org/dl/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.34-blue.svg)](https://kubernetes.io/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![CI](https://github.com/jordigilh/kubernaut/actions/workflows/defense-in-depth-optimized.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/defense-in-depth-optimized.yml)
-[![Service Maturity](https://github.com/jordigilh/kubernaut/actions/workflows/service-maturity-validation.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/service-maturity-validation.yml)
+[![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 
 Kubernaut is an open-source Kubernetes AIOps platform that combines AI-driven investigation with automated remediation. It analyzes Kubernetes incidents, orchestrates multi-step remediation workflows, and executes validated actions—targeting mean time to resolution reduction from 60 minutes to under 5 minutes while maintaining operational safety.
 
