@@ -435,6 +435,53 @@ test-integration-holmesgpt-cleanup: clean-holmesgpt-test-ports ## Complete clean
 	@podman image prune -f --filter "label=test=holmesgptapi" 2>/dev/null || true
 	@echo "✅ Complete cleanup done (containers + images)"
 
+##@ Special Cases - Authentication Webhook
+
+.PHONY: test-unit-authwebhook
+test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
+
+.PHONY: test-integration-authwebhook
+test-integration-authwebhook: ginkgo ## Run webhook integration tests (envtest + real CRDs)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Authentication Webhook - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + programmatic infrastructure)"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --cover --covermode=atomic --fail-fast ./test/integration/authwebhook/...
+
+.PHONY: test-e2e-authwebhook
+test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/e2e/authwebhook/...
+
+.PHONY: test-all-authwebhook
+test-all-authwebhook: ## Run all webhook test tiers (Unit + Integration + E2E)
+	@echo "═══════════════════════════════════════════════════════════════════════════════"
+	@echo "🧪 Running ALL Authentication Webhook Tests (3 tiers)"
+	@echo "═══════════════════════════════════════════════════════════════════════════════"
+	@FAILED=0; \
+	$(MAKE) test-unit-authwebhook || FAILED=$$((FAILED + 1)); \
+	$(MAKE) test-integration-authwebhook || FAILED=$$((FAILED + 1)); \
+	$(MAKE) test-e2e-authwebhook || FAILED=$$((FAILED + 1)); \
+	if [ $$FAILED -gt 0 ]; then \
+		echo "❌ $$FAILED test tier(s) failed"; \
+		exit 1; \
+	fi
+	@echo "✅ All webhook test tiers completed successfully!"
+
+.PHONY: clean-authwebhook-integration
+clean-authwebhook-integration: ## Clean webhook integration test infrastructure
+	@echo "🧹 Cleaning webhook integration infrastructure..."
+	@podman stop authwebhook_postgres_1 authwebhook_redis_1 authwebhook_datastorage_1 2>/dev/null || true
+	@podman rm authwebhook_postgres_1 authwebhook_redis_1 authwebhook_datastorage_1 2>/dev/null || true
+	@podman network rm authwebhook_test-network 2>/dev/null || true
+	@echo "✅ Cleanup complete"
+
 ##@ Legacy Aliases (Backward Compatibility)
 
 .PHONY: test-gateway
