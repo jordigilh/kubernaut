@@ -1,6 +1,6 @@
 # Webhook Makefile Integration Triage
-**Date**: January 6, 2026  
-**Context**: SOC2 Compliance - Single Consolidated Webhook  
+**Date**: January 6, 2026
+**Context**: SOC2 Compliance - Single Consolidated Webhook
 **Objective**: Determine make targets needed for webhook testing using existing patterns
 
 ---
@@ -47,16 +47,145 @@ test-coverage-%:
 
 ---
 
-## 🚫 **WEBHOOK CHALLENGE: Not a Service in `cmd/`**
+## ✅ **WEBHOOK ARCHITECTURE CORRECTION**
 
-### **Problem Statement**
+### **CORRECTED Understanding**
 
-The webhook is **NOT a standalone service** with its own `cmd/` directory. It's:
-- A **shared library** in `pkg/authwebhook/`
-- **Imported by multiple CRD controllers** (WorkflowExecution, RemediationApprovalRequest, NotificationRequest)
-- **NOT discovered by `SERVICES := $(filter-out README.md, $(notdir $(wildcard cmd/*)))`**
+**Initial (Incorrect) Assumption**: Webhook is just a shared library in `pkg/authwebhook/`
 
-Therefore, the webhook **CANNOT use the existing pattern-based targets** (`test-unit-%`, `test-integration-%`, `test-e2e-%`).
+**ACTUAL Architecture** (per DD-AUTH-001):
+- ✅ Webhook **IS a standalone service** that **SHOULD** have `cmd/authwebhook/main.go`
+- ✅ Webhook **IS a Kubernetes Deployment** (`kubernaut-auth-webhook`)
+- ✅ Webhook **IS an HTTP server** listening for admission requests
+- ✅ Webhook **USES shared library** `pkg/authwebhook/` for common logic
+
+### **Current Status**
+
+```bash
+$ ls cmd/
+aianalysis  datastorage  gateway  must-gather  notification  
+remediationorchestrator  signalprocessing  workflowexecution
+
+# ❌ cmd/authwebhook/ does NOT exist yet
+```
+
+**Reason**: The webhook is **NOT YET IMPLEMENTED** - it's part of the SOC2 compliance work we're planning.
+
+### **Implication for Makefile Targets**
+
+**Once `cmd/authwebhook/` exists**:
+- ✅ Webhook **WILL** be auto-discovered: `SERVICES := $(filter-out README.md, $(notdir $(wildcard cmd/*)))`
+- ✅ Pattern-based targets **WILL** work: `make test-unit-authwebhook`, `make test-integration-authwebhook`, etc.
+- ✅ No special case needed (unlike HolmesGPT which is Python)
+
+**For NOW** (during implementation):
+- ⚠️ Use **explicit targets** (like HolmesGPT) until `cmd/authwebhook/` is created
+- ⚠️ Explicit targets provide **immediate testability** during TDD implementation
+- ✅ Once `cmd/authwebhook/main.go` exists, pattern-based targets will also work
+
+---
+
+## 🏗️ **WHAT NEEDS TO BE IMPLEMENTED**
+
+### **Required: `cmd/authwebhook/main.go`**
+
+The webhook service needs a `main.go` entry point (like all other kubernaut services):
+
+```go
+// cmd/authwebhook/main.go
+package main
+
+import (
+	"context"
+	"flag"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/go-logr/logr"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	"github.com/jordigilh/kubernaut/internal/webhook"
+)
+
+func main() {
+	var (
+		port       = flag.Int("port", 9443, "Webhook server port")
+		certDir    = flag.String("cert-dir", "/tmp/k8s-webhook-server/serving-certs", "Certificate directory")
+		configPath = flag.String("config", "/etc/authwebhook/config.yaml", "Configuration file path")
+	)
+	flag.Parse()
+
+	// Initialize logger
+	logger := setupLogger()
+	
+	// Load configuration (Data Storage URL for audit events)
+	cfg, err := loadConfig(*configPath)
+	if err != nil {
+		logger.Error(err, "Failed to load configuration")
+		os.Exit(1)
+	}
+
+	// Initialize audit client (for emitting authenticated audit events)
+	auditClient := initializeAuditClient(cfg.DataStorageURL, logger)
+	
+	// Create webhook server
+	webhookServer := webhook.NewServer(webhook.Options{
+		Port:    *port,
+		CertDir: *certDir,
+	})
+
+	// Register handlers for each CRD type
+	// DD-AUTH-001: Single webhook service, multiple handlers
+	webhookServer.Register("/authenticate/workflowexecution", 
+		&webhook.Admission{Handler: webhookhandlers.NewWorkflowExecutionHandler(auditClient, logger)})
+	
+	webhookServer.Register("/authenticate/remediationapproval", 
+		&webhook.Admission{Handler: webhookhandlers.NewRemediationApprovalHandler(auditClient, logger)})
+	
+	webhookServer.Register("/authenticate/notificationrequest", 
+		&webhook.Admission{Handler: webhookhandlers.NewNotificationRequestHandler(auditClient, logger)})
+
+	// Start webhook server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		logger.Info("Starting webhook server", "port", *port)
+		if err := webhookServer.Start(ctx); err != nil {
+			logger.Error(err, "Webhook server failed")
+			os.Exit(1)
+		}
+	}()
+
+	// Graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	logger.Info("Shutting down webhook server")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	
+	if err := webhookServer.Stop(shutdownCtx); err != nil {
+		logger.Error(err, "Graceful shutdown failed")
+		os.Exit(1)
+	}
+	
+	logger.Info("Webhook server shutdown complete")
+}
+```
+
+**Key Characteristics** (matches other kubernaut services):
+- ✅ Configuration file support (`-config` flag)
+- ✅ Structured logging (logr.Logger)
+- ✅ Graceful shutdown (signal handling)
+- ✅ Health checks and metrics
+- ✅ Audit client integration
+- ✅ Multiple handler registration (DD-AUTH-001)
 
 ---
 
@@ -280,7 +409,7 @@ const (
 	AuthWebhookIntegrationPostgresContainer   = "authwebhook_postgres_1"
 	AuthWebhookIntegrationRedisContainer      = "authwebhook_redis_1"
 	AuthWebhookIntegrationDataStorageContainer = "authwebhook_datastorage_1"
-	
+
 	// Ports (avoid conflicts with other services)
 	AuthWebhookIntegrationDataStoragePort = 18099
 	AuthWebhookIntegrationPostgresPort    = 15435
@@ -295,7 +424,7 @@ func StartAuthWebhookIntegrationInfrastructure(ctx context.Context) error {
 	// 3. Start Redis
 	// 4. Start Data Storage
 	// 5. Wait for health checks
-	
+
 	// Follow EXACT pattern from test/infrastructure/aianalysis.go
 	return nil
 }
@@ -316,7 +445,7 @@ import (
 	"context"
 	"testing"
 	"time"
-	
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -330,11 +459,11 @@ func TestAuthWebhookIntegration(t *testing.T) {
 var _ = BeforeSuite(func() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	
+
 	By("Starting webhook integration infrastructure (PostgreSQL, Redis, Data Storage)")
 	err := infrastructure.StartAuthWebhookIntegrationInfrastructure(ctx)
 	Expect(err).ToNot(HaveOccurred(), "Failed to start webhook integration infrastructure")
-	
+
 	GinkgoWriter.Println("✅ Webhook integration infrastructure ready")
 })
 
@@ -342,7 +471,7 @@ var _ = AfterSuite(func() {
 	By("Stopping webhook integration infrastructure")
 	err := infrastructure.StopAuthWebhookIntegrationInfrastructure()
 	Expect(err).ToNot(HaveOccurred(), "Failed to stop webhook integration infrastructure")
-	
+
 	GinkgoWriter.Println("✅ Webhook integration infrastructure stopped")
 })
 ```
@@ -373,22 +502,41 @@ TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo
 
 | Item | Status | Action Required |
 |------|--------|-----------------|
-| **Pattern-based targets won't work** | ⚠️ Confirmed | Webhook is not in `cmd/` |
-| **Explicit targets needed** | ✅ Required | Follow HolmesGPT pattern |
-| **Programmatic infrastructure** | ✅ Required | Follow AIAnalysis pattern |
-| **Parallel execution** | ✅ Required | `--procs=$(TEST_PROCS)` per DD-TEST-002 |
-| **Coverage collection** | ✅ Required | Unit, Integration, E2E variants |
-| **Makefile insertion location** | ✅ Identified | After HolmesGPT special cases |
+| **`cmd/authwebhook/` exists?** | ❌ NOT YET | Needs to be implemented (TDD) |
+| **Pattern-based targets will work** | ✅ FUTURE | Once `cmd/authwebhook/main.go` exists |
+| **Explicit targets needed NOW** | ✅ REQUIRED | For immediate TDD testability |
+| **Webhook architecture** | ✅ CLARIFIED | Standalone service (not just shared lib) |
+| **Programmatic infrastructure** | ✅ REQUIRED | Follow AIAnalysis pattern |
+| **Parallel execution** | ✅ REQUIRED | `--procs=$(TEST_PROCS)` per DD-TEST-002 |
+| **Coverage collection** | ✅ REQUIRED | Unit, Integration, E2E variants |
+| **Makefile insertion location** | ✅ IDENTIFIED | After HolmesGPT special cases |
 
 ---
 
 ## 📝 **NEXT STEPS**
 
-1. ✅ **Add webhook Makefile targets** (6 targets total)
-2. ✅ **Create `test/infrastructure/authwebhook.go`** (programmatic infrastructure setup)
-3. ✅ **Create test suite files** (`test/unit/authwebhook/suite_test.go`, etc.)
-4. ✅ **Verify port allocation** (avoid conflicts with existing services)
-5. ✅ **Test execution** (`make test-all-authwebhook`)
+### **Phase 1: Create Webhook Service** (NEW - Must happen first)
+1. ⬜ **Create `cmd/authwebhook/main.go`** (standalone webhook server)
+2. ⬜ **Create `cmd/authwebhook/Dockerfile`** (for K8s deployment)
+3. ⬜ **Create webhook configuration** (`config/authwebhook.yaml`)
+4. ⬜ **Verify webhook is auto-discovered** by Makefile pattern-based targets
+
+**Once webhook service exists, pattern-based targets work automatically**:
+- `make build-authwebhook` (builds binary)
+- `make test-unit-authwebhook` (runs unit tests)
+- `make test-integration-authwebhook` (runs integration tests)
+- `make test-e2e-authwebhook` (runs E2E tests)
+
+### **Phase 2: Add Explicit Targets for TDD** (During implementation)
+1. ⬜ **Add webhook Makefile targets** (6 explicit targets for immediate testability)
+2. ⬜ **Create `test/infrastructure/authwebhook.go`** (programmatic infrastructure setup)
+3. ⬜ **Create test suite files** (`test/unit/authwebhook/suite_test.go`, etc.)
+4. ⬜ **Verify port allocation** (avoid conflicts with existing services)
+5. ⬜ **Test execution** (`make test-all-authwebhook`)
+
+### **Phase 3: Cleanup** (After webhook is fully implemented)
+- ⬜ **Optional**: Remove explicit targets if pattern-based targets are sufficient
+- ⬜ **Optional**: Keep explicit targets for additional coverage variants
 
 ---
 
