@@ -41,6 +41,7 @@ package workflowexecution
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,6 +77,21 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 	BeforeEach(func() {
 		ctx = context.Background()
 
+		// Verify Data Storage is available (DD-TESTING-001: Health check before queries)
+		// Per audit_flow_integration_test.go pattern (PROVEN PATTERN)
+		httpClient := &http.Client{Timeout: 5 * time.Second}
+		resp, err := httpClient.Get(dataStorageBaseURL + "/health")
+		if err != nil || resp.StatusCode != http.StatusOK {
+			Skip(fmt.Sprintf(
+				"Data Storage not available at %s - skipping Gap 5-6 audit tests\n"+
+					"Reason: %v\n"+
+					"Start WE infrastructure: make test-integration-workflowexecution",
+				dataStorageBaseURL, err))
+		}
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+
 		// Create test namespace
 		namespace = fmt.Sprintf("we-gap56-test-%d", time.Now().Unix())
 		testNs := &corev1.Namespace{
@@ -84,9 +100,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 		Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
 
 		// Data Storage client (use shared infrastructure port from suite_test.go)
-		var err error
 		dsClient, err = dsgen.NewClientWithResponses(dataStorageBaseURL)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 	})
 
 	AfterEach(func() {
@@ -144,35 +159,35 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-		By("2. Wait for controller to process and emit events (CRD controller async)")
-		// CRD controllers are async - use Eventually with 60s timeout
-		// DD-TESTING-001: Deterministic event count (exactly 2 events)
-		Eventually(func() int {
-			// Query all audit events for this correlation_id
-			events, err := queryAuditEvents(dsClient, correlationID, nil)
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
-				return 0
-			}
-			GinkgoWriter.Printf("📊 Query result: %d events found\n", len(events))
-			return len(events)
-		}, 60*time.Second, 1*time.Second).Should(Equal(2),
-			"Should have exactly 2 audit events (selection + execution)")
+			By("2. Wait for controller to process and emit events (CRD controller async)")
+			// CRD controllers are async - use Eventually with 60s timeout
+			// DD-TESTING-001: Deterministic event count (exactly 2 events)
+			Eventually(func() int {
+				// Query all audit events for this correlation_id
+				events, err := queryAuditEvents(dsClient, correlationID, nil)
+				if err != nil {
+					GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
+					return 0
+				}
+				GinkgoWriter.Printf("📊 Query result: %d events found\n", len(events))
+				return len(events)
+			}, 60*time.Second, 1*time.Second).Should(Equal(2),
+				"Should have exactly 2 audit events (selection + execution)")
 
-		By("3. Query and validate both audit events")
-		allEvents, err := queryAuditEvents(dsClient, correlationID, nil)
-		Expect(err).ToNot(HaveOccurred())
+			By("3. Query and validate both audit events")
+			allEvents, err := queryAuditEvents(dsClient, correlationID, nil)
+			Expect(err).ToNot(HaveOccurred())
 
-		// Count events by type (DD-TESTING-001: Deterministic validation)
-		eventCounts := countEventsByType(allEvents)
-		Expect(eventCounts).To(HaveKey("workflow.selection.completed"))
-		Expect(eventCounts).To(HaveKey("execution.workflow.started"))
-		Expect(eventCounts["workflow.selection.completed"]).To(Equal(1), "Should have exactly 1 selection event")
-		Expect(eventCounts["execution.workflow.started"]).To(Equal(1), "Should have exactly 1 execution event")
+			// Count events by type (DD-TESTING-001: Deterministic validation)
+			eventCounts := countEventsByType(allEvents)
+			Expect(eventCounts).To(HaveKey("workflow.selection.completed"))
+			Expect(eventCounts).To(HaveKey("execution.workflow.started"))
+			Expect(eventCounts["workflow.selection.completed"]).To(Equal(1), "Should have exactly 1 selection event")
+			Expect(eventCounts["execution.workflow.started"]).To(Equal(1), "Should have exactly 1 execution event")
 
-		By("4. Validate workflow.selection.completed event structure")
-		selectionEvents := filterEventsByType(allEvents, "workflow.selection.completed")
-		Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
+			By("4. Validate workflow.selection.completed event structure")
+			selectionEvents := filterEventsByType(allEvents, "workflow.selection.completed")
+			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
 			selectionEvent := selectionEvents[0]
 			validateEventMetadata(selectionEvent, "workflow", correlationID)
@@ -189,9 +204,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 			Expect(workflowRef).To(HaveKeyWithValue("version", "v1.0.0"))
 			Expect(workflowRef).To(HaveKey("container_image"))
 
-		By("5. Validate execution.workflow.started event structure")
-		executionEvents := filterEventsByType(allEvents, "execution.workflow.started")
-		Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
+			By("5. Validate execution.workflow.started event structure")
+			executionEvents := filterEventsByType(allEvents, "execution.workflow.started")
+			Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
 
 			executionEvent := executionEvents[0]
 			validateEventMetadata(executionEvent, "execution", correlationID)
@@ -252,23 +267,23 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-		By("2. Wait for workflow.selection.completed event (fast path)")
-		// DD-TESTING-001: Deterministic event count (exactly 1 event)
-		Eventually(func() int {
-			selectionType := "workflow.selection.completed"
-			events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
-			if err != nil {
-				return 0
-			}
-			return len(events)
-		}, 30*time.Second, 1*time.Second).Should(Equal(1),
-			"Should have exactly 1 workflow.selection.completed event")
+			By("2. Wait for workflow.selection.completed event (fast path)")
+			// DD-TESTING-001: Deterministic event count (exactly 1 event)
+			Eventually(func() int {
+				selectionType := "workflow.selection.completed"
+				events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
+				if err != nil {
+					return 0
+				}
+				return len(events)
+			}, 30*time.Second, 1*time.Second).Should(Equal(1),
+				"Should have exactly 1 workflow.selection.completed event")
 
-		By("3. Validate selection event is present")
-		selectionType := "workflow.selection.completed"
-		selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
+			By("3. Validate selection event is present")
+			selectionType := "workflow.selection.completed"
+			selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
 			// Validate event structure
 			selectionEvent := selectionEvents[0]
@@ -350,4 +365,3 @@ func validateEventMetadata(event dsgen.AuditEvent, category, correlationID strin
 	Expect(string(event.EventOutcome)).ToNot(BeEmpty())
 	Expect(event.ActorId).ToNot(BeNil())
 }
-

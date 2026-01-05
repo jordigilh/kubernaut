@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package authwebhook_test
+package authwebhook
 
 import (
 	"testing"
@@ -42,6 +42,5 @@ import (
 
 func TestAuthWebhookUnit(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "AuthWebhook Unit Suite - BR-WE-013 SOC2 Attribution")
+	RunSpecs(t, "AuthWebhook Unit Suite - BR-AUTH-001 SOC2 Operator Attribution")
 }
-
