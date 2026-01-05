@@ -392,8 +392,14 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// ========================================
 	if err := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, pr.Name, pr.Namespace); err != nil {
 		logger.V(1).Info("Failed to record execution.workflow.started audit event", "error", err)
-		// Non-blocking: workflow execution continues
-		// Audit condition will be updated later
+		weconditions.SetAuditRecorded(wfe, false,
+			weconditions.ReasonAuditFailed,
+			fmt.Sprintf("Failed to record audit event: %v", err))
+		// Non-blocking: workflow execution continues even if audit fails
+	} else {
+		weconditions.SetAuditRecorded(wfe, true,
+			weconditions.ReasonAuditSucceeded,
+			"Audit event execution.workflow.started recorded to DataStorage")
 	}
 
 	// ========================================
@@ -416,21 +422,10 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	// ========================================
-	// Day 8: Record audit event for workflow start (BR-WE-005, ADR-032)
-	// Set audit condition BEFORE status update to avoid race condition
-	// Uses Audit Manager (P3: Audit Manager pattern)
-	// ========================================
-	if err := r.AuditManager.RecordWorkflowStarted(ctx, wfe); err != nil {
-		logger.V(1).Info("Failed to record workflow.started audit event", "error", err)
-		weconditions.SetAuditRecorded(wfe, false,
-			weconditions.ReasonAuditFailed,
-			fmt.Sprintf("Failed to record audit event: %v", err))
-	} else {
-		weconditions.SetAuditRecorded(wfe, true,
-			weconditions.ReasonAuditSucceeded,
-			"Audit event workflow.started recorded to DataStorage")
-	}
-
+	// Day 8 DEPRECATED: The old "workflow.started" event has been replaced by Day 3 Gap #6:
+	// "execution.workflow.started" (emitted above after PipelineRun creation).
+	// This provides more granular audit trail per BR-AUDIT-005 Gap #5 & #6.
+	// The audit condition is now set by Gap #6 emission (lines 382-396).
 	// ========================================
 	// Single atomic status update with all changes
 	// This eliminates race condition from multiple sequential updates

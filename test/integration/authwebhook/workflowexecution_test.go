@@ -58,9 +58,9 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					Name:      "test-wfe-clearance",
 					Namespace: namespace,
 				},
-				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					WorkflowName: "test-workflow",
-				},
+		Spec: workflowexecutionv1.WorkflowExecutionSpec{
+			TargetResource: "default/pod/test-pod",
+		},
 			}
 
 			createAndWaitForCRD(ctx, wfe)
@@ -116,9 +116,9 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					Name:      "test-wfe-no-reason",
 					Namespace: namespace,
 				},
-				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					WorkflowName: "test-workflow",
-				},
+		Spec: workflowexecutionv1.WorkflowExecutionSpec{
+			TargetResource: "default/pod/test-pod",
+		},
 			}
 
 			createAndWaitForCRD(ctx, wfe)
@@ -153,9 +153,9 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					Name:      "test-wfe-weak-reason",
 					Namespace: namespace,
 				},
-				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					WorkflowName: "test-workflow",
-				},
+		Spec: workflowexecutionv1.WorkflowExecutionSpec{
+			TargetResource: "default/pod/test-pod",
+		},
 			}
 
 			createAndWaitForCRD(ctx, wfe)

@@ -385,60 +385,60 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// and query the HTTP API to verify audit events were persisted correctly.
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		It("should persist workflow.started audit event with correct field values", func() {
-			By("Creating a WorkflowExecution")
-			wfe = createUniqueWFE("audit-started", "default/deployment/audit-started-test")
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+	It("should persist execution.workflow.started audit event (BR-AUDIT-005 Gap #6)", func() {
+		By("Creating a WorkflowExecution")
+		wfe = createUniqueWFE("audit-started", "default/deployment/audit-started-test")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for Running phase")
-			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
-			Expect(err).ToNot(HaveOccurred())
+		By("Waiting for Running phase")
+		_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+		Expect(err).ToNot(HaveOccurred())
 
-			By("Querying DataStorage API for workflow.started audit event via OpenAPI client")
-			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
-			// Query real DataStorage service (Defense-in-Depth: validate field values)
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+		By("Querying DataStorage API for execution.workflow.started audit event via OpenAPI client")
+		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+		// Query real DataStorage service (Defense-in-Depth: validate field values)
+		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-		eventCategory := "workflow"
-		var startedEvent *dsgen.AuditEvent
-		// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
-		correlationID := wfe.Spec.RemediationRequestRef.Name
-		Eventually(func() bool {
-			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &correlationID,
-			})
-				if err != nil {
-					return false
-				}
-
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-					return false
-				}
-
-				// Find workflow.started event
-				for i := range *resp.JSON200.Data {
-					if (*resp.JSON200.Data)[i].EventType == "workflow.started" {
-						startedEvent = &(*resp.JSON200.Data)[i]
-						return true
-					}
-				}
-				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"workflow.started audit event should be persisted in DataStorage")
-
-		By("Verifying audit event field values")
-		Expect(startedEvent).ToNot(BeNil())
-		Expect(startedEvent.EventCategory).To(Equal(dsgen.AuditEventEventCategoryWorkflow))
-		// WE-BUG-002: event_action contains short form ("started" not "workflow.started")
-		Expect(startedEvent.EventAction).To(Equal("started"))
-		Expect(startedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeSuccess))
-			// DD-AUDIT-CORRELATION-001: CorrelationId = RemediationRequestRef.Name
-			Expect(startedEvent.CorrelationId).To(Equal(wfe.Spec.RemediationRequestRef.Name))
-
-			GinkgoWriter.Println("✅ workflow.started audit event persisted with correct field values")
+	eventCategory := "execution" // Gap #6 uses "execution" category
+	var startedEvent *dsgen.AuditEvent
+	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+	correlationID := wfe.Spec.RemediationRequestRef.Name
+	Eventually(func() bool {
+		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+			EventCategory: &eventCategory,
+			CorrelationId: &correlationID,
 		})
+			if err != nil {
+				return false
+			}
+
+			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
+				return false
+			}
+
+			// Find execution.workflow.started event (Gap #6)
+			for i := range *resp.JSON200.Data {
+				if (*resp.JSON200.Data)[i].EventType == "execution.workflow.started" {
+					startedEvent = &(*resp.JSON200.Data)[i]
+					return true
+				}
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"execution.workflow.started audit event should be persisted in DataStorage")
+
+	By("Verifying audit event field values")
+	Expect(startedEvent).ToNot(BeNil())
+	Expect(startedEvent.EventCategory).To(Equal(dsgen.AuditEventEventCategoryExecution)) // Gap #6 uses execution category
+	// WE-BUG-002: event_action contains short form ("started" not "execution.workflow.started")
+	Expect(startedEvent.EventAction).To(Equal("started"))
+	Expect(startedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeSuccess))
+		// DD-AUDIT-CORRELATION-001: CorrelationId = RemediationRequestRef.Name
+		Expect(startedEvent.CorrelationId).To(Equal(wfe.Spec.RemediationRequestRef.Name))
+
+		GinkgoWriter.Println("✅ execution.workflow.started audit event persisted with correct field values")
+	})
 
 		It("should persist workflow.completed audit event with correct field values", func() {
 			By("Creating a WorkflowExecution")

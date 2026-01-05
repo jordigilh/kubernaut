@@ -24,7 +24,6 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -38,7 +37,7 @@ import (
 // - status.DecidedAt (timestamp)
 type RemediationApprovalRequestAuthHandler struct {
 	authenticator *authwebhook.Authenticator
-	decoder       *admission.Decoder
+	decoder       admission.Decoder
 }
 
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler
@@ -104,7 +103,7 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 
 // InjectDecoder injects the decoder into the handler
 // Required by controller-runtime admission webhook framework
-func (h *RemediationApprovalRequestAuthHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *RemediationApprovalRequestAuthHandler) InjectDecoder(d admission.Decoder) error {
 	h.decoder = d
 	return nil
 }

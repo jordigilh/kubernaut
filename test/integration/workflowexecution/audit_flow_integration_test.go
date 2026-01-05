@@ -89,7 +89,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {
-		It("should emit 'workflow.started' audit event to Data Storage", func() {
+		It("should emit 'execution.workflow.started' audit event to Data Storage", func() {
 			// BUSINESS SCENARIO:
 			// When WorkflowExecution controller creates a PipelineRun:
 			// 1. Validates workflow configuration
@@ -155,17 +155,17 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			}, 15*time.Second, 500*time.Millisecond).ShouldNot(BeEmpty(),
 				"Controller should start processing workflow execution")
 
-			By("4. Query Data Storage for 'workflow.started' audit event (SIDE EFFECT)")
-			// ✅ DD-API-001: Use OpenAPI client with type-safe parameters
-			eventType := "workflow.started"
-			eventCategory := "workflow"
-			var auditEvents []dsgen.AuditEvent
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventType:     &eventType,
-					EventCategory: &eventCategory,
-					CorrelationId: &correlationID,
-				})
+		By("4. Query Data Storage for 'execution.workflow.started' audit event (SIDE EFFECT)")
+		// ✅ DD-API-001: Use OpenAPI client with type-safe parameters
+		eventType := "execution.workflow.started"
+		eventCategory := "execution" // Gap #6 uses "execution" category
+		var auditEvents []dsgen.AuditEvent
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+				EventType:     &eventType,
+				EventCategory: &eventCategory,
+				CorrelationId: &correlationID,
+			})
 				if err != nil {
 					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
 					return 0
@@ -184,26 +184,26 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 				}
 				return 0
 			}, 20*time.Second, 1*time.Second).Should(Equal(1),
-				"BR-WE-005: WorkflowExecution MUST emit exactly 1 workflow.started audit event (DD-TESTING-001)")
+				"BR-WE-005: WorkflowExecution MUST emit exactly 1 execution.workflow.started audit event (DD-TESTING-001)")
 
 			By("5. Validate audit event content")
 			var startedEvent *dsgen.AuditEvent
 			for i := range auditEvents {
-				if auditEvents[i].EventType == "workflow.started" {
+				if auditEvents[i].EventType == "execution.workflow.started" {
 					startedEvent = &auditEvents[i]
 					break
 				}
 			}
-			Expect(startedEvent).ToNot(BeNil(), "Should have 'workflow.started' audit event")
+			Expect(startedEvent).ToNot(BeNil(), "Should have 'execution.workflow.started' audit event")
 
-			// Validate key fields
-			Expect(startedEvent.EventCategory).To(Equal(dsgen.AuditEventEventCategoryWorkflow))
-			Expect(startedEvent.EventAction).To(Equal("started"))
-			Expect(startedEvent.CorrelationId).To(Equal(correlationID))
+		// Validate key fields
+		Expect(startedEvent.EventCategory).To(Equal(dsgen.AuditEventEventCategoryExecution)) // Gap #6 uses execution category
+		Expect(startedEvent.EventAction).To(Equal("started"))
+		Expect(startedEvent.CorrelationId).To(Equal(correlationID))
 			Expect(startedEvent.ResourceType).ToNot(BeNil())
 			Expect(*startedEvent.ResourceType).To(Equal("WorkflowExecution"))
 
-			GinkgoWriter.Printf("✅ workflow.started audit event validated: %s\n", startedEvent.EventId)
+			GinkgoWriter.Printf("✅ execution.workflow.started audit event validated: %s\n", startedEvent.EventId)
 		})
 	})
 
@@ -211,7 +211,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 		It("should track workflow lifecycle through audit events", func() {
 			// BUSINESS SCENARIO:
 			// When WorkflowExecution progresses through phases:
-			// 1. Pending → Running (workflow.started)
+			// 1. Pending → Running (execution.workflow.started)
 			// 2. Running → Completed/Failed (workflow.completed/workflow.failed)
 			// 3. Each transition MUST emit audit event
 			//
@@ -260,41 +260,39 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name, not WFE name
 			correlationID := "test-rr-" + wfeName
 
-			By("3. Wait for controller to process and emit workflow.started event")
-			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-			eventCategory := "workflow"
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &correlationID,
-				})
-				if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-					return 0
-				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
-				}
-				return 0
-			}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-				"Controller should emit at least workflow.started event")
-
-			By("4. Fetch all workflow audit events for detailed validation")
-			// ✅ DD-API-001: Use OpenAPI client
-			var auditEvents []dsgen.AuditEvent
+		By("3. Wait for controller to process and emit execution.workflow.started event")
+		// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+		// Don't filter by category - get all events for this correlation ID (execution + workflow categories)
+		Eventually(func() int {
 			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
 				CorrelationId: &correlationID,
 			})
+			if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
+				return 0
+			}
+			if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
+				return *resp.JSON200.Pagination.Total
+			}
+			return 0
+		}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+			"Controller should emit at least execution.workflow.started event")
+
+		By("4. Fetch all workflow audit events for detailed validation")
+		// ✅ DD-API-001: Use OpenAPI client
+		var auditEvents []dsgen.AuditEvent
+		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+		})
 			Expect(err).ToNot(HaveOccurred(), "Should successfully query audit events")
 			Expect(resp.StatusCode()).To(Equal(http.StatusOK), "Query should return 200")
 			Expect(resp.JSON200).ToNot(BeNil(), "Response should have JSON body")
 			if resp.JSON200.Data != nil {
 				auditEvents = *resp.JSON200.Data
 			}
-			// DD-TESTING-001: Deterministic validation - we always expect workflow.started
+			// DD-TESTING-001: Deterministic validation - we always expect execution.workflow.started
 			// May also have workflow.completed/failed if Tekton is available
 			Expect(len(auditEvents)).To(BeNumerically(">=", 1),
-				"Should have at least workflow.started event")
+				"Should have at least execution.workflow.started event")
 
 			By("5. Verify workflow lifecycle events")
 			eventTypes := make(map[string]bool)
@@ -304,15 +302,15 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					event.EventType, event.CorrelationId)
 			}
 
-			// Should have at minimum workflow.started
-			Expect(eventTypes).To(HaveKey("workflow.started"),
-				"Expected workflow.started event in lifecycle")
+			// Should have at minimum execution.workflow.started
+			Expect(eventTypes).To(HaveKey("execution.workflow.started"),
+				"Expected execution.workflow.started event in lifecycle")
 
 			// May have workflow.completed or workflow.failed depending on Tekton availability
 			if eventTypes["workflow.completed"] || eventTypes["workflow.failed"] {
 				GinkgoWriter.Println("✅ Complete workflow lifecycle tracked in audit trail")
 			} else {
-				GinkgoWriter.Println("⚠️  Only workflow.started event found (expected in test env without full Tekton)")
+				GinkgoWriter.Println("⚠️  Only execution.workflow.started event found (expected in test env without full Tekton)")
 			}
 		})
 	})

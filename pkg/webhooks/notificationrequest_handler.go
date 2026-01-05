@@ -26,7 +26,6 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	admissionv1 "k8s.io/api/admission/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -41,7 +40,7 @@ import (
 // The annotations allow the controller to capture attribution before the CRD is removed by finalizers.
 type NotificationRequestDeleteHandler struct {
 	authenticator *authwebhook.Authenticator
-	decoder       *admission.Decoder
+	decoder       admission.Decoder
 }
 
 // NewNotificationRequestDeleteHandler creates a new NotificationRequest DELETE authentication handler
@@ -102,7 +101,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 
 // InjectDecoder injects the decoder into the handler
 // Required by controller-runtime admission webhook framework
-func (h *NotificationRequestDeleteHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *NotificationRequestDeleteHandler) InjectDecoder(d admission.Decoder) error {
 	h.decoder = d
 	return nil
 }
