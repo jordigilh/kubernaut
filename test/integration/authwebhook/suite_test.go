@@ -31,6 +31,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/webhooks"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -48,12 +49,24 @@ import (
 
 // Suite-level variables
 var (
-	cfg       *rest.Config
-	k8sClient client.Client
-	testEnv   *envtest.Environment
-	ctx       context.Context
-	cancel    context.CancelFunc
+	cfg              *rest.Config
+	k8sClient        client.Client
+	testEnv          *envtest.Environment
+	ctx              context.Context
+	cancel           context.CancelFunc
+	mockAuditMgr     *mockAuditManager
 )
+
+// mockAuditManager is a simple in-memory audit manager for webhook tests
+// It implements the minimal interface needed by the NotificationRequest DELETE handler
+type mockAuditManager struct {
+	events []audit.AuditEvent
+}
+
+func (m *mockAuditManager) RecordEvent(ctx context.Context, event audit.AuditEvent) error {
+	m.events = append(m.events, event)
+	return nil
+}
 
 func TestAuthWebhookIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -115,8 +128,9 @@ var _ = BeforeSuite(func() {
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
 	// Register NotificationRequest mutating webhook for DELETE
-	// Note: Must be mutating (not validating) because we need to add annotations
-	nrHandler := webhooks.NewNotificationRequestDeleteHandler()
+	// Note: Writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
+	mockAuditMgr = &mockAuditManager{events: []audit.AuditEvent{}}
+	nrHandler := webhooks.NewNotificationRequestDeleteHandler(mockAuditMgr)
 	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 

@@ -21,32 +21,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	admissionv1 "k8s.io/api/admission/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// AuditManager is the interface for recording audit events
+// This interface allows for testing without requiring a full audit store
+type AuditManager interface {
+	RecordEvent(ctx context.Context, event audit.AuditEvent) error
+}
+
 // NotificationRequestDeleteHandler handles authentication for NotificationRequest cancellation via DELETE
 // BR-AUTH-001: SOC2 CC8.1 Operator Attribution
 // DD-NOT-005: Immutable Spec - Cancellation via DELETE Operation
 //
-// This validating webhook intercepts NotificationRequest DELETE operations and adds annotations:
-// - kubernaut.ai/cancelled-by (operator email/username)
-// - kubernaut.ai/cancelled-at (timestamp)
+// This webhook intercepts NotificationRequest DELETE operations and writes audit attribution:
+// - Extracts authenticated user from admission request
+// - Writes deletion audit event to database
+// - Allows DELETE to proceed
 //
-// The annotations allow the controller to capture attribution before the CRD is removed by finalizers.
+// Note: Kubernetes API prevents mutating objects during DELETE, so attribution is captured
+// via audit trail rather than CRD annotations.
 type NotificationRequestDeleteHandler struct {
 	authenticator *authwebhook.Authenticator
+	auditManager  AuditManager
 	decoder       admission.Decoder
 }
 
 // NewNotificationRequestDeleteHandler creates a new NotificationRequest DELETE authentication handler
-func NewNotificationRequestDeleteHandler() *NotificationRequestDeleteHandler {
+func NewNotificationRequestDeleteHandler(auditManager AuditManager) *NotificationRequestDeleteHandler {
 	return &NotificationRequestDeleteHandler{
 		authenticator: authwebhook.NewAuthenticator(),
+		auditManager:  auditManager,
 	}
 }
 
@@ -78,28 +88,44 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	}
 
 	// Note: Kubernetes API server does NOT allow mutating objects during DELETE operations.
-	// This is a fundamental K8s limitation, not a webhook implementation issue.
-	// 
-	// For DELETE attribution in production, use one of these approaches:
-	// - Finalizers: Controller captures attribution before removing finalizer
-	// - Audit logs: Query K8s audit logs for DELETE operations
-	// - Pre-delete annotation: Add attribution BEFORE deleting (via controller)
-	//
-	// For integration tests, we validate that:
-	// 1. The webhook is invoked on DELETE
-	// 2. The webhook extracts user identity correctly
-	// 3. The webhook allows the DELETE to proceed
-	//
-	// The webhook logs the deletion but cannot modify the object.
-	// In a real implementation, a controller would use finalizers to capture attribution.
+	// However, we CAN write audit traces to capture attribution for SOC2 compliance.
 	
-	// Log deletion for audit purposes (in production, use structured logging)
-	// Note: This validation still provides value by ensuring authentication works
-	// and the webhook doesn't block legitimate DELETE operations.
-	
+	// Write deletion audit event
+	eventData := map[string]interface{}{
+		"notification_id": nr.Name,
+		"namespace":       nr.Namespace,
+		"type":            string(nr.Spec.Type),
+		"priority":        string(nr.Spec.Priority),
+		"cancelled_by":    authCtx.Username,
+		"user_uid":        authCtx.UID,
+		"user_groups":     authCtx.Groups,
+	}
+
+	eventDataBytes, err := json.Marshal(eventData)
+	if err != nil {
+		// If marshaling fails, allow DELETE but log the issue
+		return admission.Allowed(fmt.Sprintf("DELETE allowed with audit warning: failed to marshal event data: %v", err))
+	}
+
+	err = h.auditManager.RecordEvent(ctx, audit.AuditEvent{
+		EventCategory:  "notification",
+		EventType:      "notification.request.deleted",
+		EventOutcome:   "success",
+		ActorID:        authCtx.Username,
+		ResourceType:   "NotificationRequest",
+		ResourceID:     fmt.Sprintf("%s/%s", nr.Namespace, nr.Name),
+		CorrelationID:  nr.Name,
+		EventData:      eventDataBytes,
+	})
+
+	if err != nil {
+		// Log error but allow DELETE to proceed (audit failure shouldn't block operations)
+		// In production, this would trigger an alert for audit integrity monitoring
+		return admission.Allowed(fmt.Sprintf("DELETE allowed with audit warning: %v", err))
+	}
+
 	// Allow DELETE to proceed
-	// TODO: Implement finalizer-based attribution in controller for production
-	return admission.Allowed(fmt.Sprintf("DELETE allowed for NotificationRequest (user: %s)", authCtx.Username))
+	return admission.Allowed(fmt.Sprintf("DELETE allowed, attribution recorded (user: %s)", authCtx.Username))
 }
 
 // InjectDecoder injects the decoder into the handler
