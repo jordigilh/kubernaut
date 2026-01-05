@@ -146,6 +146,83 @@ Data Storage (Dependency):
 
 ---
 
+### **Auth Webhook Service** (Kubernetes Admission Webhook)
+
+#### **Integration Tests** (`test/integration/authwebhook/`)
+
+**Updated**: 2026-01-06 (SOC2 CC8.1 Attribution - BR-WEBHOOK-001)
+
+```yaml
+PostgreSQL:
+  Host Port: 15442
+  Container Port: 5432
+  Connection: localhost:15442
+  Purpose: Audit event storage for authenticated operator actions
+
+Redis:
+  Host Port: 16386
+  Container Port: 6379
+  Connection: localhost:16386
+  Purpose: Data Storage DLQ
+
+Data Storage (Dependency):
+  Host Port: 18099
+  Container Port: 8080
+  Connection: http://localhost:18099
+  Purpose: Audit API for webhook authentication events
+```
+
+**Configuration Files**:
+- `test/infrastructure/authwebhook.go` - Programmatic infrastructure setup
+- `test/integration/authwebhook/suite_test.go` - Test suite with BeforeSuite setup
+- `test/integration/authwebhook/datastorage-config.yaml` - Data Storage configuration
+
+**Infrastructure**: Programmatic podman commands (follows AIAnalysis pattern - DD-INTEGRATION-001 v2.0)
+**Pattern**: Ginkgo/Gomega with `BeforeSuite` infrastructure startup
+
+**Port Allocation Rationale**:
+- **PostgreSQL 15442**: Last available port in 15433-15442 range (no conflicts)
+- **Redis 16386**: Available port between 16385 (Notification) and 16387 (HAPI)
+- **Data Storage 18099**: Last available port in standard dependency range 18090-18099
+
+**Service Type**: Kubernetes admission webhook (no HTTP API - only webhook endpoints)
+**Purpose**: Extract authenticated user identity for SOC2 CC8.1 attribution
+**CRDs Supported**: WorkflowExecution, RemediationApprovalRequest, NotificationRequest
+
+#### **E2E Tests** (`test/e2e/authwebhook/`)
+
+**Status**: Pending implementation (TDD Day 5-6)
+
+```yaml
+PostgreSQL:
+  Host Port: 25442
+  Container Port: 5432
+  Connection: localhost:25442
+  Purpose: Audit event storage
+
+Redis:
+  Host Port: 26386
+  Container Port: 6379
+  Connection: localhost:26386
+  Purpose: Data Storage DLQ
+
+Webhook (in Kind):
+  NodePort: 30099
+  Purpose: Webhook admission endpoint (no host port mapping needed)
+
+Data Storage (Dependency):
+  Host Port: 28099
+  Container Port: 8080
+  Connection: http://localhost:28099
+  Purpose: Audit API
+```
+
+**Kind Config**: `test/infrastructure/kind-authwebhook-config.yaml`
+**Infrastructure**: Kind cluster with webhook deployed as admission controller
+**Pattern**: Ginkgo/Gomega with `SynchronizedBeforeSuite` for Kind cluster creation
+
+---
+
 ### **Data Storage Service**
 
 #### **Integration Tests** (`test/integration/datastorage/`)
@@ -648,6 +725,7 @@ var _ = SynchronizedBeforeSuite(
 | **Notification (CRD)** | 15440 | 16385 | N/A | Data Storage: 18096 |
 | **WorkflowExecution (CRD)** | 15441 | 16388 | N/A | Data Storage: 18097 |
 | **HolmesGPT API (Python)** | 15439 | 16387 | 18120 | Data Storage: 18098 |
+| **Auth Webhook (Admission)** | 15442 | 16386 | N/A | Data Storage: 18099 |
 
 ✅ **No Conflicts** - All services can run integration tests in parallel
 
@@ -661,6 +739,7 @@ var _ = SynchronizedBeforeSuite(
 | **Gateway** | N/A | 26380 | 28080 | Data Storage: 28091 |
 | **Effectiveness Monitor** | 25434 | N/A | 28100 | Data Storage: 28092 |
 | **Workflow Engine** | N/A | N/A | 28110 | Data Storage: 28093 |
+| **Auth Webhook** | 25442 | 26386 | N/A | Data Storage: 28099 |
 
 ✅ **No Conflicts** - All services can run E2E tests in parallel
 
@@ -713,6 +792,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.1 | 2026-01-06 | AI Assistant | **NEW SERVICE**: Added Auth Webhook (Kubernetes admission webhook) port allocations for SOC2 CC8.1 compliance; Integration tests (PostgreSQL: 15442, Redis: 16386, Data Storage: 18099); E2E tests (PostgreSQL: 25442, Redis: 26386, Data Storage: 28099); No port conflicts - parallel testing enabled |
 | 2.0 | 2026-01-01 | AI Assistant | **CRITICAL FIX**: Resolved Notification/HAPI PostgreSQL port conflict - migrated Notification PostgreSQL from 15439 (shared with HAPI) to 15440 (unique); **TRUE PARALLEL TESTING NOW ENABLED** - all 8 services can run integration tests simultaneously without port conflicts; removed shared port design flaw |
 | 1.9 | 2025-12-25 | AI Assistant | **CRITICAL FIX**: Resolved WE/HAPI Redis port conflict - migrated WorkflowExecution Redis from 16387 (shared with HAPI) to 16388 (unique); enables parallel integration testing for WE and HAPI; updated note to clarify only PostgreSQL is shared between HAPI and Notification |
 | 1.8 | 2025-12-25 | AI Assistant | **CRITICAL FIX**: Resolved HAPI port conflict - migrated HAPI Data Storage from 18094 (SignalProcessing) to 18098; added complete integration test port allocation table including all CRD controllers; documented HAPI integration test ports (PostgreSQL: 15439, Redis: 16387, HAPI API: 18120, Data Storage dependency: 18098) |

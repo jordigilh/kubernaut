@@ -1,6 +1,6 @@
 # Webhook Makefile Implementation - APPROVED APPROACH
-**Date**: January 6, 2026  
-**Status**: ✅ **APPROVED** - Option B (Explicit Targets for TDD)  
+**Date**: January 6, 2026
+**Status**: ✅ **APPROVED** - Option B (Explicit Targets for TDD)
 **Decision**: Use explicit Makefile targets for immediate testability during TDD implementation
 
 ---
@@ -28,22 +28,14 @@
 Add after line 437 in `Makefile` (after HolmesGPT special cases):
 
 ```makefile
-##@ Special Cases - Authentication Webhook (Shared Library)
+##@ Special Cases - Authentication Webhook
 
 .PHONY: test-unit-authwebhook
 test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) ./test/unit/authwebhook/...
-
-.PHONY: test-coverage-authwebhook
-test-coverage-authwebhook: ## Run webhook unit tests with coverage
-	@echo "📊 Running webhook unit tests with coverage..."
-	@cd test/unit/authwebhook && \
-		go test -v -p $(TEST_PROCS) -coverprofile=coverage.out -covermode=atomic ./... && \
-		go tool cover -html=coverage.out -o coverage.html
-	@echo "✅ Coverage report: test/unit/authwebhook/coverage.html"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
 
 .PHONY: test-integration-authwebhook
 test-integration-authwebhook: ginkgo ## Run webhook integration tests (envtest + real CRDs)
@@ -51,45 +43,14 @@ test-integration-authwebhook: ginkgo ## Run webhook integration tests (envtest +
 	@echo "🧪 Authentication Webhook - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + programmatic infrastructure)"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast ./test/integration/authwebhook/...
-
-.PHONY: test-coverage-integration-authwebhook
-test-coverage-integration-authwebhook: ## Run webhook integration tests with coverage
-	@echo "📊 Running webhook integration tests with coverage..."
-	@cd test/integration/authwebhook && \
-		go test -v -p $(TEST_PROCS) -coverprofile=coverage.out -covermode=atomic ./... && \
-		go tool cover -html=coverage.out -o coverage.html
-	@echo "✅ Coverage report: test/integration/authwebhook/coverage.html"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --cover --covermode=atomic --fail-fast ./test/integration/authwebhook/...
 
 .PHONY: test-e2e-authwebhook
 test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/authwebhook/...
-
-.PHONY: test-coverage-e2e-authwebhook
-test-coverage-e2e-authwebhook: ensure-coverdata ## Run webhook E2E tests with binary coverage
-	@echo "📊 Running webhook E2E tests with binary coverage..."
-	@echo "🔧 Step 1: Building webhook with coverage instrumentation..."
-	@CGO_ENABLED=0 go build -cover -o bin/authwebhook-coverage ./cmd/authwebhook
-	@echo "✅ Coverage-instrumented binary built: bin/authwebhook-coverage"
-	@echo ""
-	@echo "🐳 Step 2: Building Docker image with coverage binary..."
-	@docker build -t authwebhook:e2e-coverage \
-		--build-arg BINARY=bin/authwebhook-coverage \
-		-f cmd/authwebhook/Dockerfile.e2e .
-	@echo "✅ E2E coverage image built: authwebhook:e2e-coverage"
-	@echo ""
-	@echo "☸️  Step 3: Running E2E tests (Kind cluster with GOCOVERDIR)..."
-	@WEBHOOK_IMAGE=authwebhook:e2e-coverage \
-		GOCOVERDIR=$(PWD)/coverdata \
-		$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/authwebhook/...
-	@echo ""
-	@echo "📊 Step 4: Converting binary coverage to textfmt..."
-	@go tool covdata textfmt -i=coverdata -o=coverage-e2e-authwebhook.out
-	@go tool cover -html=coverage-e2e-authwebhook.out -o=coverage-e2e-authwebhook.html
-	@echo "✅ E2E Coverage report: coverage-e2e-authwebhook.html"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/e2e/authwebhook/...
 
 .PHONY: test-all-authwebhook
 test-all-authwebhook: ## Run all webhook test tiers (Unit + Integration + E2E)
@@ -106,26 +67,6 @@ test-all-authwebhook: ## Run all webhook test tiers (Unit + Integration + E2E)
 	fi
 	@echo "✅ All webhook test tiers completed successfully!"
 
-.PHONY: test-coverage-all-authwebhook
-test-coverage-all-authwebhook: ## Run all webhook test tiers with coverage collection
-	@echo "═══════════════════════════════════════════════════════════════════════════════"
-	@echo "📊 Running ALL Authentication Webhook Tests with Coverage (3 tiers)"
-	@echo "═══════════════════════════════════════════════════════════════════════════════"
-	@FAILED=0; \
-	$(MAKE) test-coverage-authwebhook || FAILED=$$((FAILED + 1)); \
-	$(MAKE) test-coverage-integration-authwebhook || FAILED=$$((FAILED + 1)); \
-	$(MAKE) test-coverage-e2e-authwebhook || FAILED=$$((FAILED + 1)); \
-	if [ $$FAILED -gt 0 ]; then \
-		echo "❌ $$FAILED coverage tier(s) failed"; \
-		exit 1; \
-	fi
-	@echo "✅ All webhook coverage tiers completed successfully!"
-	@echo ""
-	@echo "📊 Coverage Reports:"
-	@echo "   Unit:        test/unit/authwebhook/coverage.html"
-	@echo "   Integration: test/integration/authwebhook/coverage.html"
-	@echo "   E2E:         coverage-e2e-authwebhook.html"
-
 .PHONY: clean-authwebhook-integration
 clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 	@echo "🧹 Cleaning webhook integration infrastructure..."
@@ -136,6 +77,12 @@ clean-authwebhook-integration: ## Clean webhook integration test infrastructure
 ```
 
 **Insertion Point**: Line 438 in Makefile (after HolmesGPT, before Legacy Aliases)
+
+**Simplified Targets** (Matches other services):
+- ✅ **5 targets total** (down from 10)
+- ✅ Coverage enabled by default with `--cover` flag
+- ✅ Follows Gateway/DataStorage/SignalProcessing pattern
+- ✅ No separate coverage targets (coverage is always collected)
 
 ---
 
@@ -163,10 +110,10 @@ const (
 	AuthWebhookIntegrationDataStorageContainer = "authwebhook_datastorage_1"
 	AuthWebhookIntegrationNetworkName         = "authwebhook_test-network"
 
-	// Ports (avoid conflicts with other services)
+	// Ports (DD-TEST-001 v2.1 - no conflicts with other services)
 	AuthWebhookIntegrationDataStoragePort = 18099 // HTTP port for Data Storage API
-	AuthWebhookIntegrationPostgresPort    = 15435 // PostgreSQL port
-	AuthWebhookIntegrationRedisPort       = 16381 // Redis port
+	AuthWebhookIntegrationPostgresPort    = 15442 // PostgreSQL port
+	AuthWebhookIntegrationRedisPort       = 16386 // Redis port
 )
 
 // StartAuthWebhookIntegrationInfrastructure starts PostgreSQL, Redis, and Data Storage
@@ -411,7 +358,7 @@ var _ = AfterSuite(func() {
 | **DD-INTEGRATION-001** | ✅ | Programmatic infrastructure setup |
 | **DD-TEST-007** (E2E Coverage) | ✅ | Binary coverage collection target |
 | **TDD Methodology** | ✅ | Tests can be written before `cmd/authwebhook/` |
-| **Port Allocation** | ✅ | Unique ports (18099, 15435, 16381) |
+| **Port Allocation** | ✅ | Unique ports (PostgreSQL: 15442, Redis: 16386, Data Storage: 18099) - DD-TEST-001 v2.1 |
 | **HolmesGPT Pattern** | ✅ | Follows proven special case approach |
 
 ---
@@ -420,24 +367,22 @@ var _ = AfterSuite(func() {
 
 ```bash
 # During TDD Implementation (Day 1+)
-make test-unit-authwebhook              # Run unit tests
-make test-coverage-authwebhook          # Unit tests with coverage
+make test-unit-authwebhook              # Run unit tests (coverage enabled by default)
 
 # Integration testing (Day 2+)
-make test-integration-authwebhook       # Run integration tests
-make test-coverage-integration-authwebhook  # Integration with coverage
+make test-integration-authwebhook       # Run integration tests (coverage enabled by default)
 
 # E2E testing (Day 5-6)
-make test-e2e-authwebhook               # Run E2E tests
-make test-coverage-e2e-authwebhook      # E2E with binary coverage
+make test-e2e-authwebhook               # Run E2E tests (coverage enabled by default)
 
 # All tiers
-make test-all-authwebhook               # Run all test tiers
-make test-coverage-all-authwebhook      # All tiers with coverage
+make test-all-authwebhook               # Run all test tiers (Unit + Integration + E2E)
 
 # Cleanup
 make clean-authwebhook-integration      # Clean integration infrastructure
 ```
+
+**Note**: Coverage is **enabled by default** for all test tiers using `--cover --covermode=atomic` flags. No separate coverage targets needed.
 
 ---
 
@@ -461,7 +406,7 @@ make clean-authwebhook-integration      # Clean integration infrastructure
 
 ---
 
-**Status**: ✅ **READY FOR IMPLEMENTATION**  
-**Approval**: User selected Option B  
+**Status**: ✅ **READY FOR IMPLEMENTATION**
+**Approval**: User selected Option B
 **Timeline**: Ready for Day 1 of webhook TDD implementation
 
