@@ -103,8 +103,15 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			By("Verifying webhook populated authentication fields (side effect)")
 			Expect(rar.Status.Decision).To(Equal(remediationv1.ApprovalDecisionApproved),
 				"Decision should be Approved")
-			Expect(rar.Status.DecidedBy).To(ContainSubstring("@"),
-				"DecidedBy should contain operator email from K8s UserInfo")
+			Expect(rar.Status.DecidedBy).ToNot(BeEmpty(),
+				"DecidedBy should be populated by webhook with K8s UserInfo")
+			// In production: user@example.com or system:serviceaccount:namespace:name
+			// In envtest: "admin" or "system:serviceaccount:default:default"
+			Expect(rar.Status.DecidedBy).To(Or(
+				Equal("admin"),
+				ContainSubstring("system:serviceaccount"),
+				ContainSubstring("@")),
+				"DecidedBy should be valid K8s user identity")
 			Expect(rar.Status.DecidedAt).ToNot(BeNil(),
 				"DecidedAt timestamp should be set by webhook")
 			Expect(rar.Status.DecisionMessage).To(Equal("Reviewed investigation summary - memory leak confirmed, restart approved"),
@@ -171,8 +178,15 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			By("Verifying webhook populated authentication fields for rejection")
 			Expect(rar.Status.Decision).To(Equal(remediationv1.ApprovalDecisionRejected),
 				"Decision should be Rejected")
-			Expect(rar.Status.DecidedBy).To(ContainSubstring("@"),
-				"DecidedBy should contain operator email for rejection")
+			Expect(rar.Status.DecidedBy).ToNot(BeEmpty(),
+				"DecidedBy should be populated by webhook for rejection")
+			// In production: user@example.com or system:serviceaccount:namespace:name
+			// In envtest: "admin" or "system:serviceaccount:default:default"
+			Expect(rar.Status.DecidedBy).To(Or(
+				Equal("admin"),
+				ContainSubstring("system:serviceaccount"),
+				ContainSubstring("@")),
+				"DecidedBy should be valid K8s user identity")
 			Expect(rar.Status.DecidedAt).ToNot(BeNil(),
 				"DecidedAt timestamp should be set for rejection")
 

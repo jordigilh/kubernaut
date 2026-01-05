@@ -514,7 +514,7 @@ func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string)
 func flushAuditBuffer() {
 	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer flushCancel()
-	
+
 	err := auditStore.Flush(flushCtx)
 	if err != nil {
 		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit buffer: %v\n", err)
