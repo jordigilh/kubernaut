@@ -160,9 +160,9 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	eventType := "execution.workflow.started"
 	eventCategory := "execution" // Gap #6 uses "execution" category
 	var auditEvents []dsgen.AuditEvent
+	// Flush audit buffer once before polling to ensure events are written
+	flushAuditBuffer()
 	Eventually(func() int {
-		// Flush audit buffer to ensure events are written before querying
-		flushAuditBuffer()
 		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				EventType:     &eventType,
 				EventCategory: &eventCategory,
@@ -265,9 +265,9 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	By("3. Wait for controller to process and emit execution.workflow.started event")
 	// DD-TESTING-001: Use Eventually() instead of time.Sleep()
 	// Don't filter by category - get all events for this correlation ID (execution + workflow categories)
+	// Flush audit buffer once before polling to ensure events are written
+	flushAuditBuffer()
 	Eventually(func() int {
-		// Flush audit buffer to ensure events are written before querying
-		flushAuditBuffer()
 		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				CorrelationId: &correlationID,
 			})
