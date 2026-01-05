@@ -52,8 +52,9 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 		// Business Outcome: Prevent critical operations without authenticated operator identity
 
 		Context("when operator provides valid authentication", func() {
-			It("should capture operator identity for audit attribution", func() {
+			It("AUTH-001: should capture operator identity for audit attribution", func() {
 				// BUSINESS OUTCOME: Enables SOC2-compliant audit trail showing WHO performed action
+				// Test Plan Reference: AUTH-001 - Extract Valid User Info
 				req := &admissionv1.AdmissionRequest{
 					UserInfo: authv1.UserInfo{
 						Username: "operator@kubernaut.ai",
@@ -71,8 +72,9 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 					"UID captured for unique operator identification")
 			})
 
-			It("should format operator identity for audit trail persistence", func() {
+			It("AUTH-011: should format operator identity for audit trail persistence", func() {
 				// BUSINESS OUTCOME: Standardized audit format for compliance reporting
+				// Test Plan Reference: AUTH-011 - Format Operator Identity
 				req := &admissionv1.AdmissionRequest{
 					UserInfo: authv1.UserInfo{
 						Username: "operator@kubernaut.ai",
@@ -90,6 +92,7 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 
 		Context("when authentication is missing or incomplete", func() {
 			// Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
+			// Test Plan Reference: AUTH-002, AUTH-003
 			DescribeTable("prevents unauthenticated critical operations",
 				func(username, uid string, shouldReject bool, businessOutcome string) {
 					req := &admissionv1.AdmissionRequest{
@@ -110,29 +113,25 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 					}
 				},
 
-				// BUSINESS PROTECTION: Require complete authentication
-				Entry("accepts complete operator authentication",
-					"operator@kubernaut.ai", "k8s-user-123", false,
-					"Complete authentication enables SOC2-compliant operator attribution"),
-
-				// BUSINESS PROTECTION: Prevent operations without username attribution
-				Entry("rejects request missing username to prevent anonymous operations",
+				// AUTH-002: Reject Missing Username
+				Entry("AUTH-002: rejects request missing username to prevent anonymous operations",
 					"", "k8s-user-123", true,
 					"SOC2 CC8.1 violation: Cannot attribute action without operator username"),
 
-				// BUSINESS PROTECTION: Prevent operations without unique identifier
-				Entry("rejects request missing UID to prevent attribution conflicts",
+				// AUTH-003: Reject Empty UID
+				Entry("AUTH-003: rejects request missing UID to prevent attribution conflicts",
 					"operator@kubernaut.ai", "", true,
 					"SOC2 CC8.1 violation: Cannot uniquely identify operator without UID"),
 
-				// BUSINESS PROTECTION: Prevent completely unauthenticated operations
-				Entry("rejects request missing both username and UID",
+				// Additional Edge Case: Both missing (not in original plan, discovered during implementation)
+				Entry("AUTH-002+003: rejects request missing both username and UID",
 					"", "", true,
 					"SOC2 CC8.1 violation: Critical operations require authenticated operator"),
 			)
 
-			It("should reject malformed webhook requests to prevent bypass", func() {
+			It("AUTH-012: should reject malformed webhook requests to prevent bypass", func() {
 				// BUSINESS OUTCOME: Fail-safe rejection prevents authentication bypass
+				// Test Plan Reference: AUTH-012 - Reject Malformed Requests
 
 				authCtx, err := authenticator.ExtractUser(ctx, nil)
 

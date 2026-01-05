@@ -39,6 +39,7 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 	Describe("ValidateReason - SOC2 CC7.4 Audit Completeness", func() {
 		// Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
 		// Business Outcome: Prevent operators from bypassing audit completeness requirements
+		// Test Plan Reference: AUTH-005, AUTH-006, AUTH-013, AUTH-014, AUTH-015, AUTH-016
 
 		DescribeTable("prevents weak audit trails through justification enforcement",
 			func(reason string, minWords int, shouldAccept bool, businessOutcome string) {
@@ -50,42 +51,46 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 				}
 			},
 
-			// BUSINESS PROTECTION: Accept sufficient documentation (SOC2 CC7.4 compliance)
-			Entry("accepts detailed operational justification for block clearance",
+			// AUTH-005: ValidateReason - Accept Valid Input
+			Entry("AUTH-005: accepts detailed operational justification for block clearance",
 				"Investigation complete after root cause analysis confirmed memory leak in payment service pod",
 				10, true,
 				"Operators can document critical decisions with sufficient detail for audit completeness"),
-			Entry("accepts justification meeting minimum documentation standard",
+			Entry("AUTH-005: accepts justification meeting minimum documentation standard",
 				"one two three four five six seven eight nine ten",
 				10, true,
 				"Enforces minimum documentation threshold for SOC2 compliance"),
 
-			// BUSINESS PROTECTION: Reject vague/insufficient justifications (SOC2 CC7.4 violation)
-			Entry("rejects vague justification lacking operational context",
+			// AUTH-013: ValidateReason - Reject Vague
+			Entry("AUTH-013: rejects vague justification lacking operational context",
 				"Fixed it now",
 				10, false,
 				"Prevents weak audit trails that fail to document operator intent"),
-			Entry("rejects single-word non-descriptive justification",
+			
+			// AUTH-014: ValidateReason - Reject Single Word
+			Entry("AUTH-014: rejects single-word non-descriptive justification",
 				"Fixed",
 				10, false,
 				"Prevents audit records with no meaningful information for compliance review"),
 
-			// BUSINESS PROTECTION: Mandatory justification (no bypass)
-			Entry("rejects empty justification to enforce mandatory documentation",
+			// AUTH-006: ValidateReason - Reject Empty Reason
+			Entry("AUTH-006: rejects empty justification to enforce mandatory documentation",
 				"",
 				10, false,
 				"Prevents operators from bypassing audit documentation requirement"),
-			Entry("rejects whitespace-only justification to prevent circumvention",
+			Entry("AUTH-006: rejects whitespace-only justification to prevent circumvention",
 				"   ",
 				10, false,
 				"Prevents operators from using whitespace to bypass validation"),
 
-			// EDGE CASE PROTECTION: Configuration validation (defensive programming)
-			Entry("rejects negative minimum to prevent misconfiguration",
+			// AUTH-015: ValidateReason - Reject Negative Min
+			Entry("AUTH-015: rejects negative minimum to prevent misconfiguration",
 				"valid reason text",
 				-1, false,
 				"Fail-safe: Invalid configuration cannot weaken audit requirements"),
-			Entry("rejects zero minimum to ensure meaningful documentation",
+			
+			// AUTH-016: ValidateReason - Reject Zero Min
+			Entry("AUTH-016: rejects zero minimum to ensure meaningful documentation",
 				"valid reason text",
 				0, false,
 				"Fail-safe: Zero minimum would bypass audit completeness requirement"),
@@ -95,6 +100,7 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 	Describe("ValidateTimestamp - SOC2 CC8.1 Replay Attack Prevention", func() {
 		// Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
 		// Business Outcome: Prevent replay attacks on critical operations
+		// Test Plan Reference: AUTH-017 to AUTH-023
 
 		DescribeTable("prevents replay attacks and ensures request freshness",
 			func(timestampOffset time.Duration, shouldAccept bool, businessOutcome string) {
@@ -107,32 +113,38 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 				}
 			},
 
-			// BUSINESS PROTECTION: Accept fresh requests (legitimate operations)
-			Entry("accepts recent legitimate clearance request",
+			// AUTH-017: ValidateTimestamp - Accept Recent
+			Entry("AUTH-017: accepts recent legitimate clearance request",
 				-30*time.Second, true,
 				"Legitimate operator actions within time window are accepted"),
-			Entry("accepts request at maximum age boundary",
+			
+			// AUTH-018: ValidateTimestamp - Accept Boundary
+			Entry("AUTH-018: accepts request at maximum age boundary",
 				-4*time.Minute-59*time.Second, true,
 				"Requests within freshness window are considered legitimate"),
 
-			// BUSINESS PROTECTION: Reject replay attacks (stale requests)
-			Entry("rejects stale request to prevent replay attack",
+			// AUTH-021: ValidateTimestamp - Reject Stale
+			Entry("AUTH-021: rejects stale request to prevent replay attack",
 				-10*time.Minute, false,
 				"Prevents attackers from reusing captured clearance requests"),
-			Entry("rejects very old request to prevent long-term replay",
+			
+			// AUTH-022: ValidateTimestamp - Reject Very Old
+			Entry("AUTH-022: rejects very old request to prevent long-term replay",
 				-24*time.Hour, false,
 				"Prevents replay of captured requests from previous incidents"),
 
-			// BUSINESS PROTECTION: Reject future timestamps (clock skew attack)
-			Entry("rejects future timestamp to prevent clock manipulation",
+			// AUTH-019: ValidateTimestamp - Reject Future
+			Entry("AUTH-019: rejects future timestamp to prevent clock manipulation",
 				1*time.Hour, false,
 				"Prevents attackers from using future timestamps to bypass validation"),
-			Entry("rejects slightly future timestamp for strict validation",
+			
+			// AUTH-020: ValidateTimestamp - Reject Slightly Future
+			Entry("AUTH-020: rejects slightly future timestamp for strict validation",
 				1*time.Second, false,
 				"Strict freshness validation prevents clock skew exploitation"),
 
-			// EDGE CASE PROTECTION: Malformed timestamps
-			Entry("rejects zero timestamp to prevent uninitialized values",
+			// AUTH-023: ValidateTimestamp - Reject Zero
+			Entry("AUTH-023: rejects zero timestamp to prevent uninitialized values",
 				-time.Since(time.Time{}), false,
 				"Prevents malformed requests with uninitialized timestamps"),
 		)
