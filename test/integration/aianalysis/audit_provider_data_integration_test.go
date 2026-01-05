@@ -43,7 +43,6 @@ package aianalysis
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"time"
 
 	"github.com/google/uuid"
