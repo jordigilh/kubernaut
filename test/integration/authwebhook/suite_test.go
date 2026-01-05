@@ -28,6 +28,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/webhooks"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -36,6 +37,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // Suite-level variables
@@ -96,14 +98,28 @@ var _ = BeforeSuite(func() {
 		CertDir: webhookInstallOptions.LocalServingCertDir,
 	})
 
-	// TODO: Register webhook handlers when pkg/authwebhook is implemented (GREEN phase)
-	// For now, webhook server runs but has no handlers
-	// This allows tests to be written (RED phase) before handler implementation
+	By("Registering webhook handlers (GREEN phase)")
+	// Create decoder for webhook handlers
+	decoder, err := admission.NewDecoder(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
-	// Example of what will be added in GREEN phase:
-	// authenticator := authwebhook.NewAuthenticator()
-	// webhookServer.Register("/mutate-workflowexecution",
-	//     authwebhook.NewWorkflowExecutionHandler(authenticator))
+	// Register WorkflowExecution mutating webhook
+	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler()
+	err = wfeHandler.InjectDecoder(decoder)
+	Expect(err).NotTo(HaveOccurred())
+	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
+
+	// Register RemediationApprovalRequest mutating webhook
+	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler()
+	err = rarHandler.InjectDecoder(decoder)
+	Expect(err).NotTo(HaveOccurred())
+	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
+
+	// Register NotificationRequest validating webhook for DELETE
+	nrHandler := webhooks.NewNotificationRequestDeleteHandler()
+	err = nrHandler.InjectDecoder(decoder)
+	Expect(err).NotTo(HaveOccurred())
+	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 
 	By("Starting webhook server")
 	go func() {
