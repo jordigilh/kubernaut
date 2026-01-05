@@ -203,37 +203,68 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// This test validates audit events are emitted continuously, not just at startup
 			// Per ADR-032 §1: All orchestration phase transitions must be audited
 
-			By("Querying audit events and waiting for lifecycle progression (DD-TESTING-001)")
-			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-			var events []dsgen.AuditEvent
-			var total int
-			var err error
+		By("Querying audit events and waiting for lifecycle progression (DD-TESTING-001)")
+		// DD-TESTING-001: Wait for COMPLETE audit trail, not just ">=2 events"
+		// Root cause of flakiness: Audit buffer flush (1s interval) may not have completed
+		// for phase transition events when we check. Solution: Wait for specific event types.
+		var events []dsgen.AuditEvent
+		var total int
+		var err error
 
-			Eventually(func() int {
-				events, total, err = queryAuditEvents(correlationID)
-				if err != nil {
-					return 0
-				}
-				return total
-			}, 2*time.Minute, 10*time.Second).Should(BeNumerically(">=", 2),
-				"Expected multiple audit events (lifecycle.started + phase transitions/completion)")
+		Eventually(func() bool {
+			events, total, err = queryAuditEvents(correlationID)
+			if err != nil {
+				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+				return false
+			}
+			if total == 0 {
+				GinkgoWriter.Printf("⏳ Waiting for audit events (no events yet)\n")
+				return false
+			}
 
-			// Verify we have different event types (proves continuous emission)
+			// Build event type map
 			eventTypes := make(map[string]bool)
 			for _, event := range events {
 				eventTypes[event.EventType] = true
 			}
 
-			Expect(eventTypes).To(HaveKey("orchestrator.lifecycle.started"),
-				"Expected lifecycle.started event")
+			// Check for lifecycle.started (should always be present first)
+			hasLifecycleStarted := eventTypes["orchestrator.lifecycle.started"]
 
-			// Should have at least one phase transition or lifecycle completion/failure
+			// Check for phase transition or lifecycle completion/failure
 			hasPhaseTransitionOrCompletion := eventTypes["orchestrator.phase.transitioned"] ||
 				eventTypes["orchestrator.lifecycle.completed"] ||
 				eventTypes["orchestrator.lifecycle.failed"]
 
-			Expect(hasPhaseTransitionOrCompletion).To(BeTrue(),
-				"Expected phase transition or lifecycle completion/failure event")
+			if !hasLifecycleStarted {
+				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no lifecycle.started yet, %d total events)\n", total)
+				return false
+			}
+			if !hasPhaseTransitionOrCompletion {
+				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no phase transition/completion yet, %d total events)\n", total)
+				return false
+			}
+
+			return true
+		}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
+			"Expected complete audit trail with lifecycle.started + phase transition/completion events")
+
+		// Verify we have different event types (proves continuous emission)
+		eventTypes := make(map[string]bool)
+		for _, event := range events {
+			eventTypes[event.EventType] = true
+		}
+
+		Expect(eventTypes).To(HaveKey("orchestrator.lifecycle.started"),
+			"Expected lifecycle.started event")
+
+		// Should have at least one phase transition or lifecycle completion/failure
+		hasPhaseTransitionOrCompletion := eventTypes["orchestrator.phase.transitioned"] ||
+			eventTypes["orchestrator.lifecycle.completed"] ||
+			eventTypes["orchestrator.lifecycle.failed"]
+
+		Expect(hasPhaseTransitionOrCompletion).To(BeTrue(),
+			"Expected phase transition or lifecycle completion/failure event")
 
 			GinkgoWriter.Printf("✅ E2E: Audit events emitted throughout lifecycle - %d events, %d types\n",
 				total, len(eventTypes))

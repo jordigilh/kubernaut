@@ -168,30 +168,41 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for reconciliation to complete")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+		By("Waiting for reconciliation to complete")
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+			return string(analysis.Status.Phase)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-			remediationID := analysis.Spec.RemediationID
+		remediationID := analysis.Spec.RemediationID
 
-			By("Querying Data Storage for audit events via OpenAPI client (DD-API-001)")
-			// Per DD-API-001: MUST use OpenAPI generated client, NOT raw HTTP
-			// Using Eventually to handle async audit buffer flush (1s interval)
-			var events []dsgen.AuditEvent
-			Eventually(func() []dsgen.AuditEvent {
-				var err error
-				events, err = queryAuditEvents(remediationID, nil) // Query all event types
-				if err != nil {
-					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
-					return nil
-				}
-				return events
-			}, 60*time.Second, 2*time.Second).ShouldNot(BeEmpty(), "Should have at least one audit event for completed analysis")
-
-			By("Verifying audit event types and counts are EXACTLY correct")
+		By("Querying Data Storage for audit events via OpenAPI client (DD-API-001)")
+		// Per DD-API-001: MUST use OpenAPI generated client, NOT raw HTTP
+		// Per DD-TESTING-001: Wait for COMPLETE set of expected events, not just "not empty"
+		// Root cause of flakiness: Waiting for "not empty" then immediately checking exact counts
+		// can fail if audit buffer (1s flush interval) hasn't finished flushing all events yet.
+		// Solution: Eventually checks for the MINIMUM expected event count (3 phase transitions).
+		var events []dsgen.AuditEvent
+		Eventually(func() int {
+			var err error
+			events, err = queryAuditEvents(remediationID, nil) // Query all event types
+			if err != nil {
+				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+				return 0
+			}
+			// Count phase transition events specifically (most reliable indicator of completion)
 			eventCounts := countEventsByType(events)
+			phaseTransitionCount := eventCounts["aianalysis.phase.transition"]
+			if phaseTransitionCount < 3 {
+				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (got %d/3 phase transitions, %d total events)\n", 
+					phaseTransitionCount, len(events))
+			}
+			return phaseTransitionCount
+		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 3), 
+			"Should have at least 3 phase transition events (Pending→Investigating→Analyzing→Completed)")
+
+		By("Verifying audit event types and counts are EXACTLY correct")
+		eventCounts := countEventsByType(events)
 
 			// Per DD-AUDIT-003: AIAnalysis records 6 event types
 			// CRITICAL: Use EXACT counts to detect duplicates and reconciliation issues

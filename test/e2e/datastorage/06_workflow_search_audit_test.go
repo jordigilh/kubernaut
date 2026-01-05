@@ -349,8 +349,8 @@ execution:
 			Expect(filters["severity"]).To(Equal("critical"), "Filters should capture severity")
 			Expect(filters["component"]).To(Equal("deployment"), "Filters should capture component")
 
-			Expect(queryData["top_k"]).To(BeNumerically("==", 5),
-				"Query top_k should match search request")
+		Expect(queryData["top_k"]).To(Equal(float64(5)),
+			"Query top_k should match search request (DD-TESTING-001)")
 
 			// Verify results metadata (BR-AUDIT-027)
 			resultsData, ok := eventDataMap["results"].(map[string]interface{})
@@ -367,13 +367,21 @@ execution:
 			Expect(firstWorkflow["workflow_id"]).ToNot(BeEmpty(),
 				"Workflow should have workflow_id")
 
-			// V1.0: confidence only (DD-WORKFLOW-004 v2.0)
-			scoring, ok := firstWorkflow["scoring"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "workflow should contain 'scoring' object")
-			Expect(scoring["confidence"]).To(And(
-				BeNumerically(">=", 0.9),
-				BeNumerically("<=", 1.0),
-			), "Confidence should be high (≥0.9) for exact label match (DD-TESTING-001)")
+		// V1.0: confidence only (DD-WORKFLOW-004 v2.0)
+		scoring, ok := firstWorkflow["scoring"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "workflow should contain 'scoring' object")
+		
+		// DD-TESTING-001: Deterministic confidence calculation based on known test data
+		// Formula: (base_score + detected_label_boost + custom_label_boost - penalty) / 10.0
+		// Test workflow has:
+		//   - 5 mandatory labels (signal_type, severity, component, environment, priority) → 5.0 base
+		//   - NO DetectedLabels → 0.0 boost
+		//   - NO CustomLabels → 0.0 boost
+		//   - NO penalties → 0.0
+		// Expected: (5.0 + 0.0 + 0.0 - 0.0) / 10.0 = 0.5
+		expectedConfidence := 0.5
+		Expect(scoring["confidence"]).To(Equal(expectedConfidence),
+			"Confidence should be exactly 0.5 for mandatory-only label match (DD-TESTING-001)")
 
 			// Verify search metadata (BR-AUDIT-028)
 			searchMetadata, ok := eventDataMap["search_metadata"].(map[string]interface{})
