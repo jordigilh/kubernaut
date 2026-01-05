@@ -67,7 +67,7 @@ import (
 // Infrastructure: Uses existing WE integration test infrastructure (auto-started)
 //
 // ========================================
-var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial, Label("integration", "audit", "workflow", "soc2"), func() {
+var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("integration", "audit", "workflow", "soc2"), func() {
 	var (
 		ctx       context.Context
 		namespace string
