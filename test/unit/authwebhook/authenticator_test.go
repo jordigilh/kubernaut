@@ -149,7 +149,7 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 					Expect(authCtx.Username).To(Equal(username))
 					Expect(authCtx.UID).To(Equal(uid))
 					Expect(authCtx.Groups).To(HaveLen(expectedGroupCount))
-					
+
 					// Verify all groups are preserved
 					for _, group := range groups {
 						Expect(authCtx.Groups).To(ContainElement(group),
