@@ -18,11 +18,13 @@ package authwebhook
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -73,42 +75,46 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			createAndWaitForCRD(ctx, nr)
 
-			By("Operator deletes NotificationRequest to cancel (business operation)")
-			// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
-			// Webhook will intercept DELETE and add annotations for attribution
-			deleteAndWaitForAnnotations(ctx, nr, "kubernaut.ai/cancelled-by")
+		By("Operator deletes NotificationRequest to cancel (business operation)")
+		// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
+		// Webhook will intercept DELETE and write audit trace for attribution
+		// Note: K8s API prevents object mutation during DELETE, so attribution is via audit
+		Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
+			"Webhook should allow DELETE and record audit event")
 
-			By("Verifying webhook captured DELETE attribution (side effect)")
-			// Fetch the CRD one last time before it's cleaned up by finalizers
-			fetchedNR := &notificationv1.NotificationRequest{}
-			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)
+		By("Verifying webhook recorded DELETE attribution in audit trail (side effect)")
+		// The webhook writes audit events to the audit manager
+		// In tests, we verify the mockAuditMgr received the event
+		Eventually(func() int {
+			return len(mockAuditMgr.events)
+		}, 5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"Webhook should have recorded at least 1 audit event for DELETE")
 
-			if err == nil {
-				// CRD still exists with deletion timestamp
-				Expect(fetchedNR.GetDeletionTimestamp()).ToNot(BeNil(),
-					"CRD should have deletion timestamp")
-				annotations := fetchedNR.GetAnnotations()
-				Expect(annotations).ToNot(BeNil(),
-					"Webhook should have added annotations")
-				Expect(annotations["kubernaut.ai/cancelled-by"]).To(ContainSubstring("@"),
-					"cancelled-by annotation should contain operator email")
-				Expect(annotations["kubernaut.ai/cancelled-at"]).ToNot(BeEmpty(),
-					"cancelled-at annotation should contain timestamp")
-
-				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-				GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution Captured\n")
-				GinkgoWriter.Printf("   • Cancelled by: %s\n", annotations["kubernaut.ai/cancelled-by"])
-				GinkgoWriter.Printf("   • Cancelled at: %s\n", annotations["kubernaut.ai/cancelled-at"])
-				GinkgoWriter.Printf("   • Deletion timestamp: %s\n", fetchedNR.GetDeletionTimestamp())
-				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-			} else {
-				// CRD was already cleaned up (finalizers completed)
-				// This is also a valid outcome - webhook should have added annotations before finalizer ran
-				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-				GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution (finalizer completed)\n")
-				GinkgoWriter.Printf("   • CRD was cleaned up by finalizers after webhook added annotations\n")
-				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		// Verify the audit event content
+		var deletionEvent *audit.AuditEvent
+		for i := range mockAuditMgr.events {
+			if mockAuditMgr.events[i].EventType == "notification.request.deleted" {
+				deletionEvent = &mockAuditMgr.events[i]
+				break
 			}
+		}
+
+		Expect(deletionEvent).ToNot(BeNil(),
+			"Audit trail should contain notification.request.deleted event")
+		Expect(deletionEvent.ActorID).ToNot(BeEmpty(),
+			"ActorID (operator identity) should be captured")
+		Expect(deletionEvent.EventOutcome).To(Equal("success"),
+			"Event outcome should be success")
+		Expect(deletionEvent.ResourceType).To(Equal("NotificationRequest"),
+			"ResourceType should be NotificationRequest")
+
+		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution via Audit Trail\n")
+		GinkgoWriter.Printf("   • Cancelled by: %s\n", deletionEvent.ActorID)
+		GinkgoWriter.Printf("   • Event type: %s\n", deletionEvent.EventType)
+		GinkgoWriter.Printf("   • Resource: %s/%s\n", deletionEvent.ResourceType, deletionEvent.ResourceID)
+		GinkgoWriter.Printf("   • K8s Limitation: Attribution via audit (cannot mutate during DELETE)\n")
+		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
 
