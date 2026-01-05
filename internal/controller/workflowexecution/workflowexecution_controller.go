@@ -350,6 +350,17 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	}
 
 	// ========================================
+	// Gap #5: Record workflow selection audit event (BR-AUDIT-005)
+	// Emitted AFTER validation, BEFORE PipelineRun creation
+	// Provides visibility into which workflow was selected for execution
+	// ========================================
+	if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe); err != nil {
+		logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
+		// Non-blocking: workflow execution continues
+		// Audit condition will be updated later
+	}
+
+	// ========================================
 	// Step 2: Build and create PipelineRun
 	// ========================================
 	pr := r.BuildPipelineRun(wfe)
@@ -372,6 +383,17 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// DD-METRICS-001: Use injected metrics instead of global function
 	if r.Metrics != nil {
 		r.Metrics.RecordPipelineRunCreation()
+	}
+
+	// ========================================
+	// Gap #6: Record execution workflow started audit event (BR-AUDIT-005)
+	// Emitted AFTER PipelineRun creation succeeds
+	// Provides PipelineRun reference for complete Request-Response reconstruction
+	// ========================================
+	if err := r.AuditManager.RecordExecutionWorkflowStarted(ctx, wfe, pr.Name, pr.Namespace); err != nil {
+		logger.V(1).Info("Failed to record execution.workflow.started audit event", "error", err)
+		// Non-blocking: workflow execution continues
+		// Audit condition will be updated later
 	}
 
 	// ========================================

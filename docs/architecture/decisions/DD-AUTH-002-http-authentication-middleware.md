@@ -1,11 +1,34 @@
 # DD-AUTH-002: HTTP Authentication Middleware for REST API Operations
 
 **Date**: January 6, 2026
-**Status**: ✅ **AUTHORITATIVE**
-**Purpose**: Define HTTP authentication middleware for capturing operator identity in REST API operations
-**Authority**: Authentication pattern for all REST APIs requiring SOC2 CC8.1 attribution
+**Status**: ❌ **SUPERSEDED** by [DD-AUTH-003](mdc:DD-AUTH-003-externalized-authorization-sidecar.md)
+**Superseded Date**: January 6, 2026
+**Reason**: Externalized authorization via sidecar pattern provides cleaner separation of concerns, easier testing, and zero-trust architecture
+**Purpose**: [HISTORICAL] Define HTTP authentication middleware for capturing operator identity in REST API operations
+**Authority**: [SUPERSEDED] See DD-AUTH-003 for current authentication pattern
 **Scope**: HTTP endpoints requiring authenticated user identity (workflow CRUD, future REST API operations)
-**Related**: DD-AUTH-001 (CRD webhooks), DD-WORKFLOW-005 v2.0, SOC2 CC8.1
+**Related**: DD-AUTH-001 (CRD webhooks), DD-AUTH-003 (current pattern), DD-WORKFLOW-005 v2.0, SOC2 CC8.1
+
+---
+
+## ⚠️ **DEPRECATION NOTICE**
+
+**This design decision has been SUPERSEDED by DD-AUTH-003 (Externalized Authorization via Sidecar Pattern).**
+
+**Migration Required**: Services implementing DD-AUTH-002 should migrate to DD-AUTH-003.
+
+**Why Superseded**:
+1. ❌ **Auth code pollution**: Application-level JWT validation mixes auth with business logic
+2. ❌ **Testing complexity**: Requires K8s JWT token mocking in unit/integration tests
+3. ❌ **Limited auth methods**: Only supports K8s ServiceAccounts (no OAuth/OIDC)
+4. ❌ **Not zero-trust**: Application-level auth doesn't protect at network level
+5. ✅ **DD-AUTH-003 is better**: Sidecar pattern provides clean separation, easy testing, OAuth support
+
+**Migration Path**: See [DD-AUTH-003 Migration Section](mdc:DD-AUTH-003-externalized-authorization-sidecar.md#migration-path-from-dd-auth-002)
+
+---
+
+## 📋 **HISTORICAL CONTEXT** (Preserved for Reference)
 
 ---
 
@@ -35,7 +58,7 @@
 
 **Extensible Pattern**: This middleware design is reusable for any future REST API requiring authentication:
 - Configuration management APIs
-- User management APIs  
+- User management APIs
 - Access control policy APIs
 - Critical business resource APIs
 
@@ -45,11 +68,11 @@
 
 ### **Why K8s JWT Authentication**
 
-✅ **Consistency**: Same authentication source as CRD webhooks (DD-AUTH-001)  
-✅ **SOC2 CC8.1 Compliant**: Cryptographically verified identity (not forgeable)  
-✅ **Native Integration**: Leverages existing Kubernetes authentication infrastructure  
-✅ **RBAC Compatible**: Can enforce Kubernetes RBAC policies on REST API access  
-✅ **Zero Additional Infrastructure**: No separate auth service required  
+✅ **Consistency**: Same authentication source as CRD webhooks (DD-AUTH-001)
+✅ **SOC2 CC8.1 Compliant**: Cryptographically verified identity (not forgeable)
+✅ **Native Integration**: Leverages existing Kubernetes authentication infrastructure
+✅ **RBAC Compatible**: Can enforce Kubernetes RBAC policies on REST API access
+✅ **Zero Additional Infrastructure**: No separate auth service required
 ✅ **Operator-Friendly**: Works with `kubectl`, K8s API clients, and service accounts
 
 ---
@@ -427,8 +450,8 @@ var _ = Describe("Workflow CRUD Authentication", func() {
 
     It("should create workflow with authenticated user", func() {
         workflowJSON := `{"workflow_id": "test-workflow", "title": "Test Workflow"}`
-        
-        req, err := http.NewRequest(http.MethodPost, datastorageURL+"/api/v1/workflows", 
+
+        req, err := http.NewRequest(http.MethodPost, datastorageURL+"/api/v1/workflows",
             strings.NewReader(workflowJSON))
         Expect(err).ToNot(HaveOccurred())
         req.Header.Set("Content-Type", "application/json")
@@ -446,7 +469,7 @@ var _ = Describe("Workflow CRUD Authentication", func() {
 
     It("should reject workflow creation without authentication", func() {
         workflowJSON := `{"workflow_id": "test-workflow"}`
-        
+
         req, err := http.NewRequest(http.MethodPost, datastorageURL+"/api/v1/workflows",
             strings.NewReader(workflowJSON))
         Expect(err).ToNot(HaveOccurred())
@@ -767,7 +790,7 @@ var _ = Describe("E2E: Workflow CRUD Attribution", func() {
         // E2E: Use REAL K8s client and validator
         k8sConfig, err := rest.InClusterConfig()
         Expect(err).ToNot(HaveOccurred())
-        
+
         k8sClient, err = kubernetes.NewForConfig(k8sConfig)
         Expect(err).ToNot(HaveOccurred())
 
@@ -944,10 +967,81 @@ func (m *AuthMiddleware) checkRBAC(ctx context.Context, userInfo *UserInfo, reso
 
 ---
 
-**Status**: ✅ **AUTHORITATIVE - Ready for Implementation**
+**Status**: ❌ **SUPERSEDED** by DD-AUTH-003
 **Date**: January 6, 2026
-**Implementation**: Week 2, Days 12-14
-**Owner**: Data Storage Team
+**Superseded Date**: January 6, 2026
+**Implementation**: ❌ DO NOT IMPLEMENT - Use DD-AUTH-003 instead
+**Owner**: N/A (superseded)
 
 **Compliance**: SOC2 CC8.1, DD-AUTH-001 (consistency), DD-WORKFLOW-005 v2.0
+
+---
+
+## 🔄 **Why This Approach Was Superseded**
+
+### **Problems with DD-AUTH-002 (Application-Level JWT Validation)**
+
+This design decision was superseded on the same day it was created because architectural review revealed fundamental issues:
+
+1. **Auth Code Pollution** ❌
+   - Every service needs auth middleware
+   - Business logic mixed with authentication concerns
+   - Violates separation of concerns principle
+
+2. **Testing Complexity** ❌
+   - Unit tests require K8s JWT token mocking
+   - Integration tests need TokenReview API mocking
+   - Makes testing harder than necessary
+   - Example from the problem:
+     > "the idea of adding k8s JWT tokens to the business layer was not working for me"
+
+3. **Limited Authentication Methods** ❌
+   - Only supports K8s ServiceAccounts
+   - Cannot support OAuth/OIDC for external users
+   - Hard to extend to new auth providers
+
+4. **Not Zero-Trust** ❌
+   - Authentication only at application level
+   - Services can be accessed directly if network policy isn't perfect
+   - No defense-in-depth
+
+5. **Deployment Coupling** ❌
+   - Auth changes require service redeployment
+   - Can't update auth independently
+   - Slower iteration on auth improvements
+
+### **Solution: DD-AUTH-003 (Externalized Sidecar Pattern)**
+
+DD-AUTH-003 solves all these problems by externalizing authorization:
+
+| Aspect | DD-AUTH-002 (Old) | DD-AUTH-003 (New) |
+|--------|-------------------|-------------------|
+| **Where auth happens** | In application code | In sidecar proxy |
+| **Services auth code** | ~200 lines per service | 0 lines (clean!) |
+| **Unit test complexity** | K8s JWT mocking required | Just set headers |
+| **Auth methods** | K8s only | OAuth/OIDC + K8s |
+| **Zero-trust** | No (app-level only) | Yes (network-enforced) |
+| **Separation of concerns** | Poor (mixed) | Excellent (external) |
+
+### **Migration Impact**
+
+**If DD-AUTH-002 was already implemented**:
+- Remove auth middleware from services (~200 lines per service)
+- Add OAuth2-Proxy sidecar to deployments
+- Replace JWT validation with header reading
+- Estimated effort: ~1 week per service
+- **Result**: Simpler code, easier testing, better security
+
+**Since DD-AUTH-002 was never implemented**:
+- No migration needed ✅
+- Start directly with DD-AUTH-003 ✅
+- Avoid technical debt ✅
+
+---
+
+## 📚 **Historical Documentation Preserved**
+
+The content above is preserved for historical reference and architectural learning.
+
+**See [DD-AUTH-003](mdc:DD-AUTH-003-externalized-authorization-sidecar.md) for the current, approved authentication architecture.**
 

@@ -1,34 +1,3 @@
-# Day 3 PLAN Phase: Workflow Selection & Execution (Gap 5-6)
-
-**Formula**: integration-test-full-validation v2.1
-**Phase**: PLAN
-**Duration**: 20 minutes
-**Date**: January 6, 2026
-
-**Analysis Approval**: ✅ Approved with decisions:
-- Q1: 2 separate events ✅
-- Q2: Same correlation_id ✅
-- Q3: Tests 1 and 2 only ✅
-
----
-
-## 🎯 **Implementation Strategy**
-
-### TDD Approach: REFACTOR (Enhance Existing)
-
-**Target Files**:
-1. **Implementation**: `internal/controller/workflowexecution/audit.go` (enhance)
-2. **Tests**: `test/integration/workflowexecution/audit_workflow_selection_integration_test.go` (NEW)
-
-**Rationale**: Follow TDD REFACTOR principle - enhance existing audit infrastructure rather than creating new modules.
-
----
-
-## 📋 **Test Structure (Ginkgo/Gomega BDD)**
-
-### Test File: `audit_workflow_selection_integration_test.go`
-
-```go
 /*
 Copyright 2025 Jordi Gil.
 
@@ -63,7 +32,7 @@ limitations under the License.
 // - EnvTest (simulated K8s API server)
 // - PostgreSQL (port 15438): Persistence
 // - Redis (port 16384): Caching
-// - Data Storage (port 18095): Audit trail
+// - Data Storage (port 18095): Audit trail (REAL service, not mocked)
 // - WorkflowExecution Controller: Real controller with real audit client
 //
 // Test Pattern: Follows audit_flow_integration_test.go (proven, anti-pattern-free)
@@ -79,7 +48,6 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
@@ -94,7 +62,7 @@ import (
 // 1. workflow.selection.completed (Gap #5)
 // 2. execution.workflow.started (Gap #6)
 //
-// Execution: Serial (for reliability)
+// Execution: Serial (for reliability, follows audit_flow_integration_test.go pattern)
 // Infrastructure: Uses existing WE integration test infrastructure (auto-started)
 //
 // ========================================
@@ -144,7 +112,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 
 			By("1. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
 			wfeName := fmt.Sprintf("gap56-happy-%s", uuid.New().String()[:8])
-			correlationID := wfeName  // Use WFE name as correlation ID
+			rrName := "test-rr-" + wfeName
+			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name
+			correlationID := rrName
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -156,11 +126,11 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediation.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
-						Name:       "test-rr-" + wfeName,
+						Name:       rrName, // Correlation ID source!
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "k8s/restart-pod-v1",
+						WorkflowID:     "k8s-restart-pod-v1", // Label-safe: no slashes
 						Version:        "v1.0.0",
 						ContainerImage: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 					},
@@ -182,8 +152,10 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 				// Query all audit events for this correlation_id
 				events, err := queryAuditEvents(dsClient, correlationID, nil)
 				if err != nil {
+					GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
 					return 0
 				}
+				GinkgoWriter.Printf("📊 Query result: %d events found\n", len(events))
 				return len(events)
 			}, 60*time.Second, 1*time.Second).Should(BeNumerically(">=", 2),
 				"Should have at least 2 audit events (selection + execution)")
@@ -206,7 +178,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 			selectionEvent := selectionEvents[0]
 			validateEventMetadata(selectionEvent, "workflow", correlationID)
 			Expect(*selectionEvent.ActorId).To(Equal("workflowexecution-controller"))
-			Expect(*selectionEvent.Outcome).To(Equal("success"))
+			Expect(string(selectionEvent.EventOutcome)).To(Equal("success"))
 
 			// Validate event_data structure (Gap #5)
 			eventData, ok := selectionEvent.EventData.(map[string]interface{})
@@ -214,7 +186,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 			Expect(eventData).To(HaveKey("selected_workflow_ref"))
 
 			workflowRef := eventData["selected_workflow_ref"].(map[string]interface{})
-			Expect(workflowRef).To(HaveKeyWithValue("workflow_id", "k8s/restart-pod-v1"))
+			Expect(workflowRef).To(HaveKeyWithValue("workflow_id", "k8s-restart-pod-v1"))
 			Expect(workflowRef).To(HaveKeyWithValue("version", "v1.0.0"))
 			Expect(workflowRef).To(HaveKey("container_image"))
 
@@ -225,7 +197,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 			executionEvent := executionEvents[0]
 			validateEventMetadata(executionEvent, "execution", correlationID)
 			Expect(*executionEvent.ActorId).To(Equal("workflowexecution-controller"))
-			Expect(*executionEvent.Outcome).To(Equal("success"))
+			Expect(string(executionEvent.EventOutcome)).To(Equal("success"))
 
 			// Validate event_data structure (Gap #6)
 			execEventData, ok := executionEvent.EventData.(map[string]interface{})
@@ -251,7 +223,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 
 			By("1. Creating WorkflowExecution CRD")
 			wfeName := fmt.Sprintf("gap56-selection-%s", uuid.New().String()[:8])
-			correlationID := wfeName
+			rrName := "test-rr-" + wfeName
+			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name
+			correlationID := rrName
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -263,11 +237,11 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediation.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
-						Name:       "test-rr-" + wfeName,
+						Name:       rrName, // Correlation ID source!
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "k8s/scale-deployment-v1",
+						WorkflowID:     "k8s-scale-deployment-v1", // Label-safe: no slashes
 						Version:        "v1.0.0",
 						ContainerImage: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
@@ -281,7 +255,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 
 			By("2. Wait for workflow.selection.completed event (fast path)")
 			Eventually(func() int {
-				events, err := queryAuditEvents(dsClient, correlationID, ptr("workflow.selection.completed"))
+				selectionType := "workflow.selection.completed"
+				events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 				if err != nil {
 					return 0
 				}
@@ -290,7 +265,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 				"Should have workflow.selection.completed event")
 
 			By("3. Validate selection event is present")
-			selectionEvents, err := queryAuditEvents(dsClient, correlationID, ptr("workflow.selection.completed"))
+			selectionType := "workflow.selection.completed"
+			selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(selectionEvents)).To(BeNumerically(">=", 1))
 
@@ -303,13 +279,14 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Serial,
 			Expect(eventData).To(HaveKey("selected_workflow_ref"))
 
 			workflowRef := eventData["selected_workflow_ref"].(map[string]interface{})
-			Expect(workflowRef).To(HaveKeyWithValue("workflow_id", "k8s/scale-deployment-v1"))
+			Expect(workflowRef).To(HaveKeyWithValue("workflow_id", "k8s-scale-deployment-v1"))
 		})
 	})
 })
 
 // ========================================
 // HELPER FUNCTIONS (DD-TESTING-001 Compliant)
+// Reused from existing audit_flow_integration_test.go
 // ========================================
 
 // queryAuditEvents queries Data Storage for audit events
@@ -336,11 +313,11 @@ func queryAuditEvents(
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
 	}
 
-	if resp.JSON200 == nil || resp.JSON200.Events == nil {
+	if resp.JSON200 == nil || resp.JSON200.Data == nil {
 		return []dsgen.AuditEvent{}, nil
 	}
 
-	return *resp.JSON200.Events, nil
+	return *resp.JSON200.Data, nil
 }
 
 // countEventsByType groups events by type and returns counts
@@ -348,9 +325,7 @@ func queryAuditEvents(
 func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 	counts := make(map[string]int)
 	for _, event := range events {
-		if event.EventType != nil {
-			counts[*event.EventType]++
-		}
+		counts[event.EventType]++
 	}
 	return counts
 }
@@ -359,7 +334,7 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 func filterEventsByType(events []dsgen.AuditEvent, eventType string) []dsgen.AuditEvent {
 	var filtered []dsgen.AuditEvent
 	for _, event := range events {
-		if event.EventType != nil && *event.EventType == eventType {
+		if event.EventType == eventType {
 			filtered = append(filtered, event)
 		}
 	}
@@ -369,201 +344,10 @@ func filterEventsByType(events []dsgen.AuditEvent, eventType string) []dsgen.Aud
 // validateEventMetadata validates common event metadata fields
 // DD-TESTING-001: Standard metadata validation
 func validateEventMetadata(event dsgen.AuditEvent, category, correlationID string) {
-	Expect(event.EventType).ToNot(BeNil())
-	Expect(event.Category).ToNot(BeNil())
-	Expect(*event.Category).To(Equal(category))
-	Expect(event.CorrelationId).ToNot(BeNil())
-	Expect(*event.CorrelationId).To(Equal(correlationID))
-	Expect(event.Outcome).ToNot(BeNil())
+	Expect(event.EventType).ToNot(BeEmpty())
+	Expect(string(event.EventCategory)).To(Equal(category))
+	Expect(event.CorrelationId).To(Equal(correlationID))
+	Expect(string(event.EventOutcome)).ToNot(BeEmpty())
 	Expect(event.ActorId).ToNot(BeNil())
 }
-
-// ptr returns a pointer to string (helper for optional params)
-func ptr(s string) *string {
-	return &s
-}
-```
-
----
-
-## 🧪 **Mock Strategy (Per TESTING_GUIDELINES.md)**
-
-### What to MOCK: ❌ NONE
-- **Rationale**: Integration tests use REAL infrastructure per defense-in-depth strategy
-
-### What to Use REAL: ✅ ALL
-- **WorkflowExecution Controller**: Real controller running in EnvTest
-- **Data Storage HTTP API**: Real service at localhost:18095
-- **PostgreSQL**: Real database for audit persistence
-- **Redis**: Real cache for audit buffering
-- **Kubernetes API**: EnvTest simulated API server
-
-### Why This Pattern?
-1. ✅ **Integration Tests (>50% coverage requirement)**: Must test real component interactions
-2. ✅ **Defense-in-Depth**: Real infrastructure validates audit emission + persistence
-3. ✅ **SOC2 Compliance**: Complete end-to-end audit trail validation
-4. ✅ **Anti-Pattern Avoidance**: No mock-only implementations (per TESTING_GUIDELINES.md)
-
----
-
-## 📊 **TDD Sequence (RED → GREEN → REFACTOR)**
-
-### Phase 1: RED (15 minutes)
-**Objective**: Write failing tests that define expected behavior
-
-**Actions**:
-1. Create `audit_workflow_selection_integration_test.go`
-2. Write Test 1 (happy path - both events)
-3. Write Test 2 (selection only)
-4. Run tests → **MUST FAIL** (events not emitted yet)
-
-**Success Criteria**: Tests compile and fail with clear error messages
-
----
-
-### Phase 2: GREEN (20 minutes)
-**Objective**: Minimal implementation to pass tests
-
-**Actions**:
-1. Add event type constants to `audit.go`:
-   ```go
-   const (
-       EventWorkflowSelectionCompleted = "workflow.selection.completed"
-       EventExecutionWorkflowStarted   = "execution.workflow.started"
-   )
-   ```
-
-2. Emit `workflow.selection.completed` when workflow selected:
-   ```go
-   // In controller.go, after workflow selection logic
-   r.recordAuditEventAsync(ctx, wfe,
-       EventWorkflowSelectionCompleted,
-       CategoryWorkflow)
-   ```
-
-3. Emit `execution.workflow.started` when PipelineRun created:
-   ```go
-   // In controller.go, after PipelineRun creation
-   r.recordAuditEventAsync(ctx, wfe,
-       EventExecutionWorkflowStarted,
-       CategoryExecution)
-   ```
-
-4. Run tests → **MUST PASS**
-
-**Success Criteria**: All tests pass at 100%, minimal implementation only
-
----
-
-### Phase 3: REFACTOR (15 minutes)
-**Objective**: Add edge cases, error handling, structured event_data
-
-**Actions**:
-1. Add structured `event_data` fields:
-   - `selected_workflow_ref` (Gap #5)
-   - `execution_ref` (Gap #6)
-
-2. Add error handling for audit emission failures
-
-3. Add logging for audit events
-
-4. Add validation for event structure
-
-5. Run tests → **MUST STILL PASS**
-
-**Success Criteria**: Enhanced implementation, 100% pass rate maintained
-
----
-
-## 🎯 **Success Criteria**
-
-### Measurable Outcomes
-1. **2 new event types** defined in `audit.go`
-2. **2 integration tests** passing at 100%
-3. **Event structure** validates DD-AUDIT-003 compliance
-4. **No anti-patterns** (time.Sleep, Skip, direct infrastructure testing)
-5. **Test duration** < 90 seconds total (CRD controller async accounted for)
-
-### Validation Commands
-```bash
-# Run tests (must pass at 100%)
-go test -v ./test/integration/workflowexecution/ -run "Gap 5-6" -timeout 120s
-
-# Anti-pattern detection (must return 0 results)
-grep -r 'time\.Sleep' test/integration/workflowexecution/audit_workflow_selection_integration_test.go
-grep -r '\.Skip(' test/integration/workflowexecution/audit_workflow_selection_integration_test.go
-
-# Event count validation (must show exactly 2 new event types)
-# Query Data Storage after test execution
-curl -s "http://localhost:18095/api/v1/audit/events?correlation_id=<test-id>" | jq '.events[] | .event_type' | sort | uniq -c
-```
-
----
-
-## 🔗 **Integration Points**
-
-### Implementation Files to Modify
-1. **`internal/controller/workflowexecution/audit.go`** (enhance)
-   - Add 2 new event type constants
-   - Add helper methods for structured event_data
-   - Estimated: +40 lines
-
-2. **`internal/controller/workflowexecution/controller.go`** (enhance)
-   - Call audit emission at 2 points (selection + execution)
-   - Estimated: +10 lines
-
-3. **`test/integration/workflowexecution/audit_workflow_selection_integration_test.go`** (NEW)
-   - 2 integration tests
-   - Helper functions (reuse existing from DD-TESTING-001)
-   - Estimated: +350 lines
-
-**Total Code Changes**: ~400 lines (50 implementation + 350 test)
-
----
-
-## 📅 **Timeline Estimate**
-
-| Phase | Duration | Actions | Deliverable |
-|-------|----------|---------|-------------|
-| **Infrastructure** | 10m | Verify WE controller, Data Storage running | ✅ Services healthy |
-| **RED** | 15m | Write 2 failing tests | ✅ Tests compile, fail |
-| **GREEN** | 20m | Minimal audit emission | ✅ Tests pass |
-| **REFACTOR** | 15m | Structured event_data, error handling | ✅ Enhanced, tests pass |
-| **TOTAL** | **60m** | Full TDD cycle | ✅ 2 tests @ 100% |
-
-**Buffer**: +30 minutes for debugging (total: 90 minutes)
-
----
-
-## 🛡️ **Risk Mitigation**
-
-### Risk 1: CRD Controller Timing ⚠️
-**Problem**: Async controller may take time to process and emit events
-**Mitigation**: Use `Eventually()` with 60s timeout (proven pattern from Day 1-2)
-**Confidence**: 95% (existing pattern handles this)
-
-### Risk 2: Event Structure Validation ⚠️
-**Problem**: Nested JSON objects require careful validation
-**Mitigation**: Use `HaveKey()` and type assertions (existing pattern)
-**Confidence**: 90% (proven in Day 1-2 tests)
-
-### Risk 3: Test Infrastructure ⚠️
-**Problem**: Data Storage service may be unstable
-**Mitigation**: BeforeEach health check, retry logic in `queryAuditEvents()`
-**Confidence**: 95% (Day 1-2 tests passing, infrastructure stable)
-
----
-
-## ✅ **PLAN Phase Complete - Ready for Checkpoint**
-
-**Phase Duration**: 20 minutes (as planned)
-**Test Strategy**: Defined with 2 integration tests
-**TDD Sequence**: RED → GREEN → REFACTOR mapped
-**Timeline**: 60 minutes implementation + 30 minutes buffer
-**Blocking Issues**: None
-**Ready to Proceed**: YES (pending user approval)
-
----
-
-**Next Step**: PLAN CHECKPOINT - Human approval required before DO phase
 

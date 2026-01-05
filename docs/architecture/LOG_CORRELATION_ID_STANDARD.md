@@ -729,6 +729,12 @@ aiAnalysis.Labels["kubernaut.io/correlation-id"] = correlationID
 workflowExecution.Labels["kubernaut.io/correlation-id"] = correlationID
 ```
 
+**⚠️ IMPORTANT - WorkflowExecution Exception**:
+- WorkflowExecution audit events do NOT use labels for correlation ID
+- Instead, they use `Spec.RemediationRequestRef.Name` (parent RR name)
+- **Rationale**: Labels not set by RemediationOrchestrator (see DD-AUDIT-CORRELATION-001)
+- **Implementation**: Spec field is authoritative source for WFE audit correlation
+
 ---
 
 ### AI Analysis
