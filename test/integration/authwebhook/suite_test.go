@@ -18,6 +18,9 @@ package authwebhook
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
+	"net"
 	"path/filepath"
 	"testing"
 	"time"
@@ -30,8 +33,11 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/webhooks"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -108,10 +114,11 @@ var _ = BeforeSuite(func() {
 	_ = rarHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
-	// Register NotificationRequest validating webhook for DELETE
+	// Register NotificationRequest mutating webhook for DELETE
+	// Note: Must be mutating (not validating) because we need to add annotations
 	nrHandler := webhooks.NewNotificationRequestDeleteHandler()
 	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
-	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
+	webhookServer.Register("/mutate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 
 	By("Starting webhook server")
 	go func() {
@@ -124,17 +131,134 @@ var _ = BeforeSuite(func() {
 
 	By("Waiting for webhook server to be ready")
 	// Give webhook server time to start
-	// In production tests, we would use webhookServer.StartedChecker()
-	// but for TDD RED phase, this is sufficient
 	time.Sleep(2 * time.Second)
+
+	By("Configuring webhook configurations in K8s API server")
+	err = configureWebhooks(ctx, k8sClient, *webhookInstallOptions)
+	Expect(err).NotTo(HaveOccurred())
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("✅ envtest environment ready")
 	GinkgoWriter.Printf("   • Webhook server: %s:%d\n", webhookInstallOptions.LocalServingHost, webhookInstallOptions.LocalServingPort)
 	GinkgoWriter.Printf("   • CertDir: %s\n", webhookInstallOptions.LocalServingCertDir)
 	GinkgoWriter.Println("   • K8s client configured for CRD operations")
+	GinkgoWriter.Println("   • Webhook configurations applied")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
+
+// configureWebhooks creates MutatingWebhookConfiguration and ValidatingWebhookConfiguration
+// resources in the envtest API server, pointing to the webhook server we started.
+func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts envtest.WebhookInstallOptions) error {
+	// Read CA cert from webhook server
+	cert, err := tls.LoadX509KeyPair(
+		filepath.Join(webhookOpts.LocalServingCertDir, "tls.crt"),
+		filepath.Join(webhookOpts.LocalServingCertDir, "tls.key"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to load webhook certificates: %w", err)
+	}
+
+	// Get CA bundle (the cert itself in self-signed case)
+	caBundle := cert.Certificate[0]
+
+	// Construct webhook URL
+	webhookHost := webhookOpts.LocalServingHost
+	if webhookHost == "" {
+		webhookHost = "127.0.0.1"
+	}
+	webhookPort := webhookOpts.LocalServingPort
+	webhookURL := fmt.Sprintf("https://%s", net.JoinHostPort(webhookHost, fmt.Sprintf("%d", webhookPort)))
+
+	// Create MutatingWebhookConfiguration
+	mutatingWebhook := &admissionregistrationv1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubernaut-authwebhook-mutating",
+		},
+		Webhooks: []admissionregistrationv1.MutatingWebhook{
+			{
+				Name: "workflowexecution.mutate.kubernaut.ai",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					URL:      ptr.To(webhookURL + "/mutate-workflowexecution"),
+					CABundle: caBundle,
+				},
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Update,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"workflowexecution.kubernaut.ai"},
+							APIVersions: []string{"v1alpha1"},
+							Resources:   []string{"workflowexecutions/status"},
+							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
+						},
+					},
+				},
+				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
+				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          ptr.To(int32(10)),
+			},
+			{
+				Name: "remediationapprovalrequest.mutate.kubernaut.ai",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					URL:      ptr.To(webhookURL + "/mutate-remediationapprovalrequest"),
+					CABundle: caBundle,
+				},
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Update,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"remediation.kubernaut.ai"},
+							APIVersions: []string{"v1alpha1"},
+							Resources:   []string{"remediationapprovalrequests/status"},
+							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
+						},
+					},
+				},
+				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
+				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          ptr.To(int32(10)),
+			},
+			{
+				Name: "notificationrequest.mutate.kubernaut.ai",
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					URL:      ptr.To(webhookURL + "/mutate-notificationrequest-delete"),
+					CABundle: caBundle,
+				},
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Delete,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"notification.kubernaut.ai"},
+							APIVersions: []string{"v1alpha1"},
+							Resources:   []string{"notificationrequests"},
+							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
+						},
+					},
+				},
+				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
+				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          ptr.To(int32(10)),
+			},
+		},
+	}
+
+	if err := k8sClient.Create(ctx, mutatingWebhook); err != nil {
+		return fmt.Errorf("failed to create MutatingWebhookConfiguration: %w", err)
+	}
+
+	// Wait for webhook configurations to be ready
+	time.Sleep(1 * time.Second)
+
+	return nil
+}
 
 var _ = AfterSuite(func() {
 	By("Tearing down the test environment")
