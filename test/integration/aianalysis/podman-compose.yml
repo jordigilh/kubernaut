@@ -87,8 +87,8 @@ services:
     environment:
       # Mock LLM mode for integration tests (no real LLM calls)
       MOCK_LLM_MODE: "true"
-      # DataStorage connection
-      DATASTORAGE_URL: http://datastorage:8080
+      # DataStorage connection (matches src/audit/factory.py expectation)
+      DATA_STORAGE_URL: http://datastorage:8080
       PORT: 8080
     ports:
       - "18120:8080"  # AIAnalysis integration test HolmesGPT API port
