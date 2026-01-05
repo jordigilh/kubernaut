@@ -309,7 +309,7 @@ make test-unit-authwebhook
 🧪 Test Execution Results:
 ├─ Total Specs: 26 (23 AUTH-XXX IDs, some with multiple entries)
 ├─ Passed: 26 ✅
-├─ Failed: 0 
+├─ Failed: 0
 ├─ Pending: 0
 └─ Skipped: 0
 
