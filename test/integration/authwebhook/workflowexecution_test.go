@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package authwebhook_test
+package authwebhook
 
 import (
 	"context"
@@ -184,4 +184,3 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 		})
 	})
 })
-
