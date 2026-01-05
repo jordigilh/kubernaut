@@ -123,6 +123,8 @@ def _create_adr034_event(
         "event_action": operation,            # Action performed (OpenAPI: event_action)
         "event_outcome": outcome,             # Result status (OpenAPI: event_outcome)
         "event_data": event_data,             # Service-specific JSONB payload
+        "actor_type": "Service",              # Actor type per ADR-034
+        "actor_id": "holmesgpt-api",          # Service identifier per DD-AUDIT-005
     }
 
 
