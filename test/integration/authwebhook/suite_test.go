@@ -18,9 +18,9 @@ package authwebhook
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -149,17 +149,11 @@ var _ = BeforeSuite(func() {
 // configureWebhooks creates MutatingWebhookConfiguration and ValidatingWebhookConfiguration
 // resources in the envtest API server, pointing to the webhook server we started.
 func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts envtest.WebhookInstallOptions) error {
-	// Read CA cert from webhook server
-	cert, err := tls.LoadX509KeyPair(
-		filepath.Join(webhookOpts.LocalServingCertDir, "tls.crt"),
-		filepath.Join(webhookOpts.LocalServingCertDir, "tls.key"),
-	)
+	// Read CA cert PEM file directly (envtest uses self-signed certs)
+	caBundle, err := os.ReadFile(filepath.Join(webhookOpts.LocalServingCertDir, "tls.crt"))
 	if err != nil {
-		return fmt.Errorf("failed to load webhook certificates: %w", err)
+		return fmt.Errorf("failed to read CA certificate: %w", err)
 	}
-
-	// Get CA bundle (the cert itself in self-signed case)
-	caBundle := cert.Certificate[0]
 
 	// Construct webhook URL
 	webhookHost := webhookOpts.LocalServingHost
@@ -187,7 +181,7 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 							admissionregistrationv1.Update,
 						},
 						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"workflowexecution.kubernaut.ai"},
+							APIGroups:   []string{"kubernaut.ai"},
 							APIVersions: []string{"v1alpha1"},
 							Resources:   []string{"workflowexecutions/status"},
 							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
@@ -211,7 +205,7 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 							admissionregistrationv1.Update,
 						},
 						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"remediation.kubernaut.ai"},
+							APIGroups:   []string{"kubernaut.ai"},
 							APIVersions: []string{"v1alpha1"},
 							Resources:   []string{"remediationapprovalrequests/status"},
 							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
@@ -235,7 +229,7 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 							admissionregistrationv1.Delete,
 						},
 						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"notification.kubernaut.ai"},
+							APIGroups:   []string{"kubernaut.ai"},
 							APIVersions: []string{"v1alpha1"},
 							Resources:   []string{"notificationrequests"},
 							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),

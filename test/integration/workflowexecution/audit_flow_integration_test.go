@@ -157,11 +157,13 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 		By("4. Query Data Storage for 'execution.workflow.started' audit event (SIDE EFFECT)")
 		// ✅ DD-API-001: Use OpenAPI client with type-safe parameters
-		eventType := "execution.workflow.started"
-		eventCategory := "execution" // Gap #6 uses "execution" category
-		var auditEvents []dsgen.AuditEvent
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+	eventType := "execution.workflow.started"
+	eventCategory := "execution" // Gap #6 uses "execution" category
+	var auditEvents []dsgen.AuditEvent
+	Eventually(func() int {
+		// Flush audit buffer to ensure events are written before querying
+		flushAuditBuffer()
+		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				EventType:     &eventType,
 				EventCategory: &eventCategory,
 				CorrelationId: &correlationID,
@@ -260,11 +262,13 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name, not WFE name
 			correlationID := "test-rr-" + wfeName
 
-		By("3. Wait for controller to process and emit execution.workflow.started event")
-		// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-		// Don't filter by category - get all events for this correlation ID (execution + workflow categories)
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+	By("3. Wait for controller to process and emit execution.workflow.started event")
+	// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+	// Don't filter by category - get all events for this correlation ID (execution + workflow categories)
+	Eventually(func() int {
+		// Flush audit buffer to ensure events are written before querying
+		flushAuditBuffer()
+		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				CorrelationId: &correlationID,
 			})
 			if err != nil || resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
@@ -277,10 +281,12 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 		}, 20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
 			"Controller should emit at least execution.workflow.started event")
 
-		By("4. Fetch all workflow audit events for detailed validation")
-		// ✅ DD-API-001: Use OpenAPI client
-		var auditEvents []dsgen.AuditEvent
-		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+	By("4. Fetch all workflow audit events for detailed validation")
+	// ✅ DD-API-001: Use OpenAPI client
+	// Flush audit buffer to ensure all events are written
+	flushAuditBuffer()
+	var auditEvents []dsgen.AuditEvent
+	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 			CorrelationId: &correlationID,
 		})
 			Expect(err).ToNot(HaveOccurred(), "Should successfully query audit events")

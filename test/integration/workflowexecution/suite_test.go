@@ -508,3 +508,15 @@ func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string)
 	})
 	return k8sClient.Status().Update(ctx, pr)
 }
+
+// flushAuditBuffer flushes the buffered audit store to ensure all events are written to DataStorage
+// MANDATORY before querying audit events to prevent flaky tests due to buffering
+func flushAuditBuffer() {
+	flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer flushCancel()
+	
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit buffer: %v\n", err)
+	}
+}

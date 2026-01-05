@@ -163,12 +163,14 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			By("2. Wait for controller to process and emit events (CRD controller async)")
-			// CRD controllers are async - use Eventually with 60s timeout
-			// DD-TESTING-001: Deterministic event count (exactly 2 events)
-			Eventually(func() int {
-				// Query all audit events for this correlation_id
-				events, err := queryAuditEvents(dsClient, correlationID, nil)
+		By("2. Wait for controller to process and emit events (CRD controller async)")
+		// CRD controllers are async - use Eventually with 60s timeout
+		// DD-TESTING-001: Deterministic event count (exactly 2 events)
+		Eventually(func() int {
+			// Flush audit buffer to ensure events are written before querying
+			flushAuditBuffer()
+			// Query all audit events for this correlation_id
+			events, err := queryAuditEvents(dsClient, correlationID, nil)
 				if err != nil {
 					GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
 					return 0

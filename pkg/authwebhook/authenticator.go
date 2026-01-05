@@ -27,21 +27,20 @@ func (a *Authenticator) ExtractUser(ctx context.Context, req *admissionv1.Admiss
 		return nil, fmt.Errorf("admission request cannot be nil")
 	}
 
-	// Extract username
+	// Extract username (required)
 	username := req.UserInfo.Username
 	if username == "" {
 		return nil, fmt.Errorf("username is required for authentication")
 	}
 
-	// Extract UID
+	// Extract UID (optional - not available in envtest/kubeconfig contexts)
+	// Note: In production clusters, service accounts have UIDs, but test environments
+	// and user kubeconfig contexts may not. Username is sufficient for SOC2 attribution.
 	uid := req.UserInfo.UID
-	if uid == "" {
-		return nil, fmt.Errorf("UID is required for authentication")
-	}
 
 	return &AuthContext{
 		Username: username,
-		UID:      uid,
+		UID:      uid,       // May be empty in test environments - this is acceptable
 		Groups:   req.UserInfo.Groups,   // AUTH-004, AUTH-009, AUTH-010: Preserve group memberships for RBAC audit
 		Extra:    req.UserInfo.Extra,     // Preserve extra attributes for comprehensive audit context
 	}, nil

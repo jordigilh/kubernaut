@@ -405,6 +405,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	Eventually(func() bool {
+		// Flush audit buffer to ensure events are written before querying
+		flushAuditBuffer()
 		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 			EventCategory: &eventCategory,
 			CorrelationId: &correlationID,
@@ -586,9 +588,11 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
 		Expect(err).ToNot(HaveOccurred())
 
-		eventCategory := "workflow"
-		Eventually(func() bool {
-			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+	eventCategory := "workflow"
+	Eventually(func() bool {
+		// Flush audit buffer to ensure events are written before querying
+		flushAuditBuffer()
+		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				EventCategory: &eventCategory,
 				CorrelationId: &expectedCorrID,
 			})
