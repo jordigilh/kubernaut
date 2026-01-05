@@ -63,7 +63,7 @@ test-coverage-%:
 
 ```bash
 $ ls cmd/
-aianalysis  datastorage  gateway  must-gather  notification  
+aianalysis  datastorage  gateway  must-gather  notification
 remediationorchestrator  signalprocessing  workflowexecution
 
 # ❌ cmd/authwebhook/ does NOT exist yet
@@ -106,7 +106,7 @@ import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
-	
+
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	"github.com/jordigilh/kubernaut/internal/webhook"
 )
@@ -121,7 +121,7 @@ func main() {
 
 	// Initialize logger
 	logger := setupLogger()
-	
+
 	// Load configuration (Data Storage URL for audit events)
 	cfg, err := loadConfig(*configPath)
 	if err != nil {
@@ -131,7 +131,7 @@ func main() {
 
 	// Initialize audit client (for emitting authenticated audit events)
 	auditClient := initializeAuditClient(cfg.DataStorageURL, logger)
-	
+
 	// Create webhook server
 	webhookServer := webhook.NewServer(webhook.Options{
 		Port:    *port,
@@ -140,13 +140,13 @@ func main() {
 
 	// Register handlers for each CRD type
 	// DD-AUTH-001: Single webhook service, multiple handlers
-	webhookServer.Register("/authenticate/workflowexecution", 
+	webhookServer.Register("/authenticate/workflowexecution",
 		&webhook.Admission{Handler: webhookhandlers.NewWorkflowExecutionHandler(auditClient, logger)})
-	
-	webhookServer.Register("/authenticate/remediationapproval", 
+
+	webhookServer.Register("/authenticate/remediationapproval",
 		&webhook.Admission{Handler: webhookhandlers.NewRemediationApprovalHandler(auditClient, logger)})
-	
-	webhookServer.Register("/authenticate/notificationrequest", 
+
+	webhookServer.Register("/authenticate/notificationrequest",
 		&webhook.Admission{Handler: webhookhandlers.NewNotificationRequestHandler(auditClient, logger)})
 
 	// Start webhook server
@@ -169,12 +169,12 @@ func main() {
 	logger.Info("Shutting down webhook server")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
-	
+
 	if err := webhookServer.Stop(shutdownCtx); err != nil {
 		logger.Error(err, "Graceful shutdown failed")
 		os.Exit(1)
 	}
-	
+
 	logger.Info("Webhook server shutdown complete")
 }
 ```
