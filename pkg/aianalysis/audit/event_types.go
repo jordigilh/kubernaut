@@ -28,6 +28,8 @@ package audit
 // Business Requirements:
 // - BR-AI-001: AI Analysis CRD lifecycle management
 // - BR-STORAGE-001: Complete audit trail
+// - BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+// - DD-AUDIT-005: Hybrid Provider Data Capture
 type AnalysisCompletePayload struct {
 	// Core Status Fields
 	Phase            string `json:"phase"`                     // Current phase (Completed, Failed)
@@ -44,6 +46,11 @@ type AnalysisCompletePayload struct {
 	// Failure Information (conditional - present on failure)
 	Reason    string `json:"reason,omitempty"`     // Primary failure reason
 	SubReason string `json:"sub_reason,omitempty"` // Detailed failure sub-reason
+
+	// DD-AUDIT-005: Provider response summary (consumer perspective)
+	// NOTE: Full response is in holmesgpt.response.complete event (provider perspective)
+	// This field provides AA-side context for what AA received from Holmes API
+	ProviderResponseSummary *ProviderResponseSummary `json:"provider_response_summary,omitempty"`
 }
 
 // PhaseTransitionPayload is the structured payload for phase transition events.
@@ -105,4 +112,21 @@ type RegoEvaluationPayload struct {
 type ErrorPayload struct {
 	Phase        string `json:"phase"`         // Phase in which error occurred
 	ErrorMessage string `json:"error_message"` // Error message (matches system standard pkg/audit/event.go)
+}
+
+// ProviderResponseSummary provides AA's perspective of Holmes response
+//
+// Business Requirements:
+// - BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+// - DD-AUDIT-005: Hybrid Provider Data Capture (consumer perspective)
+//
+// This struct captures a SUMMARY of the Holmes API response from AA's perspective.
+// Full response data is in holmesgpt.response.complete event (provider perspective).
+// This provides consumer-side context and business validation.
+type ProviderResponseSummary struct {
+	IncidentID         string  `json:"incident_id"`                      // Incident identifier
+	AnalysisPreview    string  `json:"analysis_preview"`                 // First 500 chars of analysis
+	SelectedWorkflowID *string `json:"selected_workflow_id,omitempty"`   // Selected workflow identifier (if any)
+	NeedsHumanReview   bool    `json:"needs_human_review"`               // Whether human review is required
+	WarningsCount      int     `json:"warnings_count"`                   // Number of warnings from Holmes
 }
