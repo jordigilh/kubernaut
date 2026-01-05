@@ -2,6 +2,7 @@ package authwebhook
 
 import (
 	"context"
+	"fmt"
 
 	admissionv1 "k8s.io/api/admission/v1"
 )
@@ -18,7 +19,28 @@ func NewAuthenticator() *Authenticator {
 // ExtractUser extracts authenticated user information from admission request
 // Returns error if user info is missing or invalid
 //
-// TDD RED Phase: Stub implementation - tests will fail
+// BR-WEBHOOK-001: Extract authenticated user identity from K8s admission request
+// SOC2 CC8.1: Attribution requirement - must capture WHO performed the action
 func (a *Authenticator) ExtractUser(ctx context.Context, req *admissionv1.AdmissionRequest) (*AuthContext, error) {
-	panic("implement me: ExtractUser")
+	// Validate admission request
+	if req == nil {
+		return nil, fmt.Errorf("admission request cannot be nil")
+	}
+
+	// Extract username
+	username := req.UserInfo.Username
+	if username == "" {
+		return nil, fmt.Errorf("username is required for authentication")
+	}
+
+	// Extract UID
+	uid := req.UserInfo.UID
+	if uid == "" {
+		return nil, fmt.Errorf("UID is required for authentication")
+	}
+
+	return &AuthContext{
+		Username: username,
+		UID:      uid,
+	}, nil
 }
