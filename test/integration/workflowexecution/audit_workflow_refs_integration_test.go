@@ -166,8 +166,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		By("2. Wait for controller to process and emit events (CRD controller async)")
 		// CRD controllers are async - use Eventually with 60s timeout
 		// DD-TESTING-001: Deterministic event count (exactly 2 events)
-		// Flush audit buffer once before polling to ensure events are written
-		flushAuditBuffer()
+		// Audit buffer has 1s flush timer - Eventually's 60s timeout is sufficient
 		Eventually(func() int {
 			// Query all audit events for this correlation_id
 			events, err := queryAuditEvents(dsClient, correlationID, nil)

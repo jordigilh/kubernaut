@@ -160,8 +160,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	eventType := "execution.workflow.started"
 	eventCategory := "execution" // Gap #6 uses "execution" category
 	var auditEvents []dsgen.AuditEvent
-	// Flush audit buffer once before polling to ensure events are written
-	flushAuditBuffer()
+	// Audit buffer has 1s flush timer - Eventually's timeout is sufficient
 	Eventually(func() int {
 		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				EventType:     &eventType,
@@ -265,9 +264,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 	By("3. Wait for controller to process and emit execution.workflow.started event")
 	// DD-TESTING-001: Use Eventually() instead of time.Sleep()
 	// Don't filter by category - get all events for this correlation ID (execution + workflow categories)
-	// Flush audit buffer once before polling to ensure events are written
-	flushAuditBuffer()
-	Eventually(func() int {
+	// Audit buffer has 1s flush timer - Eventually's 20s timeout is sufficient
+	Eventually(func() int{
 		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				CorrelationId: &correlationID,
 			})
@@ -283,8 +281,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 	By("4. Fetch all workflow audit events for detailed validation")
 	// ✅ DD-API-001: Use OpenAPI client
-	// Flush audit buffer to ensure all events are written
-	flushAuditBuffer()
+	// Events already flushed during Eventually wait above
 	var auditEvents []dsgen.AuditEvent
 	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 			CorrelationId: &correlationID,
