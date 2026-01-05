@@ -243,4 +243,3 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 		})
 	})
 })
-

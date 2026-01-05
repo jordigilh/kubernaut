@@ -100,25 +100,21 @@ var _ = BeforeSuite(func() {
 
 	By("Registering webhook handlers (GREEN phase)")
 	// Create decoder for webhook handlers
-	decoder, err := admission.NewDecoder(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
+	decoder := admission.NewDecoder(scheme.Scheme)
 
 	// Register WorkflowExecution mutating webhook
 	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler()
-	err = wfeHandler.InjectDecoder(decoder)
-	Expect(err).NotTo(HaveOccurred())
+	_ = wfeHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
 
 	// Register RemediationApprovalRequest mutating webhook
 	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler()
-	err = rarHandler.InjectDecoder(decoder)
-	Expect(err).NotTo(HaveOccurred())
+	_ = rarHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
 	// Register NotificationRequest validating webhook for DELETE
 	nrHandler := webhooks.NewNotificationRequestDeleteHandler()
-	err = nrHandler.InjectDecoder(decoder)
-	Expect(err).NotTo(HaveOccurred())
+	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 
 	By("Starting webhook server")

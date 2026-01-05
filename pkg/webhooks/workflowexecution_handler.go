@@ -24,7 +24,6 @@ import (
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -38,7 +37,7 @@ import (
 // - status.BlockClearance.ClearedAt (timestamp)
 type WorkflowExecutionAuthHandler struct {
 	authenticator *authwebhook.Authenticator
-	decoder       *admission.Decoder
+	decoder       admission.Decoder
 }
 
 // NewWorkflowExecutionAuthHandler creates a new WorkflowExecution authentication handler
@@ -84,8 +83,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 
 	// Populate authentication fields
 	wfe.Status.BlockClearance.ClearedBy = authCtx.Username
-	now := metav1.Now()
-	wfe.Status.BlockClearance.ClearedAt = &now
+	wfe.Status.BlockClearance.ClearedAt = metav1.Now()
 
 	// Marshal the patched object
 	marshaledWFE, err := json.Marshal(wfe)
@@ -99,7 +97,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 
 // InjectDecoder injects the decoder into the handler
 // Required by controller-runtime admission webhook framework
-func (h *WorkflowExecutionAuthHandler) InjectDecoder(d *admission.Decoder) error {
+func (h *WorkflowExecutionAuthHandler) InjectDecoder(d admission.Decoder) error {
 	h.decoder = d
 	return nil
 }

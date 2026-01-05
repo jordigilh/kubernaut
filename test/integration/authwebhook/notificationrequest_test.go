@@ -63,10 +63,10 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Subject:  "Test escalation notification",
 					Body:     "This is a test notification that will be cancelled",
 					Recipients: []notificationv1.Recipient{
-						{Name: "oncall-team", Type: notificationv1.RecipientTypeEmail, Value: "oncall@example.com"},
+						{Email: "oncall@example.com"},
 					},
 					Channels: []notificationv1.Channel{
-						{Name: "email", Type: notificationv1.ChannelTypeEmail, Priority: 1},
+						notificationv1.ChannelEmail,
 					},
 				},
 			}
@@ -126,7 +126,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Subject:  "Test notification - normal completion",
 					Body:     "This notification will complete normally",
 					Recipients: []notificationv1.Recipient{
-						{Name: "ops-team", Type: notificationv1.RecipientTypeEmail, Value: "ops@example.com"},
+						{Email: "ops@example.com"},
 					},
 				},
 			}
@@ -176,7 +176,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 					Subject:  "Test notification - cancelled mid-processing",
 					Body:     "This notification will be cancelled while processing",
 					Recipients: []notificationv1.Recipient{
-						{Name: "dev-team", Type: notificationv1.RecipientTypeSlack, Value: "#dev-alerts"},
+						{Slack: "#dev-alerts"},
 					},
 				},
 			}
