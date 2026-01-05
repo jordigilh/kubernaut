@@ -66,7 +66,7 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 				"Fixed it now",
 				10, false,
 				"Prevents weak audit trails that fail to document operator intent"),
-			
+
 			// AUTH-014: ValidateReason - Reject Single Word
 			Entry("AUTH-014: rejects single-word non-descriptive justification",
 				"Fixed",
@@ -88,12 +88,45 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 				"valid reason text",
 				-1, false,
 				"Fail-safe: Invalid configuration cannot weaken audit requirements"),
-			
+
 			// AUTH-016: ValidateReason - Reject Zero Min
 			Entry("AUTH-016: rejects zero minimum to ensure meaningful documentation",
 				"valid reason text",
 				0, false,
 				"Fail-safe: Zero minimum would bypass audit completeness requirement"),
+
+			// AUTH-007: ValidateReason - Reject Overly Long (>100 words)
+			Entry("AUTH-007: rejects overly long justification exceeding maximum word count",
+				// 101 words: forces operators to be concise and focused
+				"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word", // 101st word
+				10, false,
+				"SOC2 CC7.4: Prevent excessively verbose justifications that reduce audit readability"),
+
+			// AUTH-008: ValidateReason - Accept at Max Length (exactly 100 words)
+			Entry("AUTH-008: accepts justification at maximum word count boundary",
+				// Exactly 100 words: boundary validation
+				"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word "+
+					"word word word word word word word word word word", // 100 words exactly
+				10, true,
+				"SOC2 CC7.4: Boundary validation for maximum justification length"),
 		)
 	})
 
@@ -117,7 +150,7 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 			Entry("AUTH-017: accepts recent legitimate clearance request",
 				-30*time.Second, true,
 				"Legitimate operator actions within time window are accepted"),
-			
+
 			// AUTH-018: ValidateTimestamp - Accept Boundary
 			Entry("AUTH-018: accepts request at maximum age boundary",
 				-4*time.Minute-59*time.Second, true,
@@ -127,7 +160,7 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 			Entry("AUTH-021: rejects stale request to prevent replay attack",
 				-10*time.Minute, false,
 				"Prevents attackers from reusing captured clearance requests"),
-			
+
 			// AUTH-022: ValidateTimestamp - Reject Very Old
 			Entry("AUTH-022: rejects very old request to prevent long-term replay",
 				-24*time.Hour, false,
@@ -137,7 +170,7 @@ var _ = Describe("BR-AUTH-001: Operator Justification Validation", func() {
 			Entry("AUTH-019: rejects future timestamp to prevent clock manipulation",
 				1*time.Hour, false,
 				"Prevents attackers from using future timestamps to bypass validation"),
-			
+
 			// AUTH-020: ValidateTimestamp - Reject Slightly Future
 			Entry("AUTH-020: rejects slightly future timestamp for strict validation",
 				1*time.Second, false,

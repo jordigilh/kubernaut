@@ -42,5 +42,7 @@ func (a *Authenticator) ExtractUser(ctx context.Context, req *admissionv1.Admiss
 	return &AuthContext{
 		Username: username,
 		UID:      uid,
+		Groups:   req.UserInfo.Groups,   // AUTH-004, AUTH-009, AUTH-010: Preserve group memberships for RBAC audit
+		Extra:    req.UserInfo.Extra,     // Preserve extra attributes for comprehensive audit context
 	}, nil
 }
