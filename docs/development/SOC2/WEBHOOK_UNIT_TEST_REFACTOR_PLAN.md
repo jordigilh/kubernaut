@@ -3,20 +3,62 @@
 **Date**: January 6, 2026
 **Status**: 🚀 **APPROVED FOR EXECUTION**
 **Approach**: Update tests to match authoritative test plan
-**Estimated Time**: 8 hours (split across multiple sessions)
+**Estimated Time**: 9.5 hours (split across multiple sessions)
+
+---
+
+## 🚨 **CRITICAL DISCOVERY: Test Plan Framework Mismatch**
+
+**Issue**: WEBHOOK_TEST_PLAN.md uses **standard Go testing** (`func TestXXX(t *testing.T)`), but:
+- ✅ Project mandates **Ginkgo/Gomega BDD framework** for ALL tests
+- ✅ Current implementation correctly uses Ginkgo with `DescribeTable`
+- ✅ WorkflowExecution testing-strategy.md line 243 shows Ginkgo pattern
+
+**Impact**: Test plan examples don't match actual implementation patterns
+
+**Resolution**: Phase 1 expanded to convert test plan examples from Go testing → Ginkgo patterns
 
 ---
 
 ## 🎯 **Implementation Phases**
 
-### **Phase 1: Assign Test Case IDs** ✅ (30 minutes)
+### **Phase 1: Assign Test Case IDs & Fix Framework** ✅ (1 hour)
 
-**Goal**: Update WEBHOOK_TEST_PLAN.md with formal AUTH-XXX IDs
+**Goal**: Update WEBHOOK_TEST_PLAN.md with formal AUTH-XXX IDs and Ginkgo patterns
+
+**CRITICAL**: Test plan currently uses standard Go testing (`func TestXXX(t *testing.T)`), but project mandates Ginkgo/Gomega
 
 **Tasks**:
 1. Add AUTH-001 through AUTH-010 IDs to test plan
-2. Create formal test case ID section in test plan
-3. Update test plan format to include IDs in test descriptions
+2. **Convert all unit test examples from standard Go testing to Ginkgo/Gomega**
+3. **Add DescribeTable examples for similar test scenarios** (per project convention)
+4. Create formal test case ID section in test plan
+5. Update test plan format to include IDs in test descriptions
+
+**Framework Conversion Example**:
+```go
+// ❌ WRONG: Test plan currently shows this
+func TestExtractAuthenticatedUser_Success(t *testing.T) {
+    assert.NoError(t, err)
+}
+
+// ✅ CORRECT: Should show Ginkgo pattern
+var _ = Describe("AUTH-001: Extract Valid User Info", func() {
+    It("should capture username, UID, and groups", func() {
+        Expect(err).ToNot(HaveOccurred())
+    })
+})
+
+// ✅ CORRECT: For similar scenarios, use DescribeTable
+DescribeTable("AUTH-002-004: User extraction validation",
+    func(username, uid string, groups []string, shouldSucceed bool) {
+        // Test logic
+    },
+    Entry("AUTH-002: Reject Missing Username", "", "uid-123", []string{}, false),
+    Entry("AUTH-003: Reject Empty UID", "user@example.com", "", []string{}, false),
+    Entry("AUTH-004: Extract Multiple Groups", "user", "uid", []string{"g1", "g2"}, true),
+)
+```
 
 **Files Modified**:
 - `docs/development/SOC2/WEBHOOK_TEST_PLAN.md`
@@ -68,7 +110,7 @@
 It("AUTH-004: Extract Multiple Groups", func() {
     // Test Plan: Test 4 - Extract Multiple Groups
     // BR: BR-AUTH-001 (Operator Attribution)
-    
+
     req := &admissionv1.AdmissionRequest{
         UserInfo: authv1.UserInfo{
             Username: "operator@kubernaut.ai",
@@ -76,9 +118,9 @@ It("AUTH-004: Extract Multiple Groups", func() {
             Groups:   []string{"system:authenticated", "operators", "admins"},
         },
     }
-    
+
     authCtx, err := authenticator.ExtractUser(ctx, req)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(authCtx.Groups).To(ConsistOf("system:authenticated", "operators", "admins"))
     Expect(authCtx.Groups).To(HaveLen(3))
@@ -91,11 +133,11 @@ It("AUTH-007: ValidateReason - Reject Overly Long Reason", func() {
     // Test Plan: Test 7 - Reject Overly Long Reason
     // BR: BR-AUTH-001 (Operator Attribution)
     // SOC2 CC7.4: Prevent excessively verbose justifications
-    
+
     longReason := strings.Repeat("word ", 101) // 101 words (> 100 max)
-    
+
     err := authwebhook.ValidateReason(longReason, 10)
-    
+
     Expect(err).To(HaveOccurred())
     Expect(err.Error()).To(ContainSubstring("too long"))
 })
@@ -107,11 +149,11 @@ It("AUTH-008: ValidateReason - Accept Reason at Max Length", func() {
     // Test Plan: Test 8 - Accept Reason at Max Length
     // BR: BR-AUTH-001 (Operator Attribution)
     // SOC2 CC7.4: Boundary validation for maximum length
-    
+
     maxReason := strings.Repeat("word ", 100) // Exactly 100 words
-    
+
     err := authwebhook.ValidateReason(maxReason, 10)
-    
+
     Expect(err).ToNot(HaveOccurred())
 })
 ```
@@ -121,7 +163,7 @@ It("AUTH-008: ValidateReason - Accept Reason at Max Length", func() {
 It("AUTH-009: Extract User with No Groups", func() {
     // Test Plan: Test 9 - Extract User with No Groups
     // BR: BR-AUTH-001 (Operator Attribution)
-    
+
     req := &admissionv1.AdmissionRequest{
         UserInfo: authv1.UserInfo{
             Username: "operator@kubernaut.ai",
@@ -129,9 +171,9 @@ It("AUTH-009: Extract User with No Groups", func() {
             Groups:   []string{}, // Empty groups
         },
     }
-    
+
     authCtx, err := authenticator.ExtractUser(ctx, req)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(authCtx.Groups).To(BeEmpty())
 })
@@ -142,7 +184,7 @@ It("AUTH-009: Extract User with No Groups", func() {
 It("AUTH-010: Extract Service Account User", func() {
     // Test Plan: Test 10 - Extract Service Account User
     // BR: BR-AUTH-001 (Operator Attribution)
-    
+
     req := &admissionv1.AdmissionRequest{
         UserInfo: authv1.UserInfo{
             Username: "system:serviceaccount:kubernaut-system:webhook-controller",
@@ -150,9 +192,9 @@ It("AUTH-010: Extract Service Account User", func() {
             Groups:   []string{"system:serviceaccounts", "system:authenticated"},
         },
     }
-    
+
     authCtx, err := authenticator.ExtractUser(ctx, req)
-    
+
     Expect(err).ToNot(HaveOccurred())
     Expect(authCtx.Username).To(ContainSubstring("serviceaccount"))
     Expect(authCtx.Groups).To(ContainElement("system:serviceaccounts"))
@@ -254,13 +296,13 @@ It("AUTH-010: Extract Service Account User", func() {
 
 | Phase | Duration | Status |
 |-------|----------|--------|
-| Phase 1: Assign IDs | 30 min | ⬜ Pending |
+| Phase 1: Assign IDs & Fix Framework | **1 hour** | ⬜ Pending |
 | Phase 2: Update Tests | 2 hours | ⬜ Pending |
 | Phase 3: Implement Missing | 3 hours | ⬜ Pending |
 | Phase 4: Handle Extras | 2 hours | ⬜ Pending |
 | Phase 5: Remove Duplicates | 30 min | ⬜ Pending |
 | Phase 6: Update Docs | 1 hour | ⬜ Pending |
-| **TOTAL** | **~9 hours** | ⬜ Pending |
+| **TOTAL** | **~9.5 hours** | ⬜ Pending |
 
 ### **Expected Outcomes**
 
@@ -301,9 +343,9 @@ Orphaned Tests: 0
 ## 🚀 **Execution Order**
 
 ### **Session 1: Foundation** (3 hours)
-1. Phase 1: Assign IDs to test plan
-2. Phase 6: Update test plan documentation
-3. Phase 2: Update existing authenticator tests
+1. Phase 1: Assign IDs & convert test plan to Ginkgo (1 hour)
+2. Phase 6: Update test plan documentation with ID reference (1 hour)
+3. Phase 2: Update existing authenticator tests with IDs (1 hour partial)
 
 ### **Session 2: Implementation** (3.5 hours)
 1. Phase 2: Update existing validator tests
