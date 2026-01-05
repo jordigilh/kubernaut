@@ -1,0 +1,106 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package webhooks
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	admissionv1 "k8s.io/api/admission/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+)
+
+// WorkflowExecutionAuthHandler handles authentication for WorkflowExecution block clearance
+// BR-WE-013: Audit-Tracked Execution Block Clearing
+// BR-AUTH-001: SOC2 CC8.1 Operator Attribution
+//
+// This mutating webhook intercepts WorkflowExecution status updates and populates:
+// - status.BlockClearance.ClearedBy (operator email/username)
+// - status.BlockClearance.ClearedAt (timestamp)
+type WorkflowExecutionAuthHandler struct {
+	authenticator *authwebhook.Authenticator
+	decoder       *admission.Decoder
+}
+
+// NewWorkflowExecutionAuthHandler creates a new WorkflowExecution authentication handler
+func NewWorkflowExecutionAuthHandler() *WorkflowExecutionAuthHandler {
+	return &WorkflowExecutionAuthHandler{
+		authenticator: authwebhook.NewAuthenticator(),
+	}
+}
+
+// Handle processes the admission request for WorkflowExecution
+// Implements admission.Handler interface from controller-runtime
+func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
+	wfe := &workflowexecutionv1.WorkflowExecution{}
+
+	// Decode the WorkflowExecution object from the request
+	err := json.Unmarshal(req.Object.Raw, wfe)
+	if err != nil {
+		return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode WorkflowExecution: %w", err))
+	}
+
+	// Check if block clearance is being requested
+	if wfe.Status.BlockClearance == nil {
+		// No clearance requested - allow without modification
+		return admission.Allowed("no block clearance requested")
+	}
+
+	// Extract authenticated user from admission request
+	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
+	if err != nil {
+		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
+	}
+
+	// Validate clearance reason (SOC2 CC7.4: Audit Completeness)
+	if wfe.Status.BlockClearance.ClearReason == "" {
+		return admission.Denied("invalid clearance reason: reason is required")
+	}
+
+	// Check if clearedBy is already set (preserve existing attribution)
+	if wfe.Status.BlockClearance.ClearedBy != "" {
+		// Already cleared - don't overwrite
+		return admission.Allowed("clearance already attributed")
+	}
+
+	// Populate authentication fields
+	wfe.Status.BlockClearance.ClearedBy = authCtx.Username
+	now := metav1.Now()
+	wfe.Status.BlockClearance.ClearedAt = &now
+
+	// Marshal the patched object
+	marshaledWFE, err := json.Marshal(wfe)
+	if err != nil {
+		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to marshal patched WorkflowExecution: %w", err))
+	}
+
+	// Return patched response
+	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledWFE)
+}
+
+// InjectDecoder injects the decoder into the handler
+// Required by controller-runtime admission webhook framework
+func (h *WorkflowExecutionAuthHandler) InjectDecoder(d *admission.Decoder) error {
+	h.decoder = d
+	return nil
+}
+
