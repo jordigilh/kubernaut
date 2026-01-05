@@ -117,219 +117,272 @@ go test -v -p 4 -cover ./test/integration/webhooks/... | grep "coverage:" | awk 
 
 ---
 
-## 🧪 **Unit Tests (70 Tests, <1s Total)**
+## 🧪 **Unit Tests (70+ Tests, <1s Total)**
 
-### **Component: Common Auth (`pkg/webhooks/auth/common_test.go`)**
+### **Component: Common Auth (`test/unit/authwebhook/`)**
 
-**10 tests, <100ms total**
+**23 tests (10 planned + 13 additional), <100ms total**
 
-#### **Test 1: Extract Valid User Info**
-```go
-func TestExtractAuthenticatedUser_Success(t *testing.T) {
-    req := admission.Request{
-        AdmissionRequest: admissionv1.AdmissionRequest{
-            UserInfo: authenticationv1.UserInfo{
-                Username: "operator@example.com",
-                UID:      "12345",
-                Groups:   []string{"system:authenticated", "admins"},
-            },
-        },
-    }
+**Framework**: Ginkgo/Gomega BDD (per project standard)
+**Pattern**: `DescribeTable` + `Entry` for similar scenarios
 
-    user, err := auth.ExtractAuthenticatedUser(req)
+---
 
-    assert.NoError(t, err)
-    assert.Equal(t, "operator@example.com", user.Username)
-    assert.Equal(t, "12345", user.UID)
-    assert.Len(t, user.Groups, 2)
-}
-```
+### **📋 Test Case ID Reference - Authenticator**
 
+| Test ID | Description | BR | SOC2 Control |
+|---------|-------------|----|--------------| 
+| AUTH-001 | Extract Valid User Info | BR-AUTH-001 | CC8.1 |
+| AUTH-002 | Reject Missing Username | BR-AUTH-001 | CC8.1 |
+| AUTH-003 | Reject Empty UID | BR-AUTH-001 | CC8.1 |
+| AUTH-004 | Extract Multiple Groups | BR-AUTH-001 | CC8.1 |
+| AUTH-009 | Extract User with No Groups | BR-AUTH-001 | CC8.1 |
+| AUTH-010 | Extract Service Account User | BR-AUTH-001 | CC8.1 |
+
+---
+
+#### **AUTH-001: Extract Valid User Info**
+
+**Test Plan Reference**: Test 1
 **BR**: BR-AUTH-001 (Operator Attribution)
-**Expected**: Returns UserInfo with all fields populated
+**Expected**: Returns UserInfo with username, UID, and groups
+
+```go
+var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
+    var (
+        authenticator *authwebhook.Authenticator
+        ctx           context.Context
+    )
+
+    BeforeEach(func() {
+        authenticator = authwebhook.NewAuthenticator()
+        ctx = context.Background()
+    })
+
+    Describe("ExtractUser - SOC2 CC8.1 Operator Attribution", func() {
+        Context("when operator provides valid authentication", func() {
+            It("AUTH-001: should extract username, UID, and groups", func() {
+                // Test Plan: Test 1 - Extract Valid User Info
+                req := &admissionv1.AdmissionRequest{
+                    UserInfo: authv1.UserInfo{
+                        Username: "operator@kubernaut.ai",
+                        UID:      "k8s-user-abc-123",
+                        Groups:   []string{"system:authenticated", "operators"},
+                    },
+                }
+
+                authCtx, err := authenticator.ExtractUser(ctx, req)
+
+                Expect(err).ToNot(HaveOccurred())
+                Expect(authCtx.Username).To(Equal("operator@kubernaut.ai"))
+                Expect(authCtx.UID).To(Equal("k8s-user-abc-123"))
+                Expect(authCtx.Groups).To(HaveLen(2))
+                Expect(authCtx.Groups).To(ConsistOf("system:authenticated", "operators"))
+            })
+        })
+    })
+})
+```
 
 ---
 
-#### **Test 2: Reject Missing Username**
+#### **AUTH-002, AUTH-003, AUTH-004: User Extraction Validation (DescribeTable)**
+
+**Pattern**: Use `DescribeTable` for similar test scenarios per project convention
+
 ```go
-func TestExtractAuthenticatedUser_MissingUsername(t *testing.T) {
-    req := admission.Request{
-        AdmissionRequest: admissionv1.AdmissionRequest{
-            UserInfo: authenticationv1.UserInfo{
-                Username: "",
-                UID:      "12345",
-            },
+Context("when validating user extraction scenarios", func() {
+    // Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
+    
+    DescribeTable("AUTH-002 to AUTH-004: User extraction validation",
+        func(testID, username, uid string, groups []string, shouldSucceed bool, businessOutcome string) {
+            req := &admissionv1.AdmissionRequest{
+                UserInfo: authv1.UserInfo{
+                    Username: username,
+                    UID:      uid,
+                    Groups:   groups,
+                },
+            }
+
+            authCtx, err := authenticator.ExtractUser(ctx, req)
+
+            if shouldSucceed {
+                Expect(err).ToNot(HaveOccurred(), businessOutcome)
+                Expect(authCtx).ToNot(BeNil())
+            } else {
+                Expect(err).To(HaveOccurred(), businessOutcome)
+                Expect(authCtx).To(BeNil())
+            }
         },
-    }
 
-    user, err := auth.ExtractAuthenticatedUser(req)
+        // AUTH-002: Reject Missing Username
+        Entry("AUTH-002: Reject Missing Username",
+            "AUTH-002",
+            "", // Empty username
+            "k8s-user-123",
+            []string{"system:authenticated"},
+            false,
+            "SOC2 CC8.1 violation: Cannot attribute action without operator username"),
 
-    assert.Error(t, err)
-    assert.Nil(t, user)
-    assert.Contains(t, err.Error(), "missing user identity")
-}
+        // AUTH-003: Reject Empty UID
+        Entry("AUTH-003: Reject Empty UID",
+            "AUTH-003",
+            "operator@kubernaut.ai",
+            "", // Empty UID
+            []string{"system:authenticated"},
+            false,
+            "SOC2 CC8.1 violation: Cannot uniquely identify operator without UID"),
+
+        // AUTH-004: Extract Multiple Groups
+        Entry("AUTH-004: Extract Multiple Groups",
+            "AUTH-004",
+            "operator@kubernaut.ai",
+            "k8s-user-123",
+            []string{"system:authenticated", "operators", "admins", "sre-team"},
+            true,
+            "All groups preserved for RBAC audit trail"),
+    )
+})
 ```
-
-**BR**: BR-AUTH-001 (Operator Attribution)
-**Expected**: Returns error for missing username
 
 ---
 
-#### **Test 3: Reject Empty UID**
+### **📋 Test Case ID Reference - Validator**
+
+| Test ID | Description | BR | SOC2 Control |
+|---------|-------------|----|--------------| 
+| AUTH-005 | ValidateReason - Accept Valid Input | BR-AUTH-001 | CC7.4 |
+| AUTH-006 | ValidateReason - Reject Empty Reason | BR-AUTH-001 | CC7.4 |
+| AUTH-007 | ValidateReason - Reject Overly Long | BR-AUTH-001 | CC7.4 |
+| AUTH-008 | ValidateReason - Accept at Max Length | BR-AUTH-001 | CC7.4 |
+
+---
+
+#### **AUTH-005, AUTH-006: ValidateReason Tests (DescribeTable)**
+
 ```go
-func TestExtractAuthenticatedUser_EmptyUID(t *testing.T) {
-    req := admission.Request{
-        AdmissionRequest: admissionv1.AdmissionRequest{
-            UserInfo: authenticationv1.UserInfo{
-                Username: "operator@example.com",
-                UID:      "",
-            },
+Describe("ValidateReason - SOC2 CC7.4 Audit Completeness", func() {
+    // Per TESTING_GUIDELINES.md: Use DescribeTable for similar test scenarios
+    
+    DescribeTable("AUTH-005 to AUTH-006: Reason validation",
+        func(testID, reason string, minWords int, shouldSucceed bool, businessOutcome string) {
+            err := authwebhook.ValidateReason(reason, minWords)
+
+            if shouldSucceed {
+                Expect(err).ToNot(HaveOccurred(), businessOutcome)
+            } else {
+                Expect(err).To(HaveOccurred(), businessOutcome)
+            }
         },
-    }
 
-    user, err := auth.ExtractAuthenticatedUser(req)
+        // AUTH-005: ValidateReason - Accept Valid Input
+        Entry("AUTH-005: Accept valid justification meeting minimum standard",
+            "AUTH-005",
+            "Clearing block due to confirmed fix deployment in production environment",
+            10,
+            true,
+            "SOC2 CC7.4: Valid justification enables audit completeness"),
 
-    // Note: Empty UID may be acceptable in some K8s setups
-    // Adjust assertion based on requirements
-    assert.NoError(t, err)
-    assert.Equal(t, "operator@example.com", user.Username)
-}
-```
-
-**BR**: BR-AUTH-001 (Operator Attribution)
-**Expected**: Username is sufficient, UID optional
+        // AUTH-006: ValidateReason - Reject Empty Reason
+        Entry("AUTH-006: Reject empty justification to enforce mandatory documentation",
+            "AUTH-006",
+            "",
+            10,
+            false,
+            "SOC2 CC7.4 violation: Mandatory justification for audit completeness"),
+    )
+})
 
 ---
 
-#### **Test 4: Extract Multiple Groups**
+#### **AUTH-007, AUTH-008: ValidateReason Length Boundaries**
+
 ```go
-func TestExtractAuthenticatedUser_MultipleGroups(t *testing.T) {
-    req := admission.Request{
-        AdmissionRequest: admissionv1.AdmissionRequest{
-            UserInfo: authenticationv1.UserInfo{
-                Username: "operator@example.com",
-                UID:      "12345",
-                Groups:   []string{"system:authenticated", "admins", "sre-team"},
-            },
+Context("when validating reason length boundaries", func() {
+    DescribeTable("AUTH-007 to AUTH-008: Length boundary validation",
+        func(testID, reason string, minWords int, shouldSucceed bool, businessOutcome string) {
+            err := authwebhook.ValidateReason(reason, minWords)
+
+            if shouldSucceed {
+                Expect(err).ToNot(HaveOccurred(), businessOutcome)
+            } else {
+                Expect(err).To(HaveOccurred(), businessOutcome)
+            }
         },
-    }
 
-    user, err := auth.ExtractAuthenticatedUser(req)
+        // AUTH-007: ValidateReason - Reject Overly Long Reason
+        Entry("AUTH-007: Reject overly long justification (>100 words)",
+            "AUTH-007",
+            strings.Repeat("word ", 101), // 101 words
+            10,
+            false,
+            "SOC2 CC7.4: Prevent excessively verbose justifications"),
 
-    assert.NoError(t, err)
-    assert.Len(t, user.Groups, 3)
-    assert.Contains(t, user.Groups, "sre-team")
-}
+        // AUTH-008: ValidateReason - Accept Reason at Max Length
+        Entry("AUTH-008: Accept justification at maximum length boundary (100 words)",
+            "AUTH-008",
+            strings.Repeat("word ", 100), // Exactly 100 words
+            10,
+            true,
+            "SOC2 CC7.4: Boundary validation for maximum length"),
+    )
+})
 ```
-
-**BR**: BR-AUTH-001 (Operator Attribution)
-**Expected**: All groups preserved
 
 ---
 
-#### **Test 5: ValidateReason - Accept Valid Input**
+#### **AUTH-009, AUTH-010: Special User Scenarios**
+
 ```go
-func TestValidateReason_ValidInput(t *testing.T) {
-    err := auth.ValidateReason("Clearing block due to confirmed fix deployment")
-    assert.NoError(t, err)
-}
-```
+Context("when handling special user scenarios", func() {
+    DescribeTable("AUTH-009 to AUTH-010: Special authentication scenarios",
+        func(testID, username, uid string, groups []string, shouldSucceed bool, businessOutcome string) {
+            req := &admissionv1.AdmissionRequest{
+                UserInfo: authv1.UserInfo{
+                    Username: username,
+                    UID:      uid,
+                    Groups:   groups,
+                },
+            }
 
-**BR**: BR-WE-013 (Audit-Tracked Block Clearing)
-**Expected**: Valid reason passes validation
+            authCtx, err := authenticator.ExtractUser(ctx, req)
 
----
-
-#### **Test 6: ValidateReason - Reject Empty Reason**
-```go
-func TestValidateReason_EmptyReason(t *testing.T) {
-    err := auth.ValidateReason("")
-    assert.Error(t, err)
-    assert.Contains(t, err.Error(), "reason is required")
-}
-```
-
-**BR**: BR-WE-013 (Audit-Tracked Block Clearing)
-**Expected**: Empty reason rejected
-
----
-
-#### **Test 7: ValidateReason - Reject Overly Long Reason**
-```go
-func TestValidateReason_TooLong(t *testing.T) {
-    longReason := strings.Repeat("a", 501)
-    err := auth.ValidateReason(longReason)
-    assert.Error(t, err)
-    assert.Contains(t, err.Error(), "exceeds maximum length")
-}
-```
-
-**BR**: BR-WE-013 (Audit-Tracked Block Clearing)
-**Expected**: Reason > 500 chars rejected
-
----
-
-#### **Test 8: ValidateReason - Accept Reason at Max Length**
-```go
-func TestValidateReason_MaxLength(t *testing.T) {
-    maxReason := strings.Repeat("a", 500)
-    err := auth.ValidateReason(maxReason)
-    assert.NoError(t, err)
-}
-```
-
-**BR**: BR-WE-013 (Audit-Tracked Block Clearing)
-**Expected**: 500 char reason accepted
-
----
-
-#### **Test 9: Extract User with No Groups**
-```go
-func TestExtractAuthenticatedUser_NoGroups(t *testing.T) {
-    req := admission.Request{
-        AdmissionRequest: admissionv1.AdmissionRequest{
-            UserInfo: authenticationv1.UserInfo{
-                Username: "operator@example.com",
-                UID:      "12345",
-                Groups:   []string{},
-            },
+            if shouldSucceed {
+                Expect(err).ToNot(HaveOccurred(), businessOutcome)
+                Expect(authCtx).ToNot(BeNil())
+                
+                // Test-specific validations
+                if testID == "AUTH-009" {
+                    Expect(authCtx.Groups).To(BeEmpty(), "Empty groups list preserved")
+                } else if testID == "AUTH-010" {
+                    Expect(authCtx.Username).To(ContainSubstring("serviceaccount"), "Service account identified")
+                    Expect(authCtx.Groups).To(ContainElement("system:serviceaccounts"), "SA groups preserved")
+                }
+            } else {
+                Expect(err).To(HaveOccurred(), businessOutcome)
+            }
         },
-    }
 
-    user, err := auth.ExtractAuthenticatedUser(req)
+        // AUTH-009: Extract User with No Groups
+        Entry("AUTH-009: Extract user with empty groups list",
+            "AUTH-009",
+            "operator@kubernaut.ai",
+            "k8s-user-123",
+            []string{}, // Empty groups
+            true,
+            "SOC2 CC8.1: Empty groups list is acceptable for audit attribution"),
 
-    assert.NoError(t, err)
-    assert.Empty(t, user.Groups)
-}
+        // AUTH-010: Extract Service Account User  
+        Entry("AUTH-010: Extract Kubernetes ServiceAccount user identity",
+            "AUTH-010",
+            "system:serviceaccount:kubernaut-system:webhook-controller",
+            "sa-uid-789",
+            []string{"system:serviceaccounts", "system:authenticated"},
+            true,
+            "SOC2 CC8.1: Service account identities supported for audit trail"),
+    )
+})
 ```
-
-**BR**: BR-AUTH-001 (Operator Attribution)
-**Expected**: Empty groups list acceptable
-
----
-
-#### **Test 10: Extract Service Account User**
-```go
-func TestExtractAuthenticatedUser_ServiceAccount(t *testing.T) {
-    req := admission.Request{
-        AdmissionRequest: admissionv1.AdmissionRequest{
-            UserInfo: authenticationv1.UserInfo{
-                Username: "system:serviceaccount:default:my-sa",
-                UID:      "sa-12345",
-                Groups:   []string{"system:serviceaccounts"},
-            },
-        },
-    }
-
-    user, err := auth.ExtractAuthenticatedUser(req)
-
-    assert.NoError(t, err)
-    assert.Equal(t, "system:serviceaccount:default:my-sa", user.Username)
-}
-```
-
-**BR**: BR-AUTH-001 (Operator Attribution)
-**Expected**: Service account identities supported
 
 ---
 
