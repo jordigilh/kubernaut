@@ -22,7 +22,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -85,7 +86,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 				return err
 			}
 			// Update status with fresh resourceVersion
-			now := corev1.Now()
+			now := metav1.Now()
 			wfe1Fresh.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
 			wfe1Fresh.Status.CompletionTime = &now
 			return k8sClient.Status().Update(ctx, wfe1Fresh)
@@ -161,7 +162,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe1), wfe1Fresh); err != nil {
 				return err
 			}
-			now := corev1.Now()
+			now := metav1.Now()
 			wfe1Fresh.Status.Phase = workflowexecutionv1alpha1.PhaseFailed
 			wfe1Fresh.Status.CompletionTime = &now
 			return k8sClient.Status().Update(ctx, wfe1Fresh)
@@ -187,14 +188,23 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 
 // createTestWorkflowExecution creates a WorkflowExecution for testing cooldown behavior.
 // Uses the same structure as the helper in suite_test.go.
+// DD-AUDIT-CORRELATION-001: MUST set RemediationRequestRef.Name for audit correlation
 func createTestWorkflowExecution(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	return &workflowexecutionv1alpha1.WorkflowExecution{
-		ObjectMeta: corev1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: DefaultNamespace,
 			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+			// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is REQUIRED for correlation ID
+			// OpenAPI validation requires correlation_id min length = 1
+			RemediationRequestRef: corev1.ObjectReference{
+				APIVersion: "remediation.kubernaut.ai/v1alpha1",
+				Kind:       "RemediationRequest",
+				Name:       "test-rr-" + name, // Correlation ID source!
+				Namespace:  DefaultNamespace,
+			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowID:     "test-workflow",
 				Version:        "v1.0.0",

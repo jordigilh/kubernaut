@@ -1,9 +1,9 @@
 # Gas Town SOC2 Audit Trail Convoy: Day 3+ Workflow
 
-**Convoy**: `soc2-audit-trail`  
-**Formula**: `integration-test-full-validation` v2.1  
-**Status**: Day 2 Complete, Day 3+ Planning  
-**Owner**: @jgil  
+**Convoy**: `soc2-audit-trail`
+**Formula**: `integration-test-full-validation` v2.1
+**Status**: Day 2 Complete, Day 3+ Planning
+**Owner**: @jgil
 
 ---
 

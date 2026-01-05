@@ -52,7 +52,8 @@ const ServiceName = "workflowexecution-controller"
 
 // Event category for WorkflowExecution audit events (ADR-034 v1.2: Service-level category)
 const (
-	CategoryWorkflow = "workflow" // Service-level identifier per ADR-034 v1.2
+	CategoryWorkflow  = "workflow"  // Service-level identifier per ADR-034 v1.2
+	CategoryExecution = "execution" // Execution-specific events (Gap #6, BR-AUDIT-005)
 )
 
 // Event actions for WorkflowExecution audit events (per DD-AUDIT-003)
@@ -64,9 +65,11 @@ const (
 
 // Event types for WorkflowExecution audit events (per ADR-034)
 const (
-	EventTypeStarted   = "workflow.started"
-	EventTypeCompleted = "workflow.completed"
-	EventTypeFailed    = "workflow.failed"
+	EventTypeStarted            = "workflow.started"
+	EventTypeCompleted          = "workflow.completed"
+	EventTypeFailed             = "workflow.failed"
+	EventTypeSelectionCompleted = "workflow.selection.completed" // Gap #5 (BR-AUDIT-005)
+	EventTypeExecutionStarted   = "execution.workflow.started"   // Gap #6 (BR-AUDIT-005)
 )
 
 // Manager handles audit trail recording for WorkflowExecution lifecycle events.
@@ -117,6 +120,139 @@ func (m *Manager) RecordWorkflowCompleted(ctx context.Context, wfe *workflowexec
 // This event is emitted when a PipelineRun fails or times out.
 func (m *Manager) RecordWorkflowFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	return m.recordAuditEvent(ctx, wfe, EventTypeFailed, "failure")
+}
+
+// RecordWorkflowSelectionCompleted records a workflow.selection.completed audit event (Gap #5).
+//
+// This event is emitted immediately after workflow selection from spec.WorkflowRef,
+// before PipelineRun creation. Per BR-AUDIT-005 Gap #5, this provides visibility
+// into which workflow was selected for execution.
+//
+// Event Data Structure:
+//   - selected_workflow_ref: {workflow_id, version, container_image}
+func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	// Build audit event with custom event_data for Gap #5
+	if m.store == nil {
+		err := fmt.Errorf("AuditStore is nil - audit is MANDATORY per ADR-032")
+		m.logger.Error(err, "CRITICAL: Cannot record audit event - manager misconfigured",
+			"action", EventTypeSelectionCompleted,
+			"wfe", wfe.Name,
+		)
+		return err
+	}
+
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeSelectionCompleted)
+	audit.SetEventCategory(event, CategoryWorkflow)
+	audit.SetEventAction(event, "completed") // "workflow.selection.completed" → "completed"
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", ServiceName)
+	audit.SetResource(event, "WorkflowExecution", wfe.Name)
+
+	// Correlation ID: Use parent RemediationRequest name (BR-AUDIT-005)
+	// Per DD-AUDIT-CORRELATION: WFE.Spec.RemediationRequestRef.Name is the authoritative source
+	// Labels are NOT set by RemediationOrchestrator (verified in creator implementation)
+	correlationID := wfe.Spec.RemediationRequestRef.Name
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, wfe.Namespace)
+
+	// Gap #5: Custom event_data with selected_workflow_ref
+	eventData := map[string]interface{}{
+		"selected_workflow_ref": map[string]interface{}{
+			"workflow_id":     wfe.Spec.WorkflowRef.WorkflowID,
+			"version":         wfe.Spec.WorkflowRef.Version,
+			"container_image": wfe.Spec.WorkflowRef.ContainerImage,
+		},
+	}
+	audit.SetEventData(event, eventData)
+
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
+			"action", EventTypeSelectionCompleted,
+			"wfe", wfe.Name,
+		)
+		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
+	}
+
+	m.logger.V(1).Info("Audit event recorded",
+		"action", EventTypeSelectionCompleted,
+		"wfe", wfe.Name,
+		"outcome", "success",
+	)
+	return nil
+}
+
+// RecordExecutionWorkflowStarted records an execution.workflow.started audit event (Gap #6).
+//
+// This event is emitted immediately after PipelineRun creation succeeds,
+// providing the PipelineRun reference for complete Request-Response reconstruction.
+// Per BR-AUDIT-005 Gap #6, this links WorkflowExecution to Tekton PipelineRun.
+//
+// Event Data Structure:
+//   - execution_ref: {api_version: "tekton.dev/v1", kind: "PipelineRun", name, namespace}
+//
+// Parameters:
+//   - pipelineRunName: Name of the created PipelineRun
+//   - pipelineRunNamespace: Namespace of the created PipelineRun
+func (m *Manager) RecordExecutionWorkflowStarted(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	pipelineRunName string,
+	pipelineRunNamespace string,
+) error {
+	// Build audit event with custom event_data for Gap #6
+	if m.store == nil {
+		err := fmt.Errorf("AuditStore is nil - audit is MANDATORY per ADR-032")
+		m.logger.Error(err, "CRITICAL: Cannot record audit event - manager misconfigured",
+			"action", EventTypeExecutionStarted,
+			"wfe", wfe.Name,
+		)
+		return err
+	}
+
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeExecutionStarted)
+	audit.SetEventCategory(event, CategoryExecution) // Gap #6: execution category
+	audit.SetEventAction(event, "started")           // "execution.workflow.started" → "started"
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", ServiceName)
+	audit.SetResource(event, "WorkflowExecution", wfe.Name)
+
+	// Correlation ID: Use parent RemediationRequest name (BR-AUDIT-005)
+	// Per DD-AUDIT-CORRELATION: WFE.Spec.RemediationRequestRef.Name is the authoritative source
+	// Labels are NOT set by RemediationOrchestrator (verified in creator implementation)
+	correlationID := wfe.Spec.RemediationRequestRef.Name
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, wfe.Namespace)
+
+	// Gap #6: Custom event_data with execution_ref
+	eventData := map[string]interface{}{
+		"execution_ref": map[string]interface{}{
+			"api_version": "tekton.dev/v1",
+			"kind":        "PipelineRun",
+			"name":        pipelineRunName,
+			"namespace":   pipelineRunNamespace,
+		},
+	}
+	audit.SetEventData(event, eventData)
+
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
+			"action", EventTypeExecutionStarted,
+			"wfe", wfe.Name,
+		)
+		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
+	}
+
+	m.logger.V(1).Info("Audit event recorded",
+		"action", EventTypeExecutionStarted,
+		"wfe", wfe.Name,
+		"pipelineRun", pipelineRunName,
+		"outcome", "success",
+	)
+	return nil
 }
 
 // recordAuditEvent is the internal implementation for recording audit events.
@@ -170,13 +306,10 @@ func (m *Manager) recordAuditEvent(
 	audit.SetActor(event, "service", ServiceName)
 	audit.SetResource(event, "WorkflowExecution", wfe.Name)
 
-	// Correlation ID from labels (set by RemediationOrchestrator)
-	correlationID := wfe.Name // Fallback: use WFE name as correlation ID
-	if wfe.Labels != nil {
-		if corrID, ok := wfe.Labels["kubernaut.ai/correlation-id"]; ok {
-			correlationID = corrID
-		}
-	}
+	// Correlation ID: Use parent RemediationRequest name (BR-AUDIT-005)
+	// Per DD-AUDIT-CORRELATION: WFE.Spec.RemediationRequestRef.Name is the authoritative source
+	// Labels are NOT set by RemediationOrchestrator (verified in creator implementation)
+	correlationID := wfe.Spec.RemediationRequestRef.Name
 	audit.SetCorrelationID(event, correlationID)
 
 	// Set namespace context
@@ -241,6 +374,3 @@ func (m *Manager) recordAuditEvent(
 	)
 	return nil
 }
-
-
-
