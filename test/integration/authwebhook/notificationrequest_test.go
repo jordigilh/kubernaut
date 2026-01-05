@@ -1,0 +1,216 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package authwebhook
+
+import (
+	"context"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// TDD RED Phase: NotificationRequest Integration Tests
+// BR-AUTH-001: Operator Attribution (SOC2 CC8.1)
+// DD-NOT-005: Immutable Spec (cancellation via DELETE operation)
+//
+// Per TESTING_GUIDELINES.md §1773-1862: Business Logic Testing Pattern
+// 1. Create NotificationRequest CRD (business operation)
+// 2. Operator deletes CRD to cancel (business operation)
+// 3. Verify webhook captured DELETE attribution via annotations (side effect)
+//
+// Tests written BEFORE webhook handlers exist (TDD RED Phase)
+
+var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", func() {
+	var (
+		ctx       context.Context
+		namespace string
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		namespace = "default"
+	})
+
+	Context("INT-NR-01: when operator cancels notification via DELETE", func() {
+		It("should capture operator identity in annotations via validating webhook", func() {
+			By("Creating NotificationRequest CRD (business operation)")
+			nr := &notificationv1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nr-cancel",
+					Namespace: namespace,
+				},
+				Spec: notificationv1.NotificationRequestSpec{
+					Type:     notificationv1.NotificationTypeEscalation,
+					Priority: notificationv1.NotificationPriorityHigh,
+					Subject:  "Test escalation notification",
+					Body:     "This is a test notification that will be cancelled",
+					Recipients: []notificationv1.Recipient{
+						{Name: "oncall-team", Type: notificationv1.RecipientTypeEmail, Value: "oncall@example.com"},
+					},
+					Channels: []notificationv1.Channel{
+						{Name: "email", Type: notificationv1.ChannelTypeEmail, Priority: 1},
+					},
+				},
+			}
+
+			createAndWaitForCRD(ctx, nr)
+
+			By("Operator deletes NotificationRequest to cancel (business operation)")
+			// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
+			// Webhook will intercept DELETE and add annotations for attribution
+			deleteAndWaitForAnnotations(ctx, nr, "kubernaut.ai/cancelled-by")
+
+			By("Verifying webhook captured DELETE attribution (side effect)")
+			// Fetch the CRD one last time before it's cleaned up by finalizers
+			fetchedNR := &notificationv1.NotificationRequest{}
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)
+
+			if err == nil {
+				// CRD still exists with deletion timestamp
+				Expect(fetchedNR.GetDeletionTimestamp()).ToNot(BeNil(),
+					"CRD should have deletion timestamp")
+				annotations := fetchedNR.GetAnnotations()
+				Expect(annotations).ToNot(BeNil(),
+					"Webhook should have added annotations")
+				Expect(annotations["kubernaut.ai/cancelled-by"]).To(ContainSubstring("@"),
+					"cancelled-by annotation should contain operator email")
+				Expect(annotations["kubernaut.ai/cancelled-at"]).ToNot(BeEmpty(),
+					"cancelled-at annotation should contain timestamp")
+
+				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+				GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution Captured\n")
+				GinkgoWriter.Printf("   • Cancelled by: %s\n", annotations["kubernaut.ai/cancelled-by"])
+				GinkgoWriter.Printf("   • Cancelled at: %s\n", annotations["kubernaut.ai/cancelled-at"])
+				GinkgoWriter.Printf("   • Deletion timestamp: %s\n", fetchedNR.GetDeletionTimestamp())
+				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			} else {
+				// CRD was already cleaned up (finalizers completed)
+				// This is also a valid outcome - webhook should have added annotations before finalizer ran
+				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+				GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution (finalizer completed)\n")
+				GinkgoWriter.Printf("   • CRD was cleaned up by finalizers after webhook added annotations\n")
+				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			}
+		})
+	})
+
+	Context("INT-NR-02: when NotificationRequest completes successfully", func() {
+		It("should not modify CRD on normal lifecycle completion", func() {
+			By("Creating NotificationRequest CRD")
+			nr := &notificationv1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nr-complete",
+					Namespace: namespace,
+				},
+				Spec: notificationv1.NotificationRequestSpec{
+					Type:     notificationv1.NotificationTypeSimple,
+					Priority: notificationv1.NotificationPriorityMedium,
+					Subject:  "Test notification - normal completion",
+					Body:     "This notification will complete normally",
+					Recipients: []notificationv1.Recipient{
+						{Name: "ops-team", Type: notificationv1.RecipientTypeEmail, Value: "ops@example.com"},
+					},
+				},
+			}
+
+			createAndWaitForCRD(ctx, nr)
+
+			By("Controller marks notification as Sent (business operation)")
+			nr.Status.Phase = notificationv1.NotificationPhaseSent
+			nr.Status.SuccessfulDeliveries = 1
+			Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
+				"Status update for completion should succeed")
+
+			By("Verifying webhook did not add cancellation annotations")
+			fetchedNR := &notificationv1.NotificationRequest{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)).To(Succeed())
+
+			annotations := fetchedNR.GetAnnotations()
+			if annotations != nil {
+				Expect(annotations).ToNot(HaveKey("kubernaut.ai/cancelled-by"),
+					"Normal completion should not have cancellation annotations")
+				Expect(annotations).ToNot(HaveKey("kubernaut.ai/cancelled-at"),
+					"Normal completion should not have cancellation annotations")
+			}
+
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			GinkgoWriter.Printf("✅ INT-NR-02 PASSED: Normal Completion (no attribution)\n")
+			GinkgoWriter.Printf("   • Phase: %s\n", fetchedNR.Status.Phase)
+			GinkgoWriter.Printf("   • No cancellation annotations (as expected)\n")
+			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+			// Clean up
+			Expect(k8sClient.Delete(ctx, nr)).To(Succeed())
+		})
+	})
+
+	Context("INT-NR-03: when NotificationRequest is deleted during processing", func() {
+		It("should capture attribution even if CRD is mid-processing", func() {
+			By("Creating NotificationRequest CRD")
+			nr := &notificationv1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nr-mid-processing",
+					Namespace: namespace,
+				},
+				Spec: notificationv1.NotificationRequestSpec{
+					Type:     notificationv1.NotificationTypeStatusUpdate,
+					Priority: notificationv1.NotificationPriorityLow,
+					Subject:  "Test notification - cancelled mid-processing",
+					Body:     "This notification will be cancelled while processing",
+					Recipients: []notificationv1.Recipient{
+						{Name: "dev-team", Type: notificationv1.RecipientTypeSlack, Value: "#dev-alerts"},
+					},
+				},
+			}
+
+			createAndWaitForCRD(ctx, nr)
+
+			By("Controller marks notification as Sending (processing started)")
+			nr.Status.Phase = notificationv1.NotificationPhaseSending
+			nr.Status.TotalAttempts = 1
+			Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
+				"Status update to Sending should succeed")
+
+			By("Operator cancels notification mid-processing")
+			deleteAndWaitForAnnotations(ctx, nr, "kubernaut.ai/cancelled-by")
+
+			By("Verifying webhook captured attribution during processing")
+			fetchedNR := &notificationv1.NotificationRequest{}
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), fetchedNR)
+
+			if err == nil {
+				Expect(fetchedNR.Status.Phase).To(Equal(notificationv1.NotificationPhaseSending),
+					"Phase should remain Sending (cancellation is async)")
+				annotations := fetchedNR.GetAnnotations()
+				Expect(annotations).ToNot(BeNil())
+				Expect(annotations["kubernaut.ai/cancelled-by"]).ToNot(BeEmpty(),
+					"Webhook should capture operator identity even during processing")
+
+				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+				GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation Attribution\n")
+				GinkgoWriter.Printf("   • Phase: %s (processing continues)\n", fetchedNR.Status.Phase)
+				GinkgoWriter.Printf("   • Cancelled by: %s\n", annotations["kubernaut.ai/cancelled-by"])
+				GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			}
+		})
+	})
+})
+

@@ -26,8 +26,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	// remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	// notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -78,11 +78,10 @@ var _ = BeforeSuite(func() {
 	By("Registering CRD schemes")
 	err = workflowexecutionv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
-	// TODO: Add RemediationApprovalRequest and NotificationRequest schemes when available
-	// err = remediationv1.AddToScheme(scheme.Scheme)
-	// Expect(err).NotTo(HaveOccurred())
-	// err = notificationv1.AddToScheme(scheme.Scheme)
-	// Expect(err).NotTo(HaveOccurred())
+	err = remediationv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = notificationv1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating K8s client for CRD operations")
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
