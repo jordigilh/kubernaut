@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
@@ -73,6 +74,11 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	// Validate clearance reason (SOC2 CC7.4: Audit Completeness)
 	if wfe.Status.BlockClearance.ClearReason == "" {
 		return admission.Denied("invalid clearance reason: reason is required")
+	}
+	// Validate clearance reason length (must be at least 10 words for proper audit trail)
+	words := strings.Fields(wfe.Status.BlockClearance.ClearReason)
+	if len(words) < 10 {
+		return admission.Denied(fmt.Sprintf("invalid clearance reason: reason must be at least 10 words for proper audit trail (SOC2 CC7.4), got %d words", len(words)))
 	}
 
 	// Check if clearedBy is already set (preserve existing attribution)

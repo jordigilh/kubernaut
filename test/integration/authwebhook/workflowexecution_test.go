@@ -73,7 +73,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 					// Populate status.BlockClearance with operator's reason
 					// Webhook will populate ClearedBy and ClearedAt fields
 					wfe.Status.BlockClearance = &workflowexecutionv1.BlockClearanceDetails{
-						ClearReason: "Integration test clearance - validated operator decision after analysis",
+						ClearReason: "Integration test clearance - validated operator decision after complete analysis review",
 						ClearMethod: "StatusField", // Operator updated status directly
 						// ClearedBy: "",  // Will be populated by webhook from K8s UserInfo
 						// ClearedAt: nil, // Will be populated by webhook with current timestamp
@@ -91,11 +91,18 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 			// Per SOC2 CC8.1: Operator attribution is captured
 			Expect(wfe.Status.BlockClearance).ToNot(BeNil(),
 				"BlockClearance should be set")
-			Expect(wfe.Status.BlockClearance.ClearedBy).To(ContainSubstring("@"),
-				"ClearedBy should contain operator email from K8s UserInfo")
+			Expect(wfe.Status.BlockClearance.ClearedBy).ToNot(BeEmpty(),
+				"ClearedBy should be populated by webhook with K8s UserInfo (envtest provides 'admin' or service account)")
+			// In production: user@example.com or system:serviceaccount:namespace:name
+			// In envtest: "admin" or "system:serviceaccount:default:default"
+			Expect(wfe.Status.BlockClearance.ClearedBy).To(Or(
+				Equal("admin"),
+				ContainSubstring("system:serviceaccount"),
+				ContainSubstring("@")),
+				"ClearedBy should be valid K8s user identity")
 			Expect(wfe.Status.BlockClearance.ClearedAt.IsZero()).To(BeFalse(),
 				"ClearedAt timestamp should be set by webhook")
-			Expect(wfe.Status.BlockClearance.ClearReason).To(Equal("Integration test clearance - validated operator decision after analysis"),
+			Expect(wfe.Status.BlockClearance.ClearReason).To(Equal("Integration test clearance - validated operator decision after complete analysis review"),
 				"ClearReason should be preserved by webhook")
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
