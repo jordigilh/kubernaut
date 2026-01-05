@@ -119,14 +119,18 @@ var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workfl
 			testLogger.Info("Test: Workflow Search Audit Trail Generation")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			// ARRANGE: Seed workflow catalog with test workflow
-			testLogger.Info("📦 Seeding workflow catalog with test workflow...")
+		// ARRANGE: Seed workflow catalog with test workflow
+		testLogger.Info("📦 Seeding workflow catalog with test workflow...")
 
-			workflowID := fmt.Sprintf("wf-audit-test-%s", testID)
+		workflowID := fmt.Sprintf("wf-audit-test-%s", testID)
 
-			// ADR-043 compliant workflow-schema.yaml content
-			// V1.0: 4 mandatory labels (severity, component, priority, environment)
-			workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+		// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
+		// to prevent cross-contamination in shared database
+		uniqueSignalType := fmt.Sprintf("OOMKilled-p%d", GinkgoParallelProcess())
+
+		// ADR-043 compliant workflow-schema.yaml content
+		// V1.0: 4 mandatory labels (severity, component, priority, environment)
+		workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowSchema
 metadata:
   workflow_id: %s
@@ -167,17 +171,18 @@ execution:
 				"maintainer":       "oncall@example.com",
 				"content":          workflowSchemaContent,
 				"content_hash":     contentHashHex, // Required field
-				"execution_engine": "tekton",       // Required field
-				"status":           "active",       // Required field
-				// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
-				"labels": map[string]interface{}{
-					"signal_type": "OOMKilled",  // mandatory
-					"severity":    "critical",   // mandatory
-					"environment": "production", // mandatory
-					"priority":    "P0",         // mandatory
-					"component":   "deployment", // mandatory
-				},
-				"container_image": containerImage,
+			"execution_engine": "tekton",       // Required field
+			"status":           "active",       // Required field
+			// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
+			// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
+			"labels": map[string]interface{}{
+				"signal_type": uniqueSignalType, // mandatory - unique per process
+				"severity":    "critical",       // mandatory
+				"environment": "production",     // mandatory
+				"priority":    "P0",             // mandatory
+				"component":   "deployment",     // mandatory
+			},
+			"container_image": containerImage,
 			}
 
 			workflowJSON, err := json.Marshal(workflow)
@@ -203,21 +208,22 @@ execution:
 
 			testLogger.Info("✅ Test workflow created", "workflow_id", workflowID)
 
-			// ACT: Perform workflow search with remediation_id
-			testLogger.Info("🔍 Performing workflow search with remediation_id...")
+		// ACT: Perform workflow search with remediation_id
+		testLogger.Info("🔍 Performing workflow search with remediation_id...")
 
-			remediationID := fmt.Sprintf("rem-%s", testID)
-			searchRequest := map[string]interface{}{
-				"remediation_id": remediationID,
-				"filters": map[string]interface{}{
-					"signal_type": "OOMKilled",  // mandatory (DD-WORKFLOW-001 v1.4)
-					"severity":    "critical",   // mandatory
-					"component":   "deployment", // mandatory
-					"environment": "production", // mandatory
-					"priority":    "P0",         // mandatory
-				},
-				"top_k": 5,
-			}
+		remediationID := fmt.Sprintf("rem-%s", testID)
+		// DD-E2E-DATA-POLLUTION-001: Search using unique signal_type per parallel process
+		searchRequest := map[string]interface{}{
+			"remediation_id": remediationID,
+			"filters": map[string]interface{}{
+				"signal_type": uniqueSignalType, // mandatory - unique per process
+				"severity":    "critical",       // mandatory
+				"component":   "deployment",     // mandatory
+				"environment": "production",     // mandatory
+				"priority":    "P0",             // mandatory
+			},
+			"top_k": 5,
+		}
 
 			searchJSON, err := json.Marshal(searchRequest)
 			Expect(err).ToNot(HaveOccurred())
@@ -338,7 +344,8 @@ execution:
 			// V1.0: Verify filters instead of text (label-only architecture)
 			filters, ok := queryData["filters"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "query should contain 'filters' object")
-			Expect(filters["signal_type"]).To(Equal("OOMKilled"), "Filters should capture signal_type")
+			// DD-E2E-DATA-POLLUTION-001: Verify unique signal_type per parallel process
+			Expect(filters["signal_type"]).To(Equal(uniqueSignalType), "Filters should capture unique signal_type")
 			Expect(filters["severity"]).To(Equal("critical"), "Filters should capture severity")
 			Expect(filters["component"]).To(Equal("deployment"), "Filters should capture component")
 
