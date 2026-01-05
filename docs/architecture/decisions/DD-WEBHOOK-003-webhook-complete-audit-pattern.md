@@ -1,7 +1,7 @@
 # DD-WEBHOOK-003: Webhook-Complete Audit Pattern for Operator Actions
 
-**Status**: ✅ **Approved** (2026-01-05)  
-**Confidence**: 95% (based on SOC2 requirements and operational simplicity)  
+**Status**: ✅ **Approved** (2026-01-05)
+**Confidence**: 95% (based on SOC2 requirements and operational simplicity)
 **Related**: DD-WEBHOOK-001 (Consolidated Webhook), BR-AUTH-001 (SOC2 CC8.1)
 
 ---
@@ -29,11 +29,11 @@
 func (h *WebhookHandler) Handle(ctx context.Context, req admission.Request) {
     // 1. Extract WHO
     authCtx := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
-    
+
     // 2. Decode WHAT (object being modified)
     obj := decode(req.Object)
     oldObj := decode(req.OldObject)
-    
+
     // 3. Write COMPLETE audit event (WHO + WHAT + ACTION)
     eventData := map[string]interface{}{
         "operation":     req.Operation,        // CREATE/UPDATE/DELETE
@@ -41,7 +41,7 @@ func (h *WebhookHandler) Handle(ctx context.Context, req admission.Request) {
         "namespace":     obj.Namespace,
         "action_details": extractActionDetails(obj, oldObj), // What changed
     }
-    
+
     h.auditManager.RecordEvent(ctx, audit.Event{
         EventType:     formatEventType(req.Operation, obj),
         ActorID:       authCtx.Username,
@@ -50,14 +50,14 @@ func (h *WebhookHandler) Handle(ctx context.Context, req admission.Request) {
         EventOutcome:  audit.OutcomeSuccess,
         EventData:     marshalJSON(eventData),
     })
-    
+
     // 4. Optionally populate CRD status fields (for UI/API queries)
     if shouldPopulateStatus(req.Operation) {
         obj.Status.PerformedBy = authCtx.Username
         obj.Status.PerformedAt = metav1.Now()
         return admission.PatchResponseFromRaw(req.Object.Raw, marshal(obj))
     }
-    
+
     return admission.Allowed("audit recorded")
 }
 ```
@@ -121,7 +121,7 @@ func (h *WebhookHandler) Handle(ctx context.Context, req admission.Request) {
 func (h *CreateHandler) Handle(ctx context.Context, req admission.Request) {
     authCtx := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
     obj := decode(req.Object)
-    
+
     h.auditManager.RecordEvent(ctx, audit.Event{
         EventType:     "resource.created",
         ActorID:       authCtx.Username,
@@ -132,7 +132,7 @@ func (h *CreateHandler) Handle(ctx context.Context, req admission.Request) {
             "spec":          obj.Spec,  // What was created
         }),
     })
-    
+
     // No CRD mutation needed (annotations not used)
     return admission.Allowed("audit recorded")
 }
@@ -150,10 +150,10 @@ func (h *UpdateHandler) Handle(ctx context.Context, req admission.Request) {
     authCtx := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
     obj := decode(req.Object)
     oldObj := decode(req.OldObject)
-    
+
     // Extract WHAT changed
     changes := detectChanges(obj, oldObj)
-    
+
     h.auditManager.RecordEvent(ctx, audit.Event{
         EventType:     "resource.updated",
         ActorID:       authCtx.Username,
@@ -166,8 +166,8 @@ func (h *UpdateHandler) Handle(ctx context.Context, req admission.Request) {
             "old_state":     oldObj.Status,
         }),
     })
-    
-    // Optionally populate status fields (for UI/API convenience)
+
+    // ALWAYS populate status fields for UPDATE operations (MANDATORY)
     obj.Status.LastModifiedBy = authCtx.Username
     obj.Status.LastModifiedAt = metav1.Now()
     
@@ -186,7 +186,7 @@ func (h *UpdateHandler) Handle(ctx context.Context, req admission.Request) {
 func (h *DeleteHandler) Handle(ctx context.Context, req admission.Request) {
     authCtx := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
     oldObj := decode(req.OldObject)  // Object being deleted
-    
+
     h.auditManager.RecordEvent(ctx, audit.Event{
         EventType:     "resource.deleted",
         ActorID:       authCtx.Username,
@@ -198,7 +198,7 @@ func (h *DeleteHandler) Handle(ctx context.Context, req admission.Request) {
             "spec":          oldObj.Spec,     // What was deleted
         }),
     })
-    
+
     // Cannot mutate during DELETE (K8s limitation)
     // No annotations used (not traceable)
     return admission.Allowed("audit recorded")
@@ -216,11 +216,11 @@ func (h *DeleteHandler) Handle(ctx context.Context, req admission.Request) {
 ```go
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) {
     obj := fetch(req)
-    
+
     // Business logic only (no attribution audit)
     if r.shouldProcessWorkflow(obj) {
         r.processWorkflow(ctx, obj)
-        
+
         // Controller writes business events (optional)
         r.auditManager.RecordEvent(ctx, audit.Event{
             EventType: "workflow.executed",
@@ -243,26 +243,35 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) {
 ## Status Field Usage
 
 ### Purpose
-Status fields (e.g., `PerformedBy`, `PerformedAt`) are **optional** for:
-- UI display (show "Last modified by: admin@example.com")
-- API queries (filter by operator)
-- Quick lookups (avoid audit table queries)
+Status fields (e.g., `PerformedBy`, `PerformedAt`) are **MANDATORY when possible**:
+- ✅ **Always populate status fields** when operation allows mutation
+- ✅ Provide immediate access to "who did what" without audit queries
+- ✅ Enable UI display, API filtering, and debugging
+- ✅ Immutable once set (operators cannot modify status fields)
 
-### Not for Auditing
-- ❌ **Status fields are NOT the audit source of truth**
-- ✅ **Audit table is the source of truth**
-- ⚠️ Status fields can be overwritten by controllers
+### Audit Table Relationship
+- ✅ **Audit table is the compliance source of truth**
+- ✅ **Status fields are the operational convenience layer**
+- ⚠️ Status fields may not exist for DELETE operations (K8s limitation)
+
+### When to Populate Status Fields
+
+| Operation | Can Mutate? | Status Fields | Audit Event |
+|-----------|-------------|---------------|-------------|
+| CREATE | ✅ Yes | ❌ Not needed (status empty) | ✅ Write audit |
+| UPDATE | ✅ Yes | ✅ **MANDATORY** | ✅ Write audit |
+| DELETE | ❌ No | ❌ Cannot mutate | ✅ Write audit |
 
 ### Usage Pattern
 ```go
-// Webhook populates status fields (optional convenience)
+// Webhook ALWAYS populates status fields for UPDATE operations
 obj.Status.LastModifiedBy = authCtx.Username
 obj.Status.LastModifiedAt = metav1.Now()
 
-// UI queries status field (fast)
+// UI queries status field (fast, no audit table query needed)
 GET /api/v1/resources?modifiedBy=admin@example.com
 
-// Compliance queries audit table (source of truth)
+// Compliance queries audit table (source of truth for SOC2)
 SELECT * FROM audit_events WHERE actor_id = 'admin@example.com';
 ```
 
@@ -274,6 +283,7 @@ SELECT * FROM audit_events WHERE actor_id = 'admin@example.com';
 
 **Webhook**:
 ```go
+// 1. Write complete audit event (WHO + WHAT + ACTION)
 h.auditManager.RecordEvent(ctx, audit.Event{
     EventType: "workflowexecution.block.cleared",
     ActorID:   authCtx.Username,
@@ -284,6 +294,8 @@ h.auditManager.RecordEvent(ctx, audit.Event{
         "new_state":      wfe.Status.Phase,
     }),
 })
+
+// 2. ALWAYS populate status fields (MANDATORY for UPDATE)
 wfe.Status.BlockClearance.ClearedBy = authCtx.Username
 wfe.Status.BlockClearance.ClearedAt = metav1.Now()
 ```
@@ -294,6 +306,7 @@ wfe.Status.BlockClearance.ClearedAt = metav1.Now()
 
 **Webhook**:
 ```go
+// 1. Write complete audit event (WHO + WHAT + ACTION)
 h.auditManager.RecordEvent(ctx, audit.Event{
     EventType: "remediationapproval.decision.made",
     ActorID:   authCtx.Username,
@@ -301,8 +314,11 @@ h.auditManager.RecordEvent(ctx, audit.Event{
         "request_name":     rar.Name,
         "decision":         rar.Status.Decision,
         "decision_message": rar.Status.DecisionMessage,
+        "ai_analysis_ref":  rar.Spec.AIAnalysisRef.Name,
     }),
 })
+
+// 2. ALWAYS populate status fields (MANDATORY for UPDATE)
 rar.Status.DecidedBy = authCtx.Username
 rar.Status.DecidedAt = &metav1.Time{Time: time.Now()}
 ```
@@ -337,7 +353,7 @@ It("should record complete audit event for operator action", func() {
     By("Operator performs action (business operation)")
     obj.Status.Decision = "Approved"
     Expect(k8sClient.Status().Update(ctx, obj)).To(Succeed())
-    
+
     By("Verifying webhook recorded audit (side effect)")
     Eventually(func() bool {
         events := mockAuditManager.GetEvents()
@@ -372,8 +388,9 @@ It("should record complete audit event for operator action", func() {
 
 ### Neutral
 
-- 🔄 **Status Fields Optional**: UI convenience only, not audit source
-- 🔄 **Controller Audits**: Still needed for system events
+- 🔄 **Status Fields Mandatory**: Always populate for UPDATE operations (UI + API convenience)
+- 🔄 **Audit Table Source of Truth**: Status fields supplement, not replace audit events
+- 🔄 **Controller Audits**: Still needed for system events (not operator attribution)
 
 ---
 
@@ -410,7 +427,8 @@ h.auditManager.RecordEvent(ctx, audit.Event{
         // All context in one event
     }),
 })
-wfe.Status.ClearedBy = authCtx.Username  // Optional (UI convenience)
+wfe.Status.ClearedBy = authCtx.Username  // MANDATORY (always populate for UPDATE)
+wfe.Status.ClearedAt = metav1.Now()
 
 // Controller (no attribution audit)
 // Only system events if needed
@@ -422,8 +440,8 @@ wfe.Status.ClearedBy = authCtx.Username  // Optional (UI convenience)
 
 | Operation | Webhook Audit | Status Fields | Controller Audit |
 |-----------|---------------|---------------|------------------|
-| CREATE | ✅ One complete event | ❌ Not needed | ❌ No attribution |
-| UPDATE | ✅ One complete event | ✅ Optional (UI) | ❌ No attribution |
+| CREATE | ✅ One complete event | ❌ Not applicable | ❌ No attribution |
+| UPDATE | ✅ One complete event | ✅ **MANDATORY** | ❌ No attribution |
 | DELETE | ✅ One complete event | ❌ Cannot mutate | ❌ No attribution |
 
 ---
@@ -437,6 +455,6 @@ wfe.Status.ClearedBy = authCtx.Username  // Optional (UI convenience)
 
 ---
 
-**Review Schedule**: Quarterly or when new operator actions are added  
-**Success Metrics**: 100% operator attribution coverage, <10ms audit latency  
+**Review Schedule**: Quarterly or when new operator actions are added
+**Success Metrics**: 100% operator attribution coverage, <10ms audit latency
 
