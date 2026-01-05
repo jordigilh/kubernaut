@@ -281,11 +281,11 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 
 			By("Validating AA event_data structure (consumer perspective - summary + business context)")
 			// DD-AUDIT-005: Validate provider_response_summary and business context fields
-			testutil.ValidateAuditEventDataNotEmpty(aaEvent, 
-				"provider_response_summary", 
-				"phase", 
-				"approval_required", 
-				"degraded_mode", 
+			testutil.ValidateAuditEventDataNotEmpty(aaEvent,
+				"provider_response_summary",
+				"phase",
+				"approval_required",
+				"degraded_mode",
 				"warnings_count")
 
 			aaEventData := aaEvent.EventData.(map[string]interface{})
@@ -401,12 +401,12 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 				CorrelationId: &correlationID,
 				EventType:     &hapiEventType,
 			})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(hapiResp.JSON200.Data).ToNot(BeNil())
-		hapiEvents := *hapiResp.JSON200.Data
-		// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
-		Expect(len(hapiEvents)).To(Equal(1), 
-			"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(hapiResp.JSON200.Data).ToNot(BeNil())
+			hapiEvents := *hapiResp.JSON200.Data
+			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
+			Expect(len(hapiEvents)).To(Equal(1),
+				"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event")
 
 			// Extract response_data
 			hapiEventData := hapiEvents[0].EventData.(map[string]interface{})
@@ -530,14 +530,14 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 			By("Counting events by type")
 			eventCounts := countEventsByType(allEvents)
 
-		// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
-		hapiCount := eventCounts["holmesgpt.response.complete"]
-		aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
+			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
+			hapiCount := eventCounts["holmesgpt.response.complete"]
+			aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
 
-		Expect(hapiCount).To(Equal(1), 
-			"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event (controller idempotency)")
-		Expect(aaCompletedCount).To(Equal(1), 
-			"DD-TESTING-001 violation: Should have EXACTLY 1 AA completion event (controller idempotency)")
+			Expect(hapiCount).To(Equal(1),
+				"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event (controller idempotency)")
+			Expect(aaCompletedCount).To(Equal(1),
+				"DD-TESTING-001 violation: Should have EXACTLY 1 AA completion event (controller idempotency)")
 
 			GinkgoWriter.Printf("📊 Event counts for correlation_id %s:\n", correlationID)
 			for eventType, count := range eventCounts {
@@ -572,4 +572,3 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, La
 		})
 	})
 })
-
