@@ -65,14 +65,19 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 
 	BeforeEach(func() {
 		// Verify Data Storage is available
-		// Per TESTING_GUIDELINES.md: Integration tests MUST use real services
+		// Per TESTING_GUIDELINES.md: Skip() is ABSOLUTELY FORBIDDEN - tests MUST fail
+		// Per DD-AUDIT-003: WorkflowExecution REQUIRES audit capability
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 		resp, err := httpClient.Get(dataStorageURL + "/health")
 		if err != nil || resp.StatusCode != http.StatusOK {
-			Skip(fmt.Sprintf(
-				"Data Storage not available at %s - skipping audit flow tests\n"+
-					"Start WE infrastructure: make test-integration-workflowexecution",
-				dataStorageURL))
+			Fail(fmt.Sprintf(
+				"REQUIRED: Data Storage not available at %s\n"+
+					"  Per DD-AUDIT-003: WorkflowExecution MUST have audit capability\n"+
+					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n"+
+					"  Per TESTING_GUIDELINES.md: Skip() is FORBIDDEN - tests must FAIL\n\n"+
+					"  Health check error: %v\n"+
+					"  Start infrastructure: make test-integration-workflowexecution\n",
+				dataStorageURL, err))
 		}
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
