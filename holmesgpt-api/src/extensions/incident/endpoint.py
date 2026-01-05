@@ -61,21 +61,28 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
     """
     request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
     result = await analyze_incident(request_data)
-    
+
     # DD-AUDIT-005: Capture complete HAPI response for audit trail (provider perspective)
     # This is the AUTHORITATIVE audit event for HAPI API responses
     # AI Analysis service will emit complementary aianalysis.analysis.completed event
     # with provider_response_summary (consumer perspective + business context)
-    audit_store = get_audit_store()
-    if audit_store:
-        # Convert IncidentResponse to dict for audit storage
-        response_dict = result.model_dump() if hasattr(result, 'model_dump') else result.dict()
-        audit_store.store_audit(create_hapi_response_complete_event(
-            incident_id=request.incident_id,
-            remediation_id=request.remediation_id,
-            response_data=response_dict
-        ))
-    
+    try:
+        audit_store = get_audit_store()
+        if audit_store:
+            # Convert IncidentResponse to dict for audit storage
+            response_dict = result.model_dump() if hasattr(result, 'model_dump') else result.dict()
+            audit_store.store_audit(create_hapi_response_complete_event(
+                incident_id=request.incident_id,
+                remediation_id=request.remediation_id,
+                response_data=response_dict
+            ))
+    except Exception as e:
+        # Non-fatal: Audit emission failure should not break API response
+        # Log error but continue returning successful response to caller
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to emit HAPI audit event: {e}", exc_info=True)
+
     return result
 
 
