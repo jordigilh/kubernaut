@@ -66,12 +66,8 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
     # This is the AUTHORITATIVE audit event for HAPI API responses
     # AI Analysis service will emit complementary aianalysis.analysis.completed event
     # with provider_response_summary (consumer perspective + business context)
-    import logging
-    logger = logging.getLogger(__name__)
     try:
-        logger.info(f"🔍 DD-AUDIT-005: Attempting to emit HAPI audit event for incident={request.incident_id}, remediation={request.remediation_id}")
         audit_store = get_audit_store()
-        logger.info(f"🔍 DD-AUDIT-005: audit_store={'INITIALIZED' if audit_store else 'NULL'}")
         if audit_store:
             # Convert IncidentResponse to dict for audit storage
             # BR-HAPI-212: In mock mode, result is already a dict
@@ -81,21 +77,28 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
                 response_dict = result.model_dump()
             else:
                 response_dict = result.dict()
-            logger.info(f"🔍 DD-AUDIT-005: Creating audit event...")
+            
             audit_event = create_hapi_response_complete_event(
                 incident_id=request.incident_id,
                 remediation_id=request.remediation_id,
                 response_data=response_dict
             )
-            logger.info(f"🔍 DD-AUDIT-005: Storing audit event...")
             audit_store.store_audit(audit_event)
-            logger.info(f"✅ DD-AUDIT-005: HAPI audit event stored successfully")
-        else:
-            logger.warning(f"⚠️  DD-AUDIT-005: audit_store is None - cannot emit audit event")
     except Exception as e:
-        # Non-fatal: Audit emission failure should not break API response
-        # Log error but continue returning successful response to caller
-        logger.error(f"❌ DD-AUDIT-005: Failed to emit HAPI audit event: {e}", exc_info=True)
+        # BR-AUDIT-005: Audit writes are MANDATORY, but should not block business operation
+        # Log the error but allow the business operation to complete
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(
+            f"Failed to emit holmesgpt.response.complete audit event: {e}",
+            extra={
+                "incident_id": request.incident_id,
+                "remediation_id": request.remediation_id,
+                "event_type": "holmesgpt.response.complete",
+                "adr": "ADR-032 §1",  # Audit writes are mandatory, but non-blocking
+            },
+            exc_info=True
+        )
 
     return result
 
