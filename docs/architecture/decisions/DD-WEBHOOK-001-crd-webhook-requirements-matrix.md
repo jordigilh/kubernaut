@@ -477,7 +477,7 @@ Is this an approval workflow or override action?
 
 ## 📅 **Implementation Timeline - V1.2 (Consolidated Webhook)**
 
-**V1.0 (December 2025)**: WorkflowExecution + RemediationApprovalRequest  
+**V1.0 (December 2025)**: WorkflowExecution + RemediationApprovalRequest
 **V1.1 (January 2026)**: NotificationRequest (Week 2-3)
 **V1.2 (January 2026)**: **ARCHITECTURE UPDATE** - Single consolidated webhook deployment
 
