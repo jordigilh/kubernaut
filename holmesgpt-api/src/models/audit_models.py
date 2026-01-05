@@ -102,3 +102,28 @@ class WorkflowValidationEventData(BaseModel):
     human_review_reason: Optional[str] = Field(None, description="Reason code if needs_human_review (final attempt)")
     is_final_attempt: bool = Field(False, description="Whether this is the final validation attempt")
 
+
+class HAPIResponseEventData(BaseModel):
+    """
+    event_data structure for holmesgpt.response.complete audit events (DD-AUDIT-005).
+
+    Emitted when: HAPI completes incident analysis and returns IncidentResponse
+    Audit Event Type: holmesgpt.response.complete
+    Service: HolmesGPT API (HAPI)
+    Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+    Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+
+    Purpose: Captures complete HAPI API response (provider perspective) for:
+    - SOC2 Type II compliance (RemediationRequest reconstruction)
+    - Defense-in-depth auditing (provider + consumer perspectives)
+    - Complete data integrity validation
+
+    Note: This is the AUTHORITATIVE audit event for HAPI API responses.
+    AI Analysis service emits complementary aianalysis.analysis.completed event
+    with provider_response_summary (consumer perspective + business context).
+    """
+    event_id: str = Field(..., description="Unique event identifier")
+    incident_id: str = Field(..., description="Incident correlation ID from request")
+    response_data: Dict[str, Any] = Field(..., description="Complete IncidentResponse structure (all fields)")
+
+

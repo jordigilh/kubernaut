@@ -72,7 +72,8 @@ from src.models.audit_models import (  # noqa: E402
     LLMRequestEventData,
     LLMResponseEventData,
     LLMToolCallEventData,
-    WorkflowValidationEventData
+    WorkflowValidationEventData,
+    HAPIResponseEventData  # DD-AUDIT-005: HAPI response complete event
 )
 
 
@@ -332,6 +333,62 @@ def create_validation_attempt_event(
         operation="validation_executed",
         outcome=outcome,
         correlation_id=remediation_id or "",
+        event_data=event_data_model.model_dump()
+    )
+
+
+def create_hapi_response_complete_event(
+    incident_id: str,
+    remediation_id: str,
+    response_data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Create HAPI response completion audit event (ADR-034 compliant)
+
+    Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
+    Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+
+    This event captures the COMPLETE HolmesGPT API response (provider perspective)
+    for SOC2 Type II compliance and RemediationRequest reconstruction.
+
+    Hybrid Audit Approach:
+    - HAPI emits: holmesgpt.response.complete (full IncidentResponse - provider perspective)
+    - AI Analysis emits: aianalysis.analysis.completed (summary + business context - consumer perspective)
+
+    This provides defense-in-depth auditing with both provider and consumer perspectives.
+
+    Args:
+        incident_id: Incident identifier for correlation
+        remediation_id: Remediation request ID for audit correlation
+        response_data: Complete IncidentResponse structure (all fields)
+
+    Returns:
+        ADR-034 compliant audit event dictionary
+
+    Example response_data:
+        {
+            "incident_id": "inc-123",
+            "analysis": "Root cause analysis text...",
+            "root_cause_analysis": {...},
+            "selected_workflow": {...},
+            "alternative_workflows": [...],
+            "confidence": 0.85,
+            "needs_human_review": false,
+            "warnings": [...]
+        }
+    """
+    # Create structured event_data using Pydantic model for validation
+    event_data_model = HAPIResponseEventData(
+        event_id=str(uuid.uuid4()),
+        incident_id=incident_id,
+        response_data=response_data  # Full IncidentResponse
+    )
+
+    return _create_adr034_event(
+        event_type="holmesgpt.response.complete",
+        operation="response_sent",
+        outcome="success",
+        correlation_id=remediation_id,
         event_data=event_data_model.model_dump()
     )
 
