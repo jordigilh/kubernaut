@@ -15,7 +15,8 @@ nodes:
   - role: worker
     extraMounts:
       # Mount for coverage data collection (DD-TEST-007)
-      - hostPath: /tmp/coverdata
+      # Using relative path for podman compatibility (like datastorage)
+      - hostPath: ./coverdata
         containerPath: /coverdata
         readOnly: false
     extraPortMappings:
