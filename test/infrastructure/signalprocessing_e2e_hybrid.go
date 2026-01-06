@@ -432,37 +432,103 @@ nodes:
 }
 
 // ============================================================================
-// SignalProcessing E2E Helper Functions (STUBS - Need Full Restoration)
-// ============================================================================
-// TODO: These are minimal stub implementations to allow compilation.
-// For SignalProcessing E2E tests to work fully, restore complete implementations
-// from git commit a906a3767~1:test/infrastructure/signalprocessing.go
-//
-// Missing complete implementations:
-// - installSignalProcessingCRDsBatched (50+ lines with CRD installation)
-// - createSignalProcessingNamespace (15 lines with namespace manifest)
-// - deploySignalProcessingPolicies (500+ lines with Rego policies)
-// - LoadSignalProcessingCoverageImage (50+ lines with image loading)
-// - DeploySignalProcessingControllerWithCoverage (30+ lines with controller deployment)
-//
+// SignalProcessing E2E Package Variables and Helper Functions (Restored from git history)
 // Authority: git show a906a3767~1:test/infrastructure/signalprocessing.go
 // ============================================================================
 
+// signalProcessingImageTag holds the unique tag for this test run (set once, reused)
+var signalProcessingImageTag string
+
 func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "⚠️  installSignalProcessingCRDsBatched: STUB implementation")
-	_, _ = fmt.Fprintln(writer, "    TODO: Restore from git a906a3767~1:test/infrastructure/signalprocessing.go")
-	// Minimal implementation: just install the CRDs
-	return fmt.Errorf("installSignalProcessingCRDsBatched: stub not implemented - restore from git history")
+	// Find SignalProcessing CRD file
+	spCRDPaths := []string{
+		"config/crd/bases/kubernaut.ai_signalprocessings.yaml",
+		"../../../config/crd/bases/kubernaut.ai_signalprocessings.yaml",
+	}
+
+	var spCRDPath string
+	for _, p := range spCRDPaths {
+		if _, err := os.Stat(p); err == nil {
+			spCRDPath, _ = filepath.Abs(p)
+			break
+		}
+	}
+
+	if spCRDPath == "" {
+		return fmt.Errorf("SignalProcessing CRD not found")
+	}
+
+	// Find RemediationRequest CRD file
+	rrCRDPaths := []string{
+		"config/crd/bases/kubernaut.ai_remediationrequests.yaml",
+		"../../../config/crd/bases/kubernaut.ai_remediationrequests.yaml",
+	}
+
+	var rrCRDPath string
+	for _, p := range rrCRDPaths {
+		if _, err := os.Stat(p); err == nil {
+			rrCRDPath, _ = filepath.Abs(p)
+			break
+		}
+	}
+
+	if rrCRDPath == "" {
+		return fmt.Errorf("RemediationRequest CRD not found")
+	}
+
+	// Apply both CRDs in a single kubectl call (OPTIMIZATION #2)
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"apply", "-f", spCRDPath, "-f", rrCRDPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install CRDs (batched): %w", err)
+	}
+
+	// Wait for both CRDs to be established
+	_, _ = fmt.Fprintln(writer, "  Waiting for CRDs to be established...")
+
+	// Check SignalProcessing CRD
+	for i := 0; i < 30; i++ {
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "crd", "signalprocessings.kubernaut.ai")
+		if err := cmd.Run(); err == nil {
+			_, _ = fmt.Fprintln(writer, "  ✓ SignalProcessing CRD established")
+			break
+		}
+		if i == 29 {
+			return fmt.Errorf("SignalProcessing CRD not established after 30 seconds")
+		}
+		time.Sleep(time.Second)
+	}
+
+	// Check RemediationRequest CRD
+	for i := 0; i < 30; i++ {
+		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "crd", "remediationrequests.kubernaut.ai")
+		if err := cmd.Run(); err == nil {
+			_, _ = fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
+			return nil
+		}
+		if i == 29 {
+			return fmt.Errorf("RemediationRequest CRD not established after 30 seconds")
+		}
+		time.Sleep(time.Second)
+	}
+
+	return nil
 }
 
 func createSignalProcessingNamespace(kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "⚠️  createSignalProcessingNamespace: STUB implementation")
-	// Minimal namespace creation
 	manifest := `
 apiVersion: v1
 kind: Namespace
 metadata:
   name: kubernaut-system
+  labels:
+    app.kubernetes.io/name: kubernaut
+    app.kubernetes.io/component: signalprocessing
 `
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -472,25 +538,479 @@ metadata:
 }
 
 func deploySignalProcessingPolicies(kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "⚠️  deploySignalProcessingPolicies: STUB implementation")
-	_, _ = fmt.Fprintln(writer, "    TODO: Restore 500+ lines of Rego policies from git history")
-	// This function needs 500+ lines of Rego policy YAML
-	// For now, skip policies to allow compilation
+	// OPTIMIZATION #1: Batch all 4 Rego ConfigMaps into single kubectl apply
+	// Eliminates 3 kubectl invocations + API server round trips (15-30s savings)
+	// Per SP_E2E_OPTIMIZATION_TRIAGE_DEC_25_2025.md
+
+	// Combine all 4 policy ConfigMaps into a single YAML manifest
+	// NOTE: Using OPA v1.0 syntax with 'if' keyword before rule bodies
+	combinedPolicies := `---
+# 1. Environment Classification Policy (BR-SP-051)
+# Input: {"namespace": {"name": string, "labels": map}, "signal": {"labels": map}}
+# Output: {"environment": string, "source": string}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-environment-policy
+  namespace: kubernaut-system
+data:
+  environment.rego: |
+    package signalprocessing.environment
+
+    # Default result: unknown environment
+    # OPA v1.0 syntax: requires 'if' keyword before rule body
+    default result := {"environment": "unknown", "source": "default"}
+
+    # Primary: Check namespace label kubernaut.ai/environment (BR-SP-051)
+    result := {"environment": env, "source": "namespace-labels"} if {
+      env := input.namespace.labels["kubernaut.ai/environment"]
+      env != ""
+    }
+
+    # Fallback: Check namespace name patterns
+    result := {"environment": "production", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "production"
+    }
+    result := {"environment": "production", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "prod"
+    }
+    result := {"environment": "staging", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "staging"
+    }
+    result := {"environment": "development", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "development"
+    }
+    result := {"environment": "development", "source": "namespace-name"} if {
+      not input.namespace.labels["kubernaut.ai/environment"]
+      input.namespace.name == "dev"
+    }
+---
+# 2. Priority Assignment Policy (BR-SP-070)
+# Input: {"environment": string, "signal": {"severity": string}}
+# Output: {"priority": "P0-P3", "confidence": 0.9}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-priority-policy
+  namespace: kubernaut-system
+data:
+  priority.rego: |
+    package signalprocessing.priority
+
+    # Priority assignment based on environment and severity
+    # OPA v1.0 syntax: requires 'if' keyword before rule body
+    default result := {"priority": "P3", "confidence": 0.6}
+
+    # Production + critical = P0 (highest urgency)
+    result := {"priority": "P0", "confidence": 0.9} if {
+      input.environment == "production"
+      input.signal.severity == "critical"
+    }
+    # Production + warning = P1 (high urgency)
+    result := {"priority": "P1", "confidence": 0.9} if {
+      input.environment == "production"
+      input.signal.severity == "warning"
+    }
+    # Staging + critical = P2 (medium urgency per BR-SP-070)
+    result := {"priority": "P2", "confidence": 0.9} if {
+      input.environment == "staging"
+      input.signal.severity == "critical"
+    }
+    # Staging + warning = P2 (medium urgency)
+    result := {"priority": "P2", "confidence": 0.9} if {
+      input.environment == "staging"
+      input.signal.severity == "warning"
+    }
+    # Development = P3 (lowest urgency, regardless of severity)
+    result := {"priority": "P3", "confidence": 0.9} if {
+      input.environment == "development"
+    }
+---
+# 3. Business Classification Policy (BR-SP-071)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-business-policy
+  namespace: kubernaut-system
+data:
+  business.rego: |
+    package signalprocessing.business
+
+    import rego.v1
+
+    # Default: Return "unknown" with low confidence when no specific rule matches
+    # Operators MUST define their own default rules.
+    default result := {"business_unit": "unknown", "confidence": 0.0, "policy_name": "operator-default"}
+
+    # Example business unit mappings based on namespace labels
+    result := {"business_unit": input.namespace.labels["kubernaut.io/business-unit"], "confidence": 0.95, "policy_name": "namespace-label"} if {
+      input.namespace.labels["kubernaut.io/business-unit"]
+    }
+---
+# 4. Custom Labels Extraction Policy (BR-SP-071)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-customlabels-policy
+  namespace: kubernaut-system
+data:
+  customlabels.rego: |
+    package signalprocessing.customlabels
+
+    import rego.v1
+
+    # Default: Return empty labels when no specific rule matches
+    # Operators define their own label extraction rules.
+    default result := {"labels": {}, "policy_name": "operator-default"}
+
+    # Example: Extract labels from namespace annotations
+    result := {"labels": extracted, "policy_name": "namespace-annotations"} if {
+      input.namespace.annotations
+      extracted := {k: v | some k, v in input.namespace.annotations; startswith(k, "kubernaut.io/label-")}
+      count(extracted) > 0
+    }
+`
+
+	// Single kubectl apply for all 4 ConfigMaps
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(combinedPolicies)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy Rego policies (batched): %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  ✓ Rego policies deployed (batched: environment, priority, business, customlabels)")
 	return nil
 }
 
+func waitForSignalProcessingController(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	timeout := 120 * time.Second
+	interval := 5 * time.Second
+	deadline := time.Now().Add(timeout)
+	attempt := 0
+
+	for time.Now().Before(deadline) {
+		attempt++
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+			"rollout", "status", "deployment/signalprocessing-controller",
+			"-n", "kubernaut-system", "--timeout=5s")
+		if err := cmd.Run(); err == nil {
+			_, _ = fmt.Fprintln(writer, "  ✓ Controller ready")
+			return nil
+		}
+
+		// Print diagnostic info every 5 attempts (25 seconds)
+		if attempt%5 == 0 {
+			_, _ = fmt.Fprintf(writer, "  ⏳ Controller not ready yet (attempt %d)...\n", attempt)
+			// Get pod status
+			podCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+				"get", "pods", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "-o", "wide")
+			podCmd.Stdout = writer
+			podCmd.Stderr = writer
+			_ = podCmd.Run()
+
+			// Get pod logs (last 10 lines)
+			logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+				"logs", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "--tail=10")
+			logsCmd.Stdout = writer
+			logsCmd.Stderr = writer
+			_ = logsCmd.Run()
+		}
+		time.Sleep(interval)
+	}
+
+	// Final diagnostic dump before failure
+	_, _ = fmt.Fprintln(writer, "  ❌ Controller not ready after timeout. Final diagnostics:")
+	describeCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"describe", "pod", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller")
+	describeCmd.Stdout = writer
+	describeCmd.Stderr = writer
+	_ = describeCmd.Run()
+
+	logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"logs", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "--tail=50")
+	logsCmd.Stdout = writer
+	logsCmd.Stderr = writer
+	_ = logsCmd.Run()
+
+	return fmt.Errorf("controller not ready after %v", timeout)
+}
+
+func GetSignalProcessingCoverageImageTag() string {
+	return GetSignalProcessingImageTag() + "-coverage"
+}
+
+// GetSignalProcessingCoverageFullImageName returns the full image name with coverage tag
+func GetSignalProcessingCoverageFullImageName() string {
+	return fmt.Sprintf("localhost/signalprocessing-controller:%s", GetSignalProcessingCoverageImageTag())
+}
+
 func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "⚠️  LoadSignalProcessingCoverageImage: STUB implementation")
-	_, _ = fmt.Fprintln(writer, "    TODO: Restore from git a906a3767~1:test/infrastructure/signalprocessing.go")
-	// Minimal implementation: try to load the image
-	imageName := "localhost/kubernaut-signalprocessing:e2e-test-coverage"
-	return loadImageToKind(clusterName, imageName, writer)
+	imageTag := GetSignalProcessingCoverageImageTag()
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("signalprocessing-controller-%s.tar", imageTag))
+	imageName := GetSignalProcessingCoverageFullImageName()
+
+	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
+	saveCmd := exec.Command("podman", "save",
+		"-o", tmpFile,
+		imageName,
+	)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
+	loadCmd := exec.Command("kind", "load", "image-archive",
+		tmpFile,
+		"--name", clusterName,
+	)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+	if err := loadCmd.Run(); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to load image: %w", err)
+	}
+
+	_ = os.Remove(tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
+	return nil
+}
+
+func signalProcessingControllerCoverageManifest() string {
+	imageTag := GetSignalProcessingCoverageImageTag()
+	imageName := fmt.Sprintf("localhost/signalprocessing-controller:%s", imageTag)
+
+	return fmt.Sprintf(`
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: signalprocessing-controller
+  namespace: kubernaut-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: signalprocessing-controller
+rules:
+- apiGroups: ["kubernaut.ai"]
+  resources: ["signalprocessings", "remediationrequests"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["signalprocessings/status", "signalprocessings/finalizers"]
+  verbs: ["get", "update", "patch"]
+- apiGroups: [""]
+  resources: ["pods", "services", "namespaces", "nodes", "configmaps", "secrets", "events"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: signalprocessing-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: signalprocessing-controller
+subjects:
+- kind: ServiceAccount
+  name: signalprocessing-controller
+  namespace: kubernaut-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: signalprocessing-controller
+  namespace: kubernaut-system
+  labels:
+    app: signalprocessing-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: signalprocessing-controller
+  template:
+    metadata:
+      labels:
+        app: signalprocessing-controller
+    spec:
+      serviceAccountName: signalprocessing-controller
+      terminationGracePeriodSeconds: 30
+      # E2E Coverage: Run as root to write to hostPath volume (acceptable for E2E tests)
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      containers:
+      - name: controller
+        image: %s
+        imagePullPolicy: Never
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        # BR-SP-090: Point to DataStorage service in kubernaut-system namespace
+        - name: DATA_STORAGE_URL
+          value: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+        # E2E Coverage: Set GOCOVERDIR to enable coverage capture
+        - name: GOCOVERDIR
+          value: /coverdata
+        ports:
+        - containerPort: 9090
+          name: metrics
+        - containerPort: 8081
+          name: health
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        volumeMounts:
+        # Mount policies at /etc/signalprocessing/policies (same as standard manifest)
+        - name: policies
+          mountPath: /etc/signalprocessing/policies
+          readOnly: true
+        # E2E Coverage: Mount coverage directory
+        - name: coverdata
+          mountPath: /coverdata
+      volumes:
+      # Projected volume for all policies (same as standard manifest)
+      - name: policies
+        projected:
+          sources:
+          - configMap:
+              name: signalprocessing-environment-policy
+          - configMap:
+              name: signalprocessing-priority-policy
+          - configMap:
+              name: signalprocessing-business-policy
+          - configMap:
+              name: signalprocessing-customlabels-policy
+      # E2E Coverage: hostPath volume for coverage data
+      - name: coverdata
+        hostPath:
+          path: /coverdata
+          type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: signalprocessing-controller-metrics
+  namespace: kubernaut-system
+  labels:
+    app: signalprocessing-controller
+spec:
+  type: NodePort
+  ports:
+  - port: 9090
+    targetPort: 9090
+    nodePort: 30182
+    name: metrics
+  selector:
+    app: signalprocessing-controller
+`, imageName)
 }
 
 func DeploySignalProcessingControllerWithCoverage(kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "⚠️  DeploySignalProcessingControllerWithCoverage: STUB implementation")
-	_, _ = fmt.Fprintln(writer, "    TODO: Restore from git a906a3767~1:test/infrastructure/signalprocessing.go")
-	// This needs a complete controller manifest with coverage settings
-	return fmt.Errorf("DeploySignalProcessingControllerWithCoverage: stub not implemented - restore from git history")
+	manifest := signalProcessingControllerCoverageManifest()
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply coverage controller manifest: %w", err)
+	}
+
+	// Wait for controller to be ready
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled controller to be ready...")
+	ctx := context.Background()
+	return waitForSignalProcessingController(ctx, kubeconfigPath, writer)
+}
+
+func GetSignalProcessingImageTag() string {
+	// Check if already set (avoid regenerating)
+	if signalProcessingImageTag != "" {
+		return signalProcessingImageTag
+	}
+
+	// Check if IMAGE_TAG env var is set (from Makefile or CI)
+	if tag := os.Getenv("IMAGE_TAG"); tag != "" {
+		signalProcessingImageTag = tag
+		return tag
+	}
+
+	// Generate unique tag per DD-TEST-001: {service}-{user}-{git-hash}-{timestamp}
+	user := os.Getenv("USER")
+	if user == "" {
+		user = "unknown"
+	}
+
+	gitHash := getSignalProcessingGitHash()
+	timestamp := time.Now().Unix()
+
+	signalProcessingImageTag = fmt.Sprintf("signalprocessing-%s-%s-%d", user, gitHash, timestamp)
+
+	// Export for cleanup in AfterSuite
+	_ = os.Setenv("IMAGE_TAG", signalProcessingImageTag)
+
+	return signalProcessingImageTag
+}
+
+func getSignalProcessingGitHash() string {
+	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "unknown"
+	}
+	return strings.TrimSpace(string(output))
 }
 
