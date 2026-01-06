@@ -170,7 +170,7 @@ func (h *UpdateHandler) Handle(ctx context.Context, req admission.Request) {
     // ALWAYS populate status fields for UPDATE operations (MANDATORY)
     obj.Status.LastModifiedBy = authCtx.Username
     obj.Status.LastModifiedAt = metav1.Now()
-    
+
     return admission.PatchResponseFromRaw(req.Object.Raw, marshal(obj))
 }
 ```
