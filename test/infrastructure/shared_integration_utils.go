@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -943,9 +944,56 @@ spec:
     nodePort: 30081
 `
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = stringReader(manifest)
+	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
+}
+
+// ============================================================================
+// Missing E2E Infrastructure Functions (Restored from git history)
+// ============================================================================
+
+// buildImageWithArgs builds a Docker image with optional build arguments
+// This is used by E2E tests to build service images before loading them into Kind
+func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArgs []string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  🔨 Building %s image: %s\n", name, imageTag)
+
+	args := []string{"build", "-t", imageTag, "-f", dockerfile}
+	args = append(args, buildArgs...)
+	args = append(args, projectRoot)
+
+	cmd := exec.Command("podman", args...)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to build %s image: %w", name, err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ %s image built successfully\n", name)
+	return nil
+}
+
+// loadImageToKind loads a pre-built Docker image into a Kind cluster
+// This is used by E2E tests after building service images
+func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  📦 Loading image into Kind cluster: %s\n", imageName)
+
+	// Add localhost prefix if not present (Kind expects it)
+	if !strings.HasPrefix(imageName, "localhost/") {
+		imageName = "localhost/" + imageName
+	}
+
+	cmd := exec.Command("kind", "load", "docker-image", imageName, "--name", clusterName)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to load image into Kind: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Image loaded into Kind cluster\n")
+	return nil
 }
 
