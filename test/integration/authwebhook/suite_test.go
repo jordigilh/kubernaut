@@ -210,18 +210,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		}
 	}()
 
-	By("Waiting for webhook server to be ready")
-	// Give webhook server time to start
-	time.Sleep(2 * time.Second)
-
-	By("Configuring webhook configurations (MutatingWebhookConfiguration + ValidatingWebhookConfiguration)")
-	// Register webhook configurations with K8s API server
-	// This is REQUIRED for envtest to actually invoke our webhooks
-	err = configureWebhooks(ctx, k8sClient, *webhookInstallOptions)
-	if err != nil {
-		Fail(fmt.Sprintf("Failed to configure webhooks: %v", err))
-	}
-	GinkgoWriter.Printf("[Process %d] ✅ Webhook configurations registered with K8s API server\n", GinkgoParallelProcess())
+	By("Webhook server ready")
+	// envtest automatically installs webhook configurations from WebhookInstallOptions.Paths
+	// and ensures webhook server is ready before proceeding
+	GinkgoWriter.Printf("[Process %d] ✅ Webhook server ready (envtest handles configuration automatically)\n", GinkgoParallelProcess())
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("✅ envtest environment ready")
