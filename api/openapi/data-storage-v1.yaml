@@ -904,7 +904,8 @@ components:
           maxLength: 50
           enum: [gateway, notification, analysis, signalprocessing, workflow, execution, orchestration, webhook]
           description: |
-            Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
+            Service-level event category (ADR-034 v1.4).
+            Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
             Values:
             - gateway: Gateway Service
             - notification: Notification Service
@@ -913,7 +914,7 @@ components:
             - workflow: Workflow Catalog Service
             - execution: Remediation Execution Service
             - orchestration: Remediation Orchestrator Service
-            - webhook: Webhook Service (Authentication/Attribution)
+            - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
           example: gateway
         event_action:
           type: string

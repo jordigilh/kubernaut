@@ -2,10 +2,10 @@
 
 **Date**: 2025-11-08
 **Status**: ✅ Approved
-**Version**: 1.3
-**Last Updated**: 2025-12-18
+**Version**: 1.4
+**Last Updated**: 2026-01-06
 **Deciders**: Architecture Team
-**Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator teams
+**Consulted**: Gateway, Data Storage, Context API, AI Analysis, Notification, Signal Processing, Remediation Orchestrator, Authentication Webhook teams
 
 ---
 
@@ -17,6 +17,7 @@
 | **v1.1** | 2025-11-27 | Added Workflow Catalog Service (Phase 3, Item 4): `workflow.catalog.search_completed` event type with scoring breakdown for debugging workflow selection. Added DD-WORKFLOW-014 cross-reference. | Architecture Team |
 | **v1.2** | 2025-12-18 | **BREAKING**: Standardized `event_category` naming convention (service-level, not operation-level). Added complete list of valid categories. RemediationOrchestrator MUST consolidate to `"orchestration"` category. Discovered during NT Team DS API query investigation (DD-API-001). Cross-references DD-AUDIT-003. | Architecture Team |
 | **v1.3** | 2025-12-18 | Added "Authoritative Subdocuments" section establishing DD-AUDIT-004 (RR Reconstruction Field Mapping) as authoritative reference for BR-AUDIT-005 v2.0 (100% RR reconstruction from audit traces). Supports enterprise compliance (SOC 2, ISO 27001, NIST 800-53). | Architecture Team |
+| **v1.4** | 2026-01-06 | Added Authentication Webhook Service (`webhook` category) for SOC2 CC8.1 operator attribution. Webhook service captures WHO (authenticated user) for CRD operations requiring manual approval. Cross-references DD-WEBHOOK-003, BR-AUTH-001. Expected volume: +100 events/day. | Architecture Team |
 
 ---
 
@@ -140,6 +141,7 @@ CREATE TABLE audit_events (
 | `workflow` | Workflow Catalog Service | Workflow search and selection | `workflow.catalog.search_completed` (DD-WORKFLOW-014) |
 | `execution` | Remediation Execution Service | Tekton workflow execution | `execution.workflow.started`, `execution.action.executed`, `execution.workflow.completed` |
 | `orchestration` | Remediation Orchestrator Service | Remediation lifecycle orchestration | `orchestrator.lifecycle.started`, `orchestrator.phase.transitioned`, `orchestrator.approval.requested` |
+| `webhook` | Authentication Webhook Service | Operator attribution for CRD operations (SOC2 CC8.1) | `webhook.workflowexecution.block_cleared`, `webhook.notificationrequest.deleted`, `webhook.remediationapprovalrequest.decided` (DD-WEBHOOK-003) |
 
 **Query Pattern**:
 ```sql

@@ -58,7 +58,7 @@ func NewNotificationRequestDeleteHandler(auditStore audit.AuditStore) *Notificat
 // Handle processes the admission request for NotificationRequest DELETE
 // Implements admission.Handler interface from controller-runtime
 func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	fmt.Printf("🔍 DELETE webhook invoked: Operation=%s, Name=%s, Namespace=%s\n", 
+	fmt.Printf("🔍 DELETE webhook invoked: Operation=%s, Name=%s, Namespace=%s\n",
 		req.Operation, req.Name, req.Namespace)
 
 	// Only handle DELETE operations
@@ -93,7 +93,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, "notification.request.deleted")
-	audit.SetEventCategory(auditEvent, "notification") // Notification-related event (webhook captures WHO)
+	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "deleted")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
@@ -112,7 +112,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 		"action":          "notification_cancelled",
 	}
 	audit.SetEventData(auditEvent, eventData)
-	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n", 
+	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
 		auditEvent.EventType, auditEvent.CorrelationId)
 
 	// Store audit event asynchronously (buffered write)
