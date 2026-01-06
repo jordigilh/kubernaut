@@ -34,6 +34,7 @@ import (
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
 	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -1397,7 +1398,11 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetCorrelationID(event, signal.Fingerprint)                  // Use fingerprint as correlation (no RR name yet)
 	audit.SetNamespace(event, signal.Namespace)
 
-	// Event data with Gateway-specific fields + error details
+	// BR-AUDIT-005 Gap #7: Standardized error_details
+	// Translate K8s CRD creation error to ErrorDetails
+	errorDetails := sharedaudit.NewErrorDetailsFromK8sError("gateway", err)
+
+	// Event data with Gateway-specific fields + standardized error_details
 	eventData := map[string]interface{}{
 		"gateway": map[string]interface{}{
 			"signal_fingerprint": signal.Fingerprint,
@@ -1407,8 +1412,9 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 			"resource_kind":      signal.Resource.Kind,
 			"resource_name":      signal.Resource.Name,
 			"severity":           signal.Severity,
-			"error_message":      err.Error(),
 		},
+		// Gap #7: Standardized error_details for SOC2 compliance
+		"error_details": errorDetails,
 	}
 	audit.SetEventData(event, eventData)
 

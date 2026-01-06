@@ -22,12 +22,14 @@ package audit
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-logr/logr"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
 // Event type constants (per DD-AUDIT-003)
@@ -394,3 +396,100 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 
 	return false
 }
+
+// RecordAnalysisFailed records an audit event for analysis failure.
+//
+// This method implements BR-AUDIT-005 Gap #7: Standardized error details
+// for SOC2 compliance and RR reconstruction.
+//
+// Parameters:
+// - ctx: Context for the operation
+// - analysis: AIAnalysis CRD that failed
+// - err: Error that caused the failure (e.g., Holmes API error)
+//
+// Example Usage:
+//
+//	err := callHolmesAPI(ctx, analysis)
+//	if err != nil {
+//	    if auditErr := c.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+//	        logger.Error(auditErr, "Failed to record analysis failure audit")
+//	    }
+//	    return err
+//	}
+//
+// Event Structure:
+// - event_type: "aianalysis.analysis.failed"
+// - event_category: "analysis"
+// - event_outcome: "failure"
+// - event_data.error_details: Standardized ErrorDetails structure
+func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error {
+	// Imports needed at top of file
+	// sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
+
+	// Determine error details based on error type
+	var errorDetails *sharedaudit.ErrorDetails
+
+	// Check if it's a Holmes API/upstream error (common case)
+	errMsg := ""
+	if err != nil {
+		errMsg = err.Error()
+	}
+
+	if err != nil && (strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded")) {
+		errorDetails = sharedaudit.NewErrorDetails(
+			"aianalysis",
+			"ERR_UPSTREAM_TIMEOUT",
+			errMsg,
+			true, // Timeout is transient
+		)
+	} else if err != nil && strings.Contains(errMsg, "invalid response") {
+		errorDetails = sharedaudit.NewErrorDetails(
+			"aianalysis",
+			"ERR_UPSTREAM_INVALID_RESPONSE",
+			errMsg,
+			false, // Invalid response may not be retryable
+		)
+	} else if err != nil {
+		// Generic upstream error
+		errorDetails = sharedaudit.NewErrorDetails(
+			"aianalysis",
+			"ERR_UPSTREAM_FAILURE",
+			errMsg,
+			true, // Assume upstream errors are transient
+		)
+	} else {
+		// No error provided (shouldn't happen, but handle gracefully)
+		errorDetails = sharedaudit.NewErrorDetails(
+			"aianalysis",
+			"ERR_INTERNAL_UNKNOWN",
+			"Analysis failed with unknown error",
+			false,
+		)
+	}
+
+	// Build audit event per DD-AUDIT-002 V2.0: OpenAPI types
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "aianalysis.analysis.failed")
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, "failed")
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetResource(event, "AIAnalysis", analysis.Name)
+	audit.SetCorrelationID(event, string(analysis.UID))
+	audit.SetNamespace(event, analysis.Namespace)
+
+	// Event data with error_details (Gap #7)
+	eventData := map[string]interface{}{
+		"analysis_name": analysis.Name,
+		"namespace":     analysis.Namespace,
+		"phase":         string(analysis.Status.Phase),
+		// Gap #7: Standardized error_details for SOC2 compliance
+		"error_details": errorDetails,
+	}
+	audit.SetEventData(event, eventData)
+
+	// Store audit event
+	return c.store.StoreAudit(ctx, event)
+}
+

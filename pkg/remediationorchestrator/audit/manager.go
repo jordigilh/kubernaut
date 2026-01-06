@@ -25,10 +25,13 @@ limitations under the License.
 package audit
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
 // ServiceName is the canonical service identifier for audit events.
@@ -197,6 +200,7 @@ func (m *Manager) BuildCompletionEvent(
 // BuildFailureEvent builds an audit event for remediation lifecycle failure.
 // Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1) with failure outcome
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
+// BR-AUDIT-005 Gap #7: Now includes standardized error_details for SOC2 compliance
 func (m *Manager) BuildFailureEvent(
 	correlationID string,
 	namespace string,
@@ -205,6 +209,35 @@ func (m *Manager) BuildFailureEvent(
 	failureReason string,
 	durationMs int64,
 ) (*dsgen.AuditEventRequest, error) {
+	// BR-AUDIT-005 Gap #7: Build standardized error_details
+	errorMessage := fmt.Sprintf("Remediation failed at phase '%s': %s", failurePhase, failureReason)
+
+	// Determine error code and retry guidance based on failure phase/reason
+	var errorCode string
+	var retryPossible bool
+
+	switch {
+	case strings.Contains(failureReason, "timeout"):
+		errorCode = "ERR_TIMEOUT_REMEDIATION"
+		retryPossible = true // Timeouts are transient
+	case strings.Contains(failureReason, "invalid") || strings.Contains(failureReason, "configuration"):
+		errorCode = "ERR_INVALID_CONFIG"
+		retryPossible = false // Invalid config is permanent
+	case strings.Contains(failureReason, "not found") || strings.Contains(failureReason, "create"):
+		errorCode = "ERR_K8S_CREATE_FAILED"
+		retryPossible = true // K8s creation may be transient
+	default:
+		errorCode = "ERR_INTERNAL_ORCHESTRATION"
+		retryPossible = true // Default to retryable
+	}
+
+	errorDetails := sharedaudit.NewErrorDetails(
+		"remediationorchestrator",
+		errorCode,
+		errorMessage,
+		retryPossible,
+	)
+
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -218,16 +251,19 @@ func (m *Manager) BuildFailureEvent(
 	audit.SetNamespace(event, namespace)
 	audit.SetDuration(event, int(durationMs))
 
-	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
-	data := CompletionData{
-		Outcome:       "Failed",
-		DurationMs:    durationMs,
-		Namespace:     namespace,
-		RRName:        rrName,
-		FailurePhase:  failurePhase,
-		FailureReason: failureReason,
+	// Event data with error_details (Gap #7)
+	// Note: CompletionData struct needs to be extended or we use map
+	eventData := map[string]interface{}{
+		"outcome":    "Failed",
+		"duration_ms": durationMs,
+		"namespace":   namespace,
+		"rr_name":     rrName,
+		"failure_phase": failurePhase,
+		"failure_reason": failureReason,
+		// Gap #7: Standardized error_details for SOC2 compliance
+		"error_details": errorDetails,
 	}
-	audit.SetEventData(event, data)
+	audit.SetEventData(event, eventData)
 
 	return event, nil
 }
