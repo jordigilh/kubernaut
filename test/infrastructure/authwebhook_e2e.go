@@ -657,10 +657,10 @@ func deployRedisToKind(kubeconfigPath, namespace, hostPort, nodePort string, wri
 	return nil
 }
 
-// runDatabaseMigrations runs database migrations using ApplyAllMigrations
+// runDatabaseMigrations runs database migrations using ApplyMigrations
 func runDatabaseMigrations(kubeconfigPath, namespace string, writer io.Writer) error {
 	ctx := context.Background()
-	return ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
+	return ApplyMigrations(ctx, namespace, kubeconfigPath, writer)
 }
 
 // deployDataStorageToKind deploys Data Storage service to Kind cluster with custom NodePort and image tag
