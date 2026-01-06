@@ -404,7 +404,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	var startedEvent *dsgen.AuditEvent
 	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 	correlationID := wfe.Spec.RemediationRequestRef.Name
-	// Ensure audit buffer is flushed before querying (prevents 10s timeout in parallel execution)
+	// Flush before querying to ensure buffered events are written to DataStorage
 	flushAuditBuffer()
 	Eventually(func() bool {
 		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
@@ -427,8 +427,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				}
 			}
 			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"execution.workflow.started audit event should be persisted in DataStorage")
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"execution.workflow.started audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
 	By("Verifying audit event field values")
 	Expect(startedEvent).ToNot(BeNil())
@@ -492,8 +492,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				}
 			}
 			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"workflow.completed audit event should be persisted in DataStorage")
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"workflow.completed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
 		By("Verifying audit event field values")
 		Expect(completedEvent).ToNot(BeNil())
@@ -533,7 +533,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	var failedEvent *dsgen.AuditEvent
 	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 	correlationID := wfe.Spec.RemediationRequestRef.Name
-	// Ensure audit buffer is flushed before querying (prevents 10s timeout in parallel execution)
+	// Flush before querying to ensure buffered events are written to DataStorage
 	flushAuditBuffer()
 	Eventually(func() bool {
 		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
@@ -556,8 +556,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				}
 			}
 			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"workflow.failed audit event should be persisted in DataStorage")
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"workflow.failed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
 		By("Verifying audit event field values including failure details")
 		Expect(failedEvent).ToNot(BeNil())
@@ -591,7 +591,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		Expect(err).ToNot(HaveOccurred())
 
 	eventCategory := "workflow"
-	// Ensure audit buffer is flushed before querying (prevents 10s timeout in parallel execution)
+	// Flush before querying to ensure buffered events are written to DataStorage
 	flushAuditBuffer()
 	Eventually(func() bool {
 		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
@@ -613,8 +613,8 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				}
 			}
 			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Audit events should include correlation ID from RemediationRequestRef.Name per DD-AUDIT-CORRELATION-001")
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"Audit events should include correlation ID from RemediationRequestRef.Name per DD-AUDIT-CORRELATION-001 (30s timeout for parallel execution)")
 
 		GinkgoWriter.Println("✅ Correlation ID from RemediationRequestRef.Name included in audit events (DD-AUDIT-CORRELATION-001)")
 	})

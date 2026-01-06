@@ -272,8 +272,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("")
 })
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
+var _ = SynchronizedAfterSuite(func() {
+	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
+	By("Tearing down per-process test environment")
 
 	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
 	// WE-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
@@ -304,18 +305,22 @@ var _ = AfterSuite(func() {
 	err = testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Stopping DataStorage infrastructure (DD-TEST-002)")
+	GinkgoWriter.Println("✅ Per-process cleanup complete")
+}, func() {
+	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
+	// This ensures DataStorage is only stopped AFTER all processes finish
+	By("Stopping shared DataStorage infrastructure (DD-TEST-002)")
 	// Stop infrastructure services (postgres, redis, datastorage)
 	// DD-TEST-001: MANDATORY infrastructure cleanup after integration tests
-	// WE-SHUTDOWN-001: Safe to stop now - audit events already flushed
-	err = infrastructure.StopWEIntegrationInfrastructure(GinkgoWriter)
+	// WE-SHUTDOWN-001: Safe to stop now - all processes flushed audit events
+	err := infrastructure.StopWEIntegrationInfrastructure(GinkgoWriter)
 	if err != nil {
 		GinkgoWriter.Printf("⚠️  Warning: Failed to stop infrastructure: %v\n", err)
 	} else {
 		GinkgoWriter.Println("✅ DataStorage infrastructure stopped (postgres, redis, datastorage)")
 	}
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
