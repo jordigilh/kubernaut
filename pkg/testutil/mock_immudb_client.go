@@ -18,6 +18,7 @@ package testutil
 
 import (
 	"context"
+	"fmt"
 
 	immuschema "github.com/codenotary/immudb/pkg/api/schema"
 )
@@ -125,20 +126,78 @@ func (m *MockImmudbClient) Login(ctx context.Context, user []byte, password []by
 	return &immuschema.LoginResponse{}, nil
 }
 
+// VerifiedGet mocks the Immudb VerifiedGet operation (Phase 5.3)
+func (m *MockImmudbClient) VerifiedGet(ctx context.Context, key []byte, opts ...interface{}) (*immuschema.Entry, error) {
+	// Simple mock: return nil (not found)
+	return nil, fmt.Errorf("key not found")
+}
+
+// Scan mocks the Immudb Scan operation (Phase 5.3)
+func (m *MockImmudbClient) Scan(ctx context.Context, req *immuschema.ScanRequest) (*immuschema.Entries, error) {
+	// Simple mock: return empty entries
+	return &immuschema.Entries{
+		Entries: []*immuschema.Entry{},
+	}, nil
+}
+
+// SetAll mocks the Immudb SetAll operation (Phase 5.3)
+func (m *MockImmudbClient) SetAll(ctx context.Context, req *immuschema.SetRequest) (*immuschema.TxHeader, error) {
+	// Simple mock: return success with transaction ID
+	return &immuschema.TxHeader{
+		Id: 1,
+	}, nil
+}
+
+// ========================================
+// NO-OP STUBS FOR client.ImmuClient INTERFACE COMPLIANCE
+// ========================================
+//
+// The client.ImmuClient interface has 50+ methods.
+// We only use a small subset for audit storage.
+// These no-op stubs satisfy the interface but are never called in unit tests.
+//
+// ========================================
+
+// ChangePassword is a no-op stub (not used in audit storage)
+func (m *MockImmudbClient) ChangePassword(ctx context.Context, user []byte, oldPass []byte, newPass []byte) error {
+	panic("ChangePassword should not be called in audit storage unit tests")
+}
+
+// CreateUser is a no-op stub (not used in audit storage)
+func (m *MockImmudbClient) CreateUser(ctx context.Context, user []byte, pass []byte, permission uint32, databasename string) error {
+	panic("CreateUser should not be called in audit storage unit tests")
+}
+
+// IsConnected is a no-op stub (not used in audit storage)
+func (m *MockImmudbClient) IsConnected() bool {
+	return true
+}
+
+// Disconnect is a no-op stub (not used in audit storage)
+func (m *MockImmudbClient) Disconnect() error {
+	return nil
+}
+
+// GetSessionID is a no-op stub (not used in audit storage)
+func (m *MockImmudbClient) GetSessionID() string {
+	return "mock-session-id"
+}
+
 // ========================================
 // INTERFACE COMPLIANCE VERIFICATION
 // ========================================
 //
-// The ImmuClient interface is large, but we only need these methods:
-// - VerifiedSet(ctx, key, value) - For audit event writes
-// - CurrentState(ctx) - For health checks
+// The ImmuClient interface is large (50+ methods), but we only need these for audit storage:
+// - VerifiedSet(ctx, key, value) - For audit event writes (Phase 5.1)
+// - CurrentState(ctx) - For health checks (Phase 5.1)
 // - HealthCheck(ctx) - For server connectivity checks (Phase 5.2)
 // - CloseSession(ctx) - For graceful shutdown (Phase 5.2)
 // - Login(ctx, user, pass) - For authentication (Phase 5.2)
-//
-// Future phases will add:
 // - VerifiedGet(ctx, key) - For audit event reads (Phase 5.3)
 // - Scan(ctx, prefix) - For correlation_id queries (Phase 5.3)
+// - SetAll(ctx, req) - For batch writes (Phase 5.3)
+//
+// All other methods are no-op stubs that panic if called.
 //
 // ========================================
 
