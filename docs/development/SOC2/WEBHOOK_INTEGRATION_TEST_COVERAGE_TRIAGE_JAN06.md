@@ -86,29 +86,29 @@ It("should handle multiple CRD types in sequence", func() {
         ClearReason: "Test clearance for multi-CRD flow",
     }
     Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
-    
+
     // Verify webhook populated authenticated fields
     Eventually(func() string {
         k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), wfe)
         return wfe.Status.BlockClearance.ClearedBy
     }).Should(Equal("admin"))
-    
+
     // 2. RemediationApprovalRequest approval
     rar := createRAR(ctx, "multi-crd-rar")
     rar.Status.Decision = "Approved"
     rar.Status.DecisionMessage = "Test approval for multi-CRD flow"
     Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())
-    
+
     // Verify webhook populated authenticated fields
     Eventually(func() string {
         k8sClient.Get(ctx, client.ObjectKeyFromObject(rar), rar)
         return rar.Status.DecidedBy
     }).Should(Equal("admin"))
-    
+
     // 3. NotificationRequest DELETE
     nr := createNR(ctx, "multi-crd-nr")
     Expect(k8sClient.Delete(ctx, nr)).To(Succeed())
-    
+
     // Verify audit event captured (DELETE doesn't populate status)
     events := waitForAuditEvents(dsClient, nr.Name, "notification.request.deleted", 1)
     Expect(*events[0].ActorId).To(Equal("admin"))
@@ -145,39 +145,39 @@ It("should handle concurrent webhook requests", func() {
     var wg sync.WaitGroup
     results := make(chan bool, 10)
     errors := make(chan error, 10)
-    
+
     // Simulate 10 concurrent operators clearing different WFEs
     for i := 0; i < 10; i++ {
         wg.Add(1)
         go func(i int) {
             defer wg.Done()
-            
+
             wfe := createWFE(ctx, fmt.Sprintf("concurrent-wfe-%d", i))
             wfe.Status.BlockClearance = &workflowexecutionv1.BlockClearance{
                 ClearReason: fmt.Sprintf("Concurrent test clearance %d", i),
             }
-            
+
             err := k8sClient.Status().Update(ctx, wfe)
             if err != nil {
                 errors <- err
                 results <- false
                 return
             }
-            
+
             // Verify webhook populated fields
             Eventually(func() bool {
                 k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe), wfe)
                 return wfe.Status.BlockClearance.ClearedBy != ""
             }).Should(BeTrue())
-            
+
             results <- true
         }(i)
     }
-    
+
     wg.Wait()
     close(results)
     close(errors)
-    
+
     // Validate all 10 requests succeeded
     successCount := 0
     for result := range results {
@@ -185,9 +185,9 @@ It("should handle concurrent webhook requests", func() {
             successCount++
         }
     }
-    
+
     Expect(successCount).To(Equal(10), "All concurrent requests should succeed")
-    
+
     // Verify no errors occurred
     errorList := []error{}
     for err := range errors {
