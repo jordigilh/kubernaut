@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -76,7 +77,11 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 				Namespace: testNamespace,
 			},
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
-				WorkflowName: "test-workflow",
+				TargetResource: "default/pod/test-pod",
+				WorkflowRef: workflowexecutionv1.WorkflowRef{
+					Name:    "test-workflow",
+					Version: "v1",
+				},
 			},
 		}
 		Expect(k8sClient.Create(testCtx, wfe)).To(Succeed())
@@ -86,8 +91,9 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 		Expect(k8sClient.Status().Update(testCtx, wfe)).To(Succeed())
 
 		// Trigger block clearance (webhook will populate ClearedBy)
-		wfe.Status.BlockClearance = &workflowexecutionv1.BlockClearanceRequest{
-			Reason: "E2E test: Verifying complete SOC2 attribution flow",
+		wfe.Status.BlockClearance = &workflowexecutionv1.BlockClearanceDetails{
+			ClearReason: "E2E test: Verifying complete SOC2 attribution flow",
+			ClearMethod: "StatusField",
 		}
 		Expect(k8sClient.Status().Update(testCtx, wfe)).To(Succeed())
 
@@ -107,26 +113,36 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 				Namespace: testNamespace,
 			},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
-				AIAnalysisRef: remediationv1.AIAnalysisRef{
+				RemediationRequestRef: corev1.ObjectReference{
+					Kind:       "RemediationRequest",
+					Namespace:  testNamespace,
+					Name:       "test-rr",
+					APIVersion: "remediation.kubernaut.ai/v1alpha1",
+				},
+				AIAnalysisRef: remediationv1.ObjectRef{
 					Name: "test-analysis",
 				},
-				RemediationPlan: remediationv1.RemediationPlan{
+				Confidence:      0.75,
+				ConfidenceLevel: "medium",
+				Reason:          "E2E test: Testing approval flow",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					Name:        "test-workflow",
 					Description: "Test remediation plan",
 				},
 			},
 		}
 		Expect(k8sClient.Create(testCtx, rar)).To(Succeed())
 
-		// Trigger approval (webhook will populate ApprovedBy)
-		rar.Status.Decision = remediationv1.DecisionApproved
+		// Trigger approval (webhook will populate DecidedBy)
+		rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 		rar.Status.DecisionMessage = "E2E test: Approved for SOC2 attribution verification"
 		Expect(k8sClient.Status().Update(testCtx, rar)).To(Succeed())
 
-		// Wait for webhook to populate ApprovedBy
+		// Wait for webhook to populate DecidedBy
 		Eventually(func() string {
 			_ = k8sClient.Get(testCtx, client.ObjectKeyFromObject(rar), rar)
-			return rar.Status.ApprovedBy
-		}, 15*time.Second, 1*time.Second).ShouldNot(BeEmpty(), "Webhook should populate ApprovedBy field")
+			return rar.Status.DecidedBy
+		}, 15*time.Second, 1*time.Second).ShouldNot(BeEmpty(), "Webhook should populate DecidedBy field")
 
 		By("Step 3: Create and delete NotificationRequest")
 		nr = &notificationv1.NotificationRequest{
@@ -136,11 +152,9 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 			},
 			Spec: notificationv1.NotificationRequestSpec{
 				Type:     notificationv1.NotificationTypeEscalation,
-				Priority: notificationv1.PriorityHigh,
-				Content: notificationv1.NotificationContent{
-					Title:   "E2E Test Notification",
-					Message: "Testing SOC2 attribution for DELETE operation",
-				},
+				Priority: notificationv1.NotificationPriorityHigh,
+				Subject:  "E2E Test Notification",
+				Body:     "Testing SOC2 attribution for DELETE operation",
 			},
 		}
 		Expect(k8sClient.Create(testCtx, nr)).To(Succeed())
@@ -309,7 +323,11 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 					Namespace: testNamespace,
 				},
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
-					WorkflowName: fmt.Sprintf("test-workflow-%d", idx),
+					TargetResource: fmt.Sprintf("default/pod/test-pod-%d", idx),
+					WorkflowRef: workflowexecutionv1.WorkflowRef{
+						Name:    fmt.Sprintf("test-workflow-%d", idx),
+						Version: "v1",
+					},
 				},
 			}
 			Expect(k8sClient.Create(testCtx, wfeList[idx])).To(Succeed())
@@ -327,8 +345,9 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 				defer GinkgoRecover()
 
 				wfe := wfeList[idx]
-				wfe.Status.BlockClearance = &workflowexecutionv1.BlockClearanceRequest{
-					Reason: fmt.Sprintf("E2E concurrent test: block clearance #%d", idx),
+				wfe.Status.BlockClearance = &workflowexecutionv1.BlockClearanceDetails{
+					ClearReason: fmt.Sprintf("E2E concurrent test: block clearance #%d", idx),
+					ClearMethod: "StatusField",
 				}
 				Expect(k8sClient.Status().Update(testCtx, wfe)).To(Succeed())
 
