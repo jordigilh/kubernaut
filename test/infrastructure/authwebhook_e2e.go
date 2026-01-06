@@ -65,6 +65,12 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + namespace...")
 
+	// Create /tmp/coverdata directory for coverage collection (required by kind-config.yaml)
+	if err := os.MkdirAll("/tmp/coverdata", 0755); err != nil {
+		return fmt.Errorf("failed to create /tmp/coverdata: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ Created /tmp/coverdata for coverage collection")
+
 	// Create Kind cluster with authwebhook-specific config
 	if err := createKindClusterWithConfig(clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
