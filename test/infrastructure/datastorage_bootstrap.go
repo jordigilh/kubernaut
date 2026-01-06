@@ -283,6 +283,7 @@ func cleanupDSBootstrapContainers(infra *DSBootstrapInfra, writer io.Writer) {
 	containers := []string{
 		infra.PostgresContainer,
 		infra.RedisContainer,
+		infra.ImmudbContainer, // SOC2 immutable audit storage
 		infra.DataStorageContainer,
 		infra.MigrationsContainer,
 	}
