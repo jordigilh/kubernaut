@@ -48,8 +48,8 @@ type MockImmudbClient struct {
 	VerifiedSetResult *immuschema.TxHeader
 
 	// CurrentState tracking (for HealthCheck)
-	CurrentStateCalls int
-	CurrentStateError error
+	CurrentStateCalls  int
+	CurrentStateError  error
 	CurrentStateResult *immuschema.ImmutableState
 }
 
@@ -200,4 +200,3 @@ func (m *MockImmudbClient) GetSessionID() string {
 // All other methods are no-op stubs that panic if called.
 //
 // ========================================
-

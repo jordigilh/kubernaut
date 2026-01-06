@@ -47,7 +47,7 @@ import (
 // 3. Drain in-flight HTTP connections
 // 4. Close resources (database, Redis)
 
-var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown",  func() {
+var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", func() {
 
 	Context("Business Requirement: Readiness Probe Coordination", func() {
 		It("MUST return 503 on readiness probe immediately when shutdown starts", func() {
@@ -935,8 +935,8 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown",  f
 			Expect(shutdownDuration).To(BeNumerically("<", 50*time.Second),
 				"Shutdown should complete within grace period")
 
-		GinkgoWriter.Printf("✅ DD-008 VALIDATED: Graceful shutdown with DLQ messages completed in %v\n", shutdownDuration)
-	})
+			GinkgoWriter.Printf("✅ DD-008 VALIDATED: Graceful shutdown with DLQ messages completed in %v\n", shutdownDuration)
+		})
 	})
 })
 

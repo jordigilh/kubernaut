@@ -48,6 +48,12 @@ const (
 	GatewayE2EMetricsPort  = 9080  // Gateway metrics
 	GatewayDataStoragePort = 30081 // Data Storage NodePort (from shared deployDataStorage)
 	DataStorageE2EHostPort = 18091 // Data Storage host port (NodePort 30081 → host port 18091)
+
+	// Gateway Integration test ports (restored from git history for backward compatibility)
+	GatewayIntegrationPostgresPort    = 15437 // PostgreSQL (DataStorage backend)
+	GatewayIntegrationRedisPort       = 16383 // Redis (DataStorage DLQ)
+	GatewayIntegrationDataStoragePort = 18091 // DataStorage API (Audit + State)
+	GatewayIntegrationMetricsPort     = 19091 // DataStorage Metrics
 )
 
 // SetupGatewayInfrastructureParallel creates the full E2E infrastructure with parallel execution.
