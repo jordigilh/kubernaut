@@ -99,7 +99,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 				_ = k8sClient.Delete(ctx, rr)
 			}()
 
-			Skip("Implementation pending: Need to determine timeout validation behavior")
+			Fail("IMPLEMENTATION REQUIRED: Need to determine timeout validation behavior\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing functionality\n" +
+				"  Next step: Verify controller emits failure audit on invalid timeout config")
 
 			// Then: Should emit orchestrator.lifecycle.completed (failure) with error_details
 			eventType := "orchestrator.lifecycle.completed"
@@ -178,7 +180,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 				_ = k8sClient.Delete(ctx, rr)
 			}()
 
-			Skip("Implementation pending: Need mechanism to trigger child CRD creation failure")
+			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger child CRD creation failure\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing infrastructure\n" +
+				"  Next step: Configure K8s RBAC or API errors to simulate child CRD failures")
 
 			// Then: Should emit orchestrator.lifecycle.completed (failure) with error_details
 			eventType := "orchestrator.lifecycle.completed"

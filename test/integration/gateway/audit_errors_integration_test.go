@@ -98,7 +98,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 			// Note: This test requires Gateway to be configured to fail CRD creation
 			// TODO: Determine how to trigger K8s CRD creation failure in test environment
 
-			Skip("Implementation pending: Need mechanism to trigger K8s CRD creation failure")
+			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger K8s CRD creation failure\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail (not Skip/PIt) to show missing infrastructure\n" +
+				"  Next step: Implement error injection mechanism for K8s API failures")
 
 			// When: Gateway receives signal but fails to create RR CRD
 			// Then: Should emit gateway.crd.creation_failed with error_details
@@ -134,7 +136,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 			// For invalid signals, Gateway may not create RR, so correlation_id may not exist
 			// This test may need to be adjusted based on Gateway's error handling
 
-			Skip("Implementation pending: Determine how Gateway emits audit for invalid signals")
+			Fail("IMPLEMENTATION REQUIRED: Determine how Gateway emits audit for invalid signals\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing functionality\n" +
+				"  Next step: Define Gateway error audit pattern for invalid payloads")
 
 			// Then: Should have error event with standardized error_details
 			// eventType := "gateway.signal.failed" // or similar

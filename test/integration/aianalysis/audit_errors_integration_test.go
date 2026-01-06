@@ -116,7 +116,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: AI Analysis Error Audit Standardization",
 				_ = k8sClient.Delete(ctx, aiAnalysis)
 			}()
 
-			Skip("Implementation pending: Need mechanism to trigger Holmes API timeout")
+			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger Holmes API timeout\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing infrastructure\n" +
+				"  Next step: Configure mock Holmes API to simulate timeout scenarios")
 
 			// Then: Should emit aianalysis.analysis.failed with error_details
 			eventType := "aianalysis.analysis.failed"
@@ -183,7 +185,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: AI Analysis Error Audit Standardization",
 				_ = k8sClient.Delete(ctx, aiAnalysis)
 			}()
 
-			Skip("Implementation pending: Need mechanism to trigger Holmes API invalid response")
+			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger Holmes API invalid response\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing infrastructure\n" +
+				"  Next step: Configure mock Holmes API to simulate malformed response data")
 
 			// Then: Should emit aianalysis.analysis.failed with error_details
 			eventType := "aianalysis.analysis.failed"
