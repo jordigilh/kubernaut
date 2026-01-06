@@ -49,6 +49,10 @@ const (
 
 	// ExecutionNamespace is where PipelineRuns are created
 	ExecutionNamespace = "kubernaut-workflows"
+
+	// WorkflowExecutionMetricsHostPort is the host port for metrics endpoint
+	// Mapped via Kind NodePort extraPortMappings (container: 30185 -> host: 9185)
+	WorkflowExecutionMetricsHostPort = 9185
 )
 
 // SetupWorkflowExecutionInfrastructureHybridWithCoverage implements DD-TEST-002 hybrid parallel strategy:
@@ -944,9 +948,9 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 					}(),
 					Containers: []corev1.Container{
 						{
-							Name:  "controller",
-							Image: "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // DD-TEST-001: service-specific tag
-							ImagePullPolicy: corev1.PullNever,                                         // DD-REGISTRY-001: Use local image loaded into Kind
+							Name:            "controller",
+							Image:           "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // DD-TEST-001: service-specific tag
+							ImagePullPolicy: corev1.PullNever,                                                   // DD-REGISTRY-001: Use local image loaded into Kind
 							Args: []string{
 								"--metrics-bind-address=:9090",
 								"--health-probe-bind-address=:8081",
@@ -1122,6 +1126,35 @@ func waitForDeploymentReady(kubeconfigPath, deploymentName string, output io.Wri
 	if err := waitCmd.Run(); err != nil {
 		return fmt.Errorf("deployment %s did not become available: %w", deploymentName, err)
 	}
+	return nil
+}
+func DeleteWorkflowExecutionCluster(clusterName string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "🗑️  Deleting Kind cluster %s...\n", clusterName)
+
+	// Add 60-second timeout to prevent hanging on stuck clusters
+	// Issue: kind delete can hang indefinitely with Podman provider
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", clusterName)
+	cmd.Stdout = output
+	cmd.Stderr = output
+	if err := cmd.Run(); err != nil {
+		// If timeout, ignore the error (cluster will be cleaned up by system)
+		if ctx.Err() == context.DeadlineExceeded {
+			_, _ = fmt.Fprintf(output, "⚠️  Cluster deletion timed out after 60s, continuing...\n")
+			return nil
+		}
+		// For other errors, check if cluster doesn't exist (ignore error)
+		// Error message: "cluster \"workflowexecution-e2e\" not found"
+		if strings.Contains(err.Error(), "not found") {
+			_, _ = fmt.Fprintf(output, "ℹ️  Cluster already deleted or doesn't exist\n")
+			return nil
+		}
+		return fmt.Errorf("failed to delete Kind cluster: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(output, "✅ Kind cluster deleted\n")
 	return nil
 }
 

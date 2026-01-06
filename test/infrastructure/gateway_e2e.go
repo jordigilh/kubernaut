@@ -1204,3 +1204,34 @@ func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.
 	return WaitForHTTPHealth(healthURL, timeout, writer)
 }
 
+func ScaleDownGatewayForCoverage(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "📊 Scaling down Gateway for coverage flush...")
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"scale", "deployment", "gateway",
+		"-n", "kubernaut-system", "--replicas=0")
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to scale down Gateway: %w", err)
+	}
+
+	// Wait for pod to terminate using kubectl wait (blocks until pod is deleted)
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway pod to terminate...")
+	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=delete", "pod",
+		"-l", "app=gateway",
+		"-n", "kubernaut-system",
+		"--timeout=60s")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	_ = waitCmd.Run() // Ignore error if no pods exist
+
+	// Coverage data is written on SIGTERM before pod exits, no additional wait needed
+	// The kubectl wait --for=delete already blocks until pod is fully terminated
+
+	_, _ = fmt.Fprintln(writer, "✅ Gateway scaled down, coverage data should be flushed")
+	return nil
+}
+
