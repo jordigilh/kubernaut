@@ -2,10 +2,22 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: January 4, 2026
-**Version**: 1.4
+**Last Reviewed**: January 6, 2026
+**Version**: 1.5
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 11 services
+
+**Recent Changes** (v1.5 - January 6, 2026):
+- **ALL ERROR EVENTS**: Enhanced with standardized `error_details` field per BR-AUDIT-005 Gap #7
+- **AI Analysis**: Added `aianalysis.analysis.failed` event for Holmes API failures (broader than `ai-analysis.llm.request_failed`)
+- **Workflow Execution**: Enhanced `workflow.failed` event with Tekton pipeline error details
+- **Gateway**: Enhanced `gateway.crd.creation_failed` event with K8s error details
+- **Remediation Orchestrator**: Enhanced `orchestrator.lifecycle.completed` (failure) with orchestration error details
+- **ErrorDetails Structure**: `{message, code, component, retry_possible, stack_trace?}` - see DD-ERROR-001
+- **Error Code Taxonomy**: `ERR_INVALID_*`, `ERR_K8S_*`, `ERR_UPSTREAM_*`, `ERR_INTERNAL_*`, `ERR_LIMIT_*`, `ERR_TIMEOUT_*`
+- **Rationale**: SOC2 Type II compliance requires standardized error capture for RR reconstruction
+- **Expected Volume**: No change in event count, enhanced event data only
+- **Authority**: BR-AUDIT-005 v2.0 Gap #7, DD-ERROR-001 (Error Details Standardization)
 
 **Recent Changes** (v1.4 - January 4, 2026):
 - **Workflow Execution**: Added `workflowexecution.block.cleared` event for SOC2 CC8.1 (operator attribution)
@@ -187,6 +199,7 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
 | `ai-analysis.crd.updated` | AIAnalysis CRD updated | P0 |
 | `ai-analysis.llm.request_failed` | LLM API request failed | P0 |
 | `aianalysis.analysis.completed` | AI analysis completed with full Holmes response (SOC2) | **P0** |
+| `aianalysis.analysis.failed` | AI analysis failed (Holmes API timeout, invalid response, etc.) | **P0** |
 
 **SOC2 Compliance Event** (v1.3 - January 2026):
 - **Event**: `aianalysis.analysis.completed`
@@ -206,9 +219,36 @@ Kubernaut consists of 11 microservices with different responsibilities. Not all 
   }
   ```
 
+**Error Event & Standardized Error Details** (v1.5 - January 2026):
+- **Event**: `aianalysis.analysis.failed`
+- **Purpose**: Captures all AI analysis failures (broader than `ai-analysis.llm.request_failed`)
+- **Distinction**: `aianalysis.analysis.failed` covers Holmes API timeouts, invalid responses, and generic upstream failures, while `ai-analysis.llm.request_failed` is specific to LLM API request errors
+- **Naming**: Consistent with `aianalysis.analysis.completed` (no hyphen)
+- **Required By**: BR-AUDIT-005 v2.0 Gap #7 (standardized error details for RR reconstruction)
+- **ErrorDetails Structure** (applies to ALL error events):
+  ```json
+  {
+    "event_data": {
+      "analysis_name": "aianalysis-abc123",
+      "error_details": {
+        "message": "Holmes API timeout after 30s",
+        "code": "ERR_UPSTREAM_TIMEOUT",
+        "component": "aianalysis",
+        "retry_possible": true,
+        "stack_trace": ["..."] // Optional, for internal errors
+      }
+    }
+  }
+  ```
+- **Error Code Examples**:
+  - `ERR_UPSTREAM_TIMEOUT`: Holmes API timeout (retry=true)
+  - `ERR_UPSTREAM_INVALID_RESPONSE`: Invalid JSON/schema from Holmes (retry=false)
+  - `ERR_UPSTREAM_FAILURE`: Generic Holmes API error (retry=true)
+- **Compliance**: DD-ERROR-001 (Error Details Standardization), SOC2 Type II RR reconstruction requirements
+
 **Industry Precedent**: OpenAI API logs, Anthropic Claude logs, AWS Bedrock audit logs
 
-**Expected Volume**: 500 events/day, 15 MB/month
+**Expected Volume**: 500 events/day (success), 50 events/day (failures), 16.5 MB/month total
 
 ---
 
