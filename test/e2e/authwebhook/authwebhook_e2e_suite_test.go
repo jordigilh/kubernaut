@@ -44,8 +44,9 @@ import (
 // Test suite for AuthWebhook E2E tests
 // This suite sets up a complete production-like environment:
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
-// - PostgreSQL 16 (for audit events)
+// - PostgreSQL 16 (for workflow catalog)
 // - Redis (for DLQ fallback)
+// - Immudb (for SOC2-compliant immutable audit trails)
 // - Data Storage service (deployed to Kind cluster)
 // - AuthWebhook service (deployed to Kind cluster as admission webhook)
 //
@@ -126,8 +127,9 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Creating Kind cluster with NodePort exposure...")
 		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
 		logger.Info("  • NodePort exposure: Data Storage (30099→8080), PostgreSQL (30442→5432), Webhook (30443→9443)")
-		logger.Info("  • PostgreSQL 16 (audit events storage)")
+		logger.Info("  • PostgreSQL 16 (workflow catalog)")
 		logger.Info("  • Redis (DLQ fallback)")
+		logger.Info("  • Immudb (SOC2 immutable audit trails)")
 		logger.Info("  • Data Storage Docker image (build + load)")
 		logger.Info("  • AuthWebhook Docker image (build + load)")
 		logger.Info("  • Kubeconfig: ~/.kube/authwebhook-e2e-config")
@@ -145,7 +147,7 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = fmt.Sprintf("%s/.kube/authwebhook-e2e-config", homeDir)
 
 		// Create infrastructure with parallel setup (ONCE for all tests)
-		// This uses parallel optimization: Build images | PostgreSQL | Redis run concurrently
+		// This uses parallel optimization: Build images | PostgreSQL | Redis | Immudb run concurrently
 		logger.Info("🚀 Setting up AuthWebhook E2E infrastructure (PARALLEL MODE)...")
 		// Generate unique image names per DD-TEST-001 compliant naming
 		dataStorageImage := infrastructure.GenerateInfraImageName("datastorage", "authwebhook-e2e")
@@ -273,8 +275,13 @@ var _ = SynchronizedAfterSuite(
 
 		// Check if we should keep the cluster for debugging
 		keepCluster := os.Getenv("KEEP_CLUSTER")
-		suiteReport := CurrentSpecReport()
-		suiteFailed := suiteReport.Failed() || anyTestFailed || keepCluster == "true"
+		
+		// Preserve cluster if:
+		// 1. KEEP_CLUSTER env var is set to "true"
+		// 2. Any test failed (anyTestFailed flag)
+		// 3. Setup failed (k8sClient is nil means BeforeSuite didn't complete)
+		setupFailed := k8sClient == nil
+		suiteFailed := keepCluster == "true" || anyTestFailed || setupFailed
 
 		// DD-TEST-007: E2E Coverage Capture Standard
 		// Extract coverage from Kind node before cluster deletion
@@ -347,13 +354,50 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if suiteFailed {
-			logger.Info("⚠️  Keeping cluster for debugging (KEEP_CLUSTER=true or test failed)")
-			logger.Info("Cluster details for debugging",
-				"cluster", clusterName,
-				"kubeconfig", kubeconfigPath,
-				"dataStorageURL", dataStorageURL,
-				"postgresURL", postgresURL)
-			logger.Info("To delete the cluster manually: kind delete cluster --name " + clusterName)
+			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
+			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			
+			if setupFailed {
+				logger.Info("🔍 REASON: BeforeSuite setup failed (infrastructure not ready)")
+			}
+			if anyTestFailed {
+				logger.Info("🔍 REASON: One or more tests failed")
+			}
+			if keepCluster == "true" {
+				logger.Info("🔍 REASON: KEEP_CLUSTER=true environment variable")
+			}
+			
+			logger.Info("")
+			logger.Info("📋 CLUSTER INFORMATION:")
+			logger.Info("   • Cluster Name: " + clusterName)
+			logger.Info("   • Kubeconfig: " + kubeconfigPath)
+			logger.Info("   • Namespace: " + sharedNamespace)
+			logger.Info("   • Data Storage URL: " + dataStorageURL)
+			logger.Info("   • PostgreSQL URL: " + postgresURL)
+			
+			logger.Info("")
+			logger.Info("🔍 DEBUGGING COMMANDS:")
+			logger.Info("   # List all pods and their status:")
+			logger.Info("   kubectl --kubeconfig=" + kubeconfigPath + " get pods -n " + sharedNamespace)
+			logger.Info("")
+			logger.Info("   # Check Data Storage pod logs:")
+			logger.Info("   kubectl --kubeconfig=" + kubeconfigPath + " logs -n " + sharedNamespace + " -l app=datastorage --tail=100")
+			logger.Info("")
+			logger.Info("   # Check Data Storage pod events:")
+			logger.Info("   kubectl --kubeconfig=" + kubeconfigPath + " describe pod -n " + sharedNamespace + " -l app=datastorage")
+			logger.Info("")
+			logger.Info("   # Check webhook pod logs:")
+			logger.Info("   kubectl --kubeconfig=" + kubeconfigPath + " logs -n " + sharedNamespace + " -l app.kubernetes.io/name=authwebhook --tail=100")
+			logger.Info("")
+			logger.Info("   # Check all events in namespace:")
+			logger.Info("   kubectl --kubeconfig=" + kubeconfigPath + " get events -n " + sharedNamespace + " --sort-by='.lastTimestamp'")
+			logger.Info("")
+			logger.Info("   # Access Data Storage from host:")
+			logger.Info("   curl http://localhost:28099/health/ready")
+			logger.Info("")
+			logger.Info("   # Delete cluster when done debugging:")
+			logger.Info("   kind delete cluster --name " + clusterName)
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			return
 		}
@@ -397,4 +441,3 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
-
