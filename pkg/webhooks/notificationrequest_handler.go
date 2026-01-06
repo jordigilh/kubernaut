@@ -93,7 +93,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, "notification.request.deleted")
-	audit.SetEventCategory(auditEvent, "webhook") // Event category is the SERVICE, not the resource
+	audit.SetEventCategory(auditEvent, "notification") // Notification-related event (webhook captures WHO)
 	audit.SetEventAction(auditEvent, "deleted")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)

@@ -84,7 +84,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: WorkflowExecution Error Audit Standardiza
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			Skip("Implementation pending: Need mechanism to trigger Tekton pipeline failure")
+			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger Tekton pipeline failure\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing infrastructure\n" +
+				"  Next step: Create test workflow container that always fails execution")
 
 			// Then: Should emit workflow.failed with error_details (enhanced from existing event)
 			eventType := "workflow.failed"
@@ -149,7 +151,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: WorkflowExecution Error Audit Standardiza
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			Skip("Implementation pending: Need to determine workflow validation behavior")
+			Fail("IMPLEMENTATION REQUIRED: Need to determine workflow validation behavior\n" +
+				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing functionality\n" +
+				"  Next step: Verify controller emits failure audit when workflow not found")
 
 			// Then: Should emit workflow.failed with error_details
 			eventType := "workflow.failed"
