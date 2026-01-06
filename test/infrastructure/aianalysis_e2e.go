@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -814,5 +815,146 @@ func deployRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
 	}
 	_ = pipeWriter2.Close()
 	return applyCmd.Wait()
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	for _, line := range []byte(s) {
+		if line == '\n' {
+			continue
+		}
+	}
+	// Simple split
+	current := ""
+	for _, c := range s {
+		if c == '\n' {
+			if current != "" {
+				lines = append(lines, current)
+			}
+			current = ""
+		} else {
+			current += string(c)
+		}
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func containsReady(s string) bool {
+	return len(s) > 0 && s != "" && (s == "True" || s == "True True")
+}
+
+func findRegoPolicy() string {
+	// Try to find via runtime caller location first
+	_, currentFile, _, ok := runtime.Caller(0)
+	if ok {
+		// Go up to project root (from test/infrastructure/)
+		projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(currentFile)))
+		policyPath := filepath.Join(projectRoot, "config/rego/aianalysis/approval.rego")
+		if _, err := os.Stat(policyPath); err == nil {
+			return policyPath
+		}
+	}
+
+	candidates := []string{
+		"config/rego/aianalysis/approval.rego",
+		"../config/rego/aianalysis/approval.rego",
+		"../../config/rego/aianalysis/approval.rego",
+		"../../../config/rego/aianalysis/approval.rego",
+	}
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err == nil {
+			absPath, _ := filepath.Abs(path)
+			return absPath
+		}
+	}
+	return ""
+}
+
+func createInlineRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
+	// Simplified E2E test policy - requires approval for all production
+	// This is intentionally simpler than production policy for E2E test predictability
+	manifest := `
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aianalysis-policies
+  namespace: kubernaut-system
+data:
+  approval.rego: |
+    package aianalysis.approval
+    import rego.v1
+
+    # Default values
+    default require_approval := false
+    default reason := "Auto-approved"
+
+    # Production environment always requires approval (E2E test simplification)
+    require_approval if {
+        input.environment == "production"
+    }
+
+    # Multiple recovery attempts require approval (any environment)
+    require_approval if {
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number >= 3
+    }
+
+    # Data quality issues in production require approval (BR-AI-011)
+    # Check both warnings (from HAPI) and failed_detections (from SignalProcessing)
+    require_approval if {
+        input.environment == "production"
+        count(input.warnings) > 0
+    }
+
+    require_approval if {
+        input.environment == "production"
+        count(input.failed_detections) > 0
+    }
+
+    # Reason determination (single rule to avoid eval_conflict_error)
+    reason := msg if {
+        require_approval
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number >= 3
+        msg := sprintf("Multiple recovery attempts (%d) - human approval required", [input.recovery_attempt_number])
+    }
+
+    reason := "Data quality warnings in production environment" if {
+        require_approval
+        input.environment == "production"
+        count(input.warnings) > 0
+        not input.is_recovery_attempt
+    }
+
+    reason := "Data quality issues detected in production environment" if {
+        require_approval
+        input.environment == "production"
+        count(input.failed_detections) > 0
+        count(input.warnings) == 0
+        not input.is_recovery_attempt
+    }
+
+    reason := "Production environment requires manual approval" if {
+        require_approval
+        input.environment == "production"
+        count(input.warnings) == 0
+        not input.is_recovery_attempt
+    }
+
+    reason := "Production environment requires manual approval" if {
+        require_approval
+        input.environment == "production"
+        input.is_recovery_attempt == true
+        input.recovery_attempt_number < 3
+    }
+`
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
 }
 
