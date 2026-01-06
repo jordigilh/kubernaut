@@ -323,17 +323,8 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("✅ Per-process cleanup complete")
 }, func() {
 	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
-	// This ensures DataStorage is only stopped AFTER all processes finish
-	By("Stopping shared DataStorage infrastructure (DD-TEST-002)")
-	// Stop infrastructure services (postgres, redis, datastorage)
-	// DD-TEST-001: MANDATORY infrastructure cleanup after integration tests
+	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 	// WE-SHUTDOWN-001: Safe to stop now - all processes flushed audit events
-	err := infrastructure.StopWEIntegrationInfrastructure(GinkgoWriter)
-	if err != nil {
-		GinkgoWriter.Printf("⚠️  Warning: Failed to stop infrastructure: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ DataStorage infrastructure stopped (postgres, redis, datastorage)")
-	}
 
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })

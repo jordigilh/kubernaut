@@ -125,16 +125,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	var err error
 
-	By("Cleaning up stale containers from previous runs (DD-TEST-001 v1.1)")
-	// Stop any existing containers from failed previous runs
-	// Use manual cleanup to match manual startup (DD-TEST-002 Sequential Pattern)
-	cleanupErr := infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
-	if cleanupErr != nil {
-		GinkgoWriter.Printf("⚠️  Cleanup of stale containers failed (may not exist): %v\n", cleanupErr)
-	} else {
-		GinkgoWriter.Println("✅ Stale containers cleaned up")
-	}
-
+	// Cleanup handled by StartDSBootstrap (cleanupDSBootstrapContainers)
 	By("Starting RO integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, Immudb, DataStorage
 	// Per DD-TEST-001 v2.2: PostgreSQL=15435, Redis=16381, Immudb=13325, DS=18140
@@ -476,9 +467,7 @@ var _ = SynchronizedAfterSuite(func() {
 	}
 
 	// RO-SHUTDOWN-001: Safe to stop now - audit events already flushed
-	By("Stopping RO integration infrastructure")
-	err = infrastructure.StopROIntegrationInfrastructure(GinkgoWriter)
-	Expect(err).NotTo(HaveOccurred())
+	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 
 	By("Cleaning up infrastructure images to prevent disk space issues (DD-TEST-001 v1.1)")
 	// Prune ONLY infrastructure images for RemediationOrchestrator
