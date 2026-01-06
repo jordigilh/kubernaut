@@ -23,7 +23,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 )
 
 func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
@@ -346,5 +348,173 @@ func buildNotificationImageOnly(writer io.Writer) error {
 
 	_, _ = fmt.Fprintln(writer, "   Notification Controller image built: localhost/kubernaut-notification:e2e-test")
 	return nil
+}
+
+func loadNotificationImageOnly(clusterName string, writer io.Writer) error {
+	// Save image to tar
+	saveCmd := exec.Command("podman", "save", "localhost/kubernaut-notification:e2e-test", "-o", "/tmp/notification-e2e.tar")
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
+	}
+
+	// Load image into Kind cluster
+	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/notification-e2e.tar", "--name", clusterName)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+
+	if err := loadCmd.Run(); err != nil {
+		return fmt.Errorf("failed to load image into Kind: %w", err)
+	}
+
+	// Clean up tar file
+	_ = os.Remove("/tmp/notification-e2e.tar")
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
+	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-notification:e2e-test")
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-notification:e2e-test")
+	}
+
+	_, _ = fmt.Fprintln(writer, "   Notification Controller image loaded into Kind cluster")
+	return nil
+}
+
+func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	// Updated path after API group migration to kubernaut.ai (Dec 16, 2025)
+	crdPath := filepath.Join(workspaceRoot, "config", "crd", "bases", "kubernaut.ai_notificationrequests.yaml")
+	if _, err := os.Stat(crdPath); os.IsNotExist(err) {
+		return fmt.Errorf("NotificationRequest CRD not found at %s", crdPath)
+	}
+
+	applyCmd := exec.Command("kubectl", "apply", "-f", crdPath)
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply NotificationRequest CRD: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "   NotificationRequest CRD installed")
+	return nil
+}
+
+func deployNotificationRBAC(namespace, kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	rbacPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-rbac.yaml")
+	if _, err := os.Stat(rbacPath); os.IsNotExist(err) {
+		return fmt.Errorf("RBAC manifest not found at %s", rbacPath)
+	}
+
+	// Apply RBAC with namespace override for ServiceAccount
+	// ClusterRole and ClusterRoleBinding are cluster-scoped
+	applyCmd := exec.Command("kubectl", "apply", "-f", rbacPath, "-n", namespace)
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply RBAC: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   RBAC deployed (ClusterRole + ClusterRoleBinding) in namespace: %s\n", namespace)
+	return nil
+}
+
+func deployNotificationConfigMap(namespace, kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	configMapPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-configmap.yaml")
+	if _, err := os.Stat(configMapPath); os.IsNotExist(err) {
+		// ConfigMap is optional - controller may use defaults
+		_, _ = fmt.Fprintf(writer, "   ConfigMap manifest not found (optional): %s\n", configMapPath)
+		return nil
+	}
+
+	applyCmd := exec.Command("kubectl", "apply", "-f", configMapPath, "-n", namespace)
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply ConfigMap: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ConfigMap deployed in namespace: %s\n", namespace)
+	return nil
+}
+
+func deployNotificationService(namespace, kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	servicePath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-service.yaml")
+	if _, err := os.Stat(servicePath); os.IsNotExist(err) {
+		return fmt.Errorf("service manifest not found at %s", servicePath)
+	}
+
+	applyCmd := exec.Command("kubectl", "apply", "-f", servicePath, "-n", namespace)
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply service: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   NodePort Service deployed (metrics: localhost:8081 → NodePort 30081)\n")
+	return nil
+}
+
+func deployNotificationControllerOnly(namespace, kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	deploymentPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-deployment.yaml")
+	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
+		return fmt.Errorf("deployment manifest not found at %s", deploymentPath)
+	}
+
+	applyCmd := exec.Command("kubectl", "apply", "-f", deploymentPath, "-n", namespace)
+	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	applyCmd.Stdout = writer
+	applyCmd.Stderr = writer
+
+	if err := applyCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply deployment: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   Notification Controller deployment applied in namespace: %s\n", namespace)
+	return nil
+}
+
+func DeployNotificationDataStorageServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
+	// Deploy DataStorage with Notification-specific NodePort 30090
+	return DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30090, writer)
 }
 

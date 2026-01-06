@@ -1140,3 +1140,21 @@ func GetDataStorageImageTagForSP() string {
 	return GenerateInfraImageName("datastorage", "signalprocessing")
 }
 
+func findSignalProcessingProjectRoot() string {
+	// Try to find go.mod to determine project root
+	paths := []string{
+		".",
+		"..",
+		"../..",
+		"../../..",
+	}
+	for _, p := range paths {
+		goMod := filepath.Join(p, "go.mod")
+		if _, err := os.Stat(goMod); err == nil {
+			absPath, _ := filepath.Abs(p)
+			return absPath
+		}
+	}
+	return ""
+}
+
