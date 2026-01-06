@@ -166,7 +166,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		By("2. Wait for controller to process and emit events (CRD controller async)")
 		// CRD controllers are async - use Eventually with 60s timeout
 		// DD-TESTING-001: Deterministic event count (exactly 2 events)
-		// Audit buffer has 1s flush timer - Eventually's 60s timeout is sufficient
+		// REQUIRED: Flush audit buffer to ensure events are written to DataStorage for concurrent tests
+		flushAuditBuffer()
 		Eventually(func() int {
 			// Query all audit events for this correlation_id
 			events, err := queryAuditEvents(dsClient, correlationID, nil)
@@ -272,11 +273,13 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-			By("2. Wait for workflow.selection.completed event (fast path)")
-			// DD-TESTING-001: Deterministic event count (exactly 1 event)
-			Eventually(func() int {
-				selectionType := "workflow.selection.completed"
-				events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
+		By("2. Wait for workflow.selection.completed event (fast path)")
+		// DD-TESTING-001: Deterministic event count (exactly 1 event)
+		// REQUIRED: Flush audit buffer to ensure events are written to DataStorage for concurrent tests
+		flushAuditBuffer()
+		Eventually(func() int {
+			selectionType := "workflow.selection.completed"
+			events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 				if err != nil {
 					return 0
 				}

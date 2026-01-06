@@ -153,6 +153,12 @@ Data Storage (Dependency):
 **Updated**: 2026-01-06 (SOC2 CC8.1 Attribution - BR-WEBHOOK-001)
 
 ```yaml
+Webhook Service:
+  HTTPS Port: 9443 (DEFAULT)
+  Protocol: HTTPS (TLS)
+  Purpose: Kubernetes admission webhook endpoint (MutatingWebhookConfiguration)
+  Note: Standard K8s webhook port - no configuration needed
+
 PostgreSQL:
   Host Port: 15442
   Container Port: 5432

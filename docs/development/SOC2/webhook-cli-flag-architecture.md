@@ -15,8 +15,8 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 
 ### **Design Principle: Sensible Defaults**
 
-✅ **Default**: `http://datastorage-service:8080` (K8s service name - works in production)  
-✅ **Override**: Via environment variable or CLI flag (for dev/staging/test)  
+✅ **Default**: `http://datastorage-service:8080` (K8s service name - works in production)
+✅ **Override**: Via environment variable or CLI flag (for dev/staging/test)
 ✅ **Priority**: CLI flag > env var > default
 
 **Result**: Zero configuration needed for standard production deployments.
@@ -25,7 +25,18 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 
 ## 🔧 **CLI Flag Specification**
 
-### **Flag Specification**
+### **All Webhook Service Flags**
+
+| Flag | Default | Env Variable | Purpose |
+|------|---------|--------------|---------|
+| `--webhook-port` | `9443` | `WEBHOOK_PORT` | Webhook HTTPS port (standard K8s webhook port) |
+| `--data-storage-url` | `http://datastorage-service:8080` | `WEBHOOK_DATA_STORAGE_URL` | Audit event API endpoint |
+| `--metrics-bind-address` | `:8080` | `WEBHOOK_METRICS_ADDR` | Prometheus metrics endpoint |
+| `--cert-dir` | `/tmp/k8s-webhook-server/serving-certs` | `WEBHOOK_CERT_DIR` | TLS certificate location |
+
+**Authority**: DD-WEBHOOK-001 (Service Configuration section)
+
+### **Primary Flag: Data Storage URL**
 
 ```bash
 --data-storage-url=<URL>
@@ -39,6 +50,20 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 
 **Rationale**: Default to K8s service name for production, override for dev/test environments
 
+### **Webhook Port (Standard K8s Convention)**
+
+```bash
+--webhook-port=<PORT>
+```
+
+**Description**: HTTPS port for webhook admission endpoint  
+**Default**: `9443` (standard Kubernetes webhook port)  
+**Required**: No (uses default if not specified)  
+**Format**: Integer port number  
+**Override**: Via environment variable `WEBHOOK_PORT` or CLI flag
+
+**Rationale**: Port 9443 is the de facto standard for K8s admission webhooks (cert-manager, OPA, Istio)
+
 ---
 
 ## 📋 **Usage Examples**
@@ -49,14 +74,18 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 2. **Environment variable** `WEBHOOK_DATA_STORAGE_URL`
 3. **Default value** `http://datastorage-service:8080`
 
-### **Production Deployment** (Uses Default)
+### **Production Deployment** (Uses All Defaults)
 
 ```bash
-# Uses default: http://datastorage-service:8080
+# All defaults work - no flags needed!
+./webhooks-controller
+
+# Equivalent to:
 ./webhooks-controller \
   --webhook-port=9443 \
-  --cert-dir=/tmp/k8s-webhook-server/serving-certs \
-  --metrics-bind-address=:8080
+  --data-storage-url=http://datastorage-service:8080 \
+  --metrics-bind-address=:8080 \
+  --cert-dir=/tmp/k8s-webhook-server/serving-certs
 ```
 
 ### **Development** (Override via Env Var)
@@ -70,17 +99,17 @@ export WEBHOOK_DATA_STORAGE_URL=http://localhost:18099
 ### **Development** (Override via CLI Flag)
 
 ```bash
-# Override via CLI flag (highest priority)
+# Override Data Storage URL only (webhook port uses default 9443)
 ./webhooks-controller \
-  --data-storage-url=http://localhost:18099 \
-  --webhook-port=9443
+  --data-storage-url=http://localhost:18099
 ```
 
 ### **E2E Tests** (Override via Env Var)
 
 ```bash
 export WEBHOOK_DATA_STORAGE_URL=http://localhost:28099
-./webhooks-controller --webhook-port=9443
+./webhooks-controller
+# Webhook port 9443 uses default
 ```
 
 ---
@@ -105,20 +134,31 @@ import (
 
 func main() {
     var dataStorageURL string
+    var webhookPort int
     
-    // 1. Define CLI flag with default K8s service name
-    defaultURL := "http://datastorage-service:8080"
-    flag.StringVar(&dataStorageURL, "data-storage-url", defaultURL, 
+    // 1. Define CLI flags with production defaults
+    flag.StringVar(&dataStorageURL, "data-storage-url", 
+        "http://datastorage-service:8080",  // DEFAULT
         "Data Storage service URL for audit events")
+    flag.IntVar(&webhookPort, "webhook-port", 
+        9443,  // DEFAULT (standard K8s webhook port)
+        "Webhook HTTPS port")
     flag.Parse()
     
-    // 2. Allow environment variable override (higher priority than default)
+    // 2. Allow environment variable overrides (higher priority than defaults)
     if envURL := os.Getenv("WEBHOOK_DATA_STORAGE_URL"); envURL != "" {
         dataStorageURL = envURL
     }
+    if envPort := os.Getenv("WEBHOOK_PORT"); envPort != "" {
+        if port, err := strconv.Atoi(envPort); err == nil {
+            webhookPort = port
+        }
+    }
     
-    setupLog.Info("Using Data Storage URL", "url", dataStorageURL)
-    
+    setupLog.Info("Webhook configuration", 
+        "webhook_port", webhookPort,
+        "data_storage_url", dataStorageURL)
+
     // 3. Initialize OpenAPI audit client
     // Per DD-API-001: Use OpenAPI generated client
     dsClient, err := audit.NewOpenAPIClientAdapter(
@@ -163,7 +203,7 @@ func main() {
 
 ## ☸️ **Kubernetes Configuration**
 
-### **Option A: Use Default (Recommended for Production)**
+### **Option A: Use All Defaults (Recommended for Production)**
 
 ```yaml
 # deploy/webhooks/deployment.yaml
@@ -178,15 +218,21 @@ spec:
       containers:
       - name: webhook
         image: kubernaut/auth-webhook:latest
-        args:
-        - --webhook-port=9443
-        - --metrics-bind-address=:8080
-        - --cert-dir=/tmp/k8s-webhook-server/serving-certs
-        # No --data-storage-url flag: uses default http://datastorage-service:8080
+        # No args needed - all defaults work!
+        # Defaults:
+        #   --webhook-port=9443
+        #   --data-storage-url=http://datastorage-service:8080
+        #   --metrics-bind-address=:8080
+        #   --cert-dir=/tmp/k8s-webhook-server/serving-certs
+        ports:
+        - containerPort: 9443
+          name: webhook
+        - containerPort: 8080
+          name: metrics
 ```
 
-**Pros**: ✅ Simplest, ✅ No configuration needed, ✅ Production-ready default  
-**Cons**: None for standard deployments
+**Pros**: ✅ Zero configuration, ✅ Production-ready, ✅ Simplest possible deployment  
+**Cons**: None for standard Kubernetes environments
 
 ---
 
@@ -210,7 +256,7 @@ spec:
         - --metrics-bind-address=:8080
 ```
 
-**Pros**: ✅ Simple override, ✅ No CLI flag needed  
+**Pros**: ✅ Simple override, ✅ No CLI flag needed
 **Cons**: ⚠️ Hardcoded in deployment YAML
 
 ---
@@ -246,7 +292,7 @@ spec:
         - --webhook-port=9443
 ```
 
-**Pros**: ✅ Flexible per environment, ✅ No redeployment, ✅ Falls back to default  
+**Pros**: ✅ Flexible per environment, ✅ No redeployment, ✅ Falls back to default
 **Cons**: ⚠️ Extra resource (ConfigMap)
 
 ---
@@ -267,7 +313,7 @@ spec:
         - --data-storage-url=http://datastorage-custom:8080  # Explicit override
 ```
 
-**Pros**: ✅ Explicit, ✅ No env var needed  
+**Pros**: ✅ Explicit, ✅ No env var needed
 **Cons**: ⚠️ Requires redeployment to change
 
 ---
@@ -276,8 +322,8 @@ spec:
 
 ### **Production** (Uses Default)
 
-**Default**: `http://datastorage-service:8080`  
-**Resolution**: Kubernetes DNS (`datastorage-service.kubernaut-system.svc.cluster.local`)  
+**Default**: `http://datastorage-service:8080`
+**Resolution**: Kubernetes DNS (`datastorage-service.kubernaut-system.svc.cluster.local`)
 **Configuration**: None needed - works out of the box
 
 ```yaml
@@ -290,7 +336,7 @@ containers:
 
 ### **Staging** (Override via Env Var)
 
-**Override**: `http://datastorage-staging:8080`  
+**Override**: `http://datastorage-staging:8080`
 **Configuration**: Environment variable
 
 ```yaml
@@ -301,8 +347,8 @@ env:
 
 ### **Development** (Override for Localhost)
 
-**Override**: `http://localhost:18099` (integration) or `http://localhost:28099` (E2E)  
-**Resolution**: Podman containers expose ports to localhost  
+**Override**: `http://localhost:18099` (integration) or `http://localhost:28099` (E2E)
+**Resolution**: Podman containers expose ports to localhost
 **Configuration**: Environment variable
 
 ```bash

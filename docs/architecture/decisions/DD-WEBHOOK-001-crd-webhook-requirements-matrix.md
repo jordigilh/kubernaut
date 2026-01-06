@@ -53,9 +53,15 @@
 │  │  Shared: ExtractAuthenticatedUser(req.UserInfo)          │ │
 │  └──────────────────────────────────────────────────────────┘ │
 │                                                                 │
-│  Port: 9443 (HTTPS with TLS cert)                             │
+│  Port: 9443 (DEFAULT - HTTPS with TLS cert)                   │
+│  Data Storage URL: http://datastorage-service:8080 (DEFAULT)  │
 └────────────────────────────────────────────────────────────────┘
 ```
+
+**Default Configuration**:
+- **Webhook Port**: `9443` (standard Kubernetes webhook port - no configuration needed)
+- **Data Storage URL**: `http://datastorage-service:8080` (K8s service name - no configuration needed)
+- **Override**: Via environment variables or CLI flags for dev/test environments
 
 ### **Benefits of Consolidated Approach**
 
@@ -81,6 +87,83 @@ pkg/webhooks/notificationrequest_handler.go         # NR-specific logic
 **Comprehensive Plans**:
 - **[Implementation Plan](../../development/SOC2/WEBHOOK_IMPLEMENTATION_PLAN.md)**: 5-6 day roadmap with APDC-TDD methodology
 - **[Test Plan](../../development/SOC2/WEBHOOK_TEST_PLAN.md)**: 95 tests (70 unit + 11 integration + 14 E2E)
+
+---
+
+## ⚙️ **Service Configuration (AUTHORITATIVE)**
+
+### **Default Configuration** (Zero Config Production)
+
+| Parameter | Default Value | Override Method | Purpose |
+|-----------|---------------|-----------------|---------|
+| **Webhook Port** | `9443` | `--webhook-port` or `WEBHOOK_PORT` | Standard K8s webhook HTTPS port |
+| **Data Storage URL** | `http://datastorage-service:8080` | `--data-storage-url` or `WEBHOOK_DATA_STORAGE_URL` | Audit event API endpoint |
+| **Metrics Address** | `:8080` | `--metrics-bind-address` | Prometheus metrics endpoint |
+| **Cert Directory** | `/tmp/k8s-webhook-server/serving-certs` | `--cert-dir` | TLS certificate location |
+
+### **Configuration Priority** (Highest to Lowest)
+
+1. **CLI Flags**: Explicit command-line arguments
+2. **Environment Variables**: `WEBHOOK_*` prefixed variables
+3. **Default Values**: Sensible production defaults
+
+### **Production Deployment** (No Configuration Needed)
+
+```yaml
+# deploy/webhooks/deployment.yaml
+containers:
+- name: webhook
+  image: kubernaut/auth-webhook:latest
+  # No args needed - all defaults work in production
+  ports:
+  - containerPort: 9443  # Default webhook port
+    name: webhook
+  - containerPort: 8080  # Default metrics port
+    name: metrics
+```
+
+**Result**: Webhook works out-of-box in standard Kubernetes environments.
+
+### **Development/Test Overrides**
+
+```yaml
+# Integration tests - override Data Storage URL only
+env:
+- name: WEBHOOK_DATA_STORAGE_URL
+  value: "http://localhost:18099"
+# Webhook port 9443 uses default
+```
+
+```yaml
+# Staging - override Data Storage URL only
+env:
+- name: WEBHOOK_DATA_STORAGE_URL
+  value: "http://datastorage-staging:8080"
+# Webhook port 9443 uses default
+```
+
+### **CLI Flag Reference**
+
+```bash
+./webhooks-controller \
+  --webhook-port=9443 \                          # DEFAULT (can omit)
+  --data-storage-url=http://datastorage-service:8080 \  # DEFAULT (can omit)
+  --metrics-bind-address=:8080 \                 # DEFAULT (can omit)
+  --cert-dir=/tmp/k8s-webhook-server/serving-certs      # DEFAULT (can omit)
+
+# Minimal production command (all defaults):
+./webhooks-controller
+```
+
+### **Why Port 9443?**
+
+**Standard**: Port 9443 is the de facto standard for Kubernetes admission webhooks
+- ✅ Used by cert-manager, OPA Gatekeeper, Istio, and other K8s webhooks
+- ✅ Well-known port for webhook HTTPS traffic
+- ✅ No conflicts with application ports (8080-8089 range)
+- ✅ Firewall-friendly (standard HTTPS alternative port)
+
+**Authority**: Kubernetes webhook best practices and community conventions
 
 ---
 

@@ -405,7 +405,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	// Ensure audit buffer is flushed before querying (prevents 10s timeout in parallel execution)
-	Expect(flushAuditBuffer()).To(Succeed())
+	flushAuditBuffer()
 	Eventually(func() bool {
 		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 			EventCategory: &eventCategory,
@@ -529,12 +529,14 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
 		Expect(err).ToNot(HaveOccurred())
 
-		eventCategory := "workflow"
-		var failedEvent *dsgen.AuditEvent
-		// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
-		correlationID := wfe.Spec.RemediationRequestRef.Name
-		Eventually(func() bool {
-			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
+	eventCategory := "workflow"
+	var failedEvent *dsgen.AuditEvent
+	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+	correlationID := wfe.Spec.RemediationRequestRef.Name
+	// Ensure audit buffer is flushed before querying (prevents 10s timeout in parallel execution)
+	flushAuditBuffer()
+	Eventually(func() bool {
+		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				EventCategory: &eventCategory,
 				CorrelationId: &correlationID,
 			})
@@ -590,7 +592,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 	eventCategory := "workflow"
 	// Ensure audit buffer is flushed before querying (prevents 10s timeout in parallel execution)
-	Expect(flushAuditBuffer()).To(Succeed())
+	flushAuditBuffer()
 	Eventually(func() bool {
 		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
 				EventCategory: &eventCategory,
