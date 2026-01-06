@@ -37,6 +37,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 
+	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
@@ -465,11 +466,22 @@ var _ = SynchronizedBeforeSuite(
 			}
 
 			// Create Data Storage server instance
+			// SOC2 Gap #9: Build Immudb config for DataStorage integration tests
+			// Port: 13322 (as per DD-TEST-001: DataStorage Immudb port)
+			immudbCfg := &dsconfig.ImmudbConfig{
+				Host:     "localhost",
+				Port:     13322, // DataStorage Immudb port (DD-TEST-001)
+				Database: "defaultdb",
+				Username: "immudb",
+				Password: "immudb", // Default password from bootstrap
+			}
+
 			var err error
 			dsServer, err = server.NewServer(
 				dbConnStr,
 				redisAddr,
 				"", // No Redis password in test
+				immudbCfg,
 				logger,
 				serverCfg,
 				10000, // DLQ max length

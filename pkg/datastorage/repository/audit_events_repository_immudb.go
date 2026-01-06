@@ -61,13 +61,22 @@ import (
 
 // ImmudbClient defines the minimal Immudb client interface needed for audit storage
 // This is a subset of github.com/codenotary/immudb/pkg/client.ImmuClient
-// Only includes methods actually used by this repository
+// Only includes methods actually used by this repository and server
 type ImmudbClient interface {
 	// VerifiedSet inserts a key-value pair with cryptographic proof
 	VerifiedSet(ctx context.Context, key []byte, value []byte) (*immuschema.TxHeader, error)
 
 	// CurrentState returns the current database state (used for health checks)
 	CurrentState(ctx context.Context) (*immuschema.ImmutableState, error)
+
+	// HealthCheck verifies Immudb connectivity (Phase 5.2)
+	HealthCheck(ctx context.Context) error
+
+	// CloseSession closes the Immudb session (Phase 5.2)
+	CloseSession(ctx context.Context) error
+
+	// Login authenticates with Immudb (Phase 5.2)
+	Login(ctx context.Context, user []byte, password []byte) (*immuschema.LoginResponse, error)
 
 	// Future methods (Phase 5.3):
 	// VerifiedGet(ctx, key) - For audit event reads
@@ -174,13 +183,34 @@ func (r *ImmudbAuditEventsRepository) HealthCheck(ctx context.Context) error {
 }
 
 // ========================================
+// PHASE 5.3 STUBS: For Compilation Only
+// ========================================
+
+// Query retrieves audit events by SQL query (Phase 5.3)
+// Stub implementation for compilation - will be fully implemented in Phase 5.3
+// Note: Immudb doesn't use SQL, so this will be refactored to use Scan/prefix queries
+func (r *ImmudbAuditEventsRepository) Query(ctx context.Context, querySQL string, countSQL string, args []interface{}) ([]*AuditEvent, *PaginationMetadata, error) {
+	r.logger.Info("Query called (Phase 5.3 stub - not implemented yet)", "querySQL", querySQL)
+	// TODO Phase 5.3: Implement Immudb Scan with prefix queries (no SQL)
+	return []*AuditEvent{}, &PaginationMetadata{}, fmt.Errorf("Query not implemented yet (Phase 5.3)")
+}
+
+// CreateBatch inserts multiple audit events in a single transaction (Phase 5.3)
+// Stub implementation for compilation - will be fully implemented in Phase 5.3
+func (r *ImmudbAuditEventsRepository) CreateBatch(ctx context.Context, events []*AuditEvent) ([]*AuditEvent, error) {
+	r.logger.Info("CreateBatch called (Phase 5.3 stub - not implemented yet)", "event_count", len(events))
+	// TODO Phase 5.3: Implement Immudb batch writes
+	return nil, fmt.Errorf("CreateBatch not implemented yet (Phase 5.3)")
+}
+
+// ========================================
 // PHASE 5.2-5.4: Future Methods (NOT IMPLEMENTED YET)
 // ========================================
 //
 // These will be implemented in subsequent phases:
 //
-// Phase 5.2: Test with DataStorage integration
-// Phase 5.3: Implement Query() and CreateBatch()
+// Phase 5.2: Test with DataStorage integration ✅ (in progress)
+// Phase 5.3: Implement Query() and CreateBatch() (stubs above)
 // Phase 5.4: Full integration with all 7 services
 //
 // ========================================

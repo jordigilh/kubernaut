@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/codenotary/immudb/pkg/client"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -33,6 +34,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
@@ -51,6 +53,7 @@ import (
 type Server struct {
 	handler    *Handler
 	db         *sql.DB
+	immuClient client.ImmuClient // SOC2 Gap #9: Immudb client for tamper-evident audit storage
 	logger     logr.Logger
 	httpServer *http.Server
 
@@ -64,7 +67,8 @@ type Server struct {
 	validator  *validation.NotificationAuditValidator
 
 	// BR-STORAGE-033: Unified audit events API (ADR-034)
-	auditEventsRepo *repository.AuditEventsRepository
+	// SOC2 Gap #9: Now backed by Immudb for tamper-evident storage
+	auditEventsRepo *repository.ImmudbAuditEventsRepository
 
 	// BR-STORAGE-012: Self-auditing (DD-STORAGE-012)
 	// Uses InternalAuditClient to avoid circular dependency
@@ -92,10 +96,13 @@ const (
 // NewServer creates a new Data Storage HTTP server
 // BR-STORAGE-021: REST API Gateway for database access
 // BR-STORAGE-001 to BR-STORAGE-020: Audit write API
+// SOC2 Gap #9: Immudb for tamper-evident audit trails
 //
 // Parameters:
 // - dbConnStr: PostgreSQL connection string (format: "host=localhost port=5432 dbname=action_history user=slm_user password=xxx sslmode=disable")
 // - redisAddr: Redis address for DLQ (format: "localhost:6379")
+// - redisPassword: Redis password (from mounted secret)
+// - immudbCfg: Immudb configuration for tamper-evident audit storage (SOC2 Gap #9)
 // - logger: Structured logger
 // - cfg: Server configuration
 // - dlqMaxLen: Maximum DLQ stream length for capacity monitoring (Gap 3.3)
@@ -103,6 +110,7 @@ func NewServer(
 	dbConnStr string,
 	redisAddr string,
 	redisPassword string,
+	immudbCfg *dsconfig.ImmudbConfig,
 	logger logr.Logger,
 	cfg *Config,
 	dlqMaxLen int64,
@@ -144,6 +152,50 @@ func NewServer(
 		"addr", redisAddr,
 	)
 
+	// Connect to Immudb for SOC2 tamper-evident audit storage (Gap #9)
+	logger.Info("Connecting to Immudb for SOC2 audit trails (Gap #9)...",
+		"host", immudbCfg.Host,
+		"port", immudbCfg.Port,
+		"database", immudbCfg.Database,
+	)
+
+	immudbOpts := client.DefaultOptions().
+		WithAddress(immudbCfg.Host).
+		WithPort(immudbCfg.Port).
+		WithUsername(immudbCfg.Username).
+		WithPassword(immudbCfg.Password).
+		WithDatabase(immudbCfg.Database)
+
+	immuClient, err := client.NewImmuClient(immudbOpts)
+	if err != nil {
+		_ = db.Close()          // Clean up DB connection
+		_ = redisClient.Close() // Clean up Redis connection
+		return nil, fmt.Errorf("failed to create Immudb client: %w", err)
+	}
+
+	// Login to Immudb
+	ctx := context.Background()
+	_, err = immuClient.Login(ctx, []byte(immudbCfg.Username), []byte(immudbCfg.Password))
+	if err != nil {
+		_ = db.Close()          // Clean up DB connection
+		_ = redisClient.Close() // Clean up Redis connection
+		return nil, fmt.Errorf("failed to login to Immudb: %w", err)
+	}
+
+	// Verify Immudb connection with health check
+	err = immuClient.HealthCheck(ctx)
+	if err != nil {
+		_ = db.Close()          // Clean up DB connection
+		_ = redisClient.Close() // Clean up Redis connection
+		return nil, fmt.Errorf("failed to verify Immudb health: %w", err)
+	}
+
+	logger.Info("Immudb connection established (SOC2 Gap #9)",
+		"host", immudbCfg.Host,
+		"port", immudbCfg.Port,
+		"database", immudbCfg.Database,
+	)
+
 	// Create audit write dependencies (BR-STORAGE-001 to BR-STORAGE-020)
 	logger.V(1).Info("Creating audit write dependencies...")
 	repo := repository.NewNotificationAuditRepository(db, logger)
@@ -169,9 +221,10 @@ func NewServer(
 		"action_trace_repo_nil", actionTraceRepo == nil)
 
 	// Create BR-STORAGE-033: Unified audit events repository (ADR-034)
-	logger.V(1).Info("Creating ADR-034 unified audit events repository...")
-	auditEventsRepo := repository.NewAuditEventsRepository(db, logger)
-	logger.V(1).Info("ADR-034 audit events repository created",
+	// SOC2 Gap #9: Use Immudb for tamper-evident audit storage
+	logger.V(1).Info("Creating ADR-034 unified audit events repository (Immudb)...")
+	auditEventsRepo := repository.NewImmudbAuditEventsRepository(immuClient, logger)
+	logger.V(1).Info("ADR-034 audit events repository created (Immudb-backed, SOC2 Gap #9)",
 		"audit_events_repo_nil", auditEventsRepo == nil)
 
 	// Create BR-STORAGE-012: Self-auditing audit store (DD-STORAGE-012)
@@ -234,9 +287,10 @@ func NewServer(
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
 	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
 	srv := &Server{
-		handler: handler,
-		db:      db,
-		logger:  logger,
+		handler:    handler,
+		db:         db,
+		immuClient: immuClient, // SOC2 Gap #9: Immudb client for cleanup
+		logger:     logger,
 		httpServer: &http.Server{
 			Addr:         fmt.Sprintf(":%d", cfg.Port),
 			ReadTimeout:  cfg.ReadTimeout,
@@ -519,7 +573,7 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context) {
 // shutdownStep5CloseResources closes external resources (database, audit store)
 // DD-007 STEP 5 (previously step 4): Clean up database connections and flush audit events
 func (s *Server) shutdownStep5CloseResources() error {
-	s.logger.Info("Closing external resources (PostgreSQL, audit store)",
+	s.logger.Info("Closing external resources (PostgreSQL, Immudb, audit store)",
 		"dd", "DD-007-step-5")
 
 	// BR-STORAGE-014: Flush remaining audit events before closing database
@@ -535,6 +589,21 @@ func (s *Server) shutdownStep5CloseResources() error {
 		} else {
 			s.logger.Info("Audit events flushed successfully",
 				"dd", "DD-007-step-5-audit-complete")
+		}
+	}
+
+	// Close Immudb connection (SOC2 Gap #9)
+	if s.immuClient != nil {
+		s.logger.Info("Closing Immudb session (SOC2 Gap #9)",
+			"dd", "DD-007-step-5-immudb-close")
+		ctx := context.Background()
+		if err := s.immuClient.CloseSession(ctx); err != nil {
+			s.logger.Error(err, "Failed to close Immudb session",
+				"dd", "DD-007-step-5-immudb-error")
+			// Continue with shutdown even if Immudb close fails
+		} else {
+			s.logger.Info("Immudb session closed successfully",
+				"dd", "DD-007-step-5-immudb-complete")
 		}
 	}
 

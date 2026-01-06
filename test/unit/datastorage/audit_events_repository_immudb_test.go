@@ -27,8 +27,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
 // ========================================

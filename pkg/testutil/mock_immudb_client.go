@@ -107,6 +107,24 @@ func (m *MockImmudbClient) CurrentState(ctx context.Context) (*immuschema.Immuta
 	return m.CurrentStateResult, nil
 }
 
+// HealthCheck mocks the Immudb HealthCheck operation (Phase 5.2)
+func (m *MockImmudbClient) HealthCheck(ctx context.Context) error {
+	// Simple mock: always return nil (success)
+	return nil
+}
+
+// CloseSession mocks the Immudb CloseSession operation (Phase 5.2)
+func (m *MockImmudbClient) CloseSession(ctx context.Context) error {
+	// Simple mock: always return nil (success)
+	return nil
+}
+
+// Login mocks the Immudb Login operation (Phase 5.2)
+func (m *MockImmudbClient) Login(ctx context.Context, user []byte, password []byte) (*immuschema.LoginResponse, error) {
+	// Simple mock: return empty LoginResponse (success)
+	return &immuschema.LoginResponse{}, nil
+}
+
 // ========================================
 // INTERFACE COMPLIANCE VERIFICATION
 // ========================================
@@ -114,6 +132,9 @@ func (m *MockImmudbClient) CurrentState(ctx context.Context) (*immuschema.Immuta
 // The ImmuClient interface is large, but we only need these methods:
 // - VerifiedSet(ctx, key, value) - For audit event writes
 // - CurrentState(ctx) - For health checks
+// - HealthCheck(ctx) - For server connectivity checks (Phase 5.2)
+// - CloseSession(ctx) - For graceful shutdown (Phase 5.2)
+// - Login(ctx, user, pass) - For authentication (Phase 5.2)
 //
 // Future phases will add:
 // - VerifiedGet(ctx, key) - For audit event reads (Phase 5.3)
