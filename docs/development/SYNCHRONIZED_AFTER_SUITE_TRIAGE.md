@@ -45,7 +45,7 @@ var _ = SynchronizedAfterSuite(
 )
 ```
 
-**Authority**: 
+**Authority**:
 - `test/integration/gateway/PARALLEL_EXECUTION_FIXES_APPLIED.md`
 - `docs/development/business-requirements/TESTING_GUIDELINES.md`
 - Discovery during Gateway integration test stabilization (Dec 2025)
@@ -94,14 +94,14 @@ var _ = SynchronizedAfterSuite(
         // PHASE 1: Runs on ALL parallel processes
         // Cleanup per-process resources (connections, contexts, clients)
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        GinkgoWriter.Printf("🧹 [Process %d] Cleaning up per-process resources...\n", 
+        GinkgoWriter.Printf("🧹 [Process %d] Cleaning up per-process resources...\n",
             GinkgoParallelProcess())
-        
+
         // Close per-process connections
         if cancel != nil {
             cancel()
         }
-        
+
         // Cleanup process-specific clients
         if suiteK8sClient != nil {
             suiteK8sClient.Cleanup(suiteCtx)
@@ -114,7 +114,7 @@ var _ = SynchronizedAfterSuite(
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         GinkgoWriter.Printf("🧹 [Process %d] Tearing down shared infrastructure (Process #1 only)...\n",
             GinkgoParallelProcess())
-        
+
         // Delete shared infrastructure
         deleteKindCluster(clusterName)
         infrastructure.StopDataStorageInfra(GinkgoWriter)
@@ -191,7 +191,7 @@ var _ = SynchronizedAfterSuite(
         logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         logger.Info("🧹 CLEANUP: Per-process teardown starting...",
             zap.Int("process", GinkgoParallelProcess()))
-        
+
         if cancel != nil {
             cancel()
             logger.Info("✅ Context cancelled for process",
@@ -203,13 +203,13 @@ var _ = SynchronizedAfterSuite(
         logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         logger.Info("🧹 CLEANUP: Shared infrastructure teardown (Process 1 only)...",
             zap.Int("process", GinkgoParallelProcess()))
-        
+
         By("Deleting Gateway namespace")
         deleteNamespace(testClient, gatewayNamespace)
-        
+
         By("Deleting Kind cluster")
         deleteKindCluster(clusterName)
-        
+
         logger.Info("✅ E2E Gateway test suite teardown complete")
     },
 )
@@ -223,16 +223,16 @@ var _ = SynchronizedAfterSuite(func() {
     // Phase 1: Runs on ALL parallel processes (per-process cleanup)
     processNum := GinkgoParallelProcess()
     GinkgoWriter.Printf("🧹 [Process %d] Per-process cleanup...\n", processNum)
-    
+
     // Clean up process-specific schema
     schemaName := fmt.Sprintf("test_schema_p%d", processNum)
     _, _ = globalDB.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-    
+
 }, func() {
     // Phase 2: Runs ONCE on process 1 after all processes finish
     By("Tearing down shared DataStorage infrastructure")
     infrastructure.StopDataStorageInfra(GinkgoWriter)
-    
+
     if globalDB != nil {
         globalDB.Close()
     }
@@ -321,7 +321,7 @@ This prevents early processes from tearing down infrastructure while late proces
 
 ---
 
-**Report Generated**: January 6, 2026  
-**Authority**: BR-TESTING-001, TESTING_GUIDELINES.md  
+**Report Generated**: January 6, 2026
+**Authority**: BR-TESTING-001, TESTING_GUIDELINES.md
 **Related**: DD-TEST-002 (parallel execution infrastructure)
 
