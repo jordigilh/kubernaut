@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -32,19 +33,23 @@ import (
 // WorkflowExecutionAuthHandler handles authentication for WorkflowExecution block clearance
 // BR-WE-013: Audit-Tracked Execution Block Clearing
 // BR-AUTH-001: SOC2 CC8.1 Operator Attribution
+// DD-WEBHOOK-003: Webhook-Complete Audit Pattern
 //
-// This mutating webhook intercepts WorkflowExecution status updates and populates:
-// - status.BlockClearance.ClearedBy (operator email/username)
-// - status.BlockClearance.ClearedAt (timestamp)
+// This mutating webhook intercepts WorkflowExecution status updates and:
+// 1. Populates status.BlockClearance.ClearedBy (operator email/username)
+// 2. Populates status.BlockClearance.ClearedAt (timestamp)
+// 3. Writes complete audit event (WHO + WHAT + ACTION)
 type WorkflowExecutionAuthHandler struct {
 	authenticator *authwebhook.Authenticator
 	decoder       admission.Decoder
+	auditStore    audit.AuditStore
 }
 
 // NewWorkflowExecutionAuthHandler creates a new WorkflowExecution authentication handler
-func NewWorkflowExecutionAuthHandler() *WorkflowExecutionAuthHandler {
+func NewWorkflowExecutionAuthHandler(auditStore audit.AuditStore) *WorkflowExecutionAuthHandler {
 	return &WorkflowExecutionAuthHandler{
 		authenticator: authwebhook.NewAuthenticator(),
+		auditStore:    auditStore,
 	}
 }
 
@@ -90,6 +95,34 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	// Populate authentication fields
 	wfe.Status.BlockClearance.ClearedBy = authCtx.Username
 	wfe.Status.BlockClearance.ClearedAt = metav1.Now()
+
+	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
+	auditEvent := audit.NewAuditEventRequest()
+	audit.SetEventType(auditEvent, "workflowexecution.block.cleared")
+	audit.SetEventCategory(auditEvent, "workflowexecution")
+	audit.SetEventAction(auditEvent, "block_cleared")
+	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
+	audit.SetActor(auditEvent, "user", authCtx.Username)
+	audit.SetResource(auditEvent, "WorkflowExecution", string(wfe.UID))
+	audit.SetCorrelationID(auditEvent, wfe.Name) // Use WFE name for correlation
+	audit.SetNamespace(auditEvent, wfe.Namespace)
+
+	// Set event data payload
+	eventData := map[string]interface{}{
+		"workflow_name": wfe.Name,
+		"clear_reason":  wfe.Status.BlockClearance.ClearReason,
+		"cleared_by":    wfe.Status.BlockClearance.ClearedBy,
+		"cleared_at":    wfe.Status.BlockClearance.ClearedAt.Time,
+		"action":        "block_clearance_approved",
+	}
+	audit.SetEventData(auditEvent, eventData)
+
+	// Store audit event asynchronously (buffered write)
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		// Log error but don't fail the webhook (audit should not block operations)
+		// The audit store has retry + DLQ mechanisms
+		fmt.Printf("WARNING: Failed to store audit event: %v\n", err)
+	}
 
 	// Marshal the patched object
 	marshaledWFE, err := json.Marshal(wfe)

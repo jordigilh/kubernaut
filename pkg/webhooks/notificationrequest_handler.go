@@ -29,34 +29,29 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// AuditManager is the interface for recording audit events
-// This interface allows for testing without requiring a full audit store
-type AuditManager interface {
-	RecordEvent(ctx context.Context, event audit.AuditEvent) error
-}
-
 // NotificationRequestDeleteHandler handles authentication for NotificationRequest cancellation via DELETE
 // BR-AUTH-001: SOC2 CC8.1 Operator Attribution
 // DD-NOT-005: Immutable Spec - Cancellation via DELETE Operation
+// DD-WEBHOOK-003: Webhook-Complete Audit Pattern
 //
-// This webhook intercepts NotificationRequest DELETE operations and writes audit attribution:
-// - Extracts authenticated user from admission request
-// - Writes deletion audit event to database
-// - Allows DELETE to proceed
+// This webhook intercepts NotificationRequest DELETE operations and:
+// 1. Extracts authenticated user from admission request
+// 2. Writes complete deletion audit event (WHO + WHAT + ACTION)
+// 3. Allows DELETE to proceed
 //
 // Note: Kubernetes API prevents mutating objects during DELETE, so attribution is captured
-// via audit trail rather than CRD annotations.
+// via audit trail rather than CRD annotations/status.
 type NotificationRequestDeleteHandler struct {
 	authenticator *authwebhook.Authenticator
-	auditManager  AuditManager
+	auditStore    audit.AuditStore
 	decoder       admission.Decoder
 }
 
 // NewNotificationRequestDeleteHandler creates a new NotificationRequest DELETE authentication handler
-func NewNotificationRequestDeleteHandler(auditManager AuditManager) *NotificationRequestDeleteHandler {
+func NewNotificationRequestDeleteHandler(auditStore audit.AuditStore) *NotificationRequestDeleteHandler {
 	return &NotificationRequestDeleteHandler{
 		authenticator: authwebhook.NewAuthenticator(),
-		auditManager:  auditManager,
+		auditStore:    auditStore,
 	}
 }
 
@@ -82,45 +77,37 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
-	// Initialize annotations map if it doesn't exist
-	if nr.Annotations == nil {
-		nr.Annotations = make(map[string]string)
-	}
-
 	// Note: Kubernetes API server does NOT allow mutating objects during DELETE operations.
 	// However, we CAN write audit traces to capture attribution for SOC2 compliance.
 
-	// Write deletion audit event
+	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
+	auditEvent := audit.NewAuditEventRequest()
+	audit.SetEventType(auditEvent, "notification.request.deleted")
+	audit.SetEventCategory(auditEvent, "notification")
+	audit.SetEventAction(auditEvent, "deleted")
+	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
+	audit.SetActor(auditEvent, "user", authCtx.Username)
+	audit.SetResource(auditEvent, "NotificationRequest", string(nr.UID))
+	audit.SetCorrelationID(auditEvent, nr.Name) // Use NR name for correlation
+	audit.SetNamespace(auditEvent, nr.Namespace)
+
+	// Set event data payload
 	eventData := map[string]interface{}{
 		"notification_id": nr.Name,
-		"namespace":       nr.Namespace,
 		"type":            string(nr.Spec.Type),
 		"priority":        string(nr.Spec.Priority),
 		"cancelled_by":    authCtx.Username,
 		"user_uid":        authCtx.UID,
 		"user_groups":     authCtx.Groups,
+		"action":          "notification_cancelled",
 	}
+	audit.SetEventData(auditEvent, eventData)
 
-	eventDataBytes, err := json.Marshal(eventData)
-	if err != nil {
-		// If marshaling fails, allow DELETE but log the issue
-		return admission.Allowed(fmt.Sprintf("DELETE allowed with audit warning: failed to marshal event data: %v", err))
-	}
-
-	err = h.auditManager.RecordEvent(ctx, audit.AuditEvent{
-		EventCategory:  "notification",
-		EventType:      "notification.request.deleted",
-		EventOutcome:   "success",
-		ActorID:        authCtx.Username,
-		ResourceType:   "NotificationRequest",
-		ResourceID:     fmt.Sprintf("%s/%s", nr.Namespace, nr.Name),
-		CorrelationID:  nr.Name,
-		EventData:      eventDataBytes,
-	})
-
-	if err != nil {
-		// Log error but allow DELETE to proceed (audit failure shouldn't block operations)
-		// In production, this would trigger an alert for audit integrity monitoring
+	// Store audit event asynchronously (buffered write)
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		// Log error but don't fail the webhook (audit should not block operations)
+		// The audit store has retry + DLQ mechanisms
+		fmt.Printf("WARNING: Failed to store audit event: %v\n", err)
 		return admission.Allowed(fmt.Sprintf("DELETE allowed with audit warning: %v", err))
 	}
 
