@@ -1,61 +1,86 @@
 # Webhook CLI Flag Architecture - Data Storage URL
 
-**Date**: 2026-01-05  
-**Status**: ✅ **APPROVED**  
-**Related**: WEBHOOK_IMPLEMENTATION_PLAN.md (lines 114-196, 799-897, 1048-1089)  
+**Date**: 2026-01-05
+**Status**: ✅ **APPROVED**
+**Related**: WEBHOOK_IMPLEMENTATION_PLAN.md (lines 114-196, 799-897, 1048-1089)
 **Pattern**: Follows Gateway/Notification/AI Analysis services
 
 ---
 
 ## 🎯 **Overview**
 
-The authentication webhook service requires a CLI flag `--data-storage-url` to connect to the Data Storage service for writing audit events.
+The authentication webhook service uses a CLI flag `--data-storage-url` to connect to the Data Storage service for writing audit events.
 
 **Reason**: Webhooks must write complete audit events (WHO + WHAT + ACTION) per DD-WEBHOOK-003.
+
+### **Design Principle: Sensible Defaults**
+
+✅ **Default**: `http://datastorage-service:8080` (K8s service name - works in production)  
+✅ **Override**: Via environment variable or CLI flag (for dev/staging/test)  
+✅ **Priority**: CLI flag > env var > default
+
+**Result**: Zero configuration needed for standard production deployments.
 
 ---
 
 ## 🔧 **CLI Flag Specification**
 
-### **Required Flag**
+### **Flag Specification**
 
 ```bash
 --data-storage-url=<URL>
 ```
 
 **Description**: Data Storage service URL for audit event writes  
-**Required**: Yes (webhook crashes if missing per ADR-032)  
+**Default**: `http://datastorage-service:8080` (K8s service name)  
+**Required**: No (uses default if not specified)  
 **Format**: HTTP/HTTPS URL  
-**Example**: `http://datastorage-service:8080`
+**Override**: Via environment variable `WEBHOOK_DATA_STORAGE_URL` or CLI flag
+
+**Rationale**: Default to K8s service name for production, override for dev/test environments
 
 ---
 
 ## 📋 **Usage Examples**
 
-### **Production Deployment**
+### **Priority Order**
+
+1. **CLI flag** (highest priority)
+2. **Environment variable** `WEBHOOK_DATA_STORAGE_URL`
+3. **Default value** `http://datastorage-service:8080`
+
+### **Production Deployment** (Uses Default)
 
 ```bash
+# Uses default: http://datastorage-service:8080
 ./webhooks-controller \
-  --data-storage-url=http://datastorage-service:8080 \
   --webhook-port=9443 \
   --cert-dir=/tmp/k8s-webhook-server/serving-certs \
   --metrics-bind-address=:8080
 ```
 
-### **Development (Integration Tests)**
+### **Development** (Override via Env Var)
 
 ```bash
+# Override via environment variable
+export WEBHOOK_DATA_STORAGE_URL=http://localhost:18099
+./webhooks-controller --webhook-port=9443
+```
+
+### **Development** (Override via CLI Flag)
+
+```bash
+# Override via CLI flag (highest priority)
 ./webhooks-controller \
   --data-storage-url=http://localhost:18099 \
   --webhook-port=9443
 ```
 
-### **E2E Tests**
+### **E2E Tests** (Override via Env Var)
 
 ```bash
-./webhooks-controller \
-  --data-storage-url=http://localhost:28099 \
-  --webhook-port=9443
+export WEBHOOK_DATA_STORAGE_URL=http://localhost:28099
+./webhooks-controller --webhook-port=9443
 ```
 
 ---
@@ -72,7 +97,7 @@ import (
     "fmt"
     "os"
     "time"
-    
+
     "github.com/jordigilh/kubernaut/pkg/audit"
     "github.com/jordigilh/kubernaut/pkg/webhooks"
     ctrl "sigs.k8s.io/controller-runtime"
@@ -81,52 +106,53 @@ import (
 func main() {
     var dataStorageURL string
     
-    // 1. Define CLI flag
-    flag.StringVar(&dataStorageURL, "data-storage-url", "", 
-        "Data Storage service URL for audit events (required)")
+    // 1. Define CLI flag with default K8s service name
+    defaultURL := "http://datastorage-service:8080"
+    flag.StringVar(&dataStorageURL, "data-storage-url", defaultURL, 
+        "Data Storage service URL for audit events")
     flag.Parse()
     
-    // 2. Validate required flag
-    if dataStorageURL == "" {
-        setupLog.Error(fmt.Errorf("data-storage-url is required"), 
-            "missing required flag")
-        os.Exit(1)  // Per ADR-032: Webhooks are P0
+    // 2. Allow environment variable override (higher priority than default)
+    if envURL := os.Getenv("WEBHOOK_DATA_STORAGE_URL"); envURL != "" {
+        dataStorageURL = envURL
     }
+    
+    setupLog.Info("Using Data Storage URL", "url", dataStorageURL)
     
     // 3. Initialize OpenAPI audit client
     // Per DD-API-001: Use OpenAPI generated client
     dsClient, err := audit.NewOpenAPIClientAdapter(
-        dataStorageURL, 
+        dataStorageURL,
         5*time.Second,
     )
     if err != nil {
-        setupLog.Error(err, 
+        setupLog.Error(err,
             "failed to create Data Storage client - audit is MANDATORY")
         os.Exit(1)
     }
-    
+
     // 4. Create buffered audit store
     auditConfig := audit.RecommendedConfig("authwebhook")
     auditStore, err := audit.NewBufferedStore(
-        dsClient, 
-        auditConfig, 
-        "authwebhook", 
+        dsClient,
+        auditConfig,
+        "authwebhook",
         ctrl.Log.WithName("audit"),
     )
     if err != nil {
         setupLog.Error(err, "failed to create audit store")
         os.Exit(1)
     }
-    
-    setupLog.Info("Audit store initialized", 
-        "data_storage_url", dataStorageURL, 
+
+    setupLog.Info("Audit store initialized",
+        "data_storage_url", dataStorageURL,
         "buffer_size", auditConfig.BufferSize)
-    
+
     // 5. Pass audit store to webhook handlers
     wfeHandler := webhooks.NewWorkflowExecutionAuthHandler(auditStore)
     rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler(auditStore)
     nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)
-    
+
     // ... register handlers with webhook server ...
 }
 ```
@@ -137,7 +163,7 @@ func main() {
 
 ## ☸️ **Kubernetes Configuration**
 
-### **Option A: Hardcoded (Simple)**
+### **Option A: Use Default (Recommended for Production)**
 
 ```yaml
 # deploy/webhooks/deployment.yaml
@@ -156,25 +182,50 @@ spec:
         - --webhook-port=9443
         - --metrics-bind-address=:8080
         - --cert-dir=/tmp/k8s-webhook-server/serving-certs
-        - --data-storage-url=http://datastorage-service:8080  # Hardcoded
+        # No --data-storage-url flag: uses default http://datastorage-service:8080
 ```
 
-**Pros**: ✅ Simple, ✅ No extra resources  
-**Cons**: ⚠️ Less flexible, ⚠️ Requires redeployment to change
+**Pros**: ✅ Simplest, ✅ No configuration needed, ✅ Production-ready default  
+**Cons**: None for standard deployments
 
 ---
 
-### **Option B: ConfigMap (Recommended)**
+### **Option B: Override via Environment Variable**
 
 ```yaml
-# config/base/webhook-config.yaml
+# deploy/webhooks/deployment.yaml - Staging environment
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: webhook
+        image: kubernaut/auth-webhook:latest
+        env:
+        - name: WEBHOOK_DATA_STORAGE_URL
+          value: "http://datastorage-staging:8080"  # Override default
+        args:
+        - --webhook-port=9443
+        - --metrics-bind-address=:8080
+```
+
+**Pros**: ✅ Simple override, ✅ No CLI flag needed  
+**Cons**: ⚠️ Hardcoded in deployment YAML
+
+---
+
+### **Option C: ConfigMap (Recommended for Multi-Environment)**
+
+```yaml
+# config/staging/webhook-config.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: webhook-config
   namespace: kubernaut-system
 data:
-  data-storage-url: "http://datastorage-service:8080"
+  data-storage-url: "http://datastorage-staging:8080"
 ---
 # deploy/webhooks/deployment.yaml
 apiVersion: apps/v1
@@ -184,65 +235,85 @@ spec:
     spec:
       containers:
       - name: webhook
-        args:
-        - --data-storage-url=$(DATA_STORAGE_URL)
         env:
-        - name: DATA_STORAGE_URL
+        - name: WEBHOOK_DATA_STORAGE_URL
           valueFrom:
             configMapKeyRef:
               name: webhook-config
               key: data-storage-url
+              optional: true  # Falls back to default if ConfigMap missing
+        args:
+        - --webhook-port=9443
 ```
 
-**Pros**: ✅ Flexible (no redeployment), ✅ Environment-specific  
-**Cons**: ⚠️ Extra resource
+**Pros**: ✅ Flexible per environment, ✅ No redeployment, ✅ Falls back to default  
+**Cons**: ⚠️ Extra resource (ConfigMap)
 
 ---
 
-### **Option C: Secret (For URLs with Auth)**
+### **Option D: CLI Flag Override (Least Common)**
 
 ```yaml
-# config/base/webhook-secrets.yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: webhook-secrets
-  namespace: kubernaut-system
-stringData:
-  data-storage-url: "https://datastorage.prod.internal:8443?token=xyz"
----
 # deploy/webhooks/deployment.yaml
-env:
-- name: DATA_STORAGE_URL
-  valueFrom:
-    secretKeyRef:
-      name: webhook-secrets
-      key: data-storage-url
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      containers:
+      - name: webhook
+        args:
+        - --webhook-port=9443
+        - --data-storage-url=http://datastorage-custom:8080  # Explicit override
 ```
 
-**Pros**: ✅ Secure for sensitive URLs  
-**Cons**: ⚠️ More complex
+**Pros**: ✅ Explicit, ✅ No env var needed  
+**Cons**: ⚠️ Requires redeployment to change
 
 ---
 
 ## 🌐 **Service Discovery**
 
-### **Production** (K8s Service Name)
+### **Production** (Uses Default)
 
+**Default**: `http://datastorage-service:8080`  
+**Resolution**: Kubernetes DNS (`datastorage-service.kubernaut-system.svc.cluster.local`)  
+**Configuration**: None needed - works out of the box
+
+```yaml
+# No configuration needed - uses default
+containers:
+- name: webhook
+  args:
+  - --webhook-port=9443
 ```
---data-storage-url=http://datastorage-service:8080
+
+### **Staging** (Override via Env Var)
+
+**Override**: `http://datastorage-staging:8080`  
+**Configuration**: Environment variable
+
+```yaml
+env:
+- name: WEBHOOK_DATA_STORAGE_URL
+  value: "http://datastorage-staging:8080"
 ```
 
-**Resolution**: Kubernetes DNS (`datastorage-service.kubernaut-system.svc.cluster.local`)
+### **Development** (Override for Localhost)
 
-### **Development** (Localhost)
+**Override**: `http://localhost:18099` (integration) or `http://localhost:28099` (E2E)  
+**Resolution**: Podman containers expose ports to localhost  
+**Configuration**: Environment variable
 
+```bash
+# Integration tests
+export WEBHOOK_DATA_STORAGE_URL=http://localhost:18099
+./webhooks-controller
+
+# E2E tests
+export WEBHOOK_DATA_STORAGE_URL=http://localhost:28099
+./webhooks-controller
 ```
---data-storage-url=http://localhost:18099  # Integration tests
---data-storage-url=http://localhost:28099  # E2E tests
-```
-
-**Resolution**: Podman containers expose ports to localhost
 
 ---
 
@@ -299,24 +370,33 @@ spec:
 
 | Aspect | Benefit |
 |--------|---------|
-| **Simplicity** | Single URL flag (no complex auth config) |
+| **Zero Config Production** | Works out-of-box with sensible K8s service default |
+| **Flexible Override** | 3-tier priority: CLI flag > env var > default |
+| **Simplicity** | Single URL (no complex auth config) |
 | **Consistency** | Same pattern as Gateway/Notification/AI Analysis |
-| **Flexibility** | Easy to point to different Data Storage instances |
+| **Environment-Specific** | Easy ConfigMap per environment (dev/staging/prod) |
 | **Type Safety** | OpenAPI client catches schema mismatches |
 | **Performance** | BufferedStore enables async writes |
-| **Reliability** | Crashes if audit unavailable (P0 service per ADR-032) |
+| **Reliability** | Fails fast if Data Storage unavailable (P0 service) |
 
 ---
 
 ## ✅ **Validation Checklist**
 
-Before deploying webhook service:
+### **Production Deployment**
 
-- [ ] `--data-storage-url` flag configured in deployment YAML
-- [ ] Data Storage service accessible from webhook pod
+- [ ] Data Storage service running (`datastorage-service:8080`)
 - [ ] Network policy allows webhook → Data Storage traffic
+- [ ] Webhook logs show "Using Data Storage URL: http://datastorage-service:8080"
+- [ ] Webhook logs show "Audit store initialized"
 - [ ] Audit events visible in Data Storage API (`GET /audit/events`)
-- [ ] Webhook logs show "Audit store initialized" message
+- [ ] No configuration needed (uses default)
+
+### **Non-Production Environments**
+
+- [ ] `WEBHOOK_DATA_STORAGE_URL` env var set (if override needed)
+- [ ] OR `--data-storage-url` CLI flag specified
+- [ ] Webhook logs show correct URL being used
 - [ ] Integration tests pass with real Data Storage service
 
 ---
@@ -331,7 +411,7 @@ Before deploying webhook service:
 
 ---
 
-**Last Updated**: 2026-01-05  
-**Status**: Ready for implementation  
-**Priority**: HIGH (required for webhook service deployment)  
+**Last Updated**: 2026-01-05
+**Status**: Ready for implementation
+**Priority**: HIGH (required for webhook service deployment)
 
