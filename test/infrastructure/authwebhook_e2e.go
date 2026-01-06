@@ -229,17 +229,34 @@ func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
 }
 
 // loadAuthWebhookImageWithTag loads the AuthWebhook image into Kind cluster
+// Uses tar export method for podman compatibility (podman images aren't directly visible to Kind)
 func loadAuthWebhookImageWithTag(clusterName, imageTag string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "📦 Loading AuthWebhook image into Kind: %s\n", imageTag)
 
-	cmd := exec.Command("kind", "load", "docker-image", imageTag, "--name", clusterName)
-	output, err := cmd.CombinedOutput()
+	// Export image to tar file (podman/Kind compatibility)
+	tarPath := filepath.Join(os.TempDir(), "webhooks-e2e.tar")
+	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to tar: %s\n", tarPath)
+	
+	exportCmd := exec.Command("podman", "save", "-o", tarPath, imageTag)
+	exportOutput, err := exportCmd.CombinedOutput()
 	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Load failed: %s\n", output)
-		return fmt.Errorf("kind load failed: %w", err)
+		_, _ = fmt.Fprintf(writer, "❌ Export failed: %s\n", exportOutput)
+		return fmt.Errorf("podman save failed: %w", err)
+	}
+	defer os.Remove(tarPath) // Cleanup tar file
+
+	_, _ = fmt.Fprintln(writer, "   ✅ Image exported to tar")
+
+	// Load tar file into Kind
+	_, _ = fmt.Fprintf(writer, "   📦 Loading tar into Kind cluster...\n")
+	loadCmd := exec.Command("kind", "load", "image-archive", tarPath, "--name", clusterName)
+	loadOutput, err := loadCmd.CombinedOutput()
+	if err != nil {
+		_, _ = fmt.Fprintf(writer, "❌ Load failed: %s\n", loadOutput)
+		return fmt.Errorf("kind load image-archive failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook image loaded into Kind")
+	_, _ = fmt.Fprintln(writer, "   ✅ AuthWebhook image loaded into Kind")
 	return nil
 }
 
