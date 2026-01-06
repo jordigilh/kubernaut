@@ -217,8 +217,7 @@ func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 
-	err := cmd.Run()
-	if err != nil {
+	if err = cmd.Run(); err != nil {
 		return fmt.Errorf("podman build failed: %w", err)
 	}
 
