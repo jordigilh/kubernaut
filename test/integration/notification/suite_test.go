@@ -372,14 +372,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("")
 })
 
-var _ = AfterSuite(func() {
-	By("Tearing down the test environment")
-
-	// Check if any tests failed (for debugging)
-	// If tests failed, preserve infrastructure for triaging
-	// Note: We can't easily check if tests failed at this point in AfterSuite
-	// Instead, we'll check for an environment variable to control cleanup
-	skipCleanup := os.Getenv("SKIP_CLEANUP_ON_FAILURE") == "true"
+var _ = SynchronizedAfterSuite(func() {
+	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
+	By("Tearing down per-process test environment")
 
 	// Close REAL audit store to flush remaining events (DD-AUDIT-003)
 	// NT-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
@@ -411,6 +406,21 @@ var _ = AfterSuite(func() {
 		GinkgoWriter.Println("✅ Mock Slack server stopped")
 	}
 
+	cancel()
+
+	err = testEnv.Stop()
+	Expect(err).NotTo(HaveOccurred())
+
+	GinkgoWriter.Println("✅ Per-process cleanup complete")
+}, func() {
+	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
+	// This ensures DataStorage is only stopped AFTER all processes finish
+	By("Stopping shared DataStorage infrastructure (DD-TEST-002)")
+
+	// Check if any tests failed (for debugging)
+	// If tests failed, preserve infrastructure for triaging
+	skipCleanup := os.Getenv("SKIP_CLEANUP_ON_FAILURE") == "true"
+
 	if skipCleanup {
 		GinkgoWriter.Println("")
 		GinkgoWriter.Println("⚠️  SKIP_CLEANUP_ON_FAILURE=true detected")
@@ -427,20 +437,10 @@ var _ = AfterSuite(func() {
 		GinkgoWriter.Println("")
 	} else {
 		// DD-TEST-001 v1.1: Clean up infrastructure containers
-		// NT-SHUTDOWN-001: Safe to stop now - audit events already flushed
+		// NT-SHUTDOWN-001: Safe to stop now - all processes flushed audit events
 		By("Cleaning up integration test infrastructure (Go-bootstrapped)")
 		cleanupPodmanComposeInfrastructure()
-	}
-
-	cancel()
-
-	err = testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
-
-	if skipCleanup {
-		GinkgoWriter.Println("⚠️  Envtest stopped but containers preserved for debugging")
-	} else {
-		GinkgoWriter.Println("✅ Cleanup complete")
+		GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 	}
 })
 

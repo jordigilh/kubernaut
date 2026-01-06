@@ -137,19 +137,19 @@ func main() {
     var dataStorageURL string
     var webhookPort int
     var certDir string
-    
+
     // 1. Define CLI flags with production defaults
-    flag.StringVar(&dataStorageURL, "data-storage-url", 
+    flag.StringVar(&dataStorageURL, "data-storage-url",
         "http://datastorage-service:8080",  // DEFAULT
         "Data Storage service URL for audit events")
-    flag.IntVar(&webhookPort, "webhook-port", 
+    flag.IntVar(&webhookPort, "webhook-port",
         9443,  // DEFAULT (standard K8s webhook port)
         "Webhook HTTPS port")
-    flag.StringVar(&certDir, "cert-dir", 
+    flag.StringVar(&certDir, "cert-dir",
         "/tmp/k8s-webhook-server/serving-certs",  // DEFAULT
         "TLS certificate directory")
     flag.Parse()
-    
+
     // 2. Allow environment variable overrides (higher priority than defaults)
     if envURL := os.Getenv("WEBHOOK_DATA_STORAGE_URL"); envURL != "" {
         dataStorageURL = envURL
@@ -159,8 +159,8 @@ func main() {
             webhookPort = port
         }
     }
-    
-    setupLog.Info("Webhook configuration", 
+
+    setupLog.Info("Webhook configuration",
         "webhook_port", webhookPort,
         "data_storage_url", dataStorageURL,
         "cert_dir", certDir)
@@ -236,7 +236,7 @@ spec:
         # No metrics port - audit traces sufficient
 ```
 
-**Pros**: ✅ Zero configuration, ✅ Production-ready, ✅ Simplest possible deployment, ✅ No metrics overhead  
+**Pros**: ✅ Zero configuration, ✅ Production-ready, ✅ Simplest possible deployment, ✅ No metrics overhead
 **Cons**: None for standard Kubernetes environments
 
 ---

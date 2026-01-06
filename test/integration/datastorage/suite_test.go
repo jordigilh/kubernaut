@@ -551,30 +551,16 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
-var _ = AfterSuite(func() {
+var _ = SynchronizedAfterSuite(func() {
+	// Phase 1: Runs on ALL parallel processes (per-process cleanup)
 	processNum := GinkgoParallelProcess()
-	GinkgoWriter.Printf("🧹 [Process %d] Cleaning up...\n", processNum)
+	GinkgoWriter.Printf("🧹 [Process %d] Per-process cleanup...\n", processNum)
 
 	// Clean up process-specific schema
 	if db != nil && schemaName != "" {
 		GinkgoWriter.Printf("🗑️  [Process %d] Dropping schema: %s\n", processNum, schemaName)
 		if err := dropProcessSchema(db, schemaName); err != nil {
 			GinkgoWriter.Printf("⚠️  [Process %d] Failed to drop schema: %v\n", processNum, err)
-		}
-	}
-
-	// Shutdown in-process test server (only process 1)
-	if processNum == 1 && testServer != nil {
-		GinkgoWriter.Println("🛑 Shutting down in-process server...")
-		testServer.Close()
-
-		// Gracefully shutdown DataStorage server
-		if dsServer != nil {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutdownCancel()
-			if err := dsServer.Shutdown(shutdownCtx); err != nil {
-				GinkgoWriter.Printf("⚠️  Server shutdown error: %v\n", err)
-			}
 		}
 	}
 
@@ -590,20 +576,39 @@ var _ = AfterSuite(func() {
 		_ = redisClient.Close()
 	}
 
-	// Use centralized cleanup function (only process 1)
-	if processNum == 1 {
-		cleanupContainers()
+	GinkgoWriter.Printf("✅ [Process %d] Per-process cleanup complete\n", processNum)
+}, func() {
+	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
+	// This ensures PostgreSQL/Redis are only stopped AFTER all processes finish
+	GinkgoWriter.Println("🛑 [Process 1] Stopping shared infrastructure...")
 
-		// DD-TEST-001 v1.1: Clean up infrastructure images to prevent disk space issues
-		GinkgoWriter.Println("🧹 DD-TEST-001 v1.1: Cleaning up infrastructure images...")
-		pruneCmd := exec.Command("podman", "image", "prune", "-f",
-			"--filter", "label=datastorage-test=true")
-		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-		if pruneErr != nil {
-			GinkgoWriter.Printf("⚠️  Failed to prune infrastructure images: %v\n%s\n", pruneErr, pruneOutput)
-		} else {
-			GinkgoWriter.Println("✅ Infrastructure images pruned (saves ~500MB-1GB)")
+	// Shutdown in-process test server
+	if testServer != nil {
+		GinkgoWriter.Println("🛑 Shutting down in-process server...")
+		testServer.Close()
+
+		// Gracefully shutdown DataStorage server
+		if dsServer != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := dsServer.Shutdown(shutdownCtx); err != nil {
+				GinkgoWriter.Printf("⚠️  Server shutdown error: %v\n", err)
+			}
 		}
+	}
+
+	// Clean up shared containers (PostgreSQL, Redis)
+	cleanupContainers()
+
+	// DD-TEST-001 v1.1: Clean up infrastructure images to prevent disk space issues
+	GinkgoWriter.Println("🧹 DD-TEST-001 v1.1: Cleaning up infrastructure images...")
+	pruneCmd := exec.Command("podman", "image", "prune", "-f",
+		"--filter", "label=datastorage-test=true")
+	pruneOutput, pruneErr := pruneCmd.CombinedOutput()
+	if pruneErr != nil {
+		GinkgoWriter.Printf("⚠️  Failed to prune infrastructure images: %v\n%s\n", pruneErr, pruneOutput)
+	} else {
+		GinkgoWriter.Println("✅ Infrastructure images pruned (saves ~500MB-1GB)")
 	}
 
 	// Post-cleanup verification
@@ -628,7 +633,7 @@ var _ = AfterSuite(func() {
 		_ = os.RemoveAll(configDir)
 	}
 
-	GinkgoWriter.Println("✅ Cleanup complete")
+	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 
 // createNetwork creates a shared Podman network for container-to-container communication

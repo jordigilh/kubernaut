@@ -139,8 +139,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Fail(fmt.Sprintf("Failed to setup infrastructure: %v", err))
 	}
 
-	GinkgoWriter.Println("✅ Shared infrastructure ready (Process #1)")
-	return []byte{} // No data to share between processes
+	// Share Data Storage URL with all processes via byte slice
+	dataStorageURL := infra.GetDataStorageURL()
+	GinkgoWriter.Printf("✅ Shared infrastructure ready (Process #1) - Data Storage: %s\n", dataStorageURL)
+	return []byte(dataStorageURL) // Pass URL to all processes
 
 }, func(data []byte) {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -153,9 +155,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	GinkgoWriter.Printf("🔧 [Process %d] Setting up per-process resources...\n", GinkgoParallelProcess())
 
+	// Receive Data Storage URL from Phase 1
+	dataStorageURL := string(data)
+	GinkgoWriter.Printf("[Process %d] Received Data Storage URL: %s\n", GinkgoParallelProcess(), dataStorageURL)
+
 	By("Initializing Data Storage OpenAPI client (DD-API-001)")
 	var err error
-	dsClient, err = dsgen.NewClientWithResponses(infra.GetDataStorageURL())
+	dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
 	if err != nil {
 		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
 	}
@@ -163,7 +169,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Creating REAL audit store for webhook handlers")
 	// Create OpenAPI DataStorage client adapter for audit writes
-	dsAuditClient, err := audit.NewOpenAPIClientAdapter(infra.GetDataStorageURL(), 5*time.Second)
+	dsAuditClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage audit client: %v", err))
 	}
