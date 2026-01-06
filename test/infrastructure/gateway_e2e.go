@@ -834,3 +834,357 @@ func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath
 
 	return nil
 }
+func BuildGatewayImageWithCoverage(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	if projectRoot == "" {
+		return fmt.Errorf("project root not found")
+	}
+
+	dockerfilePath := filepath.Join(projectRoot, "docker", "gateway-ubi9.Dockerfile")
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		return fmt.Errorf("Gateway Dockerfile not found at %s", dockerfilePath)
+	}
+
+	containerCmd := "podman"
+	if _, err := exec.LookPath("podman"); err != nil {
+		containerCmd = "docker"
+	}
+
+	// Use unique image tag with coverage suffix
+	imageTag := "e2e-test-coverage"
+	imageName := fmt.Sprintf("localhost/kubernaut-gateway:%s", imageTag)
+	_, _ = fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
+
+	// Build with GOFLAGS=-cover for E2E coverage
+	// Using go-toolset:1.25 (no dnf update) reduces build time from 10min to 2-3min
+	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
+	cmd := exec.Command(containerCmd, "build",
+		"--no-cache", // Force fresh build to include latest code changes
+		"-t", imageName,
+		"-f", dockerfilePath,
+		"--build-arg", "GOFLAGS=-cover",
+		projectRoot,
+	)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	cmd.Dir = projectRoot
+
+	return cmd.Run()
+}
+
+func GetGatewayCoverageImageTag() string {
+	return "e2e-test-coverage"
+}
+
+func GetGatewayCoverageFullImageName() string {
+	return fmt.Sprintf("localhost/kubernaut-gateway:%s", GetGatewayCoverageImageTag())
+}
+
+func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
+	imageTag := GetGatewayCoverageImageTag()
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("kubernaut-gateway-%s.tar", imageTag))
+	imageName := GetGatewayCoverageFullImageName()
+
+	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
+	saveCmd := exec.Command("podman", "save",
+		"-o", tmpFile,
+		imageName,
+	)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
+	loadCmd := exec.Command("kind", "load", "image-archive",
+		tmpFile,
+		"--name", clusterName,
+	)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+	if err := loadCmd.Run(); err != nil {
+		_ = os.Remove(tmpFile)
+		return fmt.Errorf("failed to load image: %w", err)
+	}
+
+	_ = os.Remove(tmpFile)
+
+	// CRITICAL: Remove Podman image immediately to free disk space
+	// Image is now in Kind, Podman copy is duplicate
+	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd.Stdout = writer
+	rmiCmd.Stderr = writer
+	if err := rmiCmd.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
+	} else {
+		_, _ = fmt.Fprintf(writer, "  ✅ Podman image removed: %s\n", imageName)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Coverage image loaded and temp file cleaned\n")
+	return nil
+}
+
+func GatewayCoverageManifest() string {
+	imageName := GetGatewayCoverageFullImageName()
+
+	return fmt.Sprintf(`---
+# Gateway Service ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: kubernaut-system
+data:
+  config.yaml: |
+    server:
+      listen_addr: ":8080"
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 120s
+
+    middleware:
+      rate_limit:
+        requests_per_minute: 100
+        burst: 10
+
+    infrastructure:
+      # ADR-032: Data Storage URL is MANDATORY for P0 services (Gateway)
+      # DD-API-001: Gateway uses OpenAPI client to communicate with Data Storage
+      data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
+
+    processing:
+      deduplication:
+        ttl: 10s  # Minimum allowed TTL (production: 5m)
+
+      environment:
+        cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
+        configmap_namespace: "kubernaut-system"
+        configmap_name: "kubernaut-environment-overrides"
+
+      priority:
+        policy_path: "/etc/gateway-policy/priority-policy.rego"
+
+---
+# Gateway Service Rego Policy ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-rego-policy
+  namespace: kubernaut-system
+data:
+  priority-policy.rego: |
+    package priority
+
+    # Default priority assignment based on severity and environment
+    default priority := "P2"
+
+    # P0: Critical alerts in production
+    priority := "P0" if {
+        input.severity == "critical"
+        input.environment == "production"
+    }
+
+    # P1: Critical alerts in staging or warning in production
+    priority := "P1" if {
+        input.severity == "critical"
+        input.environment == "staging"
+    }
+
+    priority := "P1" if {
+        input.severity == "warning"
+        input.environment == "production"
+    }
+
+---
+# Gateway Service Deployment (Coverage-Enabled)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+    component: webhook
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+        component: webhook
+    spec:
+      serviceAccountName: gateway
+      terminationGracePeriodSeconds: 30
+      # E2E Coverage: Run as root to write to hostPath volume (acceptable for E2E tests)
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      # Run on control-plane node to access NodePort mappings
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: gateway
+          image: %s
+          imagePullPolicy: Never  # Use local image loaded into Kind
+          args:
+            - "--config=/etc/gateway/config.yaml"
+          env:
+          # E2E Coverage: Set GOCOVERDIR to enable coverage capture
+          - name: GOCOVERDIR
+            value: /coverdata
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gateway
+              readOnly: true
+            - name: rego-policy
+              mountPath: /etc/gateway-policy
+              readOnly: true
+            # E2E Coverage: Mount coverage directory
+            - name: coverdata
+              mountPath: /coverdata
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config
+        - name: rego-policy
+          configMap:
+            name: gateway-rego-policy
+        # E2E Coverage: hostPath volume for coverage data
+        - name: coverdata
+          hostPath:
+            path: /coverdata
+            type: DirectoryOrCreate
+
+---
+# Gateway Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-service
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+spec:
+  type: NodePort
+  selector:
+    app: gateway
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: 30080  # Expose on host for E2E testing
+    - name: metrics
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+      nodePort: 30090  # Expose metrics on host
+
+---
+# Gateway ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+  namespace: kubernaut-system
+
+---
+# Gateway ClusterRole (for CRD creation and namespace access)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gateway-role
+rules:
+  # RemediationRequest CRD access (updated to kubernaut.ai API group)
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["create", "get", "list", "watch", "update", "patch"]
+
+  # RemediationRequest status subresource access (DD-GATEWAY-011)
+  # Required for Gateway StatusUpdater to update Status.Deduplication
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests/status"]
+    verbs: ["update", "patch"]
+
+  # Namespace access (for environment classification)
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # ConfigMap access (for environment overrides)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+---
+# Gateway ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gateway-role
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: kubernaut-system
+`, imageName)
+}
+
+func DeployGatewayCoverageManifest(kubeconfigPath string, writer io.Writer) error {
+	manifest := GatewayCoverageManifest()
+
+	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply coverage Gateway manifest: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled Gateway to be ready...")
+	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
+}
+
