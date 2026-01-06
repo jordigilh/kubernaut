@@ -119,8 +119,8 @@ func main() {
 
 	// Gap 3.3: Pass DLQ max length for capacity monitoring
 	dlqMaxLen := int64(cfg.Redis.DLQMaxLen)
-	// SOC2 Gap #9: Pass Immudb config for tamper-evident audit storage
-	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, &cfg.Immudb, logger, serverCfg, dlqMaxLen)
+	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
+	srv, err := server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg, dlqMaxLen)
 	if err != nil {
 		logger.Error(err, "Failed to create server")
 		os.Exit(1)

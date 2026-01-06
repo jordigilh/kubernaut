@@ -135,7 +135,6 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		ServiceName:     "aianalysis",
 		PostgresPort:    15438, // DD-TEST-001 v2.2
 		RedisPort:       16384, // DD-TEST-001 v2.2
-		ImmudbPort:      13326, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18095, // DD-TEST-001 v2.2
 		MetricsPort:     19095,
 		ConfigDir:       "test/integration/aianalysis/config",

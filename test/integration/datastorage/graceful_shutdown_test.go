@@ -30,7 +30,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
@@ -977,15 +976,8 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 
 	// Create server instance (this will create its own DB connection pool)
 	// dlqMaxLen: 1000 events (default from DD-009)
-	// SOC2 Gap #9: Build Immudb config for test
-	immudbCfg := &dsconfig.ImmudbConfig{
-		Host:     "localhost",
-		Port:     13322, // DataStorage integration test Immudb port
-		Database: "defaultdb",
-		Username: "immudb",
-		Password: "immudb",
-	}
-	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, immudbCfg, logger, cfg, 1000)
+	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
+	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, cfg, 1000)
 	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
 
 	// Wrap in httptest.Server for HTTP testing

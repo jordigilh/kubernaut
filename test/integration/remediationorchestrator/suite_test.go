@@ -133,7 +133,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ServiceName:     "remediationorchestrator",
 		PostgresPort:    15435, // DD-TEST-001 v2.2
 		RedisPort:       16381, // DD-TEST-001 v2.2
-		ImmudbPort:      13325, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18140, // DD-TEST-001 v2.2
 		MetricsPort:     19140,
 		ConfigDir:       "test/integration/remediationorchestrator/config",
