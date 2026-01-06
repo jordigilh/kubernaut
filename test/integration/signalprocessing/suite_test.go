@@ -148,7 +148,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ServiceName:     "signalprocessing",
 		PostgresPort:    15436, // DD-TEST-001 v2.2
 		RedisPort:       16382, // DD-TEST-001 v2.2
-		ImmudbPort:      13324, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18094, // DD-TEST-001 v2.2 (OFFICIAL SP allocation)
 		MetricsPort:     19094,
 		ConfigDir:       "test/integration/signalprocessing/config",

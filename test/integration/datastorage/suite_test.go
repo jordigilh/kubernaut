@@ -20,7 +20,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -38,7 +37,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 
-	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
@@ -324,18 +322,8 @@ func cleanupContainers() {
 
 	GinkgoWriter.Println("🧹 Cleaning up test infrastructure...")
 
-	// Clean up Immudb identity files (SOC2 Gap #9)
-	// Immudb SDK stores server identity files to prevent MITM attacks
-	// When containers restart, identity changes, causing test failures
-	// Remove all .identity-* files from current directory
-	files, _ := filepath.Glob(".identity-*")
-	for _, file := range files {
-		_ = os.Remove(file)
-		GinkgoWriter.Printf("  🗑️  Removed Immudb identity file: %s\n", file)
-	}
-
-	// Stop and remove integration test containers (PostgreSQL, Redis, Immudb - service runs in-process)
-	containers := []string{postgresContainer, redisContainer, "datastorage-immudb-test"}
+	// Stop and remove integration test containers (PostgreSQL, Redis - service runs in-process)
+	containers := []string{postgresContainer, redisContainer}
 	for _, container := range containers {
 		// Stop container
 		cmd := exec.Command("podman", "stop", container)
@@ -441,10 +429,6 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("📦 Starting Redis container...")
 		startRedis()
 
-		// 3.5. Start Immudb for SOC2 audit trails (Gap #9)
-		GinkgoWriter.Println("📦 Starting Immudb container...")
-		startImmudb()
-
 		// 4. Connect to PostgreSQL to apply migrations
 		GinkgoWriter.Println("🔌 Connecting to PostgreSQL...")
 		tempDB := mustConnectPostgreSQL()
@@ -481,22 +465,13 @@ var _ = SynchronizedBeforeSuite(
 			}
 
 			// Create Data Storage server instance
-			// SOC2 Gap #9: Build Immudb config for DataStorage integration tests
-			// Port: 13322 (as per DD-TEST-001: DataStorage Immudb port)
-			immudbCfg := &dsconfig.ImmudbConfig{
-				Host:     "localhost",
-				Port:     13322, // DataStorage Immudb port (DD-TEST-001)
-				Database: "defaultdb",
-				Username: "immudb",
-				Password: "immudb", // Default password from bootstrap
-			}
+			// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
 
 			var err error
 			dsServer, err = server.NewServer(
 				dbConnStr,
 				redisAddr,
 				"", // No Redis password in test
-				immudbCfg,
 				logger,
 				serverCfg,
 				10000, // DLQ max length
@@ -819,71 +794,6 @@ func startRedis() {
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
 
 	GinkgoWriter.Println("✅ Redis started successfully")
-}
-
-// startImmudb starts the Immudb container for SOC2 Gap #9 (Tamper-Evident Audit Trail)
-func startImmudb() {
-	// Check if running in Docker Compose environment
-	if os.Getenv("IMMUDB_HOST") != "" {
-		GinkgoWriter.Println("🐳 Using external Immudb (Docker Compose)")
-		// Wait for Immudb to be ready via TCP connection
-		host := os.Getenv("IMMUDB_HOST")
-		port := os.Getenv("IMMUDB_PORT")
-		if port == "" {
-			port = "13322" // DD-TEST-001: DataStorage Immudb port
-		}
-
-		GinkgoWriter.Printf("⏳ Waiting for Immudb at %s:%s to be ready...\n", host, port)
-		Eventually(func() error {
-			addr := fmt.Sprintf("%s:%s", host, port)
-			conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
-			if err != nil {
-				return err
-			}
-			_ = conn.Close()
-			return nil
-		}, 30*time.Second, 1*time.Second).Should(Succeed(), "Immudb should be ready")
-
-		GinkgoWriter.Println("✅ Immudb is ready")
-		return
-	}
-
-	// Running locally - start our own container
-	GinkgoWriter.Println("🏠 Starting local Immudb container...")
-
-	// Cleanup existing container
-	_ = exec.Command("podman", "stop", "datastorage-immudb-test").Run()
-	_ = exec.Command("podman", "rm", "datastorage-immudb-test").Run()
-
-	// Start Immudb
-	// Use --network=datastorage-test for container-to-container communication
-	// Port 13322 per DD-TEST-001 (DataStorage Immudb port)
-	cmd := exec.Command("podman", "run", "-d",
-		"--name", "datastorage-immudb-test",
-		"--network", "datastorage-test",
-		"-p", "13322:3322", // DD-TEST-001: DataStorage Immudb port
-		"quay.io/jordigilh/immudb:latest")
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		GinkgoWriter.Printf("❌ Failed to start Immudb: %s\n", output)
-		Fail(fmt.Sprintf("Immudb container failed to start: %v", err))
-	}
-
-	// Wait for Immudb ready
-	// Per TESTING_GUIDELINES.md: Eventually() handles waiting, no time.Sleep() needed
-	GinkgoWriter.Println("⏳ Waiting for Immudb to be ready...")
-
-	Eventually(func() error {
-		conn, err := net.DialTimeout("tcp", "localhost:13322", 2*time.Second)
-		if err != nil {
-			return err
-		}
-		_ = conn.Close()
-		return nil
-	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Immudb should be ready")
-
-	GinkgoWriter.Println("✅ Immudb started successfully")
 }
 
 // connectPostgreSQL establishes PostgreSQL connection

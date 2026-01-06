@@ -122,7 +122,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ServiceName:     "workflowexecution",
 		PostgresPort:    15441, // DD-TEST-001 v2.2
 		RedisPort:       16388, // DD-TEST-001 v2.2 (unique, resolved conflict with HAPI)
-		ImmudbPort:      13327, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18097, // DD-TEST-001 v2.2
 		MetricsPort:     19097,
 		ConfigDir:       "test/integration/workflowexecution/config",

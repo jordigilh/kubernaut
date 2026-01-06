@@ -88,7 +88,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ServiceName:     "gateway",
 		PostgresPort:    15437, // DD-TEST-001 v2.2
 		RedisPort:       16380, // DD-TEST-001 v2.2
-		ImmudbPort:      13323, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18091, // DD-TEST-001 v2.2
 		MetricsPort:     19091,
 		ConfigDir:       "test/integration/gateway/config",

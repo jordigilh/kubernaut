@@ -166,7 +166,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ServiceName:     "notification",
 		PostgresPort:    15440, // DD-TEST-001 v2.2
 		RedisPort:       16385, // DD-TEST-001 v2.2
-		ImmudbPort:      13328, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18096, // DD-TEST-001 v2.2
 		MetricsPort:     19096,
 		ConfigDir:       "test/integration/notification/config",
