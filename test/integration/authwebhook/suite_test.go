@@ -148,8 +148,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		CRDDirectoryPaths: []string{
 			filepath.Join("..", "..", "..", "config", "crd", "bases"),
 		},
+		WebhookInstallOptions: envtest.WebhookInstallOptions{
+			Paths: []string{filepath.Join("..", "..", "..", "config", "webhook")},
+		},
 		ErrorIfCRDPathMissing: true,
-		// WebhookInstallOptions not needed - we register handlers programmatically below
 	}
 
 	cfg, err = testEnv.Start()
@@ -208,12 +210,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}()
 
 	By("Waiting for webhook server to be ready")
-	// Give webhook server time to start
+	// Give webhook server time to start (envtest handles webhook configuration automatically)
 	time.Sleep(2 * time.Second)
-
-	By("Configuring webhook configurations in K8s API server")
-	err = configureWebhooks(ctx, k8sClient, *webhookInstallOptions)
-	Expect(err).NotTo(HaveOccurred())
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("✅ envtest environment ready")

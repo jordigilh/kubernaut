@@ -18,6 +18,7 @@ package authwebhook
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -79,18 +80,26 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			createAndWaitForCRD(ctx, k8sClient, nr)
 
-			By("Operator deletes NotificationRequest to cancel (business operation)")
-			// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
-			// Webhook intercepts DELETE and writes audit event to Data Storage
-			// Note: K8s API prevents object mutation during DELETE, so attribution is via audit
-			Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
-				"Webhook should allow DELETE and record audit event")
+		By("Operator deletes NotificationRequest to cancel (business operation)")
+		// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
+		// Webhook intercepts DELETE and writes audit event to Data Storage
+		// Note: K8s API prevents object mutation during DELETE, so attribution is via audit
+		Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
+			"Webhook should allow DELETE and record audit event")
 
-			By("Waiting for audit event to be persisted to Data Storage (DD-TESTING-001)")
-			// Webhook uses nr.Name as correlation ID
-			// Per DD-TESTING-001: Use Eventually() for async polling, NOT time.Sleep()
-			deleteEventType := "notification.request.deleted"
-			events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
+		By("Flushing audit store to ensure events are persisted")
+		// Explicitly flush buffered audit events before querying
+		flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).ToNot(HaveOccurred(), "Audit store flush should succeed")
+		GinkgoWriter.Println("✅ Audit store flushed successfully")
+
+		By("Waiting for audit event to be persisted to Data Storage (DD-TESTING-001)")
+		// Webhook uses nr.Name as correlation ID
+		// Per DD-TESTING-001: Use Eventually() for async polling, NOT time.Sleep()
+		deleteEventType := "notification.request.deleted"
+		events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001 Pattern 4)")
 			// Per DD-TESTING-001: Use Equal(N) for deterministic validation
@@ -208,15 +217,23 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
 				"Status update to Sending should succeed")
 
-			By("Operator cancels notification mid-processing (DELETE)")
-			// Per BR-AUTH-001: DELETE captures attribution via audit trail
-			Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
-				"DELETE should succeed and record audit event")
+		By("Operator cancels notification mid-processing (DELETE)")
+		// Per BR-AUTH-001: DELETE captures attribution via audit trail
+		Expect(k8sClient.Delete(ctx, nr)).To(Succeed(),
+			"DELETE should succeed and record audit event")
 
-			By("Waiting for audit event to be persisted (DD-TESTING-001)")
-			// Webhook uses nr.Name as correlation ID
-			deleteEventType := "notification.request.deleted"
-			events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
+		By("Flushing audit store to ensure events are persisted")
+		// Explicitly flush buffered audit events before querying
+		flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		Expect(err).ToNot(HaveOccurred(), "Audit store flush should succeed")
+		GinkgoWriter.Println("✅ Audit store flushed successfully")
+
+		By("Waiting for audit event to be persisted (DD-TESTING-001)")
+		// Webhook uses nr.Name as correlation ID
+		deleteEventType := "notification.request.deleted"
+		events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001)")
 			eventCounts := countEventsByType(events)

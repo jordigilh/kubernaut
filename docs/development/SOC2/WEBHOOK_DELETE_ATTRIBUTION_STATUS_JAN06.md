@@ -1,9 +1,9 @@
 # Webhook DELETE Attribution Investigation - Status Summary
 
-**Date**: January 6, 2026  
-**Status**: ✅ **Major Progress - Architecture Corrected**  
-**Test Results**: **7/9 Passing** (78% success)  
-**Authority**: ADR-034 v1.4, DD-WEBHOOK-003, BR-AUTH-001  
+**Date**: January 6, 2026
+**Status**: ✅ **Major Progress - Architecture Corrected**
+**Test Results**: **7/9 Passing** (78% success)
+**Authority**: ADR-034 v1.4, DD-WEBHOOK-003, BR-AUTH-001
 **Confidence**: 95%
 
 ---
@@ -12,7 +12,7 @@
 
 **Original Problem**: NotificationRequest DELETE webhook audit events were failing validation with "webhook" is not a valid event_category.
 
-**Root Cause Discovery**: 
+**Root Cause Discovery**:
 1. **Architecture Violation**: We were using business domain categories (`"notification"`, `"workflow"`, `"orchestration"`) instead of the emitter service category
 2. **ADR-034 v1.2 Rule**: `event_category` MUST match the **service name that emits the event**, not the operation type
 3. **Missing Category**: "webhook" was not in the approved ADR-034 category list
@@ -229,7 +229,7 @@ SELECT * FROM audit_events WHERE event_category = 'webhook';  -- Returns ALL web
 ### **All Operator Attribution Events** (SOC2 CC8.1)
 ```sql
 -- Get all manual operator actions (last 30 days)
-SELECT 
+SELECT
     event_type,
     event_action,
     actor_id,
@@ -245,7 +245,7 @@ ORDER BY event_timestamp DESC;
 ### **Webhook Service Analytics**
 ```sql
 -- Track webhook volume and success rates
-SELECT 
+SELECT
     event_type,
     COUNT(*) as event_count,
     COUNT(CASE WHEN event_outcome = 'success' THEN 1 END) as success_count,
@@ -260,7 +260,7 @@ ORDER BY event_count DESC;
 ### **Operator Activity Report**
 ```sql
 -- Who performed the most manual actions?
-SELECT 
+SELECT
     actor_id as operator,
     COUNT(*) as action_count,
     MIN(event_timestamp) as first_action,
@@ -318,7 +318,7 @@ ORDER BY action_count DESC;
 
 ---
 
-**Document Status**: ✅ Active Investigation  
-**Review Schedule**: After NotificationRequest DELETE tests pass  
+**Document Status**: ✅ Active Investigation
+**Review Schedule**: After NotificationRequest DELETE tests pass
 **Success Metrics**: 9/9 tests passing (100%)
 
