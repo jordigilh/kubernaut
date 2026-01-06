@@ -235,7 +235,7 @@ func loadAuthWebhookImageWithTag(clusterName, imageTag string, writer io.Writer)
 	// Export image to tar file (podman/Kind compatibility)
 	tarPath := filepath.Join(os.TempDir(), "webhooks-e2e.tar")
 	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to tar: %s\n", tarPath)
-	
+
 	exportCmd := exec.Command("podman", "save", "-o", tarPath, imageTag)
 	exportOutput, err := exportCmd.CombinedOutput()
 	if err != nil {
@@ -269,18 +269,18 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// Apply CRDs first
 	_, _ = fmt.Fprintln(writer, "📋 Applying CRDs...")
-	
+
 	// Get workspace root for config paths
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
-	
+
 	cmd := exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
 	cmd.Dir = workspaceRoot // Run from workspace root
-	
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ CRD apply failed: %s\n", output)
 		return fmt.Errorf("kubectl apply crds failed: %w", err)
@@ -293,7 +293,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 		"-n", namespace,
 		"-f", "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
 	cmd.Dir = workspaceRoot // Run from workspace root
-	
+
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Deployment failed: %s\n", output)
 		return fmt.Errorf("kubectl apply failed: %w", err)
@@ -764,6 +764,7 @@ func runDatabaseMigrations(kubeconfigPath, namespace string, writer io.Writer) e
 }
 
 // deployDataStorageToKind deploys Data Storage service to Kind cluster with custom NodePort and image tag
+// Uses ConfigMap + Secret pattern (same as datastorage E2E) for proper service configuration
 func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, nodePort string, writer io.Writer) error {
 	ctx := context.Background()
 	clientset, err := getKubernetesClient(kubeconfigPath)
@@ -774,6 +775,72 @@ func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, node
 	nodePortInt, err := strconv.Atoi(nodePort)
 	if err != nil {
 		return fmt.Errorf("invalid nodePort: %w", err)
+	}
+
+	// Create ConfigMap for service configuration (required by Data Storage)
+	configYAML := fmt.Sprintf(`service:
+  name: data-storage
+  metricsPort: 9181
+  logLevel: debug
+  shutdownTimeout: 30s
+server:
+  port: 8080
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+database:
+  host: postgresql.%s.svc.cluster.local
+  port: 5432
+  name: action_history
+  user: slm_user
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: redis.%s.svc.cluster.local:6379
+  db: 0
+  dlq_stream_name: dlq-stream
+  dlq_max_len: 1000
+  dlq_consumer_group: dlq-group
+  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
+  passwordKey: "password"
+logging:
+  level: debug
+  format: json`, namespace, namespace)
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-config",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"config.yaml": configYAML,
+		},
+	}
+
+	if _, err := clientset.CoreV1().ConfigMaps(namespace).Create(ctx, configMap, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create Data Storage ConfigMap: %w", err)
+	}
+
+	// Create Secret for database and Redis credentials
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-secret",
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"db-secrets.yaml":    `username: slm_user\npassword: test_password`,
+			"redis-secrets.yaml": `password: ""`,
+		},
+	}
+
+	if _, err := clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create Data Storage Secret: %w", err)
 	}
 
 	// Create Service with custom NodePort
@@ -827,20 +894,15 @@ func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, node
 							ImagePullPolicy: corev1.PullNever,
 							Ports: []corev1.ContainerPort{
 								{Name: "http", ContainerPort: 8080},
+								{Name: "metrics", ContainerPort: 9181},
 							},
 							Env: []corev1.EnvVar{
-								{Name: "DATABASE_HOST", Value: "postgresql"},
-								{Name: "DATABASE_PORT", Value: "5432"},
-								{Name: "DATABASE_NAME", Value: "action_history"},
-								{Name: "DATABASE_USER", Value: "slm_user"},
-								{Name: "DATABASE_PASSWORD", Value: "test_password"},
-								{Name: "DATABASE_SSLMODE", Value: "disable"},
-								{Name: "REDIS_HOST", Value: "redis"},
-								{Name: "REDIS_PORT", Value: "6379"},
-								{Name: "LOG_LEVEL", Value: "debug"},
+								{Name: "CONFIG_PATH", Value: "/etc/datastorage/config.yaml"},
 								{Name: "GOCOVERDIR", Value: "/coverdata"},
 							},
 							VolumeMounts: []corev1.VolumeMount{
+								{Name: "config", MountPath: "/etc/datastorage", ReadOnly: true},
+								{Name: "secrets", MountPath: "/etc/datastorage/secrets", ReadOnly: true},
 								{Name: "coverdata", MountPath: "/coverdata"},
 							},
 							Resources: corev1.ResourceRequirements{
@@ -878,6 +940,18 @@ func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, node
 						},
 					},
 					Volumes: []corev1.Volume{
+						{Name: "config", VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: "datastorage-config",
+								},
+							},
+						}},
+						{Name: "secrets", VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: "datastorage-secret",
+							},
+						}},
 						{Name: "coverdata", VolumeSource: corev1.VolumeSource{
 							HostPath: &corev1.HostPathVolumeSource{
 								Path: "/coverdata",
@@ -951,4 +1025,3 @@ func waitForServicesReady(kubeconfigPath, namespace string, writer io.Writer) er
 
 	return nil
 }
-
