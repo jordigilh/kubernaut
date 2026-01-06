@@ -83,12 +83,12 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				},
 			}
 
-			createAndWaitForCRD(ctx, rar)
+			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator approves remediation (business operation)")
 			// Per BR-AUTH-001: Operator updates status.Decision to "Approved"
 			// Webhook will populate DecidedBy and DecidedAt fields
-			updateStatusAndWaitForWebhook(ctx, rar,
+			updateStatusAndWaitForWebhook(ctx, k8sClient, rar,
 				func() {
 					rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 					rar.Status.DecisionMessage = "Reviewed investigation summary - memory leak confirmed, restart approved"
@@ -161,11 +161,11 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				},
 			}
 
-			createAndWaitForCRD(ctx, rar)
+			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator rejects remediation (business operation)")
 			// Per BR-AUTH-001: Operator updates status.Decision to "Rejected"
-			updateStatusAndWaitForWebhook(ctx, rar,
+			updateStatusAndWaitForWebhook(ctx, k8sClient, rar,
 				func() {
 					rar.Status.Decision = remediationv1.ApprovalDecisionRejected
 					rar.Status.DecisionMessage = "Disk expansion requires change control approval first"
@@ -233,7 +233,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				},
 			}
 
-			createAndWaitForCRD(ctx, rar)
+			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator provides invalid decision (business validation)")
 			// The CRD has +kubebuilder:validation:Enum which should prevent this at API level

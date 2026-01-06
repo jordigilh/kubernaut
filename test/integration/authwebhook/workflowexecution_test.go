@@ -63,12 +63,12 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 				},
 			}
 
-			createAndWaitForCRD(ctx, wfe)
+			createAndWaitForCRD(ctx, k8sClient, wfe)
 
 			By("Operator requests block clearance (business operation)")
 			// ✅ CORRECT: Business logic - operator updates status.BlockClearance
 			// Per BR-WE-013: Operator clears PreviousExecutionFailed block after investigation
-			updateStatusAndWaitForWebhook(ctx, wfe,
+			updateStatusAndWaitForWebhook(ctx, k8sClient, wfe,
 				func() {
 					// Populate status.BlockClearance with operator's reason
 					// Webhook will populate ClearedBy and ClearedAt fields
@@ -128,7 +128,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 				},
 			}
 
-			createAndWaitForCRD(ctx, wfe)
+			createAndWaitForCRD(ctx, k8sClient, wfe)
 
 			By("Operator attempts clearance without reason (invalid business operation)")
 			// Per SOC2 CC7.4: Audit completeness requires justification
@@ -165,7 +165,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 				},
 			}
 
-			createAndWaitForCRD(ctx, wfe)
+			createAndWaitForCRD(ctx, k8sClient, wfe)
 
 			By("Operator provides insufficient justification (SOC2 CC7.4 violation)")
 			// Per BR-AUTH-001 + SOC2 CC7.4: Minimum 10 words for audit completeness
