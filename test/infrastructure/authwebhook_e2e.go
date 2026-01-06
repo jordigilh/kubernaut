@@ -200,12 +200,19 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔨 Building Webhooks service image: %s\n", imageTag)
 
+	// Get workspace root to set working directory
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
 	// Build image using podman (follows DataStorage pattern)
 	// Note: Service binary is 'webhooks' (cmd/webhooks/main.go)
 	cmd := exec.Command("podman", "build",
 		"-t", imageTag,
 		"-f", "docker/webhooks.Dockerfile",
 		".")
+	cmd.Dir = workspaceRoot // Set working directory to workspace root
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
