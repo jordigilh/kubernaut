@@ -403,8 +403,8 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		if wfe.Status.FailureDetails.FailedStepName != "" {
 			errorMessage += fmt.Sprintf(" step '%s'", wfe.Status.FailureDetails.FailedStepName)
 		}
-		if wfe.Status.FailureDetails.ErrorMessage != "" {
-			errorMessage += ": " + wfe.Status.FailureDetails.ErrorMessage
+		if wfe.Status.FailureDetails.Message != "" {
+			errorMessage += ": " + wfe.Status.FailureDetails.Message
 		}
 
 		// Determine error code based on failure type
