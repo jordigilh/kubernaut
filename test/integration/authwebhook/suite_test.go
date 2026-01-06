@@ -192,11 +192,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
 	// Register NotificationRequest DELETE webhook (DD-WEBHOOK-003: Complete audit events)
-	// Note: Writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
-	// Uses REAL audit store to write to Data Storage (DD-TESTING-001 compliance)
+	// Note: Uses ValidatingWebhook (not Mutating) because K8s doesn't invoke
+	// mutating webhooks for DELETE operations. Webhook writes audit event and allows DELETE.
 	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)
 	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
-	webhookServer.Register("/mutate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
+	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 
 	By("Starting webhook server")
 	go func() {
@@ -295,10 +295,27 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 				AdmissionReviewVersions: []string{"v1"},
 				TimeoutSeconds:          ptr.To(int32(10)),
 			},
+			// Note: NotificationRequest DELETE webhook moved to ValidatingWebhookConfiguration
+			// (K8s doesn't invoke mutating webhooks for DELETE operations)
+		},
+	}
+
+	if err := k8sClient.Create(ctx, mutatingWebhook); err != nil {
+		return fmt.Errorf("failed to create MutatingWebhookConfiguration: %w", err)
+	}
+
+	// Create ValidatingWebhookConfiguration for DELETE operations
+	// Note: Kubernetes doesn't invoke mutating webhooks for DELETE
+	// (nothing to mutate), so we use validating webhook for audit capture
+	validatingWebhook := &admissionregistrationv1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubernaut-authwebhook-validating",
+		},
+		Webhooks: []admissionregistrationv1.ValidatingWebhook{
 			{
-				Name: "notificationrequest.mutate.kubernaut.ai",
+				Name: "notificationrequest.validate.kubernaut.ai",
 				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					URL:      ptr.To(webhookURL + "/mutate-notificationrequest-delete"),
+					URL:      ptr.To(webhookURL + "/validate-notificationrequest-delete"),
 					CABundle: caBundle,
 				},
 				Rules: []admissionregistrationv1.RuleWithOperations{
@@ -315,15 +332,15 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 					},
 				},
 				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
-				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
+				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNoneOnDryRun),
 				AdmissionReviewVersions: []string{"v1"},
 				TimeoutSeconds:          ptr.To(int32(10)),
 			},
 		},
 	}
 
-	if err := k8sClient.Create(ctx, mutatingWebhook); err != nil {
-		return fmt.Errorf("failed to create MutatingWebhookConfiguration: %w", err)
+	if err := k8sClient.Create(ctx, validatingWebhook); err != nil {
+		return fmt.Errorf("failed to create ValidatingWebhookConfiguration: %w", err)
 	}
 
 	// Wait for webhook configurations to be ready

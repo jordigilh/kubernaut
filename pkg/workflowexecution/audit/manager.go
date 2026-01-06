@@ -44,6 +44,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 )
 
@@ -118,8 +119,10 @@ func (m *Manager) RecordWorkflowCompleted(ctx context.Context, wfe *workflowexec
 // RecordWorkflowFailed records a workflow.failed audit event.
 //
 // This event is emitted when a PipelineRun fails or times out.
+// BR-AUDIT-005 Gap #7: Now includes standardized error_details for SOC2 compliance.
 func (m *Manager) RecordWorkflowFailed(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
-	return m.recordAuditEvent(ctx, wfe, EventTypeFailed, "failure")
+	// Use custom audit event with error_details (Gap #7)
+	return m.recordFailureAuditWithDetails(ctx, wfe)
 }
 
 // RecordWorkflowSelectionCompleted records a workflow.selection.completed audit event (Gap #5).
@@ -371,6 +374,102 @@ func (m *Manager) recordAuditEvent(
 		"action", action,
 		"wfe", wfe.Name,
 		"outcome", outcome,
+	)
+	return nil
+}
+
+// recordFailureAuditWithDetails records a workflow.failed audit event with standardized error_details.
+//
+// This method implements BR-AUDIT-005 Gap #7: Standardized error details
+// for SOC2 compliance and RR reconstruction.
+//
+// Error details are extracted from wfe.Status.FailureDetails which contains
+// Tekton pipeline failure information (failed task, failed step, error message).
+func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
+	if m.store == nil {
+		err := fmt.Errorf("AuditStore is nil - audit is MANDATORY per ADR-032")
+		m.logger.Error(err, "CRITICAL: Cannot record audit event - manager misconfigured",
+			"action", EventTypeFailed,
+			"wfe", wfe.Name,
+		)
+		return err
+	}
+
+	// Build error_details from FailureDetails (Gap #7)
+	var errorDetails *sharedaudit.ErrorDetails
+	if wfe.Status.FailureDetails != nil {
+		// Construct error message from Tekton failure details
+		errorMessage := fmt.Sprintf("Pipeline failed at task '%s'", wfe.Status.FailureDetails.FailedTaskName)
+		if wfe.Status.FailureDetails.FailedStepName != "" {
+			errorMessage += fmt.Sprintf(" step '%s'", wfe.Status.FailureDetails.FailedStepName)
+		}
+		if wfe.Status.FailureDetails.ErrorMessage != "" {
+			errorMessage += ": " + wfe.Status.FailureDetails.ErrorMessage
+		}
+
+		// Determine error code based on failure type
+		errorCode := "ERR_PIPELINE_FAILED"
+		retryPossible := true // Pipeline failures may be transient
+
+		// Check if it's a permanent error (e.g., invalid workflow)
+		if strings.Contains(errorMessage, "not found") || strings.Contains(errorMessage, "invalid") {
+			errorCode = "ERR_WORKFLOW_NOT_FOUND"
+			retryPossible = false
+		}
+
+		errorDetails = sharedaudit.NewErrorDetails(
+			"workflowexecution",
+			errorCode,
+			errorMessage,
+			retryPossible,
+		)
+	} else {
+		// No FailureDetails (shouldn't happen, but handle gracefully)
+		errorDetails = sharedaudit.NewErrorDetails(
+			"workflowexecution",
+			"ERR_PIPELINE_FAILED",
+			"Workflow execution failed with unknown error",
+			true,
+		)
+	}
+
+	// Build audit event
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeFailed)
+	audit.SetEventCategory(event, CategoryWorkflow)
+	audit.SetEventAction(event, ActionFailed)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", ServiceName)
+	audit.SetResource(event, "WorkflowExecution", wfe.Name)
+
+	// Correlation ID from RemediationRequestRef
+	correlationID := wfe.Spec.RemediationRequestRef.Name
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, wfe.Namespace)
+
+	// Event data with error_details (Gap #7)
+	eventData := map[string]interface{}{
+		"workflow_execution": wfe.Name,
+		"namespace":          wfe.Namespace,
+		"phase":              string(wfe.Status.Phase),
+		// Gap #7: Standardized error_details for SOC2 compliance
+		"error_details": errorDetails,
+	}
+	audit.SetEventData(event, eventData)
+
+	// Store audit event
+	if err := m.store.StoreAudit(ctx, event); err != nil {
+		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
+			"action", EventTypeFailed,
+			"wfe", wfe.Name,
+		)
+		return fmt.Errorf("mandatory audit write failed per ADR-032: %w", err)
+	}
+
+	m.logger.V(1).Info("Failure audit event recorded with error_details",
+		"wfe", wfe.Name,
+		"error_code", errorDetails.Code,
 	)
 	return nil
 }
