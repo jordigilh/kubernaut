@@ -62,8 +62,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 ## 📊 Implementation Status
 
-**V1.0 Release** (In Development): All Core Services Production-Ready
-**Production-Ready Services**: 8 of 8 services (100%) ✅
+**V1.0 Release** (In Development): All Core Services + Must-Gather Production-Ready
+**Production-Ready Services**: 9 of 9 services (100%) ✅
 **SOC2 Compliance**: In active development (Week 1 of 3-week sprint - see [SOC2_AUDIT_IMPLEMENTATION_PLAN.md](docs/development/SOC2/SOC2_AUDIT_IMPLEMENTATION_PLAN.md))
 **Timeline**: V1.0 Pre-release: January 2026
 
@@ -77,7 +77,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 | **AI Analysis Service** | ✅ **v1.0 PRODUCTION-READY** | AI-powered analysis & recommendations | 309 tests (222U+53I+34E2E) |
 | **Workflow Execution** | ✅ **v1.0 PRODUCTION-READY** | Tekton workflow orchestration | 12 BRs (314 tests: 229U+70I+15E2E) |
 | **Remediation Orchestrator** | ✅ **v1.0 PRODUCTION-READY** | Cross-CRD lifecycle coordination | 490 tests (432U+39I+19E2E) SOC2-compliant audit traces |
-| **Must-Gather Diagnostic Tool** | 🔄 **In Development (Week 1-3)** | Enterprise diagnostic collection | BR-PLATFORM-001 (parallel to SOC2) |
+| **Must-Gather Diagnostic Tool** | ✅ **v1.0 PRODUCTION-READY** | Enterprise diagnostic collection | BR-PLATFORM-001 (45 containerized tests, multi-arch, CI pipeline) |
 | **~~Effectiveness Monitor~~** | ❌ **Deferred to V1.1** | Continuous improvement (DD-017) | 10 BRs (requires 8+ weeks of data) |
 
 **V1.0 Completion** (In Development):
@@ -111,8 +111,8 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 - ✅ **HolmesGPT API v3.10**: 601 tests (474U+77I+45E2E+5smoke), ConfigMap hot-reload, LLM self-correction loop
 - ✅ **Notification Service v1.0**: 358 tests (225U+112I+21E2E), 100% pass rate, Kind-based E2E, multi-channel delivery, OpenAPI audit client integration
 - ✅ **Code Quality**: Go Report Card integration, gofmt compliance (297 files), comprehensive badge suite
-- 🔄 **Must-Gather V1.0**: Enterprise diagnostic collection tool (BR-PLATFORM-001), OpenShift-compatible, parallel to SOC2 implementation
-- 📊 **V1.0 Service Count**: 8 production-ready services (10 original - Context API deprecated - Effectiveness Monitor deferred to V1.1)
+- ✅ **Must-Gather v1.0**: 45 containerized bats tests, multi-arch support (amd64/arm64), GDPR/CCPA sanitization, GitHub Actions CI, OpenShift-compatible (BR-PLATFORM-001)
+- 📊 **V1.0 Service Count**: 9 production-ready services (8 core + must-gather diagnostic tool)
 
 ---
 
@@ -254,8 +254,8 @@ kubectl run kubernaut-must-gather \
 
 **Output**: Compressed tarball (`kubernaut-must-gather-<cluster>-<timestamp>.tar.gz`)
 
-**Status**: 🔄 **In Development** (Week 1-3, parallel to SOC2 compliance)
-**Documentation**: See [BR-PLATFORM-001](docs/requirements/BR-PLATFORM-001-must-gather-diagnostic-collection.md)
+**Status**: ✅ **v1.0 PRODUCTION-READY** - 45 containerized tests, multi-arch support, GDPR/CCPA sanitization, CI pipeline
+**Documentation**: See [BR-PLATFORM-001](docs/requirements/BR-PLATFORM-001-must-gather-diagnostic-collection.md) and [Must-Gather README](cmd/must-gather/README.md)
 
 ---
 
@@ -392,9 +392,9 @@ Apache License 2.0
 
 **Kubernaut** - Building the next evolution of Kubernetes operations through intelligent, CRD-based microservices that learn and adapt.
 
-**V1.0 Complete** (Post-Merge): All 8 core services production-ready (100%) ✅ | SOC2-compliant audit traces | Must-Gather diagnostic tool in development | 1 deferred to V1.1 (DD-017) | **V1.0 Pre-release**: January 2026
+**V1.0 Complete** (Post-Merge): All 9 services production-ready (100%) ✅ | 8 core services + Must-Gather diagnostic tool | SOC2-compliant audit traces | 1 deferred to V1.1 (DD-017) | **V1.0 Pre-release**: January 2026
 
-**Current Sprint (Week 1-3)**: Must-Gather enterprise diagnostics (BR-PLATFORM-001) → Segmented E2E tests with Remediation Orchestrator (Week 2) → Full system E2E with OOMKill scenario + Claude 4.5 Haiku (Week 3) → Pre-release + feedback solicitation.
+**Current Sprint (Week 1-3)**: ✅ Must-Gather v1.0 Complete (BR-PLATFORM-001, 45 tests, CI pipeline) → Segmented E2E tests with Remediation Orchestrator (Week 2) → Full system E2E with OOMKill scenario + Claude 4.5 Haiku (Week 3) → Pre-release + feedback solicitation.
 
 ---
 
