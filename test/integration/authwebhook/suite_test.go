@@ -18,7 +18,6 @@ package authwebhook
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -64,53 +63,6 @@ var (
 
 // auditStoreAdapter adapts audit.AuditStore to webhooks.AuditManager interface
 // This allows webhook handlers to use the real audit store
-type auditStoreAdapter struct {
-	store audit.AuditStore
-}
-
-func (a *auditStoreAdapter) RecordEvent(ctx context.Context, event audit.AuditEvent) error {
-	// Convert audit.AuditEvent to dsgen.AuditEventRequest
-	// Per DD-AUDIT-002 V2.0: Use OpenAPI types directly
-	req := &dsgen.AuditEventRequest{
-		Version:        event.EventVersion,
-		EventTimestamp: event.EventTimestamp,
-		EventType:      event.EventType,
-		EventCategory:  dsgen.AuditEventRequestEventCategory(event.EventCategory),
-		EventAction:    event.EventAction,
-		EventOutcome:   dsgen.AuditEventRequestEventOutcome(event.EventOutcome),
-		ActorType:      &event.ActorType,
-		ActorId:        &event.ActorID,
-		ResourceType:   &event.ResourceType,
-		ResourceId:     &event.ResourceID,
-		CorrelationId:  event.CorrelationID,
-	}
-
-	// Optional fields that exist in dsgen.AuditEventRequest
-	if event.Namespace != nil {
-		req.Namespace = event.Namespace
-	}
-	if event.ClusterName != nil {
-		req.ClusterName = event.ClusterName
-	}
-	if event.Severity != nil {
-		req.Severity = event.Severity
-	}
-	if event.DurationMs != nil {
-		req.DurationMs = event.DurationMs
-	}
-
-	// Convert EventData from []byte to interface{} (will be JSON marshaled by OpenAPI client)
-	if len(event.EventData) > 0 {
-		var eventData interface{}
-		if err := json.Unmarshal(event.EventData, &eventData); err != nil {
-			return fmt.Errorf("failed to unmarshal event_data: %w", err)
-		}
-		req.EventData = eventData
-	}
-
-	return a.store.StoreAudit(ctx, req)
-}
-
 func TestAuthWebhookIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "AuthWebhook Integration Suite - BR-AUTH-001 SOC2 Attribution")
@@ -229,21 +181,20 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Create decoder for webhook handlers
 	decoder := admission.NewDecoder(scheme.Scheme)
 
-	// Register WorkflowExecution mutating webhook
-	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler()
+	// Register WorkflowExecution mutating webhook (DD-WEBHOOK-003: Complete audit events)
+	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler(auditStore)
 	_ = wfeHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
 
-	// Register RemediationApprovalRequest mutating webhook
-	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler()
+	// Register RemediationApprovalRequest mutating webhook (DD-WEBHOOK-003: Complete audit events)
+	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler(auditStore)
 	_ = rarHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
-	// Register NotificationRequest mutating webhook for DELETE
+	// Register NotificationRequest DELETE webhook (DD-WEBHOOK-003: Complete audit events)
 	// Note: Writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
 	// Uses REAL audit store to write to Data Storage (DD-TESTING-001 compliance)
-	auditAdapter := &auditStoreAdapter{store: auditStore}
-	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditAdapter)
+	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)
 	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 
