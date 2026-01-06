@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // ========================================
@@ -1186,5 +1187,14 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, writer io.Writer) erro
 
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled Gateway to be ready...")
 	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
+}
+
+// waitForGatewayHealth waits for the Gateway service to become healthy
+// This is a helper wrapper around WaitForHTTPHealth specifically for Gateway E2E tests
+func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.Duration) error {
+	// Gateway health endpoint is available via NodePort on the Kind cluster
+	// Using localhost as the cluster is accessible from the test machine
+	healthURL := fmt.Sprintf("http://localhost:%d/health", GatewayE2EHostPort)
+	return WaitForHTTPHealth(healthURL, timeout, writer)
 }
 
