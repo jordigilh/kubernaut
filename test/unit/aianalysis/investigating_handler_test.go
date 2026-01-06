@@ -49,6 +49,42 @@ func (n *noopAuditClient) RecordPhaseTransition(ctx context.Context, analysis *a
 	// No-op: Unit tests don't need audit recording
 }
 
+func (n *noopAuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error {
+	// No-op: Unit tests don't need audit recording
+	return nil
+}
+
+// auditClientSpy is a spy implementation that records audit events for validation.
+// BR-AUDIT-005 Gap #7: Unit tests validate ErrorDetails structure.
+type auditClientSpy struct {
+	failedAnalysisEvents []failedAnalysisEvent
+}
+
+type failedAnalysisEvent struct {
+	analysis *aianalysisv1.AIAnalysis
+	err      error
+}
+
+func (s *auditClientSpy) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+	// Not tracked in spy for Gap #7 tests
+}
+
+func (s *auditClientSpy) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
+	// Not tracked in spy for Gap #7 tests
+}
+
+func (s *auditClientSpy) RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error {
+	s.failedAnalysisEvents = append(s.failedAnalysisEvents, failedAnalysisEvent{
+		analysis: analysis,
+		err:      err,
+	})
+	return nil
+}
+
+func (s *auditClientSpy) getFailedEvents() []failedAnalysisEvent {
+	return s.failedAnalysisEvents
+}
+
 // ========================================
 // InvestigatingHandler Unit Tests
 // BR-AI-007: HolmesGPT-API integration and error handling
@@ -281,28 +317,41 @@ var _ = Describe("InvestigatingHandler", func() {
 	// NOTE: Permanent error tests moved to test/integration/aianalysis/
 	// These require real infrastructure to validate the complete error handling flow
 
-		// BR-AI-009: Business outcome - prevent infinite retry loops
-		Context("when transient errors persist beyond retry limit", func() {
+	// BR-AI-009: Business outcome - prevent infinite retry loops
+	Context("when transient errors persist beyond retry limit", func() {
+		var auditSpy *auditClientSpy
+
 		BeforeEach(func() {
 			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+			// Use audit spy to capture failure events for Gap #7 validation
+			auditSpy = &auditClientSpy{}
+			testMetrics := metrics.NewMetrics()
+			handler = handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test"), testMetrics, auditSpy)
 		})
 
-			It("should fail gracefully after exhausting retry budget", func() {
-				analysis := createTestAnalysis()
-				// Simulate max retries already reached (ConsecutiveFailures = 5)
-				// Next error will increment to 6, which exceeds MaxRetries (5)
-				analysis.Status.ConsecutiveFailures = 5
+		It("should fail gracefully after exhausting retry budget", func() {
+			analysis := createTestAnalysis()
+			// Simulate max retries already reached (ConsecutiveFailures = 5)
+			// Next error will increment to 6, which exceeds MaxRetries (5)
+			analysis.Status.ConsecutiveFailures = 5
 
-				result, err := handler.Handle(ctx, analysis)
+			result, err := handler.Handle(ctx, analysis)
 
-				Expect(err).NotTo(HaveOccurred())
-				// Business outcome: Analysis fails gracefully after max retries (doesn't hang indefinitely)
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail after exhausting retries")
-				Expect(analysis.Status.Message).To(ContainSubstring("exceeded max retries"), "Should explain max retries exceeded")
-				Expect(analysis.Status.SubReason).To(Equal("MaxRetriesExceeded"), "Should set SubReason to MaxRetriesExceeded")
-				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(6)), "Should increment failure count before failing")
-				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should not requeue after max retries")
-			})
+			Expect(err).NotTo(HaveOccurred())
+			// Business outcome: Analysis fails gracefully after max retries (doesn't hang indefinitely)
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail after exhausting retries")
+			Expect(analysis.Status.Message).To(ContainSubstring("exceeded max retries"), "Should explain max retries exceeded")
+			Expect(analysis.Status.SubReason).To(Equal("MaxRetriesExceeded"), "Should set SubReason to MaxRetriesExceeded")
+			Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(6)), "Should increment failure count before failing")
+			Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should not requeue after max retries")
+
+			// BR-AUDIT-005 Gap #7: Validate error audit with standardized ErrorDetails
+			failedEvents := auditSpy.getFailedEvents()
+			Expect(failedEvents).To(HaveLen(1), "Should record exactly 1 failure audit event")
+			Expect(failedEvents[0].analysis.Name).To(Equal(analysis.Name))
+			Expect(failedEvents[0].err).ToNot(BeNil(), "Should capture the error that caused failure")
+			Expect(failedEvents[0].err.Error()).To(ContainSubstring("Service Unavailable"), "Should capture upstream error message")
+		})
 		})
 
 		// Test mock call tracking

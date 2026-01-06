@@ -112,27 +112,37 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			event := events[0]
 			validateEventMetadata(event, "webhook")
 
-			By("Validating event_data structure (DD-TESTING-001 Pattern 5)")
-			// Per DD-AUDIT-004: Validate structured event_data fields
+			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
+			// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
+		Expect(*event.ActorId).To(Equal("admin"),
+			"actor_id column should contain authenticated operator")
+		Expect(*event.ResourceId).ToNot(BeEmpty(),
+			"resource_id column should contain CRD UID (per audit.SetResource)")
+		Expect(*event.Namespace).To(Equal(namespace),
+			"namespace column should contain CRD namespace")
+		Expect(event.EventAction).To(Equal("deleted"),
+			"event_action column should be 'deleted' for DELETE operation")
+
+			By("Validating event_data business context (DD-WEBHOOK-003 lines 335-340)")
+			// Per DD-WEBHOOK-003: event_data contains business context ONLY
 			validateEventData(event, map[string]interface{}{
-				"operator":  nil, // Verify field exists (value varies per test environment)
-				"crd_name":  nrName,
-				"namespace": namespace,
-				"action":    "delete",
+				"notification_name": nrName,        // Business field (per DD-WEBHOOK-003)
+				"notification_type": "escalation",  // Business field
+				"priority":          "high",        // Business field
+				"final_status":      nil,           // Business field (may be empty if not set)
+				"recipients":        nil,           // Business field (verify existence)
 			})
 
-			// Extract operator identity for logging
-			eventData := event.EventData.(map[string]interface{})
-			operator := eventData["operator"].(string)
-
-			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-			GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution via Audit Trail\n")
-			GinkgoWriter.Printf("   • Cancelled by: %s\n", operator)
+		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+		GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution via Structured Columns\n")
+		GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorId)
+		GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceId)
+		GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", *event.Namespace)
+		GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
 			GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
 			GinkgoWriter.Printf("   • Event category: %s\n", event.EventCategory)
-			GinkgoWriter.Printf("   • Event outcome: %s\n", event.EventOutcome)
-			GinkgoWriter.Printf("   • Correlation ID: %s\n", nrName)
-			GinkgoWriter.Printf("   • DD-TESTING-001: ✅ Deterministic count, ✅ Structured validation\n")
+			GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Structured columns for attribution\n")
+			GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Business context in event_data\n")
 			GinkgoWriter.Printf("   • K8s Limitation: Attribution via audit (cannot mutate during DELETE)\n")
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
@@ -240,31 +250,42 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 			Expect(eventCounts[deleteEventType]).To(Equal(1),
 				"Should have exactly 1 DELETE audit event even during processing")
 
-			By("Validating event metadata (DD-TESTING-001)")
-			event := events[0]
-			validateEventMetadata(event, "webhook")
+		By("Validating event metadata (DD-TESTING-001)")
+		event := events[0]
+		validateEventMetadata(event, "webhook")
 
-			By("Validating event_data structure (DD-TESTING-001)")
-			validateEventData(event, map[string]interface{}{
-				"operator":  nil, // Verify field exists
-				"crd_name":  nrName,
-				"namespace": namespace,
-				"action":    "delete",
-			})
+		By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
+		// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
+		Expect(*event.ActorId).To(Equal("admin"),
+			"actor_id column should contain authenticated operator")
+	Expect(*event.ResourceId).ToNot(BeEmpty(),
+		"resource_id column should contain CRD UID (per audit.SetResource)")
+		Expect(*event.Namespace).To(Equal(namespace),
+			"namespace column should contain CRD namespace")
+		Expect(event.EventAction).To(Equal("deleted"),
+			"event_action column should be 'deleted' for DELETE operation")
 
-			// Extract operator identity and phase for logging
-			eventData := event.EventData.(map[string]interface{})
-			operator := eventData["operator"].(string)
+		By("Validating event_data business context (DD-WEBHOOK-003 lines 335-340)")
+	// Per DD-WEBHOOK-003: event_data contains business context ONLY
+	validateEventData(event, map[string]interface{}{
+		"notification_name": nrName,          // Business field (per DD-WEBHOOK-003)
+		"notification_type": "status-update", // Business field (matches test's NotificationTypeStatusUpdate)
+		"priority":          "low",           // Business field (matches test's NotificationPriorityLow)
+		"final_status":      "Sending",       // Business field (captured mid-processing)
+		"recipients":        nil,             // Business field (verify existence)
+	})
 
-			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-			GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation via Audit\n")
-			GinkgoWriter.Printf("   • Cancelled by: %s\n", operator)
-			GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
-			GinkgoWriter.Printf("   • Event outcome: %s\n", event.EventOutcome)
-			GinkgoWriter.Printf("   • Correlation ID: %s\n", nrName)
-			GinkgoWriter.Printf("   • Audit captured during 'Sending' phase (mid-processing)\n")
-			GinkgoWriter.Printf("   • DD-TESTING-001: ✅ Deterministic count, ✅ Structured validation\n")
-			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation via Structured Columns\n")
+	GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorId)
+	GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceId)
+	GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", *event.Namespace)
+	GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
+	GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
+		GinkgoWriter.Printf("   • Audit captured during 'Sending' phase (mid-processing)\n")
+		GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Structured columns for attribution\n")
+		GinkgoWriter.Printf("   • DD-WEBHOOK-003: ✅ Business context in event_data\n")
+		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		})
 	})
 })

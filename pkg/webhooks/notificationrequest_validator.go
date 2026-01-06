@@ -119,21 +119,20 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	audit.SetNamespace(auditEvent, nr.Namespace)
 
 	// Set event data payload
-	// Standard audit fields (per DD-TESTING-001 Pattern 5: Structured Content Validation)
+	// Per DD-WEBHOOK-003 lines 335-340: Business context ONLY (attribution in structured columns)
 	eventData := map[string]interface{}{
-		// WHO, WHAT, WHERE, HOW (standard attribution fields)
-		"operator":  authCtx.Username, // SOC2 CC8.1: WHO cancelled
-		"crd_name":  nr.Name,          // WHAT was cancelled
-		"namespace": nr.Namespace,     // WHERE it happened
-		"action":    "delete",         // HOW it was cancelled
-
-		// NotificationRequest-specific context (audit completeness)
-		"notification_id": nr.Name,
-		"type":            string(nr.Spec.Type),
-		"priority":        string(nr.Spec.Priority),
-		"user_uid":        authCtx.UID,
-		"user_groups":     authCtx.Groups,
+		// Business context fields (per DD-WEBHOOK-003)
+		"notification_name": nr.Name,                   // Business field
+		"notification_type": string(nr.Spec.Type),      // Business field
+		"priority":          string(nr.Spec.Priority),  // Business field (useful for audit completeness)
+		"final_status":      string(nr.Status.Phase),   // Business field (per DD-WEBHOOK-003 line 338)
+		"recipients":        nr.Spec.Recipients,        // Business field (per DD-WEBHOOK-003 line 339)
 	}
+	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
+	// - actor_id: authCtx.Username (via audit.SetActor)
+	// - resource_name: nr.Name (via audit.SetResource)
+	// - namespace: nr.Namespace (via audit.SetNamespace)
+	// - event_action: "deleted" (via audit.SetEventAction)
 	audit.SetEventData(auditEvent, eventData)
 	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
 		auditEvent.EventType, auditEvent.CorrelationId)

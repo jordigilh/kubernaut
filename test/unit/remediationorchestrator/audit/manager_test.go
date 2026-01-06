@@ -276,35 +276,76 @@ var _ = Describe("Audit Manager", func() {
 	// Per V1.0 Maturity: Using testutil.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildFailureEvent", func() {
-		It("should build complete orchestrator.lifecycle.completed event with failure outcome", func() {
-			event, err := manager.BuildFailureEvent(
-				"correlation-123",
-				"default",
-				"rr-test-001",
-				"workflow_execution",
-				"RBAC permission denied",
-				5000,
-			)
-			Expect(err).ToNot(HaveOccurred())
+	It("should build complete orchestrator.lifecycle.completed event with failure outcome", func() {
+		event, err := manager.BuildFailureEvent(
+			"correlation-123",
+			"default",
+			"rr-test-001",
+			"workflow_execution",
+			"RBAC permission denied",
+			5000,
+		)
+		Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
-				EventCategory: dsgen.AuditEventEventCategoryOrchestration,
-				EventAction:   "completed",
-				EventOutcome:  dsgen.AuditEventEventOutcomeFailure,
-				CorrelationID: "correlation-123",
-				Namespace:     ptr.To("default"),
-				ResourceID:    ptr.To("rr-test-001"),
-				EventDataFields: map[string]interface{}{
-					"outcome":        "Failed",
-					"failure_phase":  "workflow_execution",
-					"failure_reason": "RBAC permission denied",
-				},
-			})
-
-			Expect(event.DurationMs).ToNot(BeNil())
-			Expect(*event.DurationMs).To(Equal(5000))
+		testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			EventType:     "orchestrator.lifecycle.completed",
+			EventCategory: dsgen.AuditEventEventCategoryOrchestration,
+			EventAction:   "completed",
+			EventOutcome:  dsgen.AuditEventEventOutcomeFailure,
+			CorrelationID: "correlation-123",
+			Namespace:     ptr.To("default"),
+			ResourceID:    ptr.To("rr-test-001"),
+			EventDataFields: map[string]interface{}{
+				"outcome":        "Failed",
+				"failure_phase":  "workflow_execution",
+				"failure_reason": "RBAC permission denied",
+			},
 		})
+
+		Expect(event.DurationMs).ToNot(BeNil())
+		Expect(*event.DurationMs).To(Equal(5000))
+	})
+
+	// BR-AUDIT-005 Gap #7: Validate ErrorDetails structure in failure events
+	It("should emit audit event with standardized ErrorDetails structure (Gap #7)", func() {
+		event, err := manager.BuildFailureEvent(
+			"correlation-789",
+			"production",
+			"rr-prod-002",
+			"signal_processing",
+			"timeout while enriching alert",
+			15000,
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Convert to map for EventData validation
+		eventDataBytes, _ := json.Marshal(event.EventData)
+		var eventData map[string]interface{}
+		_ = json.Unmarshal(eventDataBytes, &eventData)
+
+		// Validate error_details field exists (DD-ERROR-001)
+		Expect(eventData).To(HaveKey("error_details"), "Should contain error_details field (Gap #7)")
+
+		errorDetails, ok := eventData["error_details"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "error_details should be a map")
+
+		// Validate ErrorDetails structure per DD-ERROR-001
+		Expect(errorDetails).To(HaveKey("code"), "Should have error code")
+		Expect(errorDetails).To(HaveKey("message"), "Should have error message")
+		Expect(errorDetails).To(HaveKey("component"), "Should have component name")
+		Expect(errorDetails).To(HaveKey("retry_possible"), "Should have retry_possible indicator")
+
+		// Validate values
+		Expect(errorDetails["component"]).To(Equal("remediationorchestrator"), "Should identify remediationorchestrator component")
+		Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
+		Expect(errorDetails["message"]).To(ContainSubstring("signal_processing"), "Message should include failure phase")
+		Expect(errorDetails["message"]).To(ContainSubstring("timeout"), "Message should include failure reason")
+		Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
+
+		// Validate timeout errors are marked as retryable (business logic)
+		Expect(errorDetails["code"]).To(Equal("ERR_TIMEOUT_REMEDIATION"), "Timeout errors should use ERR_TIMEOUT_REMEDIATION code")
+		Expect(errorDetails["retry_possible"]).To(BeTrue(), "Timeout errors should be retryable")
+	})
 
 		It("should handle different failure phases and reasons with correct duration", func() {
 			event, err := manager.BuildFailureEvent(
