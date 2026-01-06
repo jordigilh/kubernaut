@@ -429,7 +429,7 @@ func startDSBootstrapImmudb(infra *DSBootstrapInfra, writer io.Writer) error {
 		"-p", fmt.Sprintf("%d:3322", cfg.ImmudbPort), // Immudb default gRPC port
 		"-e", fmt.Sprintf("IMMUDB_ADMIN_PASSWORD=%s", defaultImmudbPassword),
 		"-e", fmt.Sprintf("IMMUDB_DATABASE=%s", defaultImmudbDB),
-		"codenotary/immudb:latest", // Official multi-platform image (amd64/arm64)
+		"quay.io/jordigilh/immudb:latest", // Custom ARM64-compatible build
 	)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
