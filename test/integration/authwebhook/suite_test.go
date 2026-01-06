@@ -134,7 +134,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Setting up Data Storage infrastructure (PostgreSQL + Redis + Data Storage service)")
 	infra = testinfra.NewAuthWebhookInfrastructure()
-	infra.Setup()
+	err := infra.Setup(GinkgoWriter)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to setup infrastructure: %v", err))
+	}
 
 	GinkgoWriter.Println("✅ Shared infrastructure ready (Process #1)")
 	return []byte{} // No data to share between processes
@@ -422,7 +425,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 	By("Tearing down Data Storage infrastructure")
 	if infra != nil {
-		infra.Teardown()
+		_ = infra.Teardown(GinkgoWriter) // Ignore errors during cleanup
 		GinkgoWriter.Println("✅ Shared infrastructure torn down (PostgreSQL + Redis + Data Storage)")
 	}
 

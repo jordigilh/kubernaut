@@ -1,0 +1,41 @@
+# Data Storage Configuration for Auth Webhook Integration Tests
+# Per DD-TEST-001 v2.1: Port allocations for Auth Webhook service
+#
+# Note: Environment variables override these settings in the container
+# The DSBootstrap infrastructure passes connection details via env vars
+
+service:
+  name: data-storage
+  metricsPort: 9090
+  logLevel: debug
+  shutdownTimeout: 30s
+
+server:
+  port: 8080  # Container port (mapped to 18099 on host)
+  host: "0.0.0.0"
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: authwebhook_postgres_test  # Container name in podman network
+  port: 5432
+  name: action_history
+  user: slm_user
+  password: test_password  # Test environment only
+  ssl_mode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 10m
+
+redis:
+  addr: authwebhook_redis_test:6379  # Container name in podman network
+  db: 0
+  dlq_stream_name: dlq-stream
+  dlq_max_len: 1000
+  dlq_consumer_group: dlq-group
+
+logging:
+  level: debug
+  format: json
+
