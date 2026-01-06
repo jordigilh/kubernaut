@@ -17,8 +17,8 @@ server:
   write_timeout: 30s
 
 database:
-  host: authwebhook_postgres_test  # Container name in podman network
-  port: 5432
+  host: host.containers.internal  # Podman limitation: use host access, not container names
+  port: 15442  # DD-TEST-001 v2.1: Auth Webhook PostgreSQL port
   name: action_history
   user: slm_user
   password: test_password  # Test environment only
@@ -29,7 +29,7 @@ database:
   conn_max_idle_time: 10m
 
 redis:
-  addr: authwebhook_redis_test:6379  # Container name in podman network
+  addr: host.containers.internal:16386  # DD-TEST-001 v2.1: Auth Webhook Redis port
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
