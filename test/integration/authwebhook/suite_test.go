@@ -193,12 +193,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	_ = rarHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
-	// Register NotificationRequest DELETE webhook (DD-WEBHOOK-003: Complete audit events)
-	// Note: Uses ValidatingWebhook (not Mutating) because K8s doesn't invoke
-	// mutating webhooks for DELETE operations. Webhook writes audit event and allows DELETE.
-	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)
-	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
-	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
+	// Register NotificationRequest DELETE validator (DD-WEBHOOK-003: Complete audit events)
+	// Uses Kubebuilder CustomValidator interface for envtest compatibility
+	// Reference: https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation
+	nrValidator := webhooks.NewNotificationRequestValidator(auditStore)
+	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{
+		Handler: admission.WithCustomValidator(scheme.Scheme, &notificationv1.NotificationRequest{}, nrValidator),
+	})
 
 	By("Starting webhook server")
 	go func() {
@@ -210,15 +211,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}()
 
 	By("Waiting for webhook server to be ready")
-	// Give webhook server time to start (envtest handles webhook configuration automatically)
+	// Give webhook server time to start
 	time.Sleep(2 * time.Second)
+
+	By("Configuring webhook configurations (MutatingWebhookConfiguration + ValidatingWebhookConfiguration)")
+	// Register webhook configurations with K8s API server
+	// This is REQUIRED for envtest to actually invoke our webhooks
+	err = configureWebhooks(ctx, k8sClient, *webhookInstallOptions)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to configure webhooks: %v", err))
+	}
+	GinkgoWriter.Printf("[Process %d] ✅ Webhook configurations registered with K8s API server\n", GinkgoParallelProcess())
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Println("✅ envtest environment ready")
 	GinkgoWriter.Printf("   • Webhook server: %s:%d\n", webhookInstallOptions.LocalServingHost, webhookInstallOptions.LocalServingPort)
 	GinkgoWriter.Printf("   • CertDir: %s\n", webhookInstallOptions.LocalServingCertDir)
 	GinkgoWriter.Println("   • K8s client configured for CRD operations")
-	GinkgoWriter.Println("   • Webhook configurations applied")
+	GinkgoWriter.Println("   • Webhook configurations applied (Mutating + Validating)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 
