@@ -596,15 +596,27 @@ func (s *Server) shutdownStep5CloseResources() error {
 	if s.immuClient != nil {
 		s.logger.Info("Closing Immudb session (SOC2 Gap #9)",
 			"dd", "DD-007-step-5-immudb-close")
-		ctx := context.Background()
-		if err := s.immuClient.CloseSession(ctx); err != nil {
-			s.logger.Error(err, "Failed to close Immudb session",
-				"dd", "DD-007-step-5-immudb-error")
-			// Continue with shutdown even if Immudb close fails
-		} else {
-			s.logger.Info("Immudb session closed successfully",
-				"dd", "DD-007-step-5-immudb-complete")
-		}
+
+		// Best-effort cleanup: CloseSession can panic if session is already closed
+		// Wrap in defer/recover to prevent server shutdown panic
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.logger.Info("Immudb session already closed or invalid (recovered from panic)",
+						"dd", "DD-007-step-5-immudb-recovered")
+				}
+			}()
+
+			ctx := context.Background()
+			if err := s.immuClient.CloseSession(ctx); err != nil {
+				s.logger.Error(err, "Failed to close Immudb session",
+					"dd", "DD-007-step-5-immudb-error")
+				// Continue with shutdown even if Immudb close fails
+			} else {
+				s.logger.Info("Immudb session closed successfully",
+					"dd", "DD-007-step-5-immudb-complete")
+			}
+		}()
 	}
 
 	// Close PostgreSQL connection

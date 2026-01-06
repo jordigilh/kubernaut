@@ -18,6 +18,8 @@ package datastorage
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/codenotary/immudb/pkg/client"
@@ -62,6 +64,14 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 	)
 
 	BeforeEach(func() {
+		// Clean up Immudb identity files before each test (SOC2 Gap #9)
+		// Immudb SDK stores server identity files to prevent MITM attacks
+		// When containers restart, identity changes, causing connection failures
+		files, _ := filepath.Glob(".identity-*")
+		for _, file := range files {
+			_ = os.Remove(file)
+		}
+
 		testLogger := kubelog.NewLogger(kubelog.Options{
 			ServiceName: "immudb-integration-test",
 			Level:       1,
@@ -91,6 +101,13 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 
 	AfterEach(func() {
 		if immuClient != nil {
+			// Best-effort cleanup: CloseSession can panic if session is already closed
+			// Wrap in defer/recover to prevent test panics during cleanup
+			defer func() {
+				if r := recover(); r != nil {
+					// Session already closed or invalid - ignore panic
+				}
+			}()
 			ctx := context.Background()
 			_ = immuClient.CloseSession(ctx)
 		}
