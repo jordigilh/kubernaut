@@ -269,9 +269,18 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// Apply CRDs first
 	_, _ = fmt.Fprintln(writer, "📋 Applying CRDs...")
+	
+	// Get workspace root for config paths
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+	
 	cmd := exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
+	cmd.Dir = workspaceRoot // Run from workspace root
+	
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ CRD apply failed: %s\n", output)
 		return fmt.Errorf("kubectl apply crds failed: %w", err)
@@ -283,6 +292,8 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"-f", "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
+	cmd.Dir = workspaceRoot // Run from workspace root
+	
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Deployment failed: %s\n", output)
 		return fmt.Errorf("kubectl apply failed: %w", err)
