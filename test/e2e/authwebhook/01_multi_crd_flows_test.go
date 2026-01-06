@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	remediationorchestrationv1 "github.com/jordigilh/kubernaut/api/remediation-orchestrator/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	auditclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
@@ -43,7 +43,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 		testCtx       context.Context
 		testNamespace string
 		wfe           *workflowexecutionv1.WorkflowExecution
-		rar           *remediationorchestrationv1.RemediationApprovalRequest
+		rar           *remediationv1.RemediationApprovalRequest
 		nr            *notificationv1.NotificationRequest
 	)
 
@@ -101,16 +101,16 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 		}, 15*time.Second, 1*time.Second).ShouldNot(BeEmpty(), "Webhook should populate ClearedBy field")
 
 		By("Step 2: Create and approve RemediationApprovalRequest")
-		rar = &remediationorchestrationv1.RemediationApprovalRequest{
+		rar = &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "e2e-multi-rar",
 				Namespace: testNamespace,
 			},
-			Spec: remediationorchestrationv1.RemediationApprovalRequestSpec{
-				AIAnalysisRef: remediationorchestrationv1.AIAnalysisRef{
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				AIAnalysisRef: remediationv1.AIAnalysisRef{
 					Name: "test-analysis",
 				},
-				RemediationPlan: remediationorchestrationv1.RemediationPlan{
+				RemediationPlan: remediationv1.RemediationPlan{
 					Description: "Test remediation plan",
 				},
 			},
@@ -118,7 +118,7 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 		Expect(k8sClient.Create(testCtx, rar)).To(Succeed())
 
 		// Trigger approval (webhook will populate ApprovedBy)
-		rar.Status.Decision = remediationorchestrationv1.DecisionApproved
+		rar.Status.Decision = remediationv1.DecisionApproved
 		rar.Status.DecisionMessage = "E2E test: Approved for SOC2 attribution verification"
 		Expect(k8sClient.Status().Update(testCtx, rar)).To(Succeed())
 
