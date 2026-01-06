@@ -77,7 +77,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 				},
 			}
 
-			createAndWaitForCRD(ctx, nr)
+			createAndWaitForCRD(ctx, k8sClient, nr)
 
 			By("Operator deletes NotificationRequest to cancel (business operation)")
 			// Per DD-NOT-005: Spec is immutable, cancellation is via DELETE
@@ -149,7 +149,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 				},
 			}
 
-			createAndWaitForCRD(ctx, nr)
+			createAndWaitForCRD(ctx, k8sClient, nr)
 
 			By("Controller marks notification as Sent (business operation)")
 			nr.Status.Phase = notificationv1.NotificationPhaseSent
@@ -200,7 +200,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 				},
 			}
 
-			createAndWaitForCRD(ctx, nr)
+			createAndWaitForCRD(ctx, k8sClient, nr)
 
 			By("Controller marks notification as Sending (processing started)")
 			nr.Status.Phase = notificationv1.NotificationPhaseSending

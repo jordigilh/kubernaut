@@ -34,6 +34,7 @@ import (
 // Per TESTING_GUIDELINES.md: Use Eventually(), NEVER time.Sleep()
 func waitForStatusField(
 	ctx context.Context,
+	k8sClient client.Client,
 	obj client.Object,
 	fieldGetter func() string,
 	timeout time.Duration,
@@ -50,7 +51,7 @@ func waitForStatusField(
 
 // createAndWaitForCRD creates a CRD and waits for it to be ready
 // Per TESTING_GUIDELINES.md: Use Eventually() for K8s eventual consistency
-func createAndWaitForCRD(ctx context.Context, obj client.Object) {
+func createAndWaitForCRD(ctx context.Context, k8sClient client.Client, obj client.Object) {
 	Expect(k8sClient.Create(ctx, obj)).To(Succeed(),
 		"CRD creation should succeed")
 
@@ -70,6 +71,7 @@ func createAndWaitForCRD(ctx context.Context, obj client.Object) {
 // 3. Verify webhook populated fields correctly
 func updateStatusAndWaitForWebhook(
 	ctx context.Context,
+	k8sClient client.Client,
 	obj client.Object,
 	updateFunc func(),
 	verifyFunc func() bool,
@@ -94,6 +96,7 @@ func updateStatusAndWaitForWebhook(
 // Used for NotificationRequest DELETE attribution tests
 func deleteAndWaitForAnnotations(
 	ctx context.Context,
+	k8sClient client.Client,
 	obj client.Object,
 	expectedAnnotationKey string,
 ) {
