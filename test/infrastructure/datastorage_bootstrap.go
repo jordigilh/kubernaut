@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -35,6 +36,7 @@ type DSBootstrapConfig struct {
 	// These are the ONLY service-specific values - everything else is shared infrastructure
 	PostgresPort    int // PostgreSQL port (e.g., 15437 for Gateway)
 	RedisPort       int // Redis port (e.g., 16383 for Gateway)
+	ImmudbPort      int // Immudb port (e.g., 13323 for Gateway) - SOC2 immutable audit trails
 	DataStoragePort int // DataStorage HTTP API port (e.g., 18091 for Gateway)
 	MetricsPort     int // DataStorage metrics port (e.g., 19091 for Gateway)
 
@@ -47,6 +49,9 @@ const (
 	defaultPostgresUser     = "slm_user"
 	defaultPostgresPassword = "test_password"
 	defaultPostgresDB       = "action_history"
+	defaultImmudbUser       = "immudb"
+	defaultImmudbPassword   = "immudb_test_password"
+	defaultImmudbDB         = "kubernaut_audit"
 	defaultMigrationsPath   = "migrations" // Always at project root
 )
 
@@ -70,6 +75,7 @@ func generateInfrastructureImageTag(infrastructure, consumer string) string {
 type DSBootstrapInfra struct {
 	PostgresContainer    string // Container name: {service}_postgres_test
 	RedisContainer       string // Container name: {service}_redis_test
+	ImmudbContainer      string // Container name: {service}_immudb_test
 	DataStorageContainer string // Container name: {service}_datastorage_test
 	MigrationsContainer  string // Container name: {service}_migrations (ephemeral)
 	Network              string // Network name: {service}_test_network
@@ -91,7 +97,8 @@ type DSBootstrapInfra struct {
 // 3. Start PostgreSQL → wait for ready
 // 4. Run migrations
 // 5. Start Redis → wait for ready
-// 6. Start DataStorage → wait for HTTP /health
+// 6. Start Immudb → wait for ready (SOC2 audit trails)
+// 7. Start DataStorage → wait for HTTP /health
 //
 // This pattern achieves >99% reliability vs ~70% with podman-compose parallel startup.
 //
@@ -103,6 +110,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	infra := &DSBootstrapInfra{
 		PostgresContainer:    fmt.Sprintf("%s_postgres_test", cfg.ServiceName),
 		RedisContainer:       fmt.Sprintf("%s_redis_test", cfg.ServiceName),
+		ImmudbContainer:      fmt.Sprintf("%s_immudb_test", cfg.ServiceName),
 		DataStorageContainer: fmt.Sprintf("%s_datastorage_test", cfg.ServiceName),
 		MigrationsContainer:  fmt.Sprintf("%s_migrations", cfg.ServiceName),
 		Network:              fmt.Sprintf("%s_test_network", cfg.ServiceName),
@@ -119,6 +127,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "  PostgreSQL:     localhost:%d\n", cfg.PostgresPort)
 	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d\n", cfg.RedisPort)
+	_, _ = fmt.Fprintf(writer, "  Immudb:         localhost:%d (SOC2 audit trails)\n", cfg.ImmudbPort)
 	_, _ = fmt.Fprintf(writer, "  DataStorage:    %s\n", infra.ServiceURL)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
@@ -165,7 +174,19 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
 
-	// Step 6: DataStorage
+	// Step 6: Immudb
+	_, _ = fmt.Fprintf(writer, "🗄️  Starting Immudb (SOC2 immutable audit storage)...\n")
+	if err := startDSBootstrapImmudb(infra, writer); err != nil {
+		return nil, fmt.Errorf("failed to start Immudb: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Immudb to be ready...\n")
+	if err := waitForDSBootstrapImmudbReady(infra, writer); err != nil {
+		return nil, fmt.Errorf("Immudb failed to become ready: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ Immudb ready\n\n")
+
+	// Step 7: DataStorage
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
 	imageName, err := startDSBootstrapService(infra, projectRoot, writer)
 	if err != nil {
@@ -191,6 +212,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "  PostgreSQL:        localhost:%d\n", cfg.PostgresPort)
 	_, _ = fmt.Fprintf(writer, "  Redis:             localhost:%d\n", cfg.RedisPort)
+	_, _ = fmt.Fprintf(writer, "  Immudb:            localhost:%d (SOC2 audit trails)\n", cfg.ImmudbPort)
 	_, _ = fmt.Fprintf(writer, "  DataStorage HTTP:  %s\n", infra.ServiceURL)
 	_, _ = fmt.Fprintf(writer, "  DataStorage Metrics: %s\n", infra.MetricsURL)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -218,6 +240,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	// Stop and remove containers (ignore errors if containers don't exist)
 	containers := []string{
 		infra.DataStorageContainer,
+		infra.ImmudbContainer,
 		infra.RedisContainer,
 		infra.PostgresContainer,
 		infra.MigrationsContainer,
@@ -395,6 +418,42 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 	return nil
 }
 
+// startDSBootstrapImmudb starts the Immudb container
+func startDSBootstrapImmudb(infra *DSBootstrapInfra, writer io.Writer) error {
+	cfg := infra.Config
+
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", infra.ImmudbContainer,
+		"--network", infra.Network,
+		"-p", fmt.Sprintf("%d:3322", cfg.ImmudbPort), // Immudb default gRPC port
+		"-e", fmt.Sprintf("IMMUDB_ADMIN_PASSWORD=%s", defaultImmudbPassword),
+		"-e", fmt.Sprintf("IMMUDB_DATABASE=%s", defaultImmudbDB),
+		"codenotary/immudb:latest", // Official multi-platform image (amd64/arm64)
+	)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	return cmd.Run()
+}
+
+// waitForDSBootstrapImmudbReady waits for Immudb to be ready
+func waitForDSBootstrapImmudbReady(infra *DSBootstrapInfra, writer io.Writer) error {
+	for i := 1; i <= 30; i++ {
+		// TCP check for gRPC port (3322)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", infra.Config.ImmudbPort), 1*time.Second)
+		if err == nil {
+			conn.Close()
+			_, _ = fmt.Fprintf(writer, "   Immudb ready (attempt %d/30)\n", i)
+			return nil
+		}
+		if i == 30 {
+			return fmt.Errorf("Immudb failed to become ready after 30 seconds")
+		}
+		_, _ = fmt.Fprintf(writer, "   Waiting... (attempt %d/30)\n", i)
+		time.Sleep(1 * time.Second)
+	}
+	return nil
+}
+
 // startDSBootstrapService starts the DataStorage container
 // Returns the full image name for cleanup purposes
 func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) (string, error) {
@@ -410,15 +469,15 @@ func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer
 	// Check if DataStorage image exists, build if not
 	checkCmd := exec.Command("podman", "image", "exists", imageName)
 	if checkCmd.Run() != nil {
-	_, _ = fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
-	buildCmd := exec.Command("podman", "build",
-	"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+		_, _ = fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
+		buildCmd := exec.Command("podman", "build",
+			"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
 
-		"-t", imageName,
-		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
-		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-		projectRoot,
-	)
+			"-t", imageName,
+			"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
+			"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
+			projectRoot,
+		)
 		buildCmd.Stdout = writer
 		buildCmd.Stderr = writer
 		if err := buildCmd.Run(); err != nil {
