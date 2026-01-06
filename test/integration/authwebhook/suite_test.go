@@ -410,13 +410,15 @@ var _ = SynchronizedAfterSuite(func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// PHASE 2: Runs ONCE on process #1 AFTER all processes finish
 	// Teardown shared infrastructure (PostgreSQL + Redis + Data Storage)
+	//
+	// NOTE: SynchronizedAfterSuite guarantees Phase 2 runs AFTER all processes
+	// complete Phase 1. No time.Sleep() needed - Ginkgo handles synchronization.
+	// Per TESTING_GUIDELINES.md: time.Sleep() for async waits is forbidden.
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	GinkgoWriter.Printf("🧹 [Process %d] Tearing down shared infrastructure (Process #1 only)...\n", GinkgoParallelProcess())
+	GinkgoWriter.Println("   (Ginkgo guarantees all processes finished Phase 1 cleanup)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	// Wait a moment for all processes to finish their per-process cleanup
-	time.Sleep(2 * time.Second)
 
 	By("Tearing down Data Storage infrastructure")
 	if infra != nil {
