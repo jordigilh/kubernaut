@@ -43,7 +43,7 @@ import (
 // Parallel Execution Strategy:
 //
 //	Phase 1 (Sequential): Create Kind cluster + namespace (~65s)
-//	Phase 2 (PARALLEL):   Build/Load DS+AW images | Deploy PostgreSQL | Deploy Redis (~90s)
+//	Phase 2 (PARALLEL):   Build/Load DS+AW images | Deploy PostgreSQL | Deploy Redis | Deploy Immudb (~90s)
 //	Phase 3 (Sequential): Run migrations (~30s)
 //	Phase 4 (Sequential): Deploy DataStorage + AuthWebhook services (~45s)
 //	Phase 5 (Sequential): Wait for services ready (~30s)
@@ -96,14 +96,15 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading AuthWebhook image")
 	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  ├── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Immudb (SOC2 audit trails)")
 
 	type result struct {
 		name string
 		err  error
 	}
 
-	results := make(chan result, 4)
+	results := make(chan result, 5) // Increased from 4 to 5 for Immudb
 
 	// Goroutine 1: Build and load DataStorage image
 	go func() {
@@ -139,10 +140,16 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		results <- result{name: "Redis", err: err}
 	}()
 
+	// Goroutine 5: Deploy Immudb (SOC2 audit trails - E2E uses default cluster port)
+	go func() {
+		err := deployImmudbInNamespace(ctx, namespace, kubeconfigPath, writer)
+		results <- result{name: "Immudb", err: err}
+	}()
+
 	// Collect results from all goroutines
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for parallel tasks to complete...")
 	var firstError error
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ { // Increased from 4 to 5 for Immudb
 		res := <-results
 		if res.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s: %v\n", res.name, res.err)
@@ -834,7 +841,8 @@ logging:
 			Namespace: namespace,
 		},
 		StringData: map[string]string{
-			"db-secrets.yaml":    `username: slm_user\npassword: test_password`,
+			"db-secrets.yaml": `username: slm_user
+password: test_password`,
 			"redis-secrets.yaml": `password: ""`,
 		},
 	}
