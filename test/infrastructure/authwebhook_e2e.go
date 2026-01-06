@@ -20,8 +20,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -190,7 +193,7 @@ func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
 		"-t", imageTag,
 		"-f", "docker/webhooks.Dockerfile",
 		".")
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Build failed: %s\n", output)
@@ -335,19 +338,62 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 
 // createKindClusterWithConfig creates a Kind cluster with a specific config file
 func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string, writer io.Writer) error {
+	// Check if cluster already exists and delete it
+	checkCmd := exec.Command("kind", "get", "clusters")
+	checkOutput, _ := checkCmd.CombinedOutput()
+	if strings.Contains(string(checkOutput), clusterName) {
+		_, _ = fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
+		delCmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
+		if output, err := delCmd.CombinedOutput(); err != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to delete existing cluster: %s\n", output)
+		}
+	}
+
+	// Resolve config path relative to workspace root
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+	absoluteConfigPath := filepath.Join(workspaceRoot, configPath)
+	if _, err := os.Stat(absoluteConfigPath); os.IsNotExist(err) {
+		return fmt.Errorf("kind config file not found: %s", absoluteConfigPath)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", absoluteConfigPath)
+
 	cmd := exec.Command("kind", "create", "cluster",
 		"--name", clusterName,
+		"--config", absoluteConfigPath,
 		"--kubeconfig", kubeconfigPath,
-		"--config", configPath,
 		"--wait", "60s")
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Failed to create cluster: %s\n", output)
+		_, _ = fmt.Fprintf(writer, "❌ Failed to create cluster:\n%s\n", output)
 		return fmt.Errorf("kind create cluster failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Kind cluster created")
+	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created")
+
+	// Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
+	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
+	kubeconfigOutput, err := kubeconfigCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to get kubeconfig: %w", err)
+	}
+
+	// Ensure directory exists
+	kubeconfigDir := filepath.Dir(kubeconfigPath)
+	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
+		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
+	}
+
+	// Write kubeconfig to file
+	if err := os.WriteFile(kubeconfigPath, kubeconfigOutput, 0600); err != nil {
+		return fmt.Errorf("failed to write kubeconfig: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
 	return nil
 }
 
@@ -358,6 +404,46 @@ func LoadKubeconfig(kubeconfigPath string) (*rest.Config, error) {
 		return nil, fmt.Errorf("failed to load kubeconfig from %s: %w", kubeconfigPath, err)
 	}
 	return config, nil
+}
+
+// createTestNamespace creates a namespace in the Kind cluster
+func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
+	cmd := exec.Command("kubectl", "create", "namespace", namespace,
+		"--kubeconfig", kubeconfigPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Ignore "already exists" errors
+		if !strings.Contains(string(output), "already exists") {
+			_, _ = fmt.Fprintf(writer, "❌ Namespace creation failed:\n%s\n", output)
+			return fmt.Errorf("failed to create namespace: %w", err)
+		}
+		_, _ = fmt.Fprintf(writer, "  ⚠️  Namespace %s already exists\n", namespace)
+		return nil
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Namespace %s created\n", namespace)
+	return nil
+}
+
+// findWorkspaceRoot walks up the directory tree to find go.mod
+func findWorkspaceRoot() (string, error) {
+	dir, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+
+	// Walk up the directory tree looking for go.mod
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("could not find go.mod in any parent directory")
+		}
+		dir = parent
+	}
 }
 
 // deployPostgreSQLToKind deploys PostgreSQL to Kind cluster with custom NodePort
