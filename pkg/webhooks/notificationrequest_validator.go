@@ -119,14 +119,20 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	audit.SetNamespace(auditEvent, nr.Namespace)
 
 	// Set event data payload
+	// Standard audit fields (per DD-TESTING-001 Pattern 5: Structured Content Validation)
 	eventData := map[string]interface{}{
+		// WHO, WHAT, WHERE, HOW (standard attribution fields)
+		"operator":  authCtx.Username, // SOC2 CC8.1: WHO cancelled
+		"crd_name":  nr.Name,          // WHAT was cancelled
+		"namespace": nr.Namespace,     // WHERE it happened
+		"action":    "delete",         // HOW it was cancelled
+
+		// NotificationRequest-specific context (audit completeness)
 		"notification_id": nr.Name,
 		"type":            string(nr.Spec.Type),
 		"priority":        string(nr.Spec.Priority),
-		"cancelled_by":    authCtx.Username,
 		"user_uid":        authCtx.UID,
 		"user_groups":     authCtx.Groups,
-		"action":          "notification_cancelled",
 	}
 	audit.SetEventData(auditEvent, eventData)
 	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
