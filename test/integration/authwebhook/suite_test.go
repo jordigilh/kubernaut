@@ -116,17 +116,39 @@ func TestAuthWebhookIntegration(t *testing.T) {
 	RunSpecs(t, "AuthWebhook Integration Suite - BR-AUTH-001 SOC2 Attribution")
 }
 
-var _ = BeforeSuite(func() {
+var _ = SynchronizedBeforeSuite(func() []byte {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 1: Runs ONCE on parallel process #1
+	// Setup shared infrastructure (PostgreSQL + Redis + Data Storage)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	GinkgoWriter.Printf("🔧 [Process %d] AuthWebhook Integration Test Suite - DD-TEST-002\n", GinkgoParallelProcess())
+	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	GinkgoWriter.Printf("Creating shared test infrastructure (Process #1 only)...\n")
+	GinkgoWriter.Printf("  • PostgreSQL (port 15442)\n")
+	GinkgoWriter.Printf("  • Redis (port 16386)\n")
+	GinkgoWriter.Printf("  • Data Storage API (port 18099)\n")
+	GinkgoWriter.Printf("  • Parallel Execution: 4 concurrent processors\n")
+	GinkgoWriter.Printf("  • Pattern: DD-TEST-002 (Synchronized Suite Setup)\n")
+	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	By("Setting up Data Storage infrastructure (PostgreSQL + Redis + Data Storage service)")
+	infra = testinfra.NewAuthWebhookInfrastructure()
+	infra.Setup()
+
+	GinkgoWriter.Println("✅ Shared infrastructure ready (Process #1)")
+	return []byte{} // No data to share between processes
+
+}, func(data []byte) {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 2: Runs on ALL parallel processes
+	// Setup per-process resources (envtest + webhook server + clients)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// STEP 1: Setup Real Data Storage Infrastructure (DD-TESTING-001)
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	By("Setting up Data Storage infrastructure (PostgreSQL + Redis + Data Storage service)")
-	infra = testinfra.NewAuthWebhookInfrastructure()
-	infra.Setup()
+	GinkgoWriter.Printf("🔧 [Process %d] Setting up per-process resources...\n", GinkgoParallelProcess())
 
 	By("Initializing Data Storage OpenAPI client (DD-API-001)")
 	var err error
@@ -134,7 +156,7 @@ var _ = BeforeSuite(func() {
 	if err != nil {
 		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
 	}
-	GinkgoWriter.Println("✅ Data Storage OpenAPI client initialized")
+	GinkgoWriter.Printf("[Process %d] ✅ Data Storage OpenAPI client initialized\n", GinkgoParallelProcess())
 
 	By("Creating REAL audit store for webhook handlers")
 	// Create OpenAPI DataStorage client adapter for audit writes
@@ -155,7 +177,7 @@ var _ = BeforeSuite(func() {
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create audit store: %v", err))
 	}
-	GinkgoWriter.Println("✅ Real audit store created (connected to DataStorage)")
+	GinkgoWriter.Printf("[Process %d] ✅ Real audit store created (connected to DataStorage)\n", GinkgoParallelProcess())
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// STEP 2: Setup envtest + webhook server
@@ -350,27 +372,60 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 	return nil
 }
 
-var _ = AfterSuite(func() {
+var _ = SynchronizedAfterSuite(func() {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 1: Runs on ALL parallel processes
+	// Cleanup per-process resources (audit store + envtest + context)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	GinkgoWriter.Printf("🧹 [Process %d] Cleaning up per-process resources...\n", GinkgoParallelProcess())
+
 	By("Flushing audit store before teardown")
 	if auditStore != nil {
 		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer flushCancel()
 		err := auditStore.Flush(flushCtx)
 		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit store: %v\n", err)
+			GinkgoWriter.Printf("⚠️  [Process %d] Warning: Failed to flush audit store: %v\n", GinkgoParallelProcess(), err)
 		} else {
-			GinkgoWriter.Println("✅ Audit store flushed")
+			GinkgoWriter.Printf("[Process %d] ✅ Audit store flushed\n", GinkgoParallelProcess())
 		}
 	}
 
-	By("Tearing down the test environment")
-	cancel()
-	err := testEnv.Stop()
-	Expect(err).NotTo(HaveOccurred())
+	By("Tearing down the test environment (envtest)")
+	if cancel != nil {
+		cancel()
+	}
+	if testEnv != nil {
+		err := testEnv.Stop()
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Warning: Failed to stop envtest: %v\n", GinkgoParallelProcess(), err)
+		} else {
+			GinkgoWriter.Printf("[Process %d] ✅ envtest stopped\n", GinkgoParallelProcess())
+		}
+	}
+
+	GinkgoWriter.Printf("[Process %d] ✅ Per-process cleanup complete\n", GinkgoParallelProcess())
+
+}, func() {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 2: Runs ONCE on process #1 AFTER all processes finish
+	// Teardown shared infrastructure (PostgreSQL + Redis + Data Storage)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Printf("🧹 [Process %d] Tearing down shared infrastructure (Process #1 only)...\n", GinkgoParallelProcess())
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Wait a moment for all processes to finish their per-process cleanup
+	time.Sleep(2 * time.Second)
 
 	By("Tearing down Data Storage infrastructure")
 	if infra != nil {
 		infra.Teardown()
+		GinkgoWriter.Println("✅ Shared infrastructure torn down (PostgreSQL + Redis + Data Storage)")
 	}
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("✅ AuthWebhook Integration Test Suite - Teardown Complete")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 
