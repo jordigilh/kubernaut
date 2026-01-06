@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -338,6 +340,94 @@ func waitForSPServicesReady(ctx context.Context, namespace, kubeconfigPath strin
 	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "SignalProcessing pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ SignalProcessing ready\n")
 
+	return nil
+}
+
+// ============================================================================
+// Missing E2E Infrastructure Functions (Restored from git history)
+// ============================================================================
+
+// BuildSignalProcessingImageWithCoverage builds the SignalProcessing image with coverage instrumentation
+// This is used by E2E tests to enable coverage collection
+func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
+	projectRoot := getProjectRoot()
+	if projectRoot == "" {
+		return fmt.Errorf("project root not found")
+	}
+
+	dockerfilePath := filepath.Join(projectRoot, "docker", "signalprocessing-ubi9.Dockerfile")
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		return fmt.Errorf("SignalProcessing Dockerfile not found at %s", dockerfilePath)
+	}
+
+	containerCmd := "podman"
+	if _, err := exec.LookPath("podman"); err != nil {
+		containerCmd = "docker"
+	}
+
+	// Use unique image tag with coverage suffix
+	imageTag := "e2e-test-coverage"
+	imageName := fmt.Sprintf("localhost/kubernaut-signalprocessing:%s", imageTag)
+	_, _ = fmt.Fprintf(writer, "  📦 Building SignalProcessing with coverage: %s\n", imageName)
+
+	// Build with GOFLAGS=-cover for E2E coverage
+	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
+	cmd := exec.Command(containerCmd, "build",
+		"--no-cache", // Force fresh build to include latest code changes
+		"-t", imageName,
+		"-f", dockerfilePath,
+		"--build-arg", "GOFLAGS=-cover",
+		projectRoot,
+	)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	cmd.Dir = projectRoot
+
+	return cmd.Run()
+}
+
+// createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
+// This follows the standard Kind cluster creation pattern used by other E2E tests
+func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  Creating Kind cluster: %s\n", clusterName)
+
+	// Check if cluster already exists
+	checkCmd := exec.Command("kind", "get", "clusters")
+	output, err := checkCmd.Output()
+	if err == nil && strings.Contains(string(output), clusterName) {
+		_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, skipping creation\n", clusterName)
+		return nil
+	}
+
+	// Create Kind cluster with appropriate configuration
+	kindConfig := `
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30080
+    hostPort: 8080
+    protocol: TCP
+  - containerPort: 30081
+    hostPort: 18091
+    protocol: TCP
+`
+
+	cmd := exec.Command("kind", "create", "cluster",
+		"--name", clusterName,
+		"--kubeconfig", kubeconfigPath,
+		"--config", "-",
+	)
+	cmd.Stdin = strings.NewReader(kindConfig)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Kind cluster: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "  ✅ Kind cluster created successfully\n")
 	return nil
 }
 
