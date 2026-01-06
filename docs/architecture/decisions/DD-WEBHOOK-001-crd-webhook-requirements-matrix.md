@@ -55,12 +55,14 @@
 │                                                                 │
 │  Port: 9443 (DEFAULT - HTTPS with TLS cert)                   │
 │  Data Storage URL: http://datastorage-service:8080 (DEFAULT)  │
+│  Metrics: ❌ NONE (audit traces sufficient)                   │
 └────────────────────────────────────────────────────────────────┘
 ```
 
 **Default Configuration**:
 - **Webhook Port**: `9443` (standard Kubernetes webhook port - no configuration needed)
 - **Data Storage URL**: `http://datastorage-service:8080` (K8s service name - no configuration needed)
+- **Metrics**: ❌ **None** - Audit traces capture 100% of operations; K8s API server exposes webhook metrics
 - **Override**: Via environment variables or CLI flags for dev/test environments
 
 ### **Benefits of Consolidated Approach**
@@ -98,8 +100,8 @@ pkg/webhooks/notificationrequest_handler.go         # NR-specific logic
 |-----------|---------------|-----------------|---------|
 | **Webhook Port** | `9443` | `--webhook-port` or `WEBHOOK_PORT` | Standard K8s webhook HTTPS port |
 | **Data Storage URL** | `http://datastorage-service:8080` | `--data-storage-url` or `WEBHOOK_DATA_STORAGE_URL` | Audit event API endpoint |
-| **Metrics Address** | `:8080` | `--metrics-bind-address` | Prometheus metrics endpoint |
 | **Cert Directory** | `/tmp/k8s-webhook-server/serving-certs` | `--cert-dir` | TLS certificate location |
+| **Metrics** | ❌ **None** | N/A | Audit traces sufficient; K8s API server exposes webhook metrics |
 
 ### **Configuration Priority** (Highest to Lowest)
 
@@ -116,13 +118,12 @@ containers:
   image: kubernaut/auth-webhook:latest
   # No args needed - all defaults work in production
   ports:
-  - containerPort: 9443  # Default webhook port
+  - containerPort: 9443  # Webhook HTTPS port (only port needed)
     name: webhook
-  - containerPort: 8080  # Default metrics port
-    name: metrics
+  # No metrics port - audit traces sufficient
 ```
 
-**Result**: Webhook works out-of-box in standard Kubernetes environments.
+**Result**: Webhook works out-of-box in standard Kubernetes environments with zero configuration.
 
 ### **Development/Test Overrides**
 
@@ -148,11 +149,12 @@ env:
 ./webhooks-controller \
   --webhook-port=9443 \                          # DEFAULT (can omit)
   --data-storage-url=http://datastorage-service:8080 \  # DEFAULT (can omit)
-  --metrics-bind-address=:8080 \                 # DEFAULT (can omit)
   --cert-dir=/tmp/k8s-webhook-server/serving-certs      # DEFAULT (can omit)
 
 # Minimal production command (all defaults):
 ./webhooks-controller
+
+# No metrics flag - audit traces sufficient
 ```
 
 ### **Why Port 9443?**

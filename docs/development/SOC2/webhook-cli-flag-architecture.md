@@ -31,10 +31,11 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 |------|---------|--------------|---------|
 | `--webhook-port` | `9443` | `WEBHOOK_PORT` | Webhook HTTPS port (standard K8s webhook port) |
 | `--data-storage-url` | `http://datastorage-service:8080` | `WEBHOOK_DATA_STORAGE_URL` | Audit event API endpoint |
-| `--metrics-bind-address` | `:8080` | `WEBHOOK_METRICS_ADDR` | Prometheus metrics endpoint |
 | `--cert-dir` | `/tmp/k8s-webhook-server/serving-certs` | `WEBHOOK_CERT_DIR` | TLS certificate location |
 
-**Authority**: DD-WEBHOOK-001 (Service Configuration section)
+**Note**: ❌ **No metrics flag** - Audit traces capture 100% of operations; Kubernetes API server already exposes webhook metrics.
+
+**Authority**: DD-WEBHOOK-001 (Service Configuration section), WEBHOOK_METRICS_TRIAGE.md
 
 ### **Primary Flag: Data Storage URL**
 
@@ -42,10 +43,10 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 --data-storage-url=<URL>
 ```
 
-**Description**: Data Storage service URL for audit event writes  
-**Default**: `http://datastorage-service:8080` (K8s service name)  
-**Required**: No (uses default if not specified)  
-**Format**: HTTP/HTTPS URL  
+**Description**: Data Storage service URL for audit event writes
+**Default**: `http://datastorage-service:8080` (K8s service name)
+**Required**: No (uses default if not specified)
+**Format**: HTTP/HTTPS URL
 **Override**: Via environment variable `WEBHOOK_DATA_STORAGE_URL` or CLI flag
 
 **Rationale**: Default to K8s service name for production, override for dev/test environments
@@ -56,10 +57,10 @@ The authentication webhook service uses a CLI flag `--data-storage-url` to conne
 --webhook-port=<PORT>
 ```
 
-**Description**: HTTPS port for webhook admission endpoint  
-**Default**: `9443` (standard Kubernetes webhook port)  
-**Required**: No (uses default if not specified)  
-**Format**: Integer port number  
+**Description**: HTTPS port for webhook admission endpoint
+**Default**: `9443` (standard Kubernetes webhook port)
+**Required**: No (uses default if not specified)
+**Format**: Integer port number
 **Override**: Via environment variable `WEBHOOK_PORT` or CLI flag
 
 **Rationale**: Port 9443 is the de facto standard for K8s admission webhooks (cert-manager, OPA, Istio)
@@ -135,6 +136,7 @@ import (
 func main() {
     var dataStorageURL string
     var webhookPort int
+    var certDir string
     
     // 1. Define CLI flags with production defaults
     flag.StringVar(&dataStorageURL, "data-storage-url", 
@@ -143,6 +145,9 @@ func main() {
     flag.IntVar(&webhookPort, "webhook-port", 
         9443,  // DEFAULT (standard K8s webhook port)
         "Webhook HTTPS port")
+    flag.StringVar(&certDir, "cert-dir", 
+        "/tmp/k8s-webhook-server/serving-certs",  // DEFAULT
+        "TLS certificate directory")
     flag.Parse()
     
     // 2. Allow environment variable overrides (higher priority than defaults)
@@ -157,7 +162,9 @@ func main() {
     
     setupLog.Info("Webhook configuration", 
         "webhook_port", webhookPort,
-        "data_storage_url", dataStorageURL)
+        "data_storage_url", dataStorageURL,
+        "cert_dir", certDir)
+    // No metrics configuration - audit traces sufficient
 
     // 3. Initialize OpenAPI audit client
     // Per DD-API-001: Use OpenAPI generated client
@@ -222,16 +229,14 @@ spec:
         # Defaults:
         #   --webhook-port=9443
         #   --data-storage-url=http://datastorage-service:8080
-        #   --metrics-bind-address=:8080
         #   --cert-dir=/tmp/k8s-webhook-server/serving-certs
         ports:
         - containerPort: 9443
           name: webhook
-        - containerPort: 8080
-          name: metrics
+        # No metrics port - audit traces sufficient
 ```
 
-**Pros**: ✅ Zero configuration, ✅ Production-ready, ✅ Simplest possible deployment  
+**Pros**: ✅ Zero configuration, ✅ Production-ready, ✅ Simplest possible deployment, ✅ No metrics overhead  
 **Cons**: None for standard Kubernetes environments
 
 ---
