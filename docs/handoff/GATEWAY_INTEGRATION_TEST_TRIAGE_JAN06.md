@@ -10,7 +10,7 @@
 
 Gateway integration tests are currently non-functional due to:
 1. ✅ **FIXED**: Database credential mismatch (db-secrets.yaml)
-2. ✅ **FIXED**: Database name mismatch (config.yaml)  
+2. ✅ **FIXED**: Database name mismatch (config.yaml)
 3. ✅ **FIXED**: Missing Immudb container in cleanup (datastorage_bootstrap.go)
 4. 🔴 **BLOCKED**: Multiple compilation errors in test infrastructure files
 
