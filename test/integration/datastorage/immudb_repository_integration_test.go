@@ -63,8 +63,8 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 
 	BeforeEach(func() {
 		testLogger := kubelog.NewLogger(kubelog.Options{
-			Name:      "immudb-integration-test",
-			Verbosity: 1,
+			ServiceName: "immudb-integration-test",
+			Level:       1,
 		})
 
 		// Connect to Immudb (real container from suite_test.go)
@@ -129,7 +129,6 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 			event := &repository.AuditEvent{
 				EventType:     "test.event.type",
 				CorrelationID: "test-corr-auto",
-				ServiceName:   "integration-test",
 			}
 
 			createdEvent, err := repo.Create(ctx, event)
@@ -147,7 +146,6 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 					EventID:       uuid.New(),
 					EventType:     "test.sequential.event",
 					CorrelationID: "test-corr-sequential",
-					ServiceName:   "integration-test",
 					EventData: map[string]interface{}{
 						"sequence": i,
 					},
@@ -171,19 +169,16 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 					EventID:       uuid.New(),
 					EventType:     "batch.event.1",
 					CorrelationID: "batch-corr-123",
-					ServiceName:   "integration-test",
 				},
 				{
 					EventID:       uuid.New(),
 					EventType:     "batch.event.2",
 					CorrelationID: "batch-corr-123",
-					ServiceName:   "integration-test",
 				},
 				{
 					EventID:       uuid.New(),
 					EventType:     "batch.event.3",
 					CorrelationID: "batch-corr-123",
-					ServiceName:   "integration-test",
 				},
 			}
 
@@ -219,31 +214,26 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 					EventID:       uuid.New(),
 					EventType:     "query.test.event.1",
 					CorrelationID: "query-corr-123",
-					ServiceName:   "integration-test",
 				},
 				{
 					EventID:       uuid.New(),
 					EventType:     "query.test.event.2",
 					CorrelationID: "query-corr-123",
-					ServiceName:   "integration-test",
 				},
 				{
 					EventID:       uuid.New(),
 					EventType:     "query.test.event.3",
 					CorrelationID: "query-corr-123",
-					ServiceName:   "integration-test",
 				},
 				{
 					EventID:       uuid.New(),
 					EventType:     "query.test.event.4",
 					CorrelationID: "query-corr-456",
-					ServiceName:   "integration-test",
 				},
 				{
 					EventID:       uuid.New(),
 					EventType:     "query.test.event.5",
 					CorrelationID: "query-corr-456",
-					ServiceName:   "integration-test",
 				},
 			}
 
@@ -320,7 +310,6 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 				EventID:       eventID,
 				EventType:     "complex.json.event",
 				CorrelationID: "json-test-123",
-				ServiceName:   "integration-test",
 				EventData: map[string]interface{}{
 					"nested": map[string]interface{}{
 						"field1": "value1",
@@ -351,26 +340,25 @@ var _ = Describe("BR-AUDIT-005 SOC2 Gap #9: Immudb Repository Integration", func
 
 			parentEventID := uuid.New()
 			event := &repository.AuditEvent{
-				EventID:             uuid.New(),
-				Version:             "1.0",
-				EventType:           "full.optional.fields",
-				EventCategory:       "workflow",
-				EventAction:         "execute",
-				CorrelationID:       "full-test-123",
-				ParentEventID:       &parentEventID,
-				EventTimestamp:      time.Now().UTC(),
-				EventOutcome:        "success",
-				Severity:            "info",
-				ServiceName:         "integration-test",
-				ResourceType:        "Pod",
-				ResourceID:          "test-pod-123",
-				ResourceNamespace:   "default",
-				ActorType:           "ServiceAccount",
-				ActorID:             "system:serviceaccount:default:test",
-				EventData:           map[string]interface{}{"key": "value"},
-				EventDate:           repository.DateOnly(time.Now().UTC()),
-				RetentionDays:       2555,
-				ClusterID:           "test-cluster",
+				EventID:           uuid.New(),
+				Version:           "1.0",
+				EventType:         "full.optional.fields",
+				EventCategory:     "workflow",
+				EventAction:       "execute",
+				CorrelationID:     "full-test-123",
+				ParentEventID:     &parentEventID,
+				EventTimestamp:    time.Now().UTC(),
+				EventOutcome:      "success",
+				Severity:          "info",
+				ResourceType:      "Pod",
+				ResourceID:        "test-pod-123",
+				ResourceNamespace: "default",
+				ActorType:         "ServiceAccount",
+				ActorID:           "system:serviceaccount:default:test",
+				EventData:         map[string]interface{}{"key": "value"},
+				EventDate:         repository.DateOnly(time.Now().UTC()),
+				RetentionDays:     2555,
+				ClusterID:         "test-cluster",
 			}
 
 			createdEvent, err := repo.Create(ctx, event)
