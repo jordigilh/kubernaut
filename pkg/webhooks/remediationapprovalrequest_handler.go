@@ -99,7 +99,7 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, fmt.Sprintf("remediation.approval.%s", string(rar.Status.Decision)))
-	audit.SetEventCategory(auditEvent, "remediation")
+	audit.SetEventCategory(auditEvent, "webhook") // Event category is the SERVICE, not the resource
 	audit.SetEventAction(auditEvent, "approval_decided")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
