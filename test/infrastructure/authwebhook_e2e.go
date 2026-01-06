@@ -65,11 +65,17 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + namespace...")
 
-	// Create /tmp/coverdata directory for coverage collection (required by kind-config.yaml)
-	if err := os.MkdirAll("/tmp/coverdata", 0755); err != nil {
-		return fmt.Errorf("failed to create /tmp/coverdata: %w", err)
+	// Create ./coverdata directory for coverage collection (required by kind-config.yaml)
+	// Using relative path for podman compatibility (same as datastorage E2E)
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "  ✅ Created /tmp/coverdata for coverage collection")
+	coverdataPath := filepath.Join(workspaceRoot, "coverdata")
+	if err := os.MkdirAll(coverdataPath, 0755); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection\n", coverdataPath)
 
 	// Create Kind cluster with authwebhook-specific config
 	if err := createKindClusterWithConfig(clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
