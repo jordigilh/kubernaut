@@ -33,6 +33,8 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/webhooks"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,6 +57,8 @@ var (
 	ctx              context.Context
 	cancel           context.CancelFunc
 	mockAuditMgr     *mockAuditManager
+	dsClient         *dsgen.ClientWithResponses // DD-TESTING-001: OpenAPI-generated client
+	infra            *testinfra.AuthWebhookInfrastructure
 )
 
 // mockAuditManager is a simple in-memory audit manager for webhook tests
@@ -78,6 +82,24 @@ var _ = BeforeSuite(func() {
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// STEP 1: Setup Real Data Storage Infrastructure (DD-TESTING-001)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Setting up Data Storage infrastructure (PostgreSQL + Redis + Data Storage service)")
+	infra = testinfra.NewAuthWebhookInfrastructure()
+	infra.Setup()
+
+	By("Initializing Data Storage OpenAPI client (DD-API-001)")
+	var err error
+	dsClient, err = dsgen.NewClientWithResponses(infra.GetDataStorageURL())
+	if err != nil {
+		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
+	}
+	GinkgoWriter.Println("✅ Data Storage OpenAPI client initialized")
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// STEP 2: Setup envtest + webhook server
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	By("Bootstrapping test environment with envtest + webhook")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{
@@ -87,7 +109,6 @@ var _ = BeforeSuite(func() {
 		// WebhookInstallOptions not needed - we register handlers programmatically below
 	}
 
-	var err error
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
@@ -273,5 +294,10 @@ var _ = AfterSuite(func() {
 	cancel()
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
+
+	By("Tearing down Data Storage infrastructure")
+	if infra != nil {
+		infra.Teardown()
+	}
 })
 
