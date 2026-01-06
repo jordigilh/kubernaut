@@ -214,13 +214,17 @@ func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
 		".")
 	cmd.Dir = workspaceRoot // Set working directory to workspace root
 
-	output, err := cmd.CombinedOutput()
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	err := cmd.Run()
 	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Build failed: %s\n", output)
 		return fmt.Errorf("podman build failed: %w", err)
 	}
 
+	// Verify image was created
 	_, _ = fmt.Fprintln(writer, "✅ Webhooks service image built successfully")
+	_, _ = fmt.Fprintf(writer, "   ✅ Webhooks image built: %s\n", imageTag)
 	return nil
 }
 
