@@ -26,6 +26,7 @@ const (
 	AuditEventEventCategoryNotification     AuditEventEventCategory = "notification"
 	AuditEventEventCategoryOrchestration    AuditEventEventCategory = "orchestration"
 	AuditEventEventCategorySignalprocessing AuditEventEventCategory = "signalprocessing"
+	AuditEventEventCategoryWebhook          AuditEventEventCategory = "webhook"
 	AuditEventEventCategoryWorkflow         AuditEventEventCategory = "workflow"
 )
 
@@ -44,6 +45,7 @@ const (
 	AuditEventRequestEventCategoryNotification     AuditEventRequestEventCategory = "notification"
 	AuditEventRequestEventCategoryOrchestration    AuditEventRequestEventCategory = "orchestration"
 	AuditEventRequestEventCategorySignalprocessing AuditEventRequestEventCategory = "signalprocessing"
+	AuditEventRequestEventCategoryWebhook          AuditEventRequestEventCategory = "webhook"
 	AuditEventRequestEventCategoryWorkflow         AuditEventRequestEventCategory = "workflow"
 )
 
@@ -194,7 +196,7 @@ type AuditEvent struct {
 	// EventAction Action performed (ADR-034)
 	EventAction string `json:"event_action"`
 
-	// EventCategory Service-level event category (ADR-034 v1.2).
+	// EventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
 	// Values:
 	// - gateway: Gateway Service
 	// - notification: Notification Service
@@ -203,6 +205,7 @@ type AuditEvent struct {
 	// - workflow: Workflow Catalog Service
 	// - execution: Remediation Execution Service
 	// - orchestration: Remediation Orchestrator Service
+	// - webhook: Webhook Service (Authentication/Attribution)
 	EventCategory AuditEventEventCategory `json:"event_category"`
 
 	// EventData Service-specific event data as structured Go type.
@@ -233,7 +236,7 @@ type AuditEvent struct {
 	Version string `json:"version"`
 }
 
-// AuditEventEventCategory Service-level event category (ADR-034 v1.2).
+// AuditEventEventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
 // Values:
 // - gateway: Gateway Service
 // - notification: Notification Service
@@ -242,6 +245,7 @@ type AuditEvent struct {
 // - workflow: Workflow Catalog Service
 // - execution: Remediation Execution Service
 // - orchestration: Remediation Orchestrator Service
+// - webhook: Webhook Service (Authentication/Attribution)
 type AuditEventEventCategory string
 
 // AuditEventEventOutcome Result of the event
@@ -260,7 +264,7 @@ type AuditEventRequest struct {
 	// EventAction Action performed (ADR-034)
 	EventAction string `json:"event_action"`
 
-	// EventCategory Service-level event category (ADR-034 v1.2).
+	// EventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
 	// Values:
 	// - gateway: Gateway Service
 	// - notification: Notification Service
@@ -269,6 +273,7 @@ type AuditEventRequest struct {
 	// - workflow: Workflow Catalog Service
 	// - execution: Remediation Execution Service
 	// - orchestration: Remediation Orchestrator Service
+	// - webhook: Webhook Service (Authentication/Attribution)
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 
 	// EventData Service-specific event data as structured Go type.
@@ -295,7 +300,7 @@ type AuditEventRequest struct {
 	Version string `json:"version"`
 }
 
-// AuditEventRequestEventCategory Service-level event category (ADR-034 v1.2).
+// AuditEventRequestEventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
 // Values:
 // - gateway: Gateway Service
 // - notification: Notification Service
@@ -304,6 +309,7 @@ type AuditEventRequest struct {
 // - workflow: Workflow Catalog Service
 // - execution: Remediation Execution Service
 // - orchestration: Remediation Orchestrator Service
+// - webhook: Webhook Service (Authentication/Attribution)
 type AuditEventRequestEventCategory string
 
 // AuditEventRequestEventOutcome Result of the event
