@@ -67,15 +67,15 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
     // 1. Extract authenticated user from admission request context
     req, err := admission.RequestFromContext(ctx)
     authCtx, err := v.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
-    
+
     // 2. Create complete audit event
     auditEvent := audit.NewAuditEventRequest()
     audit.SetEventCategory(auditEvent, "webhook")  // ← Requires updated enum
     // ... set other fields ...
-    
+
     // 3. Store audit event
     v.auditStore.StoreAudit(ctx, auditEvent)
-    
+
     // 4. Allow DELETE to proceed
     return nil, nil
 }
