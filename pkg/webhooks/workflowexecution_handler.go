@@ -99,7 +99,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, "workflowexecution.block.cleared")
-	audit.SetEventCategory(auditEvent, "workflow") // Workflow-related event (webhook captures WHO)
+	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "block_cleared")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
 	audit.SetActor(auditEvent, "user", authCtx.Username)
