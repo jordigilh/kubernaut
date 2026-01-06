@@ -5,7 +5,7 @@ service:
   shutdownTimeout: 30s
 
 server:
-  port: 18091
+  port: 8080  # Internal container port (mapped to 18091 on host via podman-compose)
   host: "0.0.0.0"
   read_timeout: 30s
   write_timeout: 30s
