@@ -406,45 +406,8 @@ func LoadKubeconfig(kubeconfigPath string) (*rest.Config, error) {
 	return config, nil
 }
 
-// createTestNamespace creates a namespace in the Kind cluster
-func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
-	cmd := exec.Command("kubectl", "create", "namespace", namespace,
-		"--kubeconfig", kubeconfigPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		// Ignore "already exists" errors
-		if !strings.Contains(string(output), "already exists") {
-			_, _ = fmt.Fprintf(writer, "❌ Namespace creation failed:\n%s\n", output)
-			return fmt.Errorf("failed to create namespace: %w", err)
-		}
-		_, _ = fmt.Fprintf(writer, "  ⚠️  Namespace %s already exists\n", namespace)
-		return nil
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ Namespace %s created\n", namespace)
-	return nil
-}
-
-// findWorkspaceRoot walks up the directory tree to find go.mod
-func findWorkspaceRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-
-	// Walk up the directory tree looking for go.mod
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", fmt.Errorf("could not find go.mod in any parent directory")
-		}
-		dir = parent
-	}
-}
+// Note: createTestNamespace and findWorkspaceRoot are defined in datastorage.go
+// and shared across the infrastructure package
 
 // deployPostgreSQLToKind deploys PostgreSQL to Kind cluster with custom NodePort
 func deployPostgreSQLToKind(kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
