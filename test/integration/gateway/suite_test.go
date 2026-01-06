@@ -81,12 +81,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Cleanup is now handled internally by StartGatewayIntegrationInfrastructure
 
 	// 1. Start Gateway integration infrastructure (podman-compose)
-	//    This starts: PostgreSQL, Redis, DataStorage (with migrations)
-	//    Per DD-TEST-001: Ports 15437, 16383, 18091
-	suiteLogger.Info("📦 Starting Gateway integration infrastructure (podman-compose)...")
-	err = infrastructure.StartGatewayIntegrationInfrastructure(GinkgoWriter)
+	//    This starts: PostgreSQL, Redis, Immudb, DataStorage (with migrations)
+	//    Per DD-TEST-001 v2.2: PostgreSQL=15437, Redis=16380, Immudb=13323, DS=18091
+	suiteLogger.Info("📦 Starting Gateway integration infrastructure (DD-TEST-002)...")
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "gateway",
+		PostgresPort:    15437, // DD-TEST-001 v2.2
+		RedisPort:       16380, // DD-TEST-001 v2.2
+		ImmudbPort:      13323, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
+		DataStoragePort: 18091, // DD-TEST-001 v2.2
+		MetricsPort:     19091,
+		ConfigDir:       "test/integration/gateway/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	suiteLogger.Info("   ✅ All services started and healthy")
+	suiteLogger.Info("   ✅ All services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	// Store Data Storage URL for tests (IPv4 explicit for CI compatibility)
 	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayIntegrationDataStoragePort)
@@ -280,12 +293,7 @@ var _ = SynchronizedAfterSuite(func() {
 		fmt.Println("\n✅ No test namespaces created")
 	}
 
-	// Stop Gateway integration infrastructure (podman-compose)
-	suiteLogger.Info("Stopping Gateway integration infrastructure...")
-	err := infrastructure.StopGatewayIntegrationInfrastructure(GinkgoWriter)
-	if err != nil {
-		suiteLogger.Info("Failed to stop Gateway infrastructure", "error", err)
-	}
+	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 
 	// Stop envtest
 	if testEnv != nil {

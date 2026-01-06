@@ -135,12 +135,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		GinkgoWriter.Println("✅ Stale containers cleaned up")
 	}
 
-	By("Starting RO integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, DataStorage
-	// Per DD-TEST-001: Ports 15435, 16381, 18140
-	err = infrastructure.StartROIntegrationInfrastructure(GinkgoWriter)
+	By("Starting RO integration infrastructure (DD-TEST-002)")
+	// This starts: PostgreSQL, Redis, Immudb, DataStorage
+	// Per DD-TEST-001 v2.2: PostgreSQL=15435, Redis=16381, Immudb=13325, DS=18140
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "remediationorchestrator",
+		PostgresPort:    15435, // DD-TEST-001 v2.2
+		RedisPort:       16381, // DD-TEST-001 v2.2
+		ImmudbPort:      13325, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
+		DataStoragePort: 18140, // DD-TEST-001 v2.2
+		MetricsPort:     19140,
+		ConfigDir:       "test/integration/remediationorchestrator/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All external services started and healthy")
+	GinkgoWriter.Println("✅ All external services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	By("Registering ALL CRD schemes for RO orchestration")
 

@@ -31,13 +31,22 @@ database:
   passwordKey: "password"
 
 redis:
-  addr: host.containers.internal:16386  # DD-TEST-001 v2.1: Auth Webhook Redis port
+  addr: host.containers.internal:16386  # DD-TEST-001 v2.2: Auth Webhook Redis port
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
   dlq_consumer_group: dlq-group
   secretsFile: "/etc/datastorage/redis-secrets.yaml"  # ADR-030 Section 6
   passwordKey: "password"
+
+immudb:
+  host: authwebhook_immudb_test
+  port: 3322
+  database: kubernaut_audit
+  username: immudb
+  tls_enabled: false
+  secretsFile: /etc/datastorage/secrets/immudb-secrets.yaml  # ADR-030 Section 6
+  passwordKey: password
 
 logging:
   level: debug

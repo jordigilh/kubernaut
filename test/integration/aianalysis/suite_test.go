@@ -128,12 +128,25 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("Starting AIAnalysis integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, DataStorage, HolmesGPT-API
-	// Per DD-TEST-001: Ports 15438, 16384, 18095, 18120
+	// This starts: PostgreSQL, Redis, Immudb, DataStorage, HolmesGPT-API
+	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, Immudb=13326, DS=18095
 	var err error
-	err = infrastructure.StartAIAnalysisIntegrationInfrastructure(GinkgoWriter)
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "aianalysis",
+		PostgresPort:    15438, // DD-TEST-001 v2.2
+		RedisPort:       16384, // DD-TEST-001 v2.2
+		ImmudbPort:      13326, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
+		DataStoragePort: 18095, // DD-TEST-001 v2.2
+		MetricsPort:     19095,
+		ConfigDir:       "test/integration/aianalysis/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	By("Registering AIAnalysis CRD scheme")
 	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
@@ -428,11 +441,7 @@ var _ = SynchronizedAfterSuite(func() {
 		GinkgoWriter.Println("   podman rm aianalysis_hapi_1 aianalysis_datastorage_1 aianalysis_redis_1 aianalysis_postgres_1")
 		GinkgoWriter.Println("   podman network rm aianalysis_test-network")
 	} else {
-		By("Stopping AIAnalysis integration infrastructure")
-		err := infrastructure.StopAIAnalysisIntegrationInfrastructure(GinkgoWriter)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Warning: Error stopping infrastructure: %v\n", err)
-		}
+		// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 
 		By("Cleaning up infrastructure images to prevent disk space issues")
 		// Prune ONLY infrastructure images for this service

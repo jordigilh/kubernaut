@@ -17,17 +17,12 @@ limitations under the License.
 package gateway
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
 // =============================================================================
@@ -62,14 +57,11 @@ import (
 
 var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", func() {
 	var (
-		dsClient     *dsgen.ClientWithResponses
-		ctx          context.Context
 		gatewayURL   string
 		dataStorageURL string
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		gatewayURL = os.Getenv("GATEWAY_URL")
 		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
 
@@ -79,11 +71,6 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 		if dataStorageURL == "" {
 			Fail("DATA_STORAGE_URL environment variable not set")
 		}
-
-		// DD-API-001: Use OpenAPI client for Data Storage
-		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred())
 
 		// REQUIRED: Fail if Data Storage unavailable
 		resp, err := http.Get(dataStorageURL + "/health")

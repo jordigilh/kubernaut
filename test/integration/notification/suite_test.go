@@ -159,10 +159,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// This runs once to avoid container name collisions when TEST_PROCS > 1
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("Starting Notification integration infrastructure (Process #1 only)")
-	err := infrastructure.StartNotificationIntegrationInfrastructure(GinkgoWriter)
+	By("Starting Notification integration infrastructure (Process #1 only, DD-TEST-002)")
+	// This starts: PostgreSQL, Redis, Immudb, DataStorage
+	// Per DD-TEST-001 v2.2: PostgreSQL=15440, Redis=16385, Immudb=13328, DS=18096
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "notification",
+		PostgresPort:    15440, // DD-TEST-001 v2.2
+		RedisPort:       16385, // DD-TEST-001 v2.2
+		ImmudbPort:      13328, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
+		DataStoragePort: 18096, // DD-TEST-001 v2.2
+		MetricsPort:     19096,
+		ConfigDir:       "test/integration/notification/config",
+	}, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
-	GinkgoWriter.Println("✅ Notification integration infrastructure started (shared across all processes)")
+	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, Immudb, DataStorage - shared across all processes)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	return []byte{} // No data to share between processes
 }, func(data []byte) {
