@@ -34,8 +34,8 @@ redis:
   passwordKey: "password"
 
 immudb:
-  host: gateway_immudb_test
-  port: 3322
+  host: host.containers.internal
+  port: 13323
   database: kubernaut_audit
   username: immudb
   tls_enabled: false
