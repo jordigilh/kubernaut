@@ -18,6 +18,7 @@ package authwebhook
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -56,20 +57,58 @@ var (
 	testEnv          *envtest.Environment
 	ctx              context.Context
 	cancel           context.CancelFunc
-	mockAuditMgr     *mockAuditManager
+	auditStore       audit.AuditStore // REAL audit store for webhook handlers
 	dsClient         *dsgen.ClientWithResponses // DD-TESTING-001: OpenAPI-generated client
 	infra            *testinfra.AuthWebhookInfrastructure
 )
 
-// mockAuditManager is a simple in-memory audit manager for webhook tests
-// It implements the minimal interface needed by the NotificationRequest DELETE handler
-type mockAuditManager struct {
-	events []audit.AuditEvent
+// auditStoreAdapter adapts audit.AuditStore to webhooks.AuditManager interface
+// This allows webhook handlers to use the real audit store
+type auditStoreAdapter struct {
+	store audit.AuditStore
 }
 
-func (m *mockAuditManager) RecordEvent(ctx context.Context, event audit.AuditEvent) error {
-	m.events = append(m.events, event)
-	return nil
+func (a *auditStoreAdapter) RecordEvent(ctx context.Context, event audit.AuditEvent) error {
+	// Convert audit.AuditEvent to dsgen.AuditEventRequest
+	// Per DD-AUDIT-002 V2.0: Use OpenAPI types directly
+	req := &dsgen.AuditEventRequest{
+		Version:        event.EventVersion,
+		EventTimestamp: event.EventTimestamp,
+		EventType:      event.EventType,
+		EventCategory:  dsgen.AuditEventRequestEventCategory(event.EventCategory),
+		EventAction:    event.EventAction,
+		EventOutcome:   dsgen.AuditEventRequestEventOutcome(event.EventOutcome),
+		ActorType:      &event.ActorType,
+		ActorId:        &event.ActorID,
+		ResourceType:   &event.ResourceType,
+		ResourceId:     &event.ResourceID,
+		CorrelationId:  event.CorrelationID,
+	}
+
+	// Optional fields that exist in dsgen.AuditEventRequest
+	if event.Namespace != nil {
+		req.Namespace = event.Namespace
+	}
+	if event.ClusterName != nil {
+		req.ClusterName = event.ClusterName
+	}
+	if event.Severity != nil {
+		req.Severity = event.Severity
+	}
+	if event.DurationMs != nil {
+		req.DurationMs = event.DurationMs
+	}
+
+	// Convert EventData from []byte to interface{} (will be JSON marshaled by OpenAPI client)
+	if len(event.EventData) > 0 {
+		var eventData interface{}
+		if err := json.Unmarshal(event.EventData, &eventData); err != nil {
+			return fmt.Errorf("failed to unmarshal event_data: %w", err)
+		}
+		req.EventData = eventData
+	}
+
+	return a.store.StoreAudit(ctx, req)
 }
 
 func TestAuthWebhookIntegration(t *testing.T) {
@@ -96,6 +135,27 @@ var _ = BeforeSuite(func() {
 		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
 	}
 	GinkgoWriter.Println("✅ Data Storage OpenAPI client initialized")
+
+	By("Creating REAL audit store for webhook handlers")
+	// Create OpenAPI DataStorage client adapter for audit writes
+	dsAuditClient, err := audit.NewOpenAPIClientAdapter(infra.GetDataStorageURL(), 5*time.Second)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage audit client: %v", err))
+	}
+
+	// Create REAL buffered audit store (per ADR-038)
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 100 * time.Millisecond // Fast flush for tests
+	auditStore, err = audit.NewBufferedStore(
+		dsAuditClient,
+		auditConfig,
+		"authwebhook",
+		logf.Log.WithName("audit"),
+	)
+	if err != nil {
+		Fail(fmt.Sprintf("Failed to create audit store: %v", err))
+	}
+	GinkgoWriter.Println("✅ Real audit store created (connected to DataStorage)")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// STEP 2: Setup envtest + webhook server
@@ -150,8 +210,9 @@ var _ = BeforeSuite(func() {
 
 	// Register NotificationRequest mutating webhook for DELETE
 	// Note: Writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
-	mockAuditMgr = &mockAuditManager{events: []audit.AuditEvent{}}
-	nrHandler := webhooks.NewNotificationRequestDeleteHandler(mockAuditMgr)
+	// Uses REAL audit store to write to Data Storage (DD-TESTING-001 compliance)
+	auditAdapter := &auditStoreAdapter{store: auditStore}
+	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditAdapter)
 	_ = nrHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 
@@ -290,6 +351,18 @@ func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts
 }
 
 var _ = AfterSuite(func() {
+	By("Flushing audit store before teardown")
+	if auditStore != nil {
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer flushCancel()
+		err := auditStore.Flush(flushCtx)
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit store: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Audit store flushed")
+		}
+	}
+
 	By("Tearing down the test environment")
 	cancel()
 	err := testEnv.Stop()
