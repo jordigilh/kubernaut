@@ -82,7 +82,7 @@ spec:
       serviceAccountName: authwebhook
       containers:
         - name: authwebhook
-          image: authwebhook:e2e-test  # Replaced by infrastructure setup
+          image: webhooks:e2e-test  # Replaced by infrastructure setup (service binary is 'webhooks')
           imagePullPolicy: Never
           ports:
             - name: webhook

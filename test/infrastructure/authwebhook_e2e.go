@@ -21,7 +21,15 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
+	"time"
 
+	. "github.com/onsi/gomega"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -172,14 +180,15 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	return nil
 }
 
-// buildAuthWebhookImageWithTag builds the AuthWebhook Docker image with a specific tag
+// buildAuthWebhookImageWithTag builds the AuthWebhook (webhooks service) Docker image with a specific tag
 func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "🔨 Building AuthWebhook image: %s\n", imageTag)
+	_, _ = fmt.Fprintf(writer, "🔨 Building Webhooks service image: %s\n", imageTag)
 
 	// Build image using podman (follows DataStorage pattern)
+	// Note: Service binary is 'webhooks' (cmd/webhooks/main.go)
 	cmd := exec.Command("podman", "build",
 		"-t", imageTag,
-		"-f", "cmd/authwebhook/Dockerfile",
+		"-f", "docker/webhooks.Dockerfile",
 		".")
 	
 	output, err := cmd.CombinedOutput()
@@ -188,7 +197,7 @@ func buildAuthWebhookImageWithTag(imageTag string, writer io.Writer) error {
 		return fmt.Errorf("podman build failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook image built successfully")
+	_, _ = fmt.Fprintln(writer, "✅ Webhooks service image built successfully")
 	return nil
 }
 
@@ -251,7 +260,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 	return nil
 }
 
-// generateWebhookCerts generates TLS certificates for webhook admission
+// generateWebhookCerts generates TLS certificates for webhook admission and patches webhook configurations
 func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) error {
 	// Use openssl to generate self-signed certificates for testing
 	// In production, use cert-manager
@@ -263,44 +272,64 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 		return fmt.Errorf("openssl genrsa failed: %w", err)
 	}
 
-	// Generate certificate
+	// Generate certificate with SAN (Subject Alternative Names) for webhook service
+	// This is required for Kubernetes to trust the webhook certificate
 	cmd = exec.Command("openssl", "req", "-new", "-x509",
 		"-key", "/tmp/webhook-key.pem",
 		"-out", "/tmp/webhook-cert.pem",
 		"-days", "365",
-		"-subj", fmt.Sprintf("/CN=authwebhook.%s.svc", namespace))
+		"-subj", fmt.Sprintf("/CN=authwebhook.%s.svc", namespace),
+		"-addext", fmt.Sprintf("subjectAltName=DNS:authwebhook.%s.svc,DNS:authwebhook.%s.svc.cluster.local", namespace, namespace))
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Cert generation failed: %s\n", output)
 		return fmt.Errorf("openssl req failed: %w", err)
 	}
 
-	// Create/update secret with certificates
+	// Base64 encode the certificate for CA bundle
+	caBundleOutput, err := exec.Command("bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
+	if err != nil {
+		return fmt.Errorf("failed to base64 encode CA bundle: %w", err)
+	}
+	caBundleB64 := string(caBundleOutput)
+
+	// Create and apply secret with certificates using a single command
 	cmd = exec.Command("kubectl", "create", "secret", "tls", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"--cert=/tmp/webhook-cert.pem",
-		"--key=/tmp/webhook-key.pem",
-		"--dry-run=client",
-		"-o", "yaml")
-	secretYaml, err := cmd.CombinedOutput()
-	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Secret creation failed: %s\n", secretYaml)
+		"--key=/tmp/webhook-key.pem")
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_, _ = fmt.Fprintf(writer, "❌ Secret creation failed: %s\n", output)
 		return fmt.Errorf("kubectl create secret failed: %w", err)
 	}
 
-	cmd = exec.Command("kubectl", "apply",
-		"--kubeconfig", kubeconfigPath,
-		"-f", "-")
-	cmd.Stdin = exec.Command("echo", string(secretYaml)).Stdout
-	if output, err := cmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Secret apply failed: %s\n", output)
-		return fmt.Errorf("kubectl apply secret failed: %w", err)
+	_, _ = fmt.Fprintln(writer, "✅ Webhook TLS certificates created")
+
+	// Patch MutatingWebhookConfiguration with CA bundle
+	_, _ = fmt.Fprintln(writer, "🔧 Patching MutatingWebhookConfiguration with CA bundle...")
+	for _, webhookName := range []string{"workflowexecution.mutate.kubernaut.ai", "remediationapprovalrequest.mutate.kubernaut.ai"} {
+		patchCmd := exec.Command("kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
+			"--kubeconfig", kubeconfigPath,
+			"--type=json",
+			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
+		if output, err := patchCmd.CombinedOutput(); err != nil {
+			_, _ = fmt.Fprintf(writer, "⚠️  Failed to patch %s: %s\n", webhookName, output)
+			// Continue anyway - webhook might still work
+		}
 	}
 
-	// Read CA bundle for webhook configuration
-	// TODO: Patch webhook configurations with caBundle
+	// Patch ValidatingWebhookConfiguration with CA bundle
+	_, _ = fmt.Fprintln(writer, "🔧 Patching ValidatingWebhookConfiguration with CA bundle...")
+	patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+		"--kubeconfig", kubeconfigPath,
+		"--type=json",
+		"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
+	if output, err := patchCmd.CombinedOutput(); err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to patch validating webhook: %s\n", output)
+		// Continue anyway - webhook might still work
+	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Webhook TLS certificates created")
+	_, _ = fmt.Fprintln(writer, "✅ Webhook configurations patched with CA bundle")
 	return nil
 }
 
@@ -311,7 +340,7 @@ func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string,
 		"--kubeconfig", kubeconfigPath,
 		"--config", configPath,
 		"--wait", "60s")
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Failed to create cluster: %s\n", output)
@@ -329,5 +358,497 @@ func LoadKubeconfig(kubeconfigPath string) (*rest.Config, error) {
 		return nil, fmt.Errorf("failed to load kubeconfig from %s: %w", kubeconfigPath, err)
 	}
 	return config, nil
+}
+
+// deployPostgreSQLToKind deploys PostgreSQL to Kind cluster with custom NodePort
+func deployPostgreSQLToKind(kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
+	ctx := context.Background()
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	nodePortInt, err := strconv.Atoi(nodePort)
+	if err != nil {
+		return fmt.Errorf("invalid nodePort: %w", err)
+	}
+
+	// Create init ConfigMap
+	initConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql-init",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"init.sql": `-- AuthWebhook E2E PostgreSQL init script
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'slm_user') THEN
+        CREATE ROLE slm_user WITH LOGIN PASSWORD 'test_password';
+    END IF;
+END
+$$;
+
+GRANT ALL PRIVILEGES ON DATABASE action_history TO slm_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
+GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
+		},
+	}
+
+	if _, err := clientset.CoreV1().ConfigMaps(namespace).Create(ctx, initConfigMap, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create PostgreSQL init ConfigMap: %w", err)
+	}
+
+	// Create Secret
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql-secret",
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"POSTGRES_USER":     "slm_user",
+			"POSTGRES_PASSWORD": "test_password",
+			"POSTGRES_DB":       "action_history",
+		},
+	}
+
+	if _, err := clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+	}
+
+	// Create Service with custom NodePort
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "postgresql"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "postgresql",
+					Port:       5432,
+					TargetPort: intstr.FromInt(5432),
+					NodePort:   int32(nodePortInt),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{"app": "postgresql"},
+		},
+	}
+
+	if _, err := clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create PostgreSQL service: %w", err)
+	}
+
+	// Create Deployment
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "postgresql",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "postgresql"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "postgresql"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "postgresql"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "postgresql",
+							Image: "postgres:16-alpine",
+							Ports: []corev1.ContainerPort{
+								{Name: "postgresql", ContainerPort: 5432},
+							},
+							Env: []corev1.EnvVar{
+								{Name: "POSTGRES_USER", ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "postgresql-secret"},
+										Key:                  "POSTGRES_USER",
+									},
+								}},
+								{Name: "POSTGRES_PASSWORD", ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "postgresql-secret"},
+										Key:                  "POSTGRES_PASSWORD",
+									},
+								}},
+								{Name: "POSTGRES_DB", ValueFrom: &corev1.EnvVarSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "postgresql-secret"},
+										Key:                  "POSTGRES_DB",
+									},
+								}},
+								{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: "postgresql-data", MountPath: "/var/lib/postgresql/data"},
+								{Name: "postgresql-init", MountPath: "/docker-entrypoint-initdb.d"},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("250m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"pg_isready", "-U", "slm_user"},
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"pg_isready", "-U", "slm_user"},
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{Name: "postgresql-data", VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						}},
+						{Name: "postgresql-init", VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "postgresql-init"},
+							},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	if _, err := clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create PostgreSQL deployment: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (NodePort %s)\n", nodePort)
+	return nil
+}
+
+// deployRedisToKind deploys Redis to Kind cluster with custom NodePort
+func deployRedisToKind(kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
+	ctx := context.Background()
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	nodePortInt, err := strconv.Atoi(nodePort)
+	if err != nil {
+		return fmt.Errorf("invalid nodePort: %w", err)
+	}
+
+	// Create Service with custom NodePort
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "redis",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "redis"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "redis",
+					Port:       6379,
+					TargetPort: intstr.FromInt(6379),
+					NodePort:   int32(nodePortInt),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{"app": "redis"},
+		},
+	}
+
+	if _, err := clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create Redis service: %w", err)
+	}
+
+	// Create Deployment
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "redis",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "redis"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "redis"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "redis"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "redis",
+							Image: "redis:7-alpine",
+							Ports: []corev1.ContainerPort{
+								{Name: "redis", ContainerPort: 6379},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("200m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"redis-cli", "ping"},
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"redis-cli", "ping"},
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if _, err := clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create Redis deployment: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Redis deployed (NodePort %s)\n", nodePort)
+	return nil
+}
+
+// runDatabaseMigrations runs database migrations using ApplyAllMigrations
+func runDatabaseMigrations(kubeconfigPath, namespace string, writer io.Writer) error {
+	ctx := context.Background()
+	return ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
+}
+
+// deployDataStorageToKind deploys Data Storage service to Kind cluster with custom NodePort and image tag
+func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, nodePort string, writer io.Writer) error {
+	ctx := context.Background()
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	nodePortInt, err := strconv.Atoi(nodePort)
+	if err != nil {
+		return fmt.Errorf("invalid nodePort: %w", err)
+	}
+
+	// Create Service with custom NodePort
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "datastorage"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+					NodePort:   int32(nodePortInt),
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{"app": "datastorage"},
+		},
+	}
+
+	if _, err := clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create Data Storage service: %w", err)
+	}
+
+	// Create Deployment with custom image tag
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "datastorage"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "datastorage"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "datastorage"},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:            "datastorage",
+							Image:           imageTag,
+							ImagePullPolicy: corev1.PullNever,
+							Ports: []corev1.ContainerPort{
+								{Name: "http", ContainerPort: 8080},
+							},
+							Env: []corev1.EnvVar{
+								{Name: "DATABASE_HOST", Value: "postgresql"},
+								{Name: "DATABASE_PORT", Value: "5432"},
+								{Name: "DATABASE_NAME", Value: "action_history"},
+								{Name: "DATABASE_USER", Value: "slm_user"},
+								{Name: "DATABASE_PASSWORD", Value: "test_password"},
+								{Name: "DATABASE_SSLMODE", Value: "disable"},
+								{Name: "REDIS_HOST", Value: "redis"},
+								{Name: "REDIS_PORT", Value: "6379"},
+								{Name: "LOG_LEVEL", Value: "debug"},
+								{Name: "GOCOVERDIR", Value: "/coverdata"},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{Name: "coverdata", MountPath: "/coverdata"},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+									corev1.ResourceCPU:    resource.MustParse("250m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+									corev1.ResourceCPU:    resource.MustParse("500m"),
+								},
+							},
+							ReadinessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health/ready",
+										Port: intstr.FromInt(8080),
+									},
+								},
+								InitialDelaySeconds: 5,
+								PeriodSeconds:       5,
+								TimeoutSeconds:      3,
+							},
+							LivenessProbe: &corev1.Probe{
+								ProbeHandler: corev1.ProbeHandler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path: "/health/live",
+										Port: intstr.FromInt(8080),
+									},
+								},
+								InitialDelaySeconds: 30,
+								PeriodSeconds:       10,
+								TimeoutSeconds:      5,
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{Name: "coverdata", VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/coverdata",
+							},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	if _, err := clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create Data Storage deployment: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage deployed (NodePort %s, image %s)\n", nodePort, imageTag)
+	return nil
+}
+
+// waitForServicesReady waits for Data Storage and AuthWebhook services to be ready
+func waitForServicesReady(kubeconfigPath, namespace string, writer io.Writer) error {
+	ctx := context.Background()
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// Wait for Data Storage pod to be ready
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Data Storage pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=datastorage",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "Data Storage pod should be ready")
+	_, _ = fmt.Fprintf(writer, "   ✅ Data Storage pod ready\n")
+
+	// Wait for AuthWebhook pod to be ready
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for AuthWebhook pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app.kubernetes.io/name=authwebhook",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "AuthWebhook pod should be ready")
+	_, _ = fmt.Fprintf(writer, "   ✅ AuthWebhook pod ready\n")
+
+	return nil
 }
 

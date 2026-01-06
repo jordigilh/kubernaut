@@ -149,7 +149,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("🚀 Setting up AuthWebhook E2E infrastructure (PARALLEL MODE)...")
 		// Generate unique image names per DD-TEST-001 compliant naming
 		dataStorageImage := infrastructure.GenerateInfraImageName("datastorage", "authwebhook-e2e")
-		authWebhookImage := infrastructure.GenerateInfraImageName("authwebhook", "authwebhook-e2e")
+		authWebhookImage := infrastructure.GenerateInfraImageName("webhooks", "authwebhook-e2e")
 		err = infrastructure.SetupAuthWebhookInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, dataStorageImage, authWebhookImage, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -370,7 +370,7 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("🧹 DD-TEST-001 v1.1: Cleaning up service images...")
 		imageTag := os.Getenv("IMAGE_TAG")
 		if imageTag != "" {
-			for _, serviceName := range []string{"datastorage", "authwebhook"} {
+			for _, serviceName := range []string{"datastorage", "webhooks"} {
 				imageName := fmt.Sprintf("%s:%s", serviceName, imageTag)
 
 				pruneCmd := exec.Command("podman", "rmi", imageName)
