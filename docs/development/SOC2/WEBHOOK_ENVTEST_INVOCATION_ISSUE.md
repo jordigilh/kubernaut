@@ -1,10 +1,10 @@
 # Webhook envtest Invocation Issue - Diagnostic Report
 
-**Date**: January 6, 2026  
-**Status**: 🔍 **Under Investigation**  
-**Test Results**: **7/9 Passing** (78%)  
-**Issue**: Webhooks not being invoked by envtest for DELETE operations  
-**Authority**: DD-WEBHOOK-003, DD-TESTING-001  
+**Date**: January 6, 2026
+**Status**: 🔍 **Under Investigation**
+**Test Results**: **7/9 Passing** (78%)
+**Issue**: Webhooks not being invoked by envtest for DELETE operations
+**Authority**: DD-WEBHOOK-003, DD-TESTING-001
 
 ---
 
@@ -132,7 +132,7 @@ Webhooks might not be fully registered when tests start:
 - We added `time.Sleep(2 * time.Second)` after webhook server start
 - But envtest might need more time or explicit confirmation
 
-**Evidence**: 
+**Evidence**:
 - Weak (all tests would fail if timing issue, but 7/9 pass)
 
 **Test**:
@@ -239,7 +239,7 @@ By("Verifying NotificationRequest exists in envtest before DELETE")
 var retrieved notificationv1.NotificationRequest
 err := k8sClient.Get(ctx, client.ObjectKey{Name: nrName, Namespace: namespace}, &retrieved)
 Expect(err).ToNot(HaveOccurred(), "CRD must exist for DELETE to trigger webhook")
-GinkgoWriter.Printf("✅ CRD exists: %s/%s (UID: %s, ResourceVersion: %s)\n", 
+GinkgoWriter.Printf("✅ CRD exists: %s/%s (UID: %s, ResourceVersion: %s)\n",
     retrieved.Namespace, retrieved.Name, retrieved.UID, retrieved.ResourceVersion)
 ```
 
@@ -336,7 +336,7 @@ func simulateDELETEWebhookAudit(ctx context.Context, nr *notificationv1.Notifica
 
 ---
 
-**Document Status**: 🔍 Active Investigation  
-**Review Schedule**: After envtest limitations confirmed  
+**Document Status**: 🔍 Active Investigation
+**Review Schedule**: After envtest limitations confirmed
 **Decision Required**: Choose Alternative Approach if envtest doesn't support DELETE webhooks
 
