@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"strconv"
+	"time"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -31,24 +32,15 @@ func init() {
 	_ = notificationv1.AddToScheme(scheme)
 }
 
-// TODO: Implement proper audit manager that writes to Data Storage
-// Currently using no-op implementation - handlers will be enhanced to write audit events per DD-WEBHOOK-003
-type noOpAuditManager struct{}
-
-func (n *noOpAuditManager) RecordEvent(ctx context.Context, event audit.AuditEvent) error {
-	// TODO: Implement actual audit event writing to Data Storage
-	// Per DD-WEBHOOK-003: Webhooks should write complete audit events (WHO + WHAT + ACTION)
-	setupLog.Info("Audit event recorded (no-op)", "event_type", event.EventType, "actor_id", event.ActorID)
-	return nil
-}
-
 func main() {
 	var webhookPort int
 	var certDir string
+	var dataStorageURL string
 
-	// CLI flags with production defaults (per WEBHOOK_METRICS_TRIAGE.md)
+	// CLI flags with production defaults
 	flag.IntVar(&webhookPort, "webhook-port", 9443, "The port the webhook server binds to.")
 	flag.StringVar(&certDir, "cert-dir", "/tmp/k8s-webhook-server/serving-certs", "The directory containing TLS certificates.")
+	flag.StringVar(&dataStorageURL, "data-storage-url", "http://datastorage-service:8080", "Data Storage service URL for audit events.")
 	flag.Parse()
 
 	// Allow environment variable overrides
@@ -57,12 +49,16 @@ func main() {
 			webhookPort = port
 		}
 	}
+	if envURL := os.Getenv("DATA_STORAGE_URL"); envURL != "" {
+		dataStorageURL = envURL
+	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
 
 	setupLog.Info("Webhook server configuration",
 		"webhook_port", webhookPort,
-		"cert_dir", certDir)
+		"cert_dir", certDir,
+		"data_storage_url", dataStorageURL)
 
 	// Create manager (NO METRICS - audit traces sufficient per WEBHOOK_METRICS_TRIAGE.md)
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -80,46 +76,80 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create REAL audit store (DD-WEBHOOK-003: Webhooks write complete audit events)
+	setupLog.Info("Initializing audit store", "data_storage_url", dataStorageURL)
+	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 30*time.Second)
+	if err != nil {
+		setupLog.Error(err, "failed to create Data Storage client adapter")
+		os.Exit(1)
+	}
+
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 5 * time.Second // Production flush interval
+	auditConfig.BufferSize = 1000               // Production buffer size
+
+	auditStore, err := audit.NewBufferedStore(
+		dsClient,
+		auditConfig,
+		"authwebhook",
+		ctrl.Log.WithName("audit"),
+	)
+	if err != nil {
+		setupLog.Error(err, "failed to create audit store")
+		os.Exit(1)
+	}
+	setupLog.Info("Audit store initialized", "service", "authwebhook", "buffer_size", auditConfig.BufferSize)
+
+	// Graceful shutdown: Flush audit store before exit
+	ctx := ctrl.SetupSignalHandler()
+	go func() {
+		<-ctx.Done()
+		setupLog.Info("Flushing audit store before shutdown...")
+		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := auditStore.Flush(flushCtx); err != nil {
+			setupLog.Error(err, "failed to flush audit store during shutdown")
+		} else {
+			setupLog.Info("Audit store flushed successfully")
+		}
+	}()
+
 	// Get webhook server
 	webhookServer := mgr.GetWebhookServer()
 
 	// Create decoder for webhook handlers
 	decoder := admission.NewDecoder(scheme)
 
-	// Register WorkflowExecution handler
-	// TODO: Enhance to write audit events per DD-WEBHOOK-003
-	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler()
+	// Register WorkflowExecution handler (DD-WEBHOOK-003: Complete audit events)
+	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler(auditStore)
 	if err := wfeHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into WorkflowExecution handler")
 		os.Exit(1)
 	}
 	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
-	setupLog.Info("Registered WorkflowExecution webhook handler")
+	setupLog.Info("Registered WorkflowExecution webhook handler with audit store")
 
-	// Register RemediationApprovalRequest handler
-	// TODO: Enhance to write audit events per DD-WEBHOOK-003
-	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler()
+	// Register RemediationApprovalRequest handler (DD-WEBHOOK-003: Complete audit events)
+	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler(auditStore)
 	if err := rarHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationApprovalRequest handler")
 		os.Exit(1)
 	}
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
-	setupLog.Info("Registered RemediationApprovalRequest webhook handler")
+	setupLog.Info("Registered RemediationApprovalRequest webhook handler with audit store")
 
-	// Register NotificationRequest DELETE handler
+	// Register NotificationRequest DELETE handler (DD-WEBHOOK-003: Complete audit events)
 	// Note: This handler writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
-	// TODO: Replace noOpAuditManager with real audit store per DD-WEBHOOK-003
-	auditMgr := &noOpAuditManager{}
-	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditMgr)
+	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)
 	if err := nrHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into NotificationRequest handler")
 		os.Exit(1)
 	}
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
-	setupLog.Info("Registered NotificationRequest DELETE webhook handler")
+	setupLog.Info("Registered NotificationRequest DELETE webhook handler with audit store")
 
 	setupLog.Info("Starting webhook server", "port", webhookPort)
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

@@ -163,46 +163,46 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-	By("2. Wait for Gap 5-6 events to appear (CRD controller async)")
-	// CRD controllers are async - use Eventually with 60s timeout
-	// DD-TESTING-001: Deterministic event count per event type
-	// Flush before querying to ensure buffered events are written to DataStorage
-	flushAuditBuffer()
-	Eventually(func() bool {
-		// Query all audit events for this correlation_id
-		events, err := queryAuditEvents(dsClient, correlationID, nil)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
-			return false
-		}
-		GinkgoWriter.Printf("📊 Query result: %d events found\n", len(events))
-		
-		// Count by type to check if Gap 5-6 events are present
-		eventCounts := countEventsByType(events)
-		hasSelection := eventCounts["workflow.selection.completed"] >= 1
-		hasExecution := eventCounts["execution.workflow.started"] >= 1
-		return hasSelection && hasExecution
-	}, 60*time.Second, 1*time.Second).Should(BeTrue(),
-		"Should have workflow.selection.completed and execution.workflow.started events (Gap 5-6)")
+			By("2. Wait for Gap 5-6 events to appear (CRD controller async)")
+			// CRD controllers are async - use Eventually with 60s timeout
+			// DD-TESTING-001: Deterministic event count per event type
+			// Flush before querying to ensure buffered events are written to DataStorage
+			flushAuditBuffer()
+			Eventually(func() bool {
+				// Query all audit events for this correlation_id
+				events, err := queryAuditEvents(dsClient, correlationID, nil)
+				if err != nil {
+					GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
+					return false
+				}
+				GinkgoWriter.Printf("📊 Query result: %d events found\n", len(events))
 
-	By("3. Validate exact event counts per type (DD-TESTING-001)")
-	allEvents, err := queryAuditEvents(dsClient, correlationID, nil)
-	Expect(err).ToNot(HaveOccurred())
+				// Count by type to check if Gap 5-6 events are present
+				eventCounts := countEventsByType(events)
+				hasSelection := eventCounts["workflow.selection.completed"] >= 1
+				hasExecution := eventCounts["execution.workflow.started"] >= 1
+				return hasSelection && hasExecution
+			}, 60*time.Second, 1*time.Second).Should(BeTrue(),
+				"Should have workflow.selection.completed and execution.workflow.started events (Gap 5-6)")
 
-	// Count events by type (DD-TESTING-001: Deterministic validation)
-	eventCounts := countEventsByType(allEvents)
-	
-	// Gap 5-6: Validate exactly 1 of each required event type
-	Expect(eventCounts["workflow.selection.completed"]).To(Equal(1), 
-		"Gap 5: Should have exactly 1 workflow.selection.completed event")
-	Expect(eventCounts["execution.workflow.started"]).To(Equal(1), 
-		"Gap 6: Should have exactly 1 execution.workflow.started event")
-	
-	// Workflow may complete during test - if so, validate exactly 1 completion event
-	if completionCount, exists := eventCounts["workflow.completed"]; exists {
-		Expect(completionCount).To(Equal(1), 
-			"If workflow completed, should have exactly 1 workflow.completed event")
-	}
+			By("3. Validate exact event counts per type (DD-TESTING-001)")
+			allEvents, err := queryAuditEvents(dsClient, correlationID, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Count events by type (DD-TESTING-001: Deterministic validation)
+			eventCounts := countEventsByType(allEvents)
+
+			// Gap 5-6: Validate exactly 1 of each required event type
+			Expect(eventCounts["workflow.selection.completed"]).To(Equal(1),
+				"Gap 5: Should have exactly 1 workflow.selection.completed event")
+			Expect(eventCounts["execution.workflow.started"]).To(Equal(1),
+				"Gap 6: Should have exactly 1 execution.workflow.started event")
+
+			// Workflow may complete during test - if so, validate exactly 1 completion event
+			if completionCount, exists := eventCounts["workflow.completed"]; exists {
+				Expect(completionCount).To(Equal(1),
+					"If workflow completed, should have exactly 1 workflow.completed event")
+			}
 
 			By("4. Validate workflow.selection.completed event structure")
 			selectionEvents := filterEventsByType(allEvents, "workflow.selection.completed")
@@ -286,13 +286,13 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-		By("2. Wait for workflow.selection.completed event (fast path)")
-		// DD-TESTING-001: Deterministic event count (exactly 1 event)
-		// Flush before querying to ensure buffered events are written to DataStorage
-		flushAuditBuffer()
-		Eventually(func() int {
-			selectionType := "workflow.selection.completed"
-			events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
+			By("2. Wait for workflow.selection.completed event (fast path)")
+			// DD-TESTING-001: Deterministic event count (exactly 1 event)
+			// Flush before querying to ensure buffered events are written to DataStorage
+			flushAuditBuffer()
+			Eventually(func() int {
+				selectionType := "workflow.selection.completed"
+				events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 				if err != nil {
 					return 0
 				}

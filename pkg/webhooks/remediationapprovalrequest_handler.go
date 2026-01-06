@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -31,19 +32,23 @@ import (
 // RemediationApprovalRequestAuthHandler handles authentication for RemediationApprovalRequest decisions
 // BR-AUTH-001: SOC2 CC8.1 Operator Attribution
 // ADR-040: RemediationApprovalRequest CRD Architecture
+// DD-WEBHOOK-003: Webhook-Complete Audit Pattern
 //
-// This mutating webhook intercepts RemediationApprovalRequest status updates and populates:
-// - status.DecidedBy (operator email/username)
-// - status.DecidedAt (timestamp)
+// This mutating webhook intercepts RemediationApprovalRequest status updates and:
+// 1. Populates status.DecidedBy (operator email/username)
+// 2. Populates status.DecidedAt (timestamp)
+// 3. Writes complete audit event (WHO + WHAT + ACTION)
 type RemediationApprovalRequestAuthHandler struct {
 	authenticator *authwebhook.Authenticator
 	decoder       admission.Decoder
+	auditStore    audit.AuditStore
 }
 
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler
-func NewRemediationApprovalRequestAuthHandler() *RemediationApprovalRequestAuthHandler {
+func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore) *RemediationApprovalRequestAuthHandler {
 	return &RemediationApprovalRequestAuthHandler{
 		authenticator: authwebhook.NewAuthenticator(),
+		auditStore:    auditStore,
 	}
 }
 
@@ -90,6 +95,34 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	rar.Status.DecidedBy = authCtx.Username
 	now := metav1.Now()
 	rar.Status.DecidedAt = &now
+
+	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
+	auditEvent := audit.NewAuditEventRequest()
+	audit.SetEventType(auditEvent, fmt.Sprintf("remediation.approval.%s", string(rar.Status.Decision)))
+	audit.SetEventCategory(auditEvent, "remediation")
+	audit.SetEventAction(auditEvent, "approval_decided")
+	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
+	audit.SetActor(auditEvent, "user", authCtx.Username)
+	audit.SetResource(auditEvent, "RemediationApprovalRequest", string(rar.UID))
+	audit.SetCorrelationID(auditEvent, rar.Name) // Use RAR name for correlation
+	audit.SetNamespace(auditEvent, rar.Namespace)
+
+	// Set event data payload
+	eventData := map[string]interface{}{
+		"approval_request_name": rar.Name,
+		"decision":              string(rar.Status.Decision),
+		"decided_by":            rar.Status.DecidedBy,
+		"decided_at":            rar.Status.DecidedAt.Time,
+		"action":                "approval_decision_made",
+	}
+	audit.SetEventData(auditEvent, eventData)
+
+	// Store audit event asynchronously (buffered write)
+	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
+		// Log error but don't fail the webhook (audit should not block operations)
+		// The audit store has retry + DLQ mechanisms
+		fmt.Printf("WARNING: Failed to store audit event: %v\n", err)
+	}
 
 	// Marshal the patched object
 	marshaledRAR, err := json.Marshal(rar)
