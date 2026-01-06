@@ -167,7 +167,7 @@ eventData := map[string]interface{}{
     "crd_name":        nr.Name,           // WHAT was cancelled
     "namespace":       nr.Namespace,      // WHERE it happened
     "action":          "delete",          // HOW it was cancelled
-    
+
     // NotificationRequest-specific context
     "notification_id": nr.Name,
     "type":            string(nr.Spec.Type),

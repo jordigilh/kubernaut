@@ -1017,13 +1017,49 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(updated.Status.FailureDetails.NaturalLanguageSummary).ToNot(BeEmpty())
 		})
 
-		It("should emit WorkflowFailed event", func() {
-			_, err := reconciler.MarkFailed(ctx, wfe, pr)
-			Expect(err).ToNot(HaveOccurred())
+	It("should emit WorkflowFailed event", func() {
+		_, err := reconciler.MarkFailed(ctx, wfe, pr)
+		Expect(err).ToNot(HaveOccurred())
 
-			Expect(recorder.Events).To(HaveLen(1))
-		})
+		Expect(recorder.Events).To(HaveLen(1))
 	})
+
+	// BR-AUDIT-005 Gap #7: Validate ErrorDetails in audit event
+	It("should emit audit event with standardized ErrorDetails structure", func() {
+		// Get the audit store before calling MarkFailed
+		auditStore := reconciler.AuditStore.(*mockAuditStore)
+
+		_, err := reconciler.MarkFailed(ctx, wfe, pr)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify audit event was emitted
+		Expect(auditStore.events).To(HaveLen(1), "Should emit exactly 1 workflow.failed audit event")
+
+		auditEvent := auditStore.events[0]
+		Expect(auditEvent.EventType).To(Equal("workflow.failed"), "Should have correct event type")
+		Expect(string(auditEvent.EventOutcome)).To(Equal("failure"), "Should have failure outcome")
+
+		// Parse event_data to validate ErrorDetails (Gap #7)
+		eventData := parseEventData(auditEvent.EventData)
+		Expect(eventData).To(HaveKey("error_details"), "Should contain error_details field (Gap #7)")
+
+		// Validate ErrorDetails structure (DD-ERROR-001)
+		errorDetails, ok := eventData["error_details"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "error_details should be a map")
+
+		// Mandatory fields per DD-ERROR-001
+		Expect(errorDetails).To(HaveKey("code"), "Should have error code")
+		Expect(errorDetails).To(HaveKey("message"), "Should have error message")
+		Expect(errorDetails).To(HaveKey("component"), "Should have component name")
+		Expect(errorDetails).To(HaveKey("retry_possible"), "Should have retry_possible indicator")
+
+		// Validate values
+		Expect(errorDetails["component"]).To(Equal("workflowexecution"), "Should identify workflowexecution component")
+		Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
+		Expect(errorDetails["message"]).ToNot(BeEmpty(), "Error message should not be empty")
+		Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
+	})
+})
 
 	// ========================================
 	// Day 5: ExtractFailureDetails() Tests

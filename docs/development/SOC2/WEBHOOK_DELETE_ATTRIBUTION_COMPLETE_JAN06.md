@@ -67,7 +67,7 @@ eventData := map[string]interface{}{
     "crd_name":  nr.Name,           // WHAT
     "namespace": nr.Namespace,      // WHERE
     "action":    "delete",          // HOW
-    
+
     // Additional context
     "notification_id": nr.Name,
     "type":            string(nr.Spec.Type),
@@ -153,12 +153,12 @@ $ make test-integration-authwebhook
 6. **Still failing** - Binary embedded spec investigation
 7. **ROOT CAUSE**: TWO embedded specs (audit + datastorage), both needed regeneration
 
-**Solution**: 
+**Solution**:
 ```bash
 make generate  # Regenerates BOTH embedded specs
 ```
 
-**Evidence**: 
+**Evidence**:
 ```bash
 $ strings bin/webhooks | grep "enum:.*gateway"
 enum: [gateway, notification, analysis, signalprocessing, workflow, execution, orchestration, webhook]

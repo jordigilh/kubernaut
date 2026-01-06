@@ -244,6 +244,11 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		// Record metric for max retries exceeded
 		h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
 
+		// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
+		if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+		}
+
 		return ctrl.Result{}, nil
 	}
 
@@ -262,6 +267,11 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 
 	// Record metric for permanent errors
 	h.metrics.RecordFailure("APIError", string(classification.ErrorType))
+
+	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
 
 	return ctrl.Result{}, nil
 }
