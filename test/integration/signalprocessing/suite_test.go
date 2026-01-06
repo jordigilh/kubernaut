@@ -85,8 +85,8 @@ const (
 
 // Package-level variables for test environment
 var (
-	ctx         context.Context
-	cancel      context.CancelFunc
+	ctx        context.Context
+	cancel     context.CancelFunc
 	testEnv    *envtest.Environment
 	cfg        *rest.Config
 	k8sClient  client.Client
@@ -141,12 +141,25 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  • Data Storage API (port 18094)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	By("Starting SignalProcessing integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, DataStorage (with migrations)
-	// Per DD-TEST-001: Ports 15435, 16381, 18094
-	err = infrastructure.StartSignalProcessingIntegrationInfrastructure(GinkgoWriter)
+	By("Starting SignalProcessing integration infrastructure (DD-TEST-002)")
+	// This starts: PostgreSQL, Redis, Immudb, DataStorage (with migrations)
+	// Per DD-TEST-001 v2.2: PostgreSQL=15436, Redis=16382, Immudb=13324, DS=18094
+	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+		ServiceName:     "signalprocessing",
+		PostgresPort:    15436, // DD-TEST-001 v2.2
+		RedisPort:       16382, // DD-TEST-001 v2.2
+		ImmudbPort:      13324, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
+		DataStoragePort: 18094, // DD-TEST-001 v2.2 (OFFICIAL SP allocation)
+		MetricsPort:     19094,
+		ConfigDir:       "test/integration/signalprocessing/config",
+	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+
+	// Clean up infrastructure on exit
+	DeferCleanup(func() {
+		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
 
 	// SP-BUG-006: Capture infrastructure state for diagnostics
 	By("Verifying infrastructure container status")
@@ -338,7 +351,7 @@ else := {"environment": "development", "confidence": 0.80, "source": "configmap"
 else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	_ = 	envPolicyFile.Close()
+	_ = envPolicyFile.Close()
 
 	priorityPolicyFile, err := os.CreateTemp("", "priority-*.rego")
 	Expect(err).ToNot(HaveOccurred())
@@ -398,7 +411,7 @@ else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if 
 else := {"priority": "P3", "confidence": 0.5, "source": "default"}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	_ = 	priorityPolicyFile.Close()
+	_ = priorityPolicyFile.Close()
 
 	By("Initializing classifiers (Day 10 integration)")
 	// Initialize Environment Classifier (BR-SP-051, BR-SP-052, BR-SP-053)
@@ -444,7 +457,7 @@ result := {
 }
 `)
 	Expect(err).ToNot(HaveOccurred())
-	_ = 	businessPolicyFile.Close()
+	_ = businessPolicyFile.Close()
 
 	// Initialize Business Classifier (BR-SP-002, BR-SP-080, BR-SP-081)
 	businessClassifier, err := classifier.NewBusinessClassifier(
@@ -481,7 +494,7 @@ labels := result if {
 } else := {}
 `)
 	Expect(err).ToNot(HaveOccurred())
-	_ = 	labelsPolicyFile.Close()
+	_ = labelsPolicyFile.Close()
 
 	// BR-SP-072: Store policy file path for hot-reload testing
 	labelsPolicyFilePath = labelsPolicyFile.Name()
@@ -525,17 +538,17 @@ labels := result if {
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
-		AuditClient:        auditClient,       // BR-SP-090: Audit is MANDATORY
-		StatusManager:      statusManager,     // DD-PERF-001: Atomic Status Updates
-		Metrics:            sharedMetrics,     // DD-005: Observability (shared with enricher)
-		Recorder:           eventRecorder,     // K8s EventRecorder for debugging
-		EnvClassifier:      envClassifier,     // BR-SP-051-053: Environment classification (interface)
-		PriorityAssigner:   priorityEngine,    // BR-SP-070-072: Priority assignment (interface)
+		AuditClient:        auditClient,        // BR-SP-090: Audit is MANDATORY
+		StatusManager:      statusManager,      // DD-PERF-001: Atomic Status Updates
+		Metrics:            sharedMetrics,      // DD-005: Observability (shared with enricher)
+		Recorder:           eventRecorder,      // K8s EventRecorder for debugging
+		EnvClassifier:      envClassifier,      // BR-SP-051-053: Environment classification (interface)
+		PriorityAssigner:   priorityEngine,     // BR-SP-070-072: Priority assignment (interface)
 		BusinessClassifier: businessClassifier, // BR-SP-002, BR-SP-080-081: Business classification
-		OwnerChainBuilder:  ownerChainBuilder, // BR-SP-100: Owner chain traversal
-		RegoEngine:         regoEngine,        // BR-SP-102, BR-SP-104: CustomLabels extraction
-		LabelDetector:      labelDetector,     // BR-SP-101: Detected labels
-		K8sEnricher:        k8sEnricher,       // BR-SP-001: K8s context enrichment (interface)
+		OwnerChainBuilder:  ownerChainBuilder,  // BR-SP-100: Owner chain traversal
+		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
+		LabelDetector:      labelDetector,      // BR-SP-101: Detected labels
+		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
@@ -695,31 +708,29 @@ var _ = SynchronizedAfterSuite(
 		// This prevents "connection refused" errors during cleanup when the
 		// background writer tries to flush buffered events after DataStorage is stopped.
 		// Integration tests MUST always use real DataStorage (DD-TESTING-001)
-		GinkgoWriter.Println("🧹 Flushing audit store before infrastructure shutdown...")
+		if auditStore != nil {
+			GinkgoWriter.Println("🧹 Flushing audit store before infrastructure shutdown...")
 
-		flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer flushCancel()
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer flushCancel()
 
-		err := auditStore.Flush(flushCtx)
-		if err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
-		} else {
-			GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+			err := auditStore.Flush(flushCtx)
+			if err != nil {
+				GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
+			} else {
+				GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+			}
+
+			err = auditStore.Close()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
+			} else {
+				GinkgoWriter.Println("✅ Audit store closed")
+			}
 		}
 
-		err = auditStore.Close()
-		if err != nil {
-			GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
-		} else {
-			GinkgoWriter.Println("✅ Audit store closed")
-		}
-
-		// DD-TEST-002: Stop infrastructure using programmatic Go setup (NOT podman-compose)
+		// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 		// SP-SHUTDOWN-001: Safe to stop now - audit events already flushed
-		By("Stopping SignalProcessing infrastructure (programmatic Podman)")
-		if err := infrastructure.StopSignalProcessingIntegrationInfrastructure(GinkgoWriter); err != nil {
-			GinkgoWriter.Printf("⚠️  Failed to stop containers: %v\n", err)
-		}
 
 		// DD-TEST-002 + DD-INTEGRATION-001 v2.0: Clean up composite-tagged images
 		By("Cleaning up infrastructure images to prevent disk space issues")

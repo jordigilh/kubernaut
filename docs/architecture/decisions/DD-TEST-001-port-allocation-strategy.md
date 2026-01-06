@@ -41,6 +41,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Dynamic Toolset** | 8085 | 18130-18139 | 28130-28139 | 18130-28139 |
 | **PostgreSQL** | 5432 | 15433-15442 | 25433-25442 | 15433-25442 |
 | **Redis** | 6379 | 16379-16388 | 26379-26388 | 16379-26388 |
+| **Immudb** | 3322 | 13322-13331 | 23322-23331 | 13322-23331 |
 | **Embedding Service** | 8000 | 18000-18009 | 28000-28009 | 18000-28009 |
 
 ### **Port Range Blocks - CRD Controllers (Kind NodePort)**
@@ -237,11 +238,19 @@ PostgreSQL:
   Host Port: 15433
   Container Port: 5432
   Connection: localhost:15433
+  Purpose: Workflow catalog storage (operational data)
 
 Redis:
   Host Port: 16379
   Container Port: 6379
   Connection: localhost:16379
+  Purpose: DLQ for audit events
+
+Immudb:
+  Host Port: 13322
+  Container Port: 3322
+  Connection: immudb://localhost:13322
+  Purpose: Immutable audit event storage (SOC2 compliance)
 
 Data Storage API:
   Host Port: 18090
@@ -260,11 +269,19 @@ PostgreSQL:
   Host Port: 25433
   Container Port: 5432
   Connection: localhost:25433
+  Purpose: Workflow catalog storage
 
 Redis:
   Host Port: 26379
   Container Port: 6379
   Connection: localhost:26379
+  Purpose: DLQ for audit events
+
+Immudb:
+  Container Port: 3322
+  Connection: immudb://immudb-service:3322 (in-cluster)
+  Purpose: Immutable audit event storage (SOC2 compliance)
+  Note: Deployed as Kubernetes Service in Kind cluster - no host port mapping needed
 
 Data Storage API:
   Host Port: 28090
@@ -283,10 +300,23 @@ Embedding Service:
 
 #### **Integration Tests** (`test/integration/gateway/`)
 ```yaml
+PostgreSQL (Data Storage dependency):
+  Host Port: 15437
+  Container Port: 5432
+  Connection: localhost:15437
+  Purpose: Workflow catalog for Data Storage
+
 Redis:
   Host Port: 16380
   Container Port: 6379
   Connection: localhost:16380
+  Purpose: Gateway rate limiting + Data Storage DLQ
+
+Immudb (Data Storage dependency):
+  Host Port: 13323
+  Container Port: 3322
+  Connection: immudb://localhost:13323
+  Purpose: Audit event storage via Data Storage
 
 Gateway API:
   Host Port: 18080
@@ -393,17 +423,23 @@ Data Storage (Dependency):
 
 #### **Integration Tests** (`test/integration/signalprocessing/`)
 ```yaml
-PostgreSQL:
+PostgreSQL (Data Storage dependency):
   Host Port: 15436
   Container Port: 5432
   Connection: localhost:15436
-  Purpose: Audit storage (BR-SP-090)
+  Purpose: Workflow catalog for Data Storage
 
-Redis:
+Redis (Data Storage dependency):
   Host Port: 16382
   Container Port: 6379
   Connection: localhost:16382
   Purpose: DataStorage DLQ
+
+Immudb (Data Storage dependency):
+  Host Port: 13324
+  Container Port: 3322
+  Connection: immudb://localhost:13324
+  Purpose: Audit event storage (BR-SP-090)
 
 Data Storage (Dependency):
   Host Port: 18094  # OFFICIAL ALLOCATION - SignalProcessing owns this port
@@ -719,23 +755,23 @@ var _ = SynchronizedBeforeSuite(
 
 ### **Integration Tests** (Can run simultaneously)
 
-| Service | PostgreSQL | Redis | API | Dependencies |
-|---------|-----------|-------|-----|--------------|
-| **Data Storage** | 15433 | 16379 | 18090 | Embedding: 18000 |
-| **Gateway** | N/A | 16380 | 18080 | Data Storage: 18091 |
-| **Effectiveness Monitor** | 15434 | N/A | 18100 | Data Storage: 18092 |
-| **Workflow Engine** | N/A | N/A | 18110 | Data Storage: 18093 |
-| **SignalProcessing (CRD)** | 15436 | 16382 | N/A | Data Storage: 18094 |
-| **RemediationOrchestrator (CRD)** | 15435 | 16381 | N/A | Data Storage: 18140 |
-| **AIAnalysis (CRD)** | 15438 | 16384 | N/A | Data Storage: 18095 |
-| **Notification (CRD)** | 15440 | 16385 | N/A | Data Storage: 18096 |
-| **WorkflowExecution (CRD)** | 15441 | 16388 | N/A | Data Storage: 18097 |
-| **HolmesGPT API (Python)** | 15439 | 16387 | 18120 | Data Storage: 18098 |
-| **Auth Webhook (Admission)** | 15442 | 16386 | N/A | Data Storage: 18099 |
+| Service | PostgreSQL | Redis | **Immudb** | API | Dependencies |
+|---------|-----------|-------|-----------|-----|--------------|
+| **Data Storage** | 15433 | 16379 | **13322** | 18090 | Embedding: 18000 |
+| **Gateway** | 15437 | 16380 | **13323** | 18080 | Data Storage: 18091 |
+| **Effectiveness Monitor** | 15434 | N/A | **13331** | 18100 | Data Storage: 18092 |
+| **Workflow Engine** | N/A | N/A | N/A | 18110 | Data Storage: 18093 |
+| **SignalProcessing (CRD)** | 15436 | 16382 | **13324** | N/A | Data Storage: 18094 |
+| **RemediationOrchestrator (CRD)** | 15435 | 16381 | **13325** | N/A | Data Storage: 18140 |
+| **AIAnalysis (CRD)** | 15438 | 16384 | **13326** | N/A | Data Storage: 18095 |
+| **Notification (CRD)** | 15440 | 16385 | **13328** | N/A | Data Storage: 18096 |
+| **WorkflowExecution (CRD)** | 15441 | 16388 | **13327** | N/A | Data Storage: 18097 |
+| **HolmesGPT API (Python)** | 15439 | 16387 | **13329** | 18120 | Data Storage: 18098 |
+| **Auth Webhook (Admission)** | 15442 | 16386 | **13330** | N/A | Data Storage: 18099 |
 
 ✅ **No Conflicts** - All services can run integration tests in parallel
 
-**Note**: All services now have unique port allocations to enable true parallel testing. Notification PostgreSQL moved from 15439 (conflicted with HAPI) to 15440 (unique).
+**Note**: All services now have unique port allocations including Immudb (13322-13331) for SOC2-compliant immutable audit trails. Immudb ports allocated per service to enable parallel testing.
 
 ### **E2E Tests** (Can run simultaneously)
 
@@ -798,6 +834,7 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.2 | 2026-01-06 | AI Assistant | **IMMUDB INTEGRATION**: Added Immudb port allocations for SOC2 Gap #9 (tamper-evidence); Integration tests: Immudb ports 13322-13331 (per-service allocation); E2E tests: Default port 3322 via Kubernetes Service; Updated all 11 services (DataStorage: 13322, Gateway: 13323, SP: 13324, RO: 13325, AIAnalysis: 13326, WE: 13327, NT: 13328, HAPI: 13329, AuthWebhook: 13330, EffMon: 13331); Enables parallel integration testing with immutable audit trails |
 | 2.1 | 2026-01-06 | AI Assistant | **NEW SERVICE**: Added Auth Webhook (Kubernetes admission webhook) port allocations for SOC2 CC8.1 compliance; Integration tests (PostgreSQL: 15442, Redis: 16386, Data Storage: 18099); E2E tests (PostgreSQL: 25442, Redis: 26386, Data Storage: 28099); No port conflicts - parallel testing enabled |
 | 2.0 | 2026-01-01 | AI Assistant | **CRITICAL FIX**: Resolved Notification/HAPI PostgreSQL port conflict - migrated Notification PostgreSQL from 15439 (shared with HAPI) to 15440 (unique); **TRUE PARALLEL TESTING NOW ENABLED** - all 8 services can run integration tests simultaneously without port conflicts; removed shared port design flaw |
 | 1.9 | 2025-12-25 | AI Assistant | **CRITICAL FIX**: Resolved WE/HAPI Redis port conflict - migrated WorkflowExecution Redis from 16387 (shared with HAPI) to 16388 (unique); enables parallel integration testing for WE and HAPI; updated note to clarify only PostgreSQL is shared between HAPI and Notification |

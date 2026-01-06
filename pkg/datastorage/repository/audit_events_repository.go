@@ -18,7 +18,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -187,6 +189,69 @@ func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsReposi
 		logger: logger,
 	}
 }
+
+// ========================================
+// GAP #9: HASH CHAIN IMPLEMENTATION (Tamper-Evidence)
+// Authority: AUDIT_V1_0_ENTERPRISE_COMPLIANCE_PLAN_DEC_18_2025.md - Day 7
+// SOC2 Requirement: Tamper-evident audit logs (SOC 2 Type II, NIST 800-53, Sarbanes-Oxley)
+// ========================================
+
+// calculateEventHash computes SHA256 hash for blockchain-style chain
+// Hash = SHA256(previous_event_hash + event_json)
+// This creates an immutable chain where tampering with ANY event breaks the chain
+func calculateEventHash(previousHash string, event *AuditEvent) (string, error) {
+	// Serialize event to JSON (canonical form for consistent hashing)
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
+	}
+
+	// Compute hash: SHA256(previous_hash + event_json)
+	hasher := sha256.New()
+	hasher.Write([]byte(previousHash))
+	hasher.Write(eventJSON)
+	hashBytes := hasher.Sum(nil)
+
+	return hex.EncodeToString(hashBytes), nil
+}
+
+// getPreviousEventHash retrieves the hash of the most recent event for a given correlation_id
+// Returns empty string if no previous event exists (first event in chain)
+// Uses advisory lock to prevent race conditions during concurrent inserts
+func (r *AuditEventsRepository) getPreviousEventHash(ctx context.Context, tx *sql.Tx, correlationID string) (string, error) {
+	// Step 1: Acquire advisory lock for this correlation_id (prevents race conditions)
+	// Uses PostgreSQL function audit_event_lock_id() from migration 023
+	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(audit_event_lock_id($1))", correlationID)
+	if err != nil {
+		return "", fmt.Errorf("failed to acquire advisory lock: %w", err)
+	}
+
+	// Step 2: Query last event hash for this correlation_id
+	var previousHash sql.NullString
+	query := `
+		SELECT event_hash
+		FROM audit_events
+		WHERE correlation_id = $1
+		  AND event_hash IS NOT NULL
+		ORDER BY event_timestamp DESC, event_id DESC
+		LIMIT 1
+	`
+
+	err = tx.QueryRowContext(ctx, query, correlationID).Scan(&previousHash)
+	if err == sql.ErrNoRows {
+		// First event in chain - no previous hash (return empty string)
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query previous event hash: %w", err)
+	}
+
+	return previousHash.String, nil
+}
+
+// ========================================
+// END GAP #9 HASH CHAIN FUNCTIONS
+// ========================================
 
 // Create inserts a new audit event into the unified audit_events table
 // Returns the created event with event_id and created_at populated

@@ -275,7 +275,7 @@ var _ = SynchronizedAfterSuite(
 
 		// Check if we should keep the cluster for debugging
 		keepCluster := os.Getenv("KEEP_CLUSTER")
-		
+
 		// Preserve cluster if:
 		// 1. KEEP_CLUSTER env var is set to "true"
 		// 2. Any test failed (anyTestFailed flag)
@@ -357,7 +357,7 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			
+
 			if setupFailed {
 				logger.Info("🔍 REASON: BeforeSuite setup failed (infrastructure not ready)")
 			}
@@ -367,7 +367,7 @@ var _ = SynchronizedAfterSuite(
 			if keepCluster == "true" {
 				logger.Info("🔍 REASON: KEEP_CLUSTER=true environment variable")
 			}
-			
+
 			logger.Info("")
 			logger.Info("📋 CLUSTER INFORMATION:")
 			logger.Info("   • Cluster Name: " + clusterName)
@@ -375,7 +375,7 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("   • Namespace: " + sharedNamespace)
 			logger.Info("   • Data Storage URL: " + dataStorageURL)
 			logger.Info("   • PostgreSQL URL: " + postgresURL)
-			
+
 			logger.Info("")
 			logger.Info("🔍 DEBUGGING COMMANDS:")
 			logger.Info("   # List all pods and their status:")

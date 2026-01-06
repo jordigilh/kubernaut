@@ -25,13 +25,22 @@ database:
   passwordKey: "password"
 
 redis:
-  addr: host.containers.internal:16383
+  addr: host.containers.internal:16380  # DD-TEST-001 v2.2 (corrected from 16383)
   db: 0
   dlq_stream_name: dlq-stream
   dlq_max_len: 1000
   dlq_consumer_group: dlq-group
   secretsFile: "/etc/datastorage/redis-secrets.yaml"
   passwordKey: "password"
+
+immudb:
+  host: gateway_immudb_test
+  port: 3322
+  database: kubernaut_audit
+  username: immudb
+  tls_enabled: false
+  secretsFile: /etc/datastorage/secrets/immudb-secrets.yaml
+  passwordKey: password
 
 logging:
   level: debug

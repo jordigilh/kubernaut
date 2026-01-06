@@ -205,6 +205,14 @@ redis:
   db: 0
   secretsFile: "` + redisSecretsPath + `"
   passwordKey: "password"
+immudb:
+  host: "localhost"
+  port: 13322
+  database: "kubernaut_audit"
+  username: "immudb"
+  tls_enabled: false
+  secretsFile: "` + tempDir + `/immudb-secrets.yaml"
+  passwordKey: "password"
 logging:
   level: info
   format: json
@@ -219,6 +227,11 @@ logging:
 
 			redisSecretYAML := `password: test-redis-password`
 			err = os.WriteFile(redisSecretsPath, []byte(redisSecretYAML), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			immudbSecretYAML := `password: test-immudb-password`
+			immudbSecretsPath := filepath.Join(tempDir, "immudb-secrets.yaml")
+			err = os.WriteFile(immudbSecretsPath, []byte(immudbSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
 			cmd := exec.Command(binaryPath)

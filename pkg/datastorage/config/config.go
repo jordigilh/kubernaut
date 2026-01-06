@@ -49,6 +49,7 @@ type Config struct {
 	Logging  LoggingConfig  `yaml:"logging"`
 	Database DatabaseConfig `yaml:"database"`
 	Redis    RedisConfig    `yaml:"redis"`
+	Immudb   ImmudbConfig   `yaml:"immudb"`
 }
 
 // ServerConfig contains HTTP server configuration
@@ -95,6 +96,23 @@ type RedisConfig struct {
 
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/redis/credentials.yaml"
+	PasswordKey string `yaml:"passwordKey"` // Key name for password in secret file (e.g., "password")
+}
+
+// ImmudbConfig contains Immudb configuration for SOC2-compliant immutable audit trails
+type ImmudbConfig struct {
+	Host     string `yaml:"host"`     // e.g., "localhost" or container name
+	Port     int    `yaml:"port"`     // Default: 3322 (Immudb gRPC port)
+	Database string `yaml:"database"` // e.g., "kubernaut_audit"
+	Username string `yaml:"username"` // Default: "immudb"
+	Password string `yaml:"-"`        // NOT in YAML - loaded from secret file via LoadSecrets()
+
+	// TLS Configuration
+	TLSEnabled  bool   `yaml:"tls_enabled"`  // Enable TLS for production
+	TLSCertPath string `yaml:"tls_cert_path"` // Path to TLS certificate
+
+	// Secret file configuration (ADR-030 Section 6)
+	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/immudb/credentials.yaml"
 	PasswordKey string `yaml:"passwordKey"` // Key name for password in secret file (e.g., "password")
 }
 
@@ -188,6 +206,35 @@ func (c *Config) LoadSecrets() error {
 
 	c.Redis.Password = redisPasswordStr
 
+	// Load Immudb secrets (REQUIRED)
+	if c.Immudb.SecretsFile == "" {
+		return fmt.Errorf("immudb secretsFile required (ADR-030 Section 6)")
+	}
+	if c.Immudb.PasswordKey == "" {
+		return fmt.Errorf("immudb passwordKey required (ADR-030 Section 6)")
+	}
+
+	immudbSecrets, err := loadSecretFile(c.Immudb.SecretsFile)
+	if err != nil {
+		return fmt.Errorf("failed to load immudb secrets from %s: %w",
+			c.Immudb.SecretsFile, err)
+	}
+
+	// Extract Immudb password
+	immudbPassword, ok := immudbSecrets[c.Immudb.PasswordKey]
+	if !ok {
+		return fmt.Errorf("password key '%s' not found in immudb secret file %s",
+			c.Immudb.PasswordKey, c.Immudb.SecretsFile)
+	}
+
+	immudbPasswordStr, isString := immudbPassword.(string)
+	if !isString {
+		return fmt.Errorf("immudb password key '%s' in secret file is not a string",
+			c.Immudb.PasswordKey)
+	}
+
+	c.Immudb.Password = immudbPasswordStr
+
 	return nil
 }
 
@@ -245,6 +292,23 @@ func (c *Config) Validate() error {
 	// Validate Redis configuration
 	if c.Redis.Addr == "" {
 		return fmt.Errorf("redis address required")
+	}
+
+	// Validate Immudb configuration
+	if c.Immudb.Host == "" {
+		return fmt.Errorf("immudb host required")
+	}
+	if c.Immudb.Port == 0 {
+		return fmt.Errorf("immudb port required")
+	}
+	if c.Immudb.Port < 1 || c.Immudb.Port > 65535 {
+		return fmt.Errorf("immudb port must be between 1 and 65535, got: %d", c.Immudb.Port)
+	}
+	if c.Immudb.Database == "" {
+		return fmt.Errorf("immudb database required")
+	}
+	if c.Immudb.Username == "" {
+		return fmt.Errorf("immudb username required")
 	}
 
 	// Validate logging configuration
