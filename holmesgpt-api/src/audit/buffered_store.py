@@ -62,6 +62,7 @@ from datastorage import ApiClient, Configuration  # noqa: E402
 from datastorage.api.audit_write_api_api import AuditWriteAPIApi  # noqa: E402
 from datastorage.exceptions import ApiException  # noqa: E402
 from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
+from datastorage_auth_session import ServiceAccountAuthSession  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +140,23 @@ class BufferedAuditStore:
         self._failed_batch_count = 0
         self._lock = threading.Lock()
 
-        # Initialize Data Storage OpenAPI client (Phase 2b)
+        # ========================================
+        # DD-AUTH-005: Inject ServiceAccount authentication session
+        # This change affects holmesgpt-api service automatically:
+        # - holmesgpt-api reads ServiceAccount token from /var/run/secrets/kubernetes.io/serviceaccount/token
+        # - Session caches token for 5 minutes (reduces filesystem I/O)
+        # - Session injects Authorization: Bearer <token> header on every request
+        # - Gracefully degrades if token file doesn't exist (local dev)
+        #
+        # See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
+        # ========================================
+        
+        # Initialize Data Storage OpenAPI client with auth session (Phase 2b + DD-AUTH-005)
         # Replaces manual requests.post() for type safety and contract validation
+        auth_session = ServiceAccountAuthSession()
         api_config = Configuration(host=data_storage_url)
         self._api_client = ApiClient(configuration=api_config)
+        self._api_client.rest_client.pool_manager = auth_session  # ← ServiceAccount token injection
         self._audit_api = AuditWriteAPIApi(self._api_client)
 
         # Start background worker
