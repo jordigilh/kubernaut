@@ -18,17 +18,20 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/google/uuid"
+	ptr "k8s.io/utils/ptr"
 
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
-	// TODO: Uncomment when implementing tests
-	// "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/gateway/types"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
 // =============================================================================
@@ -53,8 +56,8 @@ import (
 // - Tests MUST Fail() if not implemented (NO Skip())
 //
 // Error Scenarios Tested:
-// - Scenario 1: K8s CRD creation failure (ERR_K8S_*)
-// - Scenario 2: Invalid signal format (ERR_INVALID_*)
+// - Scenario 1: K8s CRD creation failure (ERR_K8S_*) - Integration test
+// - Scenario 2: Adapter validation failure (ERR_INVALID_*) - Unit test (see test/unit/gateway/audit_errors_unit_test.go)
 //
 // To run these tests:
 //   make test-integration-gateway
@@ -68,6 +71,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 		gatewayServer  *gateway.Server
 		dataStorageURL string
 		testNamespace  string
+		dsClient       *dsgen.ClientWithResponses
 	)
 
 	BeforeEach(func() {
@@ -90,6 +94,10 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 			Fail(fmt.Sprintf("Data Storage health check failed at %s: status %d", dataStorageURL, healthResp.StatusCode))
 		}
 
+		// Create OpenAPI client for Data Storage queries
+		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+
 		// Setup isolated test namespace
 		testNamespace = fmt.Sprintf("test-error-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 		EnsureTestNamespace(ctx, testClient, testNamespace)
@@ -108,58 +116,102 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 
 	Context("Gap #7 Scenario 1: K8s CRD Creation Failure", func() {
 		It("should emit standardized error_details on CRD creation failure", func() {
-			Fail("IMPLEMENTATION REQUIRED: K8s CRD creation failure error audit\n" +
-				"  Business Flow: Gateway.ProcessSignal() -> K8s API fails -> Audit event emitted\n" +
-				"  Next Steps:\n" +
-				"    1. Create valid NormalizedSignal with invalid namespace\n" +
-				"    2. Call gatewayServer.ProcessSignal(ctx, signal)\n" +
-				"    3. Expect error from K8s API (namespace not found)\n" +
-				"    4. Query Data Storage for 'gateway.crd.creation_failed' audit event\n" +
-				"    5. Validate error_details structure (message, code, component, retry_possible)\n" +
-				"  Tracking: BR-AUDIT-005 Gap #7")
+			By("1. Create signal with non-existent namespace")
+			// Use a namespace that definitely doesn't exist
+			invalidNamespace := "non-existent-ns-" + uuid.New().String()
+			fingerprint := "test-fp-" + uuid.New().String()[:16]
 
-			// TODO: Implement test
-			// signal := &types.NormalizedSignal{
-			//     Fingerprint: "test-fingerprint-" + uuid.New().String(),
-			//     AlertName:   "TestAlert",
-			//     Namespace:   "non-existent-namespace", // Will cause K8s API error
-			//     Severity:    "warning",
-			//     ResourceKind: "Pod",
-			//     ResourceName: "test-pod",
-			// }
-			//
-			// _, err := gatewayServer.ProcessSignal(ctx, signal)
-			// Expect(err).To(HaveOccurred()) // Should fail K8s create
-			//
-			// Then query Data Storage for audit event with error_details
+			signal := &types.NormalizedSignal{
+				Fingerprint: fingerprint,
+				AlertName:   "CRDCreationFailureTest",
+				Namespace:   invalidNamespace, // Non-existent namespace causes K8s API error
+				Severity:    "warning",
+				Resource: types.ResourceIdentifier{
+					Kind: "Pod",
+					Name: "test-pod",
+				},
+				SourceType: "prometheus-alert",
+			}
+
+			By("2. Call Gateway business logic - expect failure")
+			_, err := gatewayServer.ProcessSignal(ctx, signal)
+			Expect(err).To(HaveOccurred(), "ProcessSignal should fail due to invalid namespace")
+			Expect(err.Error()).To(ContainSubstring("namespace"), "Error should mention namespace issue")
+
+			By("3. Query Data Storage for 'gateway.crd.creation_failed' audit event")
+			eventType := "gateway.crd.creation_failed"
+			params := &dsgen.QueryAuditEventsParams{
+				CorrelationId: &fingerprint,
+				EventType:     &eventType,
+				EventCategory: ptr.To("gateway"),
+			}
+
+			var auditEvents []dsgen.AuditEvent
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+				if err != nil {
+					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
+					return 0
+				}
+				if resp.JSON200 == nil {
+					return 0
+				}
+				if resp.JSON200.Data != nil {
+					auditEvents = *resp.JSON200.Data
+				}
+				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
+					return *resp.JSON200.Pagination.Total
+				}
+				return 0
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"Should find exactly 1 'crd.creation_failed' audit event")
+
+			By("4. Validate error_details structure (Gap #7)")
+			Expect(auditEvents).To(HaveLen(1), "Should have exactly 1 audit event")
+
+			// Convert to map for easier validation
+			eventJSON, err := json.Marshal(auditEvents[0])
+			Expect(err).ToNot(HaveOccurred())
+			var eventMap map[string]interface{}
+			err = json.Unmarshal(eventJSON, &eventMap)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Validate standard ADR-034 fields
+			Expect(eventMap["version"]).To(Equal("1.0"))
+			Expect(eventMap["event_type"]).To(Equal("gateway.crd.creation_failed"))
+			Expect(eventMap["event_category"]).To(Equal("gateway"))
+			Expect(eventMap["event_action"]).To(Equal("created"))
+			Expect(eventMap["event_outcome"]).To(Equal("failure"))
+			Expect(eventMap["correlation_id"]).To(Equal(fingerprint))
+
+			// Validate error_details structure (Gap #7)
+			eventData, ok := eventMap["event_data"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "event_data should be a map")
+
+			errorDetails, ok := eventData["error_details"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "error_details should exist in event_data (Gap #7)")
+
+			// Gap #7: Standardized error_details fields
+			Expect(errorDetails).To(HaveKey("message"), "error_details.message required")
+			Expect(errorDetails).To(HaveKey("code"), "error_details.code required")
+			Expect(errorDetails).To(HaveKey("component"), "error_details.component required")
+			Expect(errorDetails["component"]).To(Equal("gateway"), "error_details.component should be 'gateway'")
+			Expect(errorDetails).To(HaveKey("retry_possible"), "error_details.retry_possible required")
+
+			// Validate error message contains meaningful context
+			message := errorDetails["message"].(string)
+			Expect(message).ToNot(BeEmpty(), "error_details.message should not be empty")
+			Expect(message).To(Or(
+				ContainSubstring("namespace"),
+				ContainSubstring("not found"),
+				ContainSubstring("failed"),
+			), "error_details.message should contain error context")
 		})
 	})
 
-	Context("Gap #7 Scenario 2: Invalid Signal Format", func() {
-		It("should emit standardized error_details on invalid signal format", func() {
-			Fail("IMPLEMENTATION REQUIRED: Invalid signal format error audit\n" +
-				"  Business Flow: Gateway.ProcessSignal() -> Validation fails -> Audit event emitted\n" +
-				"  Next Steps:\n" +
-				"    1. Create invalid NormalizedSignal (missing required fields)\n" +
-				"    2. Call gatewayServer.ProcessSignal(ctx, invalidSignal)\n" +
-				"    3. Expect validation error\n" +
-				"    4. Query Data Storage for 'gateway.signal.validation_failed' audit event\n" +
-				"    5. Validate error_details structure (message, code, component, retry_possible)\n" +
-				"  Tracking: BR-AUDIT-005 Gap #7")
-
-			// TODO: Implement test
-			// invalidSignal := &types.NormalizedSignal{
-			//     // Missing required fields
-			//     Fingerprint: "", // INVALID: empty fingerprint
-			//     AlertName:   "", // INVALID: empty alert name
-			//     Namespace:   testNamespace,
-			// }
-			//
-			// _, err := gatewayServer.ProcessSignal(ctx, invalidSignal)
-			// Expect(err).To(HaveOccurred()) // Should fail validation
-			//
-			// Then query Data Storage for audit event with error_details
-		})
-	})
+	// NOTE: Scenario 2 (Adapter Validation Failure) moved to unit tests
+	// Rationale: Adapter validation is pure logic without infrastructure needs
+	// Location: test/unit/gateway/audit_errors_unit_test.go
+	// This maintains proper test distribution (70% unit, >50% integration)
 })
 

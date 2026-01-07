@@ -177,6 +177,14 @@ type AuditEvent struct {
 	PreviousEventHash string `json:"previous_event_hash"` // Hash of the previous event in the chain
 
 	// ========================================
+	// SOC2 Gap #8: Legal Hold & Retention
+	// ========================================
+	LegalHold        bool       `json:"legal_hold"`          // Legal hold flag prevents deletion
+	LegalHoldReason  string     `json:"legal_hold_reason"`   // Reason for legal hold
+	LegalHoldPlacedBy string    `json:"legal_hold_placed_by"` // User who placed legal hold
+	LegalHoldPlacedAt *time.Time `json:"legal_hold_placed_at"` // Timestamp when hold was placed
+
+	// ========================================
 	// FLEXIBLE EVENT DATA (ADR-034)
 	// ========================================
 	EventData map[string]interface{} `json:"event_data"` // Service-specific data
