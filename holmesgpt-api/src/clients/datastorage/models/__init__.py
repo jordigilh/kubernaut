@@ -23,10 +23,15 @@ from .create_notification_audit202_response import CreateNotificationAudit202Res
 from .detected_labels import DetectedLabels
 from .health_check200_response import HealthCheck200Response
 from .health_check503_response import HealthCheck503Response
+from .list_legal_holds200_response import ListLegalHolds200Response
+from .list_legal_holds200_response_holds_inner import ListLegalHolds200ResponseHoldsInner
 from .mandatory_labels import MandatoryLabels
 from .notification_audit import NotificationAudit
 from .notification_audit_response import NotificationAuditResponse
+from .place_legal_hold_request import PlaceLegalHoldRequest
 from .rfc7807_problem import RFC7807Problem
+from .release_legal_hold200_response import ReleaseLegalHold200Response
+from .release_legal_hold_request import ReleaseLegalHoldRequest
 from .remediation_workflow import RemediationWorkflow
 from .workflow_disable_request import WorkflowDisableRequest
 from .workflow_list_response import WorkflowListResponse

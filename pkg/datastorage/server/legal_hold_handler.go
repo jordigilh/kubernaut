@@ -90,11 +90,13 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Extract X-User-ID header (placed_by)
+	// 3. Extract X-User-ID header (placed_by) - REQUIRED for SOC2 compliance
 	placedBy := r.Header.Get("X-User-ID")
 	if placedBy == "" {
-		// Default to "unknown" if not provided (for backwards compatibility)
-		placedBy = "unknown"
+		s.metrics.LegalHoldFailures.WithLabelValues("unauthorized").Inc()
+		response.WriteRFC7807Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized",
+			"X-User-ID header is required for legal hold operations", s.logger)
+		return
 	}
 
 	// 4. Check if correlation_id exists
@@ -199,10 +201,13 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 3. Extract X-User-ID header (released_by)
+	// 3. Extract X-User-ID header (released_by) - REQUIRED for SOC2 compliance
 	releasedBy := r.Header.Get("X-User-ID")
 	if releasedBy == "" {
-		releasedBy = "unknown"
+		s.metrics.LegalHoldFailures.WithLabelValues("unauthorized").Inc()
+		response.WriteRFC7807Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized",
+			"X-User-ID header is required for legal hold operations", s.logger)
+		return
 	}
 
 	// 4. Check if correlation_id has any events with legal hold

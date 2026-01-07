@@ -194,11 +194,11 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			eventCounts := countEventsByType(events)
 			phaseTransitionCount := eventCounts["aianalysis.phase.transition"]
 			if phaseTransitionCount < 3 {
-				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (got %d/3 phase transitions, %d total events)\n", 
+				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (got %d/3 phase transitions, %d total events)\n",
 					phaseTransitionCount, len(events))
 			}
 			return phaseTransitionCount
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 3), 
+		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 3),
 			"Should have at least 3 phase transition events (Pending→Investigating→Analyzing→Completed)")
 
 		By("Verifying audit event types and counts are EXACTLY correct")

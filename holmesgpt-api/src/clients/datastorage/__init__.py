@@ -41,10 +41,15 @@ __all__ = [
     "DetectedLabels",
     "HealthCheck200Response",
     "HealthCheck503Response",
+    "ListLegalHolds200Response",
+    "ListLegalHolds200ResponseHoldsInner",
     "MandatoryLabels",
     "NotificationAudit",
     "NotificationAuditResponse",
+    "PlaceLegalHoldRequest",
     "RFC7807Problem",
+    "ReleaseLegalHold200Response",
+    "ReleaseLegalHoldRequest",
     "RemediationWorkflow",
     "WorkflowDisableRequest",
     "WorkflowListResponse",
@@ -83,10 +88,15 @@ from .models.create_notification_audit202_response import CreateNotificationAudi
 from .models.detected_labels import DetectedLabels as DetectedLabels
 from .models.health_check200_response import HealthCheck200Response as HealthCheck200Response
 from .models.health_check503_response import HealthCheck503Response as HealthCheck503Response
+from .models.list_legal_holds200_response import ListLegalHolds200Response as ListLegalHolds200Response
+from .models.list_legal_holds200_response_holds_inner import ListLegalHolds200ResponseHoldsInner as ListLegalHolds200ResponseHoldsInner
 from .models.mandatory_labels import MandatoryLabels as MandatoryLabels
 from .models.notification_audit import NotificationAudit as NotificationAudit
 from .models.notification_audit_response import NotificationAuditResponse as NotificationAuditResponse
+from .models.place_legal_hold_request import PlaceLegalHoldRequest as PlaceLegalHoldRequest
 from .models.rfc7807_problem import RFC7807Problem as RFC7807Problem
+from .models.release_legal_hold200_response import ReleaseLegalHold200Response as ReleaseLegalHold200Response
+from .models.release_legal_hold_request import ReleaseLegalHoldRequest as ReleaseLegalHoldRequest
 from .models.remediation_workflow import RemediationWorkflow as RemediationWorkflow
 from .models.workflow_disable_request import WorkflowDisableRequest as WorkflowDisableRequest
 from .models.workflow_list_response import WorkflowListResponse as WorkflowListResponse

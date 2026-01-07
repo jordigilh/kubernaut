@@ -113,6 +113,7 @@ HTTPSignatureAuthSetting = TypedDict(
 AuthSettings = TypedDict(
     "AuthSettings",
     {
+        "userIdHeader": APIKeyAuthSetting,
     },
     total=False,
 )
@@ -165,6 +166,26 @@ class Configuration:
     :param cert_file: the path to a client certificate file, for mTLS.
     :param key_file: the path to a client key file, for mTLS.
 
+    :Example:
+
+    API Key Authentication Example.
+    Given the following security scheme in the OpenAPI specification:
+      components:
+        securitySchemes:
+          cookieAuth:         # name for the security scheme
+            type: apiKey
+            in: cookie
+            name: JSESSIONID  # cookie name
+
+    You can programmatically set the cookie:
+
+conf = datastorage.Configuration(
+    api_key={'cookieAuth': 'abc123'}
+    api_key_prefix={'cookieAuth': 'JSESSIONID'}
+)
+
+    The following cookie will be added to the HTTP request:
+       Cookie: JSESSIONID abc123
     """
 
     _default: ClassVar[Optional[Self]] = None
@@ -495,6 +516,15 @@ class Configuration:
         :return: The Auth Settings information dict.
         """
         auth: AuthSettings = {}
+        if 'userIdHeader' in self.api_key:
+            auth['userIdHeader'] = {
+                'type': 'api_key',
+                'in': 'header',
+                'key': 'X-User-ID',
+                'value': self.get_api_key_with_prefix(
+                    'userIdHeader',
+                ),
+            }
         return auth
 
     def to_debug_report(self) -> str:
