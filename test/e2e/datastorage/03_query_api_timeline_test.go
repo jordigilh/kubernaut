@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -138,17 +139,18 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			event := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "gateway", // ADR-034: renamed from 'service'
-				"event_action":    fmt.Sprintf("gateway_op_%d", i),
-				"event_type":      "gateway.signal.received",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-				"correlation_id":  correlationID,
-				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
-				"event_data":      eventData,
+			// DD-API-001: Use typed OpenAPI struct
+			event := dsgen.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+				EventAction:    fmt.Sprintf("gateway_op_%d", i),
+				EventType:      "gateway.signal.received",
+				EventTimestamp: time.Now().UTC(),
+				CorrelationId:  correlationID,
+				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+				EventData:      eventData,
 			}
-			resp := createAuditEventFromMap(ctx, dsClient, event)
+			resp := createAuditEventOpenAPI(ctx, dsClient, event)
 			// Accept both 201 (direct write) and 202 (DLQ fallback)
 			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
@@ -162,17 +164,18 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			event := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "analysis", // ADR-034: renamed from 'service'
-				"event_action":    fmt.Sprintf("ai_op_%d", i),
-				"event_type":      "analysis.analysis.completed",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-				"correlation_id":  correlationID,
-				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
-				"event_data":      eventData,
+			// DD-API-001: Use typed OpenAPI struct
+			event := dsgen.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    fmt.Sprintf("ai_op_%d", i),
+				EventType:      "analysis.analysis.completed",
+				EventTimestamp: time.Now().UTC(),
+				CorrelationId:  correlationID,
+				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+				EventData:      eventData,
 			}
-			resp := createAuditEventFromMap(ctx, dsClient, event)
+			resp := createAuditEventOpenAPI(ctx, dsClient, event)
 			// Accept both 201 (direct write) and 202 (DLQ fallback)
 			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			time.Sleep(100 * time.Millisecond)
@@ -186,17 +189,18 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				Build()
 			Expect(err).ToNot(HaveOccurred())
 
-			event := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "workflow", // ADR-034: renamed from 'service'
-				"event_action":    fmt.Sprintf("workflow_op_%d", i),
-				"event_type":      "workflow.workflow.completed",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-				"correlation_id":  correlationID,
-				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
-				"event_data":      eventData,
+			// DD-API-001: Use typed OpenAPI struct
+			event := dsgen.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  dsgen.AuditEventRequestEventCategoryWorkflow,
+				EventAction:    fmt.Sprintf("workflow_op_%d", i),
+				EventType:      "workflow.workflow.completed",
+				EventTimestamp: time.Now().UTC(),
+				CorrelationId:  correlationID,
+				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+				EventData:      eventData,
 			}
-			resp := createAuditEventFromMap(ctx, dsClient, event)
+			resp := createAuditEventOpenAPI(ctx, dsClient, event)
 			// Accept both 201 (direct write) and 202 (DLQ fallback)
 			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			time.Sleep(100 * time.Millisecond)

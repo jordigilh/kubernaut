@@ -151,18 +151,19 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		gatewayEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "gateway",
-			"event_action":    "signal_processing",
-			"event_type":      "gateway.signal.received",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      gatewayEventData,
+		// DD-API-001: Use typed OpenAPI struct for type safety
+		gatewayEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventAction:    "signal_processing",
+			EventType:      "gateway.signal.received",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      gatewayEventData,
 		}
 
-		resp := createAuditEventFromMap(ctx, dsClient, gatewayEvent)
+		resp := createAuditEventOpenAPI(ctx, dsClient, gatewayEvent)
 		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Gateway audit event should be created")
 		testLogger.Info("✅ Gateway audit event created")
 
@@ -173,18 +174,19 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		aiEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "analysis",
-			"event_action":    "rca_generation",
-			"event_type":      "analysis.analysis.completed",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      aiEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		aiEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+			EventAction:    "rca_generation",
+			EventType:      "analysis.analysis.completed",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      aiEventData,
 		}
 
-		resp = createAuditEventFromMap(ctx, dsClient, aiEvent)
+		resp = createAuditEventOpenAPI(ctx, dsClient, aiEvent)
 		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
 		testLogger.Info("✅ AIAnalysis audit event created")
 
@@ -195,52 +197,55 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		workflowEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "workflow",
-			"event_action":    "remediation_execution",
-			"event_type":      "workflow.workflow.completed",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      workflowEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		workflowEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryWorkflow,
+			EventAction:    "remediation_execution",
+			EventType:      "workflow.workflow.completed",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      workflowEventData,
 		}
 
-		resp = createAuditEventFromMap(ctx, dsClient, workflowEvent)
+		resp = createAuditEventOpenAPI(ctx, dsClient, workflowEvent)
 		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Workflow audit event should be created")
 		testLogger.Info("✅ Workflow audit event created")
 
 		// Step 4: Orchestrator - Remediation Completed
 		testLogger.Info("🎯 Step 4: Orchestrator completes...")
-		orchestratorEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "orchestration", // ADR-034 v1.2 valid category (was "orchestrator")
-			"event_action":    "orchestration",
-			"event_type":      "orchestration.remediation.completed", // Match category
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      map[string]interface{}{},
+		// DD-API-001: Use typed OpenAPI struct
+		orchestratorEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryOrchestration, // ADR-034 v1.2 valid category
+			EventAction:    "orchestration",
+			EventType:      "orchestration.remediation.completed",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      map[string]interface{}{}, // Empty event data
 		}
 
-		resp = createAuditEventFromMap(ctx, dsClient, orchestratorEvent)
+		resp = createAuditEventOpenAPI(ctx, dsClient, orchestratorEvent)
 		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
 		testLogger.Info("✅ Orchestrator audit event created")
 
 		// Step 5: EffectivenessMonitor - Assessment Completed
 		testLogger.Info("📊 Step 5: EffectivenessMonitor assesses...")
-		monitorEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "analysis", // ADR-034 v1.2: effectiveness assessment = analysis category (was "monitor")
-			"event_action":    "effectiveness_assessment",
-			"event_type":      "analysis.assessment.completed", // Match category
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_data":      map[string]interface{}{},
+		// DD-API-001: Use typed OpenAPI struct
+		monitorEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis, // ADR-034 v1.2: effectiveness assessment = analysis category
+			EventAction:    "effectiveness_assessment",
+			EventType:      "analysis.assessment.completed",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventData:      map[string]interface{}{}, // Empty event data
 		}
 
-		resp = createAuditEventFromMap(ctx, dsClient, monitorEvent)
+		resp = createAuditEventOpenAPI(ctx, dsClient, monitorEvent)
 		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Monitor audit event should be created")
 		testLogger.Info("✅ Monitor audit event created")
 
