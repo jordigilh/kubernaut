@@ -15,6 +15,8 @@ Name | Type | Description | Notes
 **metadata** | **Dict[str, object]** | Additional metadata | [optional] 
 **selected_workflow** | **Dict[str, object]** |  | [optional] 
 **recovery_analysis** | **Dict[str, object]** |  | [optional] 
+**needs_human_review** | **bool** | Whether human review is needed (BR-HAPI-197) | [optional] [default to False]
+**human_review_reason** | **str** |  | [optional] 
 
 ## Example
 
