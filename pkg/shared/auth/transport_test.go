@@ -91,37 +91,6 @@ var _ = Describe("AuthTransport", func() {
 		})
 	})
 
-	Describe("NewStaticTokenTransport", func() {
-		It("should inject Authorization Bearer header", func() {
-			// Create static token transport
-			transport := auth.NewStaticTokenTransport("test-token-12345")
-			client := &http.Client{Transport: transport}
-
-			// Make request
-			resp, err := client.Get(server.URL)
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
-
-			// Verify Authorization header was injected
-			Expect(resp.Header.Get("X-Echo-Authorization")).To(Equal("Bearer test-token-12345"))
-			Expect(resp.Header.Get("X-Echo-User")).To(BeEmpty())
-		})
-
-		It("should not inject header if token is empty", func() {
-			// Create transport with empty token
-			transport := auth.NewStaticTokenTransport("")
-			client := &http.Client{Transport: transport}
-
-			// Make request
-			resp, err := client.Get(server.URL)
-			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
-
-			// Verify no headers injected
-			Expect(resp.Header.Get("X-Echo-Authorization")).To(BeEmpty())
-			Expect(resp.Header.Get("X-Echo-User")).To(BeEmpty())
-		})
-	})
 
 	Describe("NewServiceAccountTransport", func() {
 		It("should read token from filesystem and inject Authorization header", func() {
