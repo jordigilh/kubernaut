@@ -124,6 +124,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}()
 
 	// Build DataStorage with dynamic tag in parallel
+	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
+	// uses build-before-cluster optimization pattern (Phase 3 analysis)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
 		err := buildDataStorageImageWithTag(dataStorageImageName, writer)
 		buildResults <- buildResult{name: "DataStorage", err: err}
@@ -216,6 +219,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}()
 
 	// Load DataStorage image with dynamic tag
+	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
+	// uses build-before-cluster optimization pattern (Phase 3 analysis)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
 		err := loadDataStorageImageWithTag(clusterName, dataStorageImageName, writer)
 		loadResults <- buildResult{name: "DataStorage", err: err}
@@ -1158,4 +1164,5 @@ func DeleteWorkflowExecutionCluster(clusterName string, output io.Writer) error 
 	_, _ = fmt.Fprintf(output, "✅ Kind cluster deleted\n")
 	return nil
 }
+
 

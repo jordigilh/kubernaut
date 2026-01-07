@@ -150,7 +150,7 @@ class BufferedAuditStore:
         #
         # See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
         # ========================================
-        
+
         # Initialize Data Storage OpenAPI client with auth session (Phase 2b + DD-AUTH-005)
         # Replaces manual requests.post() for type safety and contract validation
         auth_session = ServiceAccountAuthSession()

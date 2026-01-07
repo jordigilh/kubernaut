@@ -513,15 +513,43 @@ ginkgo -v --focus="Test 15" ./test/e2e/gateway/
 
 ---
 
+### **🚨 ADDITIONAL ISSUE DISCOVERED: Migration 006 Also Has CONCURRENTLY**
+
+**During verification of the migration 023 fix, we discovered**:
+
+**File**: `migrations/006_effectiveness_assessment.sql`
+**Lines**: 211, 214
+**Problem**: Also uses `CREATE INDEX CONCURRENTLY`
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_action_outcomes_learning_query
+    ON action_outcomes(action_type, context_hash, executed_at DESC);
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_effectiveness_results_learning_query
+    ON effectiveness_results(action_type, assessed_at DESC);
+```
+
+**Critical Finding**: Migration 006 is for **v1.1 effectiveness assessment features** but exists in the v1.0 migrations directory.
+
+**Question**: Should migration 006 be:
+1. **Removed from v1.0** (moved to v1.1 branch/folder)?
+2. **Fixed** (remove CONCURRENTLY like migration 023)?
+3. **Excluded** (add to migration skip list for v1.0)?
+
+**Impact**: If migration 006 is auto-discovered by E2E tests, it will also cause the same transaction block error as migration 023 did.
+
+---
+
 ### **📊 IMPACT ASSESSMENT**
 
 | Component | Status | Impact | Urgency |
 |-----------|--------|--------|---------|
-| **Gateway E2E Test 15** | ❌ FAILING | `audit_events` table missing due to migration rollback | 🔴 HIGH |
-| **DataStorage E2E Tests** | ⚠️ **LIKELY AFFECTED** | Also use `ApplyAllMigrations()` | 🟡 MEDIUM |
+| **Gateway E2E Test 15** | ❌ FAILING | `audit_events` table missing due to migration 023 rollback | 🔴 HIGH |
+| **Migration 006** | ⚠️ **V1.1 LEAKAGE** | Contains CONCURRENTLY + v1.1 features in v1.0 codebase | 🟡 MEDIUM |
+| **DataStorage E2E Tests** | ⚠️ **LIKELY AFFECTED** | Also use `ApplyAllMigrations()` which discovers 006 + 023 | 🟡 MEDIUM |
 | **Other E2E Tests** (WE, AA, RO, SP, Notification) | ⚠️ **POTENTIALLY AFFECTED** | Any test using `ApplyAllMigrations()` | 🟡 MEDIUM |
-| **Integration Tests** | ✅ PASSING | Use hardcoded migration list (doesn't include 023/024 yet) | 🟢 LOW |
-| **Production Deployments** | ⚠️ **AT RISK** | Migration 023 will fail if applied via transaction-based tool | 🔴 HIGH |
+| **Integration Tests** | ✅ PASSING | Use hardcoded migration list (includes 006 but may skip it) | 🟢 LOW |
+| **Production Deployments** | ⚠️ **AT RISK** | Migrations 006 and 023 will fail if applied via transaction-based tool | 🔴 HIGH |
 
 ---
 

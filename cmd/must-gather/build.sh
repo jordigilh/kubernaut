@@ -60,10 +60,10 @@ echo ""
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo "Pushing ${REGISTRY}/${IMAGE_NAME}:${VERSION}..."
     podman push "${REGISTRY}/${IMAGE_NAME}:${VERSION}"
-    
+
     echo "Pushing ${REGISTRY}/${IMAGE_NAME}:latest..."
     podman push "${REGISTRY}/${IMAGE_NAME}:latest"
-    
+
     echo ""
     echo "=========================================="
     echo "✅ Images successfully pushed!"

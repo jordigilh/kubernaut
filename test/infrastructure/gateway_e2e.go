@@ -137,12 +137,20 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	}()
 
 	// Goroutine 2: Build and load DataStorage image with dynamic tag
+	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
-		var err error
-		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
-			err = fmt.Errorf("DS image build failed: %w", buildErr)
-		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
-			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			KindClusterName:  clusterName,
+			BuildContextPath: ".", // Project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		_, err := BuildAndLoadImageToKind(cfg, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image build+load failed: %w", err)
 		}
 		results <- result{name: "DataStorage image", err: err}
 	}()
@@ -175,12 +183,19 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
+	// PHASE 3: Apply migrations + Deploy DataStorage (requires PostgreSQL)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Applying migrations + Deploying DataStorage...")
 
-	// Deploy DataStorage using the image built in Phase 2 (parallel)
+	// 3a. Apply database migrations (PostgreSQL only, NO ImmuDB per Jan 6 2026 decision)
+	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
+	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
+	// 3b. Deploy DataStorage using the image built in Phase 2 (parallel)
 	// Per DD-TEST-001: Use the UUID-tagged image for E2E isolation
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
@@ -262,6 +277,11 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Gateway image built")
 
+	// REFACTORED: Build+Load consolidated into single step (Phase 3)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// Note: This function builds BEFORE cluster creation, so we can't load yet
+	// We'll need to keep the separate build/load pattern here OR restructure
+	// For now, keeping original pattern as this is a unique sequential flow
 	_, _ = fmt.Fprintln(writer, "  🔨 Building DataStorage image with dynamic tag...")
 	if err := buildDataStorageImageWithTag(dataStorageImage, writer); err != nil {
 		return fmt.Errorf("DataStorage image build failed: %w", err)
@@ -434,12 +454,20 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	}()
 
 	// Goroutine 2: Build and load DataStorage image with dynamic tag
+	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
-		var err error
-		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
-			err = fmt.Errorf("DS image build failed: %w", buildErr)
-		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
-			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			KindClusterName:  clusterName,
+			BuildContextPath: ".", // Project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		_, err := BuildAndLoadImageToKind(cfg, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image build+load failed: %w", err)
 		}
 		results <- result{name: "DataStorage image", err: err}
 	}()
@@ -472,12 +500,19 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3: Deploy DataStorage (requires PostgreSQL)
+	// PHASE 3: Apply migrations + Deploy DataStorage (requires PostgreSQL)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Applying migrations + Deploying DataStorage...")
 
-	// Deploy DataStorage using the image built in Phase 2 (parallel)
+	// 3a. Apply database migrations (PostgreSQL only, NO ImmuDB per Jan 6 2026 decision)
+	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
+	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply migrations: %w", err)
+	}
+
+	// 3b. Deploy DataStorage using the image built in Phase 2 (parallel)
 	// Per DD-TEST-001: Use the UUID-tagged image for E2E isolation
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
@@ -597,32 +632,20 @@ func DeleteGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 // ========================================
 
 // createGatewayKindCluster creates a Kind cluster for Gateway E2E tests
+// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// Use Gateway-specific Kind configuration (2-node cluster with API server tuning)
-	// Reference: test/infrastructure/kind-aianalysis-config.yaml pattern
-	projectRoot := getProjectRoot()
-	kindConfigPath := projectRoot + "/test/infrastructure/kind-gateway-config.yaml"
-
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", kindConfigPath,
-		"--kubeconfig", kubeconfigPath,
-		"--wait", "5m",
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	// DD-TEST-007: Set working directory to project root so ./coverdata in Kind config resolves correctly
-	cmd.Dir = projectRoot
-
-	// Set KIND_EXPERIMENTAL_PROVIDER=podman to use Podman instead of Docker
-	cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kind create cluster failed: %w", err)
+	opts := KindClusterOptions{
+		ClusterName:             clusterName,
+		KubeconfigPath:          kubeconfigPath,
+		ConfigPath:              "test/infrastructure/kind-gateway-config.yaml",
+		WaitTimeout:             "5m",
+		DeleteExisting:          false,
+		ReuseExisting:           false,
+		UsePodman:               true,
+		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
-
-	return nil
+	return CreateKindClusterWithConfig(opts, writer)
 }
 
 // buildAndLoadGatewayImage builds Gateway Docker image using shared build utilities and loads it into Kind

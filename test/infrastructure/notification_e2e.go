@@ -210,17 +210,21 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	dataStorageImage := GenerateInfraImageName("datastorage", "notification")
 	_, _ = fmt.Fprintf(writer, "📦 DataStorage image: %s\n", dataStorageImage)
 
-	// 1. Build Data Storage image with dynamic tag
-	_, _ = fmt.Fprintf(writer, "🔨 Building Data Storage image...\n")
-	if err := buildDataStorageImageWithTag(dataStorageImage, writer); err != nil {
-		return fmt.Errorf("failed to build Data Storage image: %w", err)
-	}
-
-	// 2. Load Data Storage image into Kind cluster with same tag
+	// 1+2. Build and Load Data Storage image with dynamic tag (consolidated)
+	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	clusterName := "notification-e2e" // Matches CreateNotificationCluster
-	_, _ = fmt.Fprintf(writer, "📦 Loading Data Storage image into Kind cluster...\n")
-	if err := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); err != nil {
-		return fmt.Errorf("failed to load Data Storage image: %w", err)
+	_, _ = fmt.Fprintf(writer, "🔨 Building and loading Data Storage image...\n")
+	cfg := E2EImageConfig{
+		ServiceName:      "datastorage",
+		ImageName:        "kubernaut/datastorage",
+		DockerfilePath:   "docker/data-storage.Dockerfile",
+		KindClusterName:  clusterName,
+		BuildContextPath: ".", // Project root
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+	}
+	if _, err := BuildAndLoadImageToKind(cfg, writer); err != nil {
+		return fmt.Errorf("failed to build+load Data Storage image: %w", err)
 	}
 
 	// 3. Deploy shared Data Storage infrastructure with Notification-specific NodePort 30090

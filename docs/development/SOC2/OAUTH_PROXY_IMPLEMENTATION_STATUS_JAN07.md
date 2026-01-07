@@ -1,7 +1,7 @@
 # OAuth-Proxy Sidecar Implementation Status - SOC2 Gap #8
 
-**Date**: January 7, 2026  
-**Status**: 🔄 **IN PROGRESS** (2/8 tasks complete)  
+**Date**: January 7, 2026
+**Status**: 🔄 **IN PROGRESS** (2/8 tasks complete)
 **Authority**: DD-AUTH-004 (oauth-proxy sidecar), DD-AUTH-005 (client authentication pattern), SOC2 Gap #8
 
 ---
@@ -167,7 +167,7 @@
 
 ---
 
-**Status**: 2/8 tasks complete (25%)  
-**Estimated Remaining Time**: 8-10 hours (including all 7 services integration)  
+**Status**: 2/8 tasks complete (25%)
+**Estimated Remaining Time**: 8-10 hours (including all 7 services integration)
 **Next Action**: Implement DD-AUTH-005 transport layer authentication (Phase 1-2: Go and Python foundations)
 

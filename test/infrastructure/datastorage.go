@@ -88,13 +88,15 @@ func DeleteCluster(clusterName string, writer io.Writer) error {
 // Parallel Execution Strategy:
 //
 //	Phase 1 (Sequential): Create Kind cluster + namespace (~65s)
-//	Phase 2 (PARALLEL):   Build/Load DS image | Deploy PostgreSQL | Deploy Redis | Deploy Immudb (~60s)
+//	Phase 2 (PARALLEL):   Build/Load DS image | Deploy PostgreSQL | Deploy Redis (~60s)
 //	Phase 3 (Sequential): Run migrations (~30s)
 //	Phase 4 (Sequential): Deploy DataStorage service (~30s)
 //	Phase 5 (Sequential): Wait for services ready (~30s)
 //
 // Total time: ~3.6 minutes (vs ~4.7 minutes sequential)
 // Savings: ~1 minute per E2E run (~23% faster)
+//
+// Note: ImmuDB removed Jan 6, 2026 - PostgreSQL-only architecture per integration test decision
 //
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
 func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
@@ -127,23 +129,30 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
 	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	_, _ = fmt.Fprintln(writer, "  ├── Deploying Redis")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying Immudb (SOC2 audit trails)")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
 
 	type result struct {
 		name string
 		err  error
 	}
 
-	results := make(chan result, 4) // Increased from 3 to 4 for Immudb
+	results := make(chan result, 3) // PostgreSQL-only architecture (ImmuDB removed Jan 6, 2026)
 
 	// Goroutine 1: Build and load DataStorage image (with dynamic tag from caller)
+	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
-		var err error
-		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
-			err = fmt.Errorf("DS image build failed: %w", buildErr)
-		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
-			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			KindClusterName:  clusterName,
+			BuildContextPath: ".", // Project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		_, err := BuildAndLoadImageToKind(cfg, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image build+load failed: %w", err)
 		}
 		results <- result{name: "DS image", err: err}
 	}()
@@ -166,18 +175,9 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		results <- result{name: "Redis", err: err}
 	}()
 
-	// Goroutine 4: Deploy Immudb (SOC2 Gap #9 - tamper-evident audit trails)
-	go func() {
-		err := deployImmudbInNamespace(ctx, namespace, kubeconfigPath, writer)
-		if err != nil {
-			err = fmt.Errorf("Immudb deploy failed: %w", err)
-		}
-		results <- result{name: "Immudb", err: err}
-	}()
-
 	// Wait for all parallel tasks to complete
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for parallel tasks to complete...")
-	for i := 0; i < 4; i++ { // Increased from 3 to 4
+	for i := 0; i < 3; i++ {
 		r := <-results
 		if r.err != nil {
 			return fmt.Errorf("parallel setup failed (%s): %w", r.name, r.err)
@@ -185,7 +185,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded (incl. Immudb for SOC2)")
+	_, _ = fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded (PostgreSQL-only architecture)")
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3/4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
@@ -240,9 +240,11 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	return nil
 }
 
-// DeployDataStorageTestServices deploys PostgreSQL, Redis, Immudb, and Data Storage Service to a namespace
+// DeployDataStorageTestServices deploys PostgreSQL, Redis, and Data Storage Service to a namespace
 // This is used by E2E tests to create isolated test environments
 // dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:holmesgpt-api-a1b2c3d4")
+//
+// Note: ImmuDB removed Jan 6, 2026 - PostgreSQL-only architecture per integration test decision
 func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
@@ -267,31 +269,25 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
-	// 4. Deploy Immudb for SOC2-compliant audit trails (Gap #9)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Immudb for SOC2 audit trails...\n")
-	if err := deployImmudbInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy Immudb: %w", err)
-	}
-
-	// 5. Apply database migrations using shared migration library
+	// 4. Apply database migrations using shared migration library
 	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
 	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 6. Deploy Data Storage Service
+	// 5. Deploy Data Storage Service
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
-	// 7. Wait for all services ready
+	// 6. Wait for all services ready
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (PostgreSQL + Redis + Immudb + DataStorage)\n", namespace)
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (PostgreSQL + Redis + DataStorage)\n", namespace)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
@@ -334,31 +330,25 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("failed to deploy Redis: %w", err)
 	}
 
-	// 4. Deploy Immudb for SOC2-compliant audit trails (Gap #9)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Immudb for SOC2 audit trails...\n")
-	if err := deployImmudbInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy Immudb: %w", err)
-	}
-
-	// 5. Apply database migrations using shared migration library
+	// 4. Apply database migrations using shared migration library
 	_, _ = fmt.Fprintf(writer, "📋 Applying database migrations...\n")
 	if err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 6. Deploy Data Storage Service with custom NodePort
+	// 5. Deploy Data Storage Service with custom NodePort
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service (NodePort %d)...\n", nodePort)
 	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, nodePort, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
 
-	// 7. Wait for all services ready
+	// 6. Wait for all services ready
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for services to be ready...\n")
 	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (NodePort %d, incl. Immudb for SOC2)\n", namespace, nodePort)
+	_, _ = fmt.Fprintf(writer, "✅ Data Storage test services ready in namespace %s (NodePort %d, PostgreSQL + Redis + DataStorage)\n", namespace, nodePort)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
@@ -776,168 +766,6 @@ func deployRedisInNamespace(ctx context.Context, namespace, kubeconfigPath strin
 	return nil
 }
 
-// deployImmudbInNamespace deploys Immudb (immutable database) for SOC2-compliant audit trails
-// Immudb provides:
-// - Cryptographic proof of data integrity (Merkle trees)
-// - Tamper-evident audit logs (built-in hashing)
-// - Time-travel queries and historical data verification
-//
-// Per SOC2 Gap #9 (DD-TEST-001 v2.2): Immudb replaces PostgreSQL for audit_events storage
-// Integration tests use port range 13322-13331, E2E uses default 3322 (in-cluster)
-func deployImmudbInNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
-	clientset, err := getKubernetesClient(kubeconfigPath)
-	if err != nil {
-		return err
-	}
-
-	// 1. Create Secret for Immudb admin password
-	// Note: In production, this would be a Kubernetes Secret mounted from a secure source
-	// For E2E tests, we use a test password
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "immudb-secret",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "immudb",
-			},
-		},
-		StringData: map[string]string{
-			"IMMUDB_ADMIN_PASSWORD": "immudb_e2e_password", // E2E test password
-		},
-	}
-
-	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Immudb secret: %w", err)
-	}
-
-	// 2. Create Service
-	service := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "immudb",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "immudb",
-			},
-		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeClusterIP,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "grpc",
-					Port:       3322, // Immudb default gRPC port
-					TargetPort: intstr.FromInt(3322),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-			Selector: map[string]string{
-				"app": "immudb",
-			},
-		},
-	}
-
-	_, err = clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Immudb service: %w", err)
-	}
-
-	// 3. Create Deployment
-	replicas := int32(1)
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "immudb",
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app": "immudb",
-			},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": "immudb",
-				},
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app": "immudb",
-					},
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "immudb",
-							Image: "codenotary/immudb:latest", // Official multi-platform image (amd64/arm64)
-							Ports: []corev1.ContainerPort{
-								{
-									Name:          "grpc",
-									ContainerPort: 3322,
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "IMMUDB_ADMIN_PASSWORD",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{
-												Name: "immudb-secret",
-											},
-											Key: "IMMUDB_ADMIN_PASSWORD",
-										},
-									},
-								},
-								{
-									Name:  "IMMUDB_DATABASE",
-									Value: "kubernaut_audit", // Default database for audit events
-								},
-							},
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("256Mi"),
-									corev1.ResourceCPU:    resource.MustParse("200m"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("512Mi"),
-									corev1.ResourceCPU:    resource.MustParse("400m"),
-								},
-							},
-							ReadinessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									TCPSocket: &corev1.TCPSocketAction{
-										Port: intstr.FromInt(3322),
-									},
-								},
-								InitialDelaySeconds: 10,
-								PeriodSeconds:       5,
-								TimeoutSeconds:      3,
-							},
-							LivenessProbe: &corev1.Probe{
-								ProbeHandler: corev1.ProbeHandler{
-									TCPSocket: &corev1.TCPSocketAction{
-										Port: intstr.FromInt(3322),
-									},
-								},
-								InitialDelaySeconds: 30,
-								PeriodSeconds:       10,
-								TimeoutSeconds:      5,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create Immudb deployment: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "   ✅ Immudb deployed (Secret + Service + Deployment) for SOC2 audit trails\n")
-	return nil
-}
-
 // ApplyMigrations is an exported wrapper for applying ALL migrations to a namespace.
 // This is useful for re-applying migrations after PostgreSQL restarts (e.g., in DLQ tests).
 //
@@ -1338,62 +1166,17 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 }
 
 func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// Check if cluster already exists
-	checkCmd := exec.Command("kind", "get", "clusters")
-	checkOutput, _ := checkCmd.CombinedOutput()
-	if strings.Contains(string(checkOutput), clusterName) {
-		_, _ = fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
-		_ = DeleteCluster(clusterName, writer)
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
+	opts := KindClusterOptions{
+		ClusterName:    clusterName,
+		KubeconfigPath: kubeconfigPath,
+		ConfigPath:     "test/infrastructure/kind-datastorage-config.yaml",
+		WaitTimeout:    "60s",
+		DeleteExisting: true, // Original behavior: delete if exists
+		ReuseExisting:  false,
 	}
-
-	// Use external config file with extraPortMappings for NodePort access
-	// This eliminates kubectl port-forward instability (like Gateway E2E tests)
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-	configPath := filepath.Join(workspaceRoot, "test", "infrastructure", "kind-datastorage-config.yaml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("kind config file not found: %s", configPath)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", configPath)
-
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", configPath,
-		"--kubeconfig", kubeconfigPath) // Isolated kubeconfig per TESTING_GUIDELINES.md
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Kind create output:\n%s\n", output)
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created")
-
-	// Export kubeconfig to specified path
-	// Note: kind create --kubeconfig doesn't always work reliably, so we export explicitly
-	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
-	// Use Output() instead of CombinedOutput() to avoid capturing stderr
-	// (stderr contains "enabling experimental podman provider" which breaks YAML parsing)
-	kubeconfigOutput, err := kubeconfigCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get kubeconfig: %w", err)
-	}
-
-	// Ensure directory exists
-	kubeconfigDir := filepath.Dir(kubeconfigPath)
-	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
-		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
-	}
-
-	// Write kubeconfig to file
-	if err := os.WriteFile(kubeconfigPath, kubeconfigOutput, 0600); err != nil {
-		return fmt.Errorf("failed to write kubeconfig: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
-	return nil
+	return CreateKindClusterWithConfig(opts, writer)
 }
 
 func buildDataStorageImage(writer io.Writer) error {
@@ -1490,7 +1273,7 @@ func loadDataStorageImage(clusterName string, writer io.Writer) error {
 }
 
 // DataStorageInfrastructure manages the Data Storage Service test infrastructure
-// This includes PostgreSQL, Redis, Immudb, and the Data Storage Service itself
+// This includes PostgreSQL, Redis, and the Data Storage Service itself
 type DataStorageInfrastructure struct {
 	PostgresContainer string
 	RedisContainer    string
@@ -1740,7 +1523,7 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 		"002_fix_partitioning.sql",
 		"003_stored_procedures.sql",
 		"004_add_effectiveness_assessment_due.sql",
-		"006_effectiveness_assessment.sql",
+		// NOTE: Migration 006 moved to migrations/v1.1/ (v1.1 feature, removed 2026-01-07)
 		"012_adr033_multidimensional_tracking.sql",
 		"013_create_audit_events_table.sql",
 		"017_add_workflow_schema_fields.sql",
