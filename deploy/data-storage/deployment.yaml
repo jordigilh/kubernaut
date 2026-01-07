@@ -29,16 +29,71 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
+        # ========================================
+        # DD-AUTH-004: OAuth-Proxy Sidecar for Authentication/Authorization
+        # DD-AUTH-005: All 8 services authenticate via this proxy
+        #
+        # Flow: Client → oauth-proxy:8080 → DataStorage:8081
+        # - oauth-proxy validates JWT tokens
+        # - oauth-proxy performs Subject Access Review (SAR) - Tiered approach
+        # - oauth-proxy injects X-Auth-Request-User header
+        # - DataStorage receives authenticated requests
+        # ========================================
+        - name: oauth-proxy
+          image: quay.io/openshift/oauth-proxy:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: proxy
+              containerPort: 8080
+              protocol: TCP
+          args:
+            - --https-address=
+            - --http-address=0.0.0.0:8080
+            - --upstream=http://localhost:8081
+            - --provider=openshift
+            - --openshift-service-account=data-storage-sa
+            - --cookie-secret-file=/etc/oauth-proxy/cookie-secret
+            - --cookie-name=_oauth_proxy
+            - --cookie-expire=24h0m0s
+            - --email-domain=*
+            - --skip-provider-button=true
+            # DD-AUTH-004: Tiered SAR - All REST APIs require authorization
+            - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"data-storage-service","verb":"get"}
+            # Pass user identity to DataStorage (SOC2 compliance)
+            - --set-xauthrequest=true
+          volumeMounts:
+            - name: oauth-proxy-cookie-secret
+              mountPath: /etc/oauth-proxy
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 20Mi
+            limits:
+              cpu: 100m
+              memory: 100Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
         - name: data-storage
           image: quay.io/jordigilh/data-storage:latest
           imagePullPolicy: Always
           ports:
+            # DD-AUTH-004: Changed from 8080 to 8081 (internal port, behind oauth-proxy)
             - name: http
-              containerPort: 8080
+              containerPort: 8081
               protocol: TCP
             - name: metrics
               containerPort: 9090
               protocol: TCP
+          env:
+            # DD-AUTH-004: DataStorage listens on 8081 (oauth-proxy proxies 8080 → 8081)
+            - name: SERVER_PORT
+              value: "8081"
           envFrom:
             - configMapRef:
                 name: data-storage-config
@@ -74,6 +129,13 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        # DD-AUTH-004: OAuth-proxy cookie secret for session management
+        - name: oauth-proxy-cookie-secret
+          secret:
+            secretName: data-storage-oauth-proxy-secret
+            items:
+              - key: cookie-secret
+                path: cookie-secret
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
 
