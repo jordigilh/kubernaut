@@ -29,7 +29,9 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -76,6 +78,10 @@ var (
 	// These are set in SynchronizedBeforeSuite and available to all tests
 	dataStorageURL string // http://localhost:28090 (NodePort 30081 mapped via Kind extraPortMappings per DD-TEST-001)
 	postgresURL    string // localhost:25433 (NodePort 30432 mapped via Kind extraPortMappings per DD-TEST-001)
+
+	// Shared OpenAPI client (DD-API-001: OpenAPI Client Mandate)
+	// Replaces raw HTTP client for type-safe API interaction
+	dsClient *dsgen.ClientWithResponses
 
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "datastorage-e2e"
@@ -166,6 +172,21 @@ var _ = SynchronizedBeforeSuite(
 			return nil
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "Data Storage NodePort did not become responsive")
 		logger.Info("✅ Data Storage is ready via NodePort (localhost:8081)")
+
+		// DD-API-001: Initialize OpenAPI client for E2E tests
+		// E2E tests run externally against Kind cluster, so we use mock user transport
+		// (no oauth-proxy in E2E environment)
+		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for E2E tests...")
+		mockTransport := testutil.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
+		dsClient, err = dsgen.NewClientWithResponses(
+			"http://localhost:28090",
+			dsgen.WithHTTPClient(&http.Client{
+				Timeout:   10 * time.Second,
+				Transport: mockTransport,
+			}),
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		logger.Info("✅ DataStorage OpenAPI client created", "baseURL", "http://localhost:28090")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")
@@ -272,6 +293,20 @@ var _ = SynchronizedBeforeSuite(
 			"dataStorageURL", dataStorageURL,
 			"postgresURL", postgresURL,
 			"method", map[bool]string{true: "NodePort", false: "port-forward"}[nodePortWorks])
+
+		// DD-API-001: Initialize OpenAPI client for this process
+		// E2E tests run externally against Kind cluster, so we use mock user transport
+		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
+		mockTransport := testutil.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
+		dsClient, err = dsgen.NewClientWithResponses(
+			dataStorageURL,
+			dsgen.WithHTTPClient(&http.Client{
+				Timeout:   10 * time.Second,
+				Transport: mockTransport,
+			}),
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		logger.Info("✅ DataStorage OpenAPI client created", "process", processID, "baseURL", dataStorageURL)
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests
 		// All kubectl commands must use --kubeconfig flag explicitly
