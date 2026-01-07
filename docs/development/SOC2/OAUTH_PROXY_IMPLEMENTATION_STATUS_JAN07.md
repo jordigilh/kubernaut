@@ -1,18 +1,32 @@
 # OAuth-Proxy Sidecar Implementation Status - SOC2 Gap #8
 
 **Date**: January 7, 2026  
-**Status**: 🔄 **IN PROGRESS** (1/7 tasks complete)  
-**Authority**: DD-AUTH-004, SOC2 Gap #8 Legal Hold Authentication
+**Status**: 🔄 **IN PROGRESS** (2/8 tasks complete)  
+**Authority**: DD-AUTH-004 (oauth-proxy sidecar), DD-AUTH-005 (client authentication pattern), SOC2 Gap #8
 
 ---
 
 ## 📊 Implementation Progress
 
-### ✅ Task 1: Design Decision Document (COMPLETE)
+### ✅ Task 1: OAuth-Proxy Sidecar Design Decision (COMPLETE)
 - **File**: `docs/architecture/decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md`
 - **Commit**: `7dcc980a0`
 - **Status**: ✅ Complete
 - **Summary**: Comprehensive DD documenting OpenShift oauth-proxy sidecar pattern for legal hold authentication
+
+---
+
+### ✅ Task 1B: Client Authentication Pattern Design Decision (COMPLETE)
+- **File**: `docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md`
+- **Commit**: TBD
+- **Status**: ✅ Complete
+- **Summary**: AUTHORITATIVE blueprint for all 7 services (6 Go + 1 Python) to authenticate with DataStorage API
+- **Key Points**:
+  - Transport layer injection (http.RoundTripper for Go, requests.Session for Python)
+  - Environment-aware authentication (integration/E2E/production)
+  - Zero service code changes for Go (update audit adapter once)
+  - One function change for Python (client instantiation)
+  - Complete implementation checklist for all services
 
 ---
 
@@ -88,16 +102,22 @@
 
 ## 📋 Files to Modify
 
-### Core Implementation
+### Design Decisions
 1. ✅ `docs/architecture/decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md` (DONE)
-2. 🔄 `test/infrastructure/datastorage.go` (IN PROGRESS)
-3. ⬜ `pkg/datastorage/server/legal_hold_handler.go`
-4. ⬜ `test/integration/datastorage/legal_hold_integration_test.go`
-5. ⬜ `api/openapi/data-storage-v1.yaml`
+2. ✅ `docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md` (DONE)
+
+### Core Implementation
+3. 🔄 `test/infrastructure/datastorage.go` (IN PROGRESS - oauth-proxy sidecar)
+4. ⬜ `pkg/shared/auth/transport.go` (NEW - Go auth transport)
+5. ⬜ `pkg/audit/openapi_client_adapter.go` (UPDATE - inject auth transport)
+6. ⬜ `holmesgpt-api/src/clients/datastorage_auth_session.py` (NEW - Python auth session)
+7. ⬜ `pkg/datastorage/server/legal_hold_handler.go` (UPDATE - X-Auth-Request-User header)
+8. ⬜ `test/integration/datastorage/legal_hold_integration_test.go` (UPDATE - mock auth headers)
+9. ⬜ `api/openapi/data-storage-v1.yaml` (UPDATE - document auth flow)
 
 ### Generated Files (After OpenAPI Update)
-6. ⬜ `pkg/datastorage/client/generated.go` (Go client)
-7. ⬜ `holmesgpt-api/src/clients/datastorage/` (Python client)
+10. ⬜ `pkg/datastorage/client/generated.go` (Go client)
+11. ⬜ `holmesgpt-api/src/clients/datastorage/` (Python client)
 
 ---
 
@@ -119,7 +139,8 @@
 
 ## 🔗 Related Documents
 
-- [DD-AUTH-004](../../../architecture/decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) - Design Decision
+- [DD-AUTH-004](../../../architecture/decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) - OAuth-Proxy Sidecar Design Decision
+- [DD-AUTH-005](../../../architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md) - **AUTHORITATIVE** Client Authentication Pattern (7 services)
 - [DD-AUTH-003](../../../architecture/decisions/DD-AUTH-003-externalized-authorization-sidecar.md) - Parent Pattern
 - [GAP8_LEGAL_HOLD_COMPLETE_JAN06.md](./GAP8_LEGAL_HOLD_COMPLETE_JAN06.md) - Legal Hold Implementation
 - [OpenShift oauth-proxy README](https://github.com/openshift/oauth-proxy/blob/master/README.md) - Authoritative Reference
@@ -146,7 +167,7 @@
 
 ---
 
-**Status**: 1/7 tasks complete (14%)  
-**Estimated Remaining Time**: 4-6 hours  
-**Next Action**: Complete Task 2 (DataStorage K8s deployment with oauth-proxy sidecar)
+**Status**: 2/8 tasks complete (25%)  
+**Estimated Remaining Time**: 8-10 hours (including all 7 services integration)  
+**Next Action**: Implement DD-AUTH-005 transport layer authentication (Phase 1-2: Go and Python foundations)
 

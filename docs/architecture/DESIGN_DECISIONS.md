@@ -105,6 +105,8 @@
 | DD-LLM-003 | Mock-First Development Strategy for LLM Integration | ✅ Approved | 2025-12-11 | [DD-LLM-003-mock-first-development-strategy.md](decisions/DD-LLM-003-mock-first-development-strategy.md) |
 | DD-AIANALYSIS-004 | Storm Context NOT Exposed to LLM | ✅ Approved | 2025-12-13 | [DD-AIANALYSIS-004-storm-context-not-exposed.md](decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) |
 | DD-TESTING-001 | Audit Event Validation Standards (Authoritative) | ✅ Approved | 2026-01-02 | [DD-TESTING-001-audit-event-validation-standards.md](decisions/DD-TESTING-001-audit-event-validation-standards.md) |
+| DD-AUTH-004 | OpenShift OAuth-Proxy for SOC2 Legal Hold Authentication | ✅ Approved | 2026-01-07 | [DD-AUTH-004-openshift-oauth-proxy-legal-hold.md](decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) |
+| DD-AUTH-005 | DataStorage Client Authentication Pattern (Authoritative) | ✅ Approved | 2026-01-07 | [DD-AUTH-005-datastorage-client-authentication-pattern.md](decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
