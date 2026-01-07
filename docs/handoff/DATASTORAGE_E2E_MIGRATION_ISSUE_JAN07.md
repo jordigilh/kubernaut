@@ -366,9 +366,9 @@ FAIL! -- 0 Passed | 1 Failed | 0 Pending | 36 Skipped
 
 #### **Specific Issue**
 
-**File**: `migrations/023_add_event_hashing.sql`  
-**Line**: 55-57  
-**Problem**: 
+**File**: `migrations/023_add_event_hashing.sql`
+**Line**: 55-57
+**Problem**:
 
 ```sql
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_events_hash
@@ -447,8 +447,8 @@ Then update `test/infrastructure/migrations.go` to skip `023b` in E2E tests.
 
 ### **🔍 SECONDARY ISSUE: pgcrypto Extension Privileges**
 
-**File**: `migrations/023_add_event_hashing.sql`  
-**Line**: 31  
+**File**: `migrations/023_add_event_hashing.sql`
+**Line**: 31
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
@@ -580,9 +580,9 @@ ginkgo -v --focus="Test 15" ./test/e2e/gateway/
 
 ### **🔗 COORDINATION CHANNELS**
 
-**Primary Contact**: SOC2 Audit Team  
-**Secondary Contact**: DataStorage Team (Migration Infrastructure)  
-**Reporter**: Gateway Team  
+**Primary Contact**: SOC2 Audit Team
+**Secondary Contact**: DataStorage Team (Migration Infrastructure)
+**Reporter**: Gateway Team
 **Document Location**: `docs/handoff/DATASTORAGE_E2E_MIGRATION_ISSUE_JAN07.md`
 
 **Status Updates**:
