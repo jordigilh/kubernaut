@@ -172,11 +172,8 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			"event_data":      baselineEventData,
 		}
 
-		resp := postAuditEvent(httpClient, serviceURL, baselineEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Baseline event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		resp := createAuditEventFromMap(ctx, dsClient, baselineEvent)
+		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Baseline event should be created")
 		testLogger.Info("✅ Baseline event written successfully")
 
 		// Verify baseline event in database
@@ -226,13 +223,10 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			"event_data":      outageEventData,
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, outageEvent)
+		resp = createAuditEventFromMap(ctx, dsClient, outageEvent)
 		// During network partition, the service should accept the event (202 Accepted) and queue it
-		Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+		Expect(resp.StatusCode()).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 			"Event should be accepted during network partition (DLQ fallback)")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
 		testLogger.Info("✅ Event accepted during network partition (DLQ fallback)")
 
 		// Step 4: Verify DLQ fallback behavior
