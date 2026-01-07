@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -161,18 +162,19 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		baselineEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "gateway",
-			"event_type":      "gateway.signal.received",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_action":    "baseline_write",
-			"event_data":      baselineEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		baselineEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventType:      "gateway.signal.received",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventAction:    "baseline_write",
+			EventData:      baselineEventData,
 		}
 
-		resp := createAuditEventFromMap(ctx, dsClient, baselineEvent)
+		resp := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
 		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Baseline event should be created")
 		testLogger.Info("✅ Baseline event written successfully")
 
@@ -212,18 +214,19 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			Build()
 		Expect(err).ToNot(HaveOccurred())
 
-		outageEvent := map[string]interface{}{
-			"version":         "1.0",
-			"event_category":  "gateway",
-			"event_type":      "gateway.signal.received",
-			"event_timestamp": time.Now().UTC().Format(time.RFC3339),
-			"correlation_id":  correlationID,
-			"event_outcome":   "success",
-			"event_action":    "network_partition_write",
-			"event_data":      outageEventData,
+		// DD-API-001: Use typed OpenAPI struct
+		outageEvent := dsgen.AuditEventRequest{
+			Version:        "1.0",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventType:      "gateway.signal.received",
+			EventTimestamp: time.Now().UTC(),
+			CorrelationId:  correlationID,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventAction:    "network_partition_write",
+			EventData:      outageEventData,
 		}
 
-		resp = createAuditEventFromMap(ctx, dsClient, outageEvent)
+		resp = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
 		// During network partition, the service should accept the event (202 Accepted) and queue it
 		Expect(resp.StatusCode()).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 			"Event should be accepted during network partition (DLQ fallback)")
