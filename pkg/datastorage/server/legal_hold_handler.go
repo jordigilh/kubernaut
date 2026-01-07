@@ -90,12 +90,14 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Extract X-User-ID header (placed_by) - REQUIRED for SOC2 compliance
-	placedBy := r.Header.Get("X-User-ID")
+	// 3. Extract X-Auth-Request-User header (placed_by) - REQUIRED for SOC2 compliance
+	// DD-AUTH-004: OAuth-proxy injects this header after validating JWT token + SAR
+	// DD-AUTH-005: All services authenticate via oauth-proxy, which sets this header
+	placedBy := r.Header.Get("X-Auth-Request-User")
 	if placedBy == "" {
 		s.metrics.LegalHoldFailures.WithLabelValues("unauthorized").Inc()
 		response.WriteRFC7807Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized",
-			"X-User-ID header is required for legal hold operations", s.logger)
+			"X-Auth-Request-User header is required for legal hold operations (missing authentication)", s.logger)
 		return
 	}
 
@@ -201,12 +203,14 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 3. Extract X-User-ID header (released_by) - REQUIRED for SOC2 compliance
-	releasedBy := r.Header.Get("X-User-ID")
+	// 3. Extract X-Auth-Request-User header (released_by) - REQUIRED for SOC2 compliance
+	// DD-AUTH-004: OAuth-proxy injects this header after validating JWT token + SAR
+	// DD-AUTH-005: All services authenticate via oauth-proxy, which sets this header
+	releasedBy := r.Header.Get("X-Auth-Request-User")
 	if releasedBy == "" {
 		s.metrics.LegalHoldFailures.WithLabelValues("unauthorized").Inc()
 		response.WriteRFC7807Error(w, http.StatusUnauthorized, "unauthorized", "Unauthorized",
-			"X-User-ID header is required for legal hold operations", s.logger)
+			"X-Auth-Request-User header is required for legal hold operations (missing authentication)", s.logger)
 		return
 	}
 
