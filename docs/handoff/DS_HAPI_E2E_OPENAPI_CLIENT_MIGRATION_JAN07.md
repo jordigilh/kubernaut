@@ -1,8 +1,8 @@
 # DataStorage & HAPI E2E Tests - OpenAPI Client Migration Triage
 
-**Date**: January 7, 2026  
-**Priority**: 🔶 **MEDIUM** - Technical Debt (V1.0 Blocker per DD-API-001)  
-**Scope**: E2E test compliance with OpenAPI client mandate  
+**Date**: January 7, 2026
+**Priority**: 🔶 **MEDIUM** - Technical Debt (V1.0 Blocker per DD-API-001)
+**Scope**: E2E test compliance with OpenAPI client mandate
 **Status**: 📋 **TRIAGE COMPLETE** - Ready for implementation
 
 ---
@@ -13,7 +13,7 @@
 
 **Inconsistency Detected**: All other services (RemediationOrchestrator, WorkflowExecution, AIAnalysis, SignalProcessing) have already migrated their E2E tests to use OpenAPI clients, but **DataStorage's own E2E tests** and **HAPI E2E tests** were never migrated.
 
-**Business Impact**: 
+**Business Impact**:
 - ❌ No type safety - tests can break silently when API changes
 - ❌ No contract validation - missing parameters not caught
 - ❌ Manual JSON parsing - brittle and error-prone
@@ -239,6 +239,57 @@ assert response.selected_workflow is not None
 **Effort**: 4-6 hours  
 **Priority**: HIGH (service owner should fix own tests first)
 
+#### **Step 0: Pre-Test Client Generation Validation** ✅ (10 min) **COMPLETE**
+
+**Purpose**: Catch OpenAPI spec inconsistencies **before** E2E tests run.
+
+**Implementation**: 
+- Created `pkg/datastorage/client/doc.go` with `//go:generate` directive
+- Added `make generate-datastorage-client` target
+- Modified `test-e2e-datastorage` to pre-generate client before running tests
+
+**Benefits**:
+1. ✅ **Early Detection**: Invalid OpenAPI specs caught before test execution
+2. ✅ **Clear Errors**: oapi-codegen provides specific validation errors
+3. ✅ **CI/CD Safety**: Build fails fast if spec is invalid
+4. ✅ **Developer Feedback**: Immediate feedback on spec changes
+
+**Usage**:
+```bash
+# Manual client generation (for development)
+make generate-datastorage-client
+
+# E2E tests now auto-validate client generation first
+make test-e2e-datastorage
+# Output:
+#   🔍 Pre-validating DataStorage OpenAPI client generation...
+#   📋 Generating DataStorage Go client from api/openapi/data-storage-v1.yaml...
+#   ✅ DataStorage Go client generated successfully
+#   ✅ DataStorage client validated successfully
+#   🧪 datastorage - E2E Tests (Kind cluster, 4 procs)
+```
+
+**Error Example**:
+```bash
+# If spec is invalid:
+make test-e2e-datastorage
+# Output:
+#   🔍 Pre-validating DataStorage OpenAPI client generation...
+#   📋 Generating DataStorage Go client from api/openapi/data-storage-v1.yaml...
+#   error: schema "PlaceLegalHoldRequest" is invalid: missing required field "reason"
+#   ❌ DataStorage client generation failed - OpenAPI spec may be invalid
+#   make: *** [test-e2e-datastorage] Error 1
+```
+
+**Files Modified**:
+- `pkg/datastorage/client/doc.go` (NEW) - go:generate directive
+- `Makefile` - Added `generate-datastorage-client` target
+- `Makefile` - Modified `test-e2e-datastorage` to pre-validate client
+
+**Authority**: DD-API-001 (OpenAPI Client Mandate)
+
+---
+
 #### **Step 1: Update Suite Setup** (30 min)
 ```go
 // test/e2e/datastorage/datastorage_e2e_suite_test.go
@@ -306,7 +357,7 @@ grep -r "http.Get\|http.Post\|http.NewRequest" *.go | grep -v "// Example" | wc 
 
 ### **Phase 2: HAPI E2E Tests** (Python)
 
-**Effort**: 3-4 hours  
+**Effort**: 3-4 hours
 **Priority**: MEDIUM (less critical, but good for consistency)
 
 #### **Step 1: Update Fixtures** (30 min)
@@ -355,14 +406,14 @@ def test_incident_analysis(e2e_client):
 # After (✅ REQUIRED):
 def test_incident_analysis(incident_api):
     from holmesgpt_api_client.models.incident_request import IncidentRequest
-    
+
     request = IncidentRequest(
         incident_id="test-123",
         remediation_id="rem-456",
         signal_type="PodCrashLoopBackOff",
         # ... type-safe Pydantic model
     )
-    
+
     response = incident_api.incident_analyze_endpoint_api_v1_incident_analyze_post(request)
     assert response.selected_workflow is not None
 ```
@@ -414,7 +465,7 @@ grep -r "TestClient" tests/e2e/*.py | wc -l
 | **Phase 2.4** | HAPI verification | 30 min | MEDIUM |
 | **Total** | | **7-10 hours** | |
 
-**Recommendation**: 
+**Recommendation**:
 - **Week 1**: DataStorage E2E migration (4-6 hours)
 - **Week 2**: HAPI E2E migration (3-4 hours)
 
@@ -436,7 +487,7 @@ grep -r "TestClient" tests/e2e/*.py | wc -l
 1. **Review this triage** with team
 2. **Prioritize**: DataStorage first (service owner responsibility)
 3. **Create tasks** in issue tracker
-4. **Assign owners**: 
+4. **Assign owners**:
    - DataStorage E2E: DataStorage team
    - HAPI E2E: HAPI/AIAnalysis team
 5. **Execute migrations** following implementation plan
@@ -453,8 +504,8 @@ grep -r "TestClient" tests/e2e/*.py | wc -l
 
 ---
 
-**Status**: 📋 **READY FOR IMPLEMENTATION**  
-**Document Owner**: AI Assistant  
-**Created**: January 7, 2026  
+**Status**: 📋 **READY FOR IMPLEMENTATION**
+**Document Owner**: AI Assistant
+**Created**: January 7, 2026
 **Authority**: DD-API-001 (OpenAPI Client Mandate)
 

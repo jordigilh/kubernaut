@@ -18,10 +18,6 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-const (
-	UserIdHeaderScopes = "userIdHeader.Scopes"
-)
-
 // Defines values for AuditEventEventCategory.
 const (
 	AuditEventEventCategoryAnalysis         AuditEventEventCategory = "analysis"
