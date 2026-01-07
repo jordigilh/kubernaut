@@ -74,7 +74,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
         "endpoint": "/incident/analyze",
         "purpose": "LLM cost tracking and audit trail"
     })
-    
+
     request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
     result = await analyze_incident(request_data)
 
@@ -93,7 +93,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
                 response_dict = result.model_dump()
             else:
                 response_dict = result.dict()
-            
+
             audit_event = create_hapi_response_complete_event(
                 incident_id=request.incident_id,
                 remediation_id=request.remediation_id,

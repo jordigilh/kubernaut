@@ -1,8 +1,8 @@
 # HolmesGPT API OAuth-Proxy Triage - Phase 9
 
-**Date**: January 7, 2026  
-**Requestor**: User  
-**Triager**: AI Assistant  
+**Date**: January 7, 2026
+**Requestor**: User
+**Triager**: AI Assistant
 **Status**: Analysis Complete - Awaiting Decision
 
 ---
@@ -211,9 +211,9 @@ Location: `deploy/holmesgpt-api/06-deployment.yaml`
 
 ## ✅ **Triage Complete**
 
-**Status**: Awaiting user decision  
-**Recommended**: Option B (Enhance existing auth)  
-**Alternative**: Option A (OAuth-proxy sidecar) if full consistency is required  
+**Status**: Awaiting user decision
+**Recommended**: Option B (Enhance existing auth)
+**Alternative**: Option A (OAuth-proxy sidecar) if full consistency is required
 **Priority**: Low (not blocking, existing auth works)
 
 **Ready for**: User decision and approval to proceed

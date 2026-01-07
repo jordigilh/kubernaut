@@ -213,6 +213,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	// 1+2. Build and Load Data Storage image with dynamic tag (consolidated)
 	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
 	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// BUG FIX: Capture returned image name to ensure deployment uses correct tag
 	clusterName := "notification-e2e" // Matches CreateNotificationCluster
 	_, _ = fmt.Fprintf(writer, "🔨 Building and loading Data Storage image...\n")
 	cfg := E2EImageConfig{
@@ -220,12 +221,16 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		ImageName:        "kubernaut/datastorage",
 		DockerfilePath:   "docker/data-storage.Dockerfile",
 		KindClusterName:  clusterName,
-		BuildContextPath: ".", // Project root
+		BuildContextPath: "", // Empty = use project root (default)
 		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 	}
-	if _, err := BuildAndLoadImageToKind(cfg, writer); err != nil {
+	actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
+	if err != nil {
 		return fmt.Errorf("failed to build+load Data Storage image: %w", err)
 	}
+	// Use actual built image name instead of pre-generated one
+	dataStorageImage = actualImageName
+	_, _ = fmt.Fprintf(writer, "✅ Using actual image: %s\n", dataStorageImage)
 
 	// 3. Deploy shared Data Storage infrastructure with Notification-specific NodePort 30090
 	// CRITICAL: Must match kind-notification-config.yaml port mapping

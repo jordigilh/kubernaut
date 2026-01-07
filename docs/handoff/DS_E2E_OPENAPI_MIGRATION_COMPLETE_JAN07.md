@@ -1,8 +1,8 @@
 # DataStorage E2E OpenAPI Client Migration - COMPLETE ✅
 
-**Date**: January 7, 2025  
-**Status**: ✅ **COMPLETE** - All 7 workflow and audit test files migrated  
-**Authority**: DD-API-001 (OpenAPI Client Mandate)  
+**Date**: January 7, 2025
+**Status**: ✅ **COMPLETE** - All 7 workflow and audit test files migrated
+**Authority**: DD-API-001 (OpenAPI Client Mandate)
 **Related**: User feedback "we don't need to keep backwards compatibility"
 
 ---
@@ -21,7 +21,7 @@
 | `07_workflow_version_management_test.go` | 3 Create + 1 Search | -31 lines | ✅ |
 | `08_workflow_search_edge_cases_test.go` | 5 Create + 5 Search | -51 lines | ✅ |
 
-**Total Operations Migrated**: **40+ POST/GET calls**  
+**Total Operations Migrated**: **40+ POST/GET calls**
 **Total Code Reduction**: **-159+ net lines** (cleaner, type-safe code)
 
 ---
@@ -77,7 +77,7 @@ workflows := *resp.JSON200.Workflows // Direct typed access
 
 ### **Step 0: Pre-Generation Validation** ✅
 
-**Problem Solved**: Spec inconsistencies caught early, not during tests  
+**Problem Solved**: Spec inconsistencies caught early, not during tests
 **Implementation**: `Makefile` target with automatic validation
 
 ```makefile
@@ -153,7 +153,7 @@ dsClient, _ = dsgen.NewClientWithResponses(
 
 ### **File 03: `03_query_api_timeline_test.go`** ✅
 - **Operations**: 3 POST (audit creation) + 8 GET queries (timeline, pagination, filters)
-- **Changes**: 
+- **Changes**:
   - POST: Typed `dsgen.AuditEventRequest`
   - GET: `dsClient.QueryAuditEventsWithResponse` with typed `dsgen.QueryAuditEventsParams`
 - **Key Improvements**: Query parameters (`Since`, `Until`) as typed `*string` RFC3339 timestamps
@@ -261,9 +261,9 @@ $ grep "json.Marshal.*workflow|json.Marshal.*search" test/e2e/datastorage/*.go
 
 ### **Phase 2: HAPI E2E Migration** (Pending)
 
-**Scope**: Migrate HolmesGPT API E2E tests to use OpenAPI client  
-**Files**: `holmesgpt-api/tests/e2e/*.py` (Python tests)  
-**Estimated Effort**: ~2-3 hours (8-10 Python test files)  
+**Scope**: Migrate HolmesGPT API E2E tests to use OpenAPI client
+**Files**: `holmesgpt-api/tests/e2e/*.py` (Python tests)
+**Estimated Effort**: ~2-3 hours (8-10 Python test files)
 **Dependencies**:
 1. Update HAPI E2E fixtures (Python)
 2. Migrate HAPI E2E test files to use OpenAPI client

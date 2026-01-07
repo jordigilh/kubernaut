@@ -1,8 +1,8 @@
 # HolmesGPT API OAuth-Proxy Integration - COMPLETE
 
-**Date**: January 7, 2026  
-**Authority**: DD-AUTH-006  
-**Related**: DD-AUTH-004 (DataStorage oauth-proxy pattern)  
+**Date**: January 7, 2026
+**Authority**: DD-AUTH-006
+**Related**: DD-AUTH-004 (DataStorage oauth-proxy pattern)
 **Status**: ✅ COMPLETE - All 7 Phases Done (24 Total Commits)
 
 ---
@@ -20,7 +20,7 @@
 ## 🎯 **Implementation Phases**
 
 ### **Phase 9.1: Add OAuth-Proxy to HAPI Deployment**
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Commit**: `feat(auth): Add oauth-proxy sidecar to holmesgpt-api deployment`
 
 **Changes**:
@@ -47,7 +47,7 @@
 ---
 
 ### **Phase 9.2: Create OAuth-Proxy Secret**
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Commit**: `feat(auth): Create oauth-proxy secret for holmesgpt-api`
 
 **Changes**:
@@ -65,7 +65,7 @@
 ---
 
 ### **Phase 9.3: Create RBAC for Gateway → HAPI Access**
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Commit**: `feat(auth): Create RBAC for Gateway → HolmesGPT API access`
 
 **Changes**:
@@ -94,7 +94,7 @@
 ---
 
 ### **Phase 9.4: Update Service Routing to OAuth-Proxy**
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Commit**: `feat(auth): Update Service routing to oauth-proxy for HAPI`
 
 **Changes**:
@@ -110,7 +110,7 @@
 ---
 
 ### **Phase 9.5: Refactor Python Middleware (Extract User, Log)**
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Commit**: `feat(auth): Extract user from oauth-proxy header and log for audit`
 
 **Changes**:
@@ -149,7 +149,7 @@
 ---
 
 ### **Phase 9.6: Update Integration Tests**
-**Status**: ✅ COMPLETE (no changes needed)  
+**Status**: ✅ COMPLETE (no changes needed)
 **Commit**: `docs(auth): Document HAPI integration test strategy (no changes needed)`
 
 **Documentation**:
@@ -175,7 +175,7 @@
 ---
 
 ### **Phase 9.7: Clean Up Unused Auth Code**
-**Status**: ✅ COMPLETE  
+**Status**: ✅ COMPLETE
 **Commit**: `refactor(auth): Mark Python auth middleware as DEPRECATED`
 
 **Changes**:
@@ -224,19 +224,19 @@ Gateway → Service:8080 → oauth-proxy:8080
 ## 🔐 **Security Improvements**
 
 ### **1. Port-Forward Protection**
-**Before**: Anyone with cluster access can port-forward to HAPI and use LLM  
+**Before**: Anyone with cluster access can port-forward to HAPI and use LLM
 **After**: Port-forward requests blocked without valid ServiceAccount token + RBAC
 
 ### **2. LLM Cost Control**
-**Before**: Uncontrolled LLM access (expensive)  
+**Before**: Uncontrolled LLM access (expensive)
 **After**: Only Gateway can access (cost attribution via user header)
 
 ### **3. User Attribution**
-**Before**: No visibility into who is using LLM  
+**Before**: No visibility into who is using LLM
 **After**: User logged for cost tracking, security auditing, future SOC2
 
 ### **4. Consistent Pattern**
-**Before**: Different auth patterns for DataStorage vs HAPI  
+**Before**: Different auth patterns for DataStorage vs HAPI
 **After**: Same oauth-proxy pattern across all services
 
 ---
@@ -392,8 +392,8 @@ kubectl exec -n kubernaut-system deploy/gateway -- \
 
 ---
 
-**Authority**: DD-AUTH-006 (HolmesGPT API oauth-proxy integration)  
-**Related**: DD-AUTH-004 (DataStorage), DD-AUTH-005 (Client auth pattern)  
-**Date**: January 7, 2026  
+**Authority**: DD-AUTH-006 (HolmesGPT API oauth-proxy integration)
+**Related**: DD-AUTH-004 (DataStorage), DD-AUTH-005 (Client auth pattern)
+**Date**: January 7, 2026
 **Author**: AI Assistant (Phase 9 Implementation)
 
