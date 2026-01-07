@@ -78,6 +78,14 @@ generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto
 	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/holmesgpt/client/...
 	@echo "✅ Generation complete"
 
+.PHONY: generate-datastorage-client
+generate-datastorage-client: ## Generate DataStorage OpenAPI client from spec (DD-API-001)
+	@echo "📋 Generating DataStorage Go client from api/openapi/data-storage-v1.yaml..."
+	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/datastorage/client/...
+	@echo "✅ DataStorage Go client generated successfully"
+	@echo "   Client: pkg/datastorage/client/generated.go"
+	@echo "   Spec: api/openapi/data-storage-v1.yaml"
+
 .PHONY: generate-holmesgpt-client
 generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI spec
 	@echo "📋 Generating HolmesGPT-API client from holmesgpt-api/api/openapi.json..."
@@ -138,6 +146,15 @@ test-e2e-%: ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g.
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
+	@# Pre-generate DataStorage client to catch spec inconsistencies (DD-API-001)
+	@if [ "$*" = "datastorage" ]; then \
+		echo "🔍 Pre-validating DataStorage OpenAPI client generation..."; \
+		$(MAKE) generate-datastorage-client || { \
+			echo "❌ DataStorage client generation failed - OpenAPI spec may be invalid"; \
+			exit 1; \
+		}; \
+		echo "✅ DataStorage client validated successfully"; \
+	fi
 	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
 
 # All Tests for Service
