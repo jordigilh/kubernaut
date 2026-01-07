@@ -52,7 +52,11 @@ COMMENT ON COLUMN audit_events.previous_event_hash IS
 
 -- Index 1: event_hash lookup (for chain verification)
 -- Used by: Verification API to detect tampered events
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_audit_events_hash
+-- Note: CONCURRENTLY removed for E2E test compatibility (transaction-based migrations)
+--       E2E tests apply migrations in transactions for atomicity
+--       CONCURRENTLY cannot run inside transaction blocks (PostgreSQL restriction)
+--       E2E tests have empty databases, so no locking/downtime concerns
+CREATE INDEX IF NOT EXISTS idx_audit_events_hash
     ON audit_events(event_hash)
     WHERE event_hash IS NOT NULL;
 
