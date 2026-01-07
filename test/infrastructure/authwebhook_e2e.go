@@ -52,7 +52,7 @@ import (
 //
 // PostgreSQL-only architecture (SOC2 audit storage)
 // Authority: Gateway/DataStorage hybrid pattern migration (Jan 7, 2026)
-func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage, authWebhookImage string, writer io.Writer) error {
+func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace string, writer io.Writer) (awImage, dsImage string, err error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 AuthWebhook E2E Infrastructure (HYBRID PATTERN)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -119,10 +119,8 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		}
 	}
 	if len(buildErrors) > 0 {
-		return fmt.Errorf("image builds failed: %v", buildErrors)
+		return "", "", fmt.Errorf("image builds failed: %v", buildErrors)
 	}
-
-	dataStorageImage = dsImageName // Update parameter with actual built image
 
 	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
 
@@ -137,23 +135,23 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	// So ./coverdata in test/e2e/authwebhook/kind-config.yaml means test/e2e/authwebhook/coverdata
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
+		return "", "", fmt.Errorf("failed to find workspace root: %w", err)
 	}
 	coverdataPath := filepath.Join(workspaceRoot, "test", "e2e", "authwebhook", "coverdata")
 	if err := os.MkdirAll(coverdataPath, 0755); err != nil {
-		return fmt.Errorf("failed to create coverdata directory: %w", err)
+		return "", "", fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection\n", coverdataPath)
 
 	// Create Kind cluster with authwebhook-specific config
 	if err := createKindClusterWithConfig(clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
+		return "", "", fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
+		return "", "", fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -217,7 +215,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf("parallel load/deploy failed: %v", errors)
+		return "", "", fmt.Errorf("parallel load/deploy failed: %v", errors)
 	}
 
 	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - images loaded + infrastructure deployed")
@@ -228,7 +226,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Running database migrations...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
 	if err := runDatabaseMigrations(kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to run migrations: %w", err)
+		return "", "", fmt.Errorf("failed to run migrations: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -239,15 +237,15 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Deploy DataStorage service (E2E ports per DD-TEST-001)
 	_, _ = fmt.Fprintln(writer, "  📦 Deploying DataStorage service...")
-	if err := deployDataStorageToKind(kubeconfigPath, namespace, dataStorageImage, "28099", "30099", writer); err != nil {
-		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	if err := deployDataStorageToKind(kubeconfigPath, namespace, dsImageName, "28099", "30099", writer); err != nil {
+		return "", "", fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
 	// Deploy AuthWebhook service with webhook configurations
 	_, _ = fmt.Fprintln(writer, "  🔐 Deploying AuthWebhook service...")
 	// Deploy AuthWebhook service using pre-built image from Phase 1
 	if err := deployAuthWebhookToKind(kubeconfigPath, namespace, awImageName, writer); err != nil {
-		return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
+		return "", "", fmt.Errorf("failed to deploy AuthWebhook: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -256,12 +254,14 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 6: Waiting for services to be ready...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
 	if err := waitForServicesReady(kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("services failed to become ready: %w", err)
+		return "", "", fmt.Errorf("services failed to become ready: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n✅ AuthWebhook E2E infrastructure ready!")
+	_, _ = fmt.Fprintf(writer, "  🖼️  AuthWebhook image: %s\n", awImageName)
+	_, _ = fmt.Fprintf(writer, "  🖼️  DataStorage image: %s\n", dsImageName)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	return nil
+	return awImageName, dsImageName, nil
 }
 
 // buildAuthWebhookImageWithTag builds the AuthWebhook (webhooks service) Docker image with a specific tag

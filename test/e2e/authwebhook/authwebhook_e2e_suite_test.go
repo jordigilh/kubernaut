@@ -152,8 +152,16 @@ var _ = SynchronizedBeforeSuite(
 		// Generate unique image names per DD-TEST-001 compliant naming
 		dataStorageImage := infrastructure.GenerateInfraImageName("datastorage", "authwebhook-e2e")
 		authWebhookImage := infrastructure.GenerateInfraImageName("webhooks", "authwebhook-e2e")
-		err = infrastructure.SetupAuthWebhookInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, dataStorageImage, authWebhookImage, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred())
+	// Setup AuthWebhook infrastructure (hybrid pattern) - returns built image names
+	var awImage, dsImage string
+	awImage, dsImage, err = infrastructure.SetupAuthWebhookInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred())
+	Expect(awImage).ToNot(BeEmpty(), "AuthWebhook image name must not be empty")
+	Expect(dsImage).ToNot(BeEmpty(), "DataStorage image name must not be empty")
+	
+	logger.Info("✅ Infrastructure setup complete")
+	logger.Info("  • AuthWebhook image: " + awImage)
+	logger.Info("  • DataStorage image: " + dsImage)
 
 		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for Data Storage NodePort to be responsive...")

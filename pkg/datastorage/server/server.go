@@ -18,9 +18,11 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
@@ -73,6 +76,10 @@ type Server struct {
 
 	// BR-STORAGE-019: Prometheus metrics (GAP-10)
 	metrics *dsmetrics.Metrics
+
+	// SOC2 Day 9.1: Digital signature for audit exports
+	// BR-AUDIT-007: Signed exports for tamper detection
+	signer *cert.Signer
 }
 
 // DD-007 + DD-008 graceful shutdown constants
@@ -234,6 +241,18 @@ func NewServer(
 		WithWorkflowRepository(workflowRepo),
 		WithAuditStore(auditStore))
 
+	// SOC2 Day 9.1: Load signing certificate for audit exports
+	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
+	logger.V(1).Info("Loading signing certificate from /etc/certs...")
+	signer, err := loadSigningCertificate(logger)
+	if err != nil {
+		_ = db.Close() // Clean up DB connection
+		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+	}
+	logger.Info("Signing certificate loaded successfully",
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint())
+
 	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
 	// This allows graceful shutdown to work in both Start() and httptest scenarios
 	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
@@ -252,6 +271,7 @@ func NewServer(
 		auditEventsRepo: auditEventsRepo,
 		auditStore:      auditStore,
 		metrics:         metrics,
+		signer:          signer,
 	}
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
@@ -575,4 +595,86 @@ func (s *Server) shutdownStep5CloseResources() error {
 // This allows integration tests to verify DD-008 DLQ drain behavior
 func (s *Server) GetDLQClient() *dlq.Client {
 	return s.dlqClient
+}
+
+// loadSigningCertificate loads the signing certificate from cert-manager managed Secret
+// SOC2 Day 9.1: Digital signatures for audit exports
+// BR-AUDIT-007: Tamper-evident audit logs
+//
+// Certificate Location: /etc/certs/ (mounted from datastorage-signing-cert Secret)
+// - /etc/certs/tls.crt (PEM certificate)
+// - /etc/certs/tls.key (PEM private key)
+//
+// cert-manager Compatibility:
+// - Managed by Certificate CRD (deploy/data-storage/certificate.yaml)
+// - Auto-rotates 30 days before expiry
+// - Self-signed via selfsigned-issuer ClusterIssuer
+//
+// Fallback: If cert-manager not available, generate self-signed cert
+func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
+	certFile := "/etc/certs/tls.crt"
+	keyFile := "/etc/certs/tls.key"
+
+	// Check if cert-manager provided certificate exists
+	if _, err := os.Stat(certFile); os.IsNotExist(err) {
+		logger.Info("cert-manager certificate not found, generating self-signed certificate",
+			"cert_file", certFile)
+		return generateFallbackCertificate(logger)
+	}
+
+	// Load certificate from cert-manager Secret
+	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		logger.Error(err, "Failed to load certificate from cert-manager Secret",
+			"cert_file", certFile,
+			"key_file", keyFile)
+		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+	}
+
+	// Create signer from TLS certificate
+	signer, err := cert.NewSignerFromTLSCertificate(&tlsCert)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer from certificate: %w", err)
+	}
+
+	logger.V(1).Info("Loaded signing certificate from cert-manager",
+		"cert_file", certFile,
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint())
+
+	return signer, nil
+}
+
+// generateFallbackCertificate generates a self-signed certificate if cert-manager is unavailable
+// Used in development or when cert-manager is not yet installed
+func generateFallbackCertificate(logger logr.Logger) (*cert.Signer, error) {
+	logger.Info("Generating fallback self-signed certificate",
+		"validity", "1 year",
+		"key_size", "2048-bit RSA")
+
+	// Generate self-signed certificate
+	certPair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
+		CommonName:       "data-storage-service",
+		Organization:     "Kubernaut",
+		DNSNames:         []string{"data-storage-service", "data-storage-service.kubernaut-system.svc.cluster.local"},
+		ValidityDuration: 8760 * time.Hour, // 1 year (cert-manager default)
+		KeySize:          2048,              // cert-manager default
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate fallback certificate: %w", err)
+	}
+
+	// Create signer from generated certificate
+	signer, err := cert.NewSignerFromPEM(certPair.CertPEM, certPair.KeyPEM)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create signer from generated certificate: %w", err)
+	}
+
+	logger.Info("Fallback certificate generated successfully",
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint(),
+		"not_before", certPair.NotBefore,
+		"not_after", certPair.NotAfter)
+
+	return signer, nil
 }
