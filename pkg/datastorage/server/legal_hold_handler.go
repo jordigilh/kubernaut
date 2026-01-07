@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/response"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
 // ========================================

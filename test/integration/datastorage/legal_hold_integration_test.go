@@ -1,4 +1,4 @@
-package datastorage_test
+package datastorage
 
 import (
 	"bytes"
@@ -150,8 +150,8 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 						CorrelationID: correlationID,
 						ResourceType:  "test_resource",
 						ResourceID:    fmt.Sprintf("test-%d", i),
-						Namespace:     "default",
-						ClusterName:   "test-cluster",
+						ResourceNamespace: "default",
+						ClusterID:         "test-cluster",
 						ActorID:       "test-actor",
 						ActorType:     "user",
 						Severity:      "info",
@@ -277,7 +277,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// 3. Verify X-User-ID was captured in database
 				var placedBy string
 				query := `SELECT legal_hold_placed_by FROM audit_events WHERE correlation_id = $1`
-				err = db.QueryRowContext(ctx, query, correlationID).Scan(&placedBy)
+				err = db.DB.QueryRowContext(ctx, query, correlationID).Scan(&placedBy)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(placedBy).To(Equal("compliance-officer@company.com"))
 			})
@@ -297,8 +297,8 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 						CorrelationID: correlationID,
 						ResourceType:  "test_resource",
 						ResourceID:    fmt.Sprintf("test-%d", i),
-						Namespace:     "default",
-						ClusterName:   "test-cluster",
+						ResourceNamespace: "default",
+						ClusterID:         "test-cluster",
 						ActorID:       "test-actor",
 						ActorType:     "user",
 						Severity:      "info",
@@ -365,8 +365,8 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 						CorrelationID: corrID,
 						ResourceType:  "test_resource",
 						ResourceID:    "test-123",
-						Namespace:     "default",
-						ClusterName:   "test-cluster",
+						ResourceNamespace: "default",
+						ClusterID:         "test-cluster",
 						ActorID:       "test-actor",
 						ActorType:     "user",
 						Severity:      "info",
