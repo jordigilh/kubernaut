@@ -23,6 +23,12 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 	)
 
 	BeforeEach(func() {
+		// CRITICAL: API tests MUST use public schema
+		// Rationale: The in-process HTTP API server (testServer) uses public schema,
+		// not parallel process schemas. If tests insert/query data in test_process_X
+		// schemas, the API won't find the data and tests will fail.
+		usePublicSchema()
+
 		ctx = context.Background()
 		correlationID = "legal-hold-test-" + uuid.New().String()
 		// Create audit events repository for legal hold tests
@@ -58,7 +64,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				// 2. Place legal hold via direct database update (simulating API)
 				query := `
-					UPDATE audit_events 
+					UPDATE audit_events
 					SET legal_hold = TRUE,
 					    legal_hold_reason = $1,
 					    legal_hold_placed_by = $2,
@@ -199,9 +205,9 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// 5. Verify legal hold metadata
 				var placedBy, reason string
 				metadataQuery := `
-					SELECT legal_hold_placed_by, legal_hold_reason 
-					FROM audit_events 
-					WHERE correlation_id = $1 
+					SELECT legal_hold_placed_by, legal_hold_reason
+					FROM audit_events
+					WHERE correlation_id = $1
 					LIMIT 1
 				`
 				err = db.DB.QueryRowContext(ctx, metadataQuery, correlationID).Scan(&placedBy, &reason)

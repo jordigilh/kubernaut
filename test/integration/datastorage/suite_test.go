@@ -193,6 +193,128 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	}
 	GinkgoWriter.Printf("  ✅ [Process %d] Created FK constraint: fk_audit_events_parent\n", processNum)
 
+	// ========================================
+	// SOC2 Gap #8: Copy Trigger Functions
+	// ========================================
+	// PostgreSQL's "LIKE ... INCLUDING ALL" does NOT copy trigger functions or triggers.
+	// We must recreate them manually for legal hold enforcement.
+	//
+	// Reference: Migration 024 (prevent_legal_hold_deletion function, enforce_legal_hold trigger)
+	// BR-AUDIT-006: Legal hold enforcement to prevent deletion during litigation
+	GinkgoWriter.Printf("⚙️  [Process %d] Copying trigger functions from public schema...\n", processNum)
+
+	// Query to get all functions in public schema
+	funcRows, err := db.Query(`
+		SELECT
+			p.proname AS function_name,
+			pg_get_functiondef(p.oid) AS function_def
+		FROM pg_proc p
+		JOIN pg_namespace n ON p.pronamespace = n.oid
+		WHERE n.nspname = 'public'
+		AND p.proname NOT LIKE 'pg_%'
+		AND p.proname NOT LIKE 'uuid_%'
+		ORDER BY p.proname
+	`)
+	if err != nil {
+		return "", fmt.Errorf("failed to list trigger functions: %w", err)
+	}
+	defer func() { _ = funcRows.Close() }()
+
+	var functions []struct {
+		name string
+		def  string
+	}
+	for funcRows.Next() {
+		var funcName, funcDef string
+		if err := funcRows.Scan(&funcName, &funcDef); err != nil {
+			return "", fmt.Errorf("failed to scan function: %w", err)
+		}
+		functions = append(functions, struct {
+			name string
+			def  string
+		}{funcName, funcDef})
+	}
+
+	// Create each function in the test schema
+	for _, fn := range functions {
+		// Replace "public." with test schema name in function definition
+		funcDef := strings.ReplaceAll(fn.def, "public.", schemaName+".")
+
+		// Drop function if exists (idempotent)
+		dropFuncSQL := fmt.Sprintf("DROP FUNCTION IF EXISTS %s.%s CASCADE", schemaName, fn.name)
+		_, err = db.Exec(dropFuncSQL)
+		if err != nil {
+			return "", fmt.Errorf("failed to drop existing function %s: %w", fn.name, err)
+		}
+
+		// Create function in test schema
+		_, err = db.Exec(funcDef)
+		if err != nil {
+			return "", fmt.Errorf("failed to create function %s: %w", fn.name, err)
+		}
+		GinkgoWriter.Printf("  ✅ [Process %d] Copied function: %s\n", processNum, fn.name)
+	}
+
+	// ========================================
+	// SOC2 Gap #8: Copy Triggers
+	// ========================================
+	GinkgoWriter.Printf("⚙️  [Process %d] Copying triggers from public schema...\n", processNum)
+
+	// Query to get all triggers in public schema
+	triggerRows, err := db.Query(`
+		SELECT
+			t.tgname AS trigger_name,
+			c.relname AS table_name,
+			pg_get_triggerdef(t.oid) AS trigger_def
+		FROM pg_trigger t
+		JOIN pg_class c ON t.tgrelid = c.oid
+		JOIN pg_namespace n ON c.relnamespace = n.oid
+		WHERE n.nspname = 'public'
+		AND NOT t.tgisinternal
+		ORDER BY c.relname, t.tgname
+	`)
+	if err != nil {
+		return "", fmt.Errorf("failed to list triggers: %w", err)
+	}
+	defer func() { _ = triggerRows.Close() }()
+
+	var triggers []struct {
+		name      string
+		tableName string
+		def       string
+	}
+	for triggerRows.Next() {
+		var triggerName, tableName, triggerDef string
+		if err := triggerRows.Scan(&triggerName, &tableName, &triggerDef); err != nil {
+			return "", fmt.Errorf("failed to scan trigger: %w", err)
+		}
+		triggers = append(triggers, struct {
+			name      string
+			tableName string
+			def       string
+		}{triggerName, tableName, triggerDef})
+	}
+
+	// Create each trigger in the test schema
+	for _, trig := range triggers {
+		// Replace "public." with test schema name in trigger definition
+		triggerDef := strings.ReplaceAll(trig.def, "public.", schemaName+".")
+
+		// Drop trigger if exists (idempotent)
+		dropTrigSQL := fmt.Sprintf("DROP TRIGGER IF EXISTS %s ON %s.%s CASCADE", trig.name, schemaName, trig.tableName)
+		_, err = db.Exec(dropTrigSQL)
+		if err != nil {
+			return "", fmt.Errorf("failed to drop existing trigger %s: %w", trig.name, err)
+		}
+
+		// Create trigger in test schema
+		_, err = db.Exec(triggerDef)
+		if err != nil {
+			return "", fmt.Errorf("failed to create trigger %s on %s: %w", trig.name, trig.tableName, err)
+		}
+		GinkgoWriter.Printf("  ✅ [Process %d] Copied trigger: %s on %s\n", processNum, trig.name, trig.tableName)
+	}
+
 	// Set search_path to use this schema, with public as fallback for extensions
 	// This allows per-process schema isolation while still accessing shared extensions (pgcrypto, uuid-ossp)
 	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s, public", schemaName))
