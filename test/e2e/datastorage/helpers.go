@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
 )
@@ -171,4 +172,105 @@ func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
 
 	GinkgoWriter.Printf("✅ NetworkPolicy deleted: DataStorage → PostgreSQL traffic restored in %s\n", namespace)
 	return nil
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DD-API-001: OpenAPI Client Helper Functions
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// createAuditEventOpenAPI creates an audit event using the OpenAPI client (type-safe)
+// Returns the CreateAuditEventResponse which contains JSON201/JSON202 for success
+//
+// Authority: DD-API-001 (OpenAPI Client Mandate)
+// Replaces: postAuditEvent (raw HTTP helper)
+func createAuditEventOpenAPI(ctx context.Context, client *dsgen.ClientWithResponses, event dsgen.AuditEventRequest) *dsgen.CreateAuditEventResponse {
+	resp, err := client.CreateAuditEventWithResponse(ctx, event)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create audit event via OpenAPI client")
+
+	// Log response details if not 2xx status
+	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+		_, _ = fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode(), string(resp.Body))
+	}
+
+	return resp
+}
+
+// convertMapToAuditEventRequest converts map[string]interface{} to typed AuditEventRequest
+// This helper provides backward compatibility during migration from raw HTTP to OpenAPI client
+//
+// Usage: During Step 3 migration, tests can continue using map[string]interface{} temporarily
+// Future: Tests should use typed dsgen.AuditEventRequest directly
+func convertMapToAuditEventRequest(eventMap map[string]interface{}) dsgen.AuditEventRequest {
+	req := dsgen.AuditEventRequest{}
+
+	// Extract required fields
+	if v, ok := eventMap["correlation_id"].(string); ok {
+		req.CorrelationId = v
+	}
+	if v, ok := eventMap["event_type"].(string); ok {
+		req.EventType = v
+	}
+	if v, ok := eventMap["event_category"].(string); ok {
+		category := dsgen.AuditEventRequestEventCategory(v)
+		req.EventCategory = category
+	}
+	if v, ok := eventMap["event_outcome"].(string); ok {
+		outcome := dsgen.AuditEventRequestEventOutcome(v)
+		req.EventOutcome = outcome // EventOutcome is not a pointer
+	}
+	if v, ok := eventMap["event_action"].(string); ok {
+		req.EventAction = v // EventAction is required
+	}
+	if v, ok := eventMap["cluster_name"].(string); ok {
+		clusterName := v
+		req.ClusterName = &clusterName
+	}
+	if v, ok := eventMap["version"].(string); ok {
+		req.Version = v // Version is string, not pointer
+	}
+
+	// Extract optional fields
+	if v, ok := eventMap["actor_id"].(string); ok {
+		req.ActorId = &v
+	}
+	if v, ok := eventMap["actor_type"].(string); ok {
+		req.ActorType = &v
+	}
+	if v, ok := eventMap["resource_type"].(string); ok {
+		req.ResourceType = &v
+	}
+	if v, ok := eventMap["resource_id"].(string); ok {
+		req.ResourceId = &v
+	}
+	if v, ok := eventMap["severity"].(string); ok {
+		req.Severity = &v
+	}
+	if v, ok := eventMap["namespace"].(string); ok {
+		req.Namespace = &v
+	}
+
+	// event_data is interface{} in the generated client, so pass through
+	if v, ok := eventMap["event_data"]; ok {
+		req.EventData = v
+	}
+
+	// event_timestamp - if provided use it, otherwise will be set by server
+	if v, ok := eventMap["event_timestamp"].(time.Time); ok {
+		req.EventTimestamp = v
+	} else {
+		// Default to current time if not provided
+		req.EventTimestamp = time.Now()
+	}
+
+	return req
+}
+
+// createAuditEventFromMap is a convenience wrapper for backward compatibility
+// Converts map[string]interface{} to AuditEventRequest and calls createAuditEventOpenAPI
+//
+// Usage: Allows incremental migration - tests using map[string]interface{} can switch
+//        from postAuditEvent to this function without changing event construction
+func createAuditEventFromMap(ctx context.Context, client *dsgen.ClientWithResponses, eventMap map[string]interface{}) *dsgen.CreateAuditEventResponse {
+	event := convertMapToAuditEventRequest(eventMap)
+	return createAuditEventOpenAPI(ctx, client, event)
 }
