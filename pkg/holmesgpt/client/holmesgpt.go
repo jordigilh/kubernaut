@@ -231,7 +231,7 @@ func (c *HolmesGPTClient) InvestigateRecovery(ctx context.Context, req *Recovery
 	// DEBUG: Log what we're sending (BR-HAPI-197 investigation)
 	log.Printf("🔍 DEBUG: Sending recovery request to HAPI - IncidentID=%s, SignalType.Set=%v, SignalType.Value=%s, IsRecoveryAttempt=%v, requestPointer=%p",
 		req.IncidentID, req.SignalType.Set, req.SignalType.Value, req.IsRecoveryAttempt.Value, req)
-	
+
 	// DD-HAPI-003: Use generated client method for compile-time type safety
 	res, err := c.client.RecoveryAnalyzeEndpointAPIV1RecoveryAnalyzePost(ctx, req)
 	if err != nil {
