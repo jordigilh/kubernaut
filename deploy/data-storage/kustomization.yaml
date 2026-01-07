@@ -10,6 +10,7 @@ resources:
   - rolebinding.yaml
   - configmap.yaml
   - secret.yaml
+  - certificate.yaml  # SOC2 Day 9.1: Signing certificate (cert-manager)
   - deployment.yaml
   - service.yaml
   - servicemonitor.yaml

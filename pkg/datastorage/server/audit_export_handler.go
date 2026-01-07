@@ -70,8 +70,8 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	exportedBy := r.Header.Get("X-Auth-Request-User")
 	if exportedBy == "" {
 		s.logger.Info("Export request rejected: missing X-Auth-Request-User header")
-		writeRFC7807Error(w, http.StatusUnauthorized, 
-			"Unauthorized", 
+		writeRFC7807Error(w, http.StatusUnauthorized,
+			"Unauthorized",
 			"X-Auth-Request-User header required for audit export",
 			r.URL.Path)
 		return
@@ -81,8 +81,8 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	filters, err := parseExportFilters(r)
 	if err != nil {
 		s.logger.Error(err, "Invalid export query parameters")
-		writeRFC7807Error(w, http.StatusBadRequest, 
-			"Validation Error", 
+		writeRFC7807Error(w, http.StatusBadRequest,
+			"Validation Error",
 			fmt.Sprintf("Invalid query parameters: %v", err),
 			r.URL.Path)
 		return
@@ -90,8 +90,8 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 
 	// Validate limit
 	if filters.Limit > maxExportLimit {
-		writeRFC7807Error(w, http.StatusRequestEntityTooLarge, 
-			"Payload Too Large", 
+		writeRFC7807Error(w, http.StatusRequestEntityTooLarge,
+			"Payload Too Large",
 			fmt.Sprintf("Export limit exceeds maximum of %d events. Use pagination.", maxExportLimit),
 			r.URL.Path)
 		return
@@ -101,8 +101,8 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	exportResult, err := s.auditEventsRepo.Export(ctx, filters)
 	if err != nil {
 		s.logger.Error(err, "Failed to export audit events")
-		writeRFC7807Error(w, http.StatusInternalServerError, 
-			"Export Failed", 
+		writeRFC7807Error(w, http.StatusInternalServerError,
+			"Export Failed",
 			"Failed to export audit events. Please retry.",
 			r.URL.Path)
 		return
@@ -120,8 +120,8 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	response, err := s.buildExportResponse(ctx, exportResult, filters, format, includeDetachedSignature, exportedBy)
 	if err != nil {
 		s.logger.Error(err, "Failed to build export response")
-		writeRFC7807Error(w, http.StatusInternalServerError, 
-			"Export Failed", 
+		writeRFC7807Error(w, http.StatusInternalServerError,
+			"Export Failed",
 			"Failed to build export response. Please retry.",
 			r.URL.Path)
 		return
@@ -137,14 +137,14 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 		}
 	case "csv":
 		// CSV export not yet implemented
-		writeRFC7807Error(w, http.StatusNotImplemented, 
-			"Format Not Supported", 
+		writeRFC7807Error(w, http.StatusNotImplemented,
+			"Format Not Supported",
 			"CSV export format is not yet implemented. Use format=json.",
 			r.URL.Path)
 		return
 	default:
-		writeRFC7807Error(w, http.StatusBadRequest, 
-			"Invalid Format", 
+		writeRFC7807Error(w, http.StatusBadRequest,
+			"Invalid Format",
 			fmt.Sprintf("Unknown format: %s. Supported formats: json, csv.", format),
 			r.URL.Path)
 		return
@@ -323,18 +323,40 @@ func (s *Server) buildExportResponse(
 
 // signExport signs the export data with x509 certificate
 // Returns: (signature_base64, algorithm, cert_fingerprint, error)
+//
+// SOC2 Day 9.1: Digital signature implementation
+// BR-AUDIT-007: Signed exports for tamper detection
+// Algorithm: SHA256withRSA (NIST recommended)
 func (s *Server) signExport(ctx context.Context, exportResult *repository.ExportResult, exportTimestamp time.Time) (string, string, string, error) {
-	// TODO: Implement actual x509 signing in Day 9.1 digital signature task
-	// For now, return placeholder values
-	
-	// Placeholder signature (to be replaced with actual x509 signing)
-	signature := "PLACEHOLDER_SIGNATURE_TO_BE_IMPLEMENTED"
-	algorithm := "SHA256withRSA"
-	certFingerprint := "PLACEHOLDER_CERT_FINGERPRINT"
+	if s.signer == nil {
+		return "", "", "", fmt.Errorf("signer not initialized")
+	}
 
-	s.logger.Info("Export signature generated (placeholder)",
+	// Build signable data structure (export metadata + events)
+	signableData := map[string]interface{}{
+		"export_timestamp":      exportTimestamp,
+		"total_events":          exportResult.TotalEventsQueried,
+		"valid_chain_events":    exportResult.ValidChainEvents,
+		"broken_chain_events":   exportResult.BrokenChainEvents,
+		"tampered_event_ids":    exportResult.TamperedEventIDs,
+		"verification_timestamp": exportResult.VerificationTimestamp,
+	}
+
+	// Sign the export data
+	signature, err := s.signer.Sign(signableData)
+	if err != nil {
+		s.logger.Error(err, "Failed to sign export data")
+		return "", "", "", fmt.Errorf("failed to sign export: %w", err)
+	}
+
+	// Get certificate metadata
+	algorithm := s.signer.GetAlgorithm()
+	certFingerprint := s.signer.GetCertificateFingerprint()
+
+	s.logger.V(1).Info("Export signature generated successfully",
 		"algorithm", algorithm,
-		"cert_fingerprint", certFingerprint)
+		"cert_fingerprint", certFingerprint,
+		"signature_length", len(signature))
 
 	return signature, algorithm, certFingerprint, nil
 }

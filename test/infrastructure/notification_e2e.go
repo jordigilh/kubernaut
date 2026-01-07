@@ -36,11 +36,11 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// 0. Create E2E file output directory (platform-specific)
 	e2eDir, err := GetE2EFileOutputDir()
 	if err != nil {
-		return fmt.Errorf("failed to get E2E file output directory: %w", err)
+		return "", fmt.Errorf("failed to get E2E file output directory: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "📁 Creating E2E file output directory: %s\n", e2eDir)
 	if err := os.MkdirAll(e2eDir, 0755); err != nil {
-		return fmt.Errorf("failed to create E2E file output directory: %w", err)
+		return "", fmt.Errorf("failed to create E2E file output directory: %w", err)
 	}
 
 	// ============================================================
@@ -61,7 +61,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	}
 	notificationImageName, err := BuildImageForKind(cfg, writer)
 	if err != nil {
-		return fmt.Errorf("failed to build Notification Controller image: %w", err)
+		return "", fmt.Errorf("failed to build Notification Controller image: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 1 Complete: Image built: %s\n", notificationImageName)
 
@@ -85,7 +85,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 		extraMounts,
 		writer,
 	); err != nil {
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
+		return "", fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 2 Complete: Cluster created")
 
@@ -97,7 +97,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "  • Uses consolidated LoadImageToKind() helper")
 	_, _ = fmt.Fprintln(writer, "  • Automatic cleanup of tar file and Podman image")
 	if err := LoadImageToKind(notificationImageName, "notification", clusterName, writer); err != nil {
-		return fmt.Errorf("failed to load Notification Controller image: %w", err)
+		return "", fmt.Errorf("failed to load Notification Controller image: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 3 Complete: Image loaded")
 
@@ -107,20 +107,24 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 4: Installing NotificationRequest CRD...")
 	if err := installNotificationCRD(kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to install NotificationRequest CRD: %w", err)
+		return "", fmt.Errorf("failed to install NotificationRequest CRD: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 4 Complete: CRDs installed")
 
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "✅ Hybrid Parallel Setup Complete - tests can now deploy controller")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	return nil
+	return notificationImageName, nil
 }
 
-func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath, notificationImageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Notification Controller in Namespace: %s\n", namespace)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	if notificationImageName == "" {
+		return fmt.Errorf("notificationImageName parameter is required")
+	}
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
@@ -157,9 +161,9 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 		return fmt.Errorf("failed to deploy NodePort Service: %w", err)
 	}
 
-	// 4. Deploy Notification Controller
+	// 4. Deploy Notification Controller with image from setup phase
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification Controller...\n")
-	if err := deployNotificationControllerOnly(namespace, kubeconfigPath, writer); err != nil {
+	if err := deployNotificationControllerOnly(namespace, kubeconfigPath, notificationImageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy Notification Controller: %w", err)
 	}
 

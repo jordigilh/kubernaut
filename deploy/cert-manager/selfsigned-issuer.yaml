@@ -1,0 +1,40 @@
+---
+# ========================================
+# cert-manager ClusterIssuer for Self-Signed Certificates
+# Authority: SOC2_WEEK2_COMPLETE_PLAN_V1_1_JAN07.md - Day 9.1
+# ========================================
+#
+# Creates a cluster-wide self-signed certificate issuer.
+#
+# SOC2 Requirements:
+# - CC8.1: Digital signatures for audit exports
+# - AU-9: Protection of Audit Information
+#
+# Usage:
+# 1. Install cert-manager:
+#    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+#
+# 2. Apply this ClusterIssuer:
+#    kubectl apply -f deploy/cert-manager/selfsigned-issuer.yaml
+#
+# 3. Create Certificate CRDs (see deploy/data-storage/certificate.yaml)
+#
+# Future Upgrade Path:
+# To upgrade to internal CA or external CA (Vault):
+# - Option A: Replace with CA ClusterIssuer (internal PKI)
+# - Option B: Replace with Vault Issuer (enterprise PKI)
+# - No application code changes required
+#
+# ========================================
+
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+  labels:
+    app.kubernetes.io/name: selfsigned-issuer
+    app.kubernetes.io/component: cert-manager
+    app.kubernetes.io/managed-by: kubernaut
+spec:
+  selfSigned: {}
+

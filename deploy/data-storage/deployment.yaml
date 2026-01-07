@@ -126,6 +126,10 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            # SOC2 Day 9.1: Signing certificate for audit export
+            - name: signing-cert
+              mountPath: /etc/certs
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
@@ -136,6 +140,12 @@ spec:
             items:
               - key: cookie-secret
                 path: cookie-secret
+        # SOC2 Day 9.1: Signing certificate (managed by cert-manager)
+        # Certificate: deploy/data-storage/certificate.yaml
+        # Format: tls.crt, tls.key (cert-manager compatible)
+        - name: signing-cert
+          secret:
+            secretName: datastorage-signing-cert
       restartPolicy: Always
       terminationGracePeriodSeconds: 30
 
