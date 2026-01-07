@@ -1,8 +1,8 @@
 # Test Infrastructure Refactoring - Phase 3: Image Build Consolidation
 
-**Date**: January 7, 2026  
-**Author**: AI Assistant  
-**Status**: 🔄 IN PROGRESS  
+**Date**: January 7, 2026
+**Author**: AI Assistant
+**Status**: 🔄 IN PROGRESS
 **Priority**: HIGH (reduces ~400 lines of duplicated code)
 
 ---
@@ -25,7 +25,7 @@
 
 ### **Consolidated Function Already Exists**
 
-**File**: `test/infrastructure/datastorage_bootstrap.go`  
+**File**: `test/infrastructure/datastorage_bootstrap.go`
 **Function**: `BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error)`
 
 **Features**:

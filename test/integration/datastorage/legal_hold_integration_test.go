@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -179,13 +180,18 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("POST", datastorageURL+"/api/v1/audit/legal-hold", bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-User-ID", "legal-team@company.com")
+				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
 				defer resp.Body.Close()
 
-				// 3. Verify response
+				// 3. Verify response (print body for debugging if not 200)
+				if resp.StatusCode != http.StatusOK {
+					bodyBytes, _ := io.ReadAll(resp.Body)
+					GinkgoWriter.Printf("❌ Unexpected status %d, response body: %s\n", resp.StatusCode, string(bodyBytes))
+					resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes)) // Reset body for further reading
+				}
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 				var response map[string]interface{}
@@ -228,7 +234,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("POST", datastorageURL+"/api/v1/audit/legal-hold", bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-User-ID", "legal-team@company.com")
+				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
@@ -238,7 +244,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				Expect(resp.StatusCode).To(Or(Equal(http.StatusBadRequest), Equal(http.StatusNotFound)))
 			})
 
-			It("should capture X-User-ID in placed_by field", func() {
+			It("should capture X-Auth-Request-User in placed_by field", func() {
 				// 1. Create test event
 				event := &repository.AuditEvent{
 					EventID:       uuid.New(),
@@ -261,7 +267,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				_, err := auditRepo.Create(ctx, event)
 				Expect(err).ToNot(HaveOccurred())
 
-				// 2. Place legal hold with specific X-User-ID
+				// 2. Place legal hold with specific X-Auth-Request-User
 				requestBody := map[string]interface{}{
 					"correlation_id": correlationID,
 					"reason":         "Test: User ID Capture",
@@ -272,7 +278,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("POST", datastorageURL+"/api/v1/audit/legal-hold", bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-User-ID", "compliance-officer@company.com")
+				req.Header.Set("X-Auth-Request-User", "compliance-officer@company.com")
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
@@ -280,7 +286,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-				// 3. Verify X-User-ID was captured in database
+				// 3. Verify X-Auth-Request-User was captured in database
 				var placedBy string
 				query := `SELECT legal_hold_placed_by FROM audit_events WHERE correlation_id = $1`
 				err = db.DB.QueryRowContext(ctx, query, correlationID).Scan(&placedBy)
@@ -326,7 +332,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				req, err := http.NewRequest("DELETE", datastorageURL+"/api/v1/audit/legal-hold/"+correlationID, bytes.NewBuffer(bodyBytes))
 				Expect(err).ToNot(HaveOccurred())
 				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("X-User-ID", "legal-team@company.com")
+				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
@@ -389,7 +395,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// 2. List legal holds via API
 				req, err := http.NewRequest("GET", datastorageURL+"/api/v1/audit/legal-hold", nil)
 				Expect(err).ToNot(HaveOccurred())
-				req.Header.Set("X-User-ID", "legal-team@company.com")
+				req.Header.Set("X-Auth-Request-User", "legal-team@company.com")
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())

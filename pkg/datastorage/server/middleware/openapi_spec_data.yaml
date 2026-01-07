@@ -654,8 +654,6 @@ paths:
         - `datastorage_legal_hold_successes_total{operation="place"}`
         - `datastorage_legal_hold_failures_total{reason="missing_correlation_id|unauthorized|..."}`
       operationId: placeLegalHold
-      security:
-        - oauthProxyAuth: []
       requestBody:
         required: true
         content:
@@ -781,8 +779,6 @@ paths:
         - `datastorage_legal_hold_successes_total{operation="release"}`
         - `datastorage_legal_hold_failures_total{reason="unauthorized|not_found|..."}`
       operationId: releaseLegalHold
-      security:
-        - oauthProxyAuth: []
       parameters:
         - name: correlation_id
           in: path
