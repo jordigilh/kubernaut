@@ -17,18 +17,16 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -164,11 +162,8 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			"event_data":      gatewayEventData,
 		}
 
-		resp := postAuditEvent(httpClient, serviceURL, gatewayEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		resp := createAuditEventFromMap(ctx, dsClient, gatewayEvent)
+		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Gateway audit event should be created")
 		testLogger.Info("✅ Gateway audit event created")
 
 		// Step 2: AIAnalysis - Analysis Completed
@@ -189,11 +184,8 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			"event_data":      aiEventData,
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, aiEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		resp = createAuditEventFromMap(ctx, dsClient, aiEvent)
+		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
 		testLogger.Info("✅ AIAnalysis audit event created")
 
 		// Step 3: Workflow - Workflow Completed
@@ -214,11 +206,8 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			"event_data":      workflowEventData,
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, workflowEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Workflow audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		resp = createAuditEventFromMap(ctx, dsClient, workflowEvent)
+		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Workflow audit event should be created")
 		testLogger.Info("✅ Workflow audit event created")
 
 		// Step 4: Orchestrator - Remediation Completed
@@ -234,11 +223,8 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			"event_data":      map[string]interface{}{},
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, orchestratorEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		resp = createAuditEventFromMap(ctx, dsClient, orchestratorEvent)
+		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
 		testLogger.Info("✅ Orchestrator audit event created")
 
 		// Step 5: EffectivenessMonitor - Assessment Completed
@@ -254,11 +240,8 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			"event_data":      map[string]interface{}{},
 		}
 
-		resp = postAuditEvent(httpClient, serviceURL, monitorEvent)
-		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Monitor audit event should be created")
-		if err := resp.Body.Close(); err != nil {
-			testLogger.Error(err, "failed to close response body")
-		}
+		resp = createAuditEventFromMap(ctx, dsClient, monitorEvent)
+		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Monitor audit event should be created")
 		testLogger.Info("✅ Monitor audit event created")
 
 		// Verification: Query database directly
@@ -274,25 +257,18 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		Expect(count).To(BeNumerically(">=", 5), "Should have at least 5 audit events in database")
 		testLogger.Info("✅ All audit events persisted to database", "count", count)
 
-		// Verification: Query via REST API
+		// Verification: Query via REST API using OpenAPI client
 		testLogger.Info("🔍 Querying audit trail via REST API...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
+		queryResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-				_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK), "Query API should return 200 OK")
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK), "Query API should return 200 OK")
+		Expect(queryResp.JSON200).ToNot(BeNil(), "Query response should have JSON200 body")
+		Expect(queryResp.JSON200.Data).ToNot(BeNil(), "Query response should have data array")
 
-		var queryResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok := queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue(), "Response should have data array")
 		// Self-auditing creates additional events, so we expect at least 5
+		data := *queryResp.JSON200.Data
 		Expect(len(data)).To(BeNumerically(">=", 5), "Query API should return at least 5 events")
 		testLogger.Info("✅ Query API returned complete audit trail", "event_count", len(data))
 
@@ -301,25 +277,16 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 
 		// Sort events by timestamp
 		sort.Slice(data, func(i, j int) bool {
-			eventI := data[i].(map[string]interface{})
-			eventJ := data[j].(map[string]interface{})
-			timestampI, _ := time.Parse(time.RFC3339, eventI["event_timestamp"].(string))
-			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
-			return timestampI.Before(timestampJ)
+			return data[i].EventTimestamp.Before(data[j].EventTimestamp)
 		})
 
 		var previousTimestamp time.Time
-		for i, item := range data {
-			event := item.(map[string]interface{})
-			timestampStr := event["event_timestamp"].(string)
-			timestamp, err := time.Parse(time.RFC3339, timestampStr)
-			Expect(err).ToNot(HaveOccurred())
-
+		for i, event := range data {
 			if i > 0 {
-				Expect(timestamp.After(previousTimestamp) || timestamp.Equal(previousTimestamp)).To(BeTrue(),
+				Expect(event.EventTimestamp.After(previousTimestamp) || event.EventTimestamp.Equal(previousTimestamp)).To(BeTrue(),
 					"Events should be in chronological order")
 			}
-			previousTimestamp = timestamp
+			previousTimestamp = event.EventTimestamp
 		}
 		testLogger.Info("✅ Events are in chronological order")
 
@@ -329,32 +296,5 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 	})
 })
 
-// Helper function to post audit event
-func postAuditEvent(client *http.Client, baseURL string, event map[string]interface{}) *http.Response {
-	body, err := json.Marshal(event)
-	Expect(err).ToNot(HaveOccurred())
-
-	req, err := http.NewRequest("POST", baseURL+"/api/v1/audit/events", bytes.NewBuffer(body))
-	Expect(err).ToNot(HaveOccurred())
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Log response body if not 2xx status
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		if err := resp.Body.Close(); err != nil {
-			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to close response body: %v\n", err)
-		}
-		if _, err := fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode, string(bodyBytes)); err != nil {
-			// Best effort - if we can't write to GinkgoWriter, there's nothing we can do
-			_, _ = fmt.Fprintf(GinkgoWriter, "⚠️  Failed to write to GinkgoWriter: %v\n", err)
-		}
-		// Create new reader for the response body so tests can still read it
-		resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	}
-
-	return resp
-}
+// DD-API-001: postAuditEvent helper function removed
+// Replaced by createAuditEventFromMap() in helpers.go (OpenAPI client-based)
