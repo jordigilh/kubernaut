@@ -1,3 +1,25 @@
+# ========================================
+# DD-AUTH-004: DataStorage Service with OAuth-Proxy
+# DD-AUTH-005: All 8 services connect via this service endpoint
+# ========================================
+#
+# Service routes external requests to oauth-proxy sidecar:
+# - External clients → Service:8080 → oauth-proxy:8080 → DataStorage:8081
+#
+# Port Routing:
+# - Service port 8080 → Pod oauth-proxy container port 8080
+# - OAuth-proxy proxies to → Pod data-storage container port 8081
+# - Metrics port 9090 → Pod data-storage container port 9090 (direct, no auth)
+#
+# Authentication Flow:
+# 1. Services send requests to data-storage-service:8080
+# 2. Service routes to oauth-proxy sidecar (pod port 8080)
+# 3. OAuth-proxy validates ServiceAccount token
+# 4. OAuth-proxy performs SAR (Subject Access Review)
+# 5. OAuth-proxy injects X-Auth-Request-User header
+# 6. OAuth-proxy proxies to DataStorage (localhost:8081)
+# 7. DataStorage receives authenticated request
+# ========================================
 apiVersion: v1
 kind: Service
 metadata:
@@ -10,13 +32,16 @@ metadata:
 spec:
   type: ClusterIP
   ports:
+    # DD-AUTH-004: HTTP traffic routes to oauth-proxy (port 8080)
+    # OAuth-proxy then proxies to DataStorage (localhost:8081)
     - name: http
       port: 8080
-      targetPort: 8080
+      targetPort: proxy  # Routes to oauth-proxy container 'proxy' port (8080)
       protocol: TCP
+    # Metrics port routes directly to DataStorage (no authentication)
     - name: metrics
       port: 9090
-      targetPort: 9090
+      targetPort: metrics  # Routes directly to data-storage container 'metrics' port (9090)
       protocol: TCP
   selector:
     app: data-storage-service
