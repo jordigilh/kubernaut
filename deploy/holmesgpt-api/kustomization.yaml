@@ -22,6 +22,7 @@ resources:
   - 11-grafana-dashboard-configmap.yaml
   - 12-prometheus-rules.yaml
   - 13-oauth-proxy-secret.yaml
+  - 14-client-rbac.yaml
 
 images:
   - name: holmesgpt-api
