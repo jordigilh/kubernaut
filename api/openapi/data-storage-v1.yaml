@@ -755,6 +755,138 @@ paths:
                   total:
                     type: integer
 
+  /api/v1/audit/export:
+    get:
+      tags:
+        - Audit Write API
+      summary: Export audit events with digital signature
+      description: |
+        Exports audit events matching the specified filters with cryptographic signatures
+        for tamper detection and compliance verification.
+
+        **Business Requirement**: BR-AUDIT-007 (Audit Export)
+        **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)
+
+        **Behavior**:
+        - Success: Returns 200 OK with signed export (JSON or CSV)
+        - Validation Error: Returns 400 Bad Request (invalid date range, etc.)
+        - Unauthorized: Returns 401 if X-Auth-Request-User header missing
+        - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)
+
+        **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)
+
+        **Export Formats**:
+        - JSON: Complete event data with hash chain verification
+        - CSV: Flattened tabular format for spreadsheet analysis
+
+        **Hash Chain Verification**:
+        - Each export includes hash chain integrity status
+        - Tampered events flagged with `hash_chain_valid: false`
+        - Chain verification performed at export time
+
+        **Digital Signature**:
+        - Export signed with service x509 certificate
+        - Signature included in `export_metadata.signature` field
+        - Detached signature available via `include_detached_signature=true`
+
+        **Pagination**:
+        - Use `offset` and `limit` for large result sets
+        - Maximum limit: 10,000 events per export
+        - Signature covers ALL pages (use same query for verification)
+
+        **Metrics Emitted**:
+        - `datastorage_export_successes_total{format="json|csv"}`
+        - `datastorage_export_failures_total{reason="unauthorized|validation|..."}`
+      operationId: exportAuditEvents
+      parameters:
+        - name: start_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Start of time range (ISO 8601)
+          example: "2026-01-01T00:00:00Z"
+        - name: end_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: End of time range (ISO 8601)
+          example: "2026-01-07T23:59:59Z"
+        - name: correlation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by correlation ID
+          example: "remediation-123"
+        - name: event_category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by event category
+          example: "remediation_approval"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+          description: Export format (json or csv)
+        - name: include_detached_signature
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include detached signature file in response
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+          description: Maximum records per export
+      responses:
+        '200':
+          description: Export generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportResponse'
+        '400':
+          description: Validation error (invalid date range, etc.)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: Unauthorized - X-Auth-Request-User header required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '413':
+          description: Payload Too Large - result set exceeds maximum (use pagination)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
   /api/v1/audit/legal-hold/{correlation_id}:
     delete:
       tags:
@@ -1702,6 +1834,154 @@ components:
         updated_by:
           type: string
           description: "Who is disabling the workflow"
+
+    AuditExportResponse:
+      type: object
+      description: Signed audit export with tamper-evident hash chain verification
+      required:
+        - export_metadata
+        - events
+        - hash_chain_verification
+      properties:
+        export_metadata:
+          type: object
+          required:
+            - export_timestamp
+            - export_format
+            - total_events
+            - signature
+          properties:
+            export_timestamp:
+              type: string
+              format: date-time
+              description: When this export was generated
+              example: "2026-01-07T20:30:00Z"
+            export_format:
+              type: string
+              enum: [json, csv]
+              description: Format of exported data
+            query_filters:
+              type: object
+              description: Filters applied to this export
+              properties:
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+                correlation_id:
+                  type: string
+                event_category:
+                  type: string
+                offset:
+                  type: integer
+                limit:
+                  type: integer
+            total_events:
+              type: integer
+              description: Total number of events in this export
+              example: 127
+            signature:
+              type: string
+              description: Digital signature of export (base64-encoded)
+              example: "MEUCIQDv8F..."
+            signature_algorithm:
+              type: string
+              description: Signature algorithm used
+              example: "SHA256withRSA"
+            certificate_fingerprint:
+              type: string
+              description: SHA256 fingerprint of signing certificate
+              example: "3a:f7:12:9c:..."
+            exported_by:
+              type: string
+              description: User who initiated the export (from X-Auth-Request-User)
+              example: "system:serviceaccount:kubernaut-system:auditor"
+        events:
+          type: array
+          description: Audit events matching the query filters
+          items:
+            type: object
+            description: Audit event with hash chain metadata
+            properties:
+              event_id:
+                type: string
+                format: uuid
+              version:
+                type: string
+              event_type:
+                type: string
+              event_timestamp:
+                type: string
+                format: date-time
+              event_category:
+                type: string
+              event_action:
+                type: string
+              event_outcome:
+                type: string
+              correlation_id:
+                type: string
+              event_data:
+                type: object
+                additionalProperties: true
+              event_hash:
+                type: string
+                description: SHA256 hash of this event
+              previous_event_hash:
+                type: string
+                description: Hash of previous event in chain
+              hash_chain_valid:
+                type: boolean
+                description: Whether this event's hash chain is valid
+              legal_hold:
+                type: boolean
+                description: Whether this event is under legal hold
+              created_at:
+                type: string
+                format: date-time
+        hash_chain_verification:
+          type: object
+          required:
+            - total_events_verified
+            - valid_chain_events
+            - broken_chain_events
+            - verification_timestamp
+          properties:
+            total_events_verified:
+              type: integer
+              description: Total events with hash chain data
+              example: 127
+            valid_chain_events:
+              type: integer
+              description: Events with valid hash chains
+              example: 127
+            broken_chain_events:
+              type: integer
+              description: Events with broken hash chains (tampered)
+              example: 0
+            chain_integrity_percentage:
+              type: number
+              format: float
+              minimum: 0.0
+              maximum: 100.0
+              description: Percentage of events with valid chains
+              example: 100.0
+            verification_timestamp:
+              type: string
+              format: date-time
+              description: When verification was performed
+            tampered_event_ids:
+              type: array
+              description: UUIDs of tampered events (if any)
+              items:
+                type: string
+                format: uuid
+        detached_signature:
+          type: string
+          description: Detached PEM-encoded signature (if requested)
+          example: "-----BEGIN SIGNATURE-----\n..."
 
   securitySchemes:
     oauthProxyAuth:
