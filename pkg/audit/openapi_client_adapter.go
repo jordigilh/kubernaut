@@ -103,6 +103,23 @@ type OpenAPIClientAdapter struct {
 //
 // Authority: DD-API-001 (OpenAPI Generated Client MANDATORY for V1.0)
 func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorageClient, error) {
+	return NewOpenAPIClientAdapterWithTransport(baseURL, timeout, nil)
+}
+
+// NewOpenAPIClientAdapterWithTransport creates a DataStorageClient with custom transport.
+// This constructor allows integration tests to inject mock auth transports.
+//
+// Production Usage (transport=nil):
+//   client := audit.NewOpenAPIClientAdapter(url, timeout)
+//   // Uses ServiceAccountTransport automatically
+//
+// Integration Test Usage (transport=mockTransport):
+//   mockTransport := testutil.NewMockUserTransport("test-user@example.com")
+//   client := audit.NewOpenAPIClientAdapterWithTransport(url, timeout, mockTransport)
+//   // Uses mock transport (injects X-Auth-Request-User header)
+//
+// DD-AUTH-005: Integration tests use this to inject mock user headers without oauth-proxy.
+func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper) (DataStorageClient, error) {
 	if baseURL == "" {
 		return nil, fmt.Errorf("baseURL cannot be empty")
 	}
@@ -112,12 +129,11 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorage
 	}
 
 	// ========================================
-	// DD-AUTH-005: Inject ServiceAccount authentication transport
-	// This change affects ALL 7 Go services automatically:
-	// - Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator,
-	//   Notification, AuthWebhook, SignalProcessing
+	// DD-AUTH-005: Inject authentication transport
+	// Production (transport=nil): Uses ServiceAccountTransport (ALL 7 Go services)
+	// Integration tests (transport!=nil): Uses provided mock transport
 	//
-	// The auth transport:
+	// The ServiceAccount transport:
 	// - Reads ServiceAccount token from /var/run/secrets/kubernetes.io/serviceaccount/token
 	// - Caches token for 5 minutes (reduces filesystem I/O)
 	// - Injects Authorization: Bearer <token> header on every request
@@ -125,17 +141,20 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorage
 	//
 	// See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
 	// ========================================
-	baseTransport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 100,
-		IdleConnTimeout:     90 * time.Second,
+	if transport == nil {
+		// Production: Use ServiceAccount transport (default)
+		baseTransport := &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 100,
+			IdleConnTimeout:     90 * time.Second,
+		}
+		transport = auth.NewServiceAccountTransportWithBase(baseTransport)
 	}
-	authTransport := auth.NewServiceAccountTransportWithBase(baseTransport)
 
-	// Create HTTP client with auth transport
+	// Create HTTP client with auth transport (ServiceAccount or mock)
 	httpClient := &http.Client{
 		Timeout:   timeout,
-		Transport: authTransport, // ← ServiceAccount token injection
+		Transport: transport, // ← ServiceAccount token injection (or mock for tests)
 	}
 
 	// Create generated OpenAPI client (DD-API-001 compliant)
