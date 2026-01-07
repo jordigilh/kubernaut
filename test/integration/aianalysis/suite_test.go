@@ -72,6 +72,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -228,10 +229,13 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
 	// Per DD-TEST-001: AIAnalysis Data Storage port 18095
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	GinkgoWriter.Println("📋 Setting up audit store...")
-	dsClient, err := audit.NewOpenAPIClientAdapter(
+	mockTransport := testutil.NewMockUserTransport("test-aianalysis@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
 		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
 

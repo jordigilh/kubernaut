@@ -24,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -77,12 +78,21 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 		}, "10s", "500ms").Should(BeTrue(), "Data Storage Service should be ready")
 
 		// Create DataStorage client using audit.NewOpenAPIClientAdapter
+		// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 		var err error
-		httpClient, err := audit.NewOpenAPIClientAdapter(datastorageURL, 5*time.Second)
+		mockTransport := testutil.NewMockUserTransport("test-datastorage@integration.test")
+		httpClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+			datastorageURL,
+			5*time.Second,
+			mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+		)
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create OpenAPI client for queries
-		dsClient, err = dsgen.NewClientWithResponses(datastorageURL)
+		// Create OpenAPI client for queries (with auth)
+		dsClient, err = dsgen.NewClientWithResponses(
+			datastorageURL,
+			dsgen.WithHTTPClient(&http.Client{Transport: mockTransport}),
+		)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create audit client with PRODUCTION configuration

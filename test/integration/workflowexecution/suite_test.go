@@ -47,6 +47,7 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
@@ -210,7 +211,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Creating REAL audit store with DataStorage OpenAPI client (DD-API-001)")
 	// Create OpenAPI DataStorage client (DD-API-001 compliant)
-	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageBaseURL, 5*time.Second)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
+	mockTransport := testutil.NewMockUserTransport("test-workflowexecution@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		dataStorageBaseURL,
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage client: %v", err))
 	}
