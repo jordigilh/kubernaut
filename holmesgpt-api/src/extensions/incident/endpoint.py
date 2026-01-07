@@ -23,13 +23,16 @@ This module defines the FastAPI router and endpoint for incident analysis.
 It handles HTTP request/response and delegates business logic to llm_integration module.
 """
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Request, status
+import logging
 
 from src.models.incident_models import IncidentRequest, IncidentResponse
 from .llm_integration import analyze_incident
 from src.audit import get_audit_store, create_hapi_response_complete_event  # DD-AUDIT-005
+from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -38,7 +41,7 @@ router = APIRouter()
     response_model=IncidentResponse,
     response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
 )
-async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentResponse:
+async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Request) -> IncidentResponse:
     """
     Analyze initial incident and provide RCA + workflow selection
 
@@ -46,20 +49,33 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
     Business Requirement: BR-WORKFLOW-001 (MCP Workflow Integration)
     Business Requirement: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
     Design Decision: DD-AUDIT-005 (Hybrid Provider Data Capture)
+    Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
 
     Called by: AIAnalysis Controller (for initial incident RCA and workflow selection)
 
     Flow:
     1. Receive IncidentRequest from AIAnalysis
-    2. Sanitize input for LLM (BR-HAPI-211)
-    3. Call HolmesGPT SDK for investigation (BR-HAPI-002)
-    4. Search workflow catalog via MCP (BR-HAPI-250)
-    5. Validate workflow response (DD-HAPI-002 v1.2)
-    6. Self-correct if validation fails (up to 3 attempts)
-    7. Emit audit event with complete response (DD-AUDIT-005)
-    8. Return IncidentResponse with RCA and workflow selection
+    2. Extract authenticated user from oauth-proxy header (DD-AUTH-006)
+    3. Sanitize input for LLM (BR-HAPI-211)
+    4. Call HolmesGPT SDK for investigation (BR-HAPI-002)
+    5. Search workflow catalog via MCP (BR-HAPI-250)
+    6. Validate workflow response (DD-HAPI-002 v1.2)
+    7. Self-correct if validation fails (up to 3 attempts)
+    8. Emit audit event with complete response (DD-AUDIT-005)
+    9. Return IncidentResponse with RCA and workflow selection
     """
-    request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
+    # DD-AUTH-006: Extract authenticated user for logging/audit
+    # OAuth-proxy has already validated token and performed SAR
+    # This is for cost tracking, security auditing, and future SOC2 readiness
+    user = get_authenticated_user(request)
+    logger.info({
+        "event": "incident_analysis_requested",
+        "user": user,
+        "endpoint": "/incident/analyze",
+        "purpose": "LLM cost tracking and audit trail"
+    })
+    
+    request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
     result = await analyze_incident(request_data)
 
     # DD-AUDIT-005: Capture complete HAPI response for audit trail (provider perspective)

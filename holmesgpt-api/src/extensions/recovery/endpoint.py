@@ -25,9 +25,10 @@ This module contains the FastAPI router and endpoint for recovery analysis.
 
 import logging
 from typing import Dict, Any
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from src.models.recovery_models import RecoveryRequest, RecoveryResponse
 from .llm_integration import analyze_recovery
+from src.middleware.user_context import get_authenticated_user  # DD-AUTH-006
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +41,29 @@ router = APIRouter()
     response_model=RecoveryResponse,
     response_model_exclude_unset=False  # BR-HAPI-197: Include needs_human_review fields in OpenAPI spec
 )
-async def recovery_analyze_endpoint(request: RecoveryRequest) -> RecoveryResponse:
+async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Request) -> RecoveryResponse:
     """
     Analyze failed action and provide recovery strategies
 
     Business Requirement: BR-HAPI-001 (Recovery analysis endpoint)
     Design Decision: DD-WORKFLOW-002 v2.4 - WorkflowCatalogToolset via SDK
+    Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
 
     Called by: AIAnalysis Controller (for recovery attempts after workflow failure)
     """
+    # DD-AUTH-006: Extract authenticated user for logging/audit
+    user = get_authenticated_user(request)
+    logger.info({
+        "event": "recovery_analysis_requested",
+        "user": user,
+        "endpoint": "/recovery/analyze",
+        "purpose": "LLM cost tracking and audit trail"
+    })
+    
     # DEBUG: Log what we receive (BR-HAPI-197 investigation)
-    logger.info(f"🔍 DEBUG: Recovery request received - signal_type={request.signal_type!r}")
+    logger.info(f"🔍 DEBUG: Recovery request received - signal_type={recovery_req.signal_type!r}")
 
-    request_data = request.model_dump() if hasattr(request, 'model_dump') else request.dict()
+    request_data = recovery_req.model_dump() if hasattr(recovery_req, 'model_dump') else recovery_req.dict()
 
     # DEBUG: Log request_data dict
     logger.info(f"🔍 DEBUG: Request dict - signal_type={request_data.get('signal_type')!r}, "
