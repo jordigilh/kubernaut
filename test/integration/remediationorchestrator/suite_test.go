@@ -75,6 +75,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
 	// Real controller testing happens in:
 	//   - Service integration tests (test/integration/{service}/)
@@ -223,9 +224,15 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per ADR-032 §1: Audit is MANDATORY for P0 services (RO is P0)
 	// Integration tests use real DataStorage API at http://127.0.0.1:18140
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	// Note: Using 127.0.0.1 instead of "localhost" to force IPv4
 	// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
-	dataStorageClient, err := audit.NewOpenAPIClientAdapter("http://127.0.0.1:18140", 5*time.Second)
+	mockTransport := testutil.NewMockUserTransport("test-remediationorchestrator@integration.test")
+	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		"http://127.0.0.1:18140",
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 
 	auditLogger := ctrl.Log.WithName("audit")

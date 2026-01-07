@@ -74,6 +74,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -288,10 +289,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Create audit store (BufferedStore pattern per ADR-038)
 	// Uses DataStorage API on port 18094 (per DD-TEST-001)
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	GinkgoWriter.Println("📋 Setting up audit store...")
-	dsClient, err := audit.NewOpenAPIClientAdapter(
+	mockTransport := testutil.NewMockUserTransport("test-signalprocessing@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort), // IPv4 explicit for CI
 		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
 
