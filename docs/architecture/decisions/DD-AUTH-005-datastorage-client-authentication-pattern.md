@@ -1,21 +1,21 @@
 # DD-AUTH-005: DataStorage Client Authentication Pattern
 
-**Date**: January 7, 2026  
-**Status**: ✅ **APPROVED** - Authoritative V1.0 Pattern  
-**Builds On**: DD-AUTH-004 (OpenShift OAuth-Proxy for Legal Hold)  
-**Confidence**: 95%  
+**Date**: January 7, 2026
+**Status**: ✅ **APPROVED** - Authoritative V1.0 Pattern
+**Builds On**: DD-AUTH-004 (OpenShift OAuth-Proxy for Legal Hold)
+**Confidence**: 95%
 **Last Reviewed**: January 7, 2026
 
 ---
 
 ## 🎯 **DECISION**
 
-**All services (6 Go + 1 Python) SHALL use transport layer injection to authenticate with DataStorage REST API. The transport layer SHALL automatically inject authentication headers based on environment (integration/E2E/production) WITHOUT modifying OpenAPI-generated clients.**
+**All services (7 Go + 1 Python) SHALL use transport layer injection to authenticate with DataStorage REST API. The transport layer SHALL automatically inject authentication headers based on environment (integration/E2E/production) WITHOUT modifying OpenAPI-generated clients.**
 
 **Pattern Authority**: This DD is the AUTHORITATIVE blueprint for DataStorage client instantiation across all services and all environments.
 
 **Scope**:
-- **6 Go Services**: Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator, Notification, AuthWebhook
+- **7 Go Services**: Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator, Notification, AuthWebhook, SignalProcessing
 - **1 Python Service**: holmesgpt-api
 - **All DataStorage API Endpoints**: `/api/v1/audit/*`, `/api/v1/storage/*`
 - **All Environments**: Integration tests, E2E tests, Production
@@ -44,7 +44,7 @@
 - ❌ **Inconsistency**: Each service implements auth differently
 - ❌ **Testing Complexity**: Hard to switch between mock and real auth
 - ❌ **OpenAPI Violation**: Not using generated clients (DD-HAPI-003)
-- ❌ **Maintenance Burden**: Auth changes require updating 7 services
+- ❌ **Maintenance Burden**: Auth changes require updating 8 services
 - ❌ **Production Risk**: Easy to forget token injection in new services
 
 **Critical Constraint from User**:
@@ -156,7 +156,7 @@ response = ds_client.place_legal_hold(correlation_id="...", reason="...")
 - ✅ **Testable**: Easy to switch between mock and real auth
 - ✅ **Scalable**: Works for ALL endpoints automatically
 - ✅ **Standard pattern**: `http.RoundTripper` is idiomatic Go
-- ✅ **Reusable**: Same pattern across all 7 services
+- ✅ **Reusable**: Same pattern across all 8 services
 
 **Cons**:
 - ⚠️ **New abstraction**: Developers need to understand transport layer
@@ -190,10 +190,10 @@ type AuthTransportMode int
 const (
 	// ModeServiceAccount reads token from filesystem (for services and E2E)
 	ModeServiceAccount AuthTransportMode = iota
-	
+
 	// ModeStaticToken uses a provided static token (for E2E tests with TokenRequest)
 	ModeStaticToken
-	
+
 	// ModeMockUser directly injects X-Auth-Request-User header (for integration tests)
 	ModeMockUser
 )
@@ -232,13 +232,13 @@ type AuthTransport struct {
 	base      http.RoundTripper
 	mode      AuthTransportMode
 	tokenPath string
-	
+
 	// For ModeStaticToken
 	staticToken string
-	
+
 	// For ModeMockUser
 	mockUserID string
-	
+
 	// Token caching (for ModeServiceAccount)
 	tokenCache      string
 	tokenCacheTime  time.Time
@@ -300,7 +300,7 @@ func NewMockUserTransportWithBase(userID string, base http.RoundTripper) *AuthTr
 func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Clone request to avoid mutating original
 	reqClone := req.Clone(req.Context())
-	
+
 	switch t.mode {
 	case ModeServiceAccount:
 		// Read token from filesystem (with caching)
@@ -308,13 +308,13 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if token != "" {
 			reqClone.Header.Set("Authorization", "Bearer "+token)
 		}
-		
+
 	case ModeStaticToken:
 		// Use provided static token
 		if t.staticToken != "" {
 			reqClone.Header.Set("Authorization", "Bearer "+t.staticToken)
 		}
-		
+
 	case ModeMockUser:
 		// Directly inject X-Auth-Request-User header (bypass oauth-proxy)
 		// This simulates what oauth-proxy would inject after validating the token
@@ -322,7 +322,7 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			reqClone.Header.Set("X-Auth-Request-User", t.mockUserID)
 		}
 	}
-	
+
 	return t.base.RoundTrip(reqClone)
 }
 
@@ -336,23 +336,23 @@ func (t *AuthTransport) getServiceAccountToken() string {
 		return cached
 	}
 	t.tokenCacheMutex.RUnlock()
-	
+
 	// Cache miss or expired - read from filesystem (write lock)
 	t.tokenCacheMutex.Lock()
 	defer t.tokenCacheMutex.Unlock()
-	
+
 	// Double-check after acquiring write lock
 	if time.Since(t.tokenCacheTime) < 5*time.Minute && t.tokenCache != "" {
 		return t.tokenCache
 	}
-	
+
 	// Read token from filesystem
 	tokenBytes, err := os.ReadFile(t.tokenPath)
 	if err != nil {
 		// Token file doesn't exist or read error
 		return ""
 	}
-	
+
 	// Update cache
 	t.tokenCache = string(tokenBytes)
 	t.tokenCacheTime = time.Now()
@@ -391,7 +391,7 @@ import (
 // ========================================
 //
 // This function injects ServiceAccount token authentication into the DataStorage OpenAPI client
-// WITHOUT modifying the generated client code. All 6 Go services use this adapter:
+// WITHOUT modifying the generated client code. All 7 Go services use this adapter:
 //
 // Services:
 // - Gateway (pkg/gateway/server.go)
@@ -400,6 +400,7 @@ import (
 // - RemediationOrchestrator (pkg/remediationorchestrator/controller.go)
 // - Notification (pkg/notification/server.go)
 // - AuthWebhook (cmd/webhooks/main.go)
+// - SignalProcessing (cmd/signalprocessing/main.go)
 //
 // Authentication Flow:
 // 1. Service creates audit adapter via this function
@@ -420,7 +421,7 @@ import (
 func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (*OpenAPIClientAdapter, error) {
 	// ========================================
 	// DD-AUTH-005: Inject ServiceAccount authentication transport
-	// This change affects ALL 6 Go services automatically
+	// This change affects ALL 7 Go services automatically
 	// ========================================
 	httpClient := &http.Client{
 		Timeout:   timeout,
@@ -443,7 +444,7 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (*OpenAPICli
 }
 ```
 
-**Impact**: ALL 6 Go services get ServiceAccount authentication with this ONE change!
+**Impact**: ALL 7 Go services get ServiceAccount authentication with this ONE change!
 
 **Services Affected (Zero Code Changes Required)**:
 1. ✅ Gateway - uses `audit.NewOpenAPIClientAdapter()`
@@ -452,6 +453,7 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (*OpenAPICli
 4. ✅ RemediationOrchestrator - uses `audit.NewOpenAPIClientAdapter()`
 5. ✅ Notification - uses `audit.NewOpenAPIClientAdapter()`
 6. ✅ AuthWebhook - uses `audit.NewOpenAPIClientAdapter()` (see `cmd/webhooks/main.go:81`)
+7. ✅ SignalProcessing - uses `audit.NewOpenAPIClientAdapter()` (see `cmd/signalprocessing/main.go:153`)
 
 ---
 
@@ -469,43 +471,43 @@ from urllib3.util.retry import Retry
 class ServiceAccountAuthSession(Session):
     """
     Requests Session that automatically injects Kubernetes ServiceAccount tokens.
-    
+
     ========================================
     DD-AUTH-005: Transport Layer Authentication
     ========================================
-    
+
     This session injects authentication headers for DataStorage API calls without
     modifying the OpenAPI-generated client code.
-    
+
     Authentication Flow:
     1. holmesgpt-api creates DataStorage client with this session
     2. Session reads /var/run/secrets/kubernetes.io/serviceaccount/token
     3. Session injects "Authorization: Bearer <token>" header
     4. oauth-proxy sidecar validates token and injects X-Auth-Request-User
     5. DataStorage handler extracts user identity
-    
+
     Usage (E2E/Production):
         session = ServiceAccountAuthSession()
         ds_client = DataStorageClient(base_url="http://datastorage:8080", session=session)
-    
+
     Usage (Integration Tests):
         session = ServiceAccountAuthSession(mock_user="test-user@example.com")
         ds_client = DataStorageClient(base_url="http://localhost:8080", session=session)
-    
+
     Benefits:
     - OpenAPI generated client remains pristine (DD-HAPI-003, DD-HAPI-005)
     - Automatic token refresh on every request
     - Environment-aware (production uses ServiceAccount, tests use mock)
-    
+
     See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
     ========================================
     """
-    
+
     def __init__(self, mock_user: Optional[str] = None, token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token"):
         super().__init__()
         self.mock_user = mock_user
         self.token_path = token_path
-        
+
         # Configure retries
         retry = Retry(
             total=3,
@@ -515,10 +517,10 @@ class ServiceAccountAuthSession(Session):
         adapter = HTTPAdapter(max_retries=retry)
         self.mount("http://", adapter)
         self.mount("https://", adapter)
-    
+
     def request(self, method, url, **kwargs):
         """Inject authentication headers before sending request."""
-        
+
         if self.mock_user:
             # Integration test mode: Mock X-Auth-Request-User header
             kwargs.setdefault("headers", {})
@@ -534,7 +536,7 @@ class ServiceAccountAuthSession(Session):
                 # Token file doesn't exist (local dev without K8s)
                 # Request proceeds without token (will fail if oauth-proxy is active)
                 pass
-        
+
         return super().request(method, url, **kwargs)
 ```
 
@@ -549,13 +551,13 @@ from src.clients.datastorage import DataStorageClient
 def create_datastorage_client(base_url: str, mock_user: Optional[str] = None) -> DataStorageClient:
     """
     Create DataStorage client with ServiceAccount authentication.
-    
+
     DD-AUTH-005: Transport layer authentication for Python services
-    
+
     Args:
         base_url: DataStorage service URL
         mock_user: If provided, mock X-Auth-Request-User header (integration tests)
-    
+
     Returns:
         Authenticated DataStorage client
     """
@@ -591,7 +593,7 @@ var _ = Describe("DataStorage Integration Tests", func() {
 		// ========================================
 		transport := auth.NewMockUserTransport("test-operator@kubernaut.ai")
 		httpClient = &http.Client{Transport: transport}
-		
+
 		dsClient, _ = datastorage.NewClientWithResponses(
 			"http://localhost:8080",
 			datastorage.WithHTTPClient(httpClient),
@@ -603,7 +605,7 @@ var _ = Describe("DataStorage Integration Tests", func() {
 			CorrelationId: "test-correlation-id",
 			Reason:        "Integration test",
 		}
-		
+
 		// Transport automatically injects: X-Auth-Request-User: test-operator@kubernaut.ai
 		resp, err := dsClient.PlaceLegalHoldWithResponse(context.Background(), req)
 		Expect(err).ToNot(HaveOccurred())
@@ -624,13 +626,13 @@ def test_place_legal_hold():
         base_url="http://localhost:8080",
         mock_user="test-operator@kubernaut.ai"
     )
-    
+
     # Session automatically injects: X-Auth-Request-User: test-operator@kubernaut.ai
     response = ds_client.place_legal_hold(
         correlation_id="test-correlation-id",
         reason="Integration test"
     )
-    
+
     assert response.status_code == 200
     assert response.json()["placed_by"] == "test-operator@kubernaut.ai"
 ```
@@ -648,27 +650,27 @@ var _ = Describe("DataStorage E2E Tests", func() {
 		// ========================================
 		// DD-AUTH-005: Static token transport for E2E tests
 		// ========================================
-		
+
 		// Get ServiceAccount token via TokenRequest API
 		token, err := getServiceAccountToken("datastorage-e2e-client", "kubernaut", 3600)
 		Expect(err).ToNot(HaveOccurred())
-		
+
 		// Create transport with static token
 		transport := auth.NewStaticTokenTransport(token)
 		httpClient := &http.Client{Transport: transport}
-		
+
 		// Create DataStorage client (connects to oauth-proxy sidecar port 8443)
 		dsClient, _ := datastorage.NewClientWithResponses(
 			"https://datastorage.kubernaut.svc.cluster.local:8443",
 			datastorage.WithHTTPClient(httpClient),
 		)
-		
+
 		// Use client normally
 		req := datastorage.PlaceLegalHoldJSONRequestBody{
 			CorrelationId: "e2e-correlation-id",
 			Reason:        "E2E test",
 		}
-		
+
 		// Transport injects: Authorization: Bearer <token>
 		// oauth-proxy validates token, performs SAR, injects X-Auth-Request-User
 		resp, err := dsClient.PlaceLegalHoldWithResponse(context.Background(), req)
@@ -688,14 +690,14 @@ def test_place_legal_hold_e2e():
     ds_client = create_datastorage_client(
         base_url="https://datastorage.kubernaut.svc.cluster.local:8443"
     )
-    
+
     # Session reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
     # oauth-proxy validates token, performs SAR, injects X-Auth-Request-User
     response = ds_client.place_legal_hold(
         correlation_id="e2e-correlation-id",
         reason="E2E test"
     )
-    
+
     assert response.status_code == 200
 ```
 
@@ -727,7 +729,7 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 ### **Positive Impacts**
 
 1. **Zero Service Code Changes** ✅
-   - 6 Go services: Update `audit.NewOpenAPIClientAdapter()` ONCE
+   - 7 Go services: Update `audit.NewOpenAPIClientAdapter()` ONCE
    - 1 Python service: Update client instantiation ONCE
    - All services automatically get authentication
 
@@ -742,7 +744,7 @@ ds_client = create_datastorage_client("http://datastorage:8080")
    - Production: Automatic ServiceAccount token from filesystem
 
 4. **Consistent Pattern Across Services** ✅
-   - All 7 services use same authentication pattern
+   - All 8 services use same authentication pattern
    - Single implementation to maintain
    - Easy to add new services (just use the adapter/session)
 
@@ -790,7 +792,7 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 
 - [ ] **Task 1.2**: Update `pkg/audit/openapi_client_adapter.go`
   - [ ] Add `auth.NewServiceAccountTransport()` to HTTP client
-  - [ ] **Result**: ALL 6 Go services get authentication automatically
+  - [ ] **Result**: ALL 7 Go services get authentication automatically
 
 ### **Phase 2: Python Foundation** (1.5 hours)
 - [ ] **Task 2.1**: Create `holmesgpt-api/src/clients/datastorage_auth_session.py`
@@ -824,9 +826,9 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 - [ ] **Task 5.1**: Update DataStorage deployment
   - [ ] Add oauth-proxy sidecar (already done in DD-AUTH-004)
 
-- [ ] **Task 5.2**: Create RBAC for all 7 services
+- [ ] **Task 5.2**: Create RBAC for all 8 services
   - [ ] Create ClusterRole for DataStorage access
-  - [ ] Create RoleBindings for all 7 ServiceAccounts
+  - [ ] Create RoleBindings for all 8 ServiceAccounts
 
 - [ ] **Task 5.3**: Create test ServiceAccount
   - [ ] `datastorage-e2e-client` with required permissions
@@ -862,6 +864,7 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 | **RemediationOrchestrator** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
 | **Notification** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
 | **AuthWebhook** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
+| **SignalProcessing** | Go | audit.NewOpenAPIClientAdapter() | ✅ Yes | ✅ Zero (uses adapter) |
 | **holmesgpt-api** | Python | Direct OpenAPI client | ✅ Yes | ⚠️ One function (client instantiation) |
 
 **Total Service Code Changes**: **1 function** (holmesgpt-api client instantiation)
@@ -882,7 +885,7 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 
 | Metric | Target | Status |
 |--------|--------|--------|
-| Go services using auth transport | 6/6 (100%) | ⬜ Not Started |
+| Go services using auth transport | 7/7 (100%) | ⬜ Not Started |
 | Python services using auth session | 1/1 (100%) | ⬜ Not Started |
 | Integration tests with mock user | 100% passing | ⬜ Not Started |
 | E2E tests with real tokens | 100% passing | ⬜ Not Started |
@@ -928,7 +931,7 @@ ds_client = create_datastorage_client("http://localhost:8080", mock_user="test-u
 
 **Document Status**: ✅ APPROVED  
 **Implementation Status**: ⬜ NOT STARTED  
-**Target V1.0**: Yes (All 7 services)  
+**Target V1.0**: Yes (All 8 services: 7 Go + 1 Python)  
 **Confidence**: 95%  
 **Authority**: AUTHORITATIVE - All services MUST follow this pattern
 
