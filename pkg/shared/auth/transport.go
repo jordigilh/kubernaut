@@ -60,20 +60,10 @@ import (
 // Related: DD-AUTH-004 (OAuth-proxy sidecar), DD-HAPI-003 (OpenAPI client mandatory)
 // ========================================
 
-// AuthTransportMode defines how the transport handles authentication
-type AuthTransportMode int
-
-const (
-	// ModeServiceAccount reads token from filesystem (production, E2E, integration with mounted tokens)
-	// Token path: /var/run/secrets/kubernetes.io/serviceaccount/token
-	// Injects: Authorization: Bearer <token>
-	// Used by: ALL services in production and E2E (real Kubernetes with mounted ServiceAccount tokens)
-	ModeServiceAccount AuthTransportMode = iota
-)
 
 // AuthTransport is an http.RoundTripper that handles authentication for DataStorage API calls.
 //
-// Mode: ModeServiceAccount (ONLY mode in production code)
+// Behavior:
 // - Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
 // - Used by: ALL services in production, E2E, and integration (with mounted tokens)
 // - Injects: Authorization: Bearer <token>
@@ -91,10 +81,9 @@ const (
 // For integration tests (mock user headers), use pkg/testutil.NewMockUserTransport().
 type AuthTransport struct {
 	base      http.RoundTripper
-	mode      AuthTransportMode
 	tokenPath string
 
-	// Token caching (for ModeServiceAccount)
+	// Token caching
 	tokenCache      string
 	tokenCacheTime  time.Time
 	tokenCacheMutex sync.RWMutex
@@ -127,11 +116,9 @@ func NewServiceAccountTransportWithBase(base http.RoundTripper) *AuthTransport {
 	}
 	return &AuthTransport{
 		base:      base,
-		mode:      ModeServiceAccount,
 		tokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token",
 	}
 }
-
 
 // RoundTrip implements http.RoundTripper.
 // Injects authentication headers based on the transport mode before forwarding the request.
