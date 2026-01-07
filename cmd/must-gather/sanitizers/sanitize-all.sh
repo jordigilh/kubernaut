@@ -98,7 +98,7 @@ sanitize_file() {
         sed -i -E 's/(sk-proj-|aws-key-|user-key-)[A-Za-z0-9_-]+/\1[REDACTED]/g' "${temp_file}"
         changes_made=true
     fi
-    
+
     # 4b. Redact token= patterns in logs
     if grep -qE 'token[=:][A-Za-z0-9_-]+' "${temp_file}" 2>/dev/null; then
         sed -i -E 's/(token[=:])([A-Za-z0-9_-]+)/\1[REDACTED]/g' "${temp_file}"
@@ -142,7 +142,7 @@ sanitize_file() {
         sed -i -E 's/(DB_PASSWORD|REDIS_PASSWORD|AWS_SECRET_KEY|AWS_SECRET_ACCESS_KEY)([:=][[:space:]]*["\047]?)([^[:space:]"\047]+)/\1\2********/g' "${temp_file}"
         changes_made=true
     fi
-    
+
     # 9b. Redact value: fields in YAML after password/secret parameter names
     if grep -qiE '(PASSWORD|SECRET|KEY|TOKEN)' "${temp_file}" 2>/dev/null; then
         # Match value: "..." or value: ... after password-like parameter names

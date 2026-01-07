@@ -9,16 +9,56 @@ info:
     - BR-STORAGE-001 to BR-STORAGE-020: Audit write API
     - BR-STORAGE-021: Incident query API (READ)
     - BR-STORAGE-024: RFC 7807 error responses
+    - BR-AUDIT-006: Legal hold capability (SOC2 Gap #8)
 
     **Design Decisions**:
     - ADR-031: OpenAPI 3.0+ specification for all stateless REST APIs
     - ADR-032: Data Access Layer Isolation (only Data Storage connects to PostgreSQL)
     - DD-009: Dead Letter Queue fallback on database errors
+    - DD-AUTH-004: OAuth-proxy sidecar for authentication/authorization
+    - DD-AUTH-005: Client authentication pattern (ServiceAccount tokens)
 
     **Architecture**:
     This service is the **ONLY** service that directly accesses PostgreSQL.
     All other services (Context API, Effectiveness Monitor, etc.) access data
     through this REST API Gateway.
+
+    **Authentication & Authorization (Production/E2E)**:
+    All requests to DataStorage are protected by an OAuth-proxy sidecar:
+    
+    1. **Client Authentication**: Services authenticate with Kubernetes ServiceAccount tokens
+       - Token mounted at: `/var/run/secrets/kubernetes.io/serviceaccount/token`
+       - Clients inject: `Authorization: Bearer <token>` header
+       - See DD-AUTH-005 for client implementation patterns
+    
+    2. **OAuth-Proxy Validation**: The sidecar validates requests
+       - Validates JWT token signature and expiration
+       - Performs Subject Access Review (SAR) to check RBAC permissions
+       - Injects `X-Auth-Request-User` header with authenticated user identity
+       - Returns HTTP 401 if token invalid, HTTP 403 if SAR fails
+    
+    3. **Handler Enforcement**: DataStorage handlers extract user identity
+       - Legal hold operations REQUIRE `X-Auth-Request-User` header
+       - HTTP 401 returned if header missing (authentication failed)
+       - User identity stored in audit events for SOC2 compliance
+    
+    **Routing Flow**:
+    ```
+    Client → data-storage-service:8080 (Service)
+           ↓
+         oauth-proxy:8080 (validates token + SAR)
+           ↓
+         DataStorage:8081 (X-Auth-Request-User header)
+    ```
+    
+    **Integration Tests**:
+    Integration tests run without oauth-proxy. Use `testutil.NewMockUserTransport()`
+    to inject mock `X-Auth-Request-User` headers directly.
+    
+    **SOC2 Compliance**:
+    - All legal hold operations attributed to authenticated users
+    - Audit trail captures placed_by/released_by from X-Auth-Request-User
+    - Unauthorized access blocked at oauth-proxy layer (defense-in-depth)
   contact:
     name: Kubernaut Platform Team
     url: https://github.com/jordigilh/kubernaut
@@ -589,6 +629,215 @@ paths:
                 status: 500
                 detail: "database and DLQ both unavailable - please retry"
                 instance: "/api/v1/audit/notifications"
+
+  /api/v1/audit/legal-hold:
+    post:
+      tags:
+        - Audit Write API
+      summary: Place legal hold on audit events
+      description: |
+        Places a legal hold on all audit events for a given correlation_id.
+        Events with legal hold cannot be deleted (enforced by database trigger).
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
+
+        **Behavior**:
+        - Success: Returns 200 OK with legal hold metadata
+        - Validation Error: Returns 400 Bad Request (RFC 7807)
+        - Not Found: Returns 404 Not Found if correlation_id doesn't exist
+        - Unauthorized: Returns 401 if X-User-ID header missing
+
+        **Authorization**: Requires X-User-ID header to track who placed the hold
+
+        **Metrics Emitted**:
+        - `datastorage_legal_hold_successes_total{operation="place"}`
+        - `datastorage_legal_hold_failures_total{reason="missing_correlation_id|unauthorized|..."}`
+      operationId: placeLegalHold
+      security:
+        - oauthProxyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - correlation_id
+                - reason
+              properties:
+                correlation_id:
+                  type: string
+                  description: Correlation ID of events to place legal hold on
+                  example: "remediation-123"
+                reason:
+                  type: string
+                  description: Reason for legal hold (e.g., "litigation", "investigation")
+                  example: "SEC investigation case #2025-001"
+      responses:
+        '200':
+          description: Legal hold placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correlation_id:
+                    type: string
+                  events_affected:
+                    type: integer
+                  placed_by:
+                    type: string
+                  placed_at:
+                    type: string
+                    format: date-time
+                  reason:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: Unauthorized - X-User-ID header required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Not Found - correlation_id doesn't exist
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+    get:
+      tags:
+        - Audit Write API
+      summary: List all active legal holds
+      description: |
+        Returns a list of all active legal holds across all audit events.
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
+
+        **Behavior**:
+        - Success: Returns 200 OK with array of active legal holds
+        - No holds: Returns empty array
+
+        **Authorization**: No authentication required (read-only operation)
+
+        **Metrics Emitted**:
+        - `datastorage_legal_hold_successes_total{operation="list"}`
+      operationId: listLegalHolds
+      responses:
+        '200':
+          description: List of active legal holds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holds:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        correlation_id:
+                          type: string
+                        events_affected:
+                          type: integer
+                        placed_by:
+                          type: string
+                        placed_at:
+                          type: string
+                          format: date-time
+                        reason:
+                          type: string
+                  total:
+                    type: integer
+
+  /api/v1/audit/legal-hold/{correlation_id}:
+    delete:
+      tags:
+        - Audit Write API
+      summary: Release legal hold on audit events
+      description: |
+        Releases a legal hold on all audit events for a given correlation_id.
+        Events can be deleted after legal hold is released.
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
+
+        **Behavior**:
+        - Success: Returns 200 OK with release metadata
+        - Validation Error: Returns 400 Bad Request (RFC 7807)
+        - Not Found: Returns 404 Not Found if legal hold doesn't exist
+        - Unauthorized: Returns 401 if X-User-ID header missing
+
+        **Authorization**: Requires X-User-ID header to track who released the hold
+
+        **Metrics Emitted**:
+        - `datastorage_legal_hold_successes_total{operation="release"}`
+        - `datastorage_legal_hold_failures_total{reason="unauthorized|not_found|..."}`
+      operationId: releaseLegalHold
+      security:
+        - oauthProxyAuth: []
+      parameters:
+        - name: correlation_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Correlation ID of events to release legal hold from
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - release_reason
+              properties:
+                release_reason:
+                  type: string
+                  description: Reason for releasing legal hold
+                  example: "Case closed"
+      responses:
+        '200':
+          description: Legal hold released successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correlation_id:
+                    type: string
+                  events_released:
+                    type: integer
+                  released_by:
+                    type: string
+                  released_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: Unauthorized - X-User-ID header required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Not Found - legal hold doesn't exist for correlation_id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
 
   /health:
     get:
@@ -1458,5 +1707,47 @@ components:
           type: string
           description: "Who is disabling the workflow"
 
-  securitySchemes: {}
+  securitySchemes:
+    oauthProxyAuth:
+      type: apiKey
+      in: header
+      name: X-Auth-Request-User
+      description: |
+        Authenticated user identity injected by OAuth-proxy sidecar.
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Audit trail for legal hold placement/release)
+        **Design Decision**: DD-AUTH-004 (OAuth-proxy sidecar authentication)
+
+        **How It Works**:
+        1. Clients send requests with `Authorization: Bearer <ServiceAccount-token>`
+        2. OAuth-proxy validates JWT token and checks RBAC (Subject Access Review)
+        3. OAuth-proxy injects `X-Auth-Request-User` header with authenticated identity
+        4. DataStorage handlers extract user identity for audit trail attribution
+
+        **Production/E2E Behavior**:
+        - OAuth-proxy automatically injects this header after successful authentication
+        - Clients do NOT manually set this header
+        - DataStorage handlers return HTTP 401 if header missing
+
+        **Integration Test Behavior**:
+        - Tests run without oauth-proxy sidecar
+        - Tests use `testutil.NewMockUserTransport()` to inject mock header
+        - Example: `X-Auth-Request-User: test-service@integration.test`
+
+        **Header Value Format**:
+        - ServiceAccount format: `system:serviceaccount:<namespace>:<name>`
+        - Example: `system:serviceaccount:kubernaut-system:gateway-service`
+        - Integration test format: `<service-name>@integration.test`
+
+        **SOC2 Compliance**:
+        This header enables attribution of legal hold operations to specific
+        authenticated users, meeting SOC2 CC8.1 (tamper-evident logs) and
+        AU-9 (protection of audit information) requirements.
+
+        **See Also**:
+        - DD-AUTH-005: Client authentication pattern documentation
+        - deploy/data-storage/deployment.yaml: OAuth-proxy configuration
+        - pkg/shared/auth/transport.go: Go client authentication
+        - holmesgpt-api/src/clients/datastorage_auth_session.py: Python client
 

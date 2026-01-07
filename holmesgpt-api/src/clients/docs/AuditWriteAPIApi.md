@@ -353,7 +353,7 @@ Events with legal hold cannot be deleted (enforced by database trigger).
 
 ### Example
 
-* Api Key Authentication (userIdHeader):
+* Api Key Authentication (oauthProxyAuth):
 
 ```python
 import datastorage
@@ -373,11 +373,11 @@ configuration = datastorage.Configuration(
 # Examples for each auth method are provided below, use the example that
 # satisfies your auth use case.
 
-# Configure API key authorization: userIdHeader
-configuration.api_key['userIdHeader'] = os.environ["API_KEY"]
+# Configure API key authorization: oauthProxyAuth
+configuration.api_key['oauthProxyAuth'] = os.environ["API_KEY"]
 
 # Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# configuration.api_key_prefix['userIdHeader'] = 'Bearer'
+# configuration.api_key_prefix['oauthProxyAuth'] = 'Bearer'
 
 # Enter a context with an instance of the API client
 with datastorage.ApiClient(configuration) as api_client:
@@ -409,7 +409,7 @@ Name | Type | Description  | Notes
 
 ### Authorization
 
-[userIdHeader](../README.md#userIdHeader)
+[oauthProxyAuth](../README.md#oauthProxyAuth)
 
 ### HTTP request headers
 
@@ -537,7 +537,7 @@ Events can be deleted after legal hold is released.
 
 ### Example
 
-* Api Key Authentication (userIdHeader):
+* Api Key Authentication (oauthProxyAuth):
 
 ```python
 import datastorage
@@ -557,11 +557,11 @@ configuration = datastorage.Configuration(
 # Examples for each auth method are provided below, use the example that
 # satisfies your auth use case.
 
-# Configure API key authorization: userIdHeader
-configuration.api_key['userIdHeader'] = os.environ["API_KEY"]
+# Configure API key authorization: oauthProxyAuth
+configuration.api_key['oauthProxyAuth'] = os.environ["API_KEY"]
 
 # Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# configuration.api_key_prefix['userIdHeader'] = 'Bearer'
+# configuration.api_key_prefix['oauthProxyAuth'] = 'Bearer'
 
 # Enter a context with an instance of the API client
 with datastorage.ApiClient(configuration) as api_client:
@@ -595,7 +595,7 @@ Name | Type | Description  | Notes
 
 ### Authorization
 
-[userIdHeader](../README.md#userIdHeader)
+[oauthProxyAuth](../README.md#oauthProxyAuth)
 
 ### HTTP request headers
 

@@ -664,7 +664,13 @@ type PaginationMetadata struct {
 func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, countSQL string, args []interface{}) ([]*AuditEvent, *PaginationMetadata, error) {
 	// Execute count query for pagination metadata
 	var total int
-	err := r.db.QueryRowContext(ctx, countSQL, args[:len(args)-2]...).Scan(&total) // Exclude limit and offset
+	// Safely exclude limit and offset from count query args
+	// Fix: Prevent panic if args has fewer than 2 elements
+	countArgs := args
+	if len(args) >= 2 {
+		countArgs = args[:len(args)-2] // Exclude limit and offset for count query
+	}
+	err := r.db.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to count audit events: %w", err)
 	}
@@ -753,8 +759,15 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 	}
 
 	// Build pagination metadata
-	limit := int(args[len(args)-2].(int))
-	offset := int(args[len(args)-1].(int))
+	// Safely extract limit and offset from args (default to 0 if not present)
+	limit := 0
+	offset := 0
+	if len(args) >= 2 {
+		limit = int(args[len(args)-2].(int))
+		offset = int(args[len(args)-1].(int))
+	} else if len(args) == 1 {
+		limit = int(args[0].(int))
+	}
 	pagination := &PaginationMetadata{
 		Limit:   limit,
 		Offset:  offset,

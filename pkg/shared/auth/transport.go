@@ -60,7 +60,6 @@ import (
 // Related: DD-AUTH-004 (OAuth-proxy sidecar), DD-HAPI-003 (OpenAPI client mandatory)
 // ========================================
 
-
 // AuthTransport is an http.RoundTripper that handles authentication for DataStorage API calls.
 //
 // Behavior:

@@ -238,55 +238,22 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 }
 
 func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// Find config file
-	configPath := findAIAnalysisKindConfig()
-	if configPath == "" {
-		return fmt.Errorf("kind-aianalysis-config.yaml not found")
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
+	opts := KindClusterOptions{
+		ClusterName:               clusterName,
+		KubeconfigPath:            kubeconfigPath,
+		ConfigPath:                "test/infrastructure/kind-aianalysis-config.yaml",
+		WaitTimeout:               "60s",
+		DeleteExisting:            false,
+		ReuseExisting:             true,                  // Original behavior: reuse if exists
+		CleanupOrphanedContainers: true,                  // Original behavior: cleanup Podman containers on macOS
+	}
+	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+		return err
 	}
 
-	// Check if cluster already exists (with cleanup if partial state)
-	checkCmd := exec.Command("kind", "get", "clusters")
-	output, _ := checkCmd.Output()
-	if containsCluster(string(output), clusterName) {
-		_, _ = fmt.Fprintln(writer, "  Cluster already exists, reusing...")
-		return exportKubeconfig(clusterName, kubeconfigPath, writer)
-	}
-
-	// Clean up any leftover Podman containers from previous failed runs
-	// This fixes issues on macOS where Kind/Podman can leave orphaned containers
-	_, _ = fmt.Fprintln(writer, "  Cleaning up any leftover containers...")
-	cleanupContainers := []string{
-		clusterName + "-control-plane",
-		clusterName + "-worker",
-	}
-	for _, containerName := range cleanupContainers {
-		cleanupCmd := exec.Command("podman", "rm", "-f", containerName)
-		_ = cleanupCmd.Run() // Ignore errors - container may not exist
-	}
-
-	// Ensure kubeconfig directory exists
-	kubeconfigDir := filepath.Dir(kubeconfigPath)
-	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
-		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
-	}
-
-	// Remove any leftover kubeconfig lock file
-	lockFile := kubeconfigPath + ".lock"
-	_ = os.Remove(lockFile) // Ignore errors - file may not exist
-
-	// Create cluster
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", configPath,
-		"--kubeconfig", kubeconfigPath,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kind create cluster failed: %w", err)
-	}
-
-	// Wait for cluster to be ready
+	// Wait for cluster to be ready (original behavior preserved)
 	return waitForClusterReady(kubeconfigPath, writer)
 }
 

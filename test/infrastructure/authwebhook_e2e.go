@@ -24,7 +24,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -43,12 +42,14 @@ import (
 // Parallel Execution Strategy:
 //
 //	Phase 1 (Sequential): Create Kind cluster + namespace (~65s)
-//	Phase 2 (PARALLEL):   Build/Load DS+AW images | Deploy PostgreSQL | Deploy Redis | Deploy Immudb (~90s)
+//	Phase 2 (PARALLEL):   Build/Load DS+AW images | Deploy PostgreSQL | Deploy Redis (~90s)
 //	Phase 3 (Sequential): Run migrations (~30s)
 //	Phase 4 (Sequential): Deploy DataStorage + AuthWebhook services (~45s)
 //	Phase 5 (Sequential): Wait for services ready (~30s)
 //
 // Total time: ~4.5 minutes (vs ~6.0 minutes sequential)
+//
+// Note: ImmuDB removed Jan 6, 2026 - PostgreSQL-only architecture per integration test decision
 // Savings: ~1.5 minutes per E2E run (~25% faster)
 //
 // Based on DataStorage reference implementation (test/infrastructure/datastorage.go:85)
@@ -96,23 +97,30 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading AuthWebhook image")
 	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
-	_, _ = fmt.Fprintln(writer, "  ├── Deploying Redis")
-	_, _ = fmt.Fprintln(writer, "  └── Deploying Immudb (SOC2 audit trails)")
+	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
 
-	type result struct {
+	type result struct{
 		name string
 		err  error
 	}
 
-	results := make(chan result, 5) // Increased from 4 to 5 for Immudb
+	results := make(chan result, 4) // PostgreSQL-only architecture (ImmuDB removed Jan 6, 2026)
 
 	// Goroutine 1: Build and load DataStorage image
+	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
-		var err error
-		if buildErr := buildDataStorageImageWithTag(dataStorageImage, writer); buildErr != nil {
-			err = fmt.Errorf("DS image build failed: %w", buildErr)
-		} else if loadErr := loadDataStorageImageWithTag(clusterName, dataStorageImage, writer); loadErr != nil {
-			err = fmt.Errorf("DS image load failed: %w", loadErr)
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			KindClusterName:  clusterName,
+			BuildContextPath: ".", // Project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		_, err := BuildAndLoadImageToKind(cfg, writer)
+		if err != nil {
+			err = fmt.Errorf("DS image build+load failed: %w", err)
 		}
 		results <- result{name: "DS image", err: err}
 	}()
@@ -140,16 +148,10 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		results <- result{name: "Redis", err: err}
 	}()
 
-	// Goroutine 5: Deploy Immudb (SOC2 audit trails - E2E uses default cluster port)
-	go func() {
-		err := deployImmudbInNamespace(ctx, namespace, kubeconfigPath, writer)
-		results <- result{name: "Immudb", err: err}
-	}()
-
 	// Collect results from all goroutines
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for parallel tasks to complete...")
 	var firstError error
-	for i := 0; i < 5; i++ { // Increased from 4 to 5 for Immudb
+	for i := 0; i < 4; i++ {
 		res := <-results
 		if res.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s: %v\n", res.name, res.err)
@@ -395,64 +397,18 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 }
 
 // createKindClusterWithConfig creates a Kind cluster with a specific config file
+// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string, writer io.Writer) error {
-	// Check if cluster already exists and delete it
-	checkCmd := exec.Command("kind", "get", "clusters")
-	checkOutput, _ := checkCmd.CombinedOutput()
-	if strings.Contains(string(checkOutput), clusterName) {
-		_, _ = fmt.Fprintln(writer, "  ⚠️  Cluster already exists, deleting...")
-		delCmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
-		if output, err := delCmd.CombinedOutput(); err != nil {
-			_, _ = fmt.Fprintf(writer, "⚠️  Failed to delete existing cluster: %s\n", output)
-		}
+	opts := KindClusterOptions{
+		ClusterName:    clusterName,
+		KubeconfigPath: kubeconfigPath,
+		ConfigPath:     configPath,
+		WaitTimeout:    "60s",
+		DeleteExisting: true, // Original behavior: delete if exists
+		ReuseExisting:  false,
 	}
-
-	// Resolve config path relative to workspace root
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-	absoluteConfigPath := filepath.Join(workspaceRoot, configPath)
-	if _, err := os.Stat(absoluteConfigPath); os.IsNotExist(err) {
-		return fmt.Errorf("kind config file not found: %s", absoluteConfigPath)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  📋 Using Kind config: %s\n", absoluteConfigPath)
-
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", absoluteConfigPath,
-		"--kubeconfig", kubeconfigPath,
-		"--wait", "60s")
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Failed to create cluster:\n%s\n", output)
-		return fmt.Errorf("kind create cluster failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  ✅ Kind cluster created")
-
-	// Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
-	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
-	kubeconfigOutput, err := kubeconfigCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to get kubeconfig: %w", err)
-	}
-
-	// Ensure directory exists
-	kubeconfigDir := filepath.Dir(kubeconfigPath)
-	if err := os.MkdirAll(kubeconfigDir, 0755); err != nil {
-		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
-	}
-
-	// Write kubeconfig to file
-	if err := os.WriteFile(kubeconfigPath, kubeconfigOutput, 0600); err != nil {
-		return fmt.Errorf("failed to write kubeconfig: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig written to %s\n", kubeconfigPath)
-	return nil
+	return CreateKindClusterWithConfig(opts, writer)
 }
 
 // LoadKubeconfig loads a kubeconfig file and returns a rest.Config

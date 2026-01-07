@@ -691,3 +691,4 @@ audit_error_stack_trace_captured_total{service="workflowexecution"} 12
 **Authority**: BR-AUDIT-005 v2.0, SOC2 Type II Compliance Requirements
 **References**: DD-AUDIT-003, DD-004, DD-AUDIT-002, TESTING_GUIDELINES.md
 
+

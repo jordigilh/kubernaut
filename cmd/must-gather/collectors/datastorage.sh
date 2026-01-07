@@ -41,7 +41,7 @@ handle_api_error() {
     local endpoint="$1"
     local exit_code="$2"
     local output="$3"
-    
+
     cat > "${OUTPUT_DIR}/error.json" <<EOF
 {
   "error": "Failed to collect data from DataStorage API",
@@ -51,7 +51,7 @@ handle_api_error() {
   "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 }
 EOF
-    
+
     echo "  ⚠️  DataStorage API unavailable: ${output}"
 }
 
@@ -60,9 +60,9 @@ api_request() {
     local endpoint="$1"
     local output_file="$2"
     local description="$3"
-    
+
     echo "  Collecting ${description}..."
-    
+
     # Attempt API call with timeout
     if response=$(curl -s -f --max-time "${TIMEOUT}" "${DATASTORAGE_URL}${endpoint}" 2>&1); then
         # Success - save response

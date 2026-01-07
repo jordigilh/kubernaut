@@ -92,6 +92,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	}()
 
 	// Build DataStorage with dynamic tag in parallel
+	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
+	// uses build-before-cluster optimization pattern (Phase 3 analysis)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
 		err := buildDataStorageImageWithTag(dataStorageImageName, writer)
 		buildResults <- buildResult{name: "DataStorage", err: err}
@@ -173,6 +176,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	}()
 
 	// Load DataStorage image with dynamic tag
+	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
+	// uses build-before-cluster optimization pattern (Phase 3 analysis)
+	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
 	go func() {
 		err := loadDataStorageImageWithTag(clusterName, dataStorageImageName, writer)
 		loadResults <- buildResult{name: "DataStorage", err: err}
@@ -393,48 +399,19 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 }
 
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
-// This follows the standard Kind cluster creation pattern used by other E2E tests
+// createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
+// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+// Authority: docs/handoff/TEST_INFRASTRUCTURE_REFACTORING_TRIAGE_JAN07.md (Phase 1)
 func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "  Creating Kind cluster: %s\n", clusterName)
-
-	// Check if cluster already exists
-	checkCmd := exec.Command("kind", "get", "clusters")
-	output, err := checkCmd.Output()
-	if err == nil && strings.Contains(string(output), clusterName) {
-		_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, skipping creation\n", clusterName)
-		return nil
+	opts := KindClusterOptions{
+		ClusterName:    clusterName,
+		KubeconfigPath: kubeconfigPath,
+		ConfigPath:     "test/infrastructure/kind-signalprocessing-config.yaml",
+		WaitTimeout:    "60s",
+		DeleteExisting: false,
+		ReuseExisting:  true, // Original behavior: reuse if exists
 	}
-
-	// Create Kind cluster with appropriate configuration
-	kindConfig := `
-kind: Cluster
-apiVersion: kind.x-k8s.io/v1alpha4
-nodes:
-- role: control-plane
-  extraPortMappings:
-  - containerPort: 30080
-    hostPort: 8080
-    protocol: TCP
-  - containerPort: 30081
-    hostPort: 18091
-    protocol: TCP
-`
-
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--kubeconfig", kubeconfigPath,
-		"--config", "-",
-	)
-	cmd.Stdin = strings.NewReader(kindConfig)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Kind cluster: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  ✅ Kind cluster created successfully\n")
-	return nil
+	return CreateKindClusterWithConfig(opts, writer)
 }
 
 // ============================================================================
