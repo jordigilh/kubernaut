@@ -18,7 +18,6 @@ package datastorage
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"sort"
@@ -210,21 +209,16 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 
 		// Step 2: Query by correlation_id → verify all 10 events returned
 		testLogger.Info("🔍 Step 2: Query by correlation_id...")
-		resp, err := httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
+		// DD-API-001: Use typed OpenAPI client for queries
+		queryResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		var queryResponse map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok := queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data := *queryResp.JSON200.Data
 		// Note: Self-auditing may add extra events (datastorage.audit.written)
 		// We expect at least 10 events (the ones we created), but may have more
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events")
@@ -232,152 +226,133 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 
 		// Step 3: Query by event_category=gateway (ADR-034) → verify only Gateway events returned
 		testLogger.Info("🔍 Step 3: Query by event_category=gateway...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&event_category=gateway", serviceURL, correlationID))
+		// DD-API-001: Use typed OpenAPI client with event_category filter
+		gatewayCategory := "gateway"
+		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventCategory: &gatewayCategory,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = *queryResp.JSON200.Data
 		Expect(data).To(HaveLen(4), "Should return 4 Gateway events")
 
 		// Verify all events are from gateway event_category (ADR-034)
-		for _, item := range data {
-			event := item.(map[string]interface{})
-			Expect(event["event_category"]).To(Equal("gateway"))
+		for _, event := range data {
+			Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryGateway))
 		}
 		testLogger.Info("✅ Query by event_category=gateway returned 4 events")
 
 		// Step 4: Query by event_type → verify only matching events returned
 		testLogger.Info("🔍 Step 4: Query by event_type=analysis.analysis.completed...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&event_type=analysis.analysis.completed", serviceURL, correlationID))
+		// DD-API-001: Use typed OpenAPI client with event_type filter
+		eventType := "analysis.analysis.completed"
+		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			EventType:     &eventType,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = *queryResp.JSON200.Data
 		Expect(data).To(HaveLen(3), "Should return 3 AIAnalysis events")
 
 		// Verify all events have correct event_type
-		for _, item := range data {
-			event := item.(map[string]interface{})
-			Expect(event["event_type"]).To(Equal("analysis.analysis.completed"))
+		for _, event := range data {
+			Expect(event.EventType).To(Equal("analysis.analysis.completed"))
 		}
 		testLogger.Info("✅ Query by event_type returned 3 events")
 
 		// Step 5: Query by time_range → verify only events in range returned
 		testLogger.Info("🔍 Step 5: Query by time_range...")
 		endTime := time.Now()
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&start_time=%s&end_time=%s",
-			serviceURL, correlationID, startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)))
+		// DD-API-001: Use typed OpenAPI client with time range filters (Since/Until)
+		startTimeStr := startTime.Format(time.RFC3339)
+		endTimeStr := endTime.Format(time.RFC3339)
+		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			Since:         &startTimeStr,
+			Until:         &endTimeStr,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = *queryResp.JSON200.Data
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events within time range")
 		testLogger.Info("✅ Query by time_range returned events", "count", len(data))
 
 		// Step 6: Query with pagination (limit=5, offset=0) → verify first 5 events
 		testLogger.Info("🔍 Step 6: Query with pagination (limit=5, offset=0)...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&limit=5&offset=0", serviceURL, correlationID))
+		// DD-API-001: Use typed OpenAPI client with pagination parameters
+		limit := 5
+		offset := 0
+		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			Limit:         &limit,
+			Offset:        &offset,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = *queryResp.JSON200.Data
 		Expect(data).To(HaveLen(5), "Should return first 5 events")
 
 		// Store first event ID for comparison
-		firstPageFirstEventID := data[0].(map[string]interface{})["event_id"].(string)
+		firstPageFirstEventID := data[0].EventId.String()
 		testLogger.Info("✅ Pagination (limit=5, offset=0) returned 5 events")
 
 		// Step 7: Query with pagination (limit=5, offset=5) → verify next 5 events
 		testLogger.Info("🔍 Step 7: Query with pagination (limit=5, offset=5)...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s&limit=5&offset=5", serviceURL, correlationID))
+		// DD-API-001: Use typed OpenAPI client with offset pagination
+		offset = 5
+		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+			Limit:         &limit,
+			Offset:        &offset,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = *queryResp.JSON200.Data
 		Expect(data).To(HaveLen(5), "Should return next 5 events")
 
 		// Verify second page has different events
-		secondPageFirstEventID := data[0].(map[string]interface{})["event_id"].(string)
+		secondPageFirstEventID := data[0].EventId.String()
 		Expect(secondPageFirstEventID).ToNot(Equal(firstPageFirstEventID), "Second page should have different events")
 		testLogger.Info("✅ Pagination (limit=5, offset=5) returned next 5 events")
 
 		// Step 8: Verify chronological order
 		testLogger.Info("🔍 Step 8: Verifying chronological order...")
-		resp, err = httpClient.Get(fmt.Sprintf("%s/api/v1/audit/events?correlation_id=%s", serviceURL, correlationID))
+		// DD-API-001: Use typed OpenAPI client for chronological verification
+		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+			CorrelationId: &correlationID,
+		})
 		Expect(err).ToNot(HaveOccurred())
-		defer func() {
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
-		}()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
+		Expect(queryResp.JSON200).ToNot(BeNil())
+		Expect(queryResp.JSON200.Data).ToNot(BeNil())
 
-		err = json.NewDecoder(resp.Body).Decode(&queryResponse)
-		Expect(err).ToNot(HaveOccurred())
-
-		data, ok = queryResponse["data"].([]interface{})
-		Expect(ok).To(BeTrue())
+		data = *queryResp.JSON200.Data
 
 		// Sort events by timestamp (API doesn't guarantee order)
 		sort.Slice(data, func(i, j int) bool {
-			eventI := data[i].(map[string]interface{})
-			eventJ := data[j].(map[string]interface{})
-			timestampI, _ := time.Parse(time.RFC3339, eventI["event_timestamp"].(string))
-			timestampJ, _ := time.Parse(time.RFC3339, eventJ["event_timestamp"].(string))
-			return timestampI.Before(timestampJ)
+			return data[i].EventTimestamp.Before(data[j].EventTimestamp)
 		})
 
 		var previousTimestamp time.Time
-		for i, item := range data {
-			event := item.(map[string]interface{})
-			timestampStr := event["event_timestamp"].(string)
-			timestamp, err := time.Parse(time.RFC3339, timestampStr)
-			Expect(err).ToNot(HaveOccurred())
+		for i, event := range data {
+			timestamp := event.EventTimestamp
 
 			if i > 0 {
 				Expect(timestamp.After(previousTimestamp) || timestamp.Equal(previousTimestamp)).To(BeTrue(),
