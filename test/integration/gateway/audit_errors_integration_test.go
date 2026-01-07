@@ -17,12 +17,18 @@ limitations under the License.
 package gateway
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/google/uuid"
+
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
+	// TODO: Uncomment when implementing tests
+	// "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 // =============================================================================
@@ -41,10 +47,10 @@ import (
 // - SOC2_AUDIT_IMPLEMENTATION_PLAN.md: Day 4 - Error Details Standardization
 //
 // Test Strategy (per TESTING_GUIDELINES.md):
-// - Integration tier: Requires real Data Storage + Gateway for error scenarios
-// - OpenAPI client MANDATORY for all audit queries (DD-API-001)
-// - Eventually() MANDATORY for async operations (NO time.Sleep())
-// - Tests MUST Fail() if infrastructure unavailable (NO Skip())
+// - Integration tier: Call Gateway business logic directly (ProcessSignal)
+// - Real infrastructure: K8s API + Data Storage (Podman)
+// - NO HTTP layer: Direct Go function calls, not HTTP requests
+// - Tests MUST Fail() if not implemented (NO Skip())
 //
 // Error Scenarios Tested:
 // - Scenario 1: K8s CRD creation failure (ERR_K8S_*)
@@ -57,100 +63,102 @@ import (
 
 var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", func() {
 	var (
-		gatewayURL   string
+		ctx            context.Context
+		testClient     *K8sTestClient
+		gatewayServer  *gateway.Server
 		dataStorageURL string
+		testNamespace  string
 	)
 
 	BeforeEach(func() {
-		gatewayURL = os.Getenv("GATEWAY_URL")
-		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
+		ctx = context.Background()
+		testClient = SetupK8sTestClient(ctx)
 
-		if gatewayURL == "" {
-			Fail("GATEWAY_URL environment variable not set")
-		}
+		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
+		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			Fail("DATA_STORAGE_URL environment variable not set")
+			dataStorageURL = "http://localhost:18090" // Fallback for manual testing
 		}
 
-		// REQUIRED: Fail if Data Storage unavailable
-		resp, err := http.Get(dataStorageURL + "/health")
-		if err != nil || resp.StatusCode != http.StatusOK {
-			Fail(fmt.Sprintf("Data Storage not available at %s - cannot run audit tests", dataStorageURL))
+		// Verify Data Storage is available
+		healthResp, err := http.Get(dataStorageURL + "/health")
+		if err != nil {
+			Fail(fmt.Sprintf("Data Storage not available at %s: %v", dataStorageURL, err))
+		}
+		defer func() { _ = healthResp.Body.Close() }()
+		if healthResp.StatusCode != http.StatusOK {
+			Fail(fmt.Sprintf("Data Storage health check failed at %s: status %d", dataStorageURL, healthResp.StatusCode))
+		}
+
+		// Setup isolated test namespace
+		testNamespace = fmt.Sprintf("test-error-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
+		EnsureTestNamespace(ctx, testClient, testNamespace)
+		RegisterTestNamespace(testNamespace)
+
+		// Create Gateway server (business logic only, no HTTP server)
+		gatewayServer, err = StartTestGateway(ctx, testClient, dataStorageURL)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	AfterEach(func() {
+		if gatewayServer != nil {
+			_ = gatewayServer.Stop(ctx)
 		}
 	})
 
 	Context("Gap #7 Scenario 1: K8s CRD Creation Failure", func() {
 		It("should emit standardized error_details on CRD creation failure", func() {
-			// Given: Simulated K8s API failure (Gateway will fail to create RR CRD)
-			// Note: This test requires Gateway to be configured to fail CRD creation
-			// TODO: Determine how to trigger K8s CRD creation failure in test environment
+			Fail("IMPLEMENTATION REQUIRED: K8s CRD creation failure error audit\n" +
+				"  Business Flow: Gateway.ProcessSignal() -> K8s API fails -> Audit event emitted\n" +
+				"  Next Steps:\n" +
+				"    1. Create valid NormalizedSignal with invalid namespace\n" +
+				"    2. Call gatewayServer.ProcessSignal(ctx, signal)\n" +
+				"    3. Expect error from K8s API (namespace not found)\n" +
+				"    4. Query Data Storage for 'gateway.crd.creation_failed' audit event\n" +
+				"    5. Validate error_details structure (message, code, component, retry_possible)\n" +
+				"  Tracking: BR-AUDIT-005 Gap #7")
 
-			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger K8s CRD creation failure\n" +
-				"  Per TESTING_GUIDELINES.md: Tests MUST fail (not Skip/PIt) to show missing infrastructure\n" +
-				"  Next step: Implement error injection mechanism for K8s API failures")
-
-			// When: Gateway receives signal but fails to create RR CRD
-			// Then: Should emit gateway.crd.creation_failed with error_details
-
-			// Verify error_details structure (WILL FAIL - not standardized yet)
-			// Expect(eventData).To(HaveKey("error_details"))
-			// errorDetails := eventData["error_details"].(map[string]interface{})
-			// Expect(errorDetails).To(HaveKey("message"))
-			// Expect(errorDetails).To(HaveKey("code"))
-			// Expect(errorDetails).To(HaveKey("component"))
-			// Expect(errorDetails["component"]).To(Equal("gateway"))
-			// Expect(errorDetails).To(HaveKey("retry_possible"))
+			// TODO: Implement test
+			// signal := &types.NormalizedSignal{
+			//     Fingerprint: "test-fingerprint-" + uuid.New().String(),
+			//     AlertName:   "TestAlert",
+			//     Namespace:   "non-existent-namespace", // Will cause K8s API error
+			//     Severity:    "warning",
+			//     ResourceKind: "Pod",
+			//     ResourceName: "test-pod",
+			// }
+			//
+			// _, err := gatewayServer.ProcessSignal(ctx, signal)
+			// Expect(err).To(HaveOccurred()) // Should fail K8s create
+			//
+			// Then query Data Storage for audit event with error_details
 		})
 	})
 
 	Context("Gap #7 Scenario 2: Invalid Signal Format", func() {
 		It("should emit standardized error_details on invalid signal format", func() {
-			// Given: Invalid JSON signal (malformed, missing required fields)
-			invalidPayload := `{
-				"invalid": "structure",
-				"missing": "required_fields"
-			}`
+			Fail("IMPLEMENTATION REQUIRED: Invalid signal format error audit\n" +
+				"  Business Flow: Gateway.ProcessSignal() -> Validation fails -> Audit event emitted\n" +
+				"  Next Steps:\n" +
+				"    1. Create invalid NormalizedSignal (missing required fields)\n" +
+				"    2. Call gatewayServer.ProcessSignal(ctx, invalidSignal)\n" +
+				"    3. Expect validation error\n" +
+				"    4. Query Data Storage for 'gateway.signal.validation_failed' audit event\n" +
+				"    5. Validate error_details structure (message, code, component, retry_possible)\n" +
+				"  Tracking: BR-AUDIT-005 Gap #7")
 
-			// When: Gateway processes invalid signal (business operation)
-			resp, err := postToGateway(gatewayURL+"/webhook/kubernetes-events", invalidPayload)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Gateway should reject with 400 Bad Request (RFC7807 response)
-			// But should also emit audit event for invalid signal
-			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
-
-			// Extract correlation_id if available, otherwise use fingerprint from error response
-			// For invalid signals, Gateway may not create RR, so correlation_id may not exist
-			// This test may need to be adjusted based on Gateway's error handling
-
-			Fail("IMPLEMENTATION REQUIRED: Determine how Gateway emits audit for invalid signals\n" +
-				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing functionality\n" +
-				"  Next step: Define Gateway error audit pattern for invalid payloads")
-
-			// Then: Should have error event with standardized error_details
-			// eventType := "gateway.signal.failed" // or similar
-			// Eventually(func() int {
-			// 	resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			// 		EventType: &eventType,
-			// 		// CorrelationId: &correlationID, // May not exist for invalid signals
-			// 	})
-			// 	if resp.JSON200 == nil {
-			// 		return 0
-			// 	}
-			// 	return *resp.JSON200.Pagination.Total
-			// }, 30*time.Second, 1*time.Second).Should(Equal(1),
-			// 	"Should find exactly 1 error event for invalid signal")
-
-			// Validate Gap #7: error_details (WILL FAIL - not standardized yet)
-			// errorDetails := eventData["error_details"].(map[string]interface{})
-			// Expect(errorDetails).To(HaveKey("message"))
-			// Expect(errorDetails["message"]).To(ContainSubstring("invalid"))
-			// Expect(errorDetails).To(HaveKey("code"))
-			// Expect(errorDetails["code"]).To(Equal("ERR_INVALID_PAYLOAD"))
-			// Expect(errorDetails).To(HaveKey("component"))
-			// Expect(errorDetails["component"]).To(Equal("gateway"))
-			// Expect(errorDetails).To(HaveKey("retry_possible"))
-			// Expect(errorDetails["retry_possible"]).To(BeFalse()) // Invalid payload not retryable
+			// TODO: Implement test
+			// invalidSignal := &types.NormalizedSignal{
+			//     // Missing required fields
+			//     Fingerprint: "", // INVALID: empty fingerprint
+			//     AlertName:   "", // INVALID: empty alert name
+			//     Namespace:   testNamespace,
+			// }
+			//
+			// _, err := gatewayServer.ProcessSignal(ctx, invalidSignal)
+			// Expect(err).To(HaveOccurred()) // Should fail validation
+			//
+			// Then query Data Storage for audit event with error_details
 		})
 	})
 })
