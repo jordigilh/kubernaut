@@ -17,8 +17,7 @@ limitations under the License.
 package gateway
 
 import (
-	"context"
-	"fmt"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,6 +25,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
+
+func TestAuditErrors(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Gateway Audit Errors Suite")
+}
 
 // =============================================================================
 // BR-AUDIT-005 Gap #7: Gateway Adapter Validation Error Audit - Unit Tests
@@ -59,12 +63,10 @@ import (
 
 var _ = Describe("BR-AUDIT-005 Gap #7: Adapter Validation Error Audit", func() {
 	var (
-		ctx              context.Context
 		prometheusAdapter adapters.SignalAdapter
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		prometheusAdapter = adapters.NewPrometheusAdapter()
 	})
 
