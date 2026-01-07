@@ -23,6 +23,7 @@ import (
 	"time"
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // ========================================
@@ -110,14 +111,31 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (DataStorage
 		timeout = 5 * time.Second // Default timeout
 	}
 
-	// Create HTTP client with configured timeout
+	// ========================================
+	// DD-AUTH-005: Inject ServiceAccount authentication transport
+	// This change affects ALL 7 Go services automatically:
+	// - Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator,
+	//   Notification, AuthWebhook, SignalProcessing
+	//
+	// The auth transport:
+	// - Reads ServiceAccount token from /var/run/secrets/kubernetes.io/serviceaccount/token
+	// - Caches token for 5 minutes (reduces filesystem I/O)
+	// - Injects Authorization: Bearer <token> header on every request
+	// - Gracefully degrades if token file doesn't exist (local dev)
+	//
+	// See: docs/architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md
+	// ========================================
+	baseTransport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100,
+		IdleConnTimeout:     90 * time.Second,
+	}
+	authTransport := auth.NewServiceAccountTransportWithBase(baseTransport)
+
+	// Create HTTP client with auth transport
 	httpClient := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			MaxIdleConns:        100,
-			MaxIdleConnsPerHost: 100,
-			IdleConnTimeout:     90 * time.Second,
-		},
+		Timeout:   timeout,
+		Transport: authTransport, // ← ServiceAccount token injection
 	}
 
 	// Create generated OpenAPI client (DD-API-001 compliant)
