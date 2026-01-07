@@ -32,6 +32,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/pkg/webhooks"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
@@ -121,7 +122,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Creating REAL audit store for webhook handlers")
 	// Create OpenAPI DataStorage client adapter for audit writes
-	dsAuditClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
+	mockTransport := testutil.NewMockUserTransport("test-authwebhook@integration.test")
+	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		dataStorageURL,
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create OpenAPI DataStorage audit client: %v", err))
 	}

@@ -56,6 +56,7 @@ import (
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/sony/gobreaker"
 	// +kubebuilder:scaffold:imports
@@ -284,7 +285,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 			"Per DD-TEST-002: Infrastructure should be started programmatically by Go code", dataStorageURL)
 
 	// Create Data Storage client with OpenAPI generated client (DD-API-001)
-	dsClient, err := audit.NewOpenAPIClientAdapter(dataStorageURL, 5*time.Second)
+	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
+	mockTransport := testutil.NewMockUserTransport("test-notification@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		dataStorageURL,
+		5*time.Second,
+		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 
 	// Create REAL buffered audit store
