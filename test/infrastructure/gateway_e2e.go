@@ -179,8 +179,9 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
 
-	// Deploy DataStorage using AIAnalysis's proven pattern
-	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
+	// Deploy DataStorage using the image built in Phase 2 (parallel)
+	// Per DD-TEST-001: Use the UUID-tagged image for E2E isolation
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
@@ -475,8 +476,9 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Deploying DataStorage...")
 
-	// Deploy DataStorage using AIAnalysis's proven pattern
-	if err := deployDataStorage(clusterName, kubeconfigPath, writer); err != nil {
+	// Deploy DataStorage using the image built in Phase 2 (parallel)
+	// Per DD-TEST-001: Use the UUID-tagged image for E2E isolation
+	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
