@@ -17,6 +17,26 @@ limitations under the License.
 """
 Authentication Middleware - Minimal Internal Service
 
+⚠️  **DEPRECATED** (January 7, 2026) ⚠️
+This middleware is DEPRECATED in favor of oauth-proxy sidecar (DD-AUTH-006).
+
+**Current Status**: auth_enabled=False (middleware disabled)
+**Replacement**: OAuth-proxy sidecar handles authentication/authorization
+**Reason**: Keep auth logic OUTSIDE business code (separation of concerns)
+
+**Why Kept**:
+- Emergency fallback if oauth-proxy has issues
+- Reference implementation for token validation
+- May be useful for local development without K8s
+
+**Migration**: DD-AUTH-006 - OAuth-Proxy Sidecar Pattern
+- OAuth-proxy validates ServiceAccount tokens
+- OAuth-proxy performs Subject Access Review (SAR)
+- OAuth-proxy injects X-Auth-Request-User header
+- Python code extracts user for logging (see user_context.py)
+
+---
+
 Business Requirements: BR-HAPI-066, BR-HAPI-067 (Basic Authentication Only)
 
 Provides Kubernetes ServiceAccount token authentication for internal service.
