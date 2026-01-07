@@ -221,6 +221,42 @@ var (
 	)
 )
 
+// Legal Hold metrics
+// SOC2 Gap #8: Legal Hold & Retention
+// BR-AUDIT-006: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
+
+var (
+	// LegalHoldSuccesses tracks successful legal hold operations.
+	//
+	// Labels:
+	//   - operation: Operation type (place, release, list)
+	//
+	// Example Prometheus query:
+	//   rate(datastorage_legal_hold_successes_total{operation="place"}[5m])
+	LegalHoldSuccesses = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "datastorage_legal_hold_successes_total",
+			Help: "Total number of successful legal hold operations by type",
+		},
+		[]string{"operation"},
+	)
+
+	// LegalHoldFailures tracks failed legal hold operations.
+	//
+	// Labels:
+	//   - reason: Failure reason (invalid_request, correlation_id_not_found, db_error, etc.)
+	//
+	// Example Prometheus query:
+	//   rate(datastorage_legal_hold_failures_total[5m]) by (reason)
+	LegalHoldFailures = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "datastorage_legal_hold_failures_total",
+			Help: "Total number of failed legal hold operations by reason",
+		},
+		[]string{"reason"},
+	)
+)
+
 // Query operation metrics
 // BR-STORAGE-007, BR-STORAGE-012, BR-STORAGE-013
 
@@ -335,6 +371,10 @@ type Metrics struct {
 	// Validation metrics
 	ValidationFailures *prometheus.CounterVec // Validation failures by field and reason
 
+	// SOC2 Gap #8: Legal Hold metrics
+	LegalHoldSuccesses *prometheus.CounterVec // Successful legal hold operations
+	LegalHoldFailures  *prometheus.CounterVec // Failed legal hold operations
+
 	// Store registry for testing
 	registry prometheus.Registerer
 }
@@ -363,6 +403,8 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 		m.AuditLagSeconds = AuditLagSeconds       // Reference global
 		m.WriteDuration = WriteDuration           // Reference global
 		m.ValidationFailures = ValidationFailures // Reference global
+		m.LegalHoldSuccesses = LegalHoldSuccesses // Reference global (SOC2 Gap #8)
+		m.LegalHoldFailures = LegalHoldFailures   // Reference global (SOC2 Gap #8)
 	} else {
 		// Testing: Create isolated metrics with custom registry
 		// Testing: Create isolated metrics with full names (DD-005 V3.0: Pattern B)
@@ -400,12 +442,31 @@ func NewMetricsWithRegistry(namespace, subsystem string, reg prometheus.Register
 			[]string{"field", "reason"},
 		)
 
+		// SOC2 Gap #8: Legal Hold metrics (for testing)
+		m.LegalHoldSuccesses = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "datastorage_legal_hold_successes_total",
+				Help: "Total number of successful legal hold operations by type",
+			},
+			[]string{"operation"},
+		)
+
+		m.LegalHoldFailures = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "datastorage_legal_hold_failures_total",
+				Help: "Total number of failed legal hold operations by reason",
+			},
+			[]string{"reason"},
+		)
+
 		// Register ONLY for custom registries (testing)
 		reg.MustRegister(
 			m.AuditTracesTotal,
 			m.AuditLagSeconds,
 			m.WriteDuration,
 			m.ValidationFailures,
+			m.LegalHoldSuccesses,
+			m.LegalHoldFailures,
 		)
 	}
 

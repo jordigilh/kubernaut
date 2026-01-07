@@ -358,6 +358,13 @@ func (s *Server) Handler() http.Handler {
 		s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
 		r.Post("/audit/verify-chain", s.HandleVerifyChain)
 
+		// SOC2 Gap #8: Legal Hold & Retention Policies
+		// BR-AUDIT-006: Legal hold capability for Sarbanes-Oxley and HIPAA compliance
+		s.logger.V(1).Info("Registering /api/v1/audit/legal-hold handlers (SOC2 Gap #8)")
+		r.Post("/audit/legal-hold", s.HandlePlaceLegalHold)
+		r.Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
+		r.Get("/audit/legal-hold", s.HandleListLegalHolds)
+
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema
