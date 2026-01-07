@@ -23,8 +23,13 @@ from ..models.audit_event_request import AuditEventRequest
 from ..models.audit_event_response import AuditEventResponse
 from ..models.audit_events_query_response import AuditEventsQueryResponse
 from ..models.batch_audit_event_response import BatchAuditEventResponse
+from ..models.list_legal_holds200_response import ListLegalHolds200Response
+from ..models.list_legal_holds200_response_holds_inner import ListLegalHolds200ResponseHoldsInner
 from ..models.notification_audit import NotificationAudit
 from ..models.notification_audit_response import NotificationAuditResponse
+from ..models.place_legal_hold_request import PlaceLegalHoldRequest
+from ..models.release_legal_hold200_response import ReleaseLegalHold200Response
+from ..models.release_legal_hold_request import ReleaseLegalHoldRequest
 
 from ..api_client import ApiClient, RequestSerialized
 from ..api_response import ApiResponse
@@ -888,6 +893,535 @@ class AuditWriteAPIApi:
 
 
     @validate_call
+    def list_legal_holds(
+        self,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ListLegalHolds200Response:
+        """List all active legal holds
+
+        Returns a list of all active legal holds across all audit events.  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement)  **Behavior**: - Success: Returns 200 OK with array of active legal holds - No holds: Returns empty array  **Authorization**: No authentication required (read-only operation)  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"list\"}` 
+
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._list_legal_holds_serialize(
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ListLegalHolds200Response",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def list_legal_holds_with_http_info(
+        self,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[ListLegalHolds200Response]:
+        """List all active legal holds
+
+        Returns a list of all active legal holds across all audit events.  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement)  **Behavior**: - Success: Returns 200 OK with array of active legal holds - No holds: Returns empty array  **Authorization**: No authentication required (read-only operation)  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"list\"}` 
+
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._list_legal_holds_serialize(
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ListLegalHolds200Response",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def list_legal_holds_without_preload_content(
+        self,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """List all active legal holds
+
+        Returns a list of all active legal holds across all audit events.  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement)  **Behavior**: - Success: Returns 200 OK with array of active legal holds - No holds: Returns empty array  **Authorization**: No authentication required (read-only operation)  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"list\"}` 
+
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._list_legal_holds_serialize(
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ListLegalHolds200Response",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _list_legal_holds_serialize(
+        self,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json'
+                ]
+            )
+
+
+        # authentication setting
+        _auth_settings: List[str] = [
+        ]
+
+        return self.api_client.param_serialize(
+            method='GET',
+            resource_path='/api/v1/audit/legal-hold',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def place_legal_hold(
+        self,
+        place_legal_hold_request: PlaceLegalHoldRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ListLegalHolds200ResponseHoldsInner:
+        """Place legal hold on audit events
+
+        Places a legal hold on all audit events for a given correlation_id. Events with legal hold cannot be deleted (enforced by database trigger).  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)  **Behavior**: - Success: Returns 200 OK with legal hold metadata - Validation Error: Returns 400 Bad Request (RFC 7807) - Not Found: Returns 404 Not Found if correlation_id doesn't exist - Unauthorized: Returns 401 if X-User-ID header missing  **Authorization**: Requires X-User-ID header to track who placed the hold  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"place\"}` - `datastorage_legal_hold_failures_total{reason=\"missing_correlation_id|unauthorized|...\"}` 
+
+        :param place_legal_hold_request: (required)
+        :type place_legal_hold_request: PlaceLegalHoldRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._place_legal_hold_serialize(
+            place_legal_hold_request=place_legal_hold_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ListLegalHolds200ResponseHoldsInner",
+            '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def place_legal_hold_with_http_info(
+        self,
+        place_legal_hold_request: PlaceLegalHoldRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[ListLegalHolds200ResponseHoldsInner]:
+        """Place legal hold on audit events
+
+        Places a legal hold on all audit events for a given correlation_id. Events with legal hold cannot be deleted (enforced by database trigger).  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)  **Behavior**: - Success: Returns 200 OK with legal hold metadata - Validation Error: Returns 400 Bad Request (RFC 7807) - Not Found: Returns 404 Not Found if correlation_id doesn't exist - Unauthorized: Returns 401 if X-User-ID header missing  **Authorization**: Requires X-User-ID header to track who placed the hold  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"place\"}` - `datastorage_legal_hold_failures_total{reason=\"missing_correlation_id|unauthorized|...\"}` 
+
+        :param place_legal_hold_request: (required)
+        :type place_legal_hold_request: PlaceLegalHoldRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._place_legal_hold_serialize(
+            place_legal_hold_request=place_legal_hold_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ListLegalHolds200ResponseHoldsInner",
+            '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def place_legal_hold_without_preload_content(
+        self,
+        place_legal_hold_request: PlaceLegalHoldRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Place legal hold on audit events
+
+        Places a legal hold on all audit events for a given correlation_id. Events with legal hold cannot be deleted (enforced by database trigger).  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)  **Behavior**: - Success: Returns 200 OK with legal hold metadata - Validation Error: Returns 400 Bad Request (RFC 7807) - Not Found: Returns 404 Not Found if correlation_id doesn't exist - Unauthorized: Returns 401 if X-User-ID header missing  **Authorization**: Requires X-User-ID header to track who placed the hold  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"place\"}` - `datastorage_legal_hold_failures_total{reason=\"missing_correlation_id|unauthorized|...\"}` 
+
+        :param place_legal_hold_request: (required)
+        :type place_legal_hold_request: PlaceLegalHoldRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._place_legal_hold_serialize(
+            place_legal_hold_request=place_legal_hold_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ListLegalHolds200ResponseHoldsInner",
+            '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _place_legal_hold_serialize(
+        self,
+        place_legal_hold_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if place_legal_hold_request is not None:
+            _body_params = place_legal_hold_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json', 
+                    'application/problem+json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'userIdHeader'
+        ]
+
+        return self.api_client.param_serialize(
+            method='POST',
+            resource_path='/api/v1/audit/legal-hold',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
     def query_audit_events(
         self,
         event_type: Annotated[Optional[StrictStr], Field(description="Filter by event type (ADR-034)")] = None,
@@ -1270,6 +1804,305 @@ class AuditWriteAPIApi:
         return self.api_client.param_serialize(
             method='GET',
             resource_path='/api/v1/audit/events',
+            path_params=_path_params,
+            query_params=_query_params,
+            header_params=_header_params,
+            body=_body_params,
+            post_params=_form_params,
+            files=_files,
+            auth_settings=_auth_settings,
+            collection_formats=_collection_formats,
+            _host=_host,
+            _request_auth=_request_auth
+        )
+
+
+
+
+    @validate_call
+    def release_legal_hold(
+        self,
+        correlation_id: Annotated[StrictStr, Field(description="Correlation ID of events to release legal hold from")],
+        release_legal_hold_request: ReleaseLegalHoldRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ReleaseLegalHold200Response:
+        """Release legal hold on audit events
+
+        Releases a legal hold on all audit events for a given correlation_id. Events can be deleted after legal hold is released.  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement)  **Behavior**: - Success: Returns 200 OK with release metadata - Validation Error: Returns 400 Bad Request (RFC 7807) - Not Found: Returns 404 Not Found if legal hold doesn't exist - Unauthorized: Returns 401 if X-User-ID header missing  **Authorization**: Requires X-User-ID header to track who released the hold  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"release\"}` - `datastorage_legal_hold_failures_total{reason=\"unauthorized|not_found|...\"}` 
+
+        :param correlation_id: Correlation ID of events to release legal hold from (required)
+        :type correlation_id: str
+        :param release_legal_hold_request: (required)
+        :type release_legal_hold_request: ReleaseLegalHoldRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._release_legal_hold_serialize(
+            correlation_id=correlation_id,
+            release_legal_hold_request=release_legal_hold_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ReleaseLegalHold200Response",
+            '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        ).data
+
+
+    @validate_call
+    def release_legal_hold_with_http_info(
+        self,
+        correlation_id: Annotated[StrictStr, Field(description="Correlation ID of events to release legal hold from")],
+        release_legal_hold_request: ReleaseLegalHoldRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> ApiResponse[ReleaseLegalHold200Response]:
+        """Release legal hold on audit events
+
+        Releases a legal hold on all audit events for a given correlation_id. Events can be deleted after legal hold is released.  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement)  **Behavior**: - Success: Returns 200 OK with release metadata - Validation Error: Returns 400 Bad Request (RFC 7807) - Not Found: Returns 404 Not Found if legal hold doesn't exist - Unauthorized: Returns 401 if X-User-ID header missing  **Authorization**: Requires X-User-ID header to track who released the hold  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"release\"}` - `datastorage_legal_hold_failures_total{reason=\"unauthorized|not_found|...\"}` 
+
+        :param correlation_id: Correlation ID of events to release legal hold from (required)
+        :type correlation_id: str
+        :param release_legal_hold_request: (required)
+        :type release_legal_hold_request: ReleaseLegalHoldRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._release_legal_hold_serialize(
+            correlation_id=correlation_id,
+            release_legal_hold_request=release_legal_hold_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ReleaseLegalHold200Response",
+            '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        response_data.read()
+        return self.api_client.response_deserialize(
+            response_data=response_data,
+            response_types_map=_response_types_map,
+        )
+
+
+    @validate_call
+    def release_legal_hold_without_preload_content(
+        self,
+        correlation_id: Annotated[StrictStr, Field(description="Correlation ID of events to release legal hold from")],
+        release_legal_hold_request: ReleaseLegalHoldRequest,
+        _request_timeout: Union[
+            None,
+            Annotated[StrictFloat, Field(gt=0)],
+            Tuple[
+                Annotated[StrictFloat, Field(gt=0)],
+                Annotated[StrictFloat, Field(gt=0)]
+            ]
+        ] = None,
+        _request_auth: Optional[Dict[StrictStr, Any]] = None,
+        _content_type: Optional[StrictStr] = None,
+        _headers: Optional[Dict[StrictStr, Any]] = None,
+        _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
+    ) -> RESTResponseType:
+        """Release legal hold on audit events
+
+        Releases a legal hold on all audit events for a given correlation_id. Events can be deleted after legal hold is released.  **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention) **SOC2 Gap**: Gap #8 (Legal Hold enforcement)  **Behavior**: - Success: Returns 200 OK with release metadata - Validation Error: Returns 400 Bad Request (RFC 7807) - Not Found: Returns 404 Not Found if legal hold doesn't exist - Unauthorized: Returns 401 if X-User-ID header missing  **Authorization**: Requires X-User-ID header to track who released the hold  **Metrics Emitted**: - `datastorage_legal_hold_successes_total{operation=\"release\"}` - `datastorage_legal_hold_failures_total{reason=\"unauthorized|not_found|...\"}` 
+
+        :param correlation_id: Correlation ID of events to release legal hold from (required)
+        :type correlation_id: str
+        :param release_legal_hold_request: (required)
+        :type release_legal_hold_request: ReleaseLegalHoldRequest
+        :param _request_timeout: timeout setting for this request. If one
+                                 number provided, it will be total request
+                                 timeout. It can also be a pair (tuple) of
+                                 (connection, read) timeouts.
+        :type _request_timeout: int, tuple(int, int), optional
+        :param _request_auth: set to override the auth_settings for an a single
+                              request; this effectively ignores the
+                              authentication in the spec for a single request.
+        :type _request_auth: dict, optional
+        :param _content_type: force content-type for the request.
+        :type _content_type: str, Optional
+        :param _headers: set to override the headers for a single
+                         request; this effectively ignores the headers
+                         in the spec for a single request.
+        :type _headers: dict, optional
+        :param _host_index: set to override the host_index for a single
+                            request; this effectively ignores the host_index
+                            in the spec for a single request.
+        :type _host_index: int, optional
+        :return: Returns the result object.
+        """ # noqa: E501
+
+        _param = self._release_legal_hold_serialize(
+            correlation_id=correlation_id,
+            release_legal_hold_request=release_legal_hold_request,
+            _request_auth=_request_auth,
+            _content_type=_content_type,
+            _headers=_headers,
+            _host_index=_host_index
+        )
+
+        _response_types_map: Dict[str, Optional[str]] = {
+            '200': "ReleaseLegalHold200Response",
+            '400': "RFC7807Problem",
+            '401': "RFC7807Problem",
+            '404': "RFC7807Problem",
+        }
+        response_data = self.api_client.call_api(
+            *_param,
+            _request_timeout=_request_timeout
+        )
+        return response_data.response
+
+
+    def _release_legal_hold_serialize(
+        self,
+        correlation_id,
+        release_legal_hold_request,
+        _request_auth,
+        _content_type,
+        _headers,
+        _host_index,
+    ) -> RequestSerialized:
+
+        _host = None
+
+        _collection_formats: Dict[str, str] = {
+        }
+
+        _path_params: Dict[str, str] = {}
+        _query_params: List[Tuple[str, str]] = []
+        _header_params: Dict[str, Optional[str]] = _headers or {}
+        _form_params: List[Tuple[str, str]] = []
+        _files: Dict[
+            str, Union[str, bytes, List[str], List[bytes], List[Tuple[str, bytes]]]
+        ] = {}
+        _body_params: Optional[bytes] = None
+
+        # process the path parameters
+        if correlation_id is not None:
+            _path_params['correlation_id'] = correlation_id
+        # process the query parameters
+        # process the header parameters
+        # process the form parameters
+        # process the body parameter
+        if release_legal_hold_request is not None:
+            _body_params = release_legal_hold_request
+
+
+        # set the HTTP header `Accept`
+        if 'Accept' not in _header_params:
+            _header_params['Accept'] = self.api_client.select_header_accept(
+                [
+                    'application/json', 
+                    'application/problem+json'
+                ]
+            )
+
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            _header_params['Content-Type'] = _content_type
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                _header_params['Content-Type'] = _default_content_type
+
+        # authentication setting
+        _auth_settings: List[str] = [
+            'userIdHeader'
+        ]
+
+        return self.api_client.param_serialize(
+            method='DELETE',
+            resource_path='/api/v1/audit/legal-hold/{correlation_id}',
             path_params=_path_params,
             query_params=_query_params,
             header_params=_header_params,

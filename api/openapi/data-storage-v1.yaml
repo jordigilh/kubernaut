@@ -590,6 +590,215 @@ paths:
                 detail: "database and DLQ both unavailable - please retry"
                 instance: "/api/v1/audit/notifications"
 
+  /api/v1/audit/legal-hold:
+    post:
+      tags:
+        - Audit Write API
+      summary: Place legal hold on audit events
+      description: |
+        Places a legal hold on all audit events for a given correlation_id.
+        Events with legal hold cannot be deleted (enforced by database trigger).
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Legal Hold enforcement for Sarbanes-Oxley, HIPAA)
+
+        **Behavior**:
+        - Success: Returns 200 OK with legal hold metadata
+        - Validation Error: Returns 400 Bad Request (RFC 7807)
+        - Not Found: Returns 404 Not Found if correlation_id doesn't exist
+        - Unauthorized: Returns 401 if X-User-ID header missing
+
+        **Authorization**: Requires X-User-ID header to track who placed the hold
+
+        **Metrics Emitted**:
+        - `datastorage_legal_hold_successes_total{operation="place"}`
+        - `datastorage_legal_hold_failures_total{reason="missing_correlation_id|unauthorized|..."}`
+      operationId: placeLegalHold
+      security:
+        - userIdHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - correlation_id
+                - reason
+              properties:
+                correlation_id:
+                  type: string
+                  description: Correlation ID of events to place legal hold on
+                  example: "remediation-123"
+                reason:
+                  type: string
+                  description: Reason for legal hold (e.g., "litigation", "investigation")
+                  example: "SEC investigation case #2025-001"
+      responses:
+        '200':
+          description: Legal hold placed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correlation_id:
+                    type: string
+                  events_affected:
+                    type: integer
+                  placed_by:
+                    type: string
+                  placed_at:
+                    type: string
+                    format: date-time
+                  reason:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: Unauthorized - X-User-ID header required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Not Found - correlation_id doesn't exist
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+    get:
+      tags:
+        - Audit Write API
+      summary: List all active legal holds
+      description: |
+        Returns a list of all active legal holds across all audit events.
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
+
+        **Behavior**:
+        - Success: Returns 200 OK with array of active legal holds
+        - No holds: Returns empty array
+
+        **Authorization**: No authentication required (read-only operation)
+
+        **Metrics Emitted**:
+        - `datastorage_legal_hold_successes_total{operation="list"}`
+      operationId: listLegalHolds
+      responses:
+        '200':
+          description: List of active legal holds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  holds:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        correlation_id:
+                          type: string
+                        events_affected:
+                          type: integer
+                        placed_by:
+                          type: string
+                        placed_at:
+                          type: string
+                          format: date-time
+                        reason:
+                          type: string
+                  total:
+                    type: integer
+
+  /api/v1/audit/legal-hold/{correlation_id}:
+    delete:
+      tags:
+        - Audit Write API
+      summary: Release legal hold on audit events
+      description: |
+        Releases a legal hold on all audit events for a given correlation_id.
+        Events can be deleted after legal hold is released.
+
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Legal Hold enforcement)
+
+        **Behavior**:
+        - Success: Returns 200 OK with release metadata
+        - Validation Error: Returns 400 Bad Request (RFC 7807)
+        - Not Found: Returns 404 Not Found if legal hold doesn't exist
+        - Unauthorized: Returns 401 if X-User-ID header missing
+
+        **Authorization**: Requires X-User-ID header to track who released the hold
+
+        **Metrics Emitted**:
+        - `datastorage_legal_hold_successes_total{operation="release"}`
+        - `datastorage_legal_hold_failures_total{reason="unauthorized|not_found|..."}`
+      operationId: releaseLegalHold
+      security:
+        - userIdHeader: []
+      parameters:
+        - name: correlation_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Correlation ID of events to release legal hold from
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - release_reason
+              properties:
+                release_reason:
+                  type: string
+                  description: Reason for releasing legal hold
+                  example: "Case closed"
+      responses:
+        '200':
+          description: Legal hold released successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  correlation_id:
+                    type: string
+                  events_released:
+                    type: integer
+                  released_by:
+                    type: string
+                  released_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: Unauthorized - X-User-ID header required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '404':
+          description: Not Found - legal hold doesn't exist for correlation_id
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
   /health:
     get:
       tags:
@@ -1458,5 +1667,17 @@ components:
           type: string
           description: "Who is disabling the workflow"
 
-  securitySchemes: {}
+  securitySchemes:
+    userIdHeader:
+      type: apiKey
+      in: header
+      name: X-User-ID
+      description: |
+        User ID for authorization tracking (legal hold operations).
+        
+        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
+        **SOC2 Gap**: Gap #8 (Audit trail for legal hold placement/release)
+        
+        This header is required for legal hold operations to track who placed
+        or released a legal hold for compliance and audit purposes.
 

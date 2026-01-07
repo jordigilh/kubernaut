@@ -119,18 +119,18 @@ var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workfl
 			testLogger.Info("Test: Workflow Search Audit Trail Generation")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// ARRANGE: Seed workflow catalog with test workflow
-		testLogger.Info("📦 Seeding workflow catalog with test workflow...")
+			// ARRANGE: Seed workflow catalog with test workflow
+			testLogger.Info("📦 Seeding workflow catalog with test workflow...")
 
-		workflowID := fmt.Sprintf("wf-audit-test-%s", testID)
+			workflowID := fmt.Sprintf("wf-audit-test-%s", testID)
 
-		// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
-		// to prevent cross-contamination in shared database
-		uniqueSignalType := fmt.Sprintf("OOMKilled-p%d", GinkgoParallelProcess())
+			// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
+			// to prevent cross-contamination in shared database
+			uniqueSignalType := fmt.Sprintf("OOMKilled-p%d", GinkgoParallelProcess())
 
-		// ADR-043 compliant workflow-schema.yaml content
-		// V1.0: 4 mandatory labels (severity, component, priority, environment)
-		workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
+			// ADR-043 compliant workflow-schema.yaml content
+			// V1.0: 4 mandatory labels (severity, component, priority, environment)
+			workflowSchemaContent := fmt.Sprintf(`apiVersion: kubernaut.io/v1alpha1
 kind: WorkflowSchema
 metadata:
   workflow_id: %s
@@ -171,18 +171,18 @@ execution:
 				"maintainer":       "oncall@example.com",
 				"content":          workflowSchemaContent,
 				"content_hash":     contentHashHex, // Required field
-			"execution_engine": "tekton",       // Required field
-			"status":           "active",       // Required field
-			// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
-			// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
-			"labels": map[string]interface{}{
-				"signal_type": uniqueSignalType, // mandatory - unique per process
-				"severity":    "critical",       // mandatory
-				"environment": "production",     // mandatory
-				"priority":    "P0",             // mandatory
-				"component":   "deployment",     // mandatory
-			},
-			"container_image": containerImage,
+				"execution_engine": "tekton",       // Required field
+				"status":           "active",       // Required field
+				// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
+				// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
+				"labels": map[string]interface{}{
+					"signal_type": uniqueSignalType, // mandatory - unique per process
+					"severity":    "critical",       // mandatory
+					"environment": "production",     // mandatory
+					"priority":    "P0",             // mandatory
+					"component":   "deployment",     // mandatory
+				},
+				"container_image": containerImage,
 			}
 
 			workflowJSON, err := json.Marshal(workflow)
@@ -208,22 +208,22 @@ execution:
 
 			testLogger.Info("✅ Test workflow created", "workflow_id", workflowID)
 
-		// ACT: Perform workflow search with remediation_id
-		testLogger.Info("🔍 Performing workflow search with remediation_id...")
+			// ACT: Perform workflow search with remediation_id
+			testLogger.Info("🔍 Performing workflow search with remediation_id...")
 
-		remediationID := fmt.Sprintf("rem-%s", testID)
-		// DD-E2E-DATA-POLLUTION-001: Search using unique signal_type per parallel process
-		searchRequest := map[string]interface{}{
-			"remediation_id": remediationID,
-			"filters": map[string]interface{}{
-				"signal_type": uniqueSignalType, // mandatory - unique per process
-				"severity":    "critical",       // mandatory
-				"component":   "deployment",     // mandatory
-				"environment": "production",     // mandatory
-				"priority":    "P0",             // mandatory
-			},
-			"top_k": 5,
-		}
+			remediationID := fmt.Sprintf("rem-%s", testID)
+			// DD-E2E-DATA-POLLUTION-001: Search using unique signal_type per parallel process
+			searchRequest := map[string]interface{}{
+				"remediation_id": remediationID,
+				"filters": map[string]interface{}{
+					"signal_type": uniqueSignalType, // mandatory - unique per process
+					"severity":    "critical",       // mandatory
+					"component":   "deployment",     // mandatory
+					"environment": "production",     // mandatory
+					"priority":    "P0",             // mandatory
+				},
+				"top_k": 5,
+			}
 
 			searchJSON, err := json.Marshal(searchRequest)
 			Expect(err).ToNot(HaveOccurred())
@@ -349,8 +349,8 @@ execution:
 			Expect(filters["severity"]).To(Equal("critical"), "Filters should capture severity")
 			Expect(filters["component"]).To(Equal("deployment"), "Filters should capture component")
 
-		Expect(queryData["top_k"]).To(Equal(float64(5)),
-			"Query top_k should match search request (DD-TESTING-001)")
+			Expect(queryData["top_k"]).To(Equal(float64(5)),
+				"Query top_k should match search request (DD-TESTING-001)")
 
 			// Verify results metadata (BR-AUDIT-027)
 			resultsData, ok := eventDataMap["results"].(map[string]interface{})
@@ -367,21 +367,21 @@ execution:
 			Expect(firstWorkflow["workflow_id"]).ToNot(BeEmpty(),
 				"Workflow should have workflow_id")
 
-		// V1.0: confidence only (DD-WORKFLOW-004 v2.0)
-		scoring, ok := firstWorkflow["scoring"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "workflow should contain 'scoring' object")
-		
-		// DD-TESTING-001: Deterministic confidence calculation based on known test data
-		// Formula: (base_score + detected_label_boost + custom_label_boost - penalty) / 10.0
-		// Test workflow has:
-		//   - 5 mandatory labels (signal_type, severity, component, environment, priority) → 5.0 base
-		//   - NO DetectedLabels → 0.0 boost
-		//   - NO CustomLabels → 0.0 boost
-		//   - NO penalties → 0.0
-		// Expected: (5.0 + 0.0 + 0.0 - 0.0) / 10.0 = 0.5
-		expectedConfidence := 0.5
-		Expect(scoring["confidence"]).To(Equal(expectedConfidence),
-			"Confidence should be exactly 0.5 for mandatory-only label match (DD-TESTING-001)")
+			// V1.0: confidence only (DD-WORKFLOW-004 v2.0)
+			scoring, ok := firstWorkflow["scoring"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "workflow should contain 'scoring' object")
+
+			// DD-TESTING-001: Deterministic confidence calculation based on known test data
+			// Formula: (base_score + detected_label_boost + custom_label_boost - penalty) / 10.0
+			// Test workflow has:
+			//   - 5 mandatory labels (signal_type, severity, component, environment, priority) → 5.0 base
+			//   - NO DetectedLabels → 0.0 boost
+			//   - NO CustomLabels → 0.0 boost
+			//   - NO penalties → 0.0
+			// Expected: (5.0 + 0.0 + 0.0 - 0.0) / 10.0 = 0.5
+			expectedConfidence := 0.5
+			Expect(scoring["confidence"]).To(Equal(expectedConfidence),
+				"Confidence should be exactly 0.5 for mandatory-only label match (DD-TESTING-001)")
 
 			// Verify search metadata (BR-AUDIT-028)
 			searchMetadata, ok := eventDataMap["search_metadata"].(map[string]interface{})

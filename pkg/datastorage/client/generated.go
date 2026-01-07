@@ -18,6 +18,10 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+const (
+	UserIdHeaderScopes = "userIdHeader.Scopes"
+)
+
 // Defines values for AuditEventEventCategory.
 const (
 	AuditEventEventCategoryAnalysis         AuditEventEventCategory = "analysis"
@@ -196,7 +200,8 @@ type AuditEvent struct {
 	// EventAction Action performed (ADR-034)
 	EventAction string `json:"event_action"`
 
-	// EventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
+	// EventCategory Service-level event category (ADR-034 v1.4).
+	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
 	// - notification: Notification Service
@@ -205,7 +210,7 @@ type AuditEvent struct {
 	// - workflow: Workflow Catalog Service
 	// - execution: Remediation Execution Service
 	// - orchestration: Remediation Orchestrator Service
-	// - webhook: Webhook Service (Authentication/Attribution)
+	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
 	EventCategory AuditEventEventCategory `json:"event_category"`
 
 	// EventData Service-specific event data as structured Go type.
@@ -236,7 +241,8 @@ type AuditEvent struct {
 	Version string `json:"version"`
 }
 
-// AuditEventEventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
+// AuditEventEventCategory Service-level event category (ADR-034 v1.4).
+// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
 // - notification: Notification Service
@@ -245,7 +251,7 @@ type AuditEvent struct {
 // - workflow: Workflow Catalog Service
 // - execution: Remediation Execution Service
 // - orchestration: Remediation Orchestrator Service
-// - webhook: Webhook Service (Authentication/Attribution)
+// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
 type AuditEventEventCategory string
 
 // AuditEventEventOutcome Result of the event
@@ -264,7 +270,8 @@ type AuditEventRequest struct {
 	// EventAction Action performed (ADR-034)
 	EventAction string `json:"event_action"`
 
-	// EventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
+	// EventCategory Service-level event category (ADR-034 v1.4).
+	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
 	// - notification: Notification Service
@@ -273,7 +280,7 @@ type AuditEventRequest struct {
 	// - workflow: Workflow Catalog Service
 	// - execution: Remediation Execution Service
 	// - orchestration: Remediation Orchestrator Service
-	// - webhook: Webhook Service (Authentication/Attribution)
+	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
 
 	// EventData Service-specific event data as structured Go type.
@@ -300,7 +307,8 @@ type AuditEventRequest struct {
 	Version string `json:"version"`
 }
 
-// AuditEventRequestEventCategory Service-level event category (ADR-034 v1.2 + DD-WEBHOOK-003).
+// AuditEventRequestEventCategory Service-level event category (ADR-034 v1.4).
+// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
 // - notification: Notification Service
@@ -309,7 +317,7 @@ type AuditEventRequest struct {
 // - workflow: Workflow Catalog Service
 // - execution: Remediation Execution Service
 // - orchestration: Remediation Orchestrator Service
-// - webhook: Webhook Service (Authentication/Attribution)
+// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
 type AuditEventRequestEventCategory string
 
 // AuditEventRequestEventOutcome Result of the event
@@ -824,6 +832,21 @@ type QueryAuditEventsParamsEventOutcome string
 // CreateAuditEventsBatchJSONBody defines parameters for CreateAuditEventsBatch.
 type CreateAuditEventsBatchJSONBody = []AuditEventRequest
 
+// PlaceLegalHoldJSONBody defines parameters for PlaceLegalHold.
+type PlaceLegalHoldJSONBody struct {
+	// CorrelationId Correlation ID of events to place legal hold on
+	CorrelationId string `json:"correlation_id"`
+
+	// Reason Reason for legal hold (e.g., "litigation", "investigation")
+	Reason string `json:"reason"`
+}
+
+// ReleaseLegalHoldJSONBody defines parameters for ReleaseLegalHold.
+type ReleaseLegalHoldJSONBody struct {
+	// ReleaseReason Reason for releasing legal hold
+	ReleaseReason string `json:"release_reason"`
+}
+
 // ListWorkflowsParams defines parameters for ListWorkflows.
 type ListWorkflowsParams struct {
 	Status      *ListWorkflowsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
@@ -842,6 +865,12 @@ type CreateAuditEventJSONRequestBody = AuditEventRequest
 
 // CreateAuditEventsBatchJSONRequestBody defines body for CreateAuditEventsBatch for application/json ContentType.
 type CreateAuditEventsBatchJSONRequestBody = CreateAuditEventsBatchJSONBody
+
+// PlaceLegalHoldJSONRequestBody defines body for PlaceLegalHold for application/json ContentType.
+type PlaceLegalHoldJSONRequestBody PlaceLegalHoldJSONBody
+
+// ReleaseLegalHoldJSONRequestBody defines body for ReleaseLegalHold for application/json ContentType.
+type ReleaseLegalHoldJSONRequestBody ReleaseLegalHoldJSONBody
 
 // CreateNotificationAuditJSONRequestBody defines body for CreateNotificationAudit for application/json ContentType.
 type CreateNotificationAuditJSONRequestBody = NotificationAudit
@@ -944,6 +973,19 @@ type ClientInterface interface {
 
 	CreateAuditEventsBatch(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListLegalHolds request
+	ListLegalHolds(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PlaceLegalHoldWithBody request with any body
+	PlaceLegalHoldWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	PlaceLegalHold(ctx context.Context, body PlaceLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReleaseLegalHoldWithBody request with any body
+	ReleaseLegalHoldWithBody(ctx context.Context, correlationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ReleaseLegalHold(ctx context.Context, correlationId string, body ReleaseLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateNotificationAuditWithBody request with any body
 	CreateNotificationAuditWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1038,6 +1080,66 @@ func (c *Client) CreateAuditEventsBatchWithBody(ctx context.Context, contentType
 
 func (c *Client) CreateAuditEventsBatch(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateAuditEventsBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListLegalHolds(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListLegalHoldsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PlaceLegalHoldWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPlaceLegalHoldRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PlaceLegalHold(ctx context.Context, body PlaceLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPlaceLegalHoldRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReleaseLegalHoldWithBody(ctx context.Context, correlationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReleaseLegalHoldRequestWithBody(c.Server, correlationId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReleaseLegalHold(ctx context.Context, correlationId string, body ReleaseLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReleaseLegalHoldRequest(c.Server, correlationId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1488,6 +1590,120 @@ func NewCreateAuditEventsBatchRequestWithBody(server string, contentType string,
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListLegalHoldsRequest generates requests for ListLegalHolds
+func NewListLegalHoldsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/legal-hold")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPlaceLegalHoldRequest calls the generic PlaceLegalHold builder with application/json body
+func NewPlaceLegalHoldRequest(server string, body PlaceLegalHoldJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPlaceLegalHoldRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPlaceLegalHoldRequestWithBody generates requests for PlaceLegalHold with any type of body
+func NewPlaceLegalHoldRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/legal-hold")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReleaseLegalHoldRequest calls the generic ReleaseLegalHold builder with application/json body
+func NewReleaseLegalHoldRequest(server string, correlationId string, body ReleaseLegalHoldJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReleaseLegalHoldRequestWithBody(server, correlationId, "application/json", bodyReader)
+}
+
+// NewReleaseLegalHoldRequestWithBody generates requests for ReleaseLegalHold with any type of body
+func NewReleaseLegalHoldRequestWithBody(server string, correlationId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "correlation_id", runtime.ParamLocationPath, correlationId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/legal-hold/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -2038,6 +2254,19 @@ type ClientWithResponsesInterface interface {
 
 	CreateAuditEventsBatchWithResponse(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAuditEventsBatchResponse, error)
 
+	// ListLegalHoldsWithResponse request
+	ListLegalHoldsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListLegalHoldsResponse, error)
+
+	// PlaceLegalHoldWithBodyWithResponse request with any body
+	PlaceLegalHoldWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PlaceLegalHoldResponse, error)
+
+	PlaceLegalHoldWithResponse(ctx context.Context, body PlaceLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*PlaceLegalHoldResponse, error)
+
+	// ReleaseLegalHoldWithBodyWithResponse request with any body
+	ReleaseLegalHoldWithBodyWithResponse(ctx context.Context, correlationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReleaseLegalHoldResponse, error)
+
+	ReleaseLegalHoldWithResponse(ctx context.Context, correlationId string, body ReleaseLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*ReleaseLegalHoldResponse, error)
+
 	// CreateNotificationAuditWithBodyWithResponse request with any body
 	CreateNotificationAuditWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateNotificationAuditResponse, error)
 
@@ -2145,6 +2374,98 @@ func (r CreateAuditEventsBatchResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateAuditEventsBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListLegalHoldsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		Holds *[]struct {
+			CorrelationId  *string    `json:"correlation_id,omitempty"`
+			EventsAffected *int       `json:"events_affected,omitempty"`
+			PlacedAt       *time.Time `json:"placed_at,omitempty"`
+			PlacedBy       *string    `json:"placed_by,omitempty"`
+			Reason         *string    `json:"reason,omitempty"`
+		} `json:"holds,omitempty"`
+		Total *int `json:"total,omitempty"`
+	}
+}
+
+// Status returns HTTPResponse.Status
+func (r ListLegalHoldsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListLegalHoldsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PlaceLegalHoldResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		CorrelationId  *string    `json:"correlation_id,omitempty"`
+		EventsAffected *int       `json:"events_affected,omitempty"`
+		PlacedAt       *time.Time `json:"placed_at,omitempty"`
+		PlacedBy       *string    `json:"placed_by,omitempty"`
+		Reason         *string    `json:"reason,omitempty"`
+	}
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON401 *RFC7807Problem
+	ApplicationproblemJSON404 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r PlaceLegalHoldResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PlaceLegalHoldResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReleaseLegalHoldResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *struct {
+		CorrelationId  *string    `json:"correlation_id,omitempty"`
+		EventsReleased *int       `json:"events_released,omitempty"`
+		ReleasedAt     *time.Time `json:"released_at,omitempty"`
+		ReleasedBy     *string    `json:"released_by,omitempty"`
+	}
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON401 *RFC7807Problem
+	ApplicationproblemJSON404 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r ReleaseLegalHoldResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReleaseLegalHoldResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2459,6 +2780,49 @@ func (c *ClientWithResponses) CreateAuditEventsBatchWithResponse(ctx context.Con
 	return ParseCreateAuditEventsBatchResponse(rsp)
 }
 
+// ListLegalHoldsWithResponse request returning *ListLegalHoldsResponse
+func (c *ClientWithResponses) ListLegalHoldsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListLegalHoldsResponse, error) {
+	rsp, err := c.ListLegalHolds(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListLegalHoldsResponse(rsp)
+}
+
+// PlaceLegalHoldWithBodyWithResponse request with arbitrary body returning *PlaceLegalHoldResponse
+func (c *ClientWithResponses) PlaceLegalHoldWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PlaceLegalHoldResponse, error) {
+	rsp, err := c.PlaceLegalHoldWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePlaceLegalHoldResponse(rsp)
+}
+
+func (c *ClientWithResponses) PlaceLegalHoldWithResponse(ctx context.Context, body PlaceLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*PlaceLegalHoldResponse, error) {
+	rsp, err := c.PlaceLegalHold(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePlaceLegalHoldResponse(rsp)
+}
+
+// ReleaseLegalHoldWithBodyWithResponse request with arbitrary body returning *ReleaseLegalHoldResponse
+func (c *ClientWithResponses) ReleaseLegalHoldWithBodyWithResponse(ctx context.Context, correlationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReleaseLegalHoldResponse, error) {
+	rsp, err := c.ReleaseLegalHoldWithBody(ctx, correlationId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReleaseLegalHoldResponse(rsp)
+}
+
+func (c *ClientWithResponses) ReleaseLegalHoldWithResponse(ctx context.Context, correlationId string, body ReleaseLegalHoldJSONRequestBody, reqEditors ...RequestEditorFn) (*ReleaseLegalHoldResponse, error) {
+	rsp, err := c.ReleaseLegalHold(ctx, correlationId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReleaseLegalHoldResponse(rsp)
+}
+
 // CreateNotificationAuditWithBodyWithResponse request with arbitrary body returning *CreateNotificationAuditResponse
 func (c *ClientWithResponses) CreateNotificationAuditWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateNotificationAuditResponse, error) {
 	rsp, err := c.CreateNotificationAuditWithBody(ctx, contentType, body, reqEditors...)
@@ -2691,6 +3055,146 @@ func ParseCreateAuditEventsBatchResponse(rsp *http.Response) (*CreateAuditEvents
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListLegalHoldsResponse parses an HTTP response from a ListLegalHoldsWithResponse call
+func ParseListLegalHoldsResponse(rsp *http.Response) (*ListLegalHoldsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListLegalHoldsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			Holds *[]struct {
+				CorrelationId  *string    `json:"correlation_id,omitempty"`
+				EventsAffected *int       `json:"events_affected,omitempty"`
+				PlacedAt       *time.Time `json:"placed_at,omitempty"`
+				PlacedBy       *string    `json:"placed_by,omitempty"`
+				Reason         *string    `json:"reason,omitempty"`
+			} `json:"holds,omitempty"`
+			Total *int `json:"total,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePlaceLegalHoldResponse parses an HTTP response from a PlaceLegalHoldWithResponse call
+func ParsePlaceLegalHoldResponse(rsp *http.Response) (*PlaceLegalHoldResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PlaceLegalHoldResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			CorrelationId  *string    `json:"correlation_id,omitempty"`
+			EventsAffected *int       `json:"events_affected,omitempty"`
+			PlacedAt       *time.Time `json:"placed_at,omitempty"`
+			PlacedBy       *string    `json:"placed_by,omitempty"`
+			Reason         *string    `json:"reason,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReleaseLegalHoldResponse parses an HTTP response from a ReleaseLegalHoldWithResponse call
+func ParseReleaseLegalHoldResponse(rsp *http.Response) (*ReleaseLegalHoldResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReleaseLegalHoldResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest struct {
+			CorrelationId  *string    `json:"correlation_id,omitempty"`
+			EventsReleased *int       `json:"events_released,omitempty"`
+			ReleasedAt     *time.Time `json:"released_at,omitempty"`
+			ReleasedBy     *string    `json:"released_by,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	}
 

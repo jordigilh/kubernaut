@@ -105,7 +105,10 @@ Class | Method | HTTP request | Description
 *AuditWriteAPIApi* | [**create_audit_event**](docs/AuditWriteAPIApi.md#create_audit_event) | **POST** /api/v1/audit/events | Create unified audit event
 *AuditWriteAPIApi* | [**create_audit_events_batch**](docs/AuditWriteAPIApi.md#create_audit_events_batch) | **POST** /api/v1/audit/events/batch | Create audit events batch
 *AuditWriteAPIApi* | [**create_notification_audit**](docs/AuditWriteAPIApi.md#create_notification_audit) | **POST** /api/v1/audit/notifications | Create notification audit record
+*AuditWriteAPIApi* | [**list_legal_holds**](docs/AuditWriteAPIApi.md#list_legal_holds) | **GET** /api/v1/audit/legal-hold | List all active legal holds
+*AuditWriteAPIApi* | [**place_legal_hold**](docs/AuditWriteAPIApi.md#place_legal_hold) | **POST** /api/v1/audit/legal-hold | Place legal hold on audit events
 *AuditWriteAPIApi* | [**query_audit_events**](docs/AuditWriteAPIApi.md#query_audit_events) | **GET** /api/v1/audit/events | Query audit events
+*AuditWriteAPIApi* | [**release_legal_hold**](docs/AuditWriteAPIApi.md#release_legal_hold) | **DELETE** /api/v1/audit/legal-hold/{correlation_id} | Release legal hold on audit events
 *HealthApi* | [**health_check**](docs/HealthApi.md#health_check) | **GET** /health | Overall health check
 *HealthApi* | [**liveness_check**](docs/HealthApi.md#liveness_check) | **GET** /health/live | Liveness check
 *HealthApi* | [**readiness_check**](docs/HealthApi.md#readiness_check) | **GET** /health/ready | Readiness check
@@ -130,10 +133,15 @@ Class | Method | HTTP request | Description
  - [DetectedLabels](docs/DetectedLabels.md)
  - [HealthCheck200Response](docs/HealthCheck200Response.md)
  - [HealthCheck503Response](docs/HealthCheck503Response.md)
+ - [ListLegalHolds200Response](docs/ListLegalHolds200Response.md)
+ - [ListLegalHolds200ResponseHoldsInner](docs/ListLegalHolds200ResponseHoldsInner.md)
  - [MandatoryLabels](docs/MandatoryLabels.md)
  - [NotificationAudit](docs/NotificationAudit.md)
  - [NotificationAuditResponse](docs/NotificationAuditResponse.md)
+ - [PlaceLegalHoldRequest](docs/PlaceLegalHoldRequest.md)
  - [RFC7807Problem](docs/RFC7807Problem.md)
+ - [ReleaseLegalHold200Response](docs/ReleaseLegalHold200Response.md)
+ - [ReleaseLegalHoldRequest](docs/ReleaseLegalHoldRequest.md)
  - [RemediationWorkflow](docs/RemediationWorkflow.md)
  - [WorkflowDisableRequest](docs/WorkflowDisableRequest.md)
  - [WorkflowListResponse](docs/WorkflowListResponse.md)
@@ -147,7 +155,14 @@ Class | Method | HTTP request | Description
 <a id="documentation-for-authorization"></a>
 ## Documentation For Authorization
 
-Endpoints do not require authorization.
+
+Authentication schemes defined for the API:
+<a id="userIdHeader"></a>
+### userIdHeader
+
+- **Type**: API key
+- **API key parameter name**: X-User-ID
+- **Location**: HTTP header
 
 
 ## Author
