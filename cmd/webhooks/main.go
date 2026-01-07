@@ -15,6 +15,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -148,10 +149,22 @@ func main() {
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 	setupLog.Info("Registered NotificationRequest DELETE webhook handler with audit store")
 
+	// Register health check endpoints for liveness and readiness probes
+	// These are required by Kubernetes deployment health checks
+	// Uses standard healthz.Ping checker (same pattern as other controllers)
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
+
 	setupLog.Info("Starting webhook server", "port", webhookPort)
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
 }
-
