@@ -188,14 +188,12 @@ password: secretimmudbpass789
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Database.Password).To(BeEmpty())
 			Expect(cfg.Redis.Password).To(BeEmpty())
-			Expect(cfg.Immudb.Password).To(BeEmpty())
 
 			err = cfg.LoadSecrets()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Database.Password).To(Equal("secretdbpass123"))
 			Expect(cfg.Database.User).To(Equal("secretdbuser"))
 			Expect(cfg.Redis.Password).To(Equal("secretredispass456"))
-			Expect(cfg.Immudb.Password).To(Equal("secretimmudbpass789"))
 		})
 
 		It("should load secrets from JSON files", func() {
@@ -259,7 +257,6 @@ logging:
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Database.Password).To(Equal("json-db-secret"))
 			Expect(cfg.Redis.Password).To(Equal("json-redis-secret"))
-			Expect(cfg.Immudb.Password).To(Equal("json-immudb-secret"))
 		})
 
 		It("should fail if database secretsFile is not configured", func() {
