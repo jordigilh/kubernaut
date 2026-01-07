@@ -47,7 +47,6 @@ func (i *AuthWebhookInfrastructure) Setup(writer io.Writer) error {
 		ServiceName:     "authwebhook",
 		PostgresPort:    15442, // DD-TEST-001 v2.2
 		RedisPort:       16386, // DD-TEST-001 v2.2
-		ImmudbPort:      13330, // DD-TEST-001 v2.2 (SOC2 immutable audit trails)
 		DataStoragePort: 18099, // DD-TEST-001 v2.2
 		MetricsPort:     19099, // DD-TEST-001 v2.2
 		ConfigDir:       "test/integration/authwebhook/config",
