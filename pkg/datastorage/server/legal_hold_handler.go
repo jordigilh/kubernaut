@@ -120,7 +120,7 @@ func (s *Server) HandlePlaceLegalHold(w http.ResponseWriter, r *http.Request) {
 	// 5. Place legal hold on all events with correlation_id
 	placedAt := time.Now()
 	updateQuery := `
-		UPDATE audit_events 
+		UPDATE audit_events
 		SET legal_hold = TRUE,
 		    legal_hold_reason = $1,
 		    legal_hold_placed_by = $2,
@@ -227,7 +227,7 @@ func (s *Server) HandleReleaseLegalHold(w http.ResponseWriter, r *http.Request) 
 	// 5. Release legal hold
 	releasedAt := time.Now()
 	updateQuery := `
-		UPDATE audit_events 
+		UPDATE audit_events
 		SET legal_hold = FALSE,
 		    legal_hold_reason = legal_hold_reason || ' [Released: ' || $1 || ']'
 		WHERE correlation_id = $2 AND legal_hold = TRUE
@@ -280,7 +280,7 @@ func (s *Server) HandleListLegalHolds(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Query all active legal holds
 	query := `
-		SELECT 
+		SELECT
 			correlation_id,
 			COUNT(*) as event_count,
 			legal_hold_placed_by,

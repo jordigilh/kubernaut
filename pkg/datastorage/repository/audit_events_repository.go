@@ -346,7 +346,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			actor_id, actor_type,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
-			event_hash, previous_event_hash
+			event_hash, previous_event_hash,
+			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8,
@@ -355,7 +356,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			$16, $17,
 			$18, $19, $20, $21,
 			$22, $23, $24,
-			$25, $26
+			$25, $26,
+			$27, $28, $29, $30
 		)
 		RETURNING event_timestamp
 	`
@@ -387,7 +389,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		retentionDays = 2555
 	}
 
-	// Execute query (ADR-034 schema + Gap #9 hash chain - 26 parameters)
+	// Execute query (ADR-034 schema + Gap #9 hash chain + Gap #8 legal hold - 30 parameters)
 	var returnedTimestamp time.Time
 	err = tx.QueryRowContext(ctx, query,
 		event.EventID,
@@ -416,6 +418,10 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		eventDataJSON,
 		event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
 		event.PreviousEventHash, // Gap #9: Hash of previous event in chain
+		event.LegalHold,         // Gap #8: legal hold flag
+		sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
+		sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
+		sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
 	).Scan(&returnedTimestamp)
 
 	if err != nil {
@@ -486,7 +492,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			actor_id, actor_type,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
-			event_hash, previous_event_hash
+			event_hash, previous_event_hash,
+			legal_hold, legal_hold_reason, legal_hold_placed_by, legal_hold_placed_at
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7,
@@ -495,7 +502,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			$15, $16,
 			$17, $18, $19, $20,
 			$21, $22, $23,
-			$24, $25
+			$24, $25,
+			$26, $27, $28, $29
 		)
 		RETURNING event_timestamp
 	`
@@ -582,7 +590,7 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			lastHashByCorrelation[event.CorrelationID] = eventHash
 			// ========================================
 
-			// Execute insert (Gap #9: includes hash chain - 25 parameters)
+			// Execute insert (Gap #9: includes hash chain + Gap #8: legal hold - 29 parameters)
 			var returnedTimestamp time.Time
 			execErr := stmt.QueryRowContext(ctx,
 				event.EventID,
@@ -610,6 +618,10 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 				eventDataJSON,
 				event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
 				event.PreviousEventHash, // Gap #9: Hash of previous event in chain
+				event.LegalHold,         // Gap #8: legal hold flag
+				sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
+				sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
+				sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
 			).Scan(&returnedTimestamp)
 
 			if execErr != nil {
