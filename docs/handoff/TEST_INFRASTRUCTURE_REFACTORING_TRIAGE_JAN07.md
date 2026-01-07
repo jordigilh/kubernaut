@@ -429,13 +429,21 @@ func StartIntegrationInfrastructure(cfg IntegrationServiceConfig, writer io.Writ
 
 ---
 
-### **Phase 4: Parallel Setup Standardization** (2 days)
-1. ✅ Create `parallel_setup_helpers.go` (3 hours)
-2. ✅ Extract `ParallelInfrastructureSetup()` function (3 hours)
-3. ✅ Update all E2E tests to use shared function (5 hours)
-4. ✅ Test all E2E suites (3 hours)
+### **Phase 4: Parallel Setup Standardization** (2 days) ❌ **DEFERRED**
+**Status**: Triage complete - defer indefinitely
+**Reason**: Parallel orchestration is intentionally service-specific for performance optimization
 
-**Expected Reduction**: ~300 lines of code
+**Analysis Results**:
+- ✅ Core functions already shared (Kind cluster, image building, deployments)
+- ⚠️ Parallel orchestration patterns are service-specific by design
+- ⚠️ Forcing standardization would reduce flexibility and potentially slow tests
+- ⚠️ ~450 lines duplication is minimal (3% of 14,612 total lines)
+- ✅ Low ROI: High risk, moderate benefit, significant effort
+
+**Recommendation**: **DEFER** - Revisit only if 5+ new services use identical patterns
+
+**Expected Reduction**: ~0 lines (deferred)
+**See**: `TEST_INFRASTRUCTURE_PHASE4_TRIAGE_JAN07.md` for detailed analysis
 
 ---
 

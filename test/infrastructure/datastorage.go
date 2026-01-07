@@ -132,8 +132,9 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
 
 	type result struct {
-		name string
-		err  error
+		name      string
+		err       error
+		imageName string // For DS image: actual built image name with tag
 	}
 
 	results := make(chan result, 3) // PostgreSQL-only architecture (ImmuDB removed Jan 6, 2026)
@@ -141,20 +142,21 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	// Goroutine 1: Build and load DataStorage image (with dynamic tag from caller)
 	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
 	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// BUG FIX: Capture returned image name to ensure deployment uses correct tag
 	go func() {
 		cfg := E2EImageConfig{
 			ServiceName:      "datastorage",
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			KindClusterName:  clusterName,
-			BuildContextPath: ".", // Project root
+			BuildContextPath: "", // Empty = use project root (default)
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		_, err := BuildAndLoadImageToKind(cfg, writer)
+		actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image build+load failed: %w", err)
 		}
-		results <- result{name: "DS image", err: err}
+		results <- result{name: "DS image", err: err, imageName: actualImageName}
 	}()
 
 	// Goroutine 2: Deploy PostgreSQL
@@ -163,7 +165,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		if err != nil {
 			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
 		}
-		results <- result{name: "PostgreSQL", err: err}
+		results <- result{name: "PostgreSQL", err: err, imageName: ""}
 	}()
 
 	// Goroutine 3: Deploy Redis
@@ -172,7 +174,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		if err != nil {
 			err = fmt.Errorf("Redis deploy failed: %w", err)
 		}
-		results <- result{name: "Redis", err: err}
+		results <- result{name: "Redis", err: err, imageName: ""}
 	}()
 
 	// Wait for all parallel tasks to complete
@@ -182,7 +184,13 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		if r.err != nil {
 			return fmt.Errorf("parallel setup failed (%s): %w", r.name, r.err)
 		}
-		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
+		// BUG FIX: Capture actual image name from DS image build
+		if r.name == "DS image" && r.imageName != "" {
+			dataStorageImage = r.imageName
+			_, _ = fmt.Fprintf(writer, "  ✅ %s complete (image: %s)\n", r.name, r.imageName)
+		} else {
+			_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
+		}
 	}
 
 	_, _ = fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded (PostgreSQL-only architecture)")

@@ -1,8 +1,8 @@
 # DataStorage E2E Migration - Audit Events COMPLETE
 
-**Date**: January 7, 2026  
-**Status**: ✅ AUDIT EVENTS COMPLETE | 🔄 WORKFLOW ENDPOINTS PENDING  
-**Authority**: DD-API-001 (OpenAPI Client Mandate)  
+**Date**: January 7, 2026
+**Status**: ✅ AUDIT EVENTS COMPLETE | 🔄 WORKFLOW ENDPOINTS PENDING
+**Authority**: DD-API-001 (OpenAPI Client Mandate)
 **User Feedback**: "we don't need to keep backwards compatibility. Can we migrate the code?"
 
 ---
@@ -172,7 +172,7 @@ For each of files 04, 06, 07, 08:
        // ... 15+ fields
    }
    resp, err := httpClient.Post(serviceURL+"/api/v1/workflows", "application/json", body)
-   
+
    // After
    workflowReq := dsgen.RemediationWorkflow{
        WorkflowName: "test-workflow",
@@ -195,7 +195,7 @@ For each of files 04, 06, 07, 08:
        "top_k": 5,
    }
    resp, err := httpClient.Post(serviceURL+"/api/v1/workflows/search", "application/json", body)
-   
+
    // After
    searchReq := dsgen.WorkflowSearchRequest{
        Filters: dsgen.WorkflowSearchFilters{

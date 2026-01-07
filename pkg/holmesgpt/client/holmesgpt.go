@@ -86,10 +86,7 @@ func NewHolmesGPTClient(cfg Config) (*HolmesGPTClient, error) {
 
 	// DD-AUTH-006: Use ServiceAccount authentication for production/E2E
 	// OAuth-proxy validates this token and injects X-Auth-Request-User header
-	transport, err := auth.NewServiceAccountTransport(http.DefaultTransport)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create ServiceAccount transport: %w", err)
-	}
+	transport := auth.NewServiceAccountTransportWithBase(http.DefaultTransport)
 
 	// Create generated OpenAPI client with authentication transport
 	// DD-HAPI-003: Generated client provides type-safe request/response handling

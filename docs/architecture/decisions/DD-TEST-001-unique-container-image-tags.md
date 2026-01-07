@@ -11,6 +11,18 @@
 
 ## 📝 **Changelog**
 
+### Version 1.4 (January 7, 2026)
+**Added**:
+- **Section 5**: Consolidated E2E Image Build Functions for standard parallel patterns
+- `BuildAndLoadImageToKind()` function in `test/infrastructure/datastorage_bootstrap.go`
+- `E2EImageConfig` struct for configurable image building with DD-TEST-001 v1.3 compliance
+- Automatic E2E_COVERAGE=true support and disk space optimization (Podman image cleanup)
+- Migrated 4 E2E test suites (DataStorage, Gateway, AuthWebhook, Notification) to use consolidated function
+
+**Impact**: Standard parallel E2E patterns now use single source of truth for image building, reducing ~170 lines of duplicated code. Build-before-cluster optimization patterns documented for 6 additional services.
+
+**See**: `docs/handoff/TEST_INFRASTRUCTURE_PHASE3_COMPLETE_JAN07.md` for migration details
+
 ### Version 1.3 (December 26, 2025)
 **Added**:
 - **Section 1.5**: Infrastructure Image Tag Format for shared services (datastorage, postgresql, redis)
@@ -932,6 +944,72 @@ image: notification:${IMAGE_TAG}  # Substituted by test code before kubectl appl
 
 ---
 
+## 📦 **Section 5: Consolidated E2E Image Build Functions** (v1.4, January 7, 2026)
+
+### **Overview**
+
+All E2E tests that use **standard parallel patterns** (build+load together after cluster creation) MUST use the consolidated `BuildAndLoadImageToKind()` function. This eliminates code duplication and ensures DD-TEST-001 v1.3 compliance.
+
+### **Consolidated Function**
+
+**File**: `test/infrastructure/datastorage_bootstrap.go`
+
+```go
+// E2EImageConfig configures image building and loading for E2E tests
+type E2EImageConfig struct {
+    ServiceName      string // Service name (e.g., "gateway", "datastorage")
+    ImageName        string // Base image name (e.g., "kubernaut/datastorage")
+    DockerfilePath   string // Relative to project root (e.g., "docker/data-storage.Dockerfile")
+    KindClusterName  string // Kind cluster name to load image into
+    BuildContextPath string // Build context path, default: "." (project root)
+    EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
+}
+
+// BuildAndLoadImageToKind builds a service image and loads it into Kind cluster
+// Features:
+//   - DD-TEST-001 v1.3 compliant image tagging
+//   - DD-TEST-007 E2E coverage instrumentation support
+//   - Automatic Podman image cleanup after Kind load (disk space optimization)
+func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error)
+```
+
+### **Usage Pattern**
+
+```go
+// Standard Parallel E2E Setup (build+load after cluster creation)
+go func() {
+    cfg := E2EImageConfig{
+        ServiceName:      "datastorage",
+        ImageName:        "kubernaut/datastorage",
+        DockerfilePath:   "docker/data-storage.Dockerfile",
+        KindClusterName:  clusterName,
+        BuildContextPath: ".",
+        EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+    }
+    _, err := BuildAndLoadImageToKind(cfg, writer)
+    results <- result{name: "DS image", err: err}
+}()
+```
+
+### **Migrated Services**
+
+- DataStorage: `SetupDataStorageInfrastructureParallel()`
+- Gateway: `SetupGatewayInfrastructureParallel()` (2 occurrences)
+- AuthWebhook: `SetupAuthWebhookInfrastructureParallel()`
+- Notification: `SetupNotificationInfrastructure()`
+
+**Code Reduction**: ~170 lines eliminated
+
+### **Build-Before-Cluster Optimization Pattern**
+
+Some services build images BEFORE creating the Kind cluster (optimization). These use separate `buildDataStorageImageWithTag()` and `loadDataStorageImageWithTag()` functions and should NOT be migrated.
+
+**Services**: Gateway (coverage), SignalProcessing, WorkflowExecution, RemediationOrchestrator
+
+**See**: `docs/handoff/TEST_INFRASTRUCTURE_PHASE3_COMPLETE_JAN07.md` for details
+
+---
+
 ## 🔗 **Related Documents**
 
 ### **Architecture Decisions**
@@ -941,11 +1019,13 @@ image: notification:${IMAGE_TAG}  # Substituted by test code before kubectl appl
 ### **Design Decisions**
 - DD-AUDIT-003: Service Audit Trace Requirements (cross-service patterns)
 - DD-AUDIT-002: Audit Architecture Refactoring (shared library usage)
+- DD-TEST-007: E2E Coverage Collection (coverage instrumentation)
 
 ### **Testing Documentation**
 - `docs/development/testing.md`: Testing strategy and patterns
 - `docs/services/crd-controllers/*/README.md`: Service-specific testing
 - `.github/workflows/*.yml`: CI/CD pipeline configurations
+- `docs/handoff/TEST_INFRASTRUCTURE_PHASE3_COMPLETE_JAN07.md`: Phase 3 migration results
 
 ### **Business Requirements**
 - BR-TEST-001: Parallel test execution capability

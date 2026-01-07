@@ -59,7 +59,7 @@ async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Requ
         "endpoint": "/recovery/analyze",
         "purpose": "LLM cost tracking and audit trail"
     })
-    
+
     # DEBUG: Log what we receive (BR-HAPI-197 investigation)
     logger.info(f"🔍 DEBUG: Recovery request received - signal_type={recovery_req.signal_type!r}")
 

@@ -100,8 +100,9 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
 
 	type result struct{
-		name string
-		err  error
+		name      string
+		err       error
+		imageName string // For DS image: actual built image name with tag
 	}
 
 	results := make(chan result, 4) // PostgreSQL-only architecture (ImmuDB removed Jan 6, 2026)
@@ -109,20 +110,21 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	// Goroutine 1: Build and load DataStorage image
 	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
 	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// BUG FIX: Capture returned image name to ensure deployment uses correct tag
 	go func() {
 		cfg := E2EImageConfig{
 			ServiceName:      "datastorage",
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			KindClusterName:  clusterName,
-			BuildContextPath: ".", // Project root
+			BuildContextPath: "", // Empty = use project root (default)
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		_, err := BuildAndLoadImageToKind(cfg, writer)
+		actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image build+load failed: %w", err)
 		}
-		results <- result{name: "DS image", err: err}
+		results <- result{name: "DS image", err: err, imageName: actualImageName}
 	}()
 
 	// Goroutine 2: Build and load AuthWebhook image
@@ -133,19 +135,19 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 		} else if loadErr := loadAuthWebhookImageWithTag(clusterName, authWebhookImage, writer); loadErr != nil {
 			err = fmt.Errorf("AuthWebhook image load failed: %w", loadErr)
 		}
-		results <- result{name: "AuthWebhook image", err: err}
+		results <- result{name: "AuthWebhook image", err: err, imageName: ""}
 	}()
 
 	// Goroutine 3: Deploy PostgreSQL (E2E ports per DD-TEST-001)
 	go func() {
 		err := deployPostgreSQLToKind(kubeconfigPath, namespace, "25442", "30442", writer)
-		results <- result{name: "PostgreSQL", err: err}
+		results <- result{name: "PostgreSQL", err: err, imageName: ""}
 	}()
 
 	// Goroutine 4: Deploy Redis (E2E ports per DD-TEST-001)
 	go func() {
 		err := deployRedisToKind(kubeconfigPath, namespace, "26386", "30386", writer)
-		results <- result{name: "Redis", err: err}
+		results <- result{name: "Redis", err: err, imageName: ""}
 	}()
 
 	// Collect results from all goroutines
@@ -159,7 +161,13 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 				firstError = res.err
 			}
 		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s: Success\n", res.name)
+			// BUG FIX: Capture actual image name from DS image build
+			if res.name == "DS image" && res.imageName != "" {
+				dataStorageImage = res.imageName
+				_, _ = fmt.Fprintf(writer, "  ✅ %s: Success (image: %s)\n", res.name, res.imageName)
+			} else {
+				_, _ = fmt.Fprintf(writer, "  ✅ %s: Success\n", res.name)
+			}
 		}
 	}
 

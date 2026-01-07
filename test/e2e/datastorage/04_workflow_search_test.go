@@ -308,11 +308,11 @@ execution:
 			topK := 5
 			searchReq := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
-					SignalType:  "OOMKilled",                                           // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,           // mandatory
-					Component:   "deployment",                                          // mandatory
-					Environment: "production",                                          // mandatory
-					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,                 // mandatory
+					SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+					Component:   "deployment",                                // mandatory
+					Environment: "production",                                // mandatory
+					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
 				},
 				TopK: &topK,
 			}

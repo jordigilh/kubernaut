@@ -152,7 +152,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			workflowContent := "apiVersion: tekton.dev/v1beta1\nkind: Pipeline\nmetadata:\n  name: oom-recovery\nspec:\n  tasks:\n  - name: increase-memory\n    taskRef:\n      name: kubectl-patch"
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
 			containerImage := "quay.io/kubernaut/workflow-oom:v1.0.0@sha256:abc123def456"
-			
+
 			createReq := dsgen.RemediationWorkflow{
 				WorkflowName:    workflowName,
 				Version:         "v1.0.0",
@@ -203,7 +203,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
 			containerImage := "quay.io/kubernaut/workflow-oom:v1.1.0@sha256:def456ghi789"
 			previousVersion := "v1.0.0"
-			
+
 			createReq := dsgen.RemediationWorkflow{
 				WorkflowName:    workflowName,
 				Version:         "v1.1.0",
@@ -262,7 +262,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(workflowContent)))
 			containerImage := "quay.io/kubernaut/workflow-oom:v2.0.0@sha256:ghi789jkl012"
 			previousVersion := "v1.1.0"
-			
+
 			createReq := dsgen.RemediationWorkflow{
 				WorkflowName:    workflowName,
 				Version:         "v2.0.0",

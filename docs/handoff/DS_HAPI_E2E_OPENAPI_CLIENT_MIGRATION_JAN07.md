@@ -236,14 +236,14 @@ assert response.selected_workflow is not None
 
 ### **Phase 1: DataStorage E2E Tests** (Go)
 
-**Effort**: 4-6 hours  
+**Effort**: 4-6 hours
 **Priority**: HIGH (service owner should fix own tests first)
 
 #### **Step 0: Pre-Test Client Generation Validation** ✅ (10 min) **COMPLETE**
 
 **Purpose**: Catch OpenAPI spec inconsistencies **before** E2E tests run.
 
-**Implementation**: 
+**Implementation**:
 - Created `pkg/datastorage/client/doc.go` with `//go:generate` directive
 - Added `make generate-datastorage-client` target
 - Modified `test-e2e-datastorage` to pre-generate client before running tests
