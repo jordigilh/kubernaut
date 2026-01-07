@@ -511,106 +511,106 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 
 		// Process events in this correlation sequentially
 		for _, event := range correlationEvents {
-		// Generate UUID if not provided
-		if event.EventID == uuid.Nil {
-			event.EventID = uuid.New()
-		}
+			// Generate UUID if not provided
+			if event.EventID == uuid.Nil {
+				event.EventID = uuid.New()
+			}
 
-		// Set event_timestamp if not provided
-		if event.EventTimestamp.IsZero() {
-			event.EventTimestamp = time.Now().UTC()
-		}
+			// Set event_timestamp if not provided
+			if event.EventTimestamp.IsZero() {
+				event.EventTimestamp = time.Now().UTC()
+			}
 
-		// Set event_date from event_timestamp (for partitioning)
-		eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
-		event.EventDate = DateOnly(eventDate)
+			// Set event_date from event_timestamp (for partitioning)
+			eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
+			event.EventDate = DateOnly(eventDate)
 
-		// Marshal event_data to JSONB
-		eventDataJSON, marshalErr := json.Marshal(event.EventData)
-		if marshalErr != nil {
-			err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
-			return nil, err
-		}
+			// Marshal event_data to JSONB
+			eventDataJSON, marshalErr := json.Marshal(event.EventData)
+			if marshalErr != nil {
+				err = fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
+				return nil, err
+			}
 
-		// Handle optional fields with sql.Null* types
-		// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
-		parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
-		parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
+			// Handle optional fields with sql.Null* types
+			// V1.0 REFACTOR: Use sqlutil helpers to reduce duplication (Opportunity 2.1)
+			parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
+			parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
 
-		// V1.0 REFACTOR: Use sqlutil helpers for optional string fields
-		namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
-		clusterName := sqlutil.ToNullStringValue(event.ClusterID)
-		errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
-		errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
-		severity := sqlutil.ToNullStringValue(event.Severity)
+			// V1.0 REFACTOR: Use sqlutil helpers for optional string fields
+			namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
+			clusterName := sqlutil.ToNullStringValue(event.ClusterID)
+			errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
+			errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
+			severity := sqlutil.ToNullStringValue(event.Severity)
 
-		// Note: DurationMs stays as sql.NullInt32 (not int64) - keep manual conversion
-		var durationMs sql.NullInt32
-		if event.DurationMs != 0 {
-			durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
-		}
+			// Note: DurationMs stays as sql.NullInt32 (not int64) - keep manual conversion
+			var durationMs sql.NullInt32
+			if event.DurationMs != 0 {
+				durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
+			}
 
-		// Set default retention days
-		retentionDays := event.RetentionDays
-		if retentionDays == 0 {
-			retentionDays = 2555
-		}
+			// Set default retention days
+			retentionDays := event.RetentionDays
+			if retentionDays == 0 {
+				retentionDays = 2555
+			}
 
-		// ========================================
-		// SOC2 Gap #9: Calculate hash chain for this event
-		// ========================================
-		previousHash := lastHashByCorrelation[event.CorrelationID]
+			// ========================================
+			// SOC2 Gap #9: Calculate hash chain for this event
+			// ========================================
+			previousHash := lastHashByCorrelation[event.CorrelationID]
 
-		eventHash, hashErr := calculateEventHash(previousHash, event)
-		if hashErr != nil {
-			err = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
-			return nil, err
-		}
+			eventHash, hashErr := calculateEventHash(previousHash, event)
+			if hashErr != nil {
+				err = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
+				return nil, err
+			}
 
-		event.EventHash = eventHash
-		event.PreviousEventHash = previousHash
+			event.EventHash = eventHash
+			event.PreviousEventHash = previousHash
 
-		// Update last hash for this correlation_id
-		lastHashByCorrelation[event.CorrelationID] = eventHash
-		// ========================================
+			// Update last hash for this correlation_id
+			lastHashByCorrelation[event.CorrelationID] = eventHash
+			// ========================================
 
-		// Execute insert (Gap #9: includes hash chain - 25 parameters)
-		var returnedTimestamp time.Time
-		execErr := stmt.QueryRowContext(ctx,
-			event.EventID,
-			event.EventTimestamp,
-			eventDate,
-			event.EventType,
-			event.EventCategory,
-			event.EventAction,
-			event.EventOutcome,
-			event.CorrelationID,
-			parentEventID,
-			parentEventDate,
-			event.ResourceType,
-			event.ResourceID,
-			namespace,
-			clusterName,
-			event.ActorID,
-			event.ActorType,
-			severity,
-			durationMs,
-			errorCode,
-			errorMessage,
-			retentionDays,
-			event.IsSensitive,
-			eventDataJSON,
-			event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
-			event.PreviousEventHash, // Gap #9: Hash of previous event in chain
-		).Scan(&returnedTimestamp)
+			// Execute insert (Gap #9: includes hash chain - 25 parameters)
+			var returnedTimestamp time.Time
+			execErr := stmt.QueryRowContext(ctx,
+				event.EventID,
+				event.EventTimestamp,
+				eventDate,
+				event.EventType,
+				event.EventCategory,
+				event.EventAction,
+				event.EventOutcome,
+				event.CorrelationID,
+				parentEventID,
+				parentEventDate,
+				event.ResourceType,
+				event.ResourceID,
+				namespace,
+				clusterName,
+				event.ActorID,
+				event.ActorType,
+				severity,
+				durationMs,
+				errorCode,
+				errorMessage,
+				retentionDays,
+				event.IsSensitive,
+				eventDataJSON,
+				event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
+				event.PreviousEventHash, // Gap #9: Hash of previous event in chain
+			).Scan(&returnedTimestamp)
 
-		if execErr != nil {
-			err = fmt.Errorf("failed to insert event %s: %w", event.EventID, execErr)
-			return nil, err
-		}
+			if execErr != nil {
+				err = fmt.Errorf("failed to insert event %s: %w", event.EventID, execErr)
+				return nil, err
+			}
 
-		event.EventTimestamp = returnedTimestamp
-		createdEvents = append(createdEvents, event)
+			event.EventTimestamp = returnedTimestamp
+			createdEvents = append(createdEvents, event)
 		}
 	}
 

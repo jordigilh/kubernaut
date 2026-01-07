@@ -79,11 +79,11 @@ DECLARE
 BEGIN
     -- Hash the correlation_id to get consistent lock ID
     hash_bytes := digest(correlation_id_param, 'sha256');
-    
+
     -- Convert first 8 bytes to BIGINT
     -- Note: PostgreSQL advisory locks use BIGINT (signed 64-bit)
     lock_id := ('x' || encode(substring(hash_bytes, 1, 8), 'hex'))::bit(64)::bigint;
-    
+
     RETURN lock_id;
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
@@ -106,14 +106,14 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Migration failed: event_hash column not created';
     END IF;
-    
+
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_name = 'audit_events' AND column_name = 'previous_event_hash'
     ) THEN
         RAISE EXCEPTION 'Migration failed: previous_event_hash column not created';
     END IF;
-    
+
     RAISE NOTICE 'Gap #9 migration successful: Hash chain columns added';
 END $$;
 
