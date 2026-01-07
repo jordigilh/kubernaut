@@ -96,21 +96,42 @@ func DeleteCluster(clusterName string, writer io.Writer) error {
 // Total time: ~3.6 minutes (vs ~4.7 minutes sequential)
 // Savings: ~1 minute per E2E run (~23% faster)
 //
-// Note: ImmuDB removed Jan 6, 2026 - PostgreSQL-only architecture per integration test decision
+// PostgreSQL-only architecture (SOC2 audit storage)
 //
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
 func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (PARALLEL MODE)")
+	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (HYBRID PATTERN)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "  Parallel optimization: ~1 min saved per E2E run (23% faster)")
-	_, _ = fmt.Fprintln(writer, "  Reference: SignalProcessing implementation")
+	_, _ = fmt.Fprintln(writer, "  Strategy: Build image → Create cluster → Load → Deploy")
+	_, _ = fmt.Fprintln(writer, "  Optimization: Eliminates cluster idle time during image build")
+	_, _ = fmt.Fprintln(writer, "  Authority: Gateway hybrid pattern migration (Jan 7, 2026)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 1: Create Kind cluster + namespace (Sequential - must be first)
+	// PHASE 1: Build DataStorage image (BEFORE cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Creating Kind cluster + namespace...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building DataStorage image (NO CLUSTER YET)...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~1-2 minutes")
+
+	cfg := E2EImageConfig{
+		ServiceName:      "datastorage",
+		ImageName:        "kubernaut/datastorage",
+		DockerfilePath:   "docker/data-storage.Dockerfile",
+		BuildContextPath: "", // Empty = use project root (default)
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+	}
+	dsImageName, err := BuildImageForKind(cfg, writer)
+	if err != nil {
+		return fmt.Errorf("DS image build failed: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ DataStorage image built: %s\n", dsImageName)
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 2: Create Kind cluster + namespace
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster + namespace...")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
 	// Create Kind cluster
 	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
@@ -124,39 +145,28 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 2: Parallel infrastructure setup
+	// PHASE 3: Load image + Deploy infrastructure in PARALLEL
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 2: Parallel infrastructure setup...")
-	_, _ = fmt.Fprintln(writer, "  ├── Building + Loading DataStorage image")
+	_, _ = fmt.Fprintln(writer, "\n⚡ PHASE 3: Loading image + Deploying infrastructure in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Loading DataStorage image to Kind")
 	_, _ = fmt.Fprintln(writer, "  ├── Deploying PostgreSQL")
 	_, _ = fmt.Fprintln(writer, "  └── Deploying Redis")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-60 seconds")
 
 	type result struct {
-		name      string
-		err       error
-		imageName string // For DS image: actual built image name with tag
+		name string
+		err  error
 	}
 
-	results := make(chan result, 3) // PostgreSQL-only architecture (ImmuDB removed Jan 6, 2026)
+	results := make(chan result, 3)
 
-	// Goroutine 1: Build and load DataStorage image (with dynamic tag from caller)
-	// REFACTORED: Now uses consolidated BuildAndLoadImageToKind() (Phase 3)
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
-	// BUG FIX: Capture returned image name to ensure deployment uses correct tag
+	// Goroutine 1: Load pre-built DataStorage image to Kind
 	go func() {
-		cfg := E2EImageConfig{
-			ServiceName:      "datastorage",
-			ImageName:        "kubernaut/datastorage",
-			DockerfilePath:   "docker/data-storage.Dockerfile",
-			KindClusterName:  clusterName,
-			BuildContextPath: "", // Empty = use project root (default)
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
-		}
-		actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
+		err := LoadImageToKind(dsImageName, "datastorage", clusterName, writer)
 		if err != nil {
-			err = fmt.Errorf("DS image build+load failed: %w", err)
+			err = fmt.Errorf("DS image load failed: %w", err)
 		}
-		results <- result{name: "DS image", err: err, imageName: actualImageName}
+		results <- result{name: "DS image load", err: err}
 	}()
 
 	// Goroutine 2: Deploy PostgreSQL
@@ -165,7 +175,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		if err != nil {
 			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
 		}
-		results <- result{name: "PostgreSQL", err: err, imageName: ""}
+		results <- result{name: "PostgreSQL", err: err}
 	}()
 
 	// Goroutine 3: Deploy Redis
@@ -174,7 +184,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		if err != nil {
 			err = fmt.Errorf("Redis deploy failed: %w", err)
 		}
-		results <- result{name: "Redis", err: err, imageName: ""}
+		results <- result{name: "Redis", err: err}
 	}()
 
 	// Wait for all parallel tasks to complete
@@ -184,22 +194,20 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		if r.err != nil {
 			return fmt.Errorf("parallel setup failed (%s): %w", r.name, r.err)
 		}
-		// BUG FIX: Capture actual image name from DS image build
-		if r.name == "DS image" && r.imageName != "" {
-			dataStorageImage = r.imageName
-			_, _ = fmt.Fprintf(writer, "  ✅ %s complete (image: %s)\n", r.name, r.imageName)
-		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
-		}
+		_, _ = fmt.Fprintf(writer, "  ✅ %s complete\n", r.name)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Phase 2 complete - all parallel tasks succeeded (PostgreSQL-only architecture)")
+	// Update dataStorageImage to use the actual built image name for deployment
+	dataStorageImage = dsImageName
+
+	_, _ = fmt.Fprintln(writer, "✅ Phase 3 complete - image loaded + infrastructure deployed")
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 3/4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
+	// PHASE 4: Deploy migrations + DataStorage service in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3/4: Deploying migrations + DataStorage service in parallel...")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying migrations + DataStorage service in parallel...")
 	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies - DataStorage retries until migrations complete)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
 
 	type deployResult struct {
 		name string
@@ -252,7 +260,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 // This is used by E2E tests to create isolated test environments
 // dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:holmesgpt-api-a1b2c3d4")
 //
-// Note: ImmuDB removed Jan 6, 2026 - PostgreSQL-only architecture per integration test decision
+// PostgreSQL-only architecture (SOC2 audit storage)
 func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)

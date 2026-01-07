@@ -56,6 +56,12 @@ const (
 	AuditEventRequestEventOutcomeSuccess AuditEventRequestEventOutcome = "success"
 )
 
+// Defines values for AuditExportResponseExportMetadataExportFormat.
+const (
+	AuditExportResponseExportMetadataExportFormatCsv  AuditExportResponseExportMetadataExportFormat = "csv"
+	AuditExportResponseExportMetadataExportFormatJson AuditExportResponseExportMetadataExportFormat = "json"
+)
+
 // Defines values for DetectedLabelsFailedDetections.
 const (
 	GitOpsManaged   DetectedLabelsFailedDetections = "gitOpsManaged"
@@ -173,6 +179,12 @@ const (
 	Failure QueryAuditEventsParamsEventOutcome = "failure"
 	Pending QueryAuditEventsParamsEventOutcome = "pending"
 	Success QueryAuditEventsParamsEventOutcome = "success"
+)
+
+// Defines values for ExportAuditEventsParamsFormat.
+const (
+	ExportAuditEventsParamsFormatCsv  ExportAuditEventsParamsFormat = "csv"
+	ExportAuditEventsParamsFormatJson ExportAuditEventsParamsFormat = "json"
 )
 
 // Defines values for ListWorkflowsParamsStatus.
@@ -343,6 +355,91 @@ type AuditEventsQueryResponse struct {
 		Total *int `json:"total,omitempty"`
 	} `json:"pagination,omitempty"`
 }
+
+// AuditExportResponse Signed audit export with tamper-evident hash chain verification
+type AuditExportResponse struct {
+	// DetachedSignature Detached PEM-encoded signature (if requested)
+	DetachedSignature *string `json:"detached_signature,omitempty"`
+
+	// Events Audit events matching the query filters
+	Events []struct {
+		CorrelationId *string                 `json:"correlation_id,omitempty"`
+		EventAction   *string                 `json:"event_action,omitempty"`
+		EventCategory *string                 `json:"event_category,omitempty"`
+		EventData     *map[string]interface{} `json:"event_data,omitempty"`
+
+		// EventHash SHA256 hash of this event
+		EventHash      *string             `json:"event_hash,omitempty"`
+		EventId        *openapi_types.UUID `json:"event_id,omitempty"`
+		EventOutcome   *string             `json:"event_outcome,omitempty"`
+		EventTimestamp *time.Time          `json:"event_timestamp,omitempty"`
+		EventType      *string             `json:"event_type,omitempty"`
+
+		// HashChainValid Whether this event's hash chain is valid
+		HashChainValid *bool `json:"hash_chain_valid,omitempty"`
+
+		// LegalHold Whether this event is under legal hold
+		LegalHold *bool `json:"legal_hold,omitempty"`
+
+		// PreviousEventHash Hash of previous event in chain
+		PreviousEventHash *string `json:"previous_event_hash,omitempty"`
+		Version           *string `json:"version,omitempty"`
+	} `json:"events"`
+	ExportMetadata struct {
+		// CertificateFingerprint SHA256 fingerprint of signing certificate
+		CertificateFingerprint *string `json:"certificate_fingerprint,omitempty"`
+
+		// ExportFormat Format of exported data
+		ExportFormat AuditExportResponseExportMetadataExportFormat `json:"export_format"`
+
+		// ExportTimestamp When this export was generated
+		ExportTimestamp time.Time `json:"export_timestamp"`
+
+		// ExportedBy User who initiated the export (from X-Auth-Request-User)
+		ExportedBy *string `json:"exported_by,omitempty"`
+
+		// QueryFilters Filters applied to this export
+		QueryFilters *struct {
+			CorrelationId *string    `json:"correlation_id,omitempty"`
+			EndTime       *time.Time `json:"end_time,omitempty"`
+			EventCategory *string    `json:"event_category,omitempty"`
+			Limit         *int       `json:"limit,omitempty"`
+			Offset        *int       `json:"offset,omitempty"`
+			StartTime     *time.Time `json:"start_time,omitempty"`
+		} `json:"query_filters,omitempty"`
+
+		// Signature Digital signature of export (base64-encoded)
+		Signature string `json:"signature"`
+
+		// SignatureAlgorithm Signature algorithm used
+		SignatureAlgorithm *string `json:"signature_algorithm,omitempty"`
+
+		// TotalEvents Total number of events in this export
+		TotalEvents int `json:"total_events"`
+	} `json:"export_metadata"`
+	HashChainVerification struct {
+		// BrokenChainEvents Events with broken hash chains (tampered)
+		BrokenChainEvents int `json:"broken_chain_events"`
+
+		// ChainIntegrityPercentage Percentage of events with valid chains
+		ChainIntegrityPercentage *float64 `json:"chain_integrity_percentage,omitempty"`
+
+		// TamperedEventIds String UUIDs of tampered events (if any)
+		TamperedEventIds *[]string `json:"tampered_event_ids,omitempty"`
+
+		// TotalEventsVerified Total events with hash chain data
+		TotalEventsVerified int `json:"total_events_verified"`
+
+		// ValidChainEvents Events with valid hash chains
+		ValidChainEvents int `json:"valid_chain_events"`
+
+		// VerificationTimestamp When verification was performed
+		VerificationTimestamp time.Time `json:"verification_timestamp"`
+	} `json:"hash_chain_verification"`
+}
+
+// AuditExportResponseExportMetadataExportFormat Format of exported data
+type AuditExportResponseExportMetadataExportFormat string
 
 // BatchAuditEventResponse defines model for BatchAuditEventResponse.
 type BatchAuditEventResponse struct {
@@ -828,6 +925,36 @@ type QueryAuditEventsParamsEventOutcome string
 // CreateAuditEventsBatchJSONBody defines parameters for CreateAuditEventsBatch.
 type CreateAuditEventsBatchJSONBody = []AuditEventRequest
 
+// ExportAuditEventsParams defines parameters for ExportAuditEvents.
+type ExportAuditEventsParams struct {
+	// StartTime Start of time range (ISO 8601)
+	StartTime *time.Time `form:"start_time,omitempty" json:"start_time,omitempty"`
+
+	// EndTime End of time range (ISO 8601)
+	EndTime *time.Time `form:"end_time,omitempty" json:"end_time,omitempty"`
+
+	// CorrelationId Filter by correlation ID
+	CorrelationId *string `form:"correlation_id,omitempty" json:"correlation_id,omitempty"`
+
+	// EventCategory Filter by event category
+	EventCategory *string `form:"event_category,omitempty" json:"event_category,omitempty"`
+
+	// Format Export format (json or csv)
+	Format *ExportAuditEventsParamsFormat `form:"format,omitempty" json:"format,omitempty"`
+
+	// IncludeDetachedSignature Include detached signature file in response
+	IncludeDetachedSignature *bool `form:"include_detached_signature,omitempty" json:"include_detached_signature,omitempty"`
+
+	// Offset Pagination offset
+	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+
+	// Limit Maximum records per export
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
+type ExportAuditEventsParamsFormat string
+
 // PlaceLegalHoldJSONBody defines parameters for PlaceLegalHold.
 type PlaceLegalHoldJSONBody struct {
 	// CorrelationId Correlation ID of events to place legal hold on
@@ -969,6 +1096,9 @@ type ClientInterface interface {
 
 	CreateAuditEventsBatch(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ExportAuditEvents request
+	ExportAuditEvents(ctx context.Context, params *ExportAuditEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListLegalHolds request
 	ListLegalHolds(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1076,6 +1206,18 @@ func (c *Client) CreateAuditEventsBatchWithBody(ctx context.Context, contentType
 
 func (c *Client) CreateAuditEventsBatch(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateAuditEventsBatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ExportAuditEvents(ctx context.Context, params *ExportAuditEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewExportAuditEventsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1591,6 +1733,167 @@ func NewCreateAuditEventsBatchRequestWithBody(server string, contentType string,
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewExportAuditEventsRequest generates requests for ExportAuditEvents
+func NewExportAuditEventsRequest(server string, params *ExportAuditEventsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/audit/export")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.StartTime != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "start_time", runtime.ParamLocationQuery, *params.StartTime); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EndTime != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "end_time", runtime.ParamLocationQuery, *params.EndTime); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.CorrelationId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "correlation_id", runtime.ParamLocationQuery, *params.CorrelationId); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.EventCategory != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "event_category", runtime.ParamLocationQuery, *params.EventCategory); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Format != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "format", runtime.ParamLocationQuery, *params.Format); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.IncludeDetachedSignature != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "include_detached_signature", runtime.ParamLocationQuery, *params.IncludeDetachedSignature); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Offset != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "offset", runtime.ParamLocationQuery, *params.Offset); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "limit", runtime.ParamLocationQuery, *params.Limit); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -2250,6 +2553,9 @@ type ClientWithResponsesInterface interface {
 
 	CreateAuditEventsBatchWithResponse(ctx context.Context, body CreateAuditEventsBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAuditEventsBatchResponse, error)
 
+	// ExportAuditEventsWithResponse request
+	ExportAuditEventsWithResponse(ctx context.Context, params *ExportAuditEventsParams, reqEditors ...RequestEditorFn) (*ExportAuditEventsResponse, error)
+
 	// ListLegalHoldsWithResponse request
 	ListLegalHoldsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListLegalHoldsResponse, error)
 
@@ -2370,6 +2676,31 @@ func (r CreateAuditEventsBatchResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r CreateAuditEventsBatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ExportAuditEventsResponse struct {
+	Body                      []byte
+	HTTPResponse              *http.Response
+	JSON200                   *AuditExportResponse
+	ApplicationproblemJSON400 *RFC7807Problem
+	ApplicationproblemJSON401 *RFC7807Problem
+	ApplicationproblemJSON413 *RFC7807Problem
+}
+
+// Status returns HTTPResponse.Status
+func (r ExportAuditEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ExportAuditEventsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2776,6 +3107,15 @@ func (c *ClientWithResponses) CreateAuditEventsBatchWithResponse(ctx context.Con
 	return ParseCreateAuditEventsBatchResponse(rsp)
 }
 
+// ExportAuditEventsWithResponse request returning *ExportAuditEventsResponse
+func (c *ClientWithResponses) ExportAuditEventsWithResponse(ctx context.Context, params *ExportAuditEventsParams, reqEditors ...RequestEditorFn) (*ExportAuditEventsResponse, error) {
+	rsp, err := c.ExportAuditEvents(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseExportAuditEventsResponse(rsp)
+}
+
 // ListLegalHoldsWithResponse request returning *ListLegalHoldsResponse
 func (c *ClientWithResponses) ListLegalHoldsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListLegalHoldsResponse, error) {
 	rsp, err := c.ListLegalHolds(ctx, reqEditors...)
@@ -3051,6 +3391,53 @@ func ParseCreateAuditEventsBatchResponse(rsp *http.Response) (*CreateAuditEvents
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseExportAuditEventsResponse parses an HTTP response from a ExportAuditEventsWithResponse call
+func ParseExportAuditEventsResponse(rsp *http.Response) (*ExportAuditEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ExportAuditEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuditExportResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
+		var dest RFC7807Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON413 = &dest
 
 	}
 

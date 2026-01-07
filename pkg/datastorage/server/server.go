@@ -365,6 +365,11 @@ func (s *Server) Handler() http.Handler {
 		r.Delete("/audit/legal-hold/{correlation_id}", s.HandleReleaseLegalHold)
 		r.Get("/audit/legal-hold", s.HandleListLegalHolds)
 
+		// SOC2 Day 9: Signed Audit Export
+		// BR-AUDIT-007: Audit export with digital signatures for compliance verification
+		s.logger.V(1).Info("Registering /api/v1/audit/export handler (SOC2 Day 9)")
+		r.Get("/audit/export", s.HandleExportAuditEvents)
+
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema

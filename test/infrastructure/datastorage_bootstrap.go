@@ -764,7 +764,25 @@ type E2EImageConfig struct {
 //	imageName, err := infrastructure.BuildAndLoadImageToKind(imageConfig, GinkgoWriter)
 //	// Image built, tagged, and loaded to Kind
 //	// Later: infrastructure.CleanupE2EImage(imageName, GinkgoWriter)
-func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
+// BuildImageForKind builds a container image for E2E testing.
+// Returns the image name (with localhost/ prefix) for later loading to Kind.
+//
+// This is Phase 1 of the hybrid E2E pattern:
+//   Phase 1: Build images (BEFORE cluster creation)
+//   Phase 2: Create Kind cluster
+//   Phase 3: Load images to cluster (using LoadImageToKind)
+//
+// Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
+// Performance: Eliminates cluster idle time during image builds
+//
+// Example:
+//   // Phase 1: Build images in parallel (no cluster yet)
+//   imageName, err := BuildImageForKind(cfg, writer)
+//   // Phase 2: Create Kind cluster
+//   createKindCluster(...)
+//   // Phase 3: Load image to cluster
+//   err = LoadImageToKind(imageName, cfg.ServiceName, clusterName, writer)
+func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	projectRoot := getProjectRoot()
 
 	if cfg.BuildContextPath == "" {
@@ -803,52 +821,114 @@ func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, erro
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Image built: %s\n", localImageName)
 
-	// Load to Kind via image archive (more reliable with podman)
-	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster via archive: %s\n", cfg.KindClusterName)
+	return localImageName, nil
+}
+
+// LoadImageToKind loads a pre-built image to a Kind cluster.
+// Steps: Export to tar → Load to Kind → Remove tar → Remove Podman image
+//
+// This is Phase 3 of the hybrid E2E pattern:
+//   Phase 1: Build images (using BuildImageForKind)
+//   Phase 2: Create Kind cluster
+//   Phase 3: Load images to cluster (THIS FUNCTION)
+//
+// Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
+// Performance: Explicit load step after cluster creation eliminates idle time
+//
+// Parameters:
+//   - imageName: Full image name with localhost/ prefix (from BuildImageForKind)
+//   - serviceName: Service name for tar file naming (e.g., "datastorage")
+//   - clusterName: Kind cluster name to load image into
+//   - writer: Output writer for logging
+//
+// Example:
+//   imageName, _ := BuildImageForKind(cfg, writer)
+//   err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
+func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster: %s\n", clusterName)
+
+	// Extract tag from image name for tar filename
+	// imageName format: "localhost/kubernaut/datastorage:tag-abc123"
+	parts := strings.Split(imageName, ":")
+	imageTag := "latest"
+	if len(parts) > 1 {
+		imageTag = parts[1]
+	}
 
 	// Create temporary tar file
-	tmpFile := fmt.Sprintf("/tmp/%s-%s.tar", cfg.ServiceName, imageTag)
+	tmpFile := fmt.Sprintf("/tmp/%s-%s.tar", serviceName, imageTag)
 	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to: %s\n", tmpFile)
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile, localImageName)
+	saveCmd := exec.Command("podman", "save", "-o", tmpFile, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
-		return "", fmt.Errorf("failed to export image: %w", err)
+		return fmt.Errorf("failed to export image: %w", err)
 	}
 
 	// Load tar file into Kind
 	_, _ = fmt.Fprintf(writer, "   📦 Importing archive into Kind cluster...\n")
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", cfg.KindClusterName)
+	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 	if err := loadCmd.Run(); err != nil {
 		// Clean up tar file on error
 		_ = os.Remove(tmpFile)
-		return "", fmt.Errorf("failed to load image to Kind: %w", err)
+		return fmt.Errorf("failed to load image to Kind: %w", err)
 	}
 
 	// Clean up tar file
 	if err := os.Remove(tmpFile); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove temp file %s: %v\n", tmpFile, err)
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ Removed tar file: %s\n", tmpFile)
 	}
 
 	// CRITICAL: Delete Podman image immediately after Kind load to free disk space
 	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
 	// Solution: Once in Kind, we don't need the Podman copy anymore
 	_, _ = fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", localImageName)
+	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	} else {
-		_, _ = fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", localImageName)
+		_, _ = fmt.Fprintf(writer, "   ✅ Podman image removed: %s\n", imageName)
 	}
 
 	_, _ = fmt.Fprintf(writer, "   ✅ Image loaded to Kind\n")
 
-	return localImageName, nil
+	return nil
+}
+
+// BuildAndLoadImageToKind builds and loads an image to Kind in one step.
+// This is a convenience wrapper for the standard (non-hybrid) E2E pattern.
+//
+// For hybrid pattern (build-before-cluster), use BuildImageForKind() and LoadImageToKind() separately.
+//
+// Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
+// Pattern: Standard (cluster-first, images build while cluster idles)
+// Performance: 18% slower than hybrid pattern, but simpler for small services
+//
+// Example (Standard Pattern):
+//   imageName, err := BuildAndLoadImageToKind(cfg, writer)
+//
+// Example (Hybrid Pattern - RECOMMENDED):
+//   imageName, err := BuildImageForKind(cfg, writer)
+//   createKindCluster(...)
+//   err = LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer)
+func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
+	imageName, err := BuildImageForKind(cfg, writer)
+	if err != nil {
+		return "", err
+	}
+
+	if err := LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer); err != nil {
+		return "", err
+	}
+
+	return imageName, nil
 }
 
 // CleanupE2EImage removes a service image built for E2E tests

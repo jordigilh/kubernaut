@@ -1885,7 +1885,7 @@ components:
             signature:
               type: string
               description: Digital signature of export (base64-encoded)
-              example: "MEUCIQDv8F..."
+              example: "PLACEHOLDER_SIGNATURE"
             signature_algorithm:
               type: string
               description: Signature algorithm used
@@ -1938,9 +1938,6 @@ components:
               legal_hold:
                 type: boolean
                 description: Whether this event is under legal hold
-              created_at:
-                type: string
-                format: date-time
         hash_chain_verification:
           type: object
           required:
@@ -1963,7 +1960,7 @@ components:
               example: 0
             chain_integrity_percentage:
               type: number
-              format: float
+              format: double
               minimum: 0.0
               maximum: 100.0
               description: Percentage of events with valid chains
@@ -1974,10 +1971,9 @@ components:
               description: When verification was performed
             tampered_event_ids:
               type: array
-              description: UUIDs of tampered events (if any)
+              description: String UUIDs of tampered events (if any)
               items:
                 type: string
-                format: uuid
         detached_signature:
           type: string
           description: Detached PEM-encoded signature (if requested)

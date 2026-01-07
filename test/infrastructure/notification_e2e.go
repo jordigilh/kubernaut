@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -48,12 +48,22 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// ============================================================
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 1: Building Notification Controller Docker image...")
-	_, _ = fmt.Fprintln(writer, "  • This ensures fresh build with latest code changes")
-	_, _ = fmt.Fprintln(writer, "  • Prevents stale image caching issues")
-	if err := buildNotificationImageOnly(writer); err != nil {
+	_, _ = fmt.Fprintln(writer, "  • Hybrid pattern: Build before cluster creation")
+	_, _ = fmt.Fprintln(writer, "  • Eliminates cluster idle time during build")
+	_, _ = fmt.Fprintln(writer, "  • Authority: Gateway/DataStorage hybrid pattern migration (Jan 7, 2026)")
+
+	cfg := E2EImageConfig{
+		ServiceName:      "notification",
+		ImageName:        "kubernaut-notification",
+		DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
+		BuildContextPath: "",
+		EnableCoverage:   false,
+	}
+	notificationImageName, err := BuildImageForKind(cfg, writer)
+	if err != nil {
 		return fmt.Errorf("failed to build Notification Controller image: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "✅ PHASE 1 Complete: Image built successfully")
+	_, _ = fmt.Fprintf(writer, "✅ PHASE 1 Complete: Image built: %s\n", notificationImageName)
 
 	// ============================================================
 	// PHASE 2: Create Kind cluster (after build completes)
@@ -84,8 +94,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// ============================================================
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 3: Loading Notification Controller image into Kind cluster...")
-	_, _ = fmt.Fprintln(writer, "  • Fresh cluster + fresh image = reliable loading")
-	if err := loadNotificationImageOnly(clusterName, writer); err != nil {
+	_, _ = fmt.Fprintln(writer, "  • Uses consolidated LoadImageToKind() helper")
+	_, _ = fmt.Fprintln(writer, "  • Automatic cleanup of tar file and Podman image")
+	if err := LoadImageToKind(notificationImageName, "notification", clusterName, writer); err != nil {
 		return fmt.Errorf("failed to load Notification Controller image: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 3 Complete: Image loaded")
@@ -335,68 +346,6 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	return nil
 }
 
-func buildNotificationImageOnly(writer io.Writer) error {
-	workspaceRoot, err := findWorkspaceRoot()
-	if err != nil {
-		return fmt.Errorf("failed to find workspace root: %w", err)
-	}
-
-	buildCmd := exec.Command("podman", "build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-		"-t", "localhost/kubernaut-notification:e2e-test",
-		"-f", "docker/notification-controller-ubi9.Dockerfile",
-		".",
-	)
-	buildCmd.Dir = workspaceRoot
-	buildCmd.Stdout = writer
-	buildCmd.Stderr = writer
-
-	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("podman build failed: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "   Notification Controller image built: localhost/kubernaut-notification:e2e-test")
-	return nil
-}
-
-func loadNotificationImageOnly(clusterName string, writer io.Writer) error {
-	// Save image to tar
-	saveCmd := exec.Command("podman", "save", "localhost/kubernaut-notification:e2e-test", "-o", "/tmp/notification-e2e.tar")
-	saveCmd.Stdout = writer
-	saveCmd.Stderr = writer
-
-	if err := saveCmd.Run(); err != nil {
-		return fmt.Errorf("failed to save image: %w", err)
-	}
-
-	// Load image into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/notification-e2e.tar", "--name", clusterName)
-	loadCmd.Stdout = writer
-	loadCmd.Stderr = writer
-
-	if err := loadCmd.Run(); err != nil {
-		return fmt.Errorf("failed to load image into Kind: %w", err)
-	}
-
-	// Clean up tar file
-	_ = os.Remove("/tmp/notification-e2e.tar")
-
-	// CRITICAL: Remove Podman image immediately to free disk space
-	// Image is now in Kind, Podman copy is duplicate
-	_, _ = fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
-	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/kubernaut-notification:e2e-test")
-	rmiCmd.Stdout = writer
-	rmiCmd.Stderr = writer
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
-	} else {
-		_, _ = fmt.Fprintln(writer, "   ✅ Podman image removed: localhost/kubernaut-notification:e2e-test")
-	}
-
-	_, _ = fmt.Fprintln(writer, "   Notification Controller image loaded into Kind cluster")
-	return nil
-}
-
 func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
@@ -498,18 +447,39 @@ func deployNotificationService(namespace, kubeconfigPath string, writer io.Write
 	return nil
 }
 
-func deployNotificationControllerOnly(namespace, kubeconfigPath string, writer io.Writer) error {
+func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationImageName string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	deploymentPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-deployment.yaml")
-	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
-		return fmt.Errorf("deployment manifest not found at %s", deploymentPath)
+	if notificationImageName == "" {
+		return fmt.Errorf("notificationImageName parameter is required (no hardcoded fallback)")
 	}
 
-	applyCmd := exec.Command("kubectl", "apply", "-f", deploymentPath, "-n", namespace)
+	_, _ = fmt.Fprintf(writer, "   Using Notification image: %s\n", notificationImageName)
+
+	// Read deployment manifest and replace hardcoded tag with actual tag
+	deploymentPath := filepath.Join(workspaceRoot, "test", "e2e", "notification", "manifests", "notification-deployment.yaml")
+	deploymentContent, err := os.ReadFile(deploymentPath)
+	if err != nil {
+		return fmt.Errorf("failed to read deployment file: %w", err)
+	}
+
+	// Replace hardcoded tag with actual unique tag
+	updatedContent := strings.ReplaceAll(string(deploymentContent),
+		"localhost/kubernaut-notification:e2e-test",
+		notificationImageName)
+
+	// Create temporary modified deployment file
+	tmpDeployment := filepath.Join(os.TempDir(), "notification-deployment-e2e.yaml")
+	if err := os.WriteFile(tmpDeployment, []byte(updatedContent), 0644); err != nil {
+		return fmt.Errorf("failed to write temp deployment: %w", err)
+	}
+	defer func() { _ = os.Remove(tmpDeployment) }()
+
+	// Apply the modified deployment
+	applyCmd := exec.Command("kubectl", "apply", "-f", tmpDeployment, "-n", namespace)
 	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	applyCmd.Stdout = writer
 	applyCmd.Stderr = writer
@@ -526,4 +496,3 @@ func DeployNotificationDataStorageServices(ctx context.Context, namespace, kubec
 	// Deploy DataStorage with Notification-specific NodePort 30090
 	return DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30090, writer)
 }
-

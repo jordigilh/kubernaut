@@ -1,8 +1,8 @@
 # HAPI E2E OpenAPI Client Migration - Triage Analysis
 
-**Date**: January 7, 2025  
-**Status**: ✅ **TRIAGE COMPLETE** - Minimal migration needed  
-**Authority**: DD-API-001 (OpenAPI Client Mandate)  
+**Date**: January 7, 2025
+**Status**: ✅ **TRIAGE COMPLETE** - Minimal migration needed
+**Authority**: DD-API-001 (OpenAPI Client Mandate)
 **Related**: DataStorage E2E migration completed (100%)
 
 ---
@@ -33,8 +33,8 @@
 | `test_mock_llm_edge_cases_e2e.py` | 371 | ✅ HAPI client | ✅ **COMPLIANT** | None |
 | `test_workflow_catalog_e2e.py` | 278 | 🔧 Business tools only | ⚠️ **VERIFY** | Possibly none |
 
-**Total Lines**: ~4,536 lines  
-**Compliant Files**: 6/8 (75%) confirmed, 2/8 (25%) need verification  
+**Total Lines**: ~4,536 lines
+**Compliant Files**: 6/8 (75%) confirmed, 2/8 (25%) need verification
 **Migration Estimate**: **0-2 hours** (if any migration needed at all)
 
 ---

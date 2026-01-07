@@ -21,7 +21,7 @@ import (
 )
 
 // AuthWebhookInfrastructure wraps the shared DSBootstrapInfra
-// Per DD-TEST-001 v2.2: PostgreSQL:15442, Redis:16386, Immudb:13330, DataStorage:18099
+// Per DD-TEST-001 v2.2: PostgreSQL:15442, Redis:16386, DataStorage:18099
 // Per DD-TEST-002: Uses shared sequential startup pattern from datastorage_bootstrap.go
 type AuthWebhookInfrastructure struct {
 	*DSBootstrapInfra // Embed shared infrastructure
@@ -41,7 +41,7 @@ func NewAuthWebhookInfrastructure() *AuthWebhookInfrastructure {
 }
 
 // Setup starts all infrastructure using shared DSBootstrap
-// Sequential Order: Cleanup → Network → PostgreSQL → Migrations → Redis → Immudb → DataStorage
+// Sequential Order: Cleanup → Network → PostgreSQL → Migrations → Redis → DataStorage
 func (i *AuthWebhookInfrastructure) Setup(writer io.Writer) error {
 	cfg := DSBootstrapConfig{
 		ServiceName:     "authwebhook",
