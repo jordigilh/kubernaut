@@ -1,0 +1,215 @@
+---
+# ========================================
+# DD-AUTH-004: RBAC for OAuth-Proxy Protected DataStorage Access
+# DD-AUTH-005: 8 services need authorization to call DataStorage
+# ========================================
+#
+# This RBAC configuration enables 8 services to authenticate with DataStorage
+# via the oauth-proxy sidecar using ServiceAccount tokens.
+#
+# Flow:
+# 1. Service → oauth-proxy (with ServiceAccount token in Authorization header)
+# 2. oauth-proxy validates token
+# 3. oauth-proxy performs Subject Access Review (SAR) using this RBAC
+# 4. oauth-proxy injects X-Auth-Request-User header
+# 5. DataStorage receives authenticated request
+#
+# Services (8 total):
+# - Gateway, AIAnalysis, WorkflowExecution, RemediationOrchestrator
+# - Notification, AuthWebhook, SignalProcessing, holmesgpt-api
+# ========================================
+
+---
+# ClusterRole: Defines permissions to access DataStorage service
+# DD-AUTH-004: Tiered SAR approach - all REST APIs require "get" verb on service resource
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: data-storage-client
+  labels:
+    app: data-storage-service
+    component: rbac
+rules:
+  # OAuth-proxy SAR check: Can the ServiceAccount "get" the data-storage-service?
+  # This is the authorization check performed by oauth-proxy before proxying requests
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["data-storage-service"]
+    verbs: ["get"]
+
+---
+# RoleBinding: Grant Gateway ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gateway-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: gateway
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: gateway-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant AIAnalysis ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: aianalysis-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: aianalysis
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: aianalysis-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant WorkflowExecution ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: workflowexecution-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: workflowexecution
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: workflowexecution-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant RemediationOrchestrator ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: remediationorchestrator-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: remediationorchestrator
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant Notification ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: notification-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: notification
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: notification-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant AuthWebhook ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: authwebhook-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: authwebhook
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: authwebhook-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant SignalProcessing ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: signalprocessing-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: signalprocessing
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: signalprocessing-sa
+    namespace: kubernaut-system
+
+---
+# RoleBinding: Grant HolmesGPT API ServiceAccount access to DataStorage
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: holmesgpt-api-data-storage-client
+  namespace: kubernaut-system
+  labels:
+    app: holmesgpt-api
+    component: rbac
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: holmesgpt-api-sa
+    namespace: kubernaut-system
+
+---
+# ========================================
+# USAGE NOTES
+# ========================================
+#
+# This RBAC configuration is required for oauth-proxy to authorize service requests.
+# Without these bindings, services will receive 403 Forbidden from oauth-proxy.
+#
+# OAuth-proxy SAR check flow:
+# 1. Service sends request with ServiceAccount token
+# 2. OAuth-proxy validates token (ensures it's a valid Kubernetes SA token)
+# 3. OAuth-proxy performs SAR: "Can <ServiceAccount> GET service/data-storage-service?"
+# 4. If SAR passes → inject X-Auth-Request-User, proxy to DataStorage
+# 5. If SAR fails → return 403 Forbidden to service
+#
+# ServiceAccount Naming Convention:
+# - Each service must have a ServiceAccount named <service>-sa
+# - ServiceAccounts must be in kubernaut-system namespace
+# - If ServiceAccount name differs, update the RoleBinding subjects accordingly
+#
+# Authority: DD-AUTH-004 (OAuth-proxy sidecar design)
+# Related: DD-AUTH-005 (Client authentication pattern)
+# ========================================
+
