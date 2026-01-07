@@ -148,12 +148,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
 				"event_data":      eventData,
 			}
-			resp := postAuditEvent(httpClient, serviceURL, event)
+			resp := createAuditEventFromMap(ctx, dsClient, event)
 			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
+			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
 		}
 		testLogger.Info("✅ Created 4 Gateway events")
@@ -175,12 +172,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
 				"event_data":      eventData,
 			}
-			resp := postAuditEvent(httpClient, serviceURL, event)
+			resp := createAuditEventFromMap(ctx, dsClient, event)
 			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
+			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 AIAnalysis events")
@@ -202,12 +196,9 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				"event_outcome":   "success", // ADR-034: renamed from 'outcome'
 				"event_data":      eventData,
 			}
-			resp := postAuditEvent(httpClient, serviceURL, event)
+			resp := createAuditEventFromMap(ctx, dsClient, event)
 			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
-			if err := resp.Body.Close(); err != nil {
-				testLogger.Error(err, "failed to close response body")
-			}
+			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 Workflow events")
