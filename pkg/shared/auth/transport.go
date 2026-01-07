@@ -42,21 +42,19 @@ import (
 // USAGE PATTERNS:
 //
 // Production/E2E (ServiceAccount token from filesystem):
-//   transport := auth.NewServiceAccountTransport()
-//   httpClient := &http.Client{Transport: transport}
-//   dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
-// E2E Tests (Static token via TokenRequest API):
-//   token := getServiceAccountToken("test-sa", "namespace", 3600)
-//   transport := auth.NewStaticTokenTransport(token)
-//   httpClient := &http.Client{Transport: transport}
-//   dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
+//	transport := auth.NewServiceAccountTransport()
+//	httpClient := &http.Client{Transport: transport}
+//	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
 // Integration Tests (Mock user header, no oauth-proxy):
-//   // Use testutil.NewMockUserTransport() to avoid test logic in production code
-//   transport := testutil.NewMockUserTransport("test-user@example.com")
-//   httpClient := &http.Client{Transport: transport}
-//   dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
+//
+//	// Use testutil.NewMockUserTransport() to avoid test logic in production code
+//	transport := testutil.NewMockUserTransport("test-user@example.com")
+//	httpClient := &http.Client{Transport: transport}
+//	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
+//
+// E2E Tests: Use SAME ServiceAccount transport as production (run tests in pods with mounted tokens)
 //
 // Authority: DD-AUTH-005 (Authoritative client authentication pattern)
 // Related: DD-AUTH-004 (OAuth-proxy sidecar), DD-HAPI-003 (OpenAPI client mandatory)
@@ -66,29 +64,21 @@ import (
 type AuthTransportMode int
 
 const (
-	// ModeServiceAccount reads token from filesystem (for services and E2E)
+	// ModeServiceAccount reads token from filesystem (production, E2E, integration with mounted tokens)
 	// Token path: /var/run/secrets/kubernetes.io/serviceaccount/token
 	// Injects: Authorization: Bearer <token>
+	// Used by: ALL services in production and E2E (real Kubernetes with mounted ServiceAccount tokens)
 	ModeServiceAccount AuthTransportMode = iota
-
-	// ModeStaticToken uses a provided static token (for E2E tests with TokenRequest)
-	// Token: Provided via NewStaticTokenTransport(token)
-	// Injects: Authorization: Bearer <token>
-	ModeStaticToken
 )
 
 // AuthTransport is an http.RoundTripper that handles authentication for DataStorage API calls.
 //
-// It supports two modes:
-// 1. ModeServiceAccount: Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
-//    - Used by: Services in E2E/Production
-//    - Injects: Authorization: Bearer <token>
-//    - Caching: 5-minute cache to avoid filesystem reads on every request
-//
-// 2. ModeStaticToken: Uses provided token
-//    - Used by: E2E tests (via TokenRequest API)
-//    - Injects: Authorization: Bearer <token>
-//    - Caching: No caching (token provided once)
+// Mode: ModeServiceAccount (ONLY mode in production code)
+// - Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
+// - Used by: ALL services in production, E2E, and integration (with mounted tokens)
+// - Injects: Authorization: Bearer <token>
+// - Caching: 5-minute cache to avoid filesystem reads on every request
+// - Graceful degradation: If token file missing, request proceeds without auth
 //
 // Thread Safety:
 // - RoundTrip() is thread-safe (clones request, no shared state mutation)
@@ -97,15 +87,12 @@ const (
 // DD-AUTH-005: This transport enables all 7 Go services to authenticate with
 // DataStorage without modifying the OpenAPI-generated client code.
 //
-// NOTE: For integration tests (mock user headers), use pkg/testutil.NewMockUserTransport()
-// to avoid test logic in production code.
+// ZERO TEST LOGIC: This production code contains no test-specific modes.
+// For integration tests (mock user headers), use pkg/testutil.NewMockUserTransport().
 type AuthTransport struct {
 	base      http.RoundTripper
 	mode      AuthTransportMode
 	tokenPath string
-
-	// For ModeStaticToken
-	staticToken string
 
 	// Token caching (for ModeServiceAccount)
 	tokenCache      string
@@ -121,9 +108,10 @@ type AuthTransport struct {
 // Injects: Authorization: Bearer <token>
 //
 // Usage:
-//   transport := auth.NewServiceAccountTransport()
-//   httpClient := &http.Client{Transport: transport}
-//   dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
+//
+//	transport := auth.NewServiceAccountTransport()
+//	httpClient := &http.Client{Transport: transport}
+//	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
 // DD-AUTH-005: This is the PRIMARY transport for production and E2E services.
 // All 7 Go services use this via audit.NewOpenAPIClientAdapter().
@@ -144,34 +132,6 @@ func NewServiceAccountTransportWithBase(base http.RoundTripper) *AuthTransport {
 	}
 }
 
-// NewStaticTokenTransport creates a transport that uses a provided static token.
-// Used by E2E tests with TokenRequest API.
-//
-// Token: Provided by caller (via Kubernetes TokenRequest API)
-// Injects: Authorization: Bearer <token>
-//
-// Usage:
-//   token := getServiceAccountToken("test-sa", "namespace", 3600)
-//   transport := auth.NewStaticTokenTransport(token)
-//   httpClient := &http.Client{Transport: transport}
-//   dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
-//
-// DD-AUTH-005: This is the transport for E2E tests that need real oauth-proxy validation.
-func NewStaticTokenTransport(token string) *AuthTransport {
-	return NewStaticTokenTransportWithBase(token, http.DefaultTransport)
-}
-
-// NewStaticTokenTransportWithBase creates a static token transport with custom base transport.
-func NewStaticTokenTransportWithBase(token string, base http.RoundTripper) *AuthTransport {
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return &AuthTransport{
-		base:        base,
-		mode:        ModeStaticToken,
-		staticToken: token,
-	}
-}
 
 // RoundTrip implements http.RoundTripper.
 // Injects authentication headers based on the transport mode before forwarding the request.
@@ -185,22 +145,14 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// CRITICAL: http.RoundTripper must NOT modify the original request
 	reqClone := req.Clone(req.Context())
 
-	switch t.mode {
-	case ModeServiceAccount:
-		// Read token from filesystem (with 5-minute caching)
-		token := t.getServiceAccountToken()
-		if token != "" {
-			reqClone.Header.Set("Authorization", "Bearer "+token)
-		}
-		// Note: If token file doesn't exist, request proceeds without auth
-		// This allows services to start before ServiceAccount token is mounted
-
-	case ModeStaticToken:
-		// Use provided static token (E2E tests)
-		if t.staticToken != "" {
-			reqClone.Header.Set("Authorization", "Bearer "+t.staticToken)
-		}
+	// Read token from filesystem (with 5-minute caching)
+	token := t.getServiceAccountToken()
+	if token != "" {
+		reqClone.Header.Set("Authorization", "Bearer "+token)
 	}
+	// Note: If token file doesn't exist, request proceeds without auth
+	// This allows services to start before ServiceAccount token is mounted
+	// Also allows local development without Kubernetes
 
 	return t.base.RoundTrip(reqClone)
 }
@@ -252,4 +204,3 @@ func (t *AuthTransport) getServiceAccountToken() string {
 	t.tokenCacheTime = time.Now()
 	return t.tokenCache
 }
-
