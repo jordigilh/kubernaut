@@ -171,6 +171,12 @@ type AuditEvent struct {
 	IsSensitive   bool `json:"is_sensitive"`   // Flag for sensitive data (GDPR, PII)
 
 	// ========================================
+	// SOC2 Gap #9: Tamper-Evidence (Hash Chain)
+	// ========================================
+	EventHash         string `json:"event_hash"`          // SHA256 hash of (previous_event_hash + event_json)
+	PreviousEventHash string `json:"previous_event_hash"` // Hash of the previous event in the chain
+
+	// ========================================
 	// FLEXIBLE EVENT DATA (ADR-034)
 	// ========================================
 	EventData map[string]interface{} `json:"event_data"` // Service-specific data
@@ -253,9 +259,9 @@ func (r *AuditEventsRepository) getPreviousEventHash(ctx context.Context, tx *sq
 // END GAP #9 HASH CHAIN FUNCTIONS
 // ========================================
 
-// Create inserts a new audit event into the unified audit_events table
+// Create inserts a new audit event into the unified audit_events table with hash chain
 // Returns the created event with event_id and created_at populated
-// This implements the minimal functionality to pass TDD tests
+// SOC2 Gap #9: Implements blockchain-style hash chain for tamper detection
 func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (*AuditEvent, error) {
 	// Generate UUID if not provided
 	if event.EventID == uuid.Nil {
@@ -292,6 +298,37 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		version = "1.0"
 	}
 
+	// ========================================
+	// SOC2 Gap #9: Hash Chain Integration
+	// ========================================
+	// Start transaction to ensure advisory lock and insert are atomic
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// Get previous event hash (with advisory lock)
+	previousHash, err := r.getPreviousEventHash(ctx, tx, event.CorrelationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous event hash: %w", err)
+	}
+
+	// Calculate current event hash
+	eventHash, err := calculateEventHash(previousHash, event)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate event hash: %w", err)
+	}
+
+	// Store hashes in event struct
+	event.EventHash = eventHash
+	event.PreviousEventHash = previousHash
+	// ========================================
+
 	query := `
 		INSERT INTO audit_events (
 			event_id, event_version, event_timestamp, event_date, event_type,
@@ -300,7 +337,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			resource_type, resource_id, namespace, cluster_name,
 			actor_id, actor_type,
 			severity, duration_ms, error_code, error_message,
-			retention_days, is_sensitive, event_data
+			retention_days, is_sensitive, event_data,
+			event_hash, previous_event_hash
 		) VALUES (
 			$1, $2, $3, $4, $5,
 			$6, $7, $8,
@@ -308,7 +346,8 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 			$12, $13, $14, $15,
 			$16, $17,
 			$18, $19, $20, $21,
-			$22, $23, $24
+			$22, $23, $24,
+			$25, $26
 		)
 		RETURNING event_timestamp
 	`
@@ -340,9 +379,9 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		retentionDays = 2555
 	}
 
-	// Execute query (ADR-034 schema - 24 parameters)
+	// Execute query (ADR-034 schema + Gap #9 hash chain - 26 parameters)
 	var returnedTimestamp time.Time
-	err = r.db.QueryRowContext(ctx, query,
+	err = tx.QueryRowContext(ctx, query,
 		event.EventID,
 		version, // event_version
 		event.EventTimestamp,
@@ -367,20 +406,29 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		retentionDays,
 		event.IsSensitive,
 		eventDataJSON,
+		event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
+		event.PreviousEventHash, // Gap #9: Hash of previous event in chain
 	).Scan(&returnedTimestamp)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert audit event: %w", err)
 	}
 
+	// Commit transaction (releases advisory lock)
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	// Populate returned timestamp
 	event.EventTimestamp = returnedTimestamp
 
-	r.logger.V(1).Info("Audit event created",
+	r.logger.V(1).Info("Audit event created with hash chain",
 		"event_id", event.EventID.String(),
 		"event_type", event.EventType,
 		"event_category", event.EventCategory,
 		"correlation_id", event.CorrelationID,
+		"event_hash", event.EventHash[:16]+"...", // Log first 16 chars for debugging
+		"has_previous_hash", event.PreviousEventHash != "",
 	)
 
 	return event, nil
@@ -408,7 +456,19 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 
 	createdEvents := make([]*AuditEvent, 0, len(events))
 
-	// Prepare batch insert statement
+	// ========================================
+	// SOC2 Gap #9: Hash Chain Integration
+	// Group events by correlation_id to maintain hash chains
+	// ========================================
+	eventsByCorrelation := make(map[string][]*AuditEvent)
+	for _, event := range events {
+		eventsByCorrelation[event.CorrelationID] = append(eventsByCorrelation[event.CorrelationID], event)
+	}
+
+	// Track last hash for each correlation_id within this batch
+	lastHashByCorrelation := make(map[string]string)
+
+	// Prepare batch insert statement (includes hash chain columns)
 	query := `
 		INSERT INTO audit_events (
 			event_id, event_timestamp, event_date, event_type,
@@ -417,7 +477,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			resource_type, resource_id, namespace, cluster_name,
 			actor_id, actor_type,
 			severity, duration_ms, error_code, error_message,
-			retention_days, is_sensitive, event_data
+			retention_days, is_sensitive, event_data,
+			event_hash, previous_event_hash
 		) VALUES (
 			$1, $2, $3, $4,
 			$5, $6, $7,
@@ -425,7 +486,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			$11, $12, $13, $14,
 			$15, $16,
 			$17, $18, $19, $20,
-			$21, $22, $23
+			$21, $22, $23,
+			$24, $25
 		)
 		RETURNING event_timestamp
 	`
@@ -436,7 +498,19 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 	}
 	defer func() { _ = stmt.Close() }()
 
-	for _, event := range events {
+	// Process each correlation_id group sequentially to maintain chain
+	for correlationID, correlationEvents := range eventsByCorrelation {
+		// Get previous hash for this correlation_id (with advisory lock)
+		previousHash, hashErr := r.getPreviousEventHash(ctx, tx, correlationID)
+		if hashErr != nil {
+			err = fmt.Errorf("failed to get previous event hash for correlation_id %s: %w", correlationID, hashErr)
+			return nil, err
+		}
+
+		lastHashByCorrelation[correlationID] = previousHash
+
+		// Process events in this correlation sequentially
+		for _, event := range correlationEvents {
 		// Generate UUID if not provided
 		if event.EventID == uuid.Nil {
 			event.EventID = uuid.New()
@@ -482,7 +556,25 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			retentionDays = 2555
 		}
 
-		// Execute insert
+		// ========================================
+		// SOC2 Gap #9: Calculate hash chain for this event
+		// ========================================
+		previousHash := lastHashByCorrelation[event.CorrelationID]
+
+		eventHash, hashErr := calculateEventHash(previousHash, event)
+		if hashErr != nil {
+			err = fmt.Errorf("failed to calculate event hash for event %s: %w", event.EventID, hashErr)
+			return nil, err
+		}
+
+		event.EventHash = eventHash
+		event.PreviousEventHash = previousHash
+
+		// Update last hash for this correlation_id
+		lastHashByCorrelation[event.CorrelationID] = eventHash
+		// ========================================
+
+		// Execute insert (Gap #9: includes hash chain - 25 parameters)
 		var returnedTimestamp time.Time
 		execErr := stmt.QueryRowContext(ctx,
 			event.EventID,
@@ -508,6 +600,8 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			retentionDays,
 			event.IsSensitive,
 			eventDataJSON,
+			event.EventHash,         // Gap #9: SHA256 hash of (previous_hash + event_json)
+			event.PreviousEventHash, // Gap #9: Hash of previous event in chain
 		).Scan(&returnedTimestamp)
 
 		if execErr != nil {
@@ -517,15 +611,17 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 
 		event.EventTimestamp = returnedTimestamp
 		createdEvents = append(createdEvents, event)
+		}
 	}
 
-	// Commit transaction
+	// Commit transaction (releases all advisory locks)
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("failed to commit batch transaction: %w", err)
 	}
 
-	r.logger.Info("Batch audit events created",
+	r.logger.Info("Batch audit events created with hash chains",
 		"count", len(createdEvents),
+		"correlation_ids", len(eventsByCorrelation),
 	)
 
 	return createdEvents, nil

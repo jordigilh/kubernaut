@@ -355,9 +355,8 @@ func (s *Server) Handler() http.Handler {
 
 		// SOC2 Gap #9: Tamper detection verification API (PostgreSQL-based)
 		// BR-AUDIT-005: Enterprise-Grade Audit Integrity
-		// TODO: Implement verification API after hash chain migration
-		// s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
-		// r.Post("/audit/verify-chain", s.handleVerifyChain)
+		s.logger.V(1).Info("Registering /api/v1/audit/verify-chain handler (SOC2 Gap #9)")
+		r.Post("/audit/verify-chain", s.HandleVerifyChain)
 
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
