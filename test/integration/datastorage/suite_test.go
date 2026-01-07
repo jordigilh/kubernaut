@@ -193,8 +193,9 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	}
 	GinkgoWriter.Printf("  ✅ [Process %d] Created FK constraint: fk_audit_events_parent\n", processNum)
 
-	// Set search_path to use this schema
-	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s", schemaName))
+	// Set search_path to use this schema, with public as fallback for extensions
+	// This allows per-process schema isolation while still accessing shared extensions (pgcrypto, uuid-ossp)
+	_, err = db.Exec(fmt.Sprintf("SET search_path TO %s, public", schemaName))
 	if err != nil {
 		return "", fmt.Errorf("failed to set search_path: %w", err)
 	}

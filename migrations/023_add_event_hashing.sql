@@ -27,6 +27,9 @@
 --
 -- ========================================
 
+-- Step 0: Enable pgcrypto extension for digest() function
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Step 1: Add event_hash column (stores SHA256 hash of this event)
 ALTER TABLE audit_events ADD COLUMN event_hash TEXT;
 
@@ -133,6 +136,9 @@ DROP FUNCTION IF EXISTS audit_event_lock_id(TEXT);
 -- Drop columns
 ALTER TABLE audit_events DROP COLUMN IF EXISTS event_hash;
 ALTER TABLE audit_events DROP COLUMN IF EXISTS previous_event_hash;
+
+-- Note: We do NOT drop pgcrypto extension as other migrations may use it
+-- If needed, drop manually: DROP EXTENSION IF EXISTS pgcrypto CASCADE;
 
 RAISE NOTICE 'Gap #9 rollback complete: Hash chain removed';
 
