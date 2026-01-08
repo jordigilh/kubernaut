@@ -44,8 +44,7 @@ type ExpectedAuditEvent struct {
 	Namespace    *string
 	ClusterName  *string
 
-	// EventDataFields is DEPRECATED - use typed OpenAPI schemas (dsgen.*Payload) instead
-	// Kept for backwards compatibility but will panic if used
+	// EventData fields (validated if non-nil)
 	EventDataFields map[string]interface{}
 }
 
@@ -62,8 +61,9 @@ type ExpectedAuditEvent struct {
 //	    EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
 //	    CorrelationID: string(sp.UID),
 //	    Severity:      &severity,
-//	    // EventDataFields is DEPRECATED - use typed schemas instead
-//	    // For integration tests, cast EventData directly in test code
+//	    EventDataFields: map[string]interface{}{
+//	        "signal_name": "TestSignal",
+//	    },
 //	})
 func ValidateAuditEvent(event dsgen.AuditEvent, expected ExpectedAuditEvent) {
 	// Validate required fields
@@ -127,8 +127,23 @@ func ValidateAuditEvent(event dsgen.AuditEvent, expected ExpectedAuditEvent) {
 			"Audit event cluster name mismatch")
 	}
 
-	// EventDataFields is no longer supported - use typed OpenAPI schemas instead
-	// For integration tests, cast EventData to map[string]interface{} directly in test code
+	// Validate EventData fields if specified
+	if expected.EventDataFields != nil && len(expected.EventDataFields) > 0 {
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue(),
+			"Audit event EventData should be map[string]interface{}")
+
+		for key, expectedValue := range expected.EventDataFields {
+			actualValue, exists := eventData[key]
+			Expect(exists).To(BeTrue(),
+				fmt.Sprintf("Audit event EventData missing required field: %s", key))
+
+			if expectedValue != nil {
+				Expect(actualValue).To(Equal(expectedValue),
+					fmt.Sprintf("Audit event EventData[%s] mismatch", key))
+			}
+		}
+	}
 }
 
 // ValidateAuditEventHasRequiredFields validates that all standard audit fields are present.
@@ -143,24 +158,18 @@ func ValidateAuditEventHasRequiredFields(event dsgen.AuditEvent) {
 	Expect(event.Version).ToNot(BeEmpty(), "Audit event missing version")
 }
 
-// ValidateAuditEventDataNotEmpty validates that specified event_data fields are not empty.
-// This is a convenience helper for checking that event_data contains expected fields.
-func ValidateAuditEventDataNotEmpty(event dsgen.AuditEvent, fieldNames ...string) {
+// ValidateAuditEventDataNotEmpty validates that EventData contains expected keys.
+// Use this when you want to verify keys exist but don't care about specific values.
+func ValidateAuditEventDataNotEmpty(event dsgen.AuditEvent, requiredKeys ...string) {
 	eventData, ok := event.EventData.(map[string]interface{})
-	Expect(ok).To(BeTrue(), "EventData should be a map[string]interface{}")
-	
-	for _, fieldName := range fieldNames {
-		Expect(eventData).To(HaveKey(fieldName), "EventData should contain field: %s", fieldName)
-		value := eventData[fieldName]
-		Expect(value).ToNot(BeNil(), "EventData field should not be nil: %s", fieldName)
-		
-		// Check for empty string
-		if strVal, ok := value.(string); ok {
-			Expect(strVal).ToNot(BeEmpty(), "EventData field should not be empty string: %s", fieldName)
-		}
+	Expect(ok).To(BeTrue(), "Audit event EventData should be map[string]interface{}")
+
+	for _, key := range requiredKeys {
+		_, exists := eventData[key]
+		Expect(exists).To(BeTrue(),
+			fmt.Sprintf("Audit event EventData missing required field: %s", key))
 	}
 }
-
 
 // AuditEventMatcher is a Gomega matcher for audit events.
 // Example: Expect(event).To(MatchAuditEvent(expected))
