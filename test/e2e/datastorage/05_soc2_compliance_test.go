@@ -144,13 +144,13 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		statusCode := exportResp.StatusCode()
 		if statusCode != 200 {
 			lastResponseBody = string(exportResp.Body)
-			logger.Info("   Export returned non-200 (retrying...)", 
+			logger.Info("   Export returned non-200 (retrying...)",
 				"status", statusCode,
 				"response_body", lastResponseBody)
 		}
 		return statusCode
-	}, 30*time.Second, 2*time.Second).Should(Equal(200), 
-		fmt.Sprintf("Certificate generation should complete within 30s. Last error: %s, Last response: %s", 
+	}, 30*time.Second, 2*time.Second).Should(Equal(200),
+		fmt.Sprintf("Certificate generation should complete within 30s. Last error: %s, Last response: %s",
 			lastError, lastResponseBody))
 
 	logger.Info("   ✅ Certificate generation complete and validated")
@@ -167,6 +167,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		testCancel()
 
 		// Note: cert-manager and namespace cleanup happens in main AfterSuite
+		// Cluster logs are captured automatically via Kind export logs on test failure
 		// We only clean up test-specific resources here
 	})
 

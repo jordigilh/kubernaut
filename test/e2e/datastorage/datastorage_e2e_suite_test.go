@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -426,12 +427,47 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if suiteFailed {
+			logger.Info("⚠️  Test failure detected - collecting diagnostic information...")
+			
+			// Export cluster logs (like must-gather) BEFORE preserving cluster
+			logger.Info("📋 Exporting cluster logs (Kind must-gather)...")
+			logsDir := "/tmp/datastorage-e2e-logs-" + time.Now().Format("20060102-150405")
+			exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+			if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+				logger.Error(exportErr, "Failed to export Kind logs",
+					"output", string(exportOutput),
+					"logs_dir", logsDir)
+			} else {
+				logger.Info("✅ Cluster logs exported successfully",
+					"logs_dir", logsDir)
+				logger.Info("📁 Logs include: pod logs, node logs, kubelet logs, and more")
+				
+				// Extract and display DataStorage server logs for immediate analysis
+				dsLogPattern := logsDir + "/*/datastorage-e2e_data-storage-service-*/*.log"
+				findCmd := exec.Command("sh", "-c", "ls "+dsLogPattern+" 2>/dev/null | head -1")
+				if logPath, err := findCmd.Output(); err == nil && len(logPath) > 0 {
+					logPathStr := strings.TrimSpace(string(logPath))
+					logger.Info("📄 DataStorage server log location", "path", logPathStr)
+					
+					// Display last 100 lines of server log
+					tailCmd := exec.Command("tail", "-100", logPathStr)
+					if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
+						logger.Info("═══════════════════════════════════════════════════════════")
+						logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
+						logger.Info("═══════════════════════════════════════════════════════════")
+						fmt.Println(string(tailOutput))
+						logger.Info("═══════════════════════════════════════════════════════════")
+					}
+				}
+			}
+			
 			logger.Info("⚠️  Keeping cluster for debugging (KEEP_CLUSTER=true or test failed)")
 			logger.Info("Cluster details for debugging",
 				"cluster", clusterName,
 				"kubeconfig", kubeconfigPath,
 				"dataStorageURL", dataStorageURL,
-				"postgresURL", postgresURL)
+				"postgresURL", postgresURL,
+				"logs_exported", logsDir)
 			logger.Info("To delete the cluster manually: kind delete cluster --name " + clusterName)
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			return
