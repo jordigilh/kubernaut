@@ -161,7 +161,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		Ports:   map[int]int{8080: 18120}, // container:host
 		Env: map[string]string{
 			"MOCK_LLM_MODE":    "true",
-			"DATA_STORAGE_URL": "http://host.containers.internal:18095",
+			"DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080", // Container-to-container communication
 			"PORT":             "8080",
 			"LOG_LEVEL":        "DEBUG",
 		},
