@@ -53,6 +53,7 @@ type ExportFilters struct {
 	EventCategory  string
 	Offset         int
 	Limit          int
+	RedactPII      bool // SOC2 Day 10.2: Enable PII redaction for privacy compliance
 }
 
 // ExportEvent represents an audit event with hash chain validation

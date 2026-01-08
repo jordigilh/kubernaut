@@ -950,6 +950,29 @@ type ExportAuditEventsParams struct {
 
 	// Limit Maximum records per export
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// RedactPii Enable PII (Personally Identifiable Information) redaction in audit export.
+	//
+	// **SOC2 Privacy Compliance**: Redacts sensitive data to comply with data minimization principles.
+	//
+	// **Redaction Rules**:
+	// - Emails: user@domain.com → u***@d***.com
+	// - IP Addresses: 192.168.1.1 → 192.***.*.***
+	// - Phone Numbers: +1-555-1234 → +1-***-****
+	//
+	// **Fields Redacted**:
+	// - event_data.user_email
+	// - event_data.source_ip
+	// - event_data.phone_number
+	// - exported_by (if email)
+	//
+	// **Use Cases**:
+	// - Sharing exports with external auditors
+	// - Compliance reports for legal teams
+	// - Anonymized analysis and research
+	//
+	// Note: Redaction occurs AFTER hash chain verification to maintain integrity.
+	RedactPii *bool `form:"redact_pii,omitempty" json:"redact_pii,omitempty"`
 }
 
 // ExportAuditEventsParamsFormat defines parameters for ExportAuditEvents.
@@ -1874,6 +1897,22 @@ func NewExportAuditEventsRequest(server string, params *ExportAuditEventsParams)
 		if params.Limit != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "limit", runtime.ParamLocationQuery, *params.Limit); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.RedactPii != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "redact_pii", runtime.ParamLocationQuery, *params.RedactPii); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
