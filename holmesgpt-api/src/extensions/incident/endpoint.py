@@ -103,8 +103,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     except Exception as e:
         # BR-AUDIT-005: Audit writes are MANDATORY, but should not block business operation
         # Log the error but allow the business operation to complete
-        import logging
-        logger = logging.getLogger(__name__)
+        # Note: logger already defined at module level (line 35)
         logger.error(
             f"Failed to emit holmesgpt.response.complete audit event: {e}",
             extra={
