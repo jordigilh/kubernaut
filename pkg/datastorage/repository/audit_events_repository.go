@@ -145,24 +145,24 @@ type AuditEvent struct {
 	// ========================================
 	// RESOURCE TRACKING (4 columns)
 	// ========================================
-	ResourceType      string `json:"resource_type"` // e.g., pod, node, deployment
-	ResourceID        string `json:"resource_id"`   // Resource identifier
-	ResourceNamespace string `json:"namespace"`     // Kubernetes namespace (DB column: namespace)
-	ClusterID         string `json:"cluster_name"`  // Cluster identifier (DB column: cluster_name)
+	ResourceType      string `json:"resource_type,omitempty"` // e.g., pod, node, deployment
+	ResourceID        string `json:"resource_id,omitempty"`   // Resource identifier
+	ResourceNamespace string `json:"namespace,omitempty"`     // Kubernetes namespace (DB column: namespace)
+	ClusterID         string `json:"cluster_name,omitempty"`  // Cluster identifier (DB column: cluster_name)
 
 	// ========================================
 	// AUDIT METADATA (ADR-034)
 	// ========================================
-	Severity     string `json:"severity"`      // 'info', 'warning', 'error', 'critical'
-	DurationMs   int    `json:"duration_ms"`   // Operation duration in milliseconds
-	ErrorCode    string `json:"error_code"`    // Specific error code
-	ErrorMessage string `json:"error_message"` // Detailed error message
+	Severity     string `json:"severity,omitempty"`      // 'info', 'warning', 'error', 'critical'
+	DurationMs   int    `json:"duration_ms,omitempty"`   // Operation duration in milliseconds
+	ErrorCode    string `json:"error_code,omitempty"`    // Specific error code
+	ErrorMessage string `json:"error_message,omitempty"` // Detailed error message
 
 	// ========================================
 	// ACTOR INFORMATION (ADR-034)
 	// ========================================
-	ActorID   string `json:"actor_id"`   // User, service account, or system
-	ActorType string `json:"actor_type"` // e.g., user, service_account, system
+	ActorID   string `json:"actor_id,omitempty"`   // User, service account, or system
+	ActorType string `json:"actor_type,omitempty"` // e.g., user, service_account, system
 
 	// ========================================
 	// COMPLIANCE (ADR-034)
