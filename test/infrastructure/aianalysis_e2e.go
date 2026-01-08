@@ -53,6 +53,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
+	// Per Consolidated API Migration (January 2026):
+	// - Uses BuildImageForKind() for all images
+	// - Returns dynamic image names for later use
+	// - No manual tag generation
+	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
 	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
@@ -65,36 +70,41 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	buildResults := make(chan imageBuildResult, 3)
-	projectRoot := getProjectRoot()
-
-	// Generate unique infrastructure image tags per DD-TEST-001 v1.3
-	dataStorageImage := GenerateInfraImageName("datastorage", "aianalysis")
-	hapiImage := GenerateInfraImageName("holmesgpt-api", "aianalysis")
 
 	go func() {
-		err := buildImageOnly("Data Storage", dataStorageImage,
-			"docker/data-storage.Dockerfile", projectRoot, writer)
-		buildResults <- imageBuildResult{"datastorage", dataStorageImage, err}
-	}()
-
-	go func() {
-		err := buildImageOnly("HolmesGPT-API", hapiImage,
-			"holmesgpt-api/Dockerfile", projectRoot, writer)
-		buildResults <- imageBuildResult{"holmesgpt-api", hapiImage, err}
-	}()
-
-	go func() {
-		var err error
-		if os.Getenv("E2E_COVERAGE") == "true" {
-			_, _ = fmt.Fprintf(writer, "   📊 Building AIAnalysis with coverage (GOFLAGS=-cover)\n")
-			buildArgs := []string{"--build-arg", "GOFLAGS=-cover"}
-			err = buildImageWithArgs("AIAnalysis controller", "localhost/kubernaut-aianalysis:latest",
-				"docker/aianalysis.Dockerfile", projectRoot, buildArgs, writer)
-		} else {
-			err = buildImageOnly("AIAnalysis controller", "localhost/kubernaut-aianalysis:latest",
-				"docker/aianalysis.Dockerfile", projectRoot, writer)
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		buildResults <- imageBuildResult{"aianalysis", "localhost/kubernaut-aianalysis:latest", err}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"datastorage", imageName, err}
+	}()
+
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "holmesgpt-api",
+			ImageName:        "kubernaut/holmesgpt-api",
+			DockerfilePath:   "holmesgpt-api/Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   false, // HAPI does not support coverage
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"holmesgpt-api", imageName, err}
+	}()
+
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "aianalysis-controller",
+			ImageName:        "kubernaut/aianalysis-controller",
+			DockerfilePath:   "docker/aianalysis.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"aianalysis", imageName, err}
 	}()
 
 	builtImages := make(map[string]string)
@@ -104,7 +114,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			return fmt.Errorf("failed to build %s image: %w", result.name, result.err)
 		}
 		builtImages[result.name] = result.image
-		_, _ = fmt.Fprintf(writer, "  ✅ %s image built\n", result.name)
+		_, _ = fmt.Fprintf(writer, "  ✅ %s image built: %s\n", result.name, result.image)
 	}
 	_, _ = fmt.Fprintln(writer, "\n✅ All images built! (~3-4 min parallel)")
 	LogDiskSpace("IMAGES_BUILT", writer)
@@ -218,14 +228,10 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	return nil
 }
 
-func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "🗑️  Deleting AIAnalysis E2E cluster...")
-
-	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to delete cluster: %w", err)
+func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed bool, writer io.Writer) error {
+	// Use shared cleanup function with log export on failure
+	if err := DeleteCluster(clusterName, "aianalysis", testsFailed, writer); err != nil {
+		return err
 	}
 
 	// Remove kubeconfig
@@ -233,7 +239,6 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, writer io.Write
 		_ = os.Remove(kubeconfigPath)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Cluster deleted")
 	return nil
 }
 
@@ -367,9 +372,12 @@ spec:
 }
 
 func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+	// Per Consolidated API Migration (January 2026):
+	// Use dynamic image name parameter (built by BuildImageForKind)
+	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
 	// Deploy controller with RBAC (extracted from deployAIAnalysisController)
-	manifest := `
+	manifest := fmt.Sprintf(`
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -446,7 +454,7 @@ spec:
       serviceAccountName: aianalysis-controller
       containers:
       - name: aianalysis
-        image: localhost/kubernaut-aianalysis:latest
+        image: %s
         imagePullPolicy: Never
         ports:
         - containerPort: 8080
@@ -506,7 +514,7 @@ spec:
     port: 8081
     targetPort: 8081
     nodePort: 30284
-`
+`, imageName)
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer

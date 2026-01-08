@@ -214,8 +214,18 @@ func NewAuditEventsRepository(db *sql.DB, logger logr.Logger) *AuditEventsReposi
 // Hash = SHA256(previous_event_hash + event_json)
 // This creates an immutable chain where tampering with ANY event breaks the chain
 func calculateEventHash(previousHash string, event *AuditEvent) (string, error) {
+	// Create a temporary event struct for hashing to ensure consistency
+	// We must exclude fields that are:
+	// 1. The hash fields themselves (EventHash, PreviousEventHash) - not yet calculated
+	// 2. DB-generated date field (EventDate) - derived from EventTimestamp
+	// Note: EventTimestamp IS included in hash (set before calculation at line 291-292)
+	eventForHashing := *event // Create a copy
+	eventForHashing.EventHash = ""
+	eventForHashing.PreviousEventHash = ""
+	eventForHashing.EventDate = DateOnly{} // Clear derived field only
+
 	// Serialize event to JSON (canonical form for consistent hashing)
-	eventJSON, err := json.Marshal(event)
+	eventJSON, err := json.Marshal(eventForHashing)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
 	}

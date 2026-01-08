@@ -12,25 +12,25 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests"]
     verbs: ["get", "list", "watch"]
-  
+
   # Update CRD status for webhook mutation (user attribution)
   # SOC2 CC8.1 Requirement: Track user who initiated CRD status changes
   - apiGroups: ["kubernaut.ai"]
     resources: ["workflowexecutions/status", "remediationapprovalrequests/status"]
     verbs: ["update", "patch"]
-  
+
   # Read ServiceAccounts for user attribution in audit trails
   # SOC2 CC8.1 Requirement: Attribute actions to authenticated users
   - apiGroups: [""]
     resources: ["serviceaccounts"]
     verbs: ["get"]
-  
+
   # TokenReview for validating ServiceAccount tokens
   # Required for authenticating webhook callers
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
     verbs: ["create"]
-  
+
   # SubjectAccessReview for authorization checks
   # Required for verifying user permissions
   - apiGroups: ["authorization.k8s.io"]

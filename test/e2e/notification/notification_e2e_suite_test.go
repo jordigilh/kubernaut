@@ -320,9 +320,13 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Notification E2E Cluster Cleanup (ONCE - Process 1)")
 
-		// Keep cluster alive on failure for debugging (per DS team request)
-		if CurrentSpecReport().Failed() || os.Getenv("KEEP_CLUSTER") == "true" {
-			logger.Info("⚠️  KEEPING cluster for debugging (test failed or KEEP_CLUSTER=true)")
+		// Determine test results for log export decision
+		anyFailure := CurrentSpecReport().Failed()
+		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
+
+		// Keep cluster alive only if explicitly requested for manual debugging
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			logger.Info("🔍 CLUSTER DEBUGGING INFORMATION:")
 			logger.Info("  Cluster name: notification-e2e")
@@ -343,9 +347,9 @@ var _ = SynchronizedAfterSuite(
 			return // Skip cluster deletion
 		}
 
-		// Always clean up Kind cluster on successful test runs
+		// Delete cluster (with must-gather log export on failure)
 		logger.Info("Deleting Kind cluster...")
-		err := infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		err := infrastructure.DeleteNotificationCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete Kind cluster (non-fatal)")
 		} else {

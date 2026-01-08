@@ -58,7 +58,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -191,16 +190,22 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Cleaning up test environment")
 
-		// Check if we should preserve the cluster for debugging
-		if os.Getenv("PRESERVE_E2E_CLUSTER") == "true" {
-			GinkgoWriter.Println("⚠️  PRESERVE_E2E_CLUSTER=true, keeping cluster for debugging")
+		// Determine cleanup strategy
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+
+		if preserveCluster {
+			GinkgoWriter.Println("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", kubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
 			return
 		}
 
-		By("Deleting KIND cluster")
-		deleteKindCluster(clusterName)
+		By("Deleting KIND cluster (with must-gather log export on failure)")
+		// Note: RemediationOrchestrator doesn't track test failures currently
+		// Pass false for testsFailed until failure tracking is added
+		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", false, GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
+		}
 
 		By("Removing isolated kubeconfig file")
 		// ============================================================================

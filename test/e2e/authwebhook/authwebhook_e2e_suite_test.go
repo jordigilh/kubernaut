@@ -147,21 +147,19 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = fmt.Sprintf("%s/.kube/authwebhook-e2e-config", homeDir)
 
 		// Create infrastructure with parallel setup (ONCE for all tests)
-		// This uses parallel optimization: Build images | PostgreSQL | Redis | Immudb run concurrently
-		logger.Info("🚀 Setting up AuthWebhook E2E infrastructure (PARALLEL MODE)...")
-		// Generate unique image names per DD-TEST-001 compliant naming
-		dataStorageImage := infrastructure.GenerateInfraImageName("datastorage", "authwebhook-e2e")
-		authWebhookImage := infrastructure.GenerateInfraImageName("webhooks", "authwebhook-e2e")
-	// Setup AuthWebhook infrastructure (hybrid pattern) - returns built image names
-	var awImage, dsImage string
-	awImage, dsImage, err = infrastructure.SetupAuthWebhookInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
-	Expect(awImage).ToNot(BeEmpty(), "AuthWebhook image name must not be empty")
-	Expect(dsImage).ToNot(BeEmpty(), "DataStorage image name must not be empty")
-	
-	logger.Info("✅ Infrastructure setup complete")
-	logger.Info("  • AuthWebhook image: " + awImage)
-	logger.Info("  • DataStorage image: " + dsImage)
+		// Hybrid pattern: Build images → Create cluster → Load → Deploy
+		logger.Info("🚀 Setting up AuthWebhook E2E infrastructure (HYBRID PATTERN)...")
+
+		// Setup AuthWebhook infrastructure (hybrid pattern) - returns built image names
+		var awImage, dsImage string
+		awImage, dsImage, err = infrastructure.SetupAuthWebhookInfrastructureParallel(ctx, clusterName, kubeconfigPath, sharedNamespace, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(awImage).ToNot(BeEmpty(), "AuthWebhook image name must not be empty")
+		Expect(dsImage).ToNot(BeEmpty(), "DataStorage image name must not be empty")
+
+		logger.Info("✅ Infrastructure setup complete")
+		logger.Info("  • AuthWebhook image: " + awImage)
+		logger.Info("  • DataStorage image: " + dsImage)
 
 		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for Data Storage NodePort to be responsive...")
@@ -284,12 +282,13 @@ var _ = SynchronizedAfterSuite(
 		// Check if we should keep the cluster for debugging
 		keepCluster := os.Getenv("KEEP_CLUSTER")
 
-		// Preserve cluster if:
-		// 1. KEEP_CLUSTER env var is set to "true"
-		// 2. Any test failed (anyTestFailed flag)
-		// 3. Setup failed (k8sClient is nil means BeforeSuite didn't complete)
+		// Determine test results
 		setupFailed := k8sClient == nil
-		suiteFailed := keepCluster == "true" || anyTestFailed || setupFailed
+		anyFailure := anyTestFailed || setupFailed
+
+		// Preserve cluster only if KEEP_CLUSTER is explicitly set (manual debugging)
+		// Otherwise: export logs on failure, then always delete cluster
+		preserveCluster := keepCluster == "true"
 
 		// DD-TEST-007: E2E Coverage Capture Standard
 		// Extract coverage from Kind node before cluster deletion
@@ -361,19 +360,16 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("   💡 To collect E2E coverage: make test-e2e-authwebhook-coverage")
 		}
 
-		if suiteFailed {
+		if preserveCluster {
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 			if setupFailed {
-				logger.Info("🔍 REASON: BeforeSuite setup failed (infrastructure not ready)")
+				logger.Info("🔍 STATUS: BeforeSuite setup failed (infrastructure not ready)")
 			}
 			if anyTestFailed {
-				logger.Info("🔍 REASON: One or more tests failed")
-			}
-			if keepCluster == "true" {
-				logger.Info("🔍 REASON: KEEP_CLUSTER=true environment variable")
+				logger.Info("🔍 STATUS: One or more tests failed")
 			}
 
 			logger.Info("")
@@ -410,9 +406,9 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// Delete Kind cluster
+		// Delete Kind cluster (with log export on failure)
 		logger.Info("🗑️  Deleting Kind cluster...")
-		if err := infrastructure.DeleteCluster(clusterName, GinkgoWriter); err != nil {
+		if err := infrastructure.DeleteCluster(clusterName, "authwebhook", anyFailure, GinkgoWriter); err != nil {
 			logger.Error(err, "Failed to delete cluster")
 		} else {
 			logger.Info("✅ Cluster deleted successfully")

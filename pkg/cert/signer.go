@@ -165,7 +165,7 @@ func (s *Signer) Verify(data interface{}, signatureBase64 string) error {
 // Used for export metadata
 func (s *Signer) GetCertificateFingerprint() string {
 	fingerprint := sha256.Sum256(s.cert.Raw)
-	
+
 	// Format as colon-separated hex (standard fingerprint format)
 	formatted := ""
 	for i, b := range fingerprint {
@@ -174,7 +174,7 @@ func (s *Signer) GetCertificateFingerprint() string {
 		}
 		formatted += fmt.Sprintf("%02x", b)
 	}
-	
+
 	return formatted
 }
 

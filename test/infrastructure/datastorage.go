@@ -71,15 +71,123 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 	return nil
 }
 
-// DeleteCluster deletes a Kind cluster
-func DeleteCluster(clusterName string, writer io.Writer) error {
+// DeleteCluster deletes a Kind cluster and optionally exports logs on test failure
+//
+// Parameters:
+//   - clusterName: Name of the Kind cluster to delete
+//   - serviceName: Service name for log directory naming (e.g., "gateway", "datastorage")
+//   - testsFailed: If true, exports logs before deletion (must-gather style)
+//   - writer: Output writer for logging
+//
+// Log Export Behavior (when testsFailed=true):
+//   - Exports to: /tmp/{serviceName}-e2e-logs-{timestamp}
+//   - Uses `kind export logs` (equivalent to must-gather)
+//   - Extracts and displays kubernaut service logs (last 100 lines)
+//   - ALWAYS deletes cluster after log export
+//
+// Example:
+//
+//	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
+func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
+	if testsFailed {
+		// ═══════════════════════════════════════════════════════════════════════
+		// EXPORT LOGS (Must-Gather Style)
+		// ═══════════════════════════════════════════════════════════════════════
+		_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
+		_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
+
+		logsDir := fmt.Sprintf("/tmp/%s-e2e-logs-%s", serviceName, time.Now().Format("20060102-150405"))
+		exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+
+		if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+			_, _ = fmt.Fprintf(writer, "❌ Failed to export Kind logs: %s\n", string(exportOutput))
+			_, _ = fmt.Fprintf(writer, "   (Continuing with cluster deletion)\n\n")
+		} else {
+			_, _ = fmt.Fprintf(writer, "✅ Cluster logs exported successfully\n")
+			_, _ = fmt.Fprintf(writer, "📁 Location: %s\n", logsDir)
+			_, _ = fmt.Fprintf(writer, "📁 Contents: pod logs, node logs, kubelet logs, and more\n\n")
+
+			// ═══════════════════════════════════════════════════════════════════════
+			// EXTRACT KUBERNAUT SERVICE LOGS (for immediate analysis)
+			// ═══════════════════════════════════════════════════════════════════════
+			extractKubernautServiceLogs(logsDir, serviceName, writer)
+		}
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// ALWAYS DELETE CLUSTER (even after log export)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintf(writer, "🗑️  Deleting Kind cluster...\n")
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Failed to delete cluster: %s\n", output)
 		return fmt.Errorf("failed to delete cluster: %w", err)
 	}
+	_, _ = fmt.Fprintf(writer, "✅ Kind cluster deleted\n")
 	return nil
+}
+
+// extractKubernautServiceLogs finds and displays logs from kubernaut services
+// This helps with immediate debugging without manually navigating Kind log directories
+func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) {
+	// Define kubernaut service patterns to search for
+	servicePatterns := []struct {
+		name    string
+		pattern string
+	}{
+		{serviceName, fmt.Sprintf("*%s*/*.log", serviceName)},
+		{"datastorage", "*datastorage*/*.log"},
+		{"gateway", "*gateway*/*.log"},
+		{"holmesgpt-api", "*holmesgpt*/*.log"},
+		{"aianalysis", "*aianalysis*/*.log"},
+		{"notification", "*notification*/*.log"},
+		{"signalprocessing", "*signalprocessing*/*.log"},
+		{"workflowexecution", "*workflowexecution*/*.log"},
+		{"remediationorchestrator", "*remediationorchestrator*/*.log"},
+		{"authwebhook", "*authwebhook*/*.log"},
+	}
+
+	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n")
+	_, _ = fmt.Fprintf(writer, "📋 KUBERNAUT SERVICE LOGS (Last 100 lines each)\n")
+	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
+
+	foundAny := false
+	for _, svc := range servicePatterns {
+		// Try to find service log files
+		findPattern := filepath.Join(logsDir, "*", svc.pattern)
+		findCmd := exec.Command("sh", "-c", fmt.Sprintf("ls %s 2>/dev/null | head -5", findPattern))
+		logPaths, err := findCmd.Output()
+
+		if err == nil && len(logPaths) > 0 {
+			// Process each log file found
+			for _, logPath := range strings.Split(strings.TrimSpace(string(logPaths)), "\n") {
+				if logPath == "" {
+					continue
+				}
+
+				foundAny = true
+				_, _ = fmt.Fprintf(writer, "📄 Service: %s\n", svc.name)
+				_, _ = fmt.Fprintf(writer, "📁 Path: %s\n", logPath)
+				_, _ = fmt.Fprintf(writer, "-----------------------------------------------------------\n")
+
+				// Display last 100 lines
+				tailCmd := exec.Command("tail", "-100", logPath)
+				if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
+					fmt.Fprintln(writer, string(tailOutput))
+				} else {
+					_, _ = fmt.Fprintf(writer, "⚠️  Could not read log: %v\n", tailErr)
+				}
+				_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
+				break // Only show first log file per service
+			}
+		}
+	}
+
+	if !foundAny {
+		_, _ = fmt.Fprintf(writer, "⚠️  No kubernaut service logs found in exported directory\n")
+		_, _ = fmt.Fprintf(writer, "   (This is normal if pods never started)\n\n")
+	}
 }
 
 // SetupDataStorageInfrastructureParallel creates the full E2E infrastructure with parallel execution.

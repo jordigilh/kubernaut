@@ -683,21 +683,9 @@ func DeployTestServices(ctx context.Context, namespace, kubeconfigPath, dataStor
 }
 
 // DeleteGatewayCluster deletes the Kind cluster
-func DeleteGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "🗑️  Deleting Gateway E2E cluster...")
-
-	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	// Set KIND_EXPERIMENTAL_PROVIDER=podman to use Podman instead of Docker
-	cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to delete cluster: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "✅ Gateway E2E cluster deleted")
-	return nil
+func DeleteGatewayCluster(clusterName, kubeconfigPath string, testsFailed bool, writer io.Writer) error {
+	// Use shared cleanup function with log export on failure
+	return DeleteCluster(clusterName, "gateway", testsFailed, writer)
 }
 
 // ========================================

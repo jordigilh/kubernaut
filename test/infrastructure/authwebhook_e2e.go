@@ -367,21 +367,20 @@ func loadAuthWebhookImageWithTag(clusterName, imageTag string, writer io.Writer)
 
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster
 func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
-	// Generate webhook TLS certificates
-	_, _ = fmt.Fprintln(writer, "🔐 Generating webhook TLS certificates...")
-	if err := generateWebhookCerts(kubeconfigPath, namespace, writer); err != nil {
-		return fmt.Errorf("failed to generate webhook certs: %w", err)
-	}
-
-	// Apply CRDs first
-	_, _ = fmt.Fprintln(writer, "📋 Applying CRDs...")
-
 	// Get workspace root for config paths
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
+	// STEP 1: Generate webhook TLS certificates (but don't patch yet - webhook configs don't exist)
+	_, _ = fmt.Fprintln(writer, "🔐 Generating webhook TLS certificates...")
+	if err := generateWebhookCertsOnly(kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to generate webhook certs: %w", err)
+	}
+
+	// STEP 2: Apply CRDs first
+	_, _ = fmt.Fprintln(writer, "📋 Applying CRDs...")
 	cmd := exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
@@ -392,7 +391,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 		return fmt.Errorf("kubectl apply crds failed: %w", err)
 	}
 
-	// Apply webhook deployment
+	// STEP 3: Apply webhook deployment (creates webhook configurations with empty caBundle)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
@@ -405,7 +404,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 		return fmt.Errorf("kubectl apply failed: %w", err)
 	}
 
-	// Patch deployment with correct image tag
+	// STEP 4: Patch deployment with correct image tag
 	_, _ = fmt.Fprintf(writer, "🔧 Patching deployment with image: %s\n", imageTag)
 	cmd = exec.Command("kubectl", "set", "image",
 		"--kubeconfig", kubeconfigPath,
@@ -417,11 +416,18 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 		return fmt.Errorf("kubectl set image failed: %w", err)
 	}
 
+	// STEP 5: NOW patch webhook configurations with CA bundle (after they exist)
+	_, _ = fmt.Fprintln(writer, "🔐 Patching webhook configurations with CA bundle...")
+	if err := patchWebhookConfigurations(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to patch webhook configurations: %w", err)
+	}
+
 	return nil
 }
 
-// generateWebhookCerts generates TLS certificates for webhook admission and patches webhook configurations
-func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) error {
+// generateWebhookCertsOnly generates TLS certificates for webhook admission WITHOUT patching
+// This must be called BEFORE the deployment (which creates the webhook configurations)
+func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer) error {
 	// Use openssl to generate self-signed certificates for testing
 	// In production, use cert-manager
 
@@ -445,13 +451,6 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 		return fmt.Errorf("openssl req failed: %w", err)
 	}
 
-	// Base64 encode the certificate for CA bundle
-	caBundleOutput, err := exec.Command("bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
-	if err != nil {
-		return fmt.Errorf("failed to base64 encode CA bundle: %w", err)
-	}
-	caBundleB64 := string(caBundleOutput)
-
 	// Create and apply secret with certificates using a single command
 	cmd = exec.Command("kubectl", "create", "secret", "tls", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
@@ -463,33 +462,48 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 		return fmt.Errorf("kubectl create secret failed: %w", err)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ Webhook TLS certificates created")
+	_, _ = fmt.Fprintln(writer, "   ✅ Webhook TLS secret created")
+	return nil
+}
 
-	// Patch MutatingWebhookConfiguration with CA bundle
-	_, _ = fmt.Fprintln(writer, "🔧 Patching MutatingWebhookConfiguration with CA bundle...")
-	for _, webhookName := range []string{"workflowexecution.mutate.kubernaut.ai", "remediationapprovalrequest.mutate.kubernaut.ai"} {
+// patchWebhookConfigurations patches webhook configurations with CA bundle
+// This must be called AFTER the deployment is applied (webhook configurations must exist)
+func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
+	// Base64 encode the certificate for CA bundle
+	caBundleOutput, err := exec.Command("bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
+	if err != nil {
+		return fmt.Errorf("failed to base64 encode CA bundle: %w", err)
+	}
+	caBundleB64 := string(caBundleOutput)
+
+	// Patch each webhook in MutatingWebhookConfiguration
+	_, _ = fmt.Fprintln(writer, "   🔧 Patching MutatingWebhookConfiguration webhooks...")
+	webhookNames := []string{"workflowexecution.mutate.kubernaut.ai", "remediationapprovalrequest.mutate.kubernaut.ai"}
+	for i, webhookName := range webhookNames {
 		patchCmd := exec.Command("kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
-			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
+			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
 		if output, err := patchCmd.CombinedOutput(); err != nil {
-			_, _ = fmt.Fprintf(writer, "⚠️  Failed to patch %s: %s\n", webhookName, output)
-			// Continue anyway - webhook might still work
+			_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch %s: %s\n", webhookName, output)
+			return fmt.Errorf("failed to patch mutating webhook %s: %w", webhookName, err)
 		}
+		_, _ = fmt.Fprintf(writer, "   ✅ Patched %s\n", webhookName)
 	}
 
-	// Patch ValidatingWebhookConfiguration with CA bundle
-	_, _ = fmt.Fprintln(writer, "🔧 Patching ValidatingWebhookConfiguration with CA bundle...")
+	// Patch ValidatingWebhookConfiguration
+	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration...")
 	patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
 		"--kubeconfig", kubeconfigPath,
 		"--type=json",
 		"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/0/clientConfig/caBundle","value":"%s"}]`, caBundleB64))
 	if output, err := patchCmd.CombinedOutput(); err != nil {
-		_, _ = fmt.Fprintf(writer, "⚠️  Failed to patch validating webhook: %s\n", output)
-		// Continue anyway - webhook might still work
+		_, _ = fmt.Fprintf(writer, "   ❌ Failed to patch validating webhook: %s\n", output)
+		return fmt.Errorf("failed to patch validating webhook: %w", err)
 	}
+	_, _ = fmt.Fprintln(writer, "   ✅ Patched validating webhook")
 
-	_, _ = fmt.Fprintln(writer, "✅ Webhook configurations patched with CA bundle")
+	_, _ = fmt.Fprintln(writer, "✅ All webhook configurations patched with CA bundle")
 	return nil
 }
 

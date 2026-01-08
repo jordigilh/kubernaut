@@ -137,6 +137,16 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, func() {
 					ContainerImage: "test/image:latest",
 					Rationale:      "Test remediation plan for E2E validation",
 				},
+				// REQUIRED FIELDS (CRD validation)
+				InvestigationSummary: "E2E test investigation: Simulating approval request flow for SOC2 attribution verification",
+				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
+					{
+						Action:    "Execute test workflow",
+						Rationale: "E2E validation of approval attribution",
+					},
+				},
+				WhyApprovalRequired: "E2E test: Confidence score 0.75 is below auto-approve threshold (typically 0.8+)",
+				RequiredBy:          metav1.NewTime(metav1.Now().Add(15 * time.Minute)), // 15 minute approval window
 			},
 		}
 		Expect(k8sClient.Create(testCtx, rar)).To(Succeed())
@@ -278,7 +288,14 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 			Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(wfe), wfe)).To(Succeed())
 			Expect(wfe.Status.BlockClearance).ToNot(BeNil(), fmt.Sprintf("WFE #%d should have block clearance", i))
 			Expect(wfe.Status.BlockClearance.ClearedBy).ToNot(BeEmpty(), fmt.Sprintf("WFE #%d should have ClearedBy populated", i))
-			Expect(wfe.Status.BlockClearance.ClearedBy).To(ContainSubstring("@"), fmt.Sprintf("WFE #%d ClearedBy should be email format", i))
+			// In E2E (Kind cluster), user is "kubernetes-admin" (not email format)
+			// In production, user would be email from authentication system
+			// Both are valid - we just need to verify attribution is captured
+			Expect(wfe.Status.BlockClearance.ClearedBy).To(Or(
+				ContainSubstring("@"),                    // Production: email format
+				Equal("kubernetes-admin"),                 // E2E/Kind: default K8s user
+				MatchRegexp("^[a-z][a-z0-9-]+[a-z0-9]$"), // K8s valid username
+			), fmt.Sprintf("WFE #%d ClearedBy should be valid user format (email or K8s username)", i))
 		}
 
 		By("✅ E2E-MULTI-02 PASSED: 10 concurrent webhook requests handled successfully")

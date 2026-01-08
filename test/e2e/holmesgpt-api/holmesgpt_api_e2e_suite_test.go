@@ -260,16 +260,11 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("HAPI E2E Test Suite - Teardown (ONCE - Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Check if we should keep cluster for debugging
-		keepCluster := os.Getenv("KEEP_CLUSTER") == "true" || anyTestFailed
+		// Determine cleanup strategy
+		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
-		if keepCluster {
-			logger.Info("⚠️  Keeping cluster alive for debugging")
-			if anyTestFailed {
-				logger.Info("Reason: Tests failed")
-			} else {
-				logger.Info("Reason: KEEP_CLUSTER=true")
-			}
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("")
 			logger.Info("To debug:")
 			logger.Info("  export KUBECONFIG=" + kubeconfigPath)
@@ -282,11 +277,11 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// Delete cluster (with must-gather log export on failure)
 		logger.Info("🧹 Deleting Kind cluster...")
-		cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
-		output, err := cmd.CombinedOutput()
+		err := infrastructure.DeleteCluster(clusterName, "holmesgpt-api", anyTestFailed, GinkgoWriter)
 		if err != nil {
-			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err, "output", string(output))
+			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err)
 		} else {
 			logger.Info("✅ Cluster deleted successfully")
 		}

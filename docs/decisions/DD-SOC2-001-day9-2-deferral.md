@@ -1,9 +1,9 @@
 # DD-SOC2-001: Day 9.2 CLI Verification Tools - Deferred to v1.1
 
-**Date**: January 7, 2025  
-**Status**: ✅ Accepted  
-**Decision Maker**: User  
-**Context**: SOC2 Week 2 implementation priorities  
+**Date**: January 7, 2025
+**Status**: ✅ Accepted
+**Decision Maker**: User
+**Context**: SOC2 Week 2 implementation priorities
 
 ---
 
@@ -173,13 +173,13 @@ func VerifySignature(exportFile, certFile string) error {
 
 ---
 
-**Decision**: ✅ **Deferred to v1.1**  
-**Priority**: Optional (upon request)  
+**Decision**: ✅ **Deferred to v1.1**
+**Priority**: Optional (upon request)
 **Next**: Day 10.1 - RBAC for audit queries
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: January 7, 2025  
+**Document Version**: 1.0
+**Last Updated**: January 7, 2025
 **Next Review**: v1.1 planning
 
