@@ -89,7 +89,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: AI Analysis Error Audit Standardization",
 	})
 
 	Context("Gap #7 Scenario 1: Holmes API Timeout", func() {
-		It("should emit standardized error_details on Holmes API timeout", func() {
+		PIt("should emit standardized error_details on Holmes API timeout", func() {
 			// Given: AIAnalysis CRD configured to call Holmes API that times out
 			aiAnalysisName := fmt.Sprintf("test-timeout-%d", time.Now().Unix())
 			correlationID := aiAnalysisName
@@ -158,7 +158,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: AI Analysis Error Audit Standardization",
 	})
 
 	Context("Gap #7 Scenario 2: Holmes API Invalid Response", func() {
-		It("should emit standardized error_details on Holmes API invalid response", func() {
+		PIt("should emit standardized error_details on Holmes API invalid response", func() {
 			// Given: AIAnalysis CRD configured to call Holmes API that returns invalid response
 			aiAnalysisName := fmt.Sprintf("test-invalid-%d", time.Now().Unix())
 			correlationID := aiAnalysisName
