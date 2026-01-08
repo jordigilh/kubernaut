@@ -1923,3 +1923,194 @@ func loadDataStorageImageWithTag(clusterName, imageTag string, writer io.Writer)
 	_, _ = fmt.Fprintf(writer, "     ✅ DataStorage image loaded: %s\n", imageTag)
 	return nil
 }
+
+// InstallCertManager installs cert-manager into the Kind cluster for SOC2 E2E testing.
+// This is ONLY needed for DataStorage SOC2 compliance tests to validate production
+// certificate management flow.
+//
+// Installation:
+// - Uses official cert-manager v1.13.0+ manifests
+// - Installs into cert-manager namespace
+// - Requires ~30 seconds for full deployment
+//
+// Usage: Call ONLY in test/e2e/datastorage/05_soc2_compliance_test.go
+func InstallCertManager(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📦 Installing cert-manager (SOC2 E2E Only)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Use latest stable cert-manager version
+	certManagerURL := "https://github.com/cert-manager/cert-manager/releases/download/v1.13.3/cert-manager.yaml"
+
+	cmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-f", certManagerURL)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to install cert-manager: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ cert-manager installed (waiting for readiness...)")
+	return nil
+}
+
+// WaitForCertManagerReady waits for cert-manager pods to become ready.
+// This ensures cert-manager is fully operational before creating Certificate resources.
+//
+// Waits for:
+// - cert-manager controller pod (ready)
+// - cert-manager cainjector pod (ready)
+// - cert-manager webhook pod (ready)
+//
+// Timeout: 120 seconds (cert-manager can take 60-90s for webhook registration)
+func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for cert-manager to be ready...")
+
+	// Wait for cert-manager deployment to be available
+	checkCmd := exec.Command("kubectl", "wait",
+		"--kubeconfig", kubeconfigPath,
+		"--namespace", "cert-manager",
+		"--for=condition=available",
+		"--timeout=120s",
+		"deployment/cert-manager",
+		"deployment/cert-manager-cainjector",
+		"deployment/cert-manager-webhook")
+	checkCmd.Stdout = writer
+	checkCmd.Stderr = writer
+
+	if err := checkCmd.Run(); err != nil {
+		return fmt.Errorf("cert-manager did not become ready: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ cert-manager is ready")
+	return nil
+}
+
+// ApplyCertManagerIssuer creates the ClusterIssuer for self-signed certificate generation.
+// This is used by DataStorage Certificate resources to request TLS certificates.
+//
+// Creates:
+// - ClusterIssuer "selfsigned-issuer" (self-signed CA)
+//
+// Note: For production, this would be replaced with Let's Encrypt or organizational CA.
+func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
+
+	// Get workspace root to find the issuer manifest
+	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
+	if workspaceRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		// Navigate up from test/e2e/datastorage or test/infrastructure to repo root
+		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+	}
+
+	issuerPath := filepath.Join(workspaceRoot, "deploy", "cert-manager", "selfsigned-issuer.yaml")
+
+	// Check if issuer manifest exists
+	if _, err := os.Stat(issuerPath); os.IsNotExist(err) {
+		return fmt.Errorf("ClusterIssuer manifest not found at %s", issuerPath)
+	}
+
+	cmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-f", issuerPath)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create ClusterIssuer: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ ClusterIssuer 'selfsigned-issuer' created")
+	return nil
+}
+
+// DeployCertManagerDataStorage deploys DataStorage with cert-manager Certificate resource.
+// This is a specialized deployment function for SOC2 E2E tests that validates the
+// production certificate management flow.
+//
+// Deploys:
+// - DataStorage Deployment (with /etc/certs volumeMount)
+// - DataStorage Service
+// - Certificate resource (cert-manager managed)
+//
+// The Certificate resource triggers cert-manager to create a Secret with TLS cert/key,
+// which DataStorage mounts at /etc/certs for audit export signing.
+func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying DataStorage with cert-manager (SOC2 E2E)")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Get workspace root
+	workspaceRoot := os.Getenv("WORKSPACE_ROOT")
+	if workspaceRoot == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("failed to get current directory: %w", err)
+		}
+		workspaceRoot = filepath.Dir(filepath.Dir(filepath.Dir(cwd)))
+	}
+
+	// Apply Certificate resource first (cert-manager will create Secret)
+	certPath := filepath.Join(workspaceRoot, "deploy", "data-storage", "certificate.yaml")
+	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		return fmt.Errorf("Certificate manifest not found at %s", certPath)
+	}
+
+	_, _ = fmt.Fprintln(writer, "📋 Creating Certificate resource...")
+	certCmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"-f", certPath)
+	certCmd.Stdout = writer
+	certCmd.Stderr = writer
+
+	if err := certCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Certificate: %w", err)
+	}
+
+	// Wait for cert-manager to create the Secret
+	_, _ = fmt.Fprintln(writer, "⏳ Waiting for cert-manager to issue certificate...")
+	waitSecretCmd := exec.Command("kubectl", "wait",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"--for=condition=Ready",
+		"--timeout=60s",
+		"certificate/datastorage-signing-cert")
+	waitSecretCmd.Stdout = writer
+	waitSecretCmd.Stderr = writer
+
+	if err := waitSecretCmd.Run(); err != nil {
+		return fmt.Errorf("cert-manager did not issue certificate: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ Certificate issued by cert-manager")
+
+	// Now deploy DataStorage using Kustomize (includes deployment with cert volume mount)
+	kustomizePath := filepath.Join(workspaceRoot, "deploy", "data-storage")
+	_, _ = fmt.Fprintln(writer, "📦 Deploying DataStorage via Kustomize...")
+
+	// Use kubectl apply with kustomize
+	deployCmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-n", namespace,
+		"-k", kustomizePath)
+	deployCmd.Stdout = writer
+	deployCmd.Stderr = writer
+
+	// Set IMAGE_TAG environment variable for kustomize
+	deployCmd.Env = append(os.Environ(), fmt.Sprintf("IMAGE_TAG=%s", imageTag))
+
+	if err := deployCmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy DataStorage: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "✅ DataStorage deployed with cert-manager certificate")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	return nil
+}
