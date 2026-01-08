@@ -42,7 +42,6 @@ package aianalysis
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -203,11 +202,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	//
 	// DD-AUTH-006: Integration tests bypass oauth-proxy by injecting X-Auth-Request-User header
 	// OAuth-proxy is not running in integration tests (only in E2E/production)
-	mockTransport := testutil.NewMockUserTransport("aianalysis-service@integration.test", http.DefaultTransport)
+	hapiMockTransport := testutil.NewMockUserTransport("aianalysis-service@integration.test")
 	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
-	}, mockTransport)
+	}, hapiMockTransport)
 	Expect(err).ToNot(HaveOccurred(), "failed to create real HAPI client")
 
 	By("Setting up REAL Rego evaluator with production policies")
@@ -236,11 +235,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	GinkgoWriter.Println("📋 Setting up audit store...")
-	mockTransport := testutil.NewMockUserTransport("test-aianalysis@integration.test")
+	auditMockTransport := testutil.NewMockUserTransport("test-aianalysis@integration.test")
 	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
 		5*time.Second,
-		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+		auditMockTransport, // ← Mock user header injection (simulates oauth-proxy)
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
 
@@ -381,11 +380,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	// Create per-process REAL HAPI client (each process gets its own client)
 	// Integration tests use REAL HAPI service with MOCK_LLM_MODE=true (only mock allowed)
 	// DD-AUTH-006: Integration tests bypass oauth-proxy by injecting X-Auth-Request-User header
-	mockTransport := testutil.NewMockUserTransport("aianalysis-service@integration.test", http.DefaultTransport)
+	processHapiTransport := testutil.NewMockUserTransport("aianalysis-service@integration.test")
 	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
 		BaseURL: "http://localhost:18120",
 		Timeout: 30 * time.Second,
-	}, mockTransport)
+	}, processHapiTransport)
 	if err != nil {
 		// Don't fail here - let tests fail if HAPI is not available
 		GinkgoWriter.Printf("⚠️ Warning: failed to create real HAPI client: %v\n", err)

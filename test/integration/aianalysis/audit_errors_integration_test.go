@@ -64,13 +64,13 @@ var _ = Describe("BR-AUDIT-005 Gap #7: AI Analysis Error Audit Standardization",
 		dsClient       *dsgen.ClientWithResponses
 		ctx            context.Context
 		dataStorageURL string
-		testNamespace  string
+		// Note: testNamespace is provided by suite BeforeEach (unique per test)
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
 		dataStorageURL = os.Getenv("DATA_STORAGE_URL")
-		testNamespace = "kubernaut-ai-test"
+		// testNamespace is automatically set by suite BeforeEach (DD-TEST-002 compliance)
 
 		if dataStorageURL == "" {
 			Fail("DATA_STORAGE_URL environment variable not set")
