@@ -1083,6 +1083,7 @@ spec:
                 - PermanentError
                 - InvestigationInconclusive
                 - ProblemResolved
+                - MaxRetriesExceeded
                 type: string
               targetInOwnerChain:
                 description: |-
