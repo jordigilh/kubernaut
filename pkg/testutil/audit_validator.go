@@ -158,19 +158,6 @@ func ValidateAuditEventHasRequiredFields(event dsgen.AuditEvent) {
 	Expect(event.Version).ToNot(BeEmpty(), "Audit event missing version")
 }
 
-// ValidateAuditEventDataNotEmpty validates that EventData contains expected keys.
-// Use this when you want to verify keys exist but don't care about specific values.
-func ValidateAuditEventDataNotEmpty(event dsgen.AuditEvent, requiredKeys ...string) {
-	eventData, ok := event.EventData.(map[string]interface{})
-	Expect(ok).To(BeTrue(), "Audit event EventData should be map[string]interface{}")
-
-	for _, key := range requiredKeys {
-		_, exists := eventData[key]
-		Expect(exists).To(BeTrue(),
-			fmt.Sprintf("Audit event EventData missing required field: %s", key))
-	}
-}
-
 // AuditEventMatcher is a Gomega matcher for audit events.
 // Example: Expect(event).To(MatchAuditEvent(expected))
 type AuditEventMatcher struct {
