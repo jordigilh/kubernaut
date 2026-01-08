@@ -323,8 +323,15 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 // calculateEventHashForVerification computes the expected SHA256 hash for verification
 // Must match the calculateEventHash logic in audit_events_repository.go
 func calculateEventHashForVerification(previousHash string, event *AuditEvent) (string, error) {
+	// CRITICAL: Clear hash fields before hashing to match INSERT behavior
+	// During INSERT, hash is calculated BEFORE EventHash/PreviousEventHash are set
+	// We must replicate that behavior during verification
+	eventCopy := *event
+	eventCopy.EventHash = ""
+	eventCopy.PreviousEventHash = ""
+
 	// Serialize event to JSON (canonical form for consistent hashing)
-	eventJSON, err := json.Marshal(event)
+	eventJSON, err := json.Marshal(&eventCopy)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
 	}
