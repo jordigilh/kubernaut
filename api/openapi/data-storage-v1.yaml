@@ -861,6 +861,34 @@ paths:
             maximum: 10000
             default: 1000
           description: Maximum records per export
+        - name: redact_pii
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |
+            Enable PII (Personally Identifiable Information) redaction in audit export.
+            
+            **SOC2 Privacy Compliance**: Redacts sensitive data to comply with data minimization principles.
+            
+            **Redaction Rules**:
+            - Emails: user@domain.com → u***@d***.com
+            - IP Addresses: 192.168.1.1 → 192.***.*.***
+            - Phone Numbers: +1-555-1234 → +1-***-****
+            
+            **Fields Redacted**:
+            - event_data.user_email
+            - event_data.source_ip
+            - event_data.phone_number
+            - exported_by (if email)
+            
+            **Use Cases**:
+            - Sharing exports with external auditors
+            - Compliance reports for legal teams
+            - Anonymized analysis and research
+            
+            Note: Redaction occurs AFTER hash chain verification to maintain integrity.
       responses:
         '200':
           description: Export generated successfully

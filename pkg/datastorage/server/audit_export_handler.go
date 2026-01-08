@@ -26,6 +26,7 @@ import (
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/jordigilh/kubernaut/pkg/pii"
 )
 
 // ========================================
@@ -208,6 +209,9 @@ func parseExportFilters(r *http.Request) (repository.ExportFilters, error) {
 		filters.Limit = limit
 	}
 
+	// Parse redact_pii (SOC2 Day 10.2)
+	filters.RedactPII = query.Get("redact_pii") == "true"
+
 	return filters, nil
 }
 
@@ -312,6 +316,15 @@ func (s *Server) buildExportResponse(
 		return nil, fmt.Errorf("failed to unmarshal into generated type: %w", err)
 	}
 
+	// SOC2 Day 10.2: Apply PII redaction if requested
+	// Redaction happens AFTER hash chain verification to maintain integrity
+	if filters.RedactPII {
+		s.logger.V(1).Info("Applying PII redaction to audit export", "exported_by", exportedBy)
+		if err := s.applyPIIRedaction(&response); err != nil {
+			return nil, fmt.Errorf("failed to apply PII redaction: %w", err)
+		}
+	}
+
 	// Add detached signature if requested
 	if includeDetachedSignature {
 		detachedSig := s.buildDetachedSignature(signature, algorithm, certFingerprint)
@@ -370,6 +383,43 @@ Certificate-Fingerprint: %s
 
 %s
 -----END SIGNATURE-----`, algorithm, certFingerprint, signature)
+}
+
+// applyPIIRedaction applies PII redaction to the export response
+// SOC2 Day 10.2: Privacy compliance and data minimization
+//
+// Redacts:
+// - Emails: user@domain.com → u***@d***.com
+// - IP Addresses: 192.168.1.1 → 192.***.*.***
+// - Phone Numbers: +1-555-1234 → +1-***-****
+//
+// Target Fields:
+// - export_metadata.exported_by
+// - events[].event_data (all string fields)
+func (s *Server) applyPIIRedaction(response *dsgen.AuditExportResponse) error {
+	redactor := pii.NewRedactor()
+
+	// Redact exported_by field (if it's an email)
+	if response.ExportMetadata.ExportedBy != nil && *response.ExportMetadata.ExportedBy != "" {
+		redacted := redactor.RedactString(*response.ExportMetadata.ExportedBy)
+		response.ExportMetadata.ExportedBy = &redacted
+	}
+
+	// Redact PII in event_data fields
+	for i := range response.Events {
+		event := &response.Events[i]
+		if event.EventData != nil {
+			// event.EventData is already *map[string]interface{} in the generated type
+			// Apply redaction to the map
+			redactedData := redactor.RedactMapByFieldNames(*event.EventData, pii.PIIFields)
+			event.EventData = &redactedData
+		}
+	}
+
+	s.logger.V(1).Info("PII redaction applied successfully",
+		"events_processed", len(response.Events))
+
+	return nil
 }
 
 // writeRFC7807Error writes an RFC 7807 Problem Details error response
