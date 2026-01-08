@@ -616,19 +616,29 @@ func loadSigningCertificate(logger logr.Logger) (*cert.Signer, error) {
 	keyFile := "/etc/certs/tls.key"
 
 	// Check if cert-manager provided certificate exists
-	if _, err := os.Stat(certFile); os.IsNotExist(err) {
+	_, statErr := os.Stat(certFile)
+	if os.IsNotExist(statErr) {
 		logger.Info("cert-manager certificate not found, generating self-signed certificate",
 			"cert_file", certFile)
+		return generateFallbackCertificate(logger)
+	}
+
+	// Check if key file exists
+	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+		logger.Info("cert-manager key file not found, generating self-signed certificate",
+			"key_file", keyFile)
 		return generateFallbackCertificate(logger)
 	}
 
 	// Load certificate from cert-manager Secret
 	tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		logger.Error(err, "Failed to load certificate from cert-manager Secret",
+		// Fallback to self-signed if cert-manager cert is invalid/corrupt
+		logger.Info("cert-manager certificate invalid or corrupt, generating self-signed certificate",
 			"cert_file", certFile,
-			"key_file", keyFile)
-		return nil, fmt.Errorf("failed to load signing certificate: %w", err)
+			"key_file", keyFile,
+			"load_error", err.Error())
+		return generateFallbackCertificate(logger)
 	}
 
 	// Create signer from TLS certificate
