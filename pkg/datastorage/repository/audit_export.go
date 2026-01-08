@@ -140,9 +140,11 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		var eventDataJSON []byte
 		var legalHold bool
 		
-		// Use sql.NullString for nullable columns to handle NULL values from database
+		// Use sql.NullString for nullable string columns and sql.NullInt64 for nullable int columns
+		// to handle NULL values from database
 		var resourceType, resourceID, resourceNamespace, clusterID sql.NullString
 		var actorID, actorType, severity, errorCode, errorMessage sql.NullString
+		var durationMs sql.NullInt64
 
 		err := rows.Scan(
 			&event.EventID,
@@ -162,7 +164,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			&actorID,
 			&actorType,
 			&severity,
-			&event.DurationMs,
+			&durationMs,
 			&errorCode,
 			&errorMessage,
 			&event.RetentionDays,
@@ -187,6 +189,9 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		event.Severity = severity.String
 		event.ErrorCode = errorCode.String
 		event.ErrorMessage = errorMessage.String
+		
+		// Convert sql.NullInt64 to int (0 for NULL)
+		event.DurationMs = int(durationMs.Int64)
 
 		// Unmarshal event_data JSON
 		if len(eventDataJSON) > 0 {
