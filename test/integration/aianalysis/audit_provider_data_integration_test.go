@@ -243,14 +243,16 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 				ActorID:       &actorID,
 			})
 
-			By("Validating HAPI event_data structure (provider perspective - full response)")
-			hapiEventData, ok := hapiEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "HAPI event_data should be a map")
+		By("Validating HAPI event_data structure (provider perspective - full response)")
+		testutil.ValidateAuditEventHasRequiredFields(hapiEvent)
+		hapiEventData, ok := hapiEvent.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue(), "HAPI event_data should be a map")
 
-			// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
-			testutil.ValidateAuditEventDataNotEmpty(hapiEvent, "response_data")
-			responseData, ok := hapiEventData["response_data"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "response_data should be a map")
+		// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
+		Expect(hapiEventData).To(HaveKey("response_data"), "EventData should contain response_data")
+		responseData, ok := hapiEventData["response_data"].(map[string]interface{})
+		Expect(ok).To(BeTrue(), "response_data should be a map")
+		Expect(responseData).ToNot(BeEmpty(), "response_data should not be empty")
 
 			// Validate complete IncidentResponse structure (for RR reconstruction)
 			Expect(responseData).To(HaveKey("incident_id"), "Should have incident_id")
@@ -279,16 +281,16 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 				ActorID:       &aaActorID,
 			})
 
-			By("Validating AA event_data structure (consumer perspective - summary + business context)")
-			// DD-AUDIT-005: Validate provider_response_summary and business context fields
-			testutil.ValidateAuditEventDataNotEmpty(aaEvent,
-				"provider_response_summary",
-				"phase",
-				"approval_required",
-				"degraded_mode",
-				"warnings_count")
-
-			aaEventData := aaEvent.EventData.(map[string]interface{})
+		By("Validating AA event_data structure (consumer perspective - summary + business context)")
+		testutil.ValidateAuditEventHasRequiredFields(aaEvent)
+		
+		// DD-AUDIT-005: Validate provider_response_summary and business context fields
+		aaEventData := aaEvent.EventData.(map[string]interface{})
+		Expect(aaEventData).To(HaveKey("provider_response_summary"), "EventData should contain provider_response_summary")
+		Expect(aaEventData).To(HaveKey("phase"), "EventData should contain phase")
+		Expect(aaEventData).To(HaveKey("approval_required"), "EventData should contain approval_required")
+		Expect(aaEventData).To(HaveKey("degraded_mode"), "EventData should contain degraded_mode")
+		Expect(aaEventData).To(HaveKey("warnings_count"), "EventData should contain warnings_count")
 			summary := aaEventData["provider_response_summary"].(map[string]interface{})
 
 			// Validate provider_response_summary structure
