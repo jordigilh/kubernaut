@@ -181,6 +181,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 
 	// Clean up HAPI container on exit
 	DeferCleanup(func() {
+		// Capture HAPI logs before stopping container (for HTTP 500 RCA)
+		GinkgoWriter.Println("\n📋 Capturing HAPI container logs before cleanup:")
+		logsCmd := exec.Command("podman", "logs", "--tail", "100", hapiContainer.Name)
+		logsCmd.Stdout = GinkgoWriter
+		logsCmd.Stderr = GinkgoWriter
+		_ = logsCmd.Run()
+		GinkgoWriter.Println("")
+		
 		infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
 	})
 
