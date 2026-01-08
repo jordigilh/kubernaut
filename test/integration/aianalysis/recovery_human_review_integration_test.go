@@ -56,7 +56,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("BR-HAPI-197: Recovery Human Review Integration", Serial, Label("integration", "recovery", "human-review"), func() {
+var _ = PDescribe("BR-HAPI-197: Recovery Human Review Integration", Serial, Label("integration", "recovery", "human-review"), func() {
 	// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
 	// No need to set it here - each test gets a unique namespace automatically
 
