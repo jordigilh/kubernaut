@@ -95,18 +95,64 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		err = infrastructure.ApplyCertManagerIssuer(kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create ClusterIssuer")
 
-		// Step 4: Validate infrastructure
-		logger.Info("📦 Step 4/4: Validating infrastructure...")
-		logger.Info("   Using existing DataStorage service from main suite")
-		logger.Info("   (DataStorage uses fallback self-signed certs)")
-		logger.Info("   cert-manager infrastructure validated for future production use")
-		logger.Info("✅ SOC2 E2E infrastructure ready")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("⚠️  NOTE: These tests validate SOC2 compliance features")
-		logger.Info("   Production deployment uses cert-manager (infrastructure validated above)")
-		logger.Info("   E2E tests use fallback certs (faster, sufficient for compliance validation)")
-		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	})
+	// Step 4: Validate infrastructure
+	logger.Info("📦 Step 4/4: Validating infrastructure...")
+	logger.Info("   Using existing DataStorage service from main suite")
+	logger.Info("   (DataStorage uses fallback self-signed certs)")
+	logger.Info("   cert-manager infrastructure validated for future production use")
+
+	// Step 5: Warm-up signing certificate generation
+	// The DataStorage service generates self-signed certificates on-demand during the first export.
+	// We need to trigger this generation and wait for it to complete before running tests.
+	logger.Info("📋 Step 5/5: Warming up certificate generation...")
+	logger.Info("   Triggering initial export to generate self-signed certificate...")
+
+	// Create a test audit event for warm-up
+	warmupCorrelationID := "warmup-" + time.Now().Format("20060102-150405")
+	warmupEvent := dsgen.AuditEventRequest{
+		CorrelationId:  warmupCorrelationID,
+		EventAction:    "warmup_action",
+		EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+		EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+		EventType:      "certificate_warmup",
+		EventTimestamp: time.Now().UTC(),
+		Version:        "1.0",
+		EventData: map[string]interface{}{
+			"purpose": "certificate generation warmup",
+		},
+	}
+
+	warmupResp, err := dsClient.CreateAuditEventWithResponse(testCtx, warmupEvent)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create warmup audit event")
+	Expect(warmupResp.StatusCode()).To(Equal(201), "Warmup audit event should be created")
+	logger.Info("   ✅ Warmup event created")
+
+	// Attempt export with retry to allow certificate generation to complete
+	logger.Info("   ⏳ Waiting for certificate generation (up to 30s)...")
+	Eventually(func() int {
+		exportResp, err := dsClient.ExportAuditEventsWithResponse(testCtx, &dsgen.ExportAuditEventsParams{
+			CorrelationId: &warmupCorrelationID,
+			Limit:         toPtr(10),
+		})
+		if err != nil {
+			logger.Info("   Export attempt failed (retrying...)", "error", err.Error())
+			return 0
+		}
+		statusCode := exportResp.StatusCode()
+		if statusCode != 200 {
+			logger.Info("   Export returned non-200 (retrying...)", "status", statusCode)
+		}
+		return statusCode
+	}, 30*time.Second, 2*time.Second).Should(Equal(200), "Certificate generation should complete within 30s")
+
+	logger.Info("   ✅ Certificate generation complete and validated")
+	logger.Info("✅ SOC2 E2E infrastructure ready")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	logger.Info("⚠️  NOTE: These tests validate SOC2 compliance features")
+	logger.Info("   Production deployment uses cert-manager (infrastructure validated above)")
+	logger.Info("   E2E tests use fallback certs (faster, sufficient for compliance validation)")
+	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+})
 
 	AfterAll(func() {
 		logger.Info("🧹 Cleaning up SOC2 E2E test resources...")
@@ -697,6 +743,11 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 // Helper function to generate test correlation IDs
 func generateTestCorrelationID() string {
 	return "soc2-e2e-" + time.Now().Format("20060102-150405")
+}
+
+// Helper function to convert int to *int for optional parameters
+func toPtr(i int) *int {
+	return &i
 }
 
 // Helper function to create test audit events
