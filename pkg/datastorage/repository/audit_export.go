@@ -139,7 +139,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		event := &AuditEvent{}
 		var eventDataJSON []byte
 		var legalHold bool
-		
+
 		// Use sql.NullString for nullable string columns and sql.NullInt64 for nullable int columns
 		// to handle NULL values from database
 		var resourceType, resourceID, resourceNamespace, clusterID sql.NullString
@@ -178,8 +178,10 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			r.logger.Error(err, "Failed to scan audit event row")
 			return nil, fmt.Errorf("failed to scan audit event: %w", err)
 		}
-		
-		// Convert sql.NullString to regular strings (empty string for NULL)
+
+		// Convert sql.NullString to regular strings
+		// NULL → empty string, which will be omitted by `omitempty` JSON tags during hash calculation
+		// This preserves the original JSON structure for hash verification
 		event.ResourceType = resourceType.String
 		event.ResourceID = resourceID.String
 		event.ResourceNamespace = resourceNamespace.String
@@ -190,7 +192,8 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		event.ErrorCode = errorCode.String
 		event.ErrorMessage = errorMessage.String
 		
-		// Convert sql.NullInt64 to int (0 for NULL)
+		// Convert sql.NullInt64 to int
+		// NULL → 0, which will be omitted by `omitempty` JSON tag during hash calculation
 		event.DurationMs = int(durationMs.Int64)
 
 		// Unmarshal event_data JSON
