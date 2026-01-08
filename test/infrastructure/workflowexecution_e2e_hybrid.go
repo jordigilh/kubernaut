@@ -24,7 +24,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -93,43 +92,52 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 0: Generate dynamic image tags (BEFORE building)
-	// ═══════════════════════════════════════════════════════════════════════
-	// Generate DataStorage image tag ONCE (non-idempotent, timestamp-based)
-	// This ensures each service builds its OWN DataStorage with LATEST code
-	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-	dataStorageImageName := GenerateInfraImageName("datastorage", "workflowexecution")
-	_, _ = fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
-	_, _ = fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
-
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
+	// Per Consolidated API Migration (January 2026):
+	// - Uses BuildImageForKind() for all images
+	// - Returns dynamic image names for later use
+	// - No manual tag generation (PHASE 0 removed)
+	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
 
 	type buildResult struct {
-		name string
-		err  error
+		name      string
+		imageName string
+		err       error
 	}
 
 	buildResults := make(chan buildResult, 2)
+	builtImages := make(map[string]string)
 
 	// Build WorkflowExecution controller with coverage in parallel
 	go func() {
-		err := BuildWorkflowExecutionImageWithCoverage(projectRoot, writer)
-		buildResults <- buildResult{name: "WorkflowExecution (coverage)", err: err}
+		cfg := E2EImageConfig{
+			ServiceName:      "workflowexecution-controller",
+			ImageName:        "kubernaut/workflowexecution-controller",
+			DockerfilePath:   "docker/workflowexecution-controller.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   true,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "WorkflowExecution (coverage)", imageName: imageName, err: err}
 	}()
 
-	// Build DataStorage with dynamic tag in parallel
-	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
-	// uses build-before-cluster optimization pattern (Phase 3 analysis)
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// Build DataStorage in parallel
 	go func() {
-		err := buildDataStorageImageWithTag(dataStorageImageName, writer)
-		buildResults <- buildResult{name: "DataStorage", err: err}
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
 	// Wait for both builds to complete
@@ -141,7 +149,8 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
 			buildErrors = append(buildErrors, result.err)
 		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.imageName)
+			builtImages[result.name] = result.imageName
 		}
 	}
 
@@ -205,26 +214,34 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images into fresh cluster (parallel)
 	// ═══════════════════════════════════════════════════════════════════════
+	// Per Consolidated API Migration (January 2026):
+	// - Uses LoadImageToKind() for all images
+	// - Uses image names from builtImages map
+	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (coverage)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 
-	loadResults := make(chan buildResult, 2)
+	type loadResult struct {
+		name string
+		err  error
+	}
+
+	loadResults := make(chan loadResult, 2)
 
 	// Load WorkflowExecution controller image
 	go func() {
-		err := LoadWorkflowExecutionCoverageImage(clusterName, projectRoot, writer)
-		loadResults <- buildResult{name: "WorkflowExecution coverage", err: err}
+		wfeImage := builtImages["WorkflowExecution (coverage)"]
+		err := LoadImageToKind(wfeImage, "workflowexecution-controller", clusterName, writer)
+		loadResults <- loadResult{name: "WorkflowExecution coverage", err: err}
 	}()
 
-	// Load DataStorage image with dynamic tag
-	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
-	// uses build-before-cluster optimization pattern (Phase 3 analysis)
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// Load DataStorage image
 	go func() {
-		err := loadDataStorageImageWithTag(clusterName, dataStorageImageName, writer)
-		loadResults <- buildResult{name: "DataStorage", err: err}
+		dsImage := builtImages["DataStorage"]
+		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Wait for both loads to complete
@@ -249,8 +266,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 4: Deploy services in PARALLEL (DD-TEST-002 MANDATE)
 	// ═══════════════════════════════════════════════════════════════════════
-	// NOTE: Using dataStorageImageName from Phase 0 (generated BEFORE build)
-	// This ensures we deploy the SAME image we just built with latest code
+	// Per Consolidated API Migration (January 2026):
+	// - Use image names from builtImages map (built in Phase 1)
+	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying services in parallel...")
 	_, _ = fmt.Fprintln(writer, "  (Kubernetes will handle dependencies and reconciliation)")
 
@@ -278,14 +296,17 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
-		// CRITICAL: Use the tag generated in Phase 0 (UUID-based, non-idempotent)
-		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-		// This ensures we deploy the SAME fresh-built image with latest DataStorage code
-		err := deployDataStorageServiceInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, dataStorageImageName, writer)
+		// Per Consolidated API Migration (January 2026):
+		// Use DataStorage image name from builtImages map (built in Phase 1)
+		dsImage := builtImages["DataStorage"]
+		err := deployDataStorageServiceInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
 	go func() {
-		err := DeployWorkflowExecutionController(ctx, WorkflowExecutionNamespace, kubeconfigPath, writer)
+		// Per Consolidated API Migration (January 2026):
+		// Use WorkflowExecution image name from builtImages map (built in Phase 1)
+		wfeImage := builtImages["WorkflowExecution (coverage)"]
+		err := DeployWorkflowExecutionController(ctx, WorkflowExecutionNamespace, kubeconfigPath, wfeImage, writer)
 		deployResults <- deployResult{"WorkflowExecution", err}
 	}()
 
@@ -581,8 +602,13 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	return nil
 }
 
-func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfigPath string, output io.Writer) error {
+func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
+	// Per Consolidated API Migration (January 2026):
+	// Accept dynamic image name as parameter (built by BuildImageForKind in PHASE 1)
+	// Image already loaded to Kind in PHASE 3 - no build/load needed here
+	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintf(output, "\n🚀 Deploying WorkflowExecution Controller to %s...\n", namespace)
+	_, _ = fmt.Fprintf(output, "  Using pre-built image: %s\n", imageName)
 
 	// Find project root for absolute paths
 	projectRoot, err := findProjectRoot()
@@ -608,76 +634,6 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	crdCmd.Stderr = output
 	if err := crdCmd.Run(); err != nil {
 		return fmt.Errorf("failed to apply CRDs: %w", err)
-	}
-
-	// Build controller image with optional E2E coverage instrumentation (DD-TEST-007)
-	_, _ = fmt.Fprintf(output, "  Building controller image...\n")
-	dockerfilePath := filepath.Join(projectRoot, "docker/workflowexecution-controller.Dockerfile")
-	// DD-REGISTRY-001: Use localhost prefix for E2E test images
-	// DD-TEST-001: Use service-specific tag to avoid conflicts with other services
-	imageName := "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution"
-
-	buildArgs := []string{
-		"build",
-		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-
-		"-t", imageName,
-		"-f", dockerfilePath,
-	}
-
-	// Build for host architecture (no multi-arch support needed)
-	hostArch := runtime.GOARCH
-	buildArgs = append(buildArgs, "--build-arg", fmt.Sprintf("GOARCH=%s", hostArch))
-	_, _ = fmt.Fprintf(output, "   🏗️  Building for host architecture: %s\n", hostArch)
-
-	// DD-TEST-007: E2E Coverage Collection
-	// If E2E_COVERAGE=true, build with coverage instrumentation
-	if os.Getenv("E2E_COVERAGE") == "true" {
-		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
-		_, _ = fmt.Fprintf(output, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
-	}
-
-	buildArgs = append(buildArgs, projectRoot)
-
-	buildCmd := exec.Command("podman", buildArgs...)
-	buildCmd.Stdout = output
-	buildCmd.Stderr = output
-	if err := buildCmd.Run(); err != nil {
-		return fmt.Errorf("failed to build controller image: %w", err)
-	}
-
-	// Save image to tarball for Kind loading (Podman images need explicit save/load)
-	_, _ = fmt.Fprintf(output, "  Saving image for Kind cluster...\n")
-	tarPath := filepath.Join(projectRoot, "workflowexecution-controller.tar")
-	saveCmd := exec.Command("podman", "save", "-o", tarPath, imageName)
-	saveCmd.Stdout = output
-	saveCmd.Stderr = output
-	if err := saveCmd.Run(); err != nil {
-		return fmt.Errorf("failed to save controller image: %w", err)
-	}
-	defer func() { _ = os.Remove(tarPath) }()
-
-	// Load image into Kind from tarball
-	_, _ = fmt.Fprintf(output, "  Loading image into Kind cluster...\n")
-	loadCmd := exec.Command("kind", "load", "image-archive", tarPath,
-		"--name", WorkflowExecutionClusterName,
-	)
-	loadCmd.Stdout = output
-	loadCmd.Stderr = output
-	if err := loadCmd.Run(); err != nil {
-		return fmt.Errorf("failed to load image into Kind: %w", err)
-	}
-
-	// CRITICAL: Remove Podman image immediately to free disk space
-	// Image is now in Kind, Podman copy is duplicate
-	_, _ = fmt.Fprintf(output, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
-	rmiCmd.Stdout = output
-	rmiCmd.Stderr = output
-	if err := rmiCmd.Run(); err != nil {
-		_, _ = fmt.Fprintf(output, "  ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
-	} else {
-		_, _ = fmt.Fprintf(output, "  ✅ Podman image removed: %s\n", imageName)
 	}
 
 	// Apply static resources (Namespaces, ServiceAccounts, RBAC)
@@ -721,7 +677,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 
 	// Deploy controller programmatically with E2E coverage support (DD-TEST-007)
 	_, _ = fmt.Fprintf(output, "  Deploying controller programmatically (E2E coverage support)...\n")
-	if err := deployWorkflowExecutionControllerDeployment(ctx, namespace, kubeconfigPath, output); err != nil {
+	if err := deployWorkflowExecutionControllerDeployment(ctx, namespace, kubeconfigPath, imageName, output); err != nil {
 		return fmt.Errorf("failed to deploy controller: %w", err)
 	}
 
@@ -910,7 +866,10 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	return nil
 }
 
-func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace, kubeconfigPath string, output io.Writer) error {
+func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
+	// Per Consolidated API Migration (January 2026):
+	// Accept dynamic image name as parameter (built by BuildImageForKind)
+	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to get Kubernetes client: %w", err)
@@ -956,8 +915,8 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 					Containers: []corev1.Container{
 						{
 							Name:            "controller",
-							Image:           "localhost/kubernaut-workflowexecution:e2e-test-workflowexecution", // DD-TEST-001: service-specific tag
-							ImagePullPolicy: corev1.PullNever,                                                   // DD-REGISTRY-001: Use local image loaded into Kind
+							Image:           imageName,            // Per Consolidated API Migration (January 2026)
+							ImagePullPolicy: corev1.PullNever,    // DD-REGISTRY-001: Use local image loaded into Kind
 							Args: []string{
 								"--metrics-bind-address=:9090",
 								"--health-probe-bind-address=:8081",
@@ -1135,34 +1094,11 @@ func waitForDeploymentReady(kubeconfigPath, deploymentName string, output io.Wri
 	}
 	return nil
 }
-func DeleteWorkflowExecutionCluster(clusterName string, output io.Writer) error {
-	_, _ = fmt.Fprintf(output, "🗑️  Deleting Kind cluster %s...\n", clusterName)
-
-	// Add 60-second timeout to prevent hanging on stuck clusters
-	// Issue: kind delete can hang indefinitely with Podman provider
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", clusterName)
-	cmd.Stdout = output
-	cmd.Stderr = output
-	if err := cmd.Run(); err != nil {
-		// If timeout, ignore the error (cluster will be cleaned up by system)
-		if ctx.Err() == context.DeadlineExceeded {
-			_, _ = fmt.Fprintf(output, "⚠️  Cluster deletion timed out after 60s, continuing...\n")
-			return nil
-		}
-		// For other errors, check if cluster doesn't exist (ignore error)
-		// Error message: "cluster \"workflowexecution-e2e\" not found"
-		if strings.Contains(err.Error(), "not found") {
-			_, _ = fmt.Fprintf(output, "ℹ️  Cluster already deleted or doesn't exist\n")
-			return nil
-		}
-		return fmt.Errorf("failed to delete Kind cluster: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(output, "✅ Kind cluster deleted\n")
-	return nil
+func DeleteWorkflowExecutionCluster(clusterName string, testsFailed bool, output io.Writer) error {
+	// Use shared cleanup function with log export on failure
+	// Note: WorkflowExecution has history of hung deletions, but DeleteCluster doesn't have timeout
+	// If this becomes an issue again, we may need to add timeout support to shared function
+	return DeleteCluster(clusterName, "workflowexecution", testsFailed, output)
 }
 
 
