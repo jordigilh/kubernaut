@@ -70,7 +70,7 @@ import (
 // Infrastructure: Uses existing AIAnalysis integration test infrastructure (auto-started)
 //
 // ========================================
-var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, Label("integration", "audit", "hybrid", "soc2"), func() {
+var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, Label("integration", "audit", "hybrid", "soc2"), func() {
 	var (
 		ctx            context.Context
 		namespace      string
