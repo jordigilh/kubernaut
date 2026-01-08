@@ -69,7 +69,7 @@ type ExportResult struct {
 	TotalEventsQueried     int
 	ValidChainEvents       int
 	BrokenChainEvents      int
-	ChainIntegrityPercent  float64
+	ChainIntegrityPercent  float32
 	TamperedEventIDs       []string
 	VerificationTimestamp  time.Time
 }
@@ -310,7 +310,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 
 	// Calculate chain integrity percentage
 	if result.TotalEventsQueried > 0 {
-		result.ChainIntegrityPercent = (float64(result.ValidChainEvents) / float64(result.TotalEventsQueried)) * 100.0
+		result.ChainIntegrityPercent = float32((float64(result.ValidChainEvents) / float64(result.TotalEventsQueried)) * 100.0)
 	} else {
 		result.ChainIntegrityPercent = 100.0
 	}
