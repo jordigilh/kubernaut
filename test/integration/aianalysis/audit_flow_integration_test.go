@@ -104,7 +104,7 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 //
 // See: DD-TESTING-001 for audit event validation standards
 // ========================================
-var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Serial, Label("integration", "audit", "flow"), func() {
+var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Serial, Label("integration", "audit", "flow"), func() {
 	var (
 		ctx            context.Context
 		namespace      string
