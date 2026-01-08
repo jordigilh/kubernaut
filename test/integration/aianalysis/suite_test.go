@@ -149,8 +149,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 
 	By("Starting HolmesGPT-API HTTP service (programmatically)")
 	// AA integration tests use OpenAPI HAPI client (HTTP-based)
-	// DD-TEST-001 v2.2: HAPI port 18120
-	// HAPI runs with MOCK_LLM_MODE=true to avoid LLM costs
+	// DD-TEST-001 v1.3: Infrastructure image format for shared services
+	// HAPI port 18120, runs with MOCK_LLM_MODE=true to avoid LLM costs
 	projectRoot := filepath.Join("..", "..", "..") // test/integration/aianalysis -> project root
 	hapiConfigDir, err := filepath.Abs("hapi-config")
 	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
@@ -172,7 +172,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		BuildDockerfile: "holmesgpt-api/Dockerfile",
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
-			Timeout: 120 * time.Second,
+			Timeout: 300 * time.Second, // HAPI build takes ~100s (Python wheels, dependencies)
 		},
 	}
 	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
