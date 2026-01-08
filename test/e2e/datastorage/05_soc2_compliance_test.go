@@ -129,21 +129,29 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 	// Attempt export with retry to allow certificate generation to complete
 	logger.Info("   ⏳ Waiting for certificate generation (up to 30s)...")
+	var lastError string
+	var lastResponseBody string
 	Eventually(func() int {
 		exportResp, err := dsClient.ExportAuditEventsWithResponse(testCtx, &dsgen.ExportAuditEventsParams{
 			CorrelationId: &warmupCorrelationID,
 			Limit:         toPtr(10),
 		})
 		if err != nil {
-			logger.Info("   Export attempt failed (retrying...)", "error", err.Error())
+			lastError = err.Error()
+			logger.Info("   Export attempt failed (retrying...)", "error", lastError)
 			return 0
 		}
 		statusCode := exportResp.StatusCode()
 		if statusCode != 200 {
-			logger.Info("   Export returned non-200 (retrying...)", "status", statusCode)
+			lastResponseBody = string(exportResp.Body)
+			logger.Info("   Export returned non-200 (retrying...)", 
+				"status", statusCode,
+				"response_body", lastResponseBody)
 		}
 		return statusCode
-	}, 30*time.Second, 2*time.Second).Should(Equal(200), "Certificate generation should complete within 30s")
+	}, 30*time.Second, 2*time.Second).Should(Equal(200), 
+		fmt.Sprintf("Certificate generation should complete within 30s. Last error: %s, Last response: %s", 
+			lastError, lastResponseBody))
 
 	logger.Info("   ✅ Certificate generation complete and validated")
 	logger.Info("✅ SOC2 E2E infrastructure ready")
