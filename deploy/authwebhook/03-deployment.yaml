@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: authwebhook
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+    app.kubernetes.io/part-of: kubernaut-platform
+spec:
+  replicas: 2  # High availability for critical webhook
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: authwebhook
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: authwebhook
+        app.kubernetes.io/component: admission-webhook
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8081"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: authwebhook
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: authwebhook
+          image: quay.io/jordigilh/kubernaut-webhooks:latest
+          imagePullPolicy: Always
+          ports:
+            - name: webhook
+              containerPort: 9443
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          env:
+            # Webhook Configuration
+            - name: WEBHOOK_PORT
+              value: "9443"
+            - name: LOG_LEVEL
+              value: "info"  # Production log level
+            
+            # Data Storage Configuration (SOC2 CC8.1 - Audit trail integration)
+            - name: DATA_STORAGE_URL
+              value: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+            
+            # Kubernetes API Configuration
+            - name: KUBERNETES_SERVICE_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: authwebhook-tls
+            defaultMode: 0400
+
