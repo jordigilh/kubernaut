@@ -19,6 +19,7 @@ package repository
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -138,6 +139,10 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		event := &AuditEvent{}
 		var eventDataJSON []byte
 		var legalHold bool
+		
+		// Use sql.NullString for nullable columns to handle NULL values from database
+		var resourceType, resourceID, resourceNamespace, clusterID sql.NullString
+		var actorID, actorType, severity, errorCode, errorMessage sql.NullString
 
 		err := rows.Scan(
 			&event.EventID,
@@ -150,16 +155,16 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			&event.CorrelationID,
 			&event.ParentEventID,
 			&event.ParentEventDate,
-			&event.ResourceType,
-			&event.ResourceID,
-			&event.ResourceNamespace,
-			&event.ClusterID,
-			&event.ActorID,
-			&event.ActorType,
-			&event.Severity,
+			&resourceType,
+			&resourceID,
+			&resourceNamespace,
+			&clusterID,
+			&actorID,
+			&actorType,
+			&severity,
 			&event.DurationMs,
-			&event.ErrorCode,
-			&event.ErrorMessage,
+			&errorCode,
+			&errorMessage,
 			&event.RetentionDays,
 			&event.IsSensitive,
 			&eventDataJSON,
@@ -171,6 +176,17 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			r.logger.Error(err, "Failed to scan audit event row")
 			return nil, fmt.Errorf("failed to scan audit event: %w", err)
 		}
+		
+		// Convert sql.NullString to regular strings (empty string for NULL)
+		event.ResourceType = resourceType.String
+		event.ResourceID = resourceID.String
+		event.ResourceNamespace = resourceNamespace.String
+		event.ClusterID = clusterID.String
+		event.ActorID = actorID.String
+		event.ActorType = actorType.String
+		event.Severity = severity.String
+		event.ErrorCode = errorCode.String
+		event.ErrorMessage = errorMessage.String
 
 		// Unmarshal event_data JSON
 		if len(eventDataJSON) > 0 {
