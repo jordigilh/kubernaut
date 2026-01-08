@@ -123,14 +123,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15438)")
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
-	GinkgoWriter.Println("  • HolmesGPT API (port 18120, MOCK_LLM_MODE=true)")
+	GinkgoWriter.Println("  • HAPI: Direct business logic calls (NO HTTP service)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("Starting AIAnalysis integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, Immudb, DataStorage, HolmesGPT-API
-	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, Immudb=13326, DS=18095
+	// This starts: PostgreSQL, Redis, DataStorage (NO HAPI HTTP service - integration tests use direct business logic calls)
+	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, DS=18095
+	// Note: HAPI HTTP service only available in E2E tests, not integration tests
 	var err error
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "aianalysis",
@@ -141,7 +142,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		ConfigDir:       "test/integration/aianalysis/config",
 	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
+	GinkgoWriter.Println("ℹ️  HAPI HTTP service NOT started - integration tests use direct business logic calls")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
@@ -317,7 +319,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	GinkgoWriter.Println("    - PostgreSQL: localhost:15438")
 	GinkgoWriter.Println("    - Redis: localhost:16384")
 	GinkgoWriter.Println("    - Data Storage: http://localhost:18095")
-	GinkgoWriter.Println("    - HolmesGPT API: http://localhost:18120 (mock LLM only)")
+	GinkgoWriter.Println("  • HAPI: Direct business logic calls (NO HTTP service in integration tests)")
 	GinkgoWriter.Println("")
 
 	// Serialize REST config to pass to all processes
