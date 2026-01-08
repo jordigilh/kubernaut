@@ -107,8 +107,8 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
         logger.error(
             f"Failed to emit holmesgpt.response.complete audit event: {e}",
             extra={
-                "incident_id": request.incident_id,
-                "remediation_id": request.remediation_id,
+                "incident_id": incident_req.incident_id,
+                "remediation_id": incident_req.remediation_id,
                 "event_type": "holmesgpt.response.complete",
                 "adr": "ADR-032 §1",  # Audit writes are mandatory, but non-blocking
             },
