@@ -172,7 +172,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		BuildDockerfile: "holmesgpt-api/Dockerfile",
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 	}
 	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)

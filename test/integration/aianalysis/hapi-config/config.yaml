@@ -5,6 +5,7 @@ llm:
   provider: "mock"
   model: "mock/test-model"
   endpoint: "http://localhost:11434"
+  secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
 
 data_storage:
   url: "http://host.containers.internal:18095"
