@@ -117,9 +117,9 @@ var _ = SynchronizedBeforeSuite(
 		// Per RO team kubeconfig standardization (REQUEST_WORKFLOWEXECUTION_KUBECONFIG_STANDARDIZATION.md)
 		kubeconfigPath = fmt.Sprintf("%s/.kube/workflowexecution-e2e-config", homeDir)
 
-		// Delete any existing cluster first
+		// Delete any existing cluster first (cleanup operation, no log export needed)
 		logger.Info("Checking for existing cluster...")
-		_ = infrastructure.DeleteWorkflowExecutionCluster(clusterName, GinkgoWriter)
+		_ = infrastructure.DeleteWorkflowExecutionCluster(clusterName, false, GinkgoWriter)
 
 		// Create Kind cluster with Tekton (using HYBRID PARALLEL infrastructure setup)
 		// DD-TEST-002: Hybrid parallel approach (build parallel → cluster → load → deploy)
@@ -320,14 +320,18 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		if anyTestFailed {
-			logger.Info("⚠️  Tests failed - preserving cluster for investigation")
+		// Determine cleanup strategy
+		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
+
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING (KEEP_CLUSTER=true)")
 			logger.Info("    Cluster: " + clusterName)
 			logger.Info("    Kubeconfig: " + kubeconfigPath)
 			logger.Info("    Delete manually: kind delete cluster --name " + clusterName)
 		} else {
+			// Delete cluster (with must-gather log export on failure)
 			logger.Info("🗑️  Cleaning up Kind cluster...")
-			err := infrastructure.DeleteWorkflowExecutionCluster(clusterName, GinkgoWriter)
+			err := infrastructure.DeleteWorkflowExecutionCluster(clusterName, anyTestFailed, GinkgoWriter)
 			if err != nil {
 				logger.Error(err, "Failed to delete cluster")
 			}

@@ -294,56 +294,22 @@ func GetE2EFileOutputDir() (string, error) {
 	return "/tmp/kubernaut-e2e-notifications", nil
 }
 
-func DeleteNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func DeleteNotificationCluster(clusterName, kubeconfigPath string, testsFailed bool, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Cleaning up Notification E2E Cluster")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Check if cluster exists before attempting deletion
-	// This prevents podman provider hang when cluster doesn't exist
-	checkCtx, checkCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer checkCancel()
-
-	checkCmd := exec.CommandContext(checkCtx, "kind", "get", "clusters")
-	output, err := checkCmd.CombinedOutput()
-	clusterExists := false
-
-	if err != nil {
-		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to check for existing clusters: %v\n", err)
-		// Assume cluster might exist, attempt deletion anyway
-		clusterExists = true
-	} else {
-		for _, line := range strings.Split(string(output), "\n") {
-			if strings.TrimSpace(line) == clusterName {
-				clusterExists = true
-				break
-			}
-		}
-	}
-
-	if !clusterExists {
-		_, _ = fmt.Fprintf(writer, "ℹ️  Cluster %s does not exist, skipping deletion\n", clusterName)
-	} else {
-		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 120*time.Second)
-		defer deleteCancel()
-
-		deleteCmd := exec.CommandContext(deleteCtx, "kind", "delete", "cluster", "--name", clusterName)
-		deleteCmd.Stdout = writer
-		deleteCmd.Stderr = writer
-
-		if err := deleteCmd.Run(); err != nil {
-			_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to delete Kind cluster %s: %v\n", clusterName, err)
-			// Don't return error - best effort cleanup
-		} else {
-			_, _ = fmt.Fprintf(writer, "✅ Kind cluster %s deleted\n", clusterName)
-		}
+	// Use shared cleanup function with log export on failure
+	if err := DeleteCluster(clusterName, "notification", testsFailed, writer); err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to delete cluster: %v\n", err)
+		// Don't return error - best effort cleanup
 	}
 
 	// Clean up kubeconfig file (uses passed path for consistency with Gateway pattern)
 	if err := os.Remove(kubeconfigPath); err != nil && !os.IsNotExist(err) {
 		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Failed to remove kubeconfig: %v\n", err)
 	} else {
-		_, _ = fmt.Fprintf(writer, "✅ Kubeconfig removed: %s\n", kubeconfigPath)
+		_, _ = fmt.Fprintln(writer, "✅ Kubeconfig removed")
 	}
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

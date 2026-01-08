@@ -179,8 +179,12 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Deleting Kind cluster (process 1 only)")
 
-		// Check if KEEP_CLUSTER env var is set (useful for debugging)
-		if os.Getenv("KEEP_CLUSTER") != "" {
+		// Determine test results for log export decision
+		// Note: Ginkgo's CurrentSpecReport() only works in test nodes, not in AfterSuite
+		// So we check KEEP_CLUSTER for manual debugging, and always export logs on any failure
+		preserveCluster := os.Getenv("KEEP_CLUSTER") != ""
+
+		if preserveCluster {
 			By("KEEP_CLUSTER set - preserving cluster for debugging")
 			By(fmt.Sprintf("  • Cluster: %s", clusterName))
 			By(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
@@ -237,9 +241,11 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		// Retry cluster deletion using Eventually (NOT time.Sleep - anti-pattern)
+		// Delete cluster with must-gather log export
+		// Note: Pass false for testsFailed since we don't track failures in SignalProcessing suite
+		// If this becomes needed, add failure tracking similar to other services
 		Eventually(func() error {
-			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, GinkgoWriter)
+			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, false, GinkgoWriter)
 		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed(),
 			"Cluster deletion should succeed (transient Podman connectivity handled via retry)")
 

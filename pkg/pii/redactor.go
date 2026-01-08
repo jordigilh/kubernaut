@@ -20,10 +20,10 @@ func NewRedactor() *Redactor {
 	return &Redactor{
 		// Email: matches standard email format (RFC 5322 simplified)
 		emailRegex: regexp.MustCompile(`[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}`),
-		
+
 		// IPv4: matches standard IPv4 addresses (0.0.0.0 - 255.255.255.255)
 		ipv4Regex: regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`),
-		
+
 		// Phone: matches various phone number formats
 		// +1-555-1234, (555) 555-1234, 555-555-1234, 555.555.1234, +1 555 555 1234
 		phoneRegex: regexp.MustCompile(`\+?[0-9]{1,3}[-\s.]?\(?[0-9]{3}\)?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4}`),
@@ -36,19 +36,19 @@ func (r *Redactor) RedactEmail(email string) string {
 	if email == "" {
 		return ""
 	}
-	
+
 	parts := strings.Split(email, "@")
 	if len(parts) != 2 {
 		// Not a valid email, return as-is or redact entirely
 		return "***@***.***"
 	}
-	
+
 	localPart := parts[0]
 	domainPart := parts[1]
-	
+
 	// Redact local part: show first character only
 	redactedLocal := string(localPart[0]) + "***"
-	
+
 	// Redact domain: show first character of each part
 	domainParts := strings.Split(domainPart, ".")
 	redactedDomain := make([]string, len(domainParts))
@@ -59,7 +59,7 @@ func (r *Redactor) RedactEmail(email string) string {
 			redactedDomain[i] = "***"
 		}
 	}
-	
+
 	return redactedLocal + "@" + strings.Join(redactedDomain, ".")
 }
 
@@ -69,13 +69,13 @@ func (r *Redactor) RedactIPv4(ip string) string {
 	if ip == "" {
 		return ""
 	}
-	
+
 	parts := strings.Split(ip, ".")
 	if len(parts) != 4 {
 		// Not a valid IPv4, return redacted
 		return "***.***.***"
 	}
-	
+
 	// Keep first octet, redact the rest
 	return parts[0] + ".***.***.***"
 }
@@ -86,7 +86,7 @@ func (r *Redactor) RedactPhone(phone string) string {
 	if phone == "" {
 		return ""
 	}
-	
+
 	// Extract country code if present (+1, +44, etc.)
 	countryCode := ""
 	if strings.HasPrefix(phone, "+") {
@@ -103,11 +103,11 @@ func (r *Redactor) RedactPhone(phone string) string {
 			}
 		}
 	}
-	
+
 	if countryCode != "" {
 		return countryCode + "-***-****"
 	}
-	
+
 	return "***-***-****"
 }
 
@@ -116,12 +116,12 @@ func (r *Redactor) RedactString(input string) string {
 	if input == "" {
 		return ""
 	}
-	
+
 	// Apply redactions in order: email, IP, phone
 	result := r.emailRegex.ReplaceAllStringFunc(input, r.RedactEmail)
 	result = r.ipv4Regex.ReplaceAllStringFunc(result, r.RedactIPv4)
 	result = r.phoneRegex.ReplaceAllStringFunc(result, r.RedactPhone)
-	
+
 	return result
 }
 
@@ -132,7 +132,7 @@ func (r *Redactor) RedactJSON(data interface{}) interface{} {
 	case string:
 		// Redact string values
 		return r.RedactString(v)
-	
+
 	case map[string]interface{}:
 		// Recursively redact map values
 		result := make(map[string]interface{}, len(v))
@@ -140,7 +140,7 @@ func (r *Redactor) RedactJSON(data interface{}) interface{} {
 			result[key] = r.RedactJSON(value)
 		}
 		return result
-	
+
 	case []interface{}:
 		// Recursively redact array elements
 		result := make([]interface{}, len(v))
@@ -148,7 +148,7 @@ func (r *Redactor) RedactJSON(data interface{}) interface{} {
 			result[i] = r.RedactJSON(value)
 		}
 		return result
-	
+
 	default:
 		// Non-string, non-composite types: return as-is
 		return v
@@ -162,9 +162,9 @@ func (r *Redactor) RedactJSONBytes(jsonBytes []byte) ([]byte, error) {
 	if err := json.Unmarshal(jsonBytes, &data); err != nil {
 		return nil, err
 	}
-	
+
 	redacted := r.RedactJSON(data)
-	
+
 	return json.Marshal(redacted)
 }
 
@@ -200,13 +200,13 @@ var PIIFields = []string{
 // This is more efficient than RedactJSON for structured data with known PII fields
 func (r *Redactor) RedactMapByFieldNames(data map[string]interface{}, fieldNames []string) map[string]interface{} {
 	result := make(map[string]interface{}, len(data))
-	
+
 	// Create a set of field names to redact
 	fieldsToRedact := make(map[string]bool, len(fieldNames))
 	for _, field := range fieldNames {
 		fieldsToRedact[field] = true
 	}
-	
+
 	for key, value := range data {
 		if fieldsToRedact[key] {
 			// Redact this field
@@ -235,7 +235,7 @@ func (r *Redactor) RedactMapByFieldNames(data map[string]interface{}, fieldNames
 			}
 		}
 	}
-	
+
 	return result
 }
 

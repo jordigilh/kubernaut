@@ -88,6 +88,9 @@ spec:
             - name: webhook
               containerPort: 9443
               protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
           env:
             # Webhook Configuration
             - name: WEBHOOK_PORT
@@ -116,8 +119,8 @@ spec:
           livenessProbe:
             httpGet:
               path: /healthz
-              port: webhook
-              scheme: HTTPS
+              port: health
+              scheme: HTTP
             initialDelaySeconds: 15
             periodSeconds: 20
             timeoutSeconds: 5
@@ -125,8 +128,8 @@ spec:
           readinessProbe:
             httpGet:
               path: /readyz
-              port: webhook
-              scheme: HTTPS
+              port: health
+              scheme: HTTP
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 5

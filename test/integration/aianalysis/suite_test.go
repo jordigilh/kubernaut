@@ -128,10 +128,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 
 	ctx, cancel = context.WithCancel(context.TODO())
 
-	By("Starting AIAnalysis integration infrastructure (podman-compose)")
-	// This starts: PostgreSQL, Redis, DataStorage (NO HAPI HTTP service - integration tests use direct business logic calls)
+	By("Starting AIAnalysis integration infrastructure (PostgreSQL, Redis, DataStorage)")
 	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, DS=18095
-	// Note: HAPI HTTP service only available in E2E tests, not integration tests
 	var err error
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "aianalysis",
@@ -142,12 +140,48 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		ConfigDir:       "test/integration/aianalysis/config",
 	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
-	GinkgoWriter.Println("ℹ️  HAPI HTTP service NOT started - integration tests use direct business logic calls")
+	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
 		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	})
+
+	By("Starting HolmesGPT-API HTTP service (programmatically)")
+	// AA integration tests use OpenAPI HAPI client (HTTP-based)
+	// DD-TEST-001 v2.2: HAPI port 18120
+	// HAPI runs with MOCK_LLM_MODE=true to avoid LLM costs
+	projectRoot := filepath.Join("..", "..", "..") // test/integration/aianalysis -> project root
+	hapiConfigDir, err := filepath.Abs("hapi-config")
+	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
+	hapiConfig := infrastructure.GenericContainerConfig{
+		Name:    "aianalysis_hapi_test",
+		Image:   infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis"),
+		Network: "aianalysis_test_network",
+		Ports:   map[int]int{8080: 18120}, // container:host
+		Env: map[string]string{
+			"MOCK_LLM_MODE":    "true",
+			"DATA_STORAGE_URL": "http://host.containers.internal:18095",
+			"PORT":             "8080",
+			"LOG_LEVEL":        "DEBUG",
+		},
+		Volumes: map[string]string{
+			hapiConfigDir: "/etc/holmesgpt:ro", // Mount HAPI config directory
+		},
+		BuildContext:    projectRoot,
+		BuildDockerfile: "holmesgpt-api/Dockerfile",
+		HealthCheck: &infrastructure.HealthCheckConfig{
+			URL:     "http://127.0.0.1:18120/health",
+			Timeout: 60 * time.Second,
+		},
+	}
+	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "HAPI container must start successfully")
+	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://localhost:18120 (container: %s)\n", hapiContainer.ID)
+
+	// Clean up HAPI container on exit
+	DeferCleanup(func() {
+		infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
 	})
 
 	By("Registering AIAnalysis CRD scheme")

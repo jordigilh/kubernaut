@@ -53,7 +53,7 @@ import (
 // ========================================
 
 const (
-	maxExportLimit    = 10000 // Maximum events per export (prevent memory issues)
+	maxExportLimit     = 10000 // Maximum events per export (prevent memory issues)
 	defaultExportLimit = 1000  // Default limit if not specified
 )
 
@@ -236,13 +236,13 @@ func (s *Server) buildExportResponse(
 	// This avoids complex inline struct matching issues
 	intermediateResponse := map[string]interface{}{
 		"export_metadata": map[string]interface{}{
-			"export_timestamp":         exportTimestamp,
-			"export_format":            format,
-			"total_events":             exportResult.TotalEventsQueried,
-			"signature":                signature,
-			"signature_algorithm":      algorithm,
-			"certificate_fingerprint":  certFingerprint,
-			"exported_by":              exportedBy,
+			"export_timestamp":        exportTimestamp,
+			"export_format":           format,
+			"total_events":            exportResult.TotalEventsQueried,
+			"signature":               signature,
+			"signature_algorithm":     algorithm,
+			"certificate_fingerprint": certFingerprint,
+			"exported_by":             exportedBy,
 			"query_filters": map[string]interface{}{
 				"offset": filters.Offset,
 				"limit":  filters.Limit,
@@ -250,11 +250,11 @@ func (s *Server) buildExportResponse(
 		},
 		"events": make([]map[string]interface{}, 0, len(exportResult.Events)),
 		"hash_chain_verification": map[string]interface{}{
-			"total_events_verified":       exportResult.TotalEventsQueried,
-			"valid_chain_events":          exportResult.ValidChainEvents,
-			"broken_chain_events":         exportResult.BrokenChainEvents,
-			"chain_integrity_percentage":  exportResult.ChainIntegrityPercent,
-			"verification_timestamp":      exportResult.VerificationTimestamp,
+			"total_events_verified":      exportResult.TotalEventsQueried,
+			"valid_chain_events":         exportResult.ValidChainEvents,
+			"broken_chain_events":        exportResult.BrokenChainEvents,
+			"chain_integrity_percentage": exportResult.ChainIntegrityPercent,
+			"verification_timestamp":     exportResult.VerificationTimestamp,
 		},
 	}
 
@@ -282,18 +282,18 @@ func (s *Server) buildExportResponse(
 	events := intermediateResponse["events"].([]map[string]interface{})
 	for _, exportEvent := range exportResult.Events {
 		event := map[string]interface{}{
-			"event_id":           exportEvent.EventID.String(),
-			"version":            exportEvent.Version,
-			"event_type":         exportEvent.EventType,
-			"event_timestamp":    exportEvent.EventTimestamp,
-			"event_category":     exportEvent.EventCategory,
-			"event_action":       exportEvent.EventAction,
-			"event_outcome":      exportEvent.EventOutcome,
-			"correlation_id":     exportEvent.CorrelationID,
-			"event_hash":         exportEvent.EventHash,
+			"event_id":            exportEvent.EventID.String(),
+			"version":             exportEvent.Version,
+			"event_type":          exportEvent.EventType,
+			"event_timestamp":     exportEvent.EventTimestamp,
+			"event_category":      exportEvent.EventCategory,
+			"event_action":        exportEvent.EventAction,
+			"event_outcome":       exportEvent.EventOutcome,
+			"correlation_id":      exportEvent.CorrelationID,
+			"event_hash":          exportEvent.EventHash,
 			"previous_event_hash": exportEvent.PreviousEventHash,
-			"hash_chain_valid":   exportEvent.HashChainValid,
-			"legal_hold":         exportEvent.LegalHold,
+			"hash_chain_valid":    exportEvent.HashChainValid,
+			"legal_hold":          exportEvent.LegalHold,
 		}
 
 		// Add optional fields
@@ -347,11 +347,11 @@ func (s *Server) signExport(ctx context.Context, exportResult *repository.Export
 
 	// Build signable data structure (export metadata + events)
 	signableData := map[string]interface{}{
-		"export_timestamp":      exportTimestamp,
-		"total_events":          exportResult.TotalEventsQueried,
-		"valid_chain_events":    exportResult.ValidChainEvents,
-		"broken_chain_events":   exportResult.BrokenChainEvents,
-		"tampered_event_ids":    exportResult.TamperedEventIDs,
+		"export_timestamp":       exportTimestamp,
+		"total_events":           exportResult.TotalEventsQueried,
+		"valid_chain_events":     exportResult.ValidChainEvents,
+		"broken_chain_events":    exportResult.BrokenChainEvents,
+		"tampered_event_ids":     exportResult.TamperedEventIDs,
 		"verification_timestamp": exportResult.VerificationTimestamp,
 	}
 
@@ -437,4 +437,3 @@ func writeRFC7807Error(w http.ResponseWriter, status int, title, detail, instanc
 
 	json.NewEncoder(w).Encode(problem)
 }
-

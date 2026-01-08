@@ -350,7 +350,7 @@ var _ = SynchronizedAfterSuite(
 		// Note: In parallel execution, anyTestFailed may not capture all process failures
 		// Use KEEP_CLUSTER=always to force preservation, or check test exit code
 		keepCluster := os.Getenv("KEEP_CLUSTER")
-		
+
 		// In SynchronizedAfterSuite, we're in process 1 which may not have run failing tests
 		// The safest approach: always export logs if ANY process reported failures
 		// We'll check this by looking at the captured anyTestFailed flag from process cleanup
@@ -433,7 +433,7 @@ var _ = SynchronizedAfterSuite(
 
 		if suiteFailed {
 			logger.Info("⚠️  Test failure detected - collecting diagnostic information...")
-			
+
 			// Export cluster logs (like must-gather) BEFORE preserving cluster
 			logger.Info("📋 Exporting cluster logs (Kind must-gather)...")
 			logsDir := "/tmp/datastorage-e2e-logs-" + time.Now().Format("20060102-150405")
@@ -446,14 +446,14 @@ var _ = SynchronizedAfterSuite(
 				logger.Info("✅ Cluster logs exported successfully",
 					"logs_dir", logsDir)
 				logger.Info("📁 Logs include: pod logs, node logs, kubelet logs, and more")
-				
+
 				// Extract and display DataStorage server logs for immediate analysis
 				dsLogPattern := logsDir + "/*/datastorage-e2e_data-storage-service-*/*.log"
 				findCmd := exec.Command("sh", "-c", "ls "+dsLogPattern+" 2>/dev/null | head -1")
 				if logPath, err := findCmd.Output(); err == nil && len(logPath) > 0 {
 					logPathStr := strings.TrimSpace(string(logPath))
 					logger.Info("📄 DataStorage server log location", "path", logPathStr)
-					
+
 					// Display last 100 lines of server log
 					tailCmd := exec.Command("tail", "-100", logPathStr)
 					if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
@@ -465,7 +465,7 @@ var _ = SynchronizedAfterSuite(
 					}
 				}
 			}
-			
+
 			logger.Info("⚠️  Keeping cluster for debugging (KEEP_CLUSTER=true or test failed)")
 			logger.Info("Cluster details for debugging",
 				"cluster", clusterName,
@@ -478,9 +478,9 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// Delete Kind cluster
+		// Delete Kind cluster (no log export needed - tests passed)
 		logger.Info("🗑️  Deleting Kind cluster...")
-		if err := infrastructure.DeleteCluster(clusterName, GinkgoWriter); err != nil {
+		if err := infrastructure.DeleteCluster(clusterName, "datastorage", false, GinkgoWriter); err != nil {
 			logger.Error(err, "Failed to delete cluster")
 		} else {
 			logger.Info("✅ Cluster deleted successfully")

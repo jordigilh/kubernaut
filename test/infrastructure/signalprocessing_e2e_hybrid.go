@@ -59,45 +59,53 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 0: Generate dynamic image tags (BEFORE building)
-	// ═══════════════════════════════════════════════════════════════════════
-	// Generate DataStorage image tag ONCE (non-idempotent, timestamp-based)
-	// This ensures each service builds its OWN DataStorage with LATEST code
-	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-	dataStorageImageName := GenerateInfraImageName("datastorage", "signalprocessing")
-	_, _ = fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
-	_, _ = fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
-
-	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images IN PARALLEL (before cluster creation)
 	// ═══════════════════════════════════════════════════════════════════════
+	// Per Consolidated API Migration (January 2026):
+	// - Uses BuildImageForKind() for all images
+	// - Returns dynamic image names for later use
+	// - No manual tag generation (PHASE 0 removed)
+	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	phase1Start := time.Now()
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase1Start.Format("15:04:05.000"))
 	_, _ = fmt.Fprintln(writer, "  ├── SignalProcessing controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
 
 	type buildResult struct {
-		name string
-		err  error
+		name      string
+		imageName string
+		err       error
 	}
 
 	buildResults := make(chan buildResult, 2)
+	builtImages := make(map[string]string)
 
 	// Build SignalProcessing with coverage in parallel
 	go func() {
-		err := BuildSignalProcessingImageWithCoverage(writer)
-		buildResults <- buildResult{name: "SignalProcessing (coverage)", err: err}
+		cfg := E2EImageConfig{
+			ServiceName:      "signalprocessing-controller",
+			ImageName:        "kubernaut/signalprocessing-controller",
+			DockerfilePath:   "docker/signalprocessing-controller.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   true,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "SignalProcessing (coverage)", imageName: imageName, err: err}
 	}()
 
-	// Build DataStorage with dynamic tag in parallel
-	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
-	// uses build-before-cluster optimization pattern (Phase 3 analysis)
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// Build DataStorage in parallel
 	go func() {
-		err := buildDataStorageImageWithTag(dataStorageImageName, writer)
-		buildResults <- buildResult{name: "DataStorage", err: err}
+		cfg := E2EImageConfig{
+			ServiceName:      "datastorage",
+			ImageName:        "kubernaut/datastorage",
+			DockerfilePath:   "docker/data-storage.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
 	// Wait for both builds to complete
@@ -109,7 +117,8 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
 			buildErrors = append(buildErrors, result.err)
 		} else {
-			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed\n", result.name)
+			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.imageName)
+			builtImages[result.name] = result.imageName
 		}
 	}
 
@@ -160,28 +169,36 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 3: Load images into fresh cluster (parallel)
 	// ═══════════════════════════════════════════════════════════════════════
+	// Per Consolidated API Migration (January 2026):
+	// - Uses LoadImageToKind() for all images
+	// - Uses image names from builtImages map
+	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	phase3Start := time.Now()
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase3Start.Format("15:04:05.000"))
 	_, _ = fmt.Fprintln(writer, "  ├── SignalProcessing coverage image")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 
-	loadResults := make(chan buildResult, 2)
+	type loadResult struct {
+		name string
+		err  error
+	}
+
+	loadResults := make(chan loadResult, 2)
 
 	// Load SignalProcessing coverage image
 	go func() {
-		err := LoadSignalProcessingCoverageImage(clusterName, writer)
-		loadResults <- buildResult{name: "SignalProcessing coverage", err: err}
+		spImage := builtImages["SignalProcessing (coverage)"]
+		err := LoadImageToKind(spImage, "signalprocessing-controller", clusterName, writer)
+		loadResults <- loadResult{name: "SignalProcessing coverage", err: err}
 	}()
 
-	// Load DataStorage image with dynamic tag
-	// NOTE: Cannot use BuildAndLoadImageToKind() here because this function
-	// uses build-before-cluster optimization pattern (Phase 3 analysis)
-	// Authority: docs/handoff/TEST_INFRASTRUCTURE_PHASE3_PLAN_JAN07.md
+	// Load DataStorage image
 	go func() {
-		err := loadDataStorageImageWithTag(clusterName, dataStorageImageName, writer)
-		loadResults <- buildResult{name: "DataStorage", err: err}
+		dsImage := builtImages["DataStorage"]
+		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Wait for both loads to complete
@@ -234,14 +251,17 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
-		// CRITICAL: Use the tag generated in Phase 0 (UUID-based, non-idempotent)
-		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-		// This ensures we deploy the SAME fresh-built image with latest DataStorage code
-		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer)
+		// Per Consolidated API Migration (January 2026):
+		// Use DataStorage image name from builtImages map (built in Phase 1)
+		dsImage := builtImages["DataStorage"]
+		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
 	go func() {
-		err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, writer)
+		// Per Consolidated API Migration (January 2026):
+		// Use SignalProcessing image name from builtImages map (built in Phase 1)
+		spImage := builtImages["SignalProcessing (coverage)"]
+		err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, spImage, writer)
 		deployResults <- deployResult{"SignalProcessing", err}
 	}()
 
@@ -779,9 +799,11 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	return nil
 }
 
-func signalProcessingControllerCoverageManifest() string {
-	imageTag := GetSignalProcessingCoverageImageTag()
-	imageName := fmt.Sprintf("localhost/signalprocessing-controller:%s", imageTag)
+func signalProcessingControllerCoverageManifest(imageName string) string {
+	// Per Consolidated API Migration (January 2026):
+	// Accept dynamic image name as parameter (built by BuildImageForKind)
+	// No longer generates own tag - uses pre-built image
+	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 
 	return fmt.Sprintf(`
 apiVersion: v1
@@ -941,8 +963,11 @@ spec:
 `, imageName)
 }
 
-func DeploySignalProcessingControllerWithCoverage(kubeconfigPath string, writer io.Writer) error {
-	manifest := signalProcessingControllerCoverageManifest()
+func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
+	// Per Consolidated API Migration (January 2026):
+	// Accept dynamic image name as parameter (built by BuildImageForKind)
+	// Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
+	manifest := signalProcessingControllerCoverageManifest(imageName)
 
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -1089,15 +1114,10 @@ func GenerateCoverageReport(coverDir string, writer io.Writer) error {
 	return nil
 }
 
-func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "🗑️  Deleting SignalProcessing E2E cluster...")
-
-	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to delete cluster: %w", err)
+func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, testsFailed bool, writer io.Writer) error {
+	// Use shared cleanup function with log export on failure
+	if err := DeleteCluster(clusterName, "signalprocessing", testsFailed, writer); err != nil {
+		return err
 	}
 
 	// Remove kubeconfig file
@@ -1105,7 +1125,6 @@ func DeleteSignalProcessingCluster(clusterName, kubeconfigPath string, writer io
 		_ = os.Remove(kubeconfigPath)
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ SignalProcessing cluster deleted")
 	return nil
 }
 
@@ -1134,4 +1153,3 @@ func findSignalProcessingProjectRoot() string {
 	}
 	return ""
 }
-

@@ -31,7 +31,7 @@ _, err := BuildAndLoadImageToKind(cfg, writer)
 err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer)
 ```
 
-**Result**: 
+**Result**:
 - `BuildAndLoadImageToKind()` built and loaded: `localhost/kubernaut/datastorage:datastorage-XXXXXX`
 - Deployment tried to use: `kubernaut/datastorage:datastorage-YYYYYY` (different tag!)
 - Pod status: `ErrImageNeverPull`

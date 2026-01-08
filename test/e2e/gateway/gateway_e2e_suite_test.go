@@ -240,9 +240,11 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("✅ E2E coverage extraction complete")
 		}
 
-		// Check if any test failed - preserve cluster for debugging
-		if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != "" {
-			logger.Info("⚠️  Keeping cluster alive for debugging")
+		// Determine cleanup strategy
+		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
+
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("To debug:")
 			logger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			logger.Info("  kubectl get namespaces | grep -E 'storm|rate|concurrent|crd|restart'")
@@ -254,11 +256,13 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// All tests passed - cleanup cluster
-		logger.Info("✅ All tests passed - cleaning up cluster...")
-		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		// Delete cluster (with must-gather log export on failure)
+		logger.Info("🗑️  Cleaning up cluster...")
+		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, anyTestFailed, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete cluster")
+		} else {
+			logger.Info("✅ Cluster deleted successfully")
 		}
 
 		// DD-TEST-001 v1.1: Clean up service images built for Kind

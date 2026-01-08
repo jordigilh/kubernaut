@@ -58,7 +58,7 @@ spec:
 
   # Certificate identity
   commonName: data-storage-service
-  
+
   # Subject Alternative Names (SANs)
   dnsNames:
     - data-storage-service

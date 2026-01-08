@@ -61,12 +61,15 @@ func main() {
 		"cert_dir", certDir,
 		"data_storage_url", dataStorageURL)
 
-	// Create manager (NO METRICS - audit traces sufficient per WEBHOOK_METRICS_TRIAGE.md)
+	// Create manager with health probe server
+	// Note: Metrics disabled (audit traces sufficient per WEBHOOK_METRICS_TRIAGE.md)
+	//       but health probes enabled on separate port for Kubernetes liveness/readiness
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: "0", // Disable metrics endpoint
 		},
+		HealthProbeBindAddress: ":8081", // Health probes on separate HTTP port
 		WebhookServer: webhook.NewServer(webhook.Options{
 			Port:    webhookPort,
 			CertDir: certDir,
