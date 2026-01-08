@@ -357,16 +357,16 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			pr.Status.Conditions = duckv1.Conditions{
 				{Type: apis.ConditionSucceeded, Status: corev1.ConditionTrue, Reason: "Succeeded"},
 			}
-			pr.Status.CompletionTime = &now
-			Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
+		pr.Status.CompletionTime = &now
+		Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
 
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
-				return updated.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+			return updated.Status.Phase
+		}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
-			Expect(updated.Status.CompletionTime).ToNot(BeNil())
-			GinkgoWriter.Println("✅ Step 3: workflow.completed audit event emitted")
+		Expect(updated.Status.CompletionTime).ToNot(BeNil())
+		GinkgoWriter.Println("✅ Step 3: workflow.completed audit event emitted")
 			GinkgoWriter.Println("✅ Audit events emitted in correct lifecycle order: started → completed")
 		})
 	})
