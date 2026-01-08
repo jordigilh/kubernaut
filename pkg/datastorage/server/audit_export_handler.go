@@ -273,9 +273,9 @@ func (s *Server) buildExportResponse(
 		queryFilters["event_category"] = filters.EventCategory
 	}
 
-	// Add optional tampered event IDs
-	if len(exportResult.TamperedEventIDs) > 0 {
-		intermediateResponse["hash_chain_verification"].(map[string]interface{})["tampered_event_ids"] = exportResult.TamperedEventIDs
+	// Add optional tampered event IDs (always include, even if empty, to match OpenAPI contract)
+	if exportResult.TamperedEventIDs != nil {
+		intermediateResponse["hash_chain_verification"].(map[string]interface{})["tampered_event_ids"] = *exportResult.TamperedEventIDs
 	}
 
 	// Convert repository events
