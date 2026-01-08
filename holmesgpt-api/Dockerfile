@@ -23,12 +23,17 @@ WORKDIR /opt/app-root/src
 # NOTE: No trailing slash on source - copies directory itself, not just contents
 COPY --chown=1001:0 dependencies ../dependencies
 
+# Copy DataStorage Python client for installation
+COPY --chown=1001:0 holmesgpt-api/src/clients/datastorage ./clients/datastorage
+
 # Copy requirements first for layer caching
 COPY --chown=1001:0 holmesgpt-api/requirements.txt ./
 
 # Upgrade pip and install Python dependencies
+# Install DataStorage client first, then requirements
 # Remove unnecessary files after installation to reduce layer size
 RUN pip install --no-cache-dir --upgrade pip && \
+	pip install --no-cache-dir ./clients/datastorage && \
 	pip install --no-cache-dir -r requirements.txt && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
