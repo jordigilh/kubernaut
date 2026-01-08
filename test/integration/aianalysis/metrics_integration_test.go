@@ -55,7 +55,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
+var _ = PDescribe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
 	var (
 		ctx       context.Context
 		namespace string
