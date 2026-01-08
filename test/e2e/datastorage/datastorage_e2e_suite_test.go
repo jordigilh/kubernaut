@@ -347,9 +347,14 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Check if we should keep the cluster for debugging
+		// Note: In parallel execution, anyTestFailed may not capture all process failures
+		// Use KEEP_CLUSTER=always to force preservation, or check test exit code
 		keepCluster := os.Getenv("KEEP_CLUSTER")
-		suiteReport := CurrentSpecReport()
-		suiteFailed := suiteReport.Failed() || anyTestFailed || keepCluster == "true"
+		
+		// In SynchronizedAfterSuite, we're in process 1 which may not have run failing tests
+		// The safest approach: always export logs if ANY process reported failures
+		// We'll check this by looking at the captured anyTestFailed flag from process cleanup
+		suiteFailed := anyTestFailed || keepCluster == "true" || keepCluster == "always"
 
 		// DD-TEST-007: E2E Coverage Capture Standard
 		// Extract coverage from Kind node before cluster deletion
