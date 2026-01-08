@@ -751,7 +751,9 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 // Helper function to generate test correlation IDs
 func generateTestCorrelationID() string {
-	return "soc2-e2e-" + time.Now().Format("20060102-150405")
+	// Use UnixNano for uniqueness in parallel test execution
+	// Parallel Ginkgo tests running in the same second would otherwise get duplicate IDs
+	return fmt.Sprintf("soc2-e2e-%d", time.Now().UnixNano())
 }
 
 // Helper function to convert int to *int for optional parameters
