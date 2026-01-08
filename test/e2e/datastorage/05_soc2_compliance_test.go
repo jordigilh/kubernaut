@@ -714,6 +714,10 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 			EventType:      "soc2_compliance_test",
 			EventTimestamp: eventTimestamp,
 			Version:        "1.0",
+			EventData: map[string]interface{}{
+				"test_iteration": i + 1,
+				"test_purpose":   "SOC2 compliance validation",
+			},
 		}
 
 		resp, err := dsClient.CreateAuditEventWithResponse(ctx, req)
