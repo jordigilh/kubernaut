@@ -335,6 +335,23 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 
+// flushAuditBuffer flushes the audit buffer to ensure all events are persisted to DataStorage.
+// This helper function is used by integration tests to synchronize audit event writes
+// before querying DataStorage, eliminating async buffering race conditions.
+//
+// Per DD-TESTING-001: Tests must explicitly flush before querying to ensure deterministic results.
+func flushAuditBuffer() {
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	if err != nil {
+		// Non-fatal: log warning but allow test to continue
+		// The test's Eventually() blocks will handle timing issues
+		GinkgoWriter.Printf("⚠️  Warning: Failed to flush audit buffer: %v\n", err)
+	}
+}
+
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
 func getFirstFoundEnvTestBinaryDir() string {
 	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
