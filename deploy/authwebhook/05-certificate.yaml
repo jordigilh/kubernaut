@@ -1,0 +1,33 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: authwebhook-tls
+  namespace: kubernaut-system
+  labels:
+    app.kubernetes.io/name: authwebhook
+    app.kubernetes.io/component: admission-webhook
+    app.kubernetes.io/part-of: kubernaut-platform
+spec:
+  # Secret where TLS certificate will be stored
+  secretName: authwebhook-tls
+  
+  # Certificate issuer (requires cert-manager installed)
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+  
+  # DNS names for webhook service
+  dnsNames:
+    - authwebhook.kubernaut-system.svc
+    - authwebhook.kubernaut-system.svc.cluster.local
+  
+  # Certificate usage
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+  
+  # Certificate duration and renewal
+  duration: 8760h  # 1 year
+  renewBefore: 720h  # 30 days before expiry
+
