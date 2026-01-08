@@ -79,7 +79,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	// Build dynamic query based on filters
 	query := `
 		SELECT
-			event_id, version, event_type, event_timestamp,
+			event_id, event_version, event_type, event_timestamp,
 			event_category, event_action, event_outcome, correlation_id,
 			parent_event_id, parent_event_date, resource_type, resource_id,
 			namespace, cluster_name, actor_id, actor_type,
