@@ -22,6 +22,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 // DeployAuthWebhookToCluster deploys the AuthWebhook service for SOC2-compliant CRD operations
@@ -121,10 +129,22 @@ func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kub
 
 	// STEP 5: Deploy AuthWebhook service + webhook configurations
 	_, _ = fmt.Fprintln(writer, "\n🚀 STEP 5: Deploying AuthWebhook service...")
+	// Read and substitute namespace in manifest (Go-based replacement for envsubst)
+	manifestPath := filepath.Join(workspaceRoot, "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
+	manifestContent, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
+	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
+	_, _ = fmt.Fprintf(writer, "   🔧 Substituted namespace: ${WEBHOOK_NAMESPACE} → %s\n", namespace)
+
+	// Apply substituted manifest via kubectl
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
-		"-n", namespace,
-		"-f", "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
+		"-f", "-") // Read from stdin
+	cmd.Stdin = strings.NewReader(substitutedManifest)
 	cmd.Dir = workspaceRoot
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ❌ Deployment failed: %s\n", output)
@@ -153,17 +173,15 @@ func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kub
 	_, _ = fmt.Fprintln(writer, "   ✅ Webhook configurations patched")
 
 	// STEP 8: Wait for webhook pod readiness
+	// Per DD-TEST-008: K8s v1.35.0 probe bug workaround
+	// kubectl wait relies on kubelet probes (broken in v1.35.0 - prober_manager.go:197 error)
+	// Solution: Poll Pod status directly via K8s API (same as AuthWebhook E2E)
+	// See: docs/handoff/AUTHWEBHOOK_POD_READINESS_ISSUE_JAN09.md
 	_, _ = fmt.Fprintln(writer, "\n⏳ STEP 8: Waiting for AuthWebhook pod readiness...")
-	cmd = exec.Command("kubectl", "wait",
-		"--kubeconfig", kubeconfigPath,
-		"-n", namespace,
-		"--for=condition=ready",
-		"pod",
-		"-l", "app.kubernetes.io/name=authwebhook",
-		"--timeout=120s")
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	_, _ = fmt.Fprintln(writer, "   ⏱️  Workaround: Polling Pod API directly (K8s v1.35.0 probe bug)")
+
+	// Use direct Pod status polling instead of kubectl wait
+	if err := waitForAuthWebhookPodReady(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("AuthWebhook pod did not become ready: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ AuthWebhook pod ready")
@@ -250,5 +268,55 @@ func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) er
 	}
 
 	return nil
+}
+
+// waitForAuthWebhookPodReady waits for AuthWebhook pod to be ready by polling Pod status directly
+// Per DD-TEST-008: Workaround for K8s v1.35.0 prober_manager bug
+// kubectl wait relies on kubelet probes which are broken (prober_manager.go:197 error affects ALL pods)
+// Solution: Poll Pod.Status.Conditions directly via K8s API (bypasses kubelet probe mechanism)
+// See: docs/handoff/AUTHWEBHOOK_POD_READINESS_ISSUE_JAN09.md
+func waitForAuthWebhookPodReady(kubeconfigPath, namespace string, writer io.Writer) error {
+	ctx := context.Background()
+
+	// Create Kubernetes clientset
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to build kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create clientset: %w", err)
+	}
+
+	// Poll Pod status directly (same pattern as AuthWebhook E2E)
+	// Per authwebhook_e2e.go:1093-1110
+	timeout := 5 * time.Minute
+	pollInterval := 5 * time.Second
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		// List AuthWebhook pods
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app.kubernetes.io/name=authwebhook",
+		})
+
+		if err == nil && len(pods.Items) > 0 {
+			for _, pod := range pods.Items {
+				if pod.Status.Phase == corev1.PodRunning {
+					for _, condition := range pod.Status.Conditions {
+						if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+							return nil // Pod is ready!
+						}
+					}
+				}
+			}
+		}
+
+		// Not ready yet, wait before next poll
+		time.Sleep(pollInterval)
+	}
+
+	return fmt.Errorf("timeout waiting for AuthWebhook pod to become ready (5 minutes)")
 }
 
