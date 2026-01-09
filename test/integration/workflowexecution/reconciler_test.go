@@ -18,7 +18,6 @@ package workflowexecution
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,7 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
@@ -394,35 +393,31 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for execution.workflow.started audit event via OpenAPI client")
-		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+		By("Querying DataStorage API for execution.workflow.started audit event via ogen client")
+		// V1.0 MANDATORY: Use ogen OpenAPI client (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
 		// Query real DataStorage service (Defense-in-Depth: validate field values)
-		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
+		auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create ogen audit client")
 
 	eventCategory := "execution" // Gap #6 uses "execution" category
-	var startedEvent *dsgen.AuditEvent
+	var startedEvent *ogenclient.AuditEvent
 	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	// Flush before querying to ensure buffered events are written to DataStorage
 	flushAuditBuffer()
 	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-			EventCategory: &eventCategory,
-			CorrelationId: &correlationID,
+		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+			EventCategory: ogenclient.NewOptString(eventCategory),
+			CorrelationID: ogenclient.NewOptString(correlationID),
 		})
 			if err != nil {
 				return false
 			}
 
-			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-				return false
-			}
-
 			// Find execution.workflow.started event (Gap #6)
-			for i := range *resp.JSON200.Data {
-				if (*resp.JSON200.Data)[i].EventType == "execution.workflow.started" {
-					startedEvent = &(*resp.JSON200.Data)[i]
+			for i := range resp.Data {
+				if resp.Data[i].EventType == "execution.workflow.started" {
+					startedEvent = &resp.Data[i]
 					return true
 				}
 			}
@@ -432,12 +427,12 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 	By("Verifying audit event field values")
 	Expect(startedEvent).ToNot(BeNil())
-	Expect(startedEvent.EventCategory).To(Equal(dsgen.AuditEventEventCategoryExecution)) // Gap #6 uses execution category
+	Expect(startedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryExecution)) // Gap #6 uses execution category
 	// WE-BUG-002: event_action contains short form ("started" not "execution.workflow.started")
 	Expect(startedEvent.EventAction).To(Equal("started"))
-	Expect(startedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeSuccess))
-		// DD-AUDIT-CORRELATION-001: CorrelationId = RemediationRequestRef.Name
-		Expect(startedEvent.CorrelationId).To(Equal(wfe.Spec.RemediationRequestRef.Name))
+	Expect(startedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+		// DD-AUDIT-CORRELATION-001: CorrelationID = RemediationRequestRef.Name
+		Expect(startedEvent.CorrelationID).To(Equal(wfe.Spec.RemediationRequestRef.Name))
 
 		GinkgoWriter.Println("✅ execution.workflow.started audit event persisted with correct field values")
 	})
@@ -462,32 +457,28 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflow.completed audit event via OpenAPI client")
-		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		By("Querying DataStorage API for workflow.completed audit event via ogen client")
+		// V1.0 MANDATORY: Use ogen OpenAPI client
+		auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
 		Expect(err).ToNot(HaveOccurred())
 
 		eventCategory := "workflow"
-		var completedEvent *dsgen.AuditEvent
+		var completedEvent *ogenclient.AuditEvent
 		// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 		correlationID := wfe.Spec.RemediationRequestRef.Name
 		Eventually(func() bool {
-			resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &correlationID,
+			resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
 			if err != nil {
 				return false
 			}
 
-			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-				return false
-			}
-
 			// Find workflow.completed event
-			for i := range *resp.JSON200.Data {
-				if (*resp.JSON200.Data)[i].EventType == "workflow.completed" {
-					completedEvent = &(*resp.JSON200.Data)[i]
+			for i := range resp.Data {
+				if resp.Data[i].EventType == "workflow.completed" {
+					completedEvent = &resp.Data[i]
 					return true
 				}
 			}
@@ -497,7 +488,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		By("Verifying audit event field values")
 		Expect(completedEvent).ToNot(BeNil())
-		Expect(completedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeSuccess))
+		Expect(completedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 		// WE-BUG-002: event_action contains short form ("completed" not "workflow.completed")
 		Expect(completedEvent.EventAction).To(Equal("completed"))
 
@@ -524,34 +515,30 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflow.failed audit event via OpenAPI client")
-		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		By("Querying DataStorage API for workflow.failed audit event via ogen client")
+		// V1.0 MANDATORY: Use ogen OpenAPI client
+		auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
 		Expect(err).ToNot(HaveOccurred())
 
 	eventCategory := "workflow"
-	var failedEvent *dsgen.AuditEvent
+	var failedEvent *ogenclient.AuditEvent
 	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 	correlationID := wfe.Spec.RemediationRequestRef.Name
 	// Flush before querying to ensure buffered events are written to DataStorage
 	flushAuditBuffer()
 	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &correlationID,
+		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
 			if err != nil {
 				return false
 			}
 
-			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-				return false
-			}
-
 			// Find workflow.failed event
-			for i := range *resp.JSON200.Data {
-				if (*resp.JSON200.Data)[i].EventType == "workflow.failed" {
-					failedEvent = &(*resp.JSON200.Data)[i]
+			for i := range resp.Data {
+				if resp.Data[i].EventType == "workflow.failed" {
+					failedEvent = &resp.Data[i]
 					return true
 				}
 			}
@@ -561,19 +548,18 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 		By("Verifying audit event field values including failure details")
 		Expect(failedEvent).ToNot(BeNil())
-		Expect(failedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeFailure))
+		Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
 		// WE-BUG-002: event_action contains short form ("failed" not "workflow.failed")
 		Expect(failedEvent.EventAction).To(Equal("failed"))
 
 		// Verify event_data contains failure details - OGEN-MIGRATION
-		eventData := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
-		Expect(eventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
+		eventData, ok := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 		// Access flat fields directly
-		Expect(eventData.Value.FailureReason.IsSet()).To(BeTrue(), "failure_reason should be set")
-		Expect(eventData.Value.FailureReason.Value).ToNot(BeEmpty(), "failure_reason should be populated")
-		Expect(eventData.Value.FailureMessage.IsSet()).To(BeTrue(), "failure_message should be set")
-		Expect(eventData.Value.FailureMessage.Value).ToNot(BeEmpty(), "failure_message should be populated")
+		Expect(eventData.FailureReason.IsSet()).To(BeTrue(), "failure_reason should be populated")
+		Expect(eventData.FailureMessage.IsSet()).To(BeTrue(), "failure_message should be populated")
+		Expect(eventData.FailureMessage.Value).ToNot(BeEmpty(), "failure_message should be populated")
 
 		GinkgoWriter.Println("✅ workflow.failed audit event persisted with failure details")
 		})
@@ -589,30 +575,26 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for audit events with correlation ID via OpenAPI client")
-		// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP
-		auditClient, err := dsgen.NewClientWithResponses(dataStorageBaseURL)
+		By("Querying DataStorage API for audit events with correlation ID via ogen client")
+		// V1.0 MANDATORY: Use ogen OpenAPI client
+		auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
 		Expect(err).ToNot(HaveOccurred())
 
 	eventCategory := "workflow"
 	// Flush before querying to ensure buffered events are written to DataStorage
 	flushAuditBuffer()
 	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &expectedCorrID,
+		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(expectedCorrID),
 			})
 			if err != nil {
 				return false
 			}
 
-			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-				return false
-			}
-
 			// Verify at least one event has the correlation ID from RemediationRequestRef.Name
-			for _, event := range *resp.JSON200.Data {
-				if event.CorrelationId == expectedCorrID {
+			for _, event := range resp.Data {
+				if event.CorrelationID == expectedCorrID {
 					return true
 				}
 			}

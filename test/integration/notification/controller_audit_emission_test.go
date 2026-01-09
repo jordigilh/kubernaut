@@ -54,7 +54,7 @@ import (
 
 var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", func() {
 	var (
-		dsClient       *ogenclient.ClientWithResponses
+		dsClient       *ogenclient.Client
 		dataStorageURL string
 		queryCtx       context.Context
 	)
@@ -73,27 +73,26 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 		// Create REST API client for querying audit events
 		var err error
-		dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage REST API client")
 	})
 
 	// Helper function to query audit events from Data Storage REST API
 	// Note: OpenAPI spec doesn't have resource_id query param, so we filter client-side
 	queryAuditEvents := func(eventType, resourceID string) []ogenclient.AuditEvent {
-		eventCategory := "notification"
-		params := &ogenclient.QueryAuditEventsParams{
-			EventType:     &eventType,
-			EventCategory: &eventCategory,
+		params := ogenclient.QueryAuditEventsParams{
+			EventType:     ogenclient.NewOptString(eventType),
+			EventCategory: ogenclient.NewOptString("notification"),
 		}
-		resp, err := dsClient.QueryAuditEventsWithResponse(queryCtx, params)
-		if err != nil || resp.JSON200 == nil || resp.JSON200.Data == nil {
+		resp, err := dsClient.QueryAuditEvents(queryCtx, params)
+		if err != nil || resp.Data == nil {
 			return nil
 		}
 
 		// Client-side filtering by resource_id (OpenAPI spec gap)
 		var filtered []ogenclient.AuditEvent
-		for _, event := range *resp.JSON200.Data {
-			if event.ResourceID != nil && *event.ResourceID == resourceID {
+		for _, event := range resp.Data {
+			if event.ResourceID.IsSet() && event.ResourceID.Value == resourceID {
 				filtered = append(filtered, event)
 			}
 		}
@@ -438,11 +437,11 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				ActorID:       &actorID,
 			})
 
-			Expect(ackEvent.ResourceType).ToNot(BeNil(), "ResourceType is required (ADR-034)")
-			Expect(*ackEvent.ResourceType).To(Equal("NotificationRequest"), "Resource type must be CRD kind (DD-AUDIT-002)")
+			Expect(ackEvent.ResourceType.IsSet()).To(BeTrue(), "ResourceType is required (ADR-034)")
+			Expect(ackEvent.ResourceType.Value).To(Equal("NotificationRequest"), "Resource type must be CRD kind (DD-AUDIT-002)")
 
-			Expect(ackEvent.ResourceID).ToNot(BeNil(), "ResourceId is required (ADR-034)")
-			Expect(*ackEvent.ResourceID).To(Equal(notificationName), "Resource ID must match notification name (DD-AUDIT-002)")
+			Expect(ackEvent.ResourceID.IsSet()).To(BeTrue(), "ResourceId is required (ADR-034)")
+			Expect(ackEvent.ResourceID.Value).To(Equal(notificationName), "Resource ID must match notification name (DD-AUDIT-002)")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
@@ -492,14 +491,14 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				for _, e := range events {
-					// Verify all ADR-034 required fields (OpenAPI types use pointers)
+					// Verify all ADR-034 required fields (OptString types)
 					if string(e.EventCategory) == "notification" &&
 						e.EventAction == "sent" &&
 						string(e.EventOutcome) == "success" &&
-						e.ActorType != nil && *e.ActorType == "service" &&
-						e.ActorID != nil && *e.ActorID == "notification-controller" &&
-						e.ResourceType != nil && *e.ResourceType == "NotificationRequest" &&
-						e.ResourceID != nil && *e.ResourceID == notificationName {
+						e.ActorType.IsSet() && e.ActorType.Value == "service" &&
+						e.ActorID.IsSet() && e.ActorID.Value == "notification-controller" &&
+						e.ResourceType.IsSet() && e.ResourceType.Value == "NotificationRequest" &&
+						e.ResourceID.IsSet() && e.ResourceID.Value == notificationName {
 						validEvent = &e
 						return true
 					}

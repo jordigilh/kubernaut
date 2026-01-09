@@ -51,6 +51,7 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
@@ -257,8 +258,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
 
-	// Create audit helpers for controller audit emission (BR-NOT-062)
-	auditHelpers := notification.NewAuditHelpers("notification-controller")
+	// Create audit manager for controller audit emission (BR-NOT-062)
+	auditManager := notificationaudit.NewManager("notification-controller")
 
 	// Create REAL audit store using Data Storage service (DD-AUDIT-003 mandate)
 	// Per 03-testing-strategy.mdc: Integration tests MUST use real services (no mocks)
@@ -355,7 +356,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager, // BR-NOT-055: Circuit breaker with gobreaker
 		AuditStore:           realAuditStore,        // ✅ REAL audit store (mandate compliance)
-		AuditHelpers:         auditHelpers,
+		AuditManager:         auditManager,
 		Metrics:              metricsRecorder,                                           // Pattern 1: Metrics (DD-METRICS-001)
 		Recorder:             k8sManager.GetEventRecorderFor("notification-controller"), // Pattern 1: EventRecorder
 		StatusManager:        statusManager,                                             // Pattern 2: Status Manager

@@ -244,13 +244,13 @@ type NotificationRequestSpec struct {
     // Reference to parent RemediationRequest (if applicable)
     // +optional
     RemediationRequestRef *corev1.ObjectReference `json:"remediationRequestRef,omitempty"`
-    
+
     // Existing fields...
     Type     NotificationType `json:"type"`
     Priority NotificationPriority `json:"priority"`
     Subject  string `json:"subject"`
     Body     string `json:"body"`
-    
+
     // Keep Metadata for other contextual information (NOT for remediationRequestName)
     // +optional
     Metadata map[string]string `json:"metadata,omitempty"`

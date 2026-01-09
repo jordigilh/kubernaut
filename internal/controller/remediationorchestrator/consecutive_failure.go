@@ -201,6 +201,14 @@ func (b *ConsecutiveFailureBlocker) createBlockNotification(ctx context.Context,
 			},
 		},
 		Spec: notificationv1.NotificationRequestSpec{
+			// Set RemediationRequestRef for audit correlation (BR-NOT-064)
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: rr.APIVersion,
+				Kind:       rr.Kind,
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			Type:     notificationv1.NotificationType("consecutive_failures_blocked"),
 			Priority: "high",
 			Subject:  fmt.Sprintf("⚠️ Remediation Blocked: %s (Consecutive Failures)", rr.Spec.SignalName),
