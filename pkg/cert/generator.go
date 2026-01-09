@@ -202,3 +202,4 @@ func GetCertificateFingerprint(certPEM []byte) (string, error) {
 	return formatted, nil
 }
 
+

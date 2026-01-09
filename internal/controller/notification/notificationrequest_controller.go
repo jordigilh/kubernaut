@@ -37,6 +37,7 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationphase "github.com/jordigilh/kubernaut/pkg/notification/phase"
@@ -99,8 +100,8 @@ type NotificationRequestReconciler struct {
 	// BR-NOT-062: Unified Audit Table Integration
 	// BR-NOT-063: Graceful Audit Degradation
 	// See: DD-NOT-001-ADR034-AUDIT-INTEGRATION-v2.0-FULL.md
-	AuditStore   audit.AuditStore // Buffered store for async audit writes (fire-and-forget)
-	AuditHelpers *AuditHelpers    // Helper functions for creating audit events
+	AuditStore   audit.AuditStore           // Buffered store for async audit writes (fire-and-forget)
+	AuditManager *notificationaudit.Manager // Audit event manager (DD-AUDIT-002)
 
 	// BR-NOT-065: Channel Routing Based on Labels
 	// BR-NOT-067: Routing Configuration Hot-Reload
@@ -467,7 +468,7 @@ func (r *NotificationRequestReconciler) handleNotFound(ctx context.Context, name
 func (r *NotificationRequestReconciler) auditMessageSent(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, channel string) error {
 	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
 	// If audit store is nil, this indicates misconfiguration and MUST fail
-	if r.AuditStore == nil || r.AuditHelpers == nil {
+	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
 		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.sent", "channel", channel)
@@ -485,7 +486,7 @@ func (r *NotificationRequestReconciler) auditMessageSent(ctx context.Context, no
 	}
 
 	// Create audit event
-	event, err := r.AuditHelpers.CreateMessageSentEvent(notification, channel)
+	event, err := r.AuditManager.CreateMessageSentEvent(notification, channel)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.sent", "channel", channel)
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
@@ -515,7 +516,7 @@ func (r *NotificationRequestReconciler) auditMessageSent(ctx context.Context, no
 func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, channel string, deliveryErr error) error {
 	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
 	// If audit store is nil, this indicates misconfiguration and MUST fail
-	if r.AuditStore == nil || r.AuditHelpers == nil {
+	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
 		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.failed", "channel", channel)
@@ -534,7 +535,7 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 	}
 
 	// Create audit event with error details
-	event, err := r.AuditHelpers.CreateMessageFailedEvent(notification, channel, deliveryErr)
+	event, err := r.AuditManager.CreateMessageFailedEvent(notification, channel, deliveryErr)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.failed", "channel", channel)
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
@@ -585,7 +586,7 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
 	// If audit store is nil, this indicates misconfiguration and MUST fail
-	if r.AuditStore == nil || r.AuditHelpers == nil {
+	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
 		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.acknowledged")
@@ -603,7 +604,7 @@ func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Con
 	}
 
 	// Create audit event
-	event, err := r.AuditHelpers.CreateMessageAcknowledgedEvent(notification)
+	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.acknowledged")
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
@@ -654,7 +655,7 @@ func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Con
 func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	// ADR-032 §1: Audit is MANDATORY - no graceful degradation allowed
 	// If audit store is nil, this indicates misconfiguration and MUST fail
-	if r.AuditStore == nil || r.AuditHelpers == nil {
+	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
 		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.escalated")
@@ -672,7 +673,7 @@ func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Contex
 	}
 
 	// Create audit event
-	event, err := r.AuditHelpers.CreateMessageEscalatedEvent(notification)
+	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification)
 	if err != nil {
 		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.escalated")
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)

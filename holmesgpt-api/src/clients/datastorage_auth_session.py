@@ -59,13 +59,12 @@ import os
 import time
 import threading
 from typing import Optional
-from requests import Session
-from requests.adapters import HTTPAdapter
+import urllib3
 
 
-class ServiceAccountAuthSession(Session):
+class ServiceAccountAuthPoolManager(urllib3.PoolManager):
     """
-    Custom requests.Session that injects ServiceAccount tokens for DataStorage authentication.
+    Custom urllib3.PoolManager that injects ServiceAccount tokens for DataStorage authentication.
 
     Behavior:
     - Reads token from /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -78,7 +77,7 @@ class ServiceAccountAuthSession(Session):
     - request() is thread-safe (clones headers, no shared state mutation)
     - Token caching uses threading.Lock for concurrent access
 
-    DD-AUTH-005: This session enables holmesgpt-api to authenticate with
+    DD-AUTH-005: This pool manager enables holmesgpt-api to authenticate with
     DataStorage without modifying the OpenAPI-generated client code.
 
     ZERO TEST LOGIC: This production code contains no test-specific modes.
@@ -94,29 +93,24 @@ class ServiceAccountAuthSession(Session):
     def __init__(
         self,
         token_path: str = "/var/run/secrets/kubernetes.io/serviceaccount/token",
-        **kwargs
+        num_pools=10,
+        headers=None,
+        **connection_pool_kw
     ):
         """
-        Initialize ServiceAccountAuthSession.
+        Initialize ServiceAccountAuthPoolManager.
 
         Args:
             token_path: Path to ServiceAccount token file
                        (default: /var/run/secrets/kubernetes.io/serviceaccount/token)
-            **kwargs: Additional arguments passed to requests.Session
+            num_pools: Number of connection pools (default: 10)
+            headers: Optional default headers
+            **connection_pool_kw: Additional arguments passed to urllib3.PoolManager
         """
-        super().__init__(**kwargs)
+        super().__init__(num_pools=num_pools, headers=headers, **connection_pool_kw)
         self._token_path = token_path
 
-        # Configure connection pooling (same as Go transport)
-        adapter = HTTPAdapter(
-            pool_connections=100,
-            pool_maxsize=100,
-            pool_block=False
-        )
-        self.mount('http://', adapter)
-        self.mount('https://', adapter)
-
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, headers=None, **kwargs):
         """
         Override request() to inject Authorization header.
 
@@ -133,15 +127,18 @@ class ServiceAccountAuthSession(Session):
         token = self._get_service_account_token()
         if token:
             # Inject Authorization header (clone headers to avoid mutation)
-            if 'headers' not in kwargs:
-                kwargs['headers'] = {}
-            kwargs['headers']['Authorization'] = f'Bearer {token}'
+            if headers is None:
+                headers = {}
+            else:
+                # Clone headers to avoid mutating shared state
+                headers = headers.copy()
+            headers['Authorization'] = f'Bearer {token}'
 
         # Note: If token file doesn't exist, request proceeds without auth
         # This allows services to start before ServiceAccount token is mounted
         # Also allows local development without Kubernetes
 
-        return super().request(method, url, **kwargs)
+        return super().request(method, url, headers=headers, **kwargs)
 
     def _get_service_account_token(self) -> Optional[str]:
         """
@@ -205,26 +202,26 @@ class ServiceAccountAuthSession(Session):
 # Production/E2E (ServiceAccount token from filesystem):
 #
 #   from datastorage import ApiClient, Configuration
-#   from datastorage_auth_session import ServiceAccountAuthSession
+#   from datastorage_auth_session import ServiceAccountAuthPoolManager
 #
-#   session = ServiceAccountAuthSession()
+#   pool_manager = ServiceAccountAuthPoolManager()
 #   config = Configuration(host="http://data-storage:8080")
 #   api_client = ApiClient(configuration=config)
-#   api_client.rest_client.pool_manager = session
+#   api_client.rest_client.pool_manager = pool_manager
 #
 #   audit_api = AuditWriteAPIApi(api_client)
 #   response = audit_api.create_audit_event(request)
 #
 # Integration Tests (Mock user header, no oauth-proxy):
 #
-#   # Use testutil.MockUserAuthSession() to avoid test logic in production code
-#   from testutil import MockUserAuthSession
+#   # Use testutil.MockUserAuthPoolManager() to avoid test logic in production code
+#   from testutil import MockUserAuthPoolManager
 #
-#   session = MockUserAuthSession(user_id="test-user@example.com")
+#   pool_manager = MockUserAuthPoolManager(user_id="test-user@example.com")
 #   config = Configuration(host="http://data-storage:8080")
 #   api_client = ApiClient(configuration=config)
-#   api_client.rest_client.pool_manager = session
+#   api_client.rest_client.pool_manager = pool_manager
 #
-# E2E Tests: Use SAME ServiceAccountAuthSession as production
+# E2E Tests: Use SAME ServiceAccountAuthPoolManager as production
 # (run tests in pods with mounted tokens)
 

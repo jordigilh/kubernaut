@@ -314,7 +314,7 @@ class TestCreateDataStorageClient:
             client = _create_data_storage_client(None)
             assert client is not None
             # Verify it's the correct OpenAPI client type
-            from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+            from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
             assert isinstance(client, WorkflowCatalogAPIApi)
             # Check the configuration host
             assert client.api_client.configuration.host == "http://test-data-storage:8080"
@@ -333,7 +333,7 @@ class TestCreateDataStorageClient:
         client = _create_data_storage_client(app_config)
         assert client is not None
         # Verify it's the correct OpenAPI client type
-        from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+        from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
         assert isinstance(client, WorkflowCatalogAPIApi)
         # Check the configuration host
         assert client.api_client.configuration.host == "http://config-data-storage:9090"
@@ -344,7 +344,7 @@ class TestCreateDataStorageClient:
         from unittest.mock import patch
 
         # Patch the Configuration import to raise an error
-        with patch("src.clients.datastorage.configuration.Configuration", side_effect=Exception("Connection failed")):
+        with patch("datastorage.configuration.Configuration", side_effect=Exception("Connection failed")):
             client = _create_data_storage_client(None)
             # Should return None and log warning, not raise
             assert client is None

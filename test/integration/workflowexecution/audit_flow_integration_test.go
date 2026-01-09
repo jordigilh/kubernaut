@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 

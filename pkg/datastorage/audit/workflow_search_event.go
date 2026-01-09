@@ -24,7 +24,7 @@ import (
 	"time"
 
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -137,7 +137,7 @@ func NewWorkflowSearchAuditEventBuilder(
 // Build constructs the audit event for workflow search.
 //
 // Returns:
-// - *dsgen.AuditEventRequest: The constructed audit event (OpenAPI type)
+// - *ogenclient.AuditEventRequest: The constructed audit event (OpenAPI type)
 // - error: Any error during construction
 //
 // The event follows the ADR-034 unified audit schema with:
@@ -147,7 +147,7 @@ func NewWorkflowSearchAuditEventBuilder(
 // - EventData: Structured WorkflowSearchEventData (as map)
 //
 // DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func (b *WorkflowSearchAuditEventBuilder) Build() (*dsgen.AuditEventRequest, error) {
+func (b *WorkflowSearchAuditEventBuilder) Build() (*ogenclient.AuditEventRequest, error) {
 	// Generate resource ID from query hash
 	resourceID := b.generateQueryHash()
 
@@ -301,7 +301,7 @@ func (b *WorkflowSearchAuditEventBuilder) generateQueryHash() string {
 // - duration: Time taken to execute the search
 //
 // Returns:
-// - *dsgen.AuditEventRequest: The constructed audit event (OpenAPI type)
+// - *ogenclient.AuditEventRequest: The constructed audit event (OpenAPI type)
 // - error: Any error during construction
 //
 // DD-AUDIT-002 V2.0: Returns OpenAPI types directly
@@ -317,7 +317,7 @@ func NewWorkflowSearchAuditEvent(
 	request *models.WorkflowSearchRequest,
 	response *models.WorkflowSearchResponse,
 	duration time.Duration,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	builder := NewWorkflowSearchAuditEventBuilder(request, response, duration)
 	return builder.Build()
 }
@@ -336,7 +336,7 @@ func NewWorkflowSearchAuditEvent(
 //
 // Returns:
 // - error: Validation error if event is invalid, nil if valid
-func ValidateWorkflowAuditEvent(event *dsgen.AuditEventRequest) error {
+func ValidateWorkflowAuditEvent(event *ogenclient.AuditEventRequest) error {
 	if event == nil {
 		return &ValidationError{Field: "event", Message: "event is nil"}
 	}
@@ -345,103 +345,25 @@ func ValidateWorkflowAuditEvent(event *dsgen.AuditEventRequest) error {
 		return &ValidationError{Field: "event_data", Message: "event_data is nil"}
 	}
 
-	// Marshal to JSON for validation
-	eventDataBytes, err := json.Marshal(event.EventData)
-	if err != nil {
-		return &ValidationError{Field: "event_data", Message: "failed to marshal: " + err.Error()}
+	// V2.0: Direct type assertion to OpenAPI-generated struct (DD-AUDIT-004)
+	// No backwards compatibility needed (pre-release product)
+	eventData, ok := event.EventData.(*ogenclient.WorkflowSearchAuditPayload)
+	if !ok {
+		return &ValidationError{Field: "event_data", Message: "event_data must be *ogenclient.WorkflowSearchAuditPayload"}
 	}
 
-	// Unmarshal to structured type for type-safe validation
-	var eventData WorkflowSearchEventData
-	if err := json.Unmarshal(eventDataBytes, &eventData); err != nil {
-		return &ValidationError{Field: "event_data", Message: "invalid JSON: " + err.Error()}
-	}
-
-	// Query field validation (Text field removed per embedding removal)
-	// Filters-based search uses QueryMetadata.Filters instead
+	// Query field validation (using OpenAPI-generated types)
+	// Filters-based search uses QueryMetadata.Filters
 	// No validation needed - Filters can be empty for broad search
 
-	// Results field is always present due to struct initialization
-	// But we need to validate that workflows have confidence
+	// Results field validation using OpenAPI-generated types
+	// Validate that workflows have valid confidence scores
 	for i, wf := range eventData.Results.Workflows {
-		// V1.0: confidence is required (Scoring.Confidence is always present due to struct)
-		// But we validate it's a valid value (>= 0)
-		if wf.Scoring.Confidence < 0 {
+		// V1.0: confidence is required (0.0-1.0 range per OpenAPI spec)
+		if wf.Scoring.Confidence < 0 || wf.Scoring.Confidence > 1 {
 			return &ValidationError{
 				Field:   "confidence",
-				Message: "confidence must be >= 0",
-				Index:   i,
-			}
-		}
-	}
-
-	return nil
-}
-
-// ValidateWorkflowAuditEventUnstructured validates a workflow search audit event
-// using unstructured JSON for backwards compatibility with existing tests.
-//
-// DD-AUDIT-002 V2.0: Validates OpenAPI types
-//
-// Deprecated: Use ValidateWorkflowAuditEvent with structured types instead.
-func ValidateWorkflowAuditEventUnstructured(event *dsgen.AuditEventRequest) error {
-	if event == nil {
-		return &ValidationError{Field: "event", Message: "event is nil"}
-	}
-
-	if event.EventData == nil {
-		return &ValidationError{Field: "event_data", Message: "event_data is nil"}
-	}
-
-	// V2.2: EventData is interface{} for polymorphism - type assert to map
-	eventData, ok := event.EventData.(map[string]interface{})
-	if !ok {
-		return &ValidationError{Field: "event_data", Message: "event_data must be a map"}
-	}
-
-	// Check for query field
-	if _, ok := eventData["query"]; !ok {
-		return &ValidationError{Field: "query", Message: "missing required field: query"}
-	}
-
-	// Check for results field
-	results, ok := eventData["results"]
-	if !ok {
-		return &ValidationError{Field: "results", Message: "missing required field: results"}
-	}
-
-	// Validate workflow scoring (V1.0: confidence required)
-	resultsMap, ok := results.(map[string]interface{})
-	if !ok {
-		return &ValidationError{Field: "results", Message: "results must be a map"}
-	}
-
-	workflows, ok := resultsMap["workflows"].([]interface{})
-	if !ok {
-		// Empty workflows array is valid
-		return nil
-	}
-
-	// Check each workflow has confidence
-	for i, wf := range workflows {
-		wfMap, ok := wf.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		scoring, ok := wfMap["scoring"].(map[string]interface{})
-		if !ok {
-			return &ValidationError{
-				Field:   "scoring",
-				Message: "missing required field: scoring",
-				Index:   i,
-			}
-		}
-
-		if _, ok := scoring["confidence"]; !ok {
-			return &ValidationError{
-				Field:   "confidence",
-				Message: "missing required field: confidence",
+				Message: "confidence must be between 0.0 and 1.0",
 				Index:   i,
 			}
 		}

@@ -20,19 +20,19 @@ package testutil
 import (
 	"fmt"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/gomega"
 )
 
 // ExpectedAuditEvent defines expected values for an audit event.
 // Fields left empty (zero value) will not be validated.
-// Based on dsgen.AuditEvent schema from pkg/datastorage/client/generated.go
+// Based on ogenclient.AuditEvent schema from pkg/datastorage/client/generated.go
 type ExpectedAuditEvent struct {
 	// Required fields (always validated)
 	EventType     string
-	EventCategory dsgen.AuditEventEventCategory // Use response type, not request type
+	EventCategory ogenclient.AuditEventEventCategory // Use response type, not request type
 	EventAction   string
-	EventOutcome  dsgen.AuditEventEventOutcome
+	EventOutcome  ogenclient.AuditEventEventOutcome
 	CorrelationID string
 
 	// Optional fields (validated only if non-empty/non-nil)
@@ -56,16 +56,16 @@ type ExpectedAuditEvent struct {
 //	severity := "info"
 //	testutil.ValidateAuditEvent(event, testutil.ExpectedAuditEvent{
 //	    EventType:     "signal.categorization.completed",
-//	    EventCategory: dsgen.AuditEventEventCategorySignalprocessing,
+//	    EventCategory: ogenclient.AuditEventEventCategorySignalprocessing,
 //	    EventAction:   "categorize",
-//	    EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+//	    EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
 //	    CorrelationID: string(sp.UID),
 //	    Severity:      &severity,
 //	    EventDataFields: map[string]interface{}{
 //	        "signal_name": "TestSignal",
 //	    },
 //	})
-func ValidateAuditEvent(event dsgen.AuditEvent, expected ExpectedAuditEvent) {
+func ValidateAuditEvent(event ogenclient.AuditEvent, expected ExpectedAuditEvent) {
 	// Validate required fields
 	Expect(event.EventType).To(Equal(expected.EventType),
 		"Audit event type mismatch")
@@ -80,50 +80,51 @@ func ValidateAuditEvent(event dsgen.AuditEvent, expected ExpectedAuditEvent) {
 		"Audit event outcome mismatch")
 
 	if expected.CorrelationID != "" {
-		Expect(event.CorrelationId).To(Equal(expected.CorrelationID),
+		Expect(event.CorrelationID).To(Equal(expected.CorrelationID),
 			"Audit event correlation ID mismatch")
 	}
 
-	// Validate optional pointer fields if specified
+	// Validate optional fields using ogen Opt types (OGEN-MIGRATION)
+	// Pattern: Use IsSet() to check existence, then access .Value
 	if expected.Severity != nil {
-		Expect(event.Severity).ToNot(BeNil(), "Audit event severity should not be nil")
-		Expect(*event.Severity).To(Equal(*expected.Severity),
+		Expect(event.Severity.IsSet()).To(BeTrue(), "Audit event severity should be set")
+		Expect(event.Severity.Value).To(Equal(*expected.Severity),
 			"Audit event severity mismatch")
 	}
 
 	if expected.ActorID != nil {
-		Expect(event.ActorId).ToNot(BeNil(), "Audit event actor_id should not be nil")
-		Expect(*event.ActorId).To(Equal(*expected.ActorID),
+		Expect(event.ActorID.IsSet()).To(BeTrue(), "Audit event actor_id should be set")
+		Expect(event.ActorID.Value).To(Equal(*expected.ActorID),
 			"Audit event actor ID mismatch")
 	}
 
 	if expected.ActorType != nil {
-		Expect(event.ActorType).ToNot(BeNil(), "Audit event actor_type should not be nil")
-		Expect(*event.ActorType).To(Equal(*expected.ActorType),
+		Expect(event.ActorType.IsSet()).To(BeTrue(), "Audit event actor_type should be set")
+		Expect(event.ActorType.Value).To(Equal(*expected.ActorType),
 			"Audit event actor type mismatch")
 	}
 
 	if expected.ResourceID != nil {
-		Expect(event.ResourceId).ToNot(BeNil(), "Audit event resource_id should not be nil")
-		Expect(*event.ResourceId).To(Equal(*expected.ResourceID),
+		Expect(event.ResourceID.IsSet()).To(BeTrue(), "Audit event resource_id should be set")
+		Expect(event.ResourceID.Value).To(Equal(*expected.ResourceID),
 			"Audit event resource ID mismatch")
 	}
 
 	if expected.ResourceType != nil {
-		Expect(event.ResourceType).ToNot(BeNil(), "Audit event resource_type should not be nil")
-		Expect(*event.ResourceType).To(Equal(*expected.ResourceType),
+		Expect(event.ResourceType.IsSet()).To(BeTrue(), "Audit event resource_type should be set")
+		Expect(event.ResourceType.Value).To(Equal(*expected.ResourceType),
 			"Audit event resource type mismatch")
 	}
 
 	if expected.Namespace != nil {
-		Expect(event.Namespace).ToNot(BeNil(), "Audit event namespace should not be nil")
-		Expect(*event.Namespace).To(Equal(*expected.Namespace),
+		Expect(event.Namespace.IsSet()).To(BeTrue(), "Audit event namespace should be set")
+		Expect(event.Namespace.Value).To(Equal(*expected.Namespace),
 			"Audit event namespace mismatch")
 	}
 
 	if expected.ClusterName != nil {
-		Expect(event.ClusterName).ToNot(BeNil(), "Audit event cluster_name should not be nil")
-		Expect(*event.ClusterName).To(Equal(*expected.ClusterName),
+		Expect(event.ClusterName.IsSet()).To(BeTrue(), "Audit event cluster_name should be set")
+		Expect(event.ClusterName.Value).To(Equal(*expected.ClusterName),
 			"Audit event cluster name mismatch")
 	}
 
@@ -148,7 +149,7 @@ func ValidateAuditEvent(event dsgen.AuditEvent, expected ExpectedAuditEvent) {
 
 // ValidateAuditEventHasRequiredFields validates that all standard audit fields are present.
 // Use this for quick validation that event structure is correct.
-func ValidateAuditEventHasRequiredFields(event dsgen.AuditEvent) {
+func ValidateAuditEventHasRequiredFields(event ogenclient.AuditEvent) {
 	Expect(event.EventType).ToNot(BeEmpty(), "Audit event missing event_type")
 	Expect(event.EventCategory).ToNot(BeZero(), "Audit event missing event_category")
 	Expect(event.EventAction).ToNot(BeEmpty(), "Audit event missing event_action")
@@ -171,9 +172,9 @@ func MatchAuditEvent(expected ExpectedAuditEvent) *AuditEventMatcher {
 
 // Match implements GomegaMatcher.
 func (m *AuditEventMatcher) Match(actual interface{}) (bool, error) {
-	event, ok := actual.(dsgen.AuditEvent)
+	event, ok := actual.(ogenclient.AuditEvent)
 	if !ok {
-		return false, fmt.Errorf("MatchAuditEvent expects dsgen.AuditEvent, got %T", actual)
+		return false, fmt.Errorf("MatchAuditEvent expects ogenclient.AuditEvent, got %T", actual)
 	}
 
 	if event.EventType != m.expected.EventType {
@@ -202,7 +203,7 @@ func (m *AuditEventMatcher) Match(actual interface{}) (bool, error) {
 
 // FailureMessage implements GomegaMatcher.
 func (m *AuditEventMatcher) FailureMessage(actual interface{}) string {
-	event := actual.(dsgen.AuditEvent)
+	event := actual.(ogenclient.AuditEvent)
 	severityStr := "<nil>"
 	if event.Severity != nil {
 		severityStr = *event.Severity

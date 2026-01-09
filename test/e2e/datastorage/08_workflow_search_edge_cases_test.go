@@ -140,7 +140,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			searchRequest := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "NonExistentSignalType_12345",             // Will not match any workflow
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+					Severity:    dsgen.Critical,
 					Component:   "deployment",
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0, // OpenAPI schema requires uppercase (enum: [P0, P1, P2, P3])
 					Environment: "production",
@@ -162,9 +162,10 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			workflows := *resp.JSON200.Workflows
 			Expect(workflows).To(BeEmpty(), "Workflows array should be empty when no workflows match")
 
-			// ASSERT: total_results = 0
-			totalResults := resp.JSON200.TotalResults
-			Expect(totalResults).To(Equal(0), "Total results should be 0 for zero matches")
+		// ASSERT: total_results = 0
+		totalResults := resp.JSON200.TotalResults
+		Expect(totalResults).ToNot(BeNil(), "TotalResults should not be nil")
+		Expect(*totalResults).To(Equal(0), "Total results should be 0 for zero matches")
 
 			// ASSERT: filters metadata exists
 			filters := resp.JSON200.Filters
@@ -191,7 +192,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			searchRequest := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "AnotherNonExistentType_99999",
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+					Severity:    dsgen.Critical,
 					Component:   "statefulset",
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP1,
 					Environment: "staging",
@@ -344,7 +345,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			searchRequest := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "tie-breaking-test",
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+					Severity:    dsgen.Critical,
 					Component:   "deployment",
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,
 					Environment: "production",
@@ -472,7 +473,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			searchRequest := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "wildcard-test",
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+					Severity:    dsgen.Critical,
 					Component:   "deployment", // Specific value
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,
 					Environment: "production",
@@ -511,7 +512,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			searchRequest := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "wildcard-test",
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+					Severity:    dsgen.Critical,
 					Component:   "unknown-component", // Unknown value (not "deployment")
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,
 					Environment: "production",

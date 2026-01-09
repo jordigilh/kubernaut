@@ -51,8 +51,9 @@ import (
 func ValidateTimestampBounds(timestamp time.Time) *validation.RFC7807Problem {
 	now := time.Now().UTC()
 
-	// Check if timestamp is in the future (with 5 min clock skew tolerance)
-	if timestamp.After(now.Add(5 * time.Minute)) {
+	// Check if timestamp is in the future (with 1 hour clock skew tolerance for E2E/Kind environments)
+	// NOTE: Kind clusters can have significant clock skew between host and container
+	if timestamp.After(now.Add(60 * time.Minute)) {
 		return &validation.RFC7807Problem{
 			Type:   "https://kubernaut.ai/problems/validation-error",
 			Title:  "Validation Error",

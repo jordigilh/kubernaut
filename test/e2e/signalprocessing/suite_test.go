@@ -73,6 +73,7 @@ var (
 	metricsURL     string
 	coverageMode   bool   // E2E coverage capture mode (per E2E_COVERAGE_COLLECTION.md)
 	coverDir       string // Coverage data directory
+	anyTestFailed  bool   // Track test failures for cluster cleanup decision
 )
 
 const (
@@ -167,6 +168,13 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
+
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes
 	func() {
@@ -179,9 +187,14 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Deleting Kind cluster (process 1 only)")
 
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			By("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
 		// Determine test results for log export decision
-		// Note: Ginkgo's CurrentSpecReport() only works in test nodes, not in AfterSuite
-		// So we check KEEP_CLUSTER for manual debugging, and always export logs on any failure
+		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {
@@ -242,10 +255,9 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Delete cluster with must-gather log export
-		// Note: Pass false for testsFailed since we don't track failures in SignalProcessing suite
-		// If this becomes needed, add failure tracking similar to other services
+		// Delete Kind cluster using infrastructure helper (with failure tracking)
 		Eventually(func() error {
-			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, false, GinkgoWriter)
+			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed(),
 			"Cluster deletion should succeed (transient Podman connectivity handled via retry)")
 

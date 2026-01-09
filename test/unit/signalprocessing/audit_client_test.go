@@ -39,6 +39,7 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	"github.com/jordigilh/kubernaut/pkg/signalprocessing"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
 
@@ -224,13 +225,14 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 				event := mockStore.StoredEvents[0]
 				Expect(event.EventType).To(Equal("signalprocessing.error.occurred"))
 				Expect(event.EventOutcome).To(Equal(dsgen.AuditEventRequestEventOutcome("failure")))
-				// Error message is stored in EventData (DD-AUDIT-002 V2.0.1)
+				// Error message is stored in structured EventData (DD-AUDIT-004 V2.2)
 				Expect(event.EventData).ToNot(BeNil())
-				eventDataMap, ok := event.EventData.(map[string]interface{})
-				Expect(ok).To(BeTrue(), "EventData should be a map")
-				errorMsg, ok := eventDataMap["error"].(string)
-				Expect(ok).To(BeTrue())
-				Expect(errorMsg).To(Equal("connection timeout"))
+				// EventData is now SignalProcessingAuditPayload (structured type)
+				// JSON marshaling happens at HTTP layer, so we validate the struct directly
+				payload, ok := event.EventData.(signalprocessing.SignalProcessingAuditPayload)
+				Expect(ok).To(BeTrue(), "EventData should be SignalProcessingAuditPayload")
+				Expect(payload.Error).To(Equal("connection timeout"))
+				Expect(payload.Phase).To(Equal("enriching"))
 			})
 		})
 	})

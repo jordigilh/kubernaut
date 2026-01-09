@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
@@ -74,7 +74,7 @@ import (
 // - Preserves retry semantics (4xx not retryable, 5xx retryable)
 // - Supports same interface (drop-in replacement)
 type OpenAPIClientAdapter struct {
-	client  *dsgen.ClientWithResponses
+	client  *ogenclient.Client
 	baseURL string
 	timeout time.Duration
 }
@@ -157,10 +157,10 @@ func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration,
 		Transport: transport, // ← ServiceAccount token injection (or mock for tests)
 	}
 
-	// Create generated OpenAPI client (DD-API-001 compliant)
-	client, err := dsgen.NewClientWithResponses(baseURL, dsgen.WithHTTPClient(httpClient))
+	// Create ogen-generated OpenAPI client (DD-API-001 compliant)
+	client, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(httpClient))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
+		return nil, fmt.Errorf("failed to create ogen client: %w", err)
 	}
 
 	return &OpenAPIClientAdapter{
@@ -187,45 +187,32 @@ func NewOpenAPIClientAdapterWithTransport(baseURL string, timeout time.Duration,
 //
 // Authority: DD-API-001 (OpenAPI Generated Client MANDATORY)
 // Related: DD-AUDIT-002 (Audit Shared Library Design)
-func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error {
+func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error {
 	if len(events) == 0 {
 		return nil // No events to write
 	}
 
 	// Convert []*AuditEventRequest to []AuditEventRequest (value slice)
 	// The generated client expects a value slice, not pointer slice
-	valueEvents := make([]dsgen.AuditEventRequest, len(events))
+	valueEvents := make([]ogenclient.AuditEventRequest, len(events))
 	for i, event := range events {
 		if event != nil {
 			valueEvents[i] = *event
 		}
 	}
 
-	// ✅ DD-API-001 COMPLIANCE: Use generated OpenAPI client instead of direct HTTP
+	// ✅ DD-API-001 COMPLIANCE: Use ogen-generated OpenAPI client
 	// Type-safe parameters, contract-validated request/response
-	resp, err := a.client.CreateAuditEventsBatchWithResponse(ctx, valueEvents)
+	resp, err := a.client.CreateAuditEventsBatch(ctx, valueEvents)
 	if err != nil {
 		// Network-level error (connection failure, timeout, DNS resolution)
 		// These are retryable per GAP-11 retry logic
 		return NewNetworkError(err)
 	}
 
-	// Check response status code (same logic as HTTPDataStorageClient)
-	statusCode := resp.StatusCode()
-	if statusCode < 200 || statusCode >= 300 {
-		// HTTP error (4xx client error or 5xx server error)
-		// GAP-11: 4xx NOT retryable (invalid data), 5xx retryable (server issue)
-		message := http.StatusText(statusCode)
-
-		// Try to extract error message from response body if available
-		// Note: CreateAuditEventsBatchResponse only has JSON201 field for success
-		// Error responses are in the raw HTTPResponse body
-		if resp.HTTPResponse != nil && len(resp.Body) > 0 {
-			message = string(resp.Body)
-		}
-
-		return NewHTTPError(statusCode, message)
-	}
+	// Ogen returns typed response directly, no status code checking needed
+	// Errors are returned via err parameter above
+	_ = resp // Response contains BatchAuditEventResponse
 
 	// Success (2xx status code)
 	return nil

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================

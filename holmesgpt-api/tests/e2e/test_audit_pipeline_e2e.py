@@ -40,8 +40,8 @@ from typing import List, Dict, Any
 from unittest.mock import patch, Mock
 
 # DD-API-001: Use OpenAPI generated clients for ALL REST API communication
-from src.clients.datastorage import ApiClient as DSApiClient, Configuration as DSConfiguration
-from src.clients.datastorage.api import AuditWriteAPIApi
+from datastorage import ApiClient as DSApiClient, Configuration as DSConfiguration
+from datastorage.api import AuditWriteAPIApi
 
 import sys
 from pathlib import Path

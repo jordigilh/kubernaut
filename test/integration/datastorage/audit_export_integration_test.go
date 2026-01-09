@@ -138,7 +138,7 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 					`SELECT event_id, event_hash, previous_event_hash
 					 FROM audit_events
 					 WHERE correlation_id = $1
-					 ORDER BY event_date ASC`,
+					 ORDER BY event_timestamp ASC, event_id ASC`,
 					correlationID)
 				Expect(err).ToNot(HaveOccurred())
 				defer rows.Close()

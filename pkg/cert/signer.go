@@ -188,3 +188,4 @@ func (s *Signer) GetCertificate() *x509.Certificate {
 	return s.cert
 }
 
+

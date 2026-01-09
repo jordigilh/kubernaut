@@ -334,6 +334,19 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 4.5: Deploy AuthWebhook for SOC2-compliant CRD operations
+	// ═══════════════════════════════════════════════════════════════════════
+	// Per DD-WEBHOOK-001: Required for WorkflowExecution block clearance
+	// Per SOC2 CC8.1: Captures WHO cleared execution blocks after failures
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook for Block Clearance Attribution")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	if err := DeployAuthWebhookToCluster(ctx, clusterName, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook deployed - SOC2 CC8.1 block clearance attribution enabled")
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// POST-DEPLOYMENT: Build workflow bundles & create pipeline (requires DataStorage ready)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🎯 Building and registering test workflow bundles...")

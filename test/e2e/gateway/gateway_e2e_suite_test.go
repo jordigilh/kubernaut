@@ -59,6 +59,9 @@ var (
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 
+	// Track if BeforeSuite completed successfully (for setup failure detection)
+	setupSucceeded bool
+
 	// DD-TEST-007: E2E Coverage Mode
 	coverageMode bool
 )
@@ -136,6 +139,9 @@ var _ = SynchronizedBeforeSuite(
 		tempLogger.Info("✅ Cluster created successfully")
 		tempLogger.Info(fmt.Sprintf("  • Kubeconfig: %s", tempKubeconfigPath))
 		tempLogger.Info("  • Process 1 will now share kubeconfig with other processes")
+
+		// Mark setup as successful (for setup failure detection in AfterSuite)
+		setupSucceeded = true
 
 		// Return kubeconfig path to all processes
 		return []byte(tempKubeconfigPath)
@@ -240,7 +246,14 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("✅ E2E coverage extraction complete")
 		}
 
+		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
+		setupFailed := !setupSucceeded
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (setupSucceeded = false)")
+		}
+
 		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {
@@ -258,7 +271,7 @@ var _ = SynchronizedAfterSuite(
 
 		// Delete cluster (with must-gather log export on failure)
 		logger.Info("🗑️  Cleaning up cluster...")
-		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, anyTestFailed, GinkgoWriter)
+		err := infrastructure.DeleteGatewayCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete cluster")
 		} else {

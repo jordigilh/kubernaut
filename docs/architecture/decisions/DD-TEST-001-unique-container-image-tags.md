@@ -1032,8 +1032,8 @@ Some services build images BEFORE creating the Kind cluster (optimization). Thes
 
 Integration tests using containerized infrastructure (PostgreSQL, Redis, DataStorage, HAPI) require correct container networking configuration to enable communication between services. Incorrect networking configuration causes HTTP 500 errors and connection failures.
 
-**Discovered**: January 8, 2026 during AIAnalysis integration test debugging  
-**Root Cause**: HAPI unable to reach DataStorage due to incorrect networking configuration  
+**Discovered**: January 8, 2026 during AIAnalysis integration test debugging
+**Root Cause**: HAPI unable to reach DataStorage due to incorrect networking configuration
 **Impact**: All integration tests using container-to-container communication
 
 ---
@@ -1042,7 +1042,7 @@ Integration tests using containerized infrastructure (PostgreSQL, Redis, DataSto
 
 **Symptom**: HTTP 500 errors from HolmesGPT-API (HAPI) during integration tests
 ```
-HolmesGPT-API error (HTTP 500): HolmesGPT-API returned HTTP 500: 
+HolmesGPT-API error (HTTP 500): HolmesGPT-API returned HTTP 500:
 decode response: unexpected status code: 500
 ```
 

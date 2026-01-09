@@ -108,14 +108,16 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 	logger.Info("   Triggering initial export to generate self-signed certificate...")
 
 	// Create a test audit event for warm-up
-	warmupCorrelationID := "warmup-" + time.Now().Format("20060102-150405")
+	// Use timestamp 5 minutes in the past to avoid clock skew issues between host and container
+	warmupTimestamp := time.Now().UTC().Add(-5 * time.Minute)
+	warmupCorrelationID := "warmup-" + warmupTimestamp.Format("20060102-150405")
 	warmupEvent := dsgen.AuditEventRequest{
 		CorrelationId:  warmupCorrelationID,
 		EventAction:    "warmup_action",
 		EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
 		EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 		EventType:      "certificate_warmup",
-		EventTimestamp: time.Now().UTC(),
+		EventTimestamp: warmupTimestamp,
 		Version:        "1.0",
 		EventData: map[string]interface{}{
 			"purpose": "certificate generation warmup",
@@ -456,13 +458,14 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			}
 			logger.Info("✅ All events have legal_hold=true")
 
-			// Step 5: List active legal holds
-			logger.Info("Step 5: Listing active legal holds")
-			listResp, err := dsClient.ListLegalHoldsWithResponse(testCtx)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(listResp.StatusCode()).To(Equal(200))
-			Expect(listResp.JSON200).ToNot(BeNil())
-			Expect(listResp.JSON200.Holds).ToNot(BeEmpty(), "Should have at least one active legal hold")
+		// Step 5: List active legal holds
+		logger.Info("Step 5: Listing active legal holds")
+		listResp, err := dsClient.ListLegalHoldsWithResponse(testCtx)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(listResp.StatusCode()).To(Equal(200))
+		Expect(listResp.JSON200).ToNot(BeNil())
+		Expect(listResp.JSON200.Holds).ToNot(BeNil(), "Holds list should not be nil")
+		Expect(*listResp.JSON200.Holds).ToNot(BeEmpty(), "Should have at least one active legal hold")
 
 			// Find our test hold
 			var foundTestHold bool
@@ -604,11 +607,20 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				"algorithm", *exportData.ExportMetadata.SignatureAlgorithm,
 				"signature_length", len(exportData.ExportMetadata.Signature))
 
-			// Step 5: Verify Hash Chain Integrity (CC8.1)
-			logger.Info("Step 5: Validating Hash Chain Integrity (CC8.1)")
-			verification := exportData.HashChainVerification
-			Expect(verification.TotalEventsVerified).To(Equal(10))
-			Expect(verification.ValidChainEvents).To(Equal(10))
+		// Step 5: Verify Hash Chain Integrity (CC8.1)
+		logger.Info("Step 5: Validating Hash Chain Integrity (CC8.1)")
+		verification := exportData.HashChainVerification
+
+		// Debug: Log verification details
+		eventsCount := len(exportData.Events)
+		logger.Info("📊 Export verification details",
+			"events_returned", eventsCount,
+			"total_verified", verification.TotalEventsVerified,
+			"valid_chain", verification.ValidChainEvents,
+			"broken_chain", verification.BrokenChainEvents)
+
+		Expect(verification.TotalEventsVerified).To(Equal(10))
+		Expect(verification.ValidChainEvents).To(Equal(10))
 			Expect(verification.BrokenChainEvents).To(Equal(0))
 			Expect(*verification.ChainIntegrityPercentage).To(Equal(float32(100.0)))
 			logger.Info("✅ Hash chain 100% intact",
@@ -765,9 +777,13 @@ func toPtr(i int) *int {
 func createTestAuditEvents(ctx context.Context, correlationID string, count int) []string {
 	eventIDs := make([]string, count)
 
+	// Use timestamp 10 minutes in the past to avoid clock skew issues between host and container
+	baseTimestamp := time.Now().UTC().Add(-10 * time.Minute)
+
 	for i := 0; i < count; i++ {
 		// Use typed structs from generated OpenAPI client
-		eventTimestamp := time.Now().UTC()
+		// Increment by seconds to ensure chronological order
+		eventTimestamp := baseTimestamp.Add(time.Duration(i) * time.Second)
 		req := dsgen.AuditEventRequest{
 			CorrelationId:  correlationID,
 			EventAction:    "soc2_test_action",

@@ -109,19 +109,21 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 
 	// Set event data payload
 	// Per DD-WEBHOOK-003 lines 314-318: Business context ONLY (attribution in structured columns)
-	eventData := map[string]interface{}{
-		"request_name":     rar.Name,
-		"decision":         string(rar.Status.Decision),
-		"decided_at":       rar.Status.DecidedAt.Time,
-		"decision_message": rar.Status.DecisionMessage,      // Per DD-WEBHOOK-003 line 316
-		"ai_analysis_ref":  rar.Spec.AIAnalysisRef.Name,     // Per DD-WEBHOOK-003 line 317
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := RemediationApprovalAuditPayload{
+		RequestName:     rar.Name,
+		Decision:        string(rar.Status.Decision),
+		DecidedAt:       rar.Status.DecidedAt.Time,
+		DecisionMessage: rar.Status.DecisionMessage,  // Per DD-WEBHOOK-003 line 316
+		AIAnalysisRef:   rar.Spec.AIAnalysisRef.Name, // Per DD-WEBHOOK-003 line 317
 	}
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: rar.Name (via audit.SetResource)
 	// - namespace: rar.Namespace (via audit.SetNamespace)
 	// - event_action: "approval_decided" (via audit.SetEventAction)
-	audit.SetEventData(auditEvent, eventData)
+	audit.SetEventData(auditEvent, payload)
 
 	// Store audit event asynchronously (buffered write)
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {

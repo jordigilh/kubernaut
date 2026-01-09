@@ -82,6 +82,9 @@ var (
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 
+	// Track if BeforeSuite completed successfully (for setup failure detection)
+	setupSucceeded bool
+
 	// Path to Python pytest tests
 	projectRoot string
 	pytestDir   string
@@ -178,6 +181,9 @@ var _ = SynchronizedBeforeSuite(
 	logger.Info("   Data Storage URL: " + dataStorageURL)
 	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// Mark setup as successful (for setup failure detection in AfterSuite)
+		setupSucceeded = true
+
 		return []byte(kubeconfigPath)
 	},
 	// This function runs on ALL processes
@@ -260,7 +266,14 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("HAPI E2E Test Suite - Teardown (ONCE - Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// Detect setup failure: if setupSucceeded is false, BeforeSuite failed
+		setupFailed := !setupSucceeded
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (setupSucceeded = false)")
+		}
+
 		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {
@@ -279,7 +292,7 @@ var _ = SynchronizedAfterSuite(
 
 		// Delete cluster (with must-gather log export on failure)
 		logger.Info("🧹 Deleting Kind cluster...")
-		err := infrastructure.DeleteCluster(clusterName, "holmesgpt-api", anyTestFailed, GinkgoWriter)
+		err := infrastructure.DeleteCluster(clusterName, "holmesgpt-api", anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err)
 		} else {

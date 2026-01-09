@@ -30,7 +30,8 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
@@ -85,7 +86,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	correlationID string,
 	namespace string,
 	rrName string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -126,7 +127,7 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	rrName string,
 	fromPhase string,
 	toPhase string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -171,7 +172,7 @@ func (m *Manager) BuildCompletionEvent(
 	rrName string,
 	outcome string,
 	durationMs int64,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -208,7 +209,7 @@ func (m *Manager) BuildFailureEvent(
 	failurePhase string,
 	failureReason string,
 	durationMs int64,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// BR-AUDIT-005 Gap #7: Build standardized error_details
 	errorMessage := fmt.Sprintf("Remediation failed at phase '%s': %s", failurePhase, failureReason)
 
@@ -251,19 +252,18 @@ func (m *Manager) BuildFailureEvent(
 	audit.SetNamespace(event, namespace)
 	audit.SetDuration(event, int(durationMs))
 
-	// Event data with error_details (Gap #7)
-	// Note: CompletionData struct needs to be extended or we use map
-	eventData := map[string]interface{}{
-		"outcome":    "Failed",
-		"duration_ms": durationMs,
-		"namespace":   namespace,
-		"rr_name":     rrName,
-		"failure_phase": failurePhase,
-		"failure_reason": failureReason,
-		// Gap #7: Standardized error_details for SOC2 compliance
-		"error_details": errorDetails,
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := remediationorchestrator.RemediationOrchestratorAuditPayload{
+		RRName:         rrName,
+		Namespace:      namespace,
+		Outcome:        "Failed",
+		DurationMs:     durationMs,
+		FailurePhase:   failurePhase,
+		FailureReason:  failureReason,
+		ErrorDetails:   errorDetails, // Gap #7: Standardized error_details for SOC2 compliance
 	}
-	audit.SetEventData(event, eventData)
+	audit.SetEventData(event, payload)
 
 	return event, nil
 }
@@ -292,7 +292,7 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	workflowID string,
 	confidence string,
 	requiredBy time.Time,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -330,7 +330,7 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	decision string,
 	decidedBy string,
 	message string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Determine action and outcome based on decision
 	var action string
 	var apiOutcome dsgen.AuditEventRequestEventOutcome
@@ -404,7 +404,7 @@ func (m *Manager) BuildManualReviewEvent(
 	reason string,
 	subReason string,
 	notificationName string,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -460,7 +460,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	rrName string,
 	fromPhase string,
 	blockData *RoutingBlockedData,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"

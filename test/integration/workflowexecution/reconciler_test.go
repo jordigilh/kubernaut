@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 )
 
@@ -565,13 +565,17 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// WE-BUG-002: event_action contains short form ("failed" not "workflow.failed")
 		Expect(failedEvent.EventAction).To(Equal("failed"))
 
-		// Verify event_data contains failure details
-			eventData, ok := failedEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be an object")
-			Expect(eventData["failure_reason"]).ToNot(BeEmpty(), "failure_reason should be populated")
-			Expect(eventData["failure_message"]).ToNot(BeEmpty(), "failure_message should be populated")
+		// Verify event_data contains failure details - OGEN-MIGRATION
+		eventData := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(eventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
 
-			GinkgoWriter.Println("✅ workflow.failed audit event persisted with failure details")
+		// Access flat fields directly
+		Expect(eventData.Value.FailureReason.IsSet()).To(BeTrue(), "failure_reason should be set")
+		Expect(eventData.Value.FailureReason.Value).ToNot(BeEmpty(), "failure_reason should be populated")
+		Expect(eventData.Value.FailureMessage.IsSet()).To(BeTrue(), "failure_message should be set")
+		Expect(eventData.Value.FailureMessage.Value).ToNot(BeEmpty(), "failure_message should be populated")
+
+		GinkgoWriter.Println("✅ workflow.failed audit event persisted with failure details")
 		})
 
 	It("should include correlation ID in audit events from RemediationRequestRef (DD-AUDIT-CORRELATION-001)", func() {

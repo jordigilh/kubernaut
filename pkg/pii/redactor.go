@@ -239,3 +239,4 @@ func (r *Redactor) RedactMapByFieldNames(data map[string]interface{}, fieldNames
 	return result
 }
 
+

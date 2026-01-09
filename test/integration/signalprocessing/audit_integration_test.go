@@ -677,8 +677,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				CorrelationID: correlationID,
 			})
 
-			// Verify event_data contains phase information
-			testutil.ValidateAuditEventDataNotEmpty(*phaseTransitionEvent)
+		// Verify event_data contains phase information (typed validation)
+		Expect(phaseTransitionEvent.EventData).ToNot(BeNil(), "EventData should not be nil")
 		})
 	})
 

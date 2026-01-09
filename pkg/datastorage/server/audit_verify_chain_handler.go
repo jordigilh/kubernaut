@@ -284,3 +284,4 @@ func calculateExpectedHash(previousHash string, event *repository.AuditEvent) (s
 }
 
 
+

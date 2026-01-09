@@ -50,7 +50,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"

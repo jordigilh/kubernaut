@@ -145,6 +145,7 @@ Class | Method | HTTP request | Description
 *AuditWriteAPIApi* | [**create_audit_event**](docs/AuditWriteAPIApi.md#create_audit_event) | **POST** /api/v1/audit/events | Create unified audit event
 *AuditWriteAPIApi* | [**create_audit_events_batch**](docs/AuditWriteAPIApi.md#create_audit_events_batch) | **POST** /api/v1/audit/events/batch | Create audit events batch
 *AuditWriteAPIApi* | [**create_notification_audit**](docs/AuditWriteAPIApi.md#create_notification_audit) | **POST** /api/v1/audit/notifications | Create notification audit record
+*AuditWriteAPIApi* | [**export_audit_events**](docs/AuditWriteAPIApi.md#export_audit_events) | **GET** /api/v1/audit/export | Export audit events with digital signature
 *AuditWriteAPIApi* | [**list_legal_holds**](docs/AuditWriteAPIApi.md#list_legal_holds) | **GET** /api/v1/audit/legal-hold | List all active legal holds
 *AuditWriteAPIApi* | [**place_legal_hold**](docs/AuditWriteAPIApi.md#place_legal_hold) | **POST** /api/v1/audit/legal-hold | Place legal hold on audit events
 *AuditWriteAPIApi* | [**query_audit_events**](docs/AuditWriteAPIApi.md#query_audit_events) | **GET** /api/v1/audit/events | Query audit events
@@ -163,46 +164,77 @@ Class | Method | HTTP request | Description
 
 ## Documentation For Models
 
+ - [AIAnalysisApprovalDecisionPayload](docs/AIAnalysisApprovalDecisionPayload.md)
+ - [AIAnalysisAuditPayload](docs/AIAnalysisAuditPayload.md)
+ - [AIAnalysisErrorPayload](docs/AIAnalysisErrorPayload.md)
+ - [AIAnalysisHolmesGPTCallPayload](docs/AIAnalysisHolmesGPTCallPayload.md)
+ - [AIAnalysisPhaseTransitionPayload](docs/AIAnalysisPhaseTransitionPayload.md)
+ - [AIAnalysisRegoEvaluationPayload](docs/AIAnalysisRegoEvaluationPayload.md)
  - [AuditEvent](docs/AuditEvent.md)
  - [AuditEventRequest](docs/AuditEventRequest.md)
+ - [AuditEventRequestEventData](docs/AuditEventRequestEventData.md)
  - [AuditEventResponse](docs/AuditEventResponse.md)
  - [AuditEventsQueryResponse](docs/AuditEventsQueryResponse.md)
  - [AuditEventsQueryResponsePagination](docs/AuditEventsQueryResponsePagination.md)
+ - [AuditExportResponse](docs/AuditExportResponse.md)
+ - [AuditExportResponseEventsInner](docs/AuditExportResponseEventsInner.md)
+ - [AuditExportResponseExportMetadata](docs/AuditExportResponseExportMetadata.md)
+ - [AuditExportResponseExportMetadataQueryFilters](docs/AuditExportResponseExportMetadataQueryFilters.md)
+ - [AuditExportResponseHashChainVerification](docs/AuditExportResponseHashChainVerification.md)
  - [BatchAuditEventResponse](docs/BatchAuditEventResponse.md)
  - [CreateNotificationAudit202Response](docs/CreateNotificationAudit202Response.md)
  - [DetectedLabels](docs/DetectedLabels.md)
+ - [ErrorDetails](docs/ErrorDetails.md)
+ - [GatewayAuditPayload](docs/GatewayAuditPayload.md)
  - [HealthCheck200Response](docs/HealthCheck200Response.md)
  - [HealthCheck503Response](docs/HealthCheck503Response.md)
+ - [HolmesGPTResponsePayload](docs/HolmesGPTResponsePayload.md)
+ - [LLMRequestPayload](docs/LLMRequestPayload.md)
+ - [LLMResponsePayload](docs/LLMResponsePayload.md)
+ - [LLMToolCallPayload](docs/LLMToolCallPayload.md)
  - [ListLegalHolds200Response](docs/ListLegalHolds200Response.md)
  - [ListLegalHolds200ResponseHoldsInner](docs/ListLegalHolds200ResponseHoldsInner.md)
  - [MandatoryLabels](docs/MandatoryLabels.md)
  - [NotificationAudit](docs/NotificationAudit.md)
+ - [NotificationAuditPayload](docs/NotificationAuditPayload.md)
  - [NotificationAuditResponse](docs/NotificationAuditResponse.md)
+ - [NotificationMessageAcknowledgedPayload](docs/NotificationMessageAcknowledgedPayload.md)
+ - [NotificationMessageEscalatedPayload](docs/NotificationMessageEscalatedPayload.md)
+ - [NotificationMessageFailedPayload](docs/NotificationMessageFailedPayload.md)
+ - [NotificationMessageSentPayload](docs/NotificationMessageSentPayload.md)
  - [PlaceLegalHoldRequest](docs/PlaceLegalHoldRequest.md)
+ - [ProviderResponseSummary](docs/ProviderResponseSummary.md)
+ - [QueryMetadata](docs/QueryMetadata.md)
  - [RFC7807Problem](docs/RFC7807Problem.md)
  - [ReleaseLegalHold200Response](docs/ReleaseLegalHold200Response.md)
  - [ReleaseLegalHoldRequest](docs/ReleaseLegalHoldRequest.md)
+ - [RemediationApprovalAuditPayload](docs/RemediationApprovalAuditPayload.md)
+ - [RemediationOrchestratorAuditPayload](docs/RemediationOrchestratorAuditPayload.md)
  - [RemediationWorkflow](docs/RemediationWorkflow.md)
+ - [ResultsMetadata](docs/ResultsMetadata.md)
+ - [ScoringV1Audit](docs/ScoringV1Audit.md)
+ - [SearchExecutionMetadata](docs/SearchExecutionMetadata.md)
+ - [SignalProcessingAuditPayload](docs/SignalProcessingAuditPayload.md)
+ - [WorkflowCatalogCreatedPayload](docs/WorkflowCatalogCreatedPayload.md)
+ - [WorkflowCatalogUpdatedPayload](docs/WorkflowCatalogUpdatedPayload.md)
  - [WorkflowDisableRequest](docs/WorkflowDisableRequest.md)
+ - [WorkflowExecutionAuditPayload](docs/WorkflowExecutionAuditPayload.md)
+ - [WorkflowExecutionWebhookAuditPayload](docs/WorkflowExecutionWebhookAuditPayload.md)
  - [WorkflowListResponse](docs/WorkflowListResponse.md)
+ - [WorkflowResultAudit](docs/WorkflowResultAudit.md)
+ - [WorkflowSearchAuditPayload](docs/WorkflowSearchAuditPayload.md)
  - [WorkflowSearchFilters](docs/WorkflowSearchFilters.md)
  - [WorkflowSearchRequest](docs/WorkflowSearchRequest.md)
  - [WorkflowSearchResponse](docs/WorkflowSearchResponse.md)
  - [WorkflowSearchResult](docs/WorkflowSearchResult.md)
  - [WorkflowUpdateRequest](docs/WorkflowUpdateRequest.md)
+ - [WorkflowValidationPayload](docs/WorkflowValidationPayload.md)
 
 
 <a id="documentation-for-authorization"></a>
 ## Documentation For Authorization
 
-
-Authentication schemes defined for the API:
-<a id="oauthProxyAuth"></a>
-### oauthProxyAuth
-
-- **Type**: API key
-- **API key parameter name**: X-Auth-Request-User
-- **Location**: HTTP header
+Endpoints do not require authorization.
 
 
 ## Author

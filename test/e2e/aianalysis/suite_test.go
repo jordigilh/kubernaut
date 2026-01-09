@@ -247,18 +247,29 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("AIAnalysis E2E Test Suite - Teardown (Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Check if any test failed - preserve cluster for debugging
-		if anyTestFailed || os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != "" {
-			logger.Info("⚠️  Keeping cluster alive for debugging")
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
+		// Determine cleanup strategy
+		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
+
+		if preserveCluster {
+			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("Reason:")
-			if anyTestFailed {
-				logger.Info("  • At least one test failed")
-			}
 			if os.Getenv("SKIP_CLEANUP") == "true" {
 				logger.Info("  • SKIP_CLEANUP=true")
 			}
 			if os.Getenv("KEEP_CLUSTER") != "" {
 				logger.Info("  • KEEP_CLUSTER set")
+			}
+			if setupFailed {
+				logger.Info("  • Setup failed (BeforeSuite failure)")
+			}
+			if anyTestFailed {
+				logger.Info("  • Tests failed")
 			}
 			logger.Info("")
 			logger.Info("To debug:")
@@ -272,9 +283,11 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
-		// All tests passed - cleanup cluster
-		logger.Info("✅ All tests passed - cleaning up cluster...")
-		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		// Delete cluster (with must-gather log export on failure)
+		// Pass true for testsFailed if EITHER setup failed OR any test failed
+		anyFailure := setupFailed || anyTestFailed
+		logger.Info("🗑️  Cleaning up cluster...")
+		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Error(err, "Failed to delete cluster")
 		}
