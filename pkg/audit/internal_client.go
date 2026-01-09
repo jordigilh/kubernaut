@@ -21,9 +21,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"time"
 )
 
 // ========================================

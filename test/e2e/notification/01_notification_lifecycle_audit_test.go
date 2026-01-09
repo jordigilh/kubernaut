@@ -28,7 +28,7 @@ import (
 	ptr "k8s.io/utils/ptr"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -69,7 +69,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		testCtx          context.Context
 		testCancel       context.CancelFunc
 		notification     *notificationv1alpha1.NotificationRequest
-		dsClient         *dsgen.ClientWithResponses
+		dsClient         *ogenclient.ClientWithResponses
 		dataStorageURL   string
 		notificationName string
 		notificationNS   string
@@ -92,7 +92,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
 		// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create NotificationRequest CRD
@@ -171,7 +171,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
 		By("Verifying controller emitted audit event for message sent")
 		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
+			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &ogenclient.QueryAuditEventsParams{
 				EventType:     ptr.To("notification.message.sent"),
 				EventCategory: ptr.To("notification"),
 				CorrelationId: &correlationID,
@@ -197,7 +197,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		events := filterEventsByActorId(allEvents, "notification-controller")
 
 		// Find controller-emitted sent event and validate ADR-034 compliance
-		var foundSentEvent *dsgen.AuditEvent
+		var foundSentEvent *ogenclient.AuditEvent
 		for i := range events {
 			if events[i].EventType == "notification.message.sent" {
 				foundSentEvent = &events[i]
@@ -212,14 +212,14 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		{
 			Expect(string(event.EventCategory)).To(Equal("notification"), "Category should be 'notification'")
 			Expect(event.ActorType).ToNot(BeNil(), "Actor type should be set")
-			Expect(*event.ActorType).To(Equal("service"), "Actor type should be 'service'")
-			Expect(event.ActorId).ToNot(BeNil(), "Actor ID should be set")
-			Expect(*event.ActorId).To(Equal("notification-controller"), "Actor ID should be 'notification-controller'")
+			Expect(event.ActorType.Value).To(Equal("service"), "Actor type should be 'service'")
+			Expect(event.ActorID).ToNot(BeNil(), "Actor ID should be set")
+			Expect(event.ActorID.Value).To(Equal("notification-controller"), "Actor ID should be 'notification-controller'")
 			Expect(event.ResourceType).ToNot(BeNil(), "Resource type should be set")
-			Expect(*event.ResourceType).To(Equal("NotificationRequest"), "Resource type should be 'NotificationRequest'")
-			Expect(event.ResourceId).ToNot(BeNil(), "Resource ID should be set")
-			Expect(*event.ResourceId).To(Equal(notificationName), "Resource ID should match notification name")
-			Expect(event.CorrelationId).To(Equal(correlationID), "Correlation ID should match")
+			Expect(event.ResourceType.Value).To(Equal("NotificationRequest"), "Resource type should be 'NotificationRequest'")
+			Expect(event.ResourceID).ToNot(BeNil(), "Resource ID should be set")
+			Expect(event.ResourceID.Value).To(Equal(notificationName), "Resource ID should match notification name")
+			Expect(event.CorrelationID).To(Equal(correlationID), "Correlation ID should match")
 			// Note: RetentionDays is stored in PostgreSQL but not returned by Data Storage Query API
 			// This is validated by integration tests against the database directly
 		}
@@ -235,9 +235,9 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 // ✅ DD-API-001: queryAuditEventCount using OpenAPI client (MANDATORY)
 // Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
 // Per ADR-034 v1.2: event_category is MANDATORY for audit queries
-func queryAuditEventCount(dsClient *dsgen.ClientWithResponses, correlationID, eventType string) int {
+func queryAuditEventCount(dsClient *ogenclient.ClientWithResponses, correlationID, eventType string) int {
 	// Build type-safe query parameters
-	params := &dsgen.QueryAuditEventsParams{
+	params := &ogenclient.QueryAuditEventsParams{
 		CorrelationId: &correlationID,
 		EventCategory: ptr.To("notification"), // ADR-034 v1.2 requirement
 	}
@@ -265,16 +265,16 @@ func queryAuditEventCount(dsClient *dsgen.ClientWithResponses, correlationID, ev
 	return 0
 }
 
-// NOTE: apiAuditEvent struct removed - now using OpenAPI generated dsgen.AuditEvent type
+// NOTE: apiAuditEvent struct removed - now using OpenAPI generated ogenclient.AuditEvent type
 // Per DD-API-001: All DataStorage communication uses generated client types
 
 // ✅ DD-API-001: queryAuditEvents using OpenAPI client (MANDATORY)
 // Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
 // Per ADR-034 v1.2: event_category is MANDATORY for audit queries
-// Returns []dsgen.AuditEvent (OpenAPI types)
-func queryAuditEvents(dsClient *dsgen.ClientWithResponses, correlationID string) []dsgen.AuditEvent {
+// Returns []ogenclient.AuditEvent (OpenAPI types)
+func queryAuditEvents(dsClient *ogenclient.ClientWithResponses, correlationID string) []ogenclient.AuditEvent {
 	// Build type-safe query parameters
-	params := &dsgen.QueryAuditEventsParams{
+	params := &ogenclient.QueryAuditEventsParams{
 		CorrelationId: &correlationID,
 		EventCategory: ptr.To("notification"), // ADR-034 v1.2 requirement
 	}
@@ -308,10 +308,10 @@ func queryAuditEvents(dsClient *dsgen.ClientWithResponses, correlationID string)
 //
 // IMPORTANT: ActorId MUST use real service names, NOT test-specific names (ADR-034 compliance).
 // DD-E2E-002: E2E Audit Event Isolation Pattern
-func filterEventsByActorId(events []dsgen.AuditEvent, actorId string) []dsgen.AuditEvent {
-	filtered := make([]dsgen.AuditEvent, 0, len(events))
+func filterEventsByActorId(events []ogenclient.AuditEvent, actorId string) []ogenclient.AuditEvent {
+	filtered := make([]ogenclient.AuditEvent, 0, len(events))
 	for _, event := range events {
-		if event.ActorId != nil && *event.ActorId == actorId {
+		if event.ActorID != nil && *event.ActorID == actorId {
 			filtered = append(filtered, event)
 		}
 	}

@@ -84,7 +84,7 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	status := ogenclient.WorkflowCatalogCreatedPayloadStatus(workflow.Status)
 
 	payload := &ogenclient.WorkflowCatalogCreatedPayload{
-		WorkflowId:       workflowUUID,
+		WorkflowID:       workflowUUID,
 		WorkflowName:     workflow.WorkflowName,
 		Version:          workflow.Version,
 		Status:           status,
@@ -125,7 +125,7 @@ func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields map[string]in
 	}
 
 	payload := &ogenclient.WorkflowCatalogUpdatedPayload{
-		WorkflowId:    workflowUUID,
+		WorkflowID:    workflowUUID,
 		UpdatedFields: updatedFields, // Not a pointer in generated type
 	}
 

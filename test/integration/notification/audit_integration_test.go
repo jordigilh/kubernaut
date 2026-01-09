@@ -69,7 +69,7 @@ package notification
 //
 //     // 3. Verify controller emitted audit event
 //     Eventually(func() int {
-//         resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
+//         resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &ogenclient.QueryAuditEventsParams{
 //             EventType:     ptr.To("notification.message.sent"),
 //             CorrelationId: &notif.Name,
 //         })

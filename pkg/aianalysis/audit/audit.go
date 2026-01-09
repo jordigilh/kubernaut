@@ -103,7 +103,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	if analysis.Status.SelectedWorkflow != nil {
 		confidence := float32(analysis.Status.SelectedWorkflow.Confidence)
 		payload.Confidence = &confidence
-		payload.WorkflowId = &analysis.Status.SelectedWorkflow.WorkflowID
+		payload.WorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
 	}
 	if analysis.Status.TargetInOwnerChain != nil {
 		payload.TargetInOwnerChain = analysis.Status.TargetInOwnerChain
@@ -119,13 +119,13 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	// This complements the holmesgpt.response.complete event (provider perspective)
 	if analysis.Status.InvestigationID != "" {
 		summary := &ogenclient.ProviderResponseSummary{
-			IncidentId:       analysis.Status.InvestigationID,
+			IncidentID:       analysis.Status.InvestigationID,
 			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
 			NeedsHumanReview: determineNeedsHumanReview(analysis),
 			WarningsCount:    len(analysis.Status.Warnings),
 		}
 		if analysis.Status.SelectedWorkflow != nil {
-			summary.SelectedWorkflowId = &analysis.Status.SelectedWorkflow.WorkflowID
+			summary.SelectedWorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
 		}
 		payload.ProviderResponseSummary = summary
 	}
@@ -155,7 +155,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write audit event",
 			"event_type", event.EventType,
-			"correlation_id", event.CorrelationId,
+			"correlation_id", event.CorrelationID,
 		)
 		// Don't fail reconciliation on audit failure (graceful degradation)
 	}
@@ -288,7 +288,7 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	// Conditional fields (type-safe pointers)
 	if analysis.Status.SelectedWorkflow != nil {
 		payload.Confidence = &analysis.Status.SelectedWorkflow.Confidence
-		payload.WorkflowId = &analysis.Status.SelectedWorkflow.WorkflowID
+		payload.WorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)

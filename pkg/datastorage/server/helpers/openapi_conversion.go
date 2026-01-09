@@ -52,7 +52,7 @@ import (
 // Returns:
 //   - *audit.AuditEvent: Internal audit event ready for storage
 //   - error: Conversion error (e.g., invalid event_data JSON)
-func ConvertAuditEventRequest(req dsclient.AuditEventRequest) (*audit.AuditEvent, error) {
+func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEvent, error) {
 	// Convert event_data from map to JSON bytes
 	eventDataJSON, err := json.Marshal(req.EventData)
 	if err != nil {
@@ -61,23 +61,23 @@ func ConvertAuditEventRequest(req dsclient.AuditEventRequest) (*audit.AuditEvent
 
 	// Extract optional fields with defaults
 	actorType := "service" // Default
-	if req.ActorType != nil {
-		actorType = *req.ActorType
+	if req.ActorType.IsSet() {
+		actorType = req.ActorType.Value
 	}
 
 	actorID := string(req.EventCategory) + "-service" // Default: category-service
-	if req.ActorId != nil {
-		actorID = *req.ActorId
+	if req.ActorID.IsSet() {
+		actorID = req.ActorID.Value
 	}
 
 	resourceType := string(req.EventCategory) // Default
-	if req.ResourceType != nil {
-		resourceType = *req.ResourceType
+	if req.ResourceType.IsSet() {
+		resourceType = req.ResourceType.Value
 	}
 
-	resourceID := req.CorrelationId // Default
-	if req.ResourceId != nil {
-		resourceID = *req.ResourceId
+	resourceID := req.CorrelationID // Default
+	if req.ResourceID.IsSet() {
+		resourceID = req.ResourceID.Value
 	}
 
 	// Build internal audit event
@@ -93,13 +93,13 @@ func ConvertAuditEventRequest(req dsclient.AuditEventRequest) (*audit.AuditEvent
 		ActorID:        actorID,
 		ResourceType:   resourceType,
 		ResourceID:     resourceID,
-		CorrelationID:  req.CorrelationId,
+		CorrelationID:  req.CorrelationID,
 		EventData:      eventDataJSON,
 	}
 
 	// Optional fields
-	if req.ParentEventId != nil {
-		parentUUID := uuid.UUID(*req.ParentEventId)
+	if req.ParentEventID != nil {
+		parentUUID := uuid.UUID(*req.ParentEventID)
 		event.ParentEventID = &parentUUID
 	}
 
@@ -195,9 +195,9 @@ func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEv
 //   - event: Repository audit event from database
 //
 // Returns:
-//   - dsclient.AuditEventResponse: OpenAPI response type
-func ConvertToAuditEventResponse(event *repository.AuditEvent) dsclient.AuditEventResponse {
-	return dsclient.AuditEventResponse{
+//   - ogenclient.AuditEventResponse: OpenAPI response type
+func ConvertToAuditEventResponse(event *repository.AuditEvent) ogenclient.AuditEventResponse {
+	return ogenclient.AuditEventResponse{
 		EventId:        event.EventID,
 		EventTimestamp: event.EventTimestamp,
 		Message:        fmt.Sprintf("audit event %s created successfully", event.EventID),
@@ -223,7 +223,7 @@ func ConvertToAuditEventResponse(event *repository.AuditEvent) dsclient.AuditEve
 //
 // Returns:
 //   - error: Validation error if any business rules violated
-func ValidateAuditEventRequest(req *dsclient.AuditEventRequest) error {
+func ValidateAuditEventRequest(req *ogenclient.AuditEventRequest) error {
 	// BR-STORAGE-034: OpenAPI middleware now handles:
 	// - ✅ Required fields (including empty strings via minLength: 1)
 	// - ✅ Enum validation (event_outcome)

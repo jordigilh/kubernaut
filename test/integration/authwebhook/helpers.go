@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -27,7 +28,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // waitForStatusField polls for a status field to be populated by webhook
@@ -150,35 +151,30 @@ func randomSuffix() string {
 //
 // Pattern: DD-TESTING-001 Pattern 2 (Type-Safe Query Helper)
 func queryAuditEvents(
-	dsClient *dsgen.ClientWithResponses,
+	dsClient *ogenclient.Client,
 	correlationID string,
 	eventType *string,
-) ([]dsgen.AuditEvent, error) {
-	limit := 100
+) ([]ogenclient.AuditEvent, error) {
+	params := ogenclient.QueryAuditEventsParams{}
+	
+	// Set CorrelationID using OptString.SetTo()
+	params.CorrelationID.SetTo(correlationID)
+	
+	// Set Limit using OptInt.SetTo()
+	params.Limit.SetTo(100)
 
-	params := &dsgen.QueryAuditEventsParams{
-		CorrelationId: &correlationID,
-		Limit:         &limit,
-	}
-
+	// Set EventType if provided
 	if eventType != nil {
-		params.EventType = eventType
+		params.EventType.SetTo(*eventType)
 	}
 
-	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), params)
+	resp, err := dsClient.QueryAuditEvents(context.Background(), params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query DataStorage: %w", err)
 	}
 
-	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
-	}
-
-	if resp.JSON200.Data == nil {
-		return []dsgen.AuditEvent{}, nil
-	}
-
-	return *resp.JSON200.Data, nil
+	// Ogen returns slice directly (not pointer)
+	return resp.Data, nil
 }
 
 // waitForAuditEvents polls Data Storage until events appear.
@@ -196,12 +192,12 @@ func queryAuditEvents(
 // Note: This helper uses Eventually() for polling, NOT time.Sleep().
 // After polling, tests MUST validate exact counts with Equal(N) per DD-TESTING-001.
 func waitForAuditEvents(
-	dsClient *dsgen.ClientWithResponses,
+	dsClient *ogenclient.Client,
 	correlationID string,
 	eventType string,
 	minCount int,
-) []dsgen.AuditEvent {
-	var events []dsgen.AuditEvent
+) []ogenclient.AuditEvent {
+	var events []ogenclient.AuditEvent
 
 	Eventually(func() int {
 		var err error
@@ -227,7 +223,7 @@ func waitForAuditEvents(
 //   eventCounts := countEventsByType(allEvents)
 //   Expect(eventCounts["webhook.block_clearance"]).To(Equal(1))  // ✅ CORRECT
 //   // NOT: Expect(len(events)).To(BeNumerically(">=", 1))        // ❌ FORBIDDEN
-func countEventsByType(events []dsgen.AuditEvent) map[string]int {
+func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 	counts := make(map[string]int)
 	for _, event := range events {
 		counts[event.EventType]++
@@ -242,7 +238,7 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 //   - expectedCategory: Expected event_category value
 //
 // Pattern: DD-TESTING-001 Pattern 6 (Event Category and Outcome Validation)
-func validateEventMetadata(event dsgen.AuditEvent, expectedCategory string) {
+func validateEventMetadata(event ogenclient.AuditEvent, expectedCategory string) {
 	// Validate event_category matches service
 	Expect(string(event.EventCategory)).To(Equal(expectedCategory),
 		"Webhook events must have event_category='webhook'")
@@ -272,10 +268,15 @@ func validateEventMetadata(event dsgen.AuditEvent, expectedCategory string) {
 //       "namespace":   "default",
 //       "action":      "block_clearance",
 //   })
-func validateEventData(event dsgen.AuditEvent, expectedFields map[string]interface{}) {
-	// Cast event_data to map for validation
-	eventData, ok := event.EventData.(map[string]interface{})
-	Expect(ok).To(BeTrue(), "event_data should be a JSON object")
+func validateEventData(event ogenclient.AuditEvent, expectedFields map[string]interface{}) {
+	// Marshal EventData to JSON, then unmarshal to map for validation
+	// Ogen discriminated unions implement json.Marshaler (Q6 answer)
+	eventDataBytes, err := json.Marshal(event.EventData)
+	Expect(err).ToNot(HaveOccurred(), "event_data should marshal to JSON")
+	
+	var eventData map[string]interface{}
+	err = json.Unmarshal(eventDataBytes, &eventData)
+	Expect(err).ToNot(HaveOccurred(), "event_data JSON should unmarshal to map")
 
 	// Validate all expected fields are present and match
 	for field, expectedValue := range expectedFields {
