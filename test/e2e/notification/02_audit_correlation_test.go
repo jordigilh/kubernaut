@@ -26,7 +26,6 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ptr "k8s.io/utils/ptr"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -77,7 +76,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		testCtx        context.Context
 		testCancel     context.CancelFunc
 		notifications  []*notificationv1alpha1.NotificationRequest
-		dsClient       *ogenclient.ClientWithResponses
+		dsClient       *ogenclient.Client
 		dataStorageURL string
 		correlationID  string
 	)
@@ -94,7 +93,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
 		var err error
-		dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create 3 NotificationRequests with same remediation context
@@ -175,16 +174,16 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		By("Waiting for controller to emit audit events for all processed notifications")
 
 		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &ogenclient.QueryAuditEventsParams{
-				EventType:     ptr.To("notification.message.sent"),
-				EventCategory: ptr.To("notification"),
-				CorrelationId: &correlationID,
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString("notification.message.sent"),
+				EventCategory: ogenclient.NewOptString("notification"),
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			if err != nil || resp.JSON200 == nil {
+			if err != nil || resp.Data == nil {
 				return 0
 			}
 			// Filter by controller actor_id after retrieving events
-			events := *resp.JSON200.Data
+			events := resp.Data
 			controllerEvents := filterEventsByActorId(events, "notification-controller")
 			return len(controllerEvents)
 		}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
@@ -222,29 +221,13 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		notificationEvents := make(map[string]*notificationEventCount)
 
 		for _, event := range events {
-			// Extract notification_id from EventData
-			// EventData structure: {"notification_id": "...", "channel": "...", ...}
-			notificationID := ""
-			if event.EventData != nil {
-				// Try direct map access first
-				if eventDataMap, ok := event.EventData.(map[string]interface{}); ok {
-					if id, exists := eventDataMap["notification_id"]; exists {
-						if idStr, ok := id.(string); ok {
-							notificationID = idStr
-						}
-					}
-				} else if eventDataStr, ok := event.EventData.(string); ok {
-					// EventData might be JSON string from PostgreSQL JSONB
-					var eventDataMap map[string]interface{}
-					if err := json.Unmarshal([]byte(eventDataStr), &eventDataMap); err == nil {
-						if id, exists := eventDataMap["notification_id"]; exists {
-							if idStr, ok := id.(string); ok {
-								notificationID = idStr
-							}
-						}
-					}
-				}
-			}
+		// Extract notification_id from EventData discriminated union
+		// ogen: Access specific payload type from discriminated union
+		notificationID := ""
+		if event.EventData.Type != "" {
+			// Access NotificationMessageSentPayload from discriminated union
+			notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
+		}
 
 			Expect(notificationID).ToNot(BeEmpty(),
 				"Event should have notification_id in EventData (got EventData type: %T)", event.EventData)
@@ -308,15 +291,15 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			Expect(string(event.EventOutcome)).To(BeElementOf("success", "failure", "error"),
 				"EventOutcome should be valid: %s", event.EventOutcome)
 
-			// Verify event data is valid JSON (marshal from interface{} first)
-			if event.EventData != nil {
-				eventDataBytes, err := json.Marshal(event.EventData)
-				Expect(err).ToNot(HaveOccurred(), "EventData should be marshallable")
-				var jsonData interface{}
-				err = json.Unmarshal(eventDataBytes, &jsonData)
-				Expect(err).ToNot(HaveOccurred(),
-					"EventData should be valid JSON: %s", string(eventDataBytes))
-			}
+		// Verify event data is valid JSON (marshal from discriminated union)
+		if event.EventData.Type != "" {
+			eventDataBytes, err := json.Marshal(event.EventData)
+			Expect(err).ToNot(HaveOccurred(), "EventData should be marshallable")
+			var jsonData interface{}
+			err = json.Unmarshal(eventDataBytes, &jsonData)
+			Expect(err).ToNot(HaveOccurred(),
+				"EventData should be valid JSON: %s", string(eventDataBytes))
+		}
 		}
 
 		// ===== STEP 7: Verify controller audit integration =====
