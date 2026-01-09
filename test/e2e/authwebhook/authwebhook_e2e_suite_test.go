@@ -37,7 +37,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	auditclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	auditclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -82,7 +82,7 @@ var (
 	postgresURL    string // localhost:25442 (NodePort 30442 mapped via Kind extraPortMappings per DD-TEST-001)
 
 	// Audit client for validating webhook audit events
-	auditClient *auditclient.ClientWithResponses
+	auditClient *auditclient.Client
 
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "authwebhook-e2e"
@@ -125,7 +125,7 @@ var _ = SynchronizedBeforeSuite(
 		}
 
 		logger.Info("Creating Kind cluster with NodePort exposure...")
-		logger.Info("  • Kind cluster (2 nodes: control-plane + worker)")
+		logger.Info("  • Kind cluster (single node: control-plane only)")
 		logger.Info("  • NodePort exposure: Data Storage (30099→8080), PostgreSQL (30442→5432), Webhook (30443→9443)")
 		logger.Info("  • PostgreSQL 16 (workflow catalog)")
 		logger.Info("  • Redis (DLQ fallback)")
@@ -238,7 +238,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		// Initialize audit client for DD-TESTING-001 validation
-		auditClient, err = auditclient.NewClientWithResponses(dataStorageURL)
+		auditClient, err = auditclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Note: We do NOT set KUBECONFIG environment variable to avoid affecting other tests

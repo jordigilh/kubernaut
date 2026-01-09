@@ -3,7 +3,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: authwebhook
-  namespace: authwebhook-e2e
+  namespace: ${WEBHOOK_NAMESPACE}
   labels:
     app.kubernetes.io/name: authwebhook
     app.kubernetes.io/component: admission-webhook
@@ -39,13 +39,13 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: authwebhook
-    namespace: authwebhook-e2e
+    namespace: ${WEBHOOK_NAMESPACE}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: authwebhook
-  namespace: authwebhook-e2e
+  namespace: ${WEBHOOK_NAMESPACE}
   labels:
     app.kubernetes.io/name: authwebhook
     app.kubernetes.io/component: admission-webhook
@@ -64,12 +64,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: authwebhook
-  namespace: authwebhook-e2e
+  namespace: ${WEBHOOK_NAMESPACE}
   labels:
     app.kubernetes.io/name: authwebhook
     app.kubernetes.io/component: admission-webhook
 spec:
   replicas: 1
+  strategy:
+    type: Recreate  # Avoid rolling updates in E2E - ensures clean pod replacement
   selector:
     matchLabels:
       app.kubernetes.io/name: authwebhook
@@ -130,10 +132,10 @@ spec:
               path: /readyz
               port: health
               scheme: HTTP
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15  # Increased: Allow time for DataStorage client init (30s timeout) + manager startup
             periodSeconds: 10
             timeoutSeconds: 5
-            failureThreshold: 3
+            failureThreshold: 6      # Increased: Total wait now ~75s (15 + 10*5) instead of 25s
       volumes:
         - name: webhook-certs
           secret:
@@ -157,7 +159,7 @@ webhooks:
     clientConfig:
       service:
         name: authwebhook
-        namespace: authwebhook-e2e
+        namespace: ${WEBHOOK_NAMESPACE}
         path: /mutate-workflowexecution
       caBundle: ""  # Populated by infrastructure
     failurePolicy: Fail
@@ -176,7 +178,7 @@ webhooks:
     clientConfig:
       service:
         name: authwebhook
-        namespace: authwebhook-e2e
+        namespace: ${WEBHOOK_NAMESPACE}
         path: /mutate-remediationapprovalrequest
       caBundle: ""  # Populated by infrastructure
     failurePolicy: Fail
@@ -201,7 +203,7 @@ webhooks:
     clientConfig:
       service:
         name: authwebhook
-        namespace: authwebhook-e2e
+        namespace: ${WEBHOOK_NAMESPACE}
         path: /validate-notificationrequest-delete
       caBundle: ""  # Populated by infrastructure
     failurePolicy: Fail

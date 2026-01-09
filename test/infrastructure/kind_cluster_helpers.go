@@ -290,14 +290,9 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 	// 2. Clean up orphaned Podman containers (macOS fix)
 	if opts.CleanupOrphanedContainers {
 		_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up any leftover Podman containers...")
-		cleanupContainers := []string{
-			opts.ClusterName + "-control-plane",
-			opts.ClusterName + "-worker",
-		}
-		for _, containerName := range cleanupContainers {
-			cleanupCmd := exec.Command("podman", "rm", "-f", containerName)
-			_ = cleanupCmd.Run() // Ignore errors - container may not exist
-		}
+		// Only control-plane node (single-node clusters for resource efficiency)
+		cleanupCmd := exec.Command("podman", "rm", "-f", opts.ClusterName+"-control-plane")
+		_ = cleanupCmd.Run() // Ignore errors - container may not exist
 	}
 
 	// 3. Resolve config path relative to workspace root
