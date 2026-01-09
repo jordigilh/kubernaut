@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,25 +48,26 @@ import (
 
 var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 
-	var testOutputDir string
-
+	// NOTE: After removing FileDeliveryConfig from CRD (DD-NOT-006 v2):
+	// - File service configured at deployment level via ConfigMap
+	// - All notifications write to shared /tmp/notifications directory
+	// - Tests search by notification name, not subdirectory
+	// - No cleanup needed (shared directory persists across tests)
 	BeforeEach(func() {
-		// Generate unique test directory path but DON'T create it yet
-		// Let the controller create it via os.MkdirAll in FileService.Deliver()
-		// This avoids permission issues with hostPath mounts where test UID != controller UID
-		// Use UUID to ensure uniqueness in parallel execution
-		testID := uuid.New().String()
-		testOutputDir = filepath.Join(e2eFileOutputDir, "fanout-test-"+testID)
-
-		logger.Info("Generated test directory path for multi-channel fanout", "dir", testOutputDir, "testID", testID)
+		// No per-test directory needed - all files go to e2eFileOutputDir
+		logger.Info("Multi-channel fanout test starting", "sharedFileDir", e2eFileOutputDir)
 	})
 
 	AfterEach(func() {
-		// Clean up test directory
-		if testOutputDir != "" {
-			_ = os.RemoveAll(testOutputDir)
-			logger.Info("Cleaned up test directory", "dir", testOutputDir)
+		// Clean up test-specific files from shared directory
+		// Pattern: notification-<test-name>-*.json
+		// This prevents file accumulation while allowing parallel test execution
+		pattern := filepath.Join(e2eFileOutputDir, "notification-e2e-multi-channel-*.json")
+		files, _ := filepath.Glob(pattern)
+		for _, f := range files {
+			_ = os.Remove(f)
 		}
+		logger.Info("Cleaned up test files", "pattern", pattern, "count", len(files))
 	})
 
 	// ========================================
@@ -95,12 +95,6 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 						notificationv1alpha1.ChannelConsole, // Console delivery
 						notificationv1alpha1.ChannelFile,    // File delivery (audit trail)
 						notificationv1alpha1.ChannelLog,     // Structured log delivery
-					},
-					// File delivery configuration
-					// Convert host path to pod path (controller runs in pod, not on host)
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: convertHostPathToPodPath(testOutputDir),
-						Format:          "json",
 					},
 				},
 			}
@@ -138,10 +132,11 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 				"Should have 0 failed deliveries")
 
 			By("Verifying file channel created audit file")
-			files, err := filepath.Glob(filepath.Join(testOutputDir, "notification-e2e-multi-channel-fanout-*.json"))
+			// NOTE: Search in shared e2eFileOutputDir (no test-specific subdirectory after FileDeliveryConfig removal)
+			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-multi-channel-fanout-*.json"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(files)).To(BeNumerically(">=", 1),
-				"File channel should create at least one audit file")
+				"File channel should create at least one audit file in shared directory")
 
 			By("Validating file content matches notification")
 			fileContent, err := os.ReadFile(files[0])
@@ -179,12 +174,9 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	// ========================================
 	Context("Scenario 2: One channel fails, others succeed", func() {
 		It("should mark as PartiallySent when file delivery fails but console/log succeed", func() {
-			By("Creating NotificationRequest with file channel pointing to invalid directory")
+		By("Creating NotificationRequest with file channel pointing to invalid directory")
 
-			// Use a path that doesn't exist and can't be created (permission denied)
-			invalidDir := "/root/invalid-test-dir"
-
-			notification := &notificationv1alpha1.NotificationRequest{
+		notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-partial-failure-test",
 					Namespace: "default",
@@ -202,12 +194,6 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 						notificationv1alpha1.ChannelConsole, // Should succeed
 						notificationv1alpha1.ChannelFile,    // Will fail (invalid directory)
 						notificationv1alpha1.ChannelLog,     // Should succeed
-					},
-					// File delivery configuration with invalid directory
-					// Convert host path to pod path (controller runs in pod, not on host)
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: convertHostPathToPodPath(invalidDir),
-						Format:          "json",
 					},
 				},
 			}

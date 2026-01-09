@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	ptr "k8s.io/utils/ptr"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -69,7 +68,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		testCtx          context.Context
 		testCancel       context.CancelFunc
 		notification     *notificationv1alpha1.NotificationRequest
-		dsClient         *ogenclient.ClientWithResponses
+		dsClient         *ogenclient.Client
 		dataStorageURL   string
 		notificationName string
 		notificationNS   string
@@ -89,11 +88,11 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// Data Storage is deployed via DeployNotificationAuditInfrastructure() in suite setup
 		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
-		// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
-		var err error
-		dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+	// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
+	// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
+	var err error
+	dsClient, err = ogenclient.NewClient(dataStorageURL)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create NotificationRequest CRD
 		notification = &notificationv1alpha1.NotificationRequest{
@@ -171,16 +170,16 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
 		By("Verifying controller emitted audit event for message sent")
 		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &ogenclient.QueryAuditEventsParams{
-				EventType:     ptr.To("notification.message.sent"),
-				EventCategory: ptr.To("notification"),
-				CorrelationId: &correlationID,
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString("notification.message.sent"),
+				EventCategory: ogenclient.NewOptString("notification"),
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			if err != nil || resp.JSON200 == nil {
+			if err != nil || resp.Data == nil {
 				return 0
 			}
 			// Filter by controller actor_id after retrieving events
-			events := *resp.JSON200.Data
+			events := resp.Data
 			controllerEvents := filterEventsByActorId(events, "notification-controller")
 			return len(controllerEvents)
 		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
@@ -235,31 +234,31 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 // ✅ DD-API-001: queryAuditEventCount using OpenAPI client (MANDATORY)
 // Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
 // Per ADR-034 v1.2: event_category is MANDATORY for audit queries
-func queryAuditEventCount(dsClient *ogenclient.ClientWithResponses, correlationID, eventType string) int {
+func queryAuditEventCount(dsClient *ogenclient.Client, correlationID, eventType string) int {
 	// Build type-safe query parameters
-	params := &ogenclient.QueryAuditEventsParams{
-		CorrelationId: &correlationID,
-		EventCategory: ptr.To("notification"), // ADR-034 v1.2 requirement
+	params := ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		EventCategory: ogenclient.NewOptString("notification"), // ADR-034 v1.2 requirement
 	}
 	if eventType != "" {
-		params.EventType = &eventType
+		params.EventType = ogenclient.NewOptString(eventType)
 	}
 
 	// ✅ Use OpenAPI generated client (type-safe, contract-validated)
-	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), params)
+	resp, err := dsClient.QueryAuditEvents(context.Background(), params)
 	if err != nil {
 		GinkgoWriter.Printf("queryAuditEventCount: Failed to query DataStorage: %v\n", err)
 		return 0
 	}
 
-	if resp.JSON200 == nil {
-		GinkgoWriter.Printf("queryAuditEventCount: Non-200 response: %d\n", resp.StatusCode())
+	if resp.Data == nil {
+		GinkgoWriter.Printf("queryAuditEventCount: No data in response\n")
 		return 0
 	}
 
 	// Extract total from pagination
-	if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-		return *resp.JSON200.Pagination.Total
+	if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+		return resp.Pagination.Value.Total.Value
 	}
 
 	return 0
@@ -272,32 +271,27 @@ func queryAuditEventCount(dsClient *ogenclient.ClientWithResponses, correlationI
 // Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
 // Per ADR-034 v1.2: event_category is MANDATORY for audit queries
 // Returns []ogenclient.AuditEvent (OpenAPI types)
-func queryAuditEvents(dsClient *ogenclient.ClientWithResponses, correlationID string) []ogenclient.AuditEvent {
+func queryAuditEvents(dsClient *ogenclient.Client, correlationID string) []ogenclient.AuditEvent {
 	// Build type-safe query parameters
-	params := &ogenclient.QueryAuditEventsParams{
-		CorrelationId: &correlationID,
-		EventCategory: ptr.To("notification"), // ADR-034 v1.2 requirement
+	params := ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		EventCategory: ogenclient.NewOptString("notification"), // ADR-034 v1.2 requirement
 	}
 
 	// ✅ Use OpenAPI generated client (type-safe, contract-validated)
-	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), params)
+	resp, err := dsClient.QueryAuditEvents(context.Background(), params)
 	if err != nil {
 		GinkgoWriter.Printf("queryAuditEvents: Failed to query DataStorage: %v\n", err)
 		return nil
 	}
 
-	if resp.JSON200 == nil {
-		GinkgoWriter.Printf("queryAuditEvents: Non-200 response: %d\n", resp.StatusCode())
-		return nil
-	}
-
-	if resp.JSON200.Data == nil {
+	if resp.Data == nil {
 		GinkgoWriter.Printf("queryAuditEvents: No data in response\n")
 		return nil
 	}
 
 	// Return OpenAPI-generated audit events directly
-	events := *resp.JSON200.Data
+	events := resp.Data
 	GinkgoWriter.Printf("queryAuditEvents: Retrieved %d events\n", len(events))
 	return events
 }
@@ -311,7 +305,7 @@ func queryAuditEvents(dsClient *ogenclient.ClientWithResponses, correlationID st
 func filterEventsByActorId(events []ogenclient.AuditEvent, actorId string) []ogenclient.AuditEvent {
 	filtered := make([]ogenclient.AuditEvent, 0, len(events))
 	for _, event := range events {
-		if event.ActorID != nil && *event.ActorID == actorId {
+		if event.ActorID.IsSet() && event.ActorID.Value == actorId {
 			filtered = append(filtered, event)
 		}
 	}

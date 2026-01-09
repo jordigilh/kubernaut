@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,25 +47,26 @@ import (
 
 var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
-	var testOutputDir string
-
+	// NOTE: After removing FileDeliveryConfig from CRD (DD-NOT-006 v2):
+	// - File service configured at deployment level via ConfigMap
+	// - All notifications write to shared /tmp/notifications directory
+	// - Tests search by notification name, not subdirectory
+	// - No cleanup needed (shared directory persists across tests)
 	BeforeEach(func() {
-		// Generate unique test directory path but DON'T create it yet
-		// Let the controller create it via os.MkdirAll in FileService.Deliver()
-		// This avoids permission issues with hostPath mounts where test UID != controller UID
-		// Use UUID to ensure uniqueness in parallel execution
-		testID := uuid.New().String()
-		testOutputDir = filepath.Join(e2eFileOutputDir, "priority-test-"+testID)
-
-		logger.Info("Generated test directory path for priority routing", "dir", testOutputDir, "testID", testID)
+		// No per-test directory needed - all files go to e2eFileOutputDir
+		logger.Info("Priority routing test starting", "sharedFileDir", e2eFileOutputDir)
 	})
 
 	AfterEach(func() {
-		// Clean up test directory
-		if testOutputDir != "" {
-			_ = os.RemoveAll(testOutputDir)
-			logger.Info("Cleaned up test directory", "dir", testOutputDir)
+		// Clean up test-specific files from shared directory
+		// Pattern: notification-*priority*.json
+		// This prevents file accumulation while allowing parallel test execution
+		pattern := filepath.Join(e2eFileOutputDir, "notification-e2e-priority-*.json")
+		files, _ := filepath.Glob(pattern)
+		for _, f := range files {
+			_ = os.Remove(f)
 		}
+		logger.Info("Cleaned up test files", "pattern", pattern, "count", len(files))
 	})
 
 	// ========================================
@@ -90,17 +90,11 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					Subject:  "E2E Test: Critical Priority Notification",
 					Body:     "CRITICAL: Testing priority-based routing with file audit trail",
 					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Console delivery
-						notificationv1alpha1.ChannelFile,    // File audit trail
-					},
-					// File delivery configuration for audit trail
-					// Convert host path to pod path (controller runs in pod, not on host)
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: convertHostPathToPodPath(testOutputDir),
-						Format:          "json",
-					},
-					Metadata: map[string]string{
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelConsole, // Console delivery
+					notificationv1alpha1.ChannelFile,    // File audit trail
+				},
+				Metadata: map[string]string{
 						"severity":    "critical",
 						"alert-name":  "CriticalSystemFailure",
 						"cluster":     "production",
@@ -143,10 +137,11 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 				"Should have 0 failed deliveries")
 
 			By("Verifying file audit trail was created")
-			files, err := filepath.Glob(filepath.Join(testOutputDir, "notification-e2e-priority-critical-*.json"))
+			// NOTE: Search in shared e2eFileOutputDir (no test-specific subdirectory after FileDeliveryConfig removal)
+			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-critical-*.json"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(files)).To(BeNumerically(">=", 1),
-				"File channel should create audit trail for critical notification")
+				"File channel should create audit trail for critical notification in shared directory")
 
 			By("Validating priority field preserved in file audit")
 			fileContent, err := os.ReadFile(files[0])
@@ -203,17 +198,12 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 						Subject:  "E2E Test: Priority Ordering - " + string(p.priority),
 						Body:     "Testing priority-based delivery ordering",
 						Priority: p.priority,
-						Channels: []notificationv1alpha1.Channel{
-							notificationv1alpha1.ChannelConsole,
-							notificationv1alpha1.ChannelFile,
-						},
-						// Convert host path to pod path (controller runs in pod, not on host)
-						FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-							OutputDirectory: convertHostPathToPodPath(testOutputDir),
-							Format:          "json",
-						},
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile,
 					},
-				}
+				},
+			}
 
 				err := k8sClient.Create(ctx, notification)
 				Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest: "+p.name)
@@ -241,7 +231,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			By("Verifying file audit trails created for all priorities")
 			for _, p := range priorities {
-				files, err := filepath.Glob(filepath.Join(testOutputDir, "notification-"+p.name+"-*.json"))
+				files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+p.name+"-*.json"))
 				Expect(err).ToNot(HaveOccurred())
 				Expect(len(files)).To(BeNumerically(">=", 1),
 					"File audit trail should exist for "+p.name)
@@ -293,17 +283,12 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					Subject:  "E2E Test: High Priority Multi-Channel",
 					Body:     "Testing high priority delivery to console, file, and log channels",
 					Priority: notificationv1alpha1.NotificationPriorityHigh,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Console delivery
-						notificationv1alpha1.ChannelFile,    // File audit trail
-						notificationv1alpha1.ChannelLog,     // Structured log
-					},
-					// Convert host path to pod path (controller runs in pod, not on host)
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: convertHostPathToPodPath(testOutputDir),
-						Format:          "json",
-					},
-					Metadata: map[string]string{
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelConsole, // Console delivery
+					notificationv1alpha1.ChannelFile,    // File audit trail
+					notificationv1alpha1.ChannelLog,     // Structured log
+				},
+				Metadata: map[string]string{
 						"severity":   "high",
 						"alert-name": "HighPriorityAlert",
 						"cluster":    "staging",
@@ -341,7 +326,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 				"Should have 0 failed deliveries")
 
 			By("Verifying file audit trail contains priority metadata")
-			files, err := filepath.Glob(filepath.Join(testOutputDir, "notification-e2e-priority-high-multi-*.json"))
+			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-high-multi-*.json"))
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(files)).To(BeNumerically(">=", 1),
 				"File channel should create audit trail")
