@@ -1417,6 +1417,8 @@ components:
               'workflowexecution.workflow.started': '#/components/schemas/WorkflowExecutionAuditPayload'
               'workflowexecution.workflow.completed': '#/components/schemas/WorkflowExecutionAuditPayload'
               'workflowexecution.workflow.failed': '#/components/schemas/WorkflowExecutionAuditPayload'
+              'workflow.selection.completed': '#/components/schemas/WorkflowExecutionAuditPayload'  # Gap #5 (BR-AUDIT-005)
+              'execution.workflow.started': '#/components/schemas/WorkflowExecutionAuditPayload'    # Gap #6 (BR-AUDIT-005)
               'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'webhook.workflow.unblocked': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'

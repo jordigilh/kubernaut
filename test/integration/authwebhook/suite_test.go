@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/pkg/webhooks"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -58,7 +58,7 @@ var (
 	ctx              context.Context
 	cancel           context.CancelFunc
 	auditStore       audit.AuditStore // REAL audit store for webhook handlers
-	dsClient         *dsgen.ClientWithResponses // DD-TESTING-001: OpenAPI-generated client
+	dsClient         *ogenclient.ClientWithResponses // DD-TESTING-001: OpenAPI-generated client
 	infra            *testinfra.AuthWebhookInfrastructure
 )
 
@@ -114,7 +114,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Initializing Data Storage OpenAPI client (DD-API-001)")
 	var err error
-	dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+	dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
 	if err != nil {
 		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
 	}

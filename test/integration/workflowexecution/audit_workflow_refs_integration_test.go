@@ -51,7 +51,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -71,7 +71,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 	var (
 		ctx       context.Context
 		namespace string
-		dsClient  *dsgen.ClientWithResponses
+		dsClient  *ogenclient.Client
 	)
 
 	BeforeEach(func() {
@@ -104,8 +104,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
 
 		// Data Storage client (use shared infrastructure port from suite_test.go)
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageBaseURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		dsClient, err = ogenclient.NewClient(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage ogen client")
 	})
 
 	AfterEach(func() {
@@ -330,12 +330,12 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 // DD-API-001: Uses OpenAPI client
 // DD-TESTING-001: Type-safe query with optional event type filter
 func queryAuditEvents(
-	client *dsgen.ClientWithResponses,
+	client *ogenclient.ClientWithResponses,
 	correlationID string,
 	eventType *string,
-) ([]dsgen.AuditEvent, error) {
+) ([]ogenclient.AuditEvent, error) {
 	limit := 100
-	params := &dsgen.QueryAuditEventsParams{
+	params := &ogenclient.QueryAuditEventsParams{
 		CorrelationId: &correlationID,
 		EventType:     eventType,
 		Limit:         &limit,
@@ -351,7 +351,7 @@ func queryAuditEvents(
 	}
 
 	if resp.JSON200 == nil || resp.JSON200.Data == nil {
-		return []dsgen.AuditEvent{}, nil
+		return []ogenclient.AuditEvent{}, nil
 	}
 
 	return *resp.JSON200.Data, nil
@@ -359,7 +359,7 @@ func queryAuditEvents(
 
 // countEventsByType groups events by type and returns counts
 // DD-TESTING-001: Deterministic event count validation
-func countEventsByType(events []dsgen.AuditEvent) map[string]int {
+func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 	counts := make(map[string]int)
 	for _, event := range events {
 		counts[event.EventType]++
@@ -368,8 +368,8 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 }
 
 // filterEventsByType returns events of specific type
-func filterEventsByType(events []dsgen.AuditEvent, eventType string) []dsgen.AuditEvent {
-	var filtered []dsgen.AuditEvent
+func filterEventsByType(events []ogenclient.AuditEvent, eventType string) []ogenclient.AuditEvent {
+	var filtered []ogenclient.AuditEvent
 	for _, event := range events {
 		if event.EventType == eventType {
 			filtered = append(filtered, event)
@@ -380,7 +380,7 @@ func filterEventsByType(events []dsgen.AuditEvent, eventType string) []dsgen.Aud
 
 // validateEventMetadata validates common event metadata fields
 // DD-TESTING-001: Standard metadata validation
-func validateEventMetadata(event dsgen.AuditEvent, category, correlationID string) {
+func validateEventMetadata(event ogenclient.AuditEvent, category, correlationID string) {
 	Expect(event.EventType).ToNot(BeEmpty())
 	Expect(string(event.EventCategory)).To(Equal(category))
 	Expect(event.CorrelationId).To(Equal(correlationID))

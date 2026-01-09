@@ -29,7 +29,7 @@ import (
 	ptr "k8s.io/utils/ptr"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -77,7 +77,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		testCtx        context.Context
 		testCancel     context.CancelFunc
 		notifications  []*notificationv1alpha1.NotificationRequest
-		dsClient       *dsgen.ClientWithResponses
+		dsClient       *ogenclient.ClientWithResponses
 		dataStorageURL string
 		correlationID  string
 	)
@@ -94,7 +94,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create 3 NotificationRequests with same remediation context
@@ -175,7 +175,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		By("Waiting for controller to emit audit events for all processed notifications")
 
 		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
+			resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &ogenclient.QueryAuditEventsParams{
 				EventType:     ptr.To("notification.message.sent"),
 				EventCategory: ptr.To("notification"),
 				CorrelationId: &correlationID,
@@ -205,9 +205,9 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		// Verify all events have same correlation_id
 		for _, event := range events {
-			Expect(event.CorrelationId).To(Equal(correlationID),
+			Expect(event.CorrelationID).To(Equal(correlationID),
 				"All events should have same correlation_id: %s (found: %s)",
-				correlationID, event.CorrelationId)
+				correlationID, event.CorrelationID)
 		}
 
 		// ===== STEP 5: Verify event types distribution and per-notification uniqueness =====
@@ -297,11 +297,11 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			Expect(event.EventTimestamp).ToNot(BeZero(), "EventTimestamp should be set")
 			Expect(string(event.EventCategory)).To(Equal("notification"), "EventCategory should be 'notification'")
 			Expect(event.ActorType).ToNot(BeNil(), "ActorType should be set")
-			Expect(*event.ActorType).To(Equal("service"), "ActorType should be 'service'")
-			Expect(event.ActorId).ToNot(BeNil(), "ActorID should be set")
-			Expect(*event.ActorId).To(Equal("notification-controller"), "ActorID should be 'notification-controller'")
+			Expect(event.ActorType.Value).To(Equal("service"), "ActorType should be 'service'")
+			Expect(event.ActorID).ToNot(BeNil(), "ActorID should be set")
+			Expect(event.ActorID.Value).To(Equal("notification-controller"), "ActorID should be 'notification-controller'")
 			Expect(event.ResourceType).ToNot(BeNil(), "ResourceType should be set")
-			Expect(*event.ResourceType).To(Equal("NotificationRequest"), "ResourceType should be 'NotificationRequest'")
+			Expect(event.ResourceType.Value).To(Equal("NotificationRequest"), "ResourceType should be 'NotificationRequest'")
 			// Note: RetentionDays is stored in PostgreSQL but not returned by Data Storage Query API
 
 			// Verify event outcome is valid

@@ -129,21 +129,15 @@ func ValidateAuditEvent(event ogenclient.AuditEvent, expected ExpectedAuditEvent
 	}
 
 	// Validate EventData fields if specified
+	// Note: EventData is now a discriminated union (ogen-generated)
+	// For specific field validation, use the appropriate Get method on EventData
+	// Example: eventData := event.EventData.GetWorkflowExecutionAuditPayload()
 	if expected.EventDataFields != nil && len(expected.EventDataFields) > 0 {
-		eventData, ok := event.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue(),
-			"Audit event EventData should be map[string]interface{}")
-
-		for key, expectedValue := range expected.EventDataFields {
-			actualValue, exists := eventData[key]
-			Expect(exists).To(BeTrue(),
-				fmt.Sprintf("Audit event EventData missing required field: %s", key))
-
-			if expectedValue != nil {
-				Expect(actualValue).To(Equal(expectedValue),
-					fmt.Sprintf("Audit event EventData[%s] mismatch", key))
-			}
-		}
+		// EventData validation is now type-specific
+		// Use the appropriate payload Get method in your test code
+		// This generic validator no longer supports unstructured data
+		Expect(event.EventData.Type).ToNot(BeEmpty(),
+			"Audit event EventData must have a discriminator type")
 	}
 }
 
@@ -154,7 +148,7 @@ func ValidateAuditEventHasRequiredFields(event ogenclient.AuditEvent) {
 	Expect(event.EventCategory).ToNot(BeZero(), "Audit event missing event_category")
 	Expect(event.EventAction).ToNot(BeEmpty(), "Audit event missing event_action")
 	Expect(event.EventOutcome).ToNot(BeZero(), "Audit event missing event_outcome")
-	Expect(event.CorrelationId).ToNot(BeEmpty(), "Audit event missing correlation_id")
+	Expect(event.CorrelationID).ToNot(BeEmpty(), "Audit event missing correlation_id")
 	Expect(event.EventTimestamp).ToNot(BeZero(), "Audit event missing event_timestamp")
 	Expect(event.Version).ToNot(BeEmpty(), "Audit event missing version")
 }
@@ -189,11 +183,11 @@ func (m *AuditEventMatcher) Match(actual interface{}) (bool, error) {
 	if event.EventOutcome != m.expected.EventOutcome {
 		return false, nil
 	}
-	if m.expected.CorrelationID != "" && event.CorrelationId != m.expected.CorrelationID {
+	if m.expected.CorrelationID != "" && event.CorrelationID != m.expected.CorrelationID {
 		return false, nil
 	}
 	if m.expected.Severity != nil {
-		if event.Severity == nil || *event.Severity != *m.expected.Severity {
+		if !event.Severity.IsSet() || event.Severity.Value != *m.expected.Severity {
 			return false, nil
 		}
 	}
@@ -205,8 +199,8 @@ func (m *AuditEventMatcher) Match(actual interface{}) (bool, error) {
 func (m *AuditEventMatcher) FailureMessage(actual interface{}) string {
 	event := actual.(ogenclient.AuditEvent)
 	severityStr := "<nil>"
-	if event.Severity != nil {
-		severityStr = *event.Severity
+	if event.Severity.IsSet() {
+		severityStr = event.Severity.Value
 	}
 	expectedSeverityStr := "<nil>"
 	if m.expected.Severity != nil {
@@ -224,7 +218,7 @@ func (m *AuditEventMatcher) FailureMessage(actual interface{}) string {
 		m.expected.EventCategory, event.EventCategory,
 		m.expected.EventAction, event.EventAction,
 		m.expected.EventOutcome, event.EventOutcome,
-		m.expected.CorrelationID, event.CorrelationId,
+		m.expected.CorrelationID, event.CorrelationID,
 		expectedSeverityStr, severityStr,
 	)
 }

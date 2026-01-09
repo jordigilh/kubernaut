@@ -295,7 +295,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataExecutionWorkflowStartedAuditEventEventData, AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		if err := s.WorkflowExecutionAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -570,7 +570,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		if err := s.WorkflowExecutionAuditPayload.Validate(); err != nil {
 			return err
 		}

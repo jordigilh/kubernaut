@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
@@ -54,7 +54,7 @@ import (
 
 var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", func() {
 	var (
-		dsClient       *dsgen.ClientWithResponses
+		dsClient       *ogenclient.ClientWithResponses
 		dataStorageURL string
 		queryCtx       context.Context
 	)
@@ -73,15 +73,15 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 		// Create REST API client for querying audit events
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage REST API client")
 	})
 
 	// Helper function to query audit events from Data Storage REST API
 	// Note: OpenAPI spec doesn't have resource_id query param, so we filter client-side
-	queryAuditEvents := func(eventType, resourceID string) []dsgen.AuditEvent {
+	queryAuditEvents := func(eventType, resourceID string) []ogenclient.AuditEvent {
 		eventCategory := "notification"
-		params := &dsgen.QueryAuditEventsParams{
+		params := &ogenclient.QueryAuditEventsParams{
 			EventType:     &eventType,
 			EventCategory: &eventCategory,
 		}
@@ -91,9 +91,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 		}
 
 		// Client-side filtering by resource_id (OpenAPI spec gap)
-		var filtered []dsgen.AuditEvent
+		var filtered []ogenclient.AuditEvent
 		for _, event := range *resp.JSON200.Data {
-			if event.ResourceId != nil && *event.ResourceId == resourceID {
+			if event.ResourceID != nil && *event.ResourceID == resourceID {
 				filtered = append(filtered, event)
 			}
 		}
@@ -140,7 +140,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
 			// Per DD-AUDIT-003: Integration tests MUST use real Data Storage service (no mocks)
-			var sentEvent *dsgen.AuditEvent
+			var sentEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				if len(events) > 0 {
@@ -159,9 +159,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// ========================================
 			testutil.ValidateAuditEvent(*sentEvent, testutil.ExpectedAuditEvent{
 				EventType:     "notification.message.sent",
-				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
-				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
 				CorrelationID: string(notification.UID),
 			})
 
@@ -214,7 +214,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
-			var slackEvent *dsgen.AuditEvent
+			var slackEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				if len(events) > 0 {
@@ -230,9 +230,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
 			testutil.ValidateAuditEvent(*slackEvent, testutil.ExpectedAuditEvent{
 				EventType:     "notification.message.sent",
-				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
-				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
 			})
 
 			// Cleanup
@@ -282,11 +282,11 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check correlation_id matches remediationID
-			var corrEvent *dsgen.AuditEvent
+			var corrEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				for _, e := range events {
-					if e.CorrelationId == remediationID {
+					if e.CorrelationID == remediationID {
 						corrEvent = &e
 						return true
 					}
@@ -296,7 +296,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				"Audit event correlation_id should match remediationID for workflow tracing (DD-AUDIT-003)")
 
 			Expect(corrEvent).ToNot(BeNil())
-			Expect(corrEvent.CorrelationId).To(Equal(remediationID), "Correlation ID must propagate to audit events")
+			Expect(corrEvent.CorrelationID).To(Equal(remediationID), "Correlation ID must propagate to audit events")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
@@ -406,7 +406,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for acknowledged event
 			// NOTE: In V2.0, this event will be emitted when user clicks [Acknowledge] button
 			// For V1.0, we validate the audit emission mechanism through controller method
-			var ackEvent *dsgen.AuditEvent
+			var ackEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.acknowledged", notificationName)
 				if len(events) > 0 {
@@ -430,9 +430,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			testutil.ValidateAuditEvent(*ackEvent, testutil.ExpectedAuditEvent{
 				EventType:     "notification.message.acknowledged",
-				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "acknowledged",
-				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
 				CorrelationID: string(notification.UID),
 				ActorType:     &actorType,
 				ActorID:       &actorID,
@@ -441,8 +441,8 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			Expect(ackEvent.ResourceType).ToNot(BeNil(), "ResourceType is required (ADR-034)")
 			Expect(*ackEvent.ResourceType).To(Equal("NotificationRequest"), "Resource type must be CRD kind (DD-AUDIT-002)")
 
-			Expect(ackEvent.ResourceId).ToNot(BeNil(), "ResourceId is required (ADR-034)")
-			Expect(*ackEvent.ResourceId).To(Equal(notificationName), "Resource ID must match notification name (DD-AUDIT-002)")
+			Expect(ackEvent.ResourceID).ToNot(BeNil(), "ResourceId is required (ADR-034)")
+			Expect(*ackEvent.ResourceID).To(Equal(notificationName), "Resource ID must match notification name (DD-AUDIT-002)")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
@@ -488,7 +488,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check ADR-034 fields
-			var validEvent *dsgen.AuditEvent
+			var validEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.sent", notificationName)
 				for _, e := range events {
@@ -497,9 +497,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 						e.EventAction == "sent" &&
 						string(e.EventOutcome) == "success" &&
 						e.ActorType != nil && *e.ActorType == "service" &&
-						e.ActorId != nil && *e.ActorId == "notification-controller" &&
+						e.ActorID != nil && *e.ActorID == "notification-controller" &&
 						e.ResourceType != nil && *e.ResourceType == "NotificationRequest" &&
-						e.ResourceId != nil && *e.ResourceId == notificationName {
+						e.ResourceID != nil && *e.ResourceID == notificationName {
 						validEvent = &e
 						return true
 					}
@@ -566,7 +566,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				"Notification should reach Failed phase due to mock Slack webhook failure (503)")
 
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for failed event
-			var failedEvent *dsgen.AuditEvent
+			var failedEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				events := queryAuditEvents("notification.message.failed", notificationName)
 				if len(events) > 0 {
@@ -582,9 +582,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
 			testutil.ValidateAuditEvent(*failedEvent, testutil.ExpectedAuditEvent{
 				EventType:     "notification.message.failed",
-				EventCategory: dsgen.AuditEventEventCategoryNotification,
+				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent", // Action was "sent" (attempted), outcome is "failure"
-				EventOutcome:  dsgen.AuditEventEventOutcomeFailure,
+				EventOutcome:  ogenclient.AuditEventEventOutcomeFailure,
 			})
 
 			// Verify error details are included in event_data

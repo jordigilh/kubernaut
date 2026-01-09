@@ -887,6 +887,8 @@ const (
 	AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData       AuditEventEventDataType = "signalprocessing.signal.processed"
 	AuditEventEventDataAianalysisAnalysisCompletedAuditEventEventData           AuditEventEventDataType = "aianalysis.analysis.completed"
 	AuditEventEventDataAianalysisAnalysisFailedAuditEventEventData              AuditEventEventDataType = "aianalysis.analysis.failed"
+	AuditEventEventDataExecutionWorkflowStartedAuditEventEventData              AuditEventEventDataType = "execution.workflow.started"
+	AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData            AuditEventEventDataType = "workflow.selection.completed"
 	AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData    AuditEventEventDataType = "workflowexecution.workflow.completed"
 	AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData       AuditEventEventDataType = "workflowexecution.workflow.failed"
 	AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData      AuditEventEventDataType = "workflowexecution.workflow.started"
@@ -956,7 +958,7 @@ func (s AuditEventEventData) IsAIAnalysisAuditPayload() bool {
 // IsWorkflowExecutionAuditPayload reports whether AuditEventEventData is WorkflowExecutionAuditPayload.
 func (s AuditEventEventData) IsWorkflowExecutionAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataExecutionWorkflowStartedAuditEventEventData, AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -1247,6 +1249,20 @@ func (s AuditEventEventData) GetWorkflowExecutionAuditPayload() (v WorkflowExecu
 		return v, false
 	}
 	return s.WorkflowExecutionAuditPayload, true
+}
+
+// NewAuditEventEventDataExecutionWorkflowStartedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventEventDataExecutionWorkflowStartedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataExecutionWorkflowStartedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataWorkflowSelectionCompletedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventEventDataWorkflowSelectionCompletedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData, v)
+	return s
 }
 
 // NewAuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
@@ -2108,6 +2124,8 @@ const (
 	AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData       AuditEventRequestEventDataType = "signalprocessing.signal.processed"
 	AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "aianalysis.analysis.completed"
 	AuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData              AuditEventRequestEventDataType = "aianalysis.analysis.failed"
+	AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData              AuditEventRequestEventDataType = "execution.workflow.started"
+	AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData            AuditEventRequestEventDataType = "workflow.selection.completed"
 	AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData    AuditEventRequestEventDataType = "workflowexecution.workflow.completed"
 	AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData       AuditEventRequestEventDataType = "workflowexecution.workflow.failed"
 	AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData      AuditEventRequestEventDataType = "workflowexecution.workflow.started"
@@ -2177,7 +2195,7 @@ func (s AuditEventRequestEventData) IsAIAnalysisAuditPayload() bool {
 // IsWorkflowExecutionAuditPayload reports whether AuditEventRequestEventData is WorkflowExecutionAuditPayload.
 func (s AuditEventRequestEventData) IsWorkflowExecutionAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -2468,6 +2486,20 @@ func (s AuditEventRequestEventData) GetWorkflowExecutionAuditPayload() (v Workfl
 		return v, false
 	}
 	return s.WorkflowExecutionAuditPayload, true
+}
+
+// NewAuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData, v)
+	return s
 }
 
 // NewAuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.

@@ -114,9 +114,9 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
 			// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
-		Expect(*event.ActorId).To(Equal("admin"),
+		Expect(*event.ActorID).To(Equal("admin"),
 			"actor_id column should contain authenticated operator")
-		Expect(*event.ResourceId).ToNot(BeEmpty(),
+		Expect(*event.ResourceID).ToNot(BeEmpty(),
 			"resource_id column should contain CRD UID (per audit.SetResource)")
 		Expect(*event.Namespace).To(Equal(namespace),
 			"namespace column should contain CRD namespace")
@@ -135,8 +135,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution via Structured Columns\n")
-		GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorId)
-		GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceId)
+		GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorID)
+		GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceID)
 		GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", *event.Namespace)
 		GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
 			GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
@@ -256,9 +256,9 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 		By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
 		// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
-		Expect(*event.ActorId).To(Equal("admin"),
+		Expect(*event.ActorID).To(Equal("admin"),
 			"actor_id column should contain authenticated operator")
-	Expect(*event.ResourceId).ToNot(BeEmpty(),
+	Expect(*event.ResourceID).ToNot(BeEmpty(),
 		"resource_id column should contain CRD UID (per audit.SetResource)")
 		Expect(*event.Namespace).To(Equal(namespace),
 			"namespace column should contain CRD namespace")
@@ -277,8 +277,8 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation via Structured Columns\n")
-	GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorId)
-	GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceId)
+	GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorID)
+	GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceID)
 	GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", *event.Namespace)
 	GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
 	GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
