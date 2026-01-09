@@ -82,6 +82,9 @@ var (
 	kubeconfigPath string
 
 	k8sClient client.Client
+
+	// Track test failures for cluster cleanup decision
+	anyTestFailed bool
 )
 
 func TestRemediationOrchestratorE2E(t *testing.T) {
@@ -174,6 +177,13 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
+
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes - cleanup context
 	func() {
@@ -190,7 +200,14 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		By("Cleaning up test environment")
 
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			By("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
 		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {
@@ -201,9 +218,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		By("Deleting KIND cluster (with must-gather log export on failure)")
-		// Note: RemediationOrchestrator doesn't track test failures currently
-		// Pass false for testsFailed until failure tracking is added
-		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", false, GinkgoWriter); err != nil {
+		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", anyFailure, GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
 		}
 

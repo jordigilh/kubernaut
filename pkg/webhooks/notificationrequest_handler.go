@@ -92,7 +92,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, "notification.request.deleted")
+	audit.SetEventType(auditEvent, "notification.request.cancelled") // DD-WEBHOOK-001 line 349
 	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "deleted")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
@@ -102,16 +102,18 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	audit.SetNamespace(auditEvent, nr.Namespace)
 
 	// Set event data payload
-	eventData := map[string]interface{}{
-		"notification_id": nr.Name,
-		"type":            string(nr.Spec.Type),
-		"priority":        string(nr.Spec.Priority),
-		"cancelled_by":    authCtx.Username,
-		"user_uid":        authCtx.UID,
-		"user_groups":     authCtx.Groups,
-		"action":          "notification_cancelled",
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := NotificationAuditPayload{
+		NotificationID: nr.Name,
+		Type:           string(nr.Spec.Type),
+		Priority:       string(nr.Spec.Priority),
+		CancelledBy:    authCtx.Username,
+		UserUID:        authCtx.UID,
+		UserGroups:     authCtx.Groups,
+		Action:         "notification_cancelled",
 	}
-	audit.SetEventData(auditEvent, eventData)
+	audit.SetEventData(auditEvent, payload)
 	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
 		auditEvent.EventType, auditEvent.CorrelationId)
 

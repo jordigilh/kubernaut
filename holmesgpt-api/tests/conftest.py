@@ -23,10 +23,29 @@ Uses mock LLM server for integration tests - no DEV_MODE anti-pattern.
 
 import pytest
 import os
+import sys
+from pathlib import Path
 from fastapi.testclient import TestClient
 from typing import Dict, Any
 
 from tests.mock_llm_server import MockLLMServer
+
+
+# ========================================
+# Pytest Hook: Configure PYTHONPATH Early
+# ========================================
+
+def pytest_configure(config):
+    """
+    Pytest hook that runs BEFORE test collection.
+
+    Add datastorage client to PYTHONPATH so OpenAPI-generated types are available
+    when test modules import src.models.audit_models.
+    """
+    project_root = Path(__file__).parent.parent
+    datastorage_client_path = project_root / "src" / "clients" / "datastorage"
+    if str(datastorage_client_path) not in sys.path:
+        sys.path.insert(0, str(datastorage_client_path))
 
 
 # ========================================

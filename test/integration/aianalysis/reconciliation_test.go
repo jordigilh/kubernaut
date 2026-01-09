@@ -32,7 +32,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = PDescribe("AIAnalysis Full Reconciliation Integration", Serial, Label("integration", "reconciliation"), func() {
+var _ = Describe("AIAnalysis Full Reconciliation Integration", Serial, Label("integration", "reconciliation"), func() {
 	const (
 		timeout  = 2 * time.Minute
 		interval = time.Second

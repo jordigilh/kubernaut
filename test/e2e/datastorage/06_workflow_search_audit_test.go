@@ -208,7 +208,7 @@ execution:
 				RemediationId: &remediationID,
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  uniqueSignalType,                              // mandatory - unique per process
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
+					Severity:    dsgen.Critical,   // mandatory
 					Component:   "deployment",                                  // mandatory
 					Environment: "production",                                  // mandatory
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
@@ -405,7 +405,7 @@ execution:
 					RemediationId: &remediationID,
 					Filters: dsgen.WorkflowSearchFilters{
 						SignalType:  "OOMKilled",                                   // mandatory (DD-WORKFLOW-001 v1.4)
-						Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
+						Severity:    dsgen.Critical,   // mandatory
 						Component:   "deployment",                                  // mandatory
 						Environment: "production",                                  // mandatory
 						Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory

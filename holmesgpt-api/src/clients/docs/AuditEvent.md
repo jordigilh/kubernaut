@@ -21,7 +21,7 @@ Name | Type | Description | Notes
 **cluster_name** | **str** |  | [optional] 
 **severity** | **str** |  | [optional] 
 **duration_ms** | **int** |  | [optional] 
-**event_data** | **object** | Service-specific event data as structured Go type. Accepts any JSON-marshalable type (structs, maps, etc.). V1.0: Eliminates map[string]interface{} - use structured types directly. See DD-AUDIT-004 for structured type requirements.  | 
+**event_data** | [**AuditEventRequestEventData**](AuditEventRequestEventData.md) |  | 
 **event_id** | **UUID** |  | [optional] 
 **event_date** | **date** | Date of the event (YYYY-MM-DD). Nullable to handle format mismatches from DataStorage. | [optional] 
 

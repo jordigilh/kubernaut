@@ -282,9 +282,8 @@ var _ = Describe("Workflow Audit Event Validation", func() {
 // - results field is required
 // - confidence field is required for each workflow (no boost/penalty breakdown)
 //
-// NOTE: Uses ValidateWorkflowAuditEventUnstructured because these tests specifically
-// check for missing field detection, which requires unstructured JSON validation.
-// The structured ValidateWorkflowAuditEvent is used for well-formed events from the builder.
+// NOTE: Now uses typed ValidateWorkflowAuditEvent (DD-AUDIT-004 V2.0 - OpenAPI schemas)
+// Field validation happens through type assertions on OpenAPI-generated types
 func validateWorkflowAuditEvent(event *dsgen.AuditEventRequest) error {
-	return audit.ValidateWorkflowAuditEventUnstructured(event)
+	return audit.ValidateWorkflowAuditEvent(event)
 }

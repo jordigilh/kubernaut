@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/pii"
 )
@@ -223,7 +223,7 @@ func (s *Server) buildExportResponse(
 	format string,
 	includeDetachedSignature bool,
 	exportedBy string,
-) (*dsgen.AuditExportResponse, error) {
+) (*ogenclient.AuditExportResponse, error) {
 	exportTimestamp := time.Now().UTC()
 
 	// Sign the export
@@ -311,7 +311,7 @@ func (s *Server) buildExportResponse(
 		return nil, fmt.Errorf("failed to marshal intermediate response: %w", err)
 	}
 
-	var response dsgen.AuditExportResponse
+	var response ogenclient.AuditExportResponse
 	if err := json.Unmarshal(jsonBytes, &response); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal into generated type: %w", err)
 	}
@@ -396,7 +396,7 @@ Certificate-Fingerprint: %s
 // Target Fields:
 // - export_metadata.exported_by
 // - events[].event_data (all string fields)
-func (s *Server) applyPIIRedaction(response *dsgen.AuditExportResponse) error {
+func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) error {
 	redactor := pii.NewRedactor()
 
 	// Redact exported_by field (if it's an email)

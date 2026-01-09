@@ -198,3 +198,4 @@ Expect(resultsData["total_found"]).To(Equal(float64(1)),
 **Justification:** Guaranteed isolation through unique labels per process. Simple, deterministic, and requires no cleanup logic. Only risk is if production code assumes specific `signal_type` values in tests, but labels are test data.
 
 
+

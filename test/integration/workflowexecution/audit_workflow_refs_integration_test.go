@@ -51,7 +51,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -208,40 +208,40 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			selectionEvents := filterEventsByType(allEvents, "workflow.selection.completed")
 			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
-			selectionEvent := selectionEvents[0]
-			validateEventMetadata(selectionEvent, "workflow", correlationID)
-			Expect(*selectionEvent.ActorId).To(Equal("workflowexecution-controller"))
-			Expect(string(selectionEvent.EventOutcome)).To(Equal("success"))
+		selectionEvent := selectionEvents[0]
+		validateEventMetadata(selectionEvent, "workflow", correlationID)
+		Expect(selectionEvent.ActorID.Value).To(Equal("workflowexecution-controller"))
+		Expect(string(selectionEvent.EventOutcome)).To(Equal("success"))
 
-			// Validate event_data structure (Gap #5)
-			eventData, ok := selectionEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be a JSON object")
-			Expect(eventData).To(HaveKey("selected_workflow_ref"))
+		// Validate event_data structure (Gap #5) - OGEN-MIGRATION
+		// Per Q4 Answer: Flat structure, no nested selected_workflow_ref
+		eventData := selectionEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(eventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
 
-			workflowRef := eventData["selected_workflow_ref"].(map[string]interface{})
-			Expect(workflowRef).To(HaveKeyWithValue("workflow_id", "k8s-restart-pod-v1"))
-			Expect(workflowRef).To(HaveKeyWithValue("version", "v1.0.0"))
-			Expect(workflowRef).To(HaveKey("container_image"))
+		// Access flat fields directly
+		Expect(eventData.Value.WorkflowID).To(Equal("k8s-restart-pod-v1"))
+		Expect(eventData.Value.WorkflowVersion).To(Equal("v1.0.0"))
+		Expect(eventData.Value.ContainerImage).ToNot(BeEmpty())
+		Expect(eventData.Value.Phase).To(Equal("Pending"))
 
-			By("5. Validate execution.workflow.started event structure")
-			executionEvents := filterEventsByType(allEvents, "execution.workflow.started")
-			Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
+		By("5. Validate execution.workflow.started event structure")
+		executionEvents := filterEventsByType(allEvents, "execution.workflow.started")
+		Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
 
-			executionEvent := executionEvents[0]
-			validateEventMetadata(executionEvent, "execution", correlationID)
-			Expect(*executionEvent.ActorId).To(Equal("workflowexecution-controller"))
-			Expect(string(executionEvent.EventOutcome)).To(Equal("success"))
+		executionEvent := executionEvents[0]
+		validateEventMetadata(executionEvent, "execution", correlationID)
+		Expect(executionEvent.ActorID.Value).To(Equal("workflowexecution-controller"))
+		Expect(string(executionEvent.EventOutcome)).To(Equal("success"))
 
-			// Validate event_data structure (Gap #6)
-			execEventData, ok := executionEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be a JSON object")
-			Expect(execEventData).To(HaveKey("execution_ref"))
+		// Validate event_data structure (Gap #6) - OGEN-MIGRATION
+		// Per Q4 Answer: Flat structure with PipelineRunName field
+		execEventData := executionEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(execEventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
 
-			executionRef := execEventData["execution_ref"].(map[string]interface{})
-			Expect(executionRef).To(HaveKeyWithValue("api_version", "tekton.dev/v1"))
-			Expect(executionRef).To(HaveKeyWithValue("kind", "PipelineRun"))
-			Expect(executionRef).To(HaveKey("name"))
-			Expect(executionRef).To(HaveKey("namespace"))
+		// Access flat fields directly
+		Expect(execEventData.Value.WorkflowID).To(Equal("k8s-restart-pod-v1"))
+		Expect(execEventData.Value.PipelineRunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
+		Expect(execEventData.Value.PipelineRunName.Value).ToNot(BeEmpty())
 		})
 	})
 
@@ -306,16 +306,17 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
-			// Validate event structure
-			selectionEvent := selectionEvents[0]
-			validateEventMetadata(selectionEvent, "workflow", correlationID)
+		// Validate event structure
+		selectionEvent := selectionEvents[0]
+		validateEventMetadata(selectionEvent, "workflow", correlationID)
 
-			eventData, ok := selectionEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(eventData).To(HaveKey("selected_workflow_ref"))
+		// Validate event_data structure - OGEN-MIGRATION
+		// Per Q4 Answer: Flat structure, no nested selected_workflow_ref
+		eventData := selectionEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(eventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
 
-			workflowRef := eventData["selected_workflow_ref"].(map[string]interface{})
-			Expect(workflowRef).To(HaveKeyWithValue("workflow_id", "k8s-scale-deployment-v1"))
+		// Access flat fields directly
+		Expect(eventData.Value.WorkflowID).To(Equal("k8s-scale-deployment-v1"))
 		})
 	})
 })

@@ -281,6 +281,17 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
+	// PHASE 4.5: Deploy AuthWebhook for SOC2-compliant CRD operations
+	// Per DD-WEBHOOK-001: Required for RemediationApprovalRequest approval decisions
+	// Per SOC2 CC8.1: Captures WHO approved/rejected remediation requests
+	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook for Operator Attribution")
+	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	if err := DeployAuthWebhookToCluster(ctx, clusterName, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook deployed - SOC2 CC8.1 user attribution enabled")
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ RemediationOrchestrator E2E Infrastructure Ready!")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

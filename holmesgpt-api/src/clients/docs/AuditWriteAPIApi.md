@@ -7,6 +7,7 @@ Method | HTTP request | Description
 [**create_audit_event**](AuditWriteAPIApi.md#create_audit_event) | **POST** /api/v1/audit/events | Create unified audit event
 [**create_audit_events_batch**](AuditWriteAPIApi.md#create_audit_events_batch) | **POST** /api/v1/audit/events/batch | Create audit events batch
 [**create_notification_audit**](AuditWriteAPIApi.md#create_notification_audit) | **POST** /api/v1/audit/notifications | Create notification audit record
+[**export_audit_events**](AuditWriteAPIApi.md#export_audit_events) | **GET** /api/v1/audit/export | Export audit events with digital signature
 [**list_legal_holds**](AuditWriteAPIApi.md#list_legal_holds) | **GET** /api/v1/audit/legal-hold | List all active legal holds
 [**place_legal_hold**](AuditWriteAPIApi.md#place_legal_hold) | **POST** /api/v1/audit/legal-hold | Place legal hold on audit events
 [**query_audit_events**](AuditWriteAPIApi.md#query_audit_events) | **GET** /api/v1/audit/events | Query audit events
@@ -250,6 +251,129 @@ No authorization required
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
+# **export_audit_events**
+> AuditExportResponse export_audit_events(start_time=start_time, end_time=end_time, correlation_id=correlation_id, event_category=event_category, format=format, include_detached_signature=include_detached_signature, offset=offset, limit=limit, redact_pii=redact_pii)
+
+Export audit events with digital signature
+
+Exports audit events matching the specified filters with cryptographic signatures
+for tamper detection and compliance verification.
+
+**Business Requirement**: BR-AUDIT-007 (Audit Export)
+**SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)
+
+**Behavior**:
+- Success: Returns 200 OK with signed export (JSON or CSV)
+- Validation Error: Returns 400 Bad Request (invalid date range, etc.)
+- Unauthorized: Returns 401 if X-Auth-Request-User header missing
+- Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)
+
+**Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)
+
+**Export Formats**:
+- JSON: Complete event data with hash chain verification
+- CSV: Flattened tabular format for spreadsheet analysis
+
+**Hash Chain Verification**:
+- Each export includes hash chain integrity status
+- Tampered events flagged with `hash_chain_valid: false`
+- Chain verification performed at export time
+
+**Digital Signature**:
+- Export signed with service x509 certificate
+- Signature included in `export_metadata.signature` field
+- Detached signature available via `include_detached_signature=true`
+
+**Pagination**:
+- Use `offset` and `limit` for large result sets
+- Maximum limit: 10,000 events per export
+- Signature covers ALL pages (use same query for verification)
+
+**Metrics Emitted**:
+- `datastorage_export_successes_total{format="json|csv"}`
+- `datastorage_export_failures_total{reason="unauthorized|validation|..."}`
+
+
+### Example
+
+
+```python
+import datastorage
+from datastorage.models.audit_export_response import AuditExportResponse
+from datastorage.rest import ApiException
+from pprint import pprint
+
+# Defining the host is optional and defaults to http://localhost:8080
+# See configuration.py for a list of all supported configuration parameters.
+configuration = datastorage.Configuration(
+    host = "http://localhost:8080"
+)
+
+
+# Enter a context with an instance of the API client
+with datastorage.ApiClient(configuration) as api_client:
+    # Create an instance of the API class
+    api_instance = datastorage.AuditWriteAPIApi(api_client)
+    start_time = '2026-01-01T00:00:00Z' # datetime | Start of time range (ISO 8601) (optional)
+    end_time = '2026-01-07T23:59:59Z' # datetime | End of time range (ISO 8601) (optional)
+    correlation_id = 'remediation-123' # str | Filter by correlation ID (optional)
+    event_category = 'remediation_approval' # str | Filter by event category (optional)
+    format = json # str | Export format (json or csv) (optional) (default to json)
+    include_detached_signature = False # bool | Include detached signature file in response (optional) (default to False)
+    offset = 0 # int | Pagination offset (optional) (default to 0)
+    limit = 1000 # int | Maximum records per export (optional) (default to 1000)
+    redact_pii = False # bool | Enable PII (Personally Identifiable Information) redaction in audit export.  **SOC2 Privacy Compliance**: Redacts sensitive data to comply with data minimization principles.  **Redaction Rules**: - Emails: user@domain.com → u***@d***.com - IP Addresses: 192.168.1.1 → 192.***.*.*** - Phone Numbers: +1-555-1234 → +1-***-****  **Fields Redacted**: - event_data.user_email - event_data.source_ip - event_data.phone_number - exported_by (if email)  **Use Cases**: - Sharing exports with external auditors - Compliance reports for legal teams - Anonymized analysis and research  Note: Redaction occurs AFTER hash chain verification to maintain integrity.  (optional) (default to False)
+
+    try:
+        # Export audit events with digital signature
+        api_response = api_instance.export_audit_events(start_time=start_time, end_time=end_time, correlation_id=correlation_id, event_category=event_category, format=format, include_detached_signature=include_detached_signature, offset=offset, limit=limit, redact_pii=redact_pii)
+        print("The response of AuditWriteAPIApi->export_audit_events:\n")
+        pprint(api_response)
+    except Exception as e:
+        print("Exception when calling AuditWriteAPIApi->export_audit_events: %s\n" % e)
+```
+
+
+
+### Parameters
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **start_time** | **datetime**| Start of time range (ISO 8601) | [optional] 
+ **end_time** | **datetime**| End of time range (ISO 8601) | [optional] 
+ **correlation_id** | **str**| Filter by correlation ID | [optional] 
+ **event_category** | **str**| Filter by event category | [optional] 
+ **format** | **str**| Export format (json or csv) | [optional] [default to json]
+ **include_detached_signature** | **bool**| Include detached signature file in response | [optional] [default to False]
+ **offset** | **int**| Pagination offset | [optional] [default to 0]
+ **limit** | **int**| Maximum records per export | [optional] [default to 1000]
+ **redact_pii** | **bool**| Enable PII (Personally Identifiable Information) redaction in audit export.  **SOC2 Privacy Compliance**: Redacts sensitive data to comply with data minimization principles.  **Redaction Rules**: - Emails: user@domain.com → u***@d***.com - IP Addresses: 192.168.1.1 → 192.***.*.*** - Phone Numbers: +1-555-1234 → +1-***-****  **Fields Redacted**: - event_data.user_email - event_data.source_ip - event_data.phone_number - exported_by (if email)  **Use Cases**: - Sharing exports with external auditors - Compliance reports for legal teams - Anonymized analysis and research  Note: Redaction occurs AFTER hash chain verification to maintain integrity.  | [optional] [default to False]
+
+### Return type
+
+[**AuditExportResponse**](AuditExportResponse.md)
+
+### Authorization
+
+No authorization required
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+### HTTP response details
+
+| Status code | Description | Response headers |
+|-------------|-------------|------------------|
+**200** | Export generated successfully |  -  |
+**400** | Validation error (invalid date range, etc.) |  -  |
+**401** | Unauthorized - X-Auth-Request-User header required |  -  |
+**413** | Payload Too Large - result set exceeds maximum (use pagination) |  -  |
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
 # **list_legal_holds**
 > ListLegalHolds200Response list_legal_holds()
 
@@ -353,7 +477,6 @@ Events with legal hold cannot be deleted (enforced by database trigger).
 
 ### Example
 
-* Api Key Authentication (oauthProxyAuth):
 
 ```python
 import datastorage
@@ -368,16 +491,6 @@ configuration = datastorage.Configuration(
     host = "http://localhost:8080"
 )
 
-# The client must configure the authentication and authorization parameters
-# in accordance with the API server security policy.
-# Examples for each auth method are provided below, use the example that
-# satisfies your auth use case.
-
-# Configure API key authorization: oauthProxyAuth
-configuration.api_key['oauthProxyAuth'] = os.environ["API_KEY"]
-
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# configuration.api_key_prefix['oauthProxyAuth'] = 'Bearer'
 
 # Enter a context with an instance of the API client
 with datastorage.ApiClient(configuration) as api_client:
@@ -409,7 +522,7 @@ Name | Type | Description  | Notes
 
 ### Authorization
 
-[oauthProxyAuth](../README.md#oauthProxyAuth)
+No authorization required
 
 ### HTTP request headers
 
@@ -537,7 +650,6 @@ Events can be deleted after legal hold is released.
 
 ### Example
 
-* Api Key Authentication (oauthProxyAuth):
 
 ```python
 import datastorage
@@ -552,16 +664,6 @@ configuration = datastorage.Configuration(
     host = "http://localhost:8080"
 )
 
-# The client must configure the authentication and authorization parameters
-# in accordance with the API server security policy.
-# Examples for each auth method are provided below, use the example that
-# satisfies your auth use case.
-
-# Configure API key authorization: oauthProxyAuth
-configuration.api_key['oauthProxyAuth'] = os.environ["API_KEY"]
-
-# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
-# configuration.api_key_prefix['oauthProxyAuth'] = 'Bearer'
 
 # Enter a context with an instance of the API client
 with datastorage.ApiClient(configuration) as api_client:
@@ -595,7 +697,7 @@ Name | Type | Description  | Notes
 
 ### Authorization
 
-[oauthProxyAuth](../README.md#oauthProxyAuth)
+No authorization required
 
 ### HTTP request headers
 

@@ -144,9 +144,9 @@ def create_data_storage_client(app_config: Optional[AppConfig]):
         WorkflowCatalogAPIApi or None if configuration is missing
     """
     try:
-        from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
-        from src.clients.datastorage.api_client import ApiClient
-        from src.clients.datastorage.configuration import Configuration
+        from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+        from datastorage.api_client import ApiClient
+        from datastorage.configuration import Configuration
 
         # Get Data Storage URL from config or environment
         ds_url = None

@@ -109,19 +109,21 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 
 	// Set event data payload
 	// Per DD-WEBHOOK-003 lines 290-295: Business context ONLY (attribution in structured columns)
-	eventData := map[string]interface{}{
-		"workflow_name":  wfe.Name,
-		"clear_reason":   wfe.Status.BlockClearance.ClearReason,
-		"cleared_at":     wfe.Status.BlockClearance.ClearedAt.Time,
-		"previous_state": "Blocked", // Per DD-WEBHOOK-003 line 293 (business field)
-		"new_state":      "Running", // Per DD-WEBHOOK-003 line 294 (business field)
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := WorkflowExecutionAuditPayload{
+		WorkflowName:  wfe.Name,
+		ClearReason:   wfe.Status.BlockClearance.ClearReason,
+		ClearedAt:     wfe.Status.BlockClearance.ClearedAt.Time,
+		PreviousState: "Blocked", // Per DD-WEBHOOK-003 line 293 (business field)
+		NewState:      "Running", // Per DD-WEBHOOK-003 line 294 (business field)
 	}
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: wfe.Name (via audit.SetResource)
 	// - namespace: wfe.Namespace (via audit.SetNamespace)
 	// - event_action: "block_cleared" (via audit.SetEventAction)
-	audit.SetEventData(auditEvent, eventData)
+	audit.SetEventData(auditEvent, payload)
 
 	// Store audit event asynchronously (buffered write)
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {

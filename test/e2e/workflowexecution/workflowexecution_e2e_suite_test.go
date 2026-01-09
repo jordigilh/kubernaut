@@ -320,7 +320,14 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
 		// Determine cleanup strategy
+		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
 		if preserveCluster {
@@ -331,7 +338,7 @@ var _ = SynchronizedAfterSuite(
 		} else {
 			// Delete cluster (with must-gather log export on failure)
 			logger.Info("🗑️  Cleaning up Kind cluster...")
-			err := infrastructure.DeleteWorkflowExecutionCluster(clusterName, anyTestFailed, GinkgoWriter)
+			err := infrastructure.DeleteWorkflowExecutionCluster(clusterName, anyFailure, GinkgoWriter)
 			if err != nil {
 				logger.Error(err, "Failed to delete cluster")
 			}

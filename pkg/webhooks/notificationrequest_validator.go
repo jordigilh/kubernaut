@@ -109,7 +109,7 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	fmt.Printf("📝 Creating audit event for DELETE operation...\n")
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, "notification.request.deleted")
+	audit.SetEventType(auditEvent, "notification.request.cancelled") // DD-WEBHOOK-001 line 349
 	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "deleted")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)
@@ -120,20 +120,22 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 
 	// Set event data payload
 	// Per DD-WEBHOOK-003 lines 335-340: Business context ONLY (attribution in structured columns)
-	eventData := map[string]interface{}{
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := NotificationAuditPayload{
 		// Business context fields (per DD-WEBHOOK-003)
-		"notification_name": nr.Name,                   // Business field
-		"notification_type": string(nr.Spec.Type),      // Business field
-		"priority":          string(nr.Spec.Priority),  // Business field (useful for audit completeness)
-		"final_status":      string(nr.Status.Phase),   // Business field (per DD-WEBHOOK-003 line 338)
-		"recipients":        nr.Spec.Recipients,        // Business field (per DD-WEBHOOK-003 line 339)
+		NotificationName: nr.Name,                   // Business field
+		NotificationType: string(nr.Spec.Type),      // Business field
+		Priority:         string(nr.Spec.Priority),  // Business field (useful for audit completeness)
+		FinalStatus:      string(nr.Status.Phase),   // Business field (per DD-WEBHOOK-003 line 338)
+		Recipients:       nr.Spec.Recipients,        // Business field (per DD-WEBHOOK-003 line 339)
 	}
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: nr.Name (via audit.SetResource)
 	// - namespace: nr.Namespace (via audit.SetNamespace)
 	// - event_action: "deleted" (via audit.SetEventAction)
-	audit.SetEventData(auditEvent, eventData)
+	audit.SetEventData(auditEvent, payload)
 	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
 		auditEvent.EventType, auditEvent.CorrelationId)
 

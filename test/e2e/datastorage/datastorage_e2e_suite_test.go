@@ -346,6 +346,12 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("Data Storage E2E Test Suite - Cleanup (Process 1)")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// Detect setup failure: if dsClient is nil, BeforeSuite failed
+		setupFailed := dsClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (dsClient is nil)")
+		}
+
 		// Check if we should keep the cluster for debugging
 		// Note: In parallel execution, anyTestFailed may not capture all process failures
 		// Use KEEP_CLUSTER=always to force preservation, or check test exit code
@@ -354,7 +360,8 @@ var _ = SynchronizedAfterSuite(
 		// In SynchronizedAfterSuite, we're in process 1 which may not have run failing tests
 		// The safest approach: always export logs if ANY process reported failures
 		// We'll check this by looking at the captured anyTestFailed flag from process cleanup
-		suiteFailed := anyTestFailed || keepCluster == "true" || keepCluster == "always"
+		// Also check for setup failures (BeforeSuite failures)
+		suiteFailed := setupFailed || anyTestFailed || keepCluster == "true" || keepCluster == "always"
 
 		// DD-TEST-007: E2E Coverage Capture Standard
 		// Extract coverage from Kind node before cluster deletion

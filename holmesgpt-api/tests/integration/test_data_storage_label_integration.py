@@ -54,11 +54,11 @@ from src.toolsets.workflow_catalog import (
 )
 
 # OpenAPI client imports for direct API contract tests
-from src.clients.datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
-from src.clients.datastorage.models.workflow_search_request import WorkflowSearchRequest
-from src.clients.datastorage.models.workflow_search_filters import WorkflowSearchFilters
-from src.clients.datastorage.api_client import ApiClient
-from src.clients.datastorage.configuration import Configuration
+from datastorage.api.workflow_catalog_api_api import WorkflowCatalogAPIApi
+from datastorage.models.workflow_search_request import WorkflowSearchRequest
+from datastorage.models.workflow_search_filters import WorkflowSearchFilters
+from datastorage.api_client import ApiClient
+from datastorage.configuration import Configuration
 
 from tests.integration.conftest import (
     DATA_STORAGE_URL,

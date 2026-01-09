@@ -67,6 +67,10 @@ import uuid  # noqa: E402
 from datetime import datetime, timezone  # noqa: E402
 from typing import Any, Dict, List, Optional  # noqa: E402
 
+# OpenAPI-generated DataStorage client types (DD-API-001)
+from datastorage.models.audit_event_request import AuditEventRequest  # noqa: E402
+from datastorage.models.audit_event_request_event_data import AuditEventRequestEventData  # noqa: E402
+
 # Local imports - structured audit event data models (ADR-034 compliance)
 from src.models.audit_models import (  # noqa: E402
     LLMRequestEventData,
@@ -95,10 +99,12 @@ def _create_adr034_event(
     operation: str,
     outcome: str,
     correlation_id: str,
-    event_data: Dict[str, Any]
-) -> Dict[str, Any]:
+    event_data: Any  # Pydantic model (LLMRequestEventData, etc.)
+) -> AuditEventRequest:
     """
-    Create an ADR-034 compliant audit event envelope.
+    Create an ADR-034 compliant audit event envelope using OpenAPI types.
+
+    V3.0: OGEN MIGRATION - Returns OpenAPI-generated Pydantic model instead of dict.
 
     This is the canonical format for all audit events per ADR-034.
     Data Storage expects this exact structure.
@@ -108,24 +114,28 @@ def _create_adr034_event(
         operation: Action performed (e.g., "llm_request_sent")
         outcome: Result status ("success", "failure", "pending")
         correlation_id: Remediation ID for correlation
-        event_data: Service-specific payload (JSONB)
+        event_data: Service-specific Pydantic payload (LLMRequestEventData, etc.)
 
     Returns:
-        ADR-034 compliant event dictionary
+        AuditEventRequest (OpenAPI-generated Pydantic model)
     """
-    return {
-        # ADR-034 Required Fields (OpenAPI spec field names per Data Storage Service)
-        "version": AUDIT_VERSION,
-        "event_category": SERVICE_NAME,       # Service name (OpenAPI: event_category)
-        "event_type": event_type,
-        "event_timestamp": _get_utc_timestamp(),
-        "correlation_id": correlation_id,
-        "event_action": operation,            # Action performed (OpenAPI: event_action)
-        "event_outcome": outcome,             # Result status (OpenAPI: event_outcome)
-        "event_data": event_data,             # Service-specific JSONB payload
-        "actor_type": "Service",              # Actor type per ADR-034
-        "actor_id": "holmesgpt-api",          # Service identifier per DD-AUDIT-005
-    }
+    # Wrap event_data in discriminated union type
+    # OpenAPI client expects AuditEventRequestEventData (discriminated union)
+    event_data_union = AuditEventRequestEventData(actual_instance=event_data)
+
+    return AuditEventRequest(
+        # ADR-034 Required Fields (OpenAPI spec per Data Storage Service)
+        version=AUDIT_VERSION,
+        event_category=SERVICE_NAME,  # Service name (OpenAPI: event_category)
+        event_type=event_type,
+        event_timestamp=_get_utc_timestamp(),
+        correlation_id=correlation_id,
+        event_action=operation,  # Action performed (OpenAPI: event_action)
+        event_outcome=outcome,  # Result status (OpenAPI: event_outcome)
+        event_data=event_data_union,  # Discriminated union wrapper
+        actor_type="Service",  # Actor type per ADR-034
+        actor_id="holmesgpt-api",  # Service identifier per DD-AUDIT-005
+    )
 
 
 def create_llm_request_event(
@@ -135,7 +145,7 @@ def create_llm_request_event(
     prompt: str,
     toolsets_enabled: List[str],
     mcp_servers: Optional[List[str]] = None
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create an LLM request audit event (ADR-034 compliant)
 
@@ -171,7 +181,7 @@ def create_llm_request_event(
         event_type="llm_request",
         operation="llm_request_sent",
         outcome="success",
-        correlation_id=remediation_id or "",
+        correlation_id=remediation_id or "unknown",
         event_data=event_data_model.model_dump()
     )
 
@@ -183,7 +193,7 @@ def create_llm_response_event(
     analysis_length: int,
     analysis_preview: str,
     tool_call_count: int
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create an LLM response audit event (ADR-034 compliant)
 
@@ -216,7 +226,7 @@ def create_llm_response_event(
         event_type="llm_response",
         operation="llm_response_received",
         outcome="success" if has_analysis else "failure",
-        correlation_id=remediation_id or "",
+        correlation_id=remediation_id or "unknown",
         event_data=event_data_model.model_dump()
     )
 
@@ -228,7 +238,7 @@ def create_tool_call_event(
     tool_name: str,
     tool_arguments: Dict[str, Any],
     tool_result: Any
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create a tool call audit event (ADR-034 compliant)
 
@@ -265,7 +275,7 @@ def create_tool_call_event(
         event_type="llm_tool_call",
         operation="tool_invoked",
         outcome="success",
-        correlation_id=remediation_id or "",
+        correlation_id=remediation_id or "unknown",
         event_data=event_data_model.model_dump()
     )
 
@@ -279,7 +289,7 @@ def create_validation_attempt_event(
     errors: List[str],
     workflow_id: Optional[str] = None,
     human_review_reason: Optional[str] = None
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create a workflow validation attempt audit event (ADR-034 compliant)
 
@@ -334,7 +344,7 @@ def create_validation_attempt_event(
         event_type="workflow_validation_attempt",
         operation="validation_executed",
         outcome=outcome,
-        correlation_id=remediation_id or "",
+        correlation_id=remediation_id or "unknown",
         event_data=event_data_model.model_dump()
     )
 
@@ -343,7 +353,7 @@ def create_hapi_response_complete_event(
     incident_id: str,
     remediation_id: str,
     response_data: Dict[str, Any]
-) -> Dict[str, Any]:
+) -> AuditEventRequest:
     """
     Create HAPI response completion audit event (ADR-034 compliant)
 

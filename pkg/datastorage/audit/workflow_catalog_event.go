@@ -16,8 +16,10 @@ limitations under the License.
 package audit
 
 import (
+	"github.com/google/uuid"
+
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -39,8 +41,8 @@ import (
 
 // NewWorkflowCreatedAuditEvent creates an audit event for workflow creation
 // BR-STORAGE-183: Audit workflow creation (business logic operation)
-// DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*dsgen.AuditEventRequest, error) {
+// DD-AUDIT-004 V2.0: Uses OpenAPI-generated typed schemas (no unstructured data)
+func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.created")
@@ -52,34 +54,57 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*dsgen.
 	pkgaudit.SetCorrelationID(auditEvent, workflow.WorkflowID)
 	auditEvent.Version = "1.0"
 
-	// Event data payload
-	payload := map[string]interface{}{
-		"workflow_id":       workflow.WorkflowID,
-		"workflow_name":     workflow.WorkflowName,
-		"version":           workflow.Version,
-		"status":            workflow.Status,
-		"is_latest_version": workflow.IsLatestVersion,
-		"execution_engine":  workflow.ExecutionEngine,
-		"name":              workflow.Name,
-		"description":       workflow.Description,
-		"labels":            workflow.Labels,
+	// V2.0: Use OpenAPI-generated typed schema (eliminates map[string]interface{})
+	// Convert workflow.Labels (MandatoryLabels struct) to map[string]interface{}
+	labelsMap := make(map[string]interface{})
+	if workflow.Labels.SignalType != "" {
+		labelsMap["signal_type"] = workflow.Labels.SignalType
+	}
+	if workflow.Labels.Severity != "" {
+		labelsMap["severity"] = workflow.Labels.Severity
+	}
+	if workflow.Labels.Component != "" {
+		labelsMap["component"] = workflow.Labels.Component
+	}
+	if workflow.Labels.Environment != "" {
+		labelsMap["environment"] = workflow.Labels.Environment
+	}
+	if workflow.Labels.Priority != "" {
+		labelsMap["priority"] = workflow.Labels.Priority
 	}
 
-	// Create common envelope format event_data
-	eventData := pkgaudit.NewEventData("datastorage", "workflow_created", "success", payload)
-	eventDataMap, err := pkgaudit.EnvelopeToMap(eventData)
+	// Parse WorkflowID as UUID
+	workflowUUID, err := uuid.Parse(workflow.WorkflowID)
 	if err != nil {
-		return nil, err
+		// Fallback: use zero UUID if parse fails
+		workflowUUID = uuid.Nil
 	}
-	pkgaudit.SetEventData(auditEvent, eventDataMap)
+
+	// Convert status enum
+	status := ogenclient.WorkflowCatalogCreatedPayloadStatus(workflow.Status)
+
+	payload := &ogenclient.WorkflowCatalogCreatedPayload{
+		WorkflowId:       workflowUUID,
+		WorkflowName:     workflow.WorkflowName,
+		Version:          workflow.Version,
+		Status:           status,
+		IsLatestVersion:  workflow.IsLatestVersion,
+		ExecutionEngine:  string(workflow.ExecutionEngine), // Convert enum to string
+		Name:             workflow.Name,
+		Description:      &workflow.Description,
+		Labels:           &labelsMap,
+	}
+
+	// Direct assignment (no envelope, no map conversion)
+	pkgaudit.SetEventData(auditEvent, payload)
 
 	return auditEvent, nil
 }
 
 // NewWorkflowUpdatedAuditEvent creates an audit event for workflow updates
 // BR-STORAGE-183: Audit workflow updates (business logic operation)
-// DD-AUDIT-002 V2.0: Uses OpenAPI types directly
-func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields map[string]interface{}) (*dsgen.AuditEventRequest, error) {
+// DD-AUDIT-004 V2.0: Uses OpenAPI-generated typed schemas (no unstructured data)
+func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields map[string]interface{}) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.updated")
@@ -91,19 +116,21 @@ func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields map[string]in
 	pkgaudit.SetCorrelationID(auditEvent, workflowID)
 	auditEvent.Version = "1.0"
 
-	// Event data payload
-	payload := map[string]interface{}{
-		"workflow_id":    workflowID,
-		"updated_fields": updatedFields,
+	// V2.0: Use OpenAPI-generated typed schema (eliminates map[string]interface{})
+	// Parse WorkflowID as UUID
+	workflowUUID, err := uuid.Parse(workflowID)
+	if err != nil {
+		// Fallback: use zero UUID if parse fails
+		workflowUUID = uuid.Nil
 	}
 
-	// Create common envelope format event_data
-	eventData := pkgaudit.NewEventData("datastorage", "workflow_updated", "success", payload)
-	eventDataMap, err := pkgaudit.EnvelopeToMap(eventData)
-	if err != nil {
-		return nil, err
+	payload := &ogenclient.WorkflowCatalogUpdatedPayload{
+		WorkflowId:    workflowUUID,
+		UpdatedFields: updatedFields, // Not a pointer in generated type
 	}
-	pkgaudit.SetEventData(auditEvent, eventDataMap)
+
+	// Direct assignment (no envelope, no map conversion)
+	pkgaudit.SetEventData(auditEvent, payload)
 
 	return auditEvent, nil
 }

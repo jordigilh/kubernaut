@@ -98,7 +98,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 		By("Waiting for audit event to be persisted to Data Storage (DD-TESTING-001)")
 		// Webhook uses nr.Name as correlation ID
 		// Per DD-TESTING-001: Use Eventually() for async polling, NOT time.Sleep()
-		deleteEventType := "notification.request.deleted"
+		deleteEventType := "notification.request.cancelled"
 		events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001 Pattern 4)")
@@ -242,7 +242,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 		By("Waiting for audit event to be persisted (DD-TESTING-001)")
 		// Webhook uses nr.Name as correlation ID
-		deleteEventType := "notification.request.deleted"
+		deleteEventType := "notification.request.cancelled"
 		events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001)")

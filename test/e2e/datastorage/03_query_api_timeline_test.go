@@ -108,7 +108,8 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 
 		// Generate unique correlation ID for this test
 		correlationID = fmt.Sprintf("query-test-%s", testNamespace)
-		startTime = time.Now()
+		// Use timestamp 15 minutes in the past to account for clock skew and event creation time
+		startTime = time.Now().UTC().Add(-15 * time.Minute)
 
 		testLogger.Info("✅ Test services ready", "namespace", testNamespace)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -131,6 +132,8 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("📝 Step 1: Creating 10 audit events across 3 services...")
 
 		// Gateway events (4 events)
+		// Use timestamps 10 minutes in the past to avoid clock skew issues between host and container
+		baseTimestamp := time.Now().UTC().Add(-10 * time.Minute)
 		for i := 1; i <= 4; i++ {
 			eventData, err := audit.NewGatewayEvent("signal.received").
 				WithSignalType("prometheus").
@@ -144,7 +147,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
 				EventAction:    fmt.Sprintf("gateway_op_%d", i),
 				EventType:      "gateway.signal.received",
-				EventTimestamp: time.Now().UTC(),
+				EventTimestamp: baseTimestamp.Add(time.Duration(i) * time.Second),
 				CorrelationId:  correlationID,
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
@@ -169,7 +172,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
 				EventAction:    fmt.Sprintf("ai_op_%d", i),
 				EventType:      "analysis.analysis.completed",
-				EventTimestamp: time.Now().UTC(),
+				EventTimestamp: baseTimestamp.Add(time.Duration(4+i) * time.Second),
 				CorrelationId:  correlationID,
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
@@ -194,7 +197,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventCategory:  dsgen.AuditEventRequestEventCategoryWorkflow,
 				EventAction:    fmt.Sprintf("workflow_op_%d", i),
 				EventType:      "workflow.workflow.completed",
-				EventTimestamp: time.Now().UTC(),
+				EventTimestamp: baseTimestamp.Add(time.Duration(7+i) * time.Second),
 				CorrelationId:  correlationID,
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,

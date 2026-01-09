@@ -62,28 +62,28 @@ class TestAuditEventStructure:
         ]
 
         for field in envelope_fields:
-            assert field in event, f"Missing ADR-034 envelope field: {field}"
+            assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event["version"] == "1.0"
-        assert event["event_category"] == "analysis"  # ADR-034 v1.2: HolmesGPT API is "analysis" service
-        assert event["event_type"] == "llm_request"
-        assert event["correlation_id"] == "rem-456"
-        assert event["event_action"] == "llm_request_sent"
-        assert event["event_outcome"] == "success"
+        assert event.version == "1.0"
+        assert event.event_category == "analysis"  # ADR-034 v1.2: HolmesGPT API is "analysis" service
+        assert event.event_type == "llm_request"
+        assert event.correlation_id == "rem-456"
+        assert event.event_action == "llm_request_sent"
+        assert event.event_outcome == "success"
 
         # Service-specific fields (in event_data)
-        event_data = event["event_data"]
+        event_data = event.event_data.actual_instance
         data_fields = [
             "event_id", "incident_id", "model",
             "prompt_length", "toolsets_enabled"
         ]
 
         for field in data_fields:
-            assert field in event_data, f"Missing event_data field: {field}"
+            assert hasattr(event_data, field), f"Missing event_data field: {field}"
 
-        assert event_data["incident_id"] == "inc-123"
-        assert event_data["model"] == "gpt-4"
+        assert event_data.incident_id == "inc-123"
+        assert event_data.model == "gpt-4"
 
     def test_llm_response_event_structure(self):
         """ADR-034: LLM response event has required envelope and data fields."""
@@ -105,22 +105,22 @@ class TestAuditEventStructure:
         ]
 
         for field in envelope_fields:
-            assert field in event, f"Missing ADR-034 envelope field: {field}"
+            assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event["event_type"] == "llm_response"
-        assert event["event_action"] == "llm_response_received"
-        assert event["event_outcome"] == "success"  # has_analysis=True
+        assert event.event_type == "llm_response"
+        assert event.event_action == "llm_response_received"
+        assert event.event_outcome == "success"  # has_analysis=True
 
         # Service-specific fields (in event_data)
-        event_data = event["event_data"]
+        event_data = event.event_data.actual_instance
         data_fields = [
             "event_id", "incident_id",
             "has_analysis", "analysis_length", "tool_call_count"
         ]
 
         for field in data_fields:
-            assert field in event_data, f"Missing event_data field: {field}"
+            assert hasattr(event_data, field), f"Missing event_data field: {field}"
 
     def test_llm_response_failure_outcome(self):
         """ADR-034: LLM response with no analysis has failure outcome."""
@@ -135,7 +135,7 @@ class TestAuditEventStructure:
             tool_call_count=0
         )
 
-        assert event["event_outcome"] == "failure"
+        assert event.event_outcome == "failure"
 
     def test_validation_attempt_event_structure(self):
         """DD-HAPI-002 v1.2: Validation attempt event has required fields."""
@@ -159,15 +159,15 @@ class TestAuditEventStructure:
         ]
 
         for field in envelope_fields:
-            assert field in event, f"Missing ADR-034 envelope field: {field}"
+            assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event["event_type"] == "workflow_validation_attempt"
-        assert event["event_action"] == "validation_executed"
-        assert event["event_outcome"] == "pending"  # Will retry (attempt 1 of 3)
+        assert event.event_type == "workflow_validation_attempt"
+        assert event.event_action == "validation_executed"
+        assert event.event_outcome == "pending"  # Will retry (attempt 1 of 3)
 
         # Service-specific fields (in event_data)
-        event_data = event["event_data"]
+        event_data = event.event_data.actual_instance
         data_fields = [
             "event_id", "incident_id",
             "attempt", "max_attempts", "is_valid",
@@ -175,9 +175,9 @@ class TestAuditEventStructure:
         ]
 
         for field in data_fields:
-            assert field in event_data, f"Missing event_data field: {field}"
+            assert hasattr(event_data, field), f"Missing event_data field: {field}"
 
-        assert event_data["is_final_attempt"] is False  # attempt 1 of 3
+        assert event_data.is_final_attempt is False  # attempt 1 of 3
 
     def test_validation_attempt_final_attempt_flag(self):
         """DD-HAPI-002: is_final_attempt and outcome set correctly."""
@@ -189,8 +189,8 @@ class TestAuditEventStructure:
             attempt=2, max_attempts=3,
             is_valid=False, errors=["Error"]
         )
-        assert event1["event_data"]["is_final_attempt"] is False
-        assert event1["event_outcome"] == "pending"
+        assert event1.event_data.actual_instance.is_final_attempt is False
+        assert event1.event_outcome == "pending"
 
         # Final attempt - outcome should be "failure"
         event2 = create_validation_attempt_event(
@@ -198,8 +198,8 @@ class TestAuditEventStructure:
             attempt=3, max_attempts=3,
             is_valid=False, errors=["Error"]
         )
-        assert event2["event_data"]["is_final_attempt"] is True
-        assert event2["event_outcome"] == "failure"
+        assert event2.event_data.actual_instance.is_final_attempt is True
+        assert event2.event_outcome == "failure"
 
         # Valid - outcome should be "success"
         event3 = create_validation_attempt_event(
@@ -229,15 +229,15 @@ class TestAuditEventStructure:
         ]
 
         for field in envelope_fields:
-            assert field in event, f"Missing ADR-034 envelope field: {field}"
+            assert hasattr(event, field), f"Missing ADR-034 envelope field: {field}"
 
         # Verify envelope values
-        assert event["event_type"] == "llm_tool_call"
-        assert event["event_action"] == "tool_invoked"
-        assert event["event_outcome"] == "success"
+        assert event.event_type == "llm_tool_call"
+        assert event.event_action == "tool_invoked"
+        assert event.event_outcome == "success"
 
         # Service-specific fields (in event_data)
-        event_data = event["event_data"]
+        event_data = event.event_data.actual_instance
         data_fields = [
             "event_id", "incident_id",
             "tool_call_index", "tool_name",
@@ -245,7 +245,7 @@ class TestAuditEventStructure:
         ]
 
         for field in data_fields:
-            assert field in event_data, f"Missing event_data field: {field}"
+            assert hasattr(event_data, field), f"Missing event_data field: {field}"
 
     def test_correlation_id_uses_remediation_id(self):
         """ADR-034: correlation_id maps to remediation_id for audit trail."""
@@ -259,10 +259,10 @@ class TestAuditEventStructure:
             toolsets_enabled=[]
         )
 
-        assert event["correlation_id"] == "rem-456"
+        assert event.correlation_id == "rem-456"
 
     def test_empty_remediation_id_handled(self):
-        """ADR-034: Empty remediation_id results in empty correlation_id."""
+        """ADR-034: Empty remediation_id uses 'unknown' as correlation_id (minLength: 1)."""
         from src.audit.events import create_llm_request_event
 
         event = create_llm_request_event(
@@ -273,4 +273,4 @@ class TestAuditEventStructure:
             toolsets_enabled=[]
         )
 
-        assert event["correlation_id"] == ""
+        assert event.correlation_id == "unknown"

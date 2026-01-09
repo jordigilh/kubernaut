@@ -188,7 +188,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		logsCmd.Stderr = GinkgoWriter
 		_ = logsCmd.Run()
 		GinkgoWriter.Println("")
-		
+
 		infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
 	})
 

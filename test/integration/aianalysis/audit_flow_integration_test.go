@@ -104,7 +104,7 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 //
 // See: DD-TESTING-001 for audit event validation standards
 // ========================================
-var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Serial, Label("integration", "audit", "flow"), func() {
+var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Serial, Label("integration", "audit", "flow"), func() {
 	var (
 		ctx            context.Context
 		namespace      string
@@ -301,16 +301,16 @@ var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Se
 			transitionCount := 0
 			for i, event := range events {
 				if event.EventType == aiaudit.EventTypePhaseTransition {
-					transitionCount++
-					// EventData is interface{}, could be map or struct
-					// Try multiple ways to access the data
-					if eventData, ok := event.EventData.(map[string]interface{}); ok {
-						fromPhase := eventData["from_phase"]
-						toPhase := eventData["to_phase"]
-						GinkgoWriter.Printf("  Transition %d (event %d): %v → %v\n", transitionCount, i+1, fromPhase, toPhase)
-					} else {
-						GinkgoWriter.Printf("  Transition %d (event %d): [event_data type: %T]\n", transitionCount, i+1, event.EventData)
-					}
+			transitionCount++
+			// EventData is interface{}, could be map or struct
+			// Integration tests receive map[string]interface{} from HTTP API
+			if eventData, ok := event.EventData.(map[string]interface{}); ok {
+				fromPhase := eventData["from_phase"]
+				toPhase := eventData["to_phase"]
+				GinkgoWriter.Printf("  Transition %d (event %d): %v → %v\n", transitionCount, i+1, fromPhase, toPhase)
+			} else {
+				GinkgoWriter.Printf("  Transition %d (event %d): [event_data type: %T]\n", transitionCount, i+1, event.EventData)
+			}
 				}
 			}
 			GinkgoWriter.Printf("  Total phase transitions: %d (expected: 3)\n", transitionCount)
@@ -323,21 +323,21 @@ var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Se
 
 			// DD-TESTING-001 Pattern 5 (lines 303-334): Validate structured event_data fields
 			// Extract actual phase transitions from event_data
-			phaseTransitions := make(map[string]bool)
-			for _, event := range events {
-				if event.EventType == aiaudit.EventTypePhaseTransition {
-					if eventData, ok := event.EventData.(map[string]interface{}); ok {
-						// FIXED: AI Analysis uses "old_phase"/"new_phase" (not "from_phase"/"to_phase")
-						// See: pkg/aianalysis/audit/event_types.go:54-57
-						oldPhase, hasOld := eventData["old_phase"].(string)
-						newPhase, hasNew := eventData["new_phase"].(string)
-						if hasOld && hasNew {
-							transitionKey := fmt.Sprintf("%s→%s", oldPhase, newPhase)
-							phaseTransitions[transitionKey] = true
-						}
-					}
+	phaseTransitions := make(map[string]bool)
+	for _, event := range events {
+		if event.EventType == aiaudit.EventTypePhaseTransition {
+			if eventData, ok := event.EventData.(map[string]interface{}); ok {
+				// FIXED: AI Analysis uses "old_phase"/"new_phase" (not "from_phase"/"to_phase")
+				// See: pkg/aianalysis/audit/event_types.go:54-57
+				oldPhase, hasOld := eventData["old_phase"].(string)
+				newPhase, hasNew := eventData["new_phase"].(string)
+				if hasOld && hasNew {
+					transitionKey := fmt.Sprintf("%s→%s", oldPhase, newPhase)
+					phaseTransitions[transitionKey] = true
 				}
 			}
+		}
+	}
 
 			// Validate required transitions (BR-AI-050)
 			requiredTransitions := []string{
@@ -480,18 +480,19 @@ var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Se
 				CorrelationID: correlationID,
 			})
 
-			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
-			eventData := event.EventData.(map[string]interface{})
-			Expect(eventData).To(HaveKey("endpoint"), "event_data should include HolmesGPT endpoint")
-			Expect(eventData).To(HaveKey("http_status_code"), "event_data should include HTTP status code")
-			Expect(eventData).To(HaveKey("duration_ms"), "event_data should include call duration")
+		// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
+		// Note: Integration tests receive data from HTTP API as map[string]interface{} (JSON deserialization)
+		eventData := event.EventData.(map[string]interface{})
+		Expect(eventData).To(HaveKey("endpoint"), "event_data should include HolmesGPT endpoint")
+		Expect(eventData).To(HaveKey("http_status_code"), "event_data should include HTTP status code")
+		Expect(eventData).To(HaveKey("duration_ms"), "event_data should include call duration")
 
-			// Validate field values
-			statusCode := int(eventData["http_status_code"].(float64))
-			Expect(statusCode).To(Equal(200), "Successful HolmesGPT call should return 200")
+		// Validate field values
+		statusCode := int(eventData["http_status_code"].(float64))
+		Expect(statusCode).To(Equal(200), "Successful HolmesGPT call should return 200")
 
-			durationMs := int(eventData["duration_ms"].(float64))
-			Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive")
+		durationMs := int(eventData["duration_ms"].(float64))
+		Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive")
 		})
 
 		It("should audit errors during investigation phase", func() {
@@ -677,15 +678,15 @@ var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Se
 				CorrelationID: correlationID,
 			})
 
-			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
-			eventData := event.EventData.(map[string]interface{})
-			Expect(eventData).To(HaveKey("decision"), "event_data should include approval decision")
-			Expect(eventData).To(HaveKey("reason"), "event_data should include decision reason")
+		// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
+		eventData := event.EventData.(map[string]interface{})
+		Expect(eventData).To(HaveKey("decision"), "event_data should include approval decision")
+		Expect(eventData).To(HaveKey("reason"), "event_data should include decision reason")
 
-			// Validate field values
-			decision := eventData["decision"].(string)
-			Expect([]string{"requires_approval", "auto_approved"}).To(ContainElement(decision),
-				"Decision should be either 'requires_approval' or 'auto_approved'")
+		// Validate field values
+		decision := eventData["decision"].(string)
+		Expect([]string{"requires_approval", "auto_approved"}).To(ContainElement(decision),
+			"Decision should be either 'requires_approval' or 'auto_approved'")
 		})
 
 	It("should automatically audit Rego policy evaluations", func() {
@@ -961,19 +962,21 @@ var _ = PDescribe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Se
 			// Business Value: Operators can trace failed HolmesGPT interactions
 			event := events[0]
 
-			// Verify event structure and required fields
-			testutil.ValidateAuditEventHasRequiredFields(event)
-			testutil.ValidateAuditEventDataNotEmpty(event, "http_status_code")
+		// Verify event structure and required fields
+		testutil.ValidateAuditEventHasRequiredFields(event)
 
-			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004 (error scenario)
-			eventData := event.EventData.(map[string]interface{})
-			Expect(eventData).To(HaveKey("endpoint"), "event_data should include HolmesGPT endpoint")
-			Expect(eventData).To(HaveKey("http_status_code"), "event_data should include HTTP status code")
-			Expect(eventData).To(HaveKey("duration_ms"), "event_data should include call duration")
+		// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004 (error scenario)
+		// HTTP API deserialization returns EventData as interface{}, cast to map for field access
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue(), "event_data should be a map (HTTP API deserialization)")
+		Expect(eventData).To(HaveKey("http_status_code"), "Should have http_status_code")
+		Expect(eventData).To(HaveKey("endpoint"), "event_data should include HolmesGPT endpoint")
+		Expect(eventData).To(HaveKey("http_status_code"), "event_data should include HTTP status code")
+		Expect(eventData).To(HaveKey("duration_ms"), "event_data should include call duration")
 
-			// Validate duration is positive (even for failed calls)
-			durationMs := int(eventData["duration_ms"].(float64))
-			Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive even for failed calls")
+		// Validate duration is positive (even for failed calls)
+		durationMs := int(eventData["duration_ms"].(float64))
+		Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive even for failed calls")
 
 			// Verify event matches expected structure
 			// Note: EventOutcome may be success or failure depending on HAPI response

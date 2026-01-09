@@ -44,8 +44,8 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
-	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 )
 
 // ServiceName is the canonical service identifier for audit events.
@@ -160,15 +160,18 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, wfe.Namespace)
 
-	// Gap #5: Custom event_data with selected_workflow_ref
-	eventData := map[string]interface{}{
-		"selected_workflow_ref": map[string]interface{}{
-			"workflow_id":     wfe.Spec.WorkflowRef.WorkflowID,
-			"version":         wfe.Spec.WorkflowRef.Version,
-			"container_image": wfe.Spec.WorkflowRef.ContainerImage,
-		},
+	// Gap #5: Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	payload := ogenclient.WorkflowExecutionAuditPayload{
+		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
+		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
+		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ExecutionName:   wfe.Name,
+		Phase:           string(wfe.Status.Phase),
+		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
-	audit.SetEventData(event, eventData)
+	event.EventData = ogenclient.NewWorkflowExecutionAuditPayloadAuditEventRequestEventData(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
@@ -230,16 +233,19 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, wfe.Namespace)
 
-	// Gap #6: Custom event_data with execution_ref
-	eventData := map[string]interface{}{
-		"execution_ref": map[string]interface{}{
-			"api_version": "tekton.dev/v1",
-			"kind":        "PipelineRun",
-			"name":        pipelineRunName,
-			"namespace":   pipelineRunNamespace,
-		},
+	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	payload := ogenclient.WorkflowExecutionAuditPayload{
+		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
+		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
+		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ExecutionName:   wfe.Name,
+		Phase:           string(wfe.Status.Phase),
+		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
+		PipelineRunName: pipelineRunName,
 	}
-	audit.SetEventData(event, eventData)
+	event.EventData = ogenclient.NewWorkflowExecutionAuditPayloadAuditEventRequestEventData(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
@@ -320,7 +326,8 @@ func (m *Manager) recordAuditEvent(
 
 	// Build structured event data (type-safe per DD-AUDIT-004)
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
-	payload := weconditions.WorkflowExecutionAuditPayload{
+	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	payload := ogenclient.WorkflowExecutionAuditPayload{
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
@@ -331,33 +338,32 @@ func (m *Manager) recordAuditEvent(
 
 	// Add timing info if available
 	if wfe.Status.StartTime != nil {
-		payload.StartedAt = &wfe.Status.StartTime.Time
+		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
 	}
 	if wfe.Status.CompletionTime != nil {
-		payload.CompletedAt = &wfe.Status.CompletionTime.Time
+		payload.CompletedAt.SetTo(wfe.Status.CompletionTime.Time)
 	}
 	if wfe.Status.Duration != "" {
-		payload.Duration = wfe.Status.Duration
+		payload.Duration.SetTo(wfe.Status.Duration)
 	}
 
 	// Add failure details if present
 	if wfe.Status.FailureDetails != nil {
-		payload.FailureReason = wfe.Status.FailureDetails.Reason
-		payload.FailureMessage = wfe.Status.FailureDetails.Message
+		payload.FailureReason.SetTo(wfe.Status.FailureDetails.Reason)
+		payload.FailureMessage.SetTo(wfe.Status.FailureDetails.Message)
 		if wfe.Status.FailureDetails.FailedTaskName != "" {
-			payload.FailedTaskName = wfe.Status.FailureDetails.FailedTaskName
+			payload.FailedTaskName.SetTo(wfe.Status.FailureDetails.FailedTaskName)
 		}
 	}
 
 	// Add PipelineRun reference if present
 	if wfe.Status.PipelineRunRef != nil {
-		payload.PipelineRunName = wfe.Status.PipelineRunRef.Name
+		payload.PipelineRunName.SetTo(wfe.Status.PipelineRunRef.Name)
 	}
 
-	// Set event data using type-safe payload (V2.2 - Direct Assignment)
-	// Per DD-AUDIT-004 v1.3: Direct struct assignment, no conversion needed
-	// Zero unstructured data: payload is structured Go type, SetEventData handles serialization
-	audit.SetEventData(event, payload)
+	// Set event data using ogen union constructor
+	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
+	event.EventData = ogenclient.NewWorkflowExecutionAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event - MANDATORY per ADR-032
 	// ADR-032: "Write Verification - audit write failures must be detected and handled"
@@ -448,15 +454,51 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, wfe.Namespace)
 
-	// Event data with error_details (Gap #7)
-	eventData := map[string]interface{}{
-		"workflow_execution": wfe.Name,
-		"namespace":          wfe.Namespace,
-		"phase":              string(wfe.Status.Phase),
-		// Gap #7: Standardized error_details for SOC2 compliance
-		"error_details": errorDetails,
+	// Build structured event data (type-safe per DD-AUDIT-004)
+	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
+	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	payload := ogenclient.WorkflowExecutionAuditPayload{
+		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
+		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
+		TargetResource:  wfe.Spec.TargetResource,
+		Phase:           string(wfe.Status.Phase),
+		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
+		ExecutionName:   wfe.Name,
 	}
-	audit.SetEventData(event, eventData)
+
+	// BR-AUDIT-005 Gap #7: Standardized error_details for SOC2 compliance
+	if errorDetails != nil {
+		payload.ErrorDetails.SetTo(*errorDetails)
+	}
+
+	// Add timing info if available
+	if wfe.Status.StartTime != nil {
+		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
+	}
+	if wfe.Status.CompletionTime != nil {
+		payload.CompletedAt.SetTo(wfe.Status.CompletionTime.Time)
+	}
+	if wfe.Status.Duration != "" {
+		payload.Duration.SetTo(wfe.Status.Duration)
+	}
+
+	// Add failure details if present
+	if wfe.Status.FailureDetails != nil {
+		payload.FailureReason.SetTo(wfe.Status.FailureDetails.Reason)
+		payload.FailureMessage.SetTo(wfe.Status.FailureDetails.Message)
+		if wfe.Status.FailureDetails.FailedTaskName != "" {
+			payload.FailedTaskName.SetTo(wfe.Status.FailureDetails.FailedTaskName)
+		}
+	}
+
+	// Add PipelineRun reference if present
+	if wfe.Status.PipelineRunRef != nil {
+		payload.PipelineRunName.SetTo(wfe.Status.PipelineRunRef.Name)
+	}
+
+	// Set event data using ogen union constructor
+	// Per OGEN-MIGRATION: Direct assignment with union constructor for type safety
+	event.EventData = ogenclient.NewWorkflowExecutionAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event
 	if err := m.store.StoreAudit(ctx, event); err != nil {

@@ -70,9 +70,9 @@ from src.extensions.recovery.llm_integration import analyze_recovery
 
 # Data Storage client for audit validation (external dependency)
 sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
-from src.clients.datastorage import ApiClient as DataStorageApiClient, Configuration as DataStorageConfiguration
-from src.clients.datastorage.api.audit_write_api_api import AuditWriteAPIApi
-from src.clients.datastorage.models.audit_event import AuditEvent
+from datastorage import ApiClient as DataStorageApiClient, Configuration as DataStorageConfiguration
+from datastorage.api.audit_write_api_api import AuditWriteAPIApi
+from datastorage.models.audit_event import AuditEvent
 
 
 # ========================================

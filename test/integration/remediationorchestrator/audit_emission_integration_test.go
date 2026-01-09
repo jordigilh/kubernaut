@@ -47,7 +47,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	audit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 )
 
@@ -60,13 +60,13 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 
 	var (
 		testNamespace string
-		dsClient      *dsclient.ClientWithResponses
+		dsClient      *ogenclient.Client
 	)
 
 	BeforeEach(func() {
 		// Create Data Storage OpenAPI client (each test needs its own client instance for parallel execution)
 		var err error
-		dsClient, err = dsclient.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage OpenAPI client")
 	})
 
@@ -122,7 +122,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		// Use Eventually because audit events are buffered (FlushInterval: 1s)
 		// Timeout: 90s (conservative, timer works at ~1s but allows for infrastructure delays)
 		eventType := "orchestrator.lifecycle.started"
-		var events []dsclient.AuditEvent
+		var events []ogenclient.AuditEvent
 		Eventually(func() int {
 			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			return len(events)
@@ -135,14 +135,15 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			Expect(string(event.EventOutcome)).To(Equal("pending"), "lifecycle.started uses pending outcome - outcome not yet determined")
 			Expect(event.CorrelationId).To(Equal(correlationID))
 
-			// Validate event_data (JSONB field as interface{})
-			Expect(event.EventData).ToNot(BeNil())
-			eventData, ok := event.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be map[string]interface{}")
-			Expect(eventData).To(HaveKey("rr_name"))
-			Expect(eventData["rr_name"]).To(Equal("rr-lifecycle-started"))
-			Expect(eventData).To(HaveKey("namespace"))
-			Expect(eventData["namespace"]).To(Equal(testNamespace))
+		// Validate event_data (JSONB field as interface{})
+		// Note: Integration tests receive data from HTTP API as map[string]interface{} (JSON deserialization)
+		Expect(event.EventData).ToNot(BeNil())
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue(), "event_data should be map[string]interface{} from HTTP API")
+		Expect(eventData).To(HaveKey("rr_name"))
+		Expect(eventData["rr_name"]).To(Equal("rr-lifecycle-started"))
+		Expect(eventData).To(HaveKey("namespace"))
+		Expect(eventData["namespace"]).To(Equal(testNamespace))
 		})
 	})
 
@@ -182,20 +183,20 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		// Timeout increased to 10s for consistency with other audit event queries (AE-INT-3, AE-INT-4, AE-INT-8)
 		// and to account for audit store flush interval (1s) + network latency + query processing
 		eventType := "orchestrator.phase.transitioned"
-		var transitionEvent *dsclient.AuditEvent
+		var transitionEvent *ogenclient.AuditEvent
 		Eventually(func() bool {
 			events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-			// Find the Processing→Analyzing transition
-			for i, e := range events {
-				if e.EventData != nil {
-					eventData, ok := e.EventData.(map[string]interface{})
-					if ok && eventData["from_phase"] == "Processing" && eventData["to_phase"] == "Analyzing" {
-						transitionEvent = &events[i]
-						return true
-					}
+		// Find the Processing→Analyzing transition
+		for i, e := range events {
+			if e.EventData != nil {
+				eventData, ok := e.EventData.(map[string]interface{})
+				if ok && eventData["from_phase"] == "Processing" && eventData["to_phase"] == "Analyzing" {
+					transitionEvent = &events[i]
+					return true
 				}
 			}
-			return false
+		}
+		return false
 		}, "10s", "500ms").Should(BeTrue(), "Expected Processing→Analyzing transition event after buffer flush")
 
 			// Validate event
@@ -283,7 +284,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		// Timeout increased to 10s to account for system load during full test suite execution
 		// (audit store has 1s flush interval + network latency + query processing)
 		eventType := "orchestrator.lifecycle.completed"
-		var events []dsclient.AuditEvent
+		var events []ogenclient.AuditEvent
 		Eventually(func() int {
 			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			return len(events)
@@ -295,12 +296,12 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			Expect(event.EventAction).To(Equal("completed"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 
-			// Validate event_data
-			Expect(event.EventData).ToNot(BeNil())
-			eventData, ok := event.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(eventData).To(HaveKey("outcome"))
-			Expect(eventData["outcome"]).To(Equal("Remediated")) // Actual value from controller
+		// Validate event_data
+		Expect(event.EventData).ToNot(BeNil())
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(eventData).To(HaveKey("outcome"))
+		Expect(eventData["outcome"]).To(Equal("Remediated")) // Actual value from controller
 		})
 	})
 
@@ -339,11 +340,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		// Per DD-AUDIT-003: orchestrator.lifecycle.completed has outcome=success OR outcome=failure
 		// Timeout increased to 10s for consistency with other audit tests and to account for query/filter overhead
 		eventType := "orchestrator.lifecycle.completed"
-		var failureEvents []dsclient.AuditEvent
+		var failureEvents []ogenclient.AuditEvent
 		Eventually(func() int {
 			allEvents := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			// Filter for failure outcome
-			failureEvents = []dsclient.AuditEvent{}
+			failureEvents = []ogenclient.AuditEvent{}
 			for _, e := range allEvents {
 				if string(e.EventOutcome) == "failure" {
 					failureEvents = append(failureEvents, e)
@@ -358,13 +359,13 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		Expect(event.EventAction).To(Equal("completed"))
 		Expect(string(event.EventOutcome)).To(Equal("failure"))
 
-		// Validate event_data
-		Expect(event.EventData).ToNot(BeNil())
-		eventData, ok := event.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue())
-		Expect(eventData).To(HaveKey("failure_phase"))
-		// Per reconciler.go:454 - failurePhase is "signal_processing" when SP fails
-		Expect(eventData["failure_phase"]).To(Equal("signal_processing"))
+	// Validate event_data
+	Expect(event.EventData).ToNot(BeNil())
+	eventData, ok := event.EventData.(map[string]interface{})
+	Expect(ok).To(BeTrue())
+	Expect(eventData).To(HaveKey("failure_phase"))
+	// Per reconciler.go:454 - failurePhase is "signal_processing" when SP fails
+	Expect(eventData["failure_phase"]).To(Equal("signal_processing"))
 		})
 	})
 
@@ -430,7 +431,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		// Per DataStorage batch flushing: Default 60s flush interval in integration tests
 		// Use 90s timeout to account for: 60s flush + 30s safety margin for processing
 		eventType := "orchestrator.approval.requested"
-		var events []dsclient.AuditEvent
+		var events []ogenclient.AuditEvent
 		Eventually(func() int {
 			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			return len(events)
@@ -442,11 +443,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		Expect(event.EventAction).To(Equal(audit.ActionApprovalRequested)) // ✅ Use authoritative constant
 		Expect(string(event.EventOutcome)).To(Equal("pending"))
 
-			// Validate event_data
-			Expect(event.EventData).ToNot(BeNil())
-			eventData, ok := event.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(eventData).To(HaveKey("approval_reason"))
+		// Validate event_data
+		Expect(event.EventData).ToNot(BeNil())
+		eventData, ok := event.EventData.(map[string]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(eventData).To(HaveKey("approval_reason"))
 		})
 	})
 
@@ -468,7 +469,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 		// Query for any audit event from this RR using Eventually (accounts for buffer flush)
 		// Timeout increased to 10s for consistency with other audit event queries
 		eventType := "orchestrator.lifecycle.started"
-		var events []dsclient.AuditEvent
+		var events []ogenclient.AuditEvent
 		Eventually(func() int {
 			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
 			return len(events)
@@ -491,13 +492,13 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 })
 
 // queryAuditEventsOpenAPI queries Data Storage using OpenAPI client for audit events by correlation_id and event_type
-func queryAuditEventsOpenAPI(client *dsclient.ClientWithResponses, correlationID, eventType string) []dsclient.AuditEvent {
+func queryAuditEventsOpenAPI(client *ogenclient.Client, correlationID, eventType string) []ogenclient.AuditEvent {
 	// Use the OpenAPI client method QueryAuditEventsWithResponse
 	// Per ADR-034 v1.2: event_category is MANDATORY for queries
 	// Use context.Background() for query context (safe for parallel test execution)
 	queryCtx := context.Background()
 	eventCategory := "orchestration" // RO audit events use "orchestration" category
-	params := &dsclient.QueryAuditEventsParams{
+	params := &ogenclient.QueryAuditEventsParams{
 		CorrelationId: &correlationID,
 		EventCategory: &eventCategory, // ✅ Required per ADR-034 v1.2 (matches pkg/remediationorchestrator/audit/audit.go)
 		EventType:     &eventType,

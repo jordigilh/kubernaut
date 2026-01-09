@@ -24,7 +24,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
 

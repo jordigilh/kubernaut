@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // AuditStore provides non-blocking audit event storage with asynchronous buffered writes.
@@ -37,7 +37,7 @@ type AuditStore interface {
 	// the event is dropped and an error is returned, but the service continues operating.
 	//
 	// DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
-	StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error
+	StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error
 
 	// Flush forces an immediate write of all buffered events to DataStorage.
 	//
@@ -81,7 +81,7 @@ type DataStorageClient interface {
 	// Returns an error if the write fails. The caller is responsible for retry logic.
 	//
 	// DD-AUDIT-002 V2.0: Uses OpenAPI-generated types
-	StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error
+	StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error
 }
 
 // BufferedAuditStore implements AuditStore with asynchronous buffered writes.
@@ -100,7 +100,7 @@ type DataStorageClient interface {
 // DD-AUDIT-002 V2.0: Updated to use OpenAPI types directly
 // DD-AUDIT-002 V3.0: Removed client-side DLQ (over-engineered, server-side DLQ sufficient)
 type BufferedAuditStore struct {
-	buffer     chan *dsgen.AuditEventRequest
+	buffer     chan *ogenclient.AuditEventRequest
 	flushChan  chan chan error // Channel to signal flush request and receive completion
 	client     DataStorageClient
 	logger     logr.Logger
@@ -144,7 +144,7 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 	}
 
 	store := &BufferedAuditStore{
-		buffer:    make(chan *dsgen.AuditEventRequest, config.BufferSize),
+		buffer:    make(chan *ogenclient.AuditEventRequest, config.BufferSize),
 		flushChan: make(chan chan error, 1), // Buffered to prevent deadlock
 		client:    client,
 		logger:    logger.WithName("audit-store"),
@@ -179,12 +179,12 @@ func NewBufferedStore(client DataStorageClient, config Config, serviceName strin
 // Returns an error if:
 // - The event fails validation (missing required fields)
 // - The buffer is full (event is dropped, but service continues)
-func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	// DEBUG: Log entry to StoreAudit (E2E debugging - Dec 28, 2025)
 	s.logger.Info("🔍 StoreAudit called",
 		"event_type", event.EventType,
 		"event_action", event.EventAction,
-		"correlation_id", event.CorrelationId,
+		"correlation_id", event.CorrelationID,
 		"buffer_capacity", cap(s.buffer),
 		"buffer_current_size", len(s.buffer))
 
@@ -208,7 +208,7 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditE
 		// DEBUG: Event successfully added to buffer
 		s.logger.Info("✅ Event buffered successfully",
 			"event_type", event.EventType,
-			"correlation_id", event.CorrelationId,
+			"correlation_id", event.CorrelationID,
 			"buffer_size_after", len(s.buffer),
 			"total_buffered", newCount)
 		return nil
@@ -220,14 +220,14 @@ func (s *BufferedAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditE
 
 		s.logger.Info("Audit buffer full, event dropped",
 			"event_type", event.EventType,
-			"correlation_id", event.CorrelationId,
+			"correlation_id", event.CorrelationID,
 			"buffered_count", atomic.LoadInt64(&s.bufferedCount),
 			"dropped_count", atomic.LoadInt64(&s.droppedCount),
 		)
 
 		// DD-AUDIT-002 V3.0: Return error to inform caller of data loss
 		// Buffer full indicates system overload - fix by increasing buffer size or reducing load
-		return fmt.Errorf("audit buffer full: event dropped (correlation_id=%s)", event.CorrelationId)
+		return fmt.Errorf("audit buffer full: event dropped (correlation_id=%s)", event.CorrelationID)
 	}
 }
 
@@ -354,7 +354,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 		"buffer_size", s.config.BufferSize,
 		"start_time", startTime.Format(time.RFC3339Nano))
 
-	batch := make([]*dsgen.AuditEventRequest, 0, s.config.BatchSize)
+	batch := make([]*ogenclient.AuditEventRequest, 0, s.config.BatchSize)
 
 	for {
 		select {
@@ -491,7 +491,7 @@ func (s *BufferedAuditStore) backgroundWriter() {
 // - Attempt 3: 4 seconds delay
 // - Attempt 4: 9 seconds delay
 // - After MaxRetries: Drop batch and log
-func (s *BufferedAuditStore) writeBatchWithRetry(batch []*dsgen.AuditEventRequest) {
+func (s *BufferedAuditStore) writeBatchWithRetry(batch []*ogenclient.AuditEventRequest) {
 	ctx := context.Background()
 
 	start := time.Now()

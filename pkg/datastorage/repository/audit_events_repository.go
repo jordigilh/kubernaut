@@ -300,9 +300,27 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	))
 
 	// Marshal event_data to JSONB
+	// CRITICAL: Normalize event_data through JSON round-trip to ensure hash consistency
+	// PostgreSQL JSONB stores and returns JSON with normalized number types (all numbers become float64 in Go).
+	// To ensure the hash calculated during INSERT matches the hash during VERIFICATION,
+	// we must normalize event_data by round-tripping through JSON before hashing.
 	eventDataJSON, err := json.Marshal(event.EventData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal event_data: %w", err)
+	}
+	
+	// Normalize: unmarshal and remarshal to match PostgreSQL's representation
+	var normalizedEventData map[string]interface{}
+	if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
+		if err := json.Unmarshal(eventDataJSON, &normalizedEventData); err != nil {
+			return nil, fmt.Errorf("failed to normalize event_data: %w", err)
+		}
+		event.EventData = normalizedEventData // Replace with normalized version for hash calculation
+		// Re-marshal for database storage
+		eventDataJSON, err = json.Marshal(normalizedEventData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to remarshal normalized event_data: %w", err)
+		}
 	}
 
 	// Prepare SQL statement (28 columns - added event_version, parent_event_date for FK constraint)
@@ -314,6 +332,13 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	version := event.Version
 	if version == "" {
 		version = "1.0"
+	}
+
+	// CRITICAL: Set default retention days BEFORE hash calculation
+	// This ensures the hash includes the correct retention_days value (2555)
+	// instead of 0, matching what will be read back from the DB during verification.
+	if event.RetentionDays == 0 {
+		event.RetentionDays = 2555
 	}
 
 	// ========================================
@@ -393,14 +418,14 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		durationMs = sql.NullInt32{Int32: int32(event.DurationMs), Valid: true}
 	}
 
-	// Set default retention days if not specified (ADR-034: 7 years = 2555 days)
+	// Note: event.RetentionDays is already defaulted to 2555 above (before hash calculation)
+	// so we can use it directly here
 	retentionDays := event.RetentionDays
-	if retentionDays == 0 {
-		retentionDays = 2555
-	}
 
 	// Execute query (ADR-034 schema + Gap #9 hash chain + Gap #8 legal hold - 30 parameters)
-	var returnedTimestamp time.Time
+	// Note: We ignore the RETURNING event_timestamp because we already have the timestamp
+	// that was used for hash calculation (modifying it would break hash verification)
+	var ignoredTimestamp time.Time // DB-returned timestamp (not used to preserve hash integrity)
 	err = tx.QueryRowContext(ctx, query,
 		event.EventID,
 		version, // event_version
@@ -432,7 +457,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		sqlutil.ToNullStringValue(event.LegalHoldReason),   // Gap #8: legal hold reason
 		sqlutil.ToNullStringValue(event.LegalHoldPlacedBy), // Gap #8: legal hold placed_by
 		sqlutil.ToNullTime(event.LegalHoldPlacedAt),        // Gap #8: legal hold placed_at
-	).Scan(&returnedTimestamp)
+	).Scan(&ignoredTimestamp)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert audit event: %w", err)
@@ -443,8 +468,10 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	// Populate returned timestamp
-	event.EventTimestamp = returnedTimestamp
+	// NOTE: We do NOT overwrite event.EventTimestamp with returnedTimestamp
+	// because the hash was calculated using the original timestamp.
+	// Changing it would break hash verification.
+	// The DB should store exactly what we sent (event.EventTimestamp at line 403)
 
 	r.logger.V(1).Info("Audit event created with hash chain",
 		"event_id", event.EventID.String(),

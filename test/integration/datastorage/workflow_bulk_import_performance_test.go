@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -175,7 +175,7 @@ var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations",  Label("integratio
 			// V1.0: Use generated enum types
 			filters := dsgen.WorkflowSearchFilters{
 				SignalType:  "bulk-import-test",
-				Severity:    dsgen.WorkflowSearchFiltersSeverityLow,
+				Severity:    dsgen.Low,
 				Component:   "component-0",
 				Priority:    dsgen.WorkflowSearchFiltersPriorityP2,
 				Environment: "testing",

@@ -79,12 +79,27 @@ generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto
 	@echo "✅ Generation complete"
 
 .PHONY: generate-datastorage-client
-generate-datastorage-client: ## Generate DataStorage OpenAPI client from spec (DD-API-001)
-	@echo "📋 Generating DataStorage Go client from api/openapi/data-storage-v1.yaml..."
-	@PATH="$(LOCALBIN):$$PATH" go generate ./pkg/datastorage/client/...
-	@echo "✅ DataStorage Go client generated successfully"
-	@echo "   Client: pkg/datastorage/client/generated.go"
-	@echo "   Spec: api/openapi/data-storage-v1.yaml"
+generate-datastorage-client: ogen ## Generate DataStorage OpenAPI client from spec (DD-API-001)
+	@echo "📋 Generating DataStorage clients (Go + Python) from api/openapi/data-storage-v1.yaml..."
+	@echo ""
+	@echo "🔧 [1/2] Generating Go client with ogen..."
+	@go generate ./pkg/datastorage/ogen-client/...
+	@echo "✅ Go client generated: pkg/datastorage/ogen-client/oas_*_gen.go"
+	@echo ""
+	@echo "🔧 [2/2] Generating Python client..."
+	@rm -rf holmesgpt-api/src/clients/datastorage
+	@podman run --rm -v "$(PWD)":/local:z openapitools/openapi-generator-cli:v7.2.0 generate \
+		-i /local/api/openapi/data-storage-v1.yaml \
+		-g python \
+		-o /local/holmesgpt-api/src/clients/datastorage \
+		--package-name datastorage \
+		--additional-properties=packageVersion=1.0.0
+	@echo "✅ Python client generated: holmesgpt-api/src/clients/datastorage/"
+	@echo ""
+	@echo "✨ Both clients generated successfully!"
+	@echo "   Go (ogen):  pkg/datastorage/ogen-client/"
+	@echo "   Python:     holmesgpt-api/src/clients/datastorage/"
+	@echo "   Spec:       api/openapi/data-storage-v1.yaml"
 
 .PHONY: generate-holmesgpt-client
 generate-holmesgpt-client: ogen ## Generate HolmesGPT-API client from OpenAPI spec

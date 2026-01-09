@@ -6,3 +6,4 @@ metadata:
     app.kubernetes.io/name: kubernaut
     app.kubernetes.io/part-of: kubernaut-platform
 
+

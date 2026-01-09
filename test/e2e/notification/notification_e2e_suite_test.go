@@ -191,6 +191,16 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
 		logger.Info("✅ Audit infrastructure ready")
 
+		// Deploy AuthWebhook for SOC2-compliant notification cancellations
+		// Per DD-WEBHOOK-001: Required for NotificationRequest DELETE operations
+		// Per SOC2 CC8.1: Captures WHO cancelled notifications
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("🔐 Deploying AuthWebhook for Cancellation Attribution")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		err = infrastructure.DeployAuthWebhookToCluster(ctx, clusterName, controllerNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "AuthWebhook deployment should succeed")
+		logger.Info("✅ AuthWebhook deployed - SOC2 CC8.1 cancellation attribution enabled")
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Ready for parallel processes")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -294,6 +304,13 @@ var _ = SynchronizedBeforeSuite(
 	},
 )
 
+// Track test failures for cluster cleanup decision
+var _ = ReportAfterEach(func(report SpecReport) {
+	if report.Failed() {
+		anyTestFailed = true
+	}
+})
+
 // SynchronizedAfterSuite runs process cleanup then cluster cleanup
 var _ = SynchronizedAfterSuite(
 	// This runs on ALL processes - cleans up per-process resources
@@ -320,8 +337,14 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Notification E2E Cluster Cleanup (ONCE - Process 1)")
 
+		// Detect setup failure: if k8sClient is nil, BeforeSuite failed
+		setupFailed := k8sClient == nil
+		if setupFailed {
+			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
+		}
+
 		// Determine test results for log export decision
-		anyFailure := CurrentSpecReport().Failed()
+		anyFailure := setupFailed || anyTestFailed
 		preserveCluster := os.Getenv("KEEP_CLUSTER") == "true"
 
 		// Keep cluster alive only if explicitly requested for manual debugging

@@ -26,9 +26,10 @@ import (
 
 	"github.com/go-logr/logr"
 
+	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 )
 
@@ -81,49 +82,56 @@ func NewAuditClient(store audit.AuditStore, log logr.Logger) *AuditClient {
 // RecordAnalysisComplete records analysis completion event
 // This is the primary audit event for AIAnalysis (per DD-AUDIT-003)
 //
-// Uses structured types per DD-AUDIT-004 for compile-time type safety.
+// Uses OpenAPI-generated types (DD-AUDIT-004 V2.0) - eliminates duplicate type definitions.
 func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
-	// Build structured payload (DD-AUDIT-004: Type-safe event data)
-	payload := AnalysisCompletePayload{
-		Phase:            analysis.Status.Phase,
+	// Build structured payload using OpenAPI-generated type
+	// Single source of truth: api/openapi/data-storage-v1.yaml
+	payload := &ogenclient.AIAnalysisAuditPayload{
+		EventType:        EventTypeAnalysisCompleted,
+		AnalysisName:     analysis.Name,
+		Namespace:        analysis.Namespace,
+		Phase:            ogenclient.AIAnalysisAuditPayloadPhase(analysis.Status.Phase),
 		ApprovalRequired: analysis.Status.ApprovalRequired,
-		ApprovalReason:   analysis.Status.ApprovalReason,
 		DegradedMode:     analysis.Status.DegradedMode,
 		WarningsCount:    len(analysis.Status.Warnings),
 	}
 
-	// Conditional fields (type-safe pointers)
+	// Optional fields
+	if analysis.Status.ApprovalReason != "" {
+		payload.ApprovalReason = &analysis.Status.ApprovalReason
+	}
 	if analysis.Status.SelectedWorkflow != nil {
-		payload.Confidence = &analysis.Status.SelectedWorkflow.Confidence
-		payload.WorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+		confidence := float32(analysis.Status.SelectedWorkflow.Confidence)
+		payload.Confidence = &confidence
+		payload.WorkflowId = &analysis.Status.SelectedWorkflow.WorkflowID
 	}
 	if analysis.Status.TargetInOwnerChain != nil {
 		payload.TargetInOwnerChain = analysis.Status.TargetInOwnerChain
 	}
 	if analysis.Status.Reason != "" {
-		payload.Reason = analysis.Status.Reason
+		payload.Reason = &analysis.Status.Reason
 	}
 	if analysis.Status.SubReason != "" {
-		payload.SubReason = analysis.Status.SubReason
+		payload.SubReason = &analysis.Status.SubReason
 	}
 
 	// DD-AUDIT-005: Add provider response summary (consumer perspective)
 	// This complements the holmesgpt.response.complete event (provider perspective)
 	if analysis.Status.InvestigationID != "" {
-		summary := &ProviderResponseSummary{
-			IncidentID:       analysis.Status.InvestigationID,
+		summary := &ogenclient.ProviderResponseSummary{
+			IncidentId:       analysis.Status.InvestigationID,
 			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
 			NeedsHumanReview: determineNeedsHumanReview(analysis),
 			WarningsCount:    len(analysis.Status.Warnings),
 		}
 		if analysis.Status.SelectedWorkflow != nil {
-			summary.SelectedWorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+			summary.SelectedWorkflowId = &analysis.Status.SelectedWorkflow.WorkflowID
 		}
 		payload.ProviderResponseSummary = summary
 	}
 
 	// Determine outcome
-	var apiOutcome dsgen.AuditEventRequestEventOutcome
+	var apiOutcome ogenclient.AuditEventRequestEventOutcome
 	if analysis.Status.Phase == "Failed" {
 		apiOutcome = audit.OutcomeFailure
 	} else {
@@ -155,7 +163,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 
 // RecordPhaseTransition records a phase transition event
 //
-// Uses structured types per DD-AUDIT-004 for compile-time type safety.
+// Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
 func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
 	// Idempotency check: Only record if phase actually changed
 	if from == to {
@@ -166,8 +174,8 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 		return
 	}
 
-	// Build structured payload (DD-AUDIT-004: Type-safe event data)
-	payload := PhaseTransitionPayload{
+	// Build structured payload using OpenAPI-generated type
+	payload := &ogenclient.AIAnalysisPhaseTransitionPayload{
 		OldPhase: from,
 		NewPhase: to,
 	}
@@ -192,10 +200,10 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 
 // RecordError records an error event
 //
-// Uses structured types per DD-AUDIT-004 for compile-time type safety.
+// Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
 func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, phase string, err error) {
-	// Build structured payload (DD-AUDIT-004: Type-safe event data)
-	payload := ErrorPayload{
+	// Build structured payload using OpenAPI-generated type
+	payload := &ogenclient.AIAnalysisErrorPayload{
 		Phase:        phase,
 		ErrorMessage: err.Error(),
 	}
@@ -223,17 +231,17 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 
 // RecordHolmesGPTCall records a HolmesGPT-API call event
 //
-// Uses structured types per DD-AUDIT-004 for compile-time type safety.
+// Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
 func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
-	// Build structured payload (DD-AUDIT-004: Type-safe event data)
-	payload := HolmesGPTCallPayload{
+	// Build structured payload using OpenAPI-generated type
+	payload := &ogenclient.AIAnalysisHolmesGPTCallPayload{
 		Endpoint:       endpoint,
-		HTTPStatusCode: statusCode,
-		DurationMs:     durationMs,
+		HttpStatusCode: int32(statusCode),
+		DurationMs:     int32(durationMs),
 	}
 
 	// Determine outcome
-	var apiOutcome dsgen.AuditEventRequestEventOutcome
+	var apiOutcome ogenclient.AuditEventRequestEventOutcome
 	if statusCode >= 400 {
 		apiOutcome = audit.OutcomeFailure
 	} else {
@@ -261,14 +269,14 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 
 // RecordApprovalDecision records an approval decision event
 //
-// Uses structured types per DD-AUDIT-004 for compile-time type safety.
+// Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
 func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision string, reason string) {
 	// Derive boolean flags from decision string
 	approvalRequired := decision == "requires_approval"
 	autoApproved := decision == "auto_approved"
 
-	// Build structured payload (DD-AUDIT-004: Type-safe event data)
-	payload := ApprovalDecisionPayload{
+	// Build structured payload using OpenAPI-generated type
+	payload := &ogenclient.AIAnalysisApprovalDecisionPayload{
 		ApprovalRequired: approvalRequired,
 		ApprovalReason:   reason,
 		AutoApproved:     autoApproved,
@@ -280,7 +288,7 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	// Conditional fields (type-safe pointers)
 	if analysis.Status.SelectedWorkflow != nil {
 		payload.Confidence = &analysis.Status.SelectedWorkflow.Confidence
-		payload.WorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+		payload.WorkflowId = &analysis.Status.SelectedWorkflow.WorkflowID
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -303,18 +311,18 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 
 // RecordRegoEvaluation records a Rego policy evaluation event
 //
-// Uses structured types per DD-AUDIT-004 for compile-time type safety.
+// Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
 func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string) {
-	// Build structured payload (DD-AUDIT-004: Type-safe event data)
-	payload := RegoEvaluationPayload{
+	// Build structured payload using OpenAPI-generated type
+	payload := &ogenclient.AIAnalysisRegoEvaluationPayload{
 		Outcome:    outcome,
 		Degraded:   degraded,
-		DurationMs: durationMs,
+		DurationMs: int32(durationMs),
 		Reason:     reason,
 	}
 
 	// Map outcome to OpenAPI enum
-	var apiOutcome dsgen.AuditEventRequestEventOutcome
+	var apiOutcome ogenclient.AuditEventRequestEventOutcome
 	switch outcome {
 	case "allow", "success", "requires_approval", "auto_approved": // Rego policy decision outcomes
 		apiOutcome = audit.OutcomeSuccess
@@ -479,15 +487,15 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 	audit.SetCorrelationID(event, string(analysis.UID))
 	audit.SetNamespace(event, analysis.Namespace)
 
-	// Event data with error_details (Gap #7)
-	eventData := map[string]interface{}{
-		"analysis_name": analysis.Name,
-		"namespace":     analysis.Namespace,
-		"phase":         string(analysis.Status.Phase),
-		// Gap #7: Standardized error_details for SOC2 compliance
-		"error_details": errorDetails,
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := aianalysis.AIAnalysisAuditPayload{
+		AnalysisName: analysis.Name,
+		Namespace:    analysis.Namespace,
+		Phase:        string(analysis.Status.Phase),
+		ErrorDetails: errorDetails, // Gap #7: Standardized error_details for SOC2 compliance
 	}
-	audit.SetEventData(event, eventData)
+	audit.SetEventData(event, payload)
 
 	// Store audit event
 	return c.store.StoreAudit(ctx, event)

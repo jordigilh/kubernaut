@@ -70,7 +70,7 @@ type ExportResult struct {
 	ValidChainEvents       int
 	BrokenChainEvents      int
 	ChainIntegrityPercent  float32
-	TamperedEventIDs       []string
+	TamperedEventIDs       *[]string // Pointer to slice to match OpenAPI client expectation
 	VerificationTimestamp  time.Time
 }
 
@@ -183,24 +183,36 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			return nil, fmt.Errorf("failed to scan audit event: %w", err)
 		}
 
-		// Convert sql.NullString to regular strings
-		// NULL → empty string, which will be omitted by `omitempty` JSON tags during hash calculation
-		// This preserves the original JSON structure for hash verification
-		event.ResourceType = resourceType.String
-		event.ResourceID = resourceID.String
-		event.ResourceNamespace = resourceNamespace.String
-		event.ClusterID = clusterID.String
-		event.ActorID = actorID.String
-		event.ActorType = actorType.String
-		event.Severity = severity.String
-		event.ErrorCode = errorCode.String
-		event.ErrorMessage = errorMessage.String
+		// CRITICAL: Force timestamp to UTC for hash consistency
+		// PostgreSQL timestamptz stores in UTC but Go reads them with local timezone.
+		// JSON marshaling includes timezone offset in local time (e.g., "2026-01-08T13:03:22.383251-05:00").
+		// But during INSERT, timestamps are marshaled as UTC (e.g., "2026-01-08T18:03:22.383251Z").
+		// To ensure hash verification works, we must convert to UTC here.
+		event.EventTimestamp = event.EventTimestamp.UTC()
 
-		// Convert sql.NullInt64 to int
-		// NULL → 0, which will be omitted by `omitempty` JSON tag during hash calculation
-		event.DurationMs = int(durationMs.Int64)
+	// Convert sql.NullString to regular strings
+	// NULL → empty string, which will be omitted by `omitempty` JSON tags during hash calculation
+	// This preserves the original JSON structure for hash verification
+	event.ResourceType = resourceType.String
+	event.ResourceID = resourceID.String
+	event.ResourceNamespace = resourceNamespace.String
+	event.ClusterID = clusterID.String
+	event.ActorID = actorID.String
+	event.ActorType = actorType.String
+	event.Severity = severity.String
+	event.ErrorCode = errorCode.String
+	event.ErrorMessage = errorMessage.String
+
+	// Convert sql.NullInt64 to int
+	// NULL → 0, which will be omitted by `omitempty` JSON tag during hash calculation
+	event.DurationMs = int(durationMs.Int64)
+
+	// Set legal_hold flag from scanned value
+	event.LegalHold = legalHold
 
 		// Unmarshal event_data JSON
+		// Note: Numbers will be float64 (Go's default for JSON numbers), which matches
+		// the normalized representation created during INSERT in audit_events_repository.go
 		if len(eventDataJSON) > 0 {
 			if err := json.Unmarshal(eventDataJSON, &event.EventData); err != nil {
 				r.logger.Error(err, "Failed to unmarshal event_data", "event_id", event.EventID)
@@ -217,12 +229,15 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 	}
 
 	// Verify hash chains
+	// Initialize TamperedEventIDs as pointer to empty slice (not nil)
+	// This ensures JSON serialization produces [] instead of null, matching OpenAPI client expectations
+	tamperedIDs := make([]string, 0)
 	result := &ExportResult{
 		Events:                 make([]*ExportEvent, 0, len(events)),
 		TotalEventsQueried:     len(events),
 		ValidChainEvents:       0,
 		BrokenChainEvents:      0,
-		TamperedEventIDs:       make([]string, 0),
+		TamperedEventIDs:       &tamperedIDs,
 		VerificationTimestamp:  time.Now().UTC(),
 	}
 
@@ -261,7 +276,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 			if event.PreviousEventHash != previousHash {
 				exportEvent.HashChainValid = false
 				result.BrokenChainEvents++
-				result.TamperedEventIDs = append(result.TamperedEventIDs, event.EventID.String())
+				*result.TamperedEventIDs = append(*result.TamperedEventIDs, event.EventID.String())
 				r.logger.Info("Hash chain broken: previous_event_hash mismatch",
 					"event_id", event.EventID,
 					"correlation_id", correlationID,
@@ -279,7 +294,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 				if event.EventHash != expectedHash {
 					exportEvent.HashChainValid = false
 					result.BrokenChainEvents++
-					result.TamperedEventIDs = append(result.TamperedEventIDs, event.EventID.String())
+					*result.TamperedEventIDs = append(*result.TamperedEventIDs, event.EventID.String())
 					r.logger.Info("Hash chain broken: event_hash mismatch (tampering detected)",
 						"event_id", event.EventID,
 						"correlation_id", correlationID,
@@ -293,7 +308,7 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 				if i == 0 && previousHash != "" {
 					exportEvent.HashChainValid = false
 					result.BrokenChainEvents++
-					result.TamperedEventIDs = append(result.TamperedEventIDs, event.EventID.String())
+					*result.TamperedEventIDs = append(*result.TamperedEventIDs, event.EventID.String())
 					r.logger.Info("Hash chain broken: first event has non-empty previous_hash",
 						"event_id", event.EventID,
 						"correlation_id", correlationID,
@@ -331,11 +346,19 @@ func calculateEventHashForVerification(previousHash string, event *AuditEvent) (
 	// This MUST match the logic in calculateEventHash() in audit_events_repository.go
 	// 1. EventHash/PreviousEventHash: Not yet calculated during INSERT
 	// 2. EventDate: Derived from EventTimestamp (not stored separately in hash)
+	// 3. LegalHold fields: Can change AFTER event creation (not part of immutable event)
 	// Note: EventTimestamp IS included in hash (set before calculation during INSERT)
 	eventCopy := *event
 	eventCopy.EventHash = ""
 	eventCopy.PreviousEventHash = ""
 	eventCopy.EventDate = DateOnly{} // Clear derived field only
+
+	// SOC2 Gap #8: Legal hold fields can change after event creation
+	// They are NOT part of the immutable audit event hash
+	eventCopy.LegalHold = false
+	eventCopy.LegalHoldReason = ""
+	eventCopy.LegalHoldPlacedBy = ""
+	eventCopy.LegalHoldPlacedAt = nil
 
 	// Serialize event to JSON (canonical form for consistent hashing)
 	eventJSON, err := json.Marshal(&eventCopy)

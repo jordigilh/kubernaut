@@ -315,7 +315,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			searchReq := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "OOMKilled",                                   // mandatory
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
+					Severity:    dsgen.Critical,   // mandatory
 					Component:   "deployment",                                  // mandatory
 					Environment: "production",                                  // mandatory
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
