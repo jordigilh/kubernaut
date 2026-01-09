@@ -21,7 +21,7 @@ The `NotificationRequestSpec` has a **channel-specific configuration field** (`F
 // FileDeliveryConfig *FileDeliveryConfig `json:"fileDeliveryConfig,omitempty"`
 type NotificationRequestSpec struct {
     // ... other fields ...
-    
+
     // File delivery configuration
     // Required when ChannelFile is specified in Channels array
     // Specifies output directory and format for file-based notifications
@@ -34,7 +34,7 @@ type FileDeliveryConfig struct {
     // Output directory for notification files
     // +kubebuilder:validation:Required
     OutputDirectory string `json:"outputDirectory"`
-    
+
     // File format (json, yaml)
     // +kubebuilder:default=json
     // +kubebuilder:validation:Enum=json;yaml
@@ -159,7 +159,7 @@ fileService := delivery.NewFileDeliveryService(
 ```go
 type NotificationRequestSpec struct {
     Channels []Channel `json:"channels,omitempty"`
-    
+
     // Generic configuration for any channel
     // Keys: channel name (e.g., "file", "slack", "webhook")
     // Values: channel-specific config (e.g., {"outputDir": "/tmp", "format": "json"})
@@ -296,7 +296,7 @@ fileService := delivery.NewFileDeliveryService(outputDir, format)
 func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
     outputDir := s.outputDir
     format := "json"
-    
+
     if notification.Spec.FileDeliveryConfig != nil {  // ❌ CRD dependency
         outputDir = notification.Spec.FileDeliveryConfig.OutputDirectory
         format = notification.Spec.FileDeliveryConfig.Format
@@ -310,7 +310,7 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
     outputDir := s.outputDir  // ✅ Use constructor config only
     format := s.format         // ✅ Use constructor config only
-    
+
     // NO CRD override - configuration is service-level
     // ...
 }
@@ -325,7 +325,7 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 ```go
 type NotificationRequestSpec struct {
     // ... other fields ...
-    
+
     // DEPRECATED: FileDeliveryConfig is deprecated and ignored.
     // File channel configuration is now managed via service-level ConfigMap.
     // This field will be removed in v1beta1.
@@ -344,7 +344,7 @@ type NotificationRequestSpec struct {
 ```go
 type NotificationRequestSpec struct {
     // ... other fields ...
-    
+
     // FileDeliveryConfig REMOVED - configure via service ConfigMap instead
 }
 ```

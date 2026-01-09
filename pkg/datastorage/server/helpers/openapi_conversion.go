@@ -115,8 +115,8 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEve
 		event.Severity = req.Severity
 	}
 
-	if req.DurationMs != nil {
-		event.DurationMs = req.DurationMs
+	if req.DurationMs.IsSet() {
+		event.DurationMs = &req.DurationMs.Value
 	}
 
 	return event, nil

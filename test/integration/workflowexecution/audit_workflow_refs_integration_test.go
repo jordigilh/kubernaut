@@ -215,14 +215,14 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 
 		// Validate event_data structure (Gap #5) - OGEN-MIGRATION
 		// Per Q4 Answer: Flat structure, no nested selected_workflow_ref
-		eventData := selectionEvent.EventData.GetWorkflowExecutionAuditPayload()
-		Expect(eventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
+		eventData, ok := selectionEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 		// Access flat fields directly
-		Expect(eventData.Value.WorkflowID).To(Equal("k8s-restart-pod-v1"))
-		Expect(eventData.Value.WorkflowVersion).To(Equal("v1.0.0"))
-		Expect(eventData.Value.ContainerImage).ToNot(BeEmpty())
-		Expect(eventData.Value.Phase).To(Equal("Pending"))
+		Expect(eventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
+		Expect(eventData.WorkflowVersion).To(Equal("v1.0.0"))
+		Expect(eventData.ContainerImage).ToNot(BeEmpty())
+		Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
 		By("5. Validate execution.workflow.started event structure")
 		executionEvents := filterEventsByType(allEvents, "execution.workflow.started")
@@ -234,14 +234,14 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		Expect(string(executionEvent.EventOutcome)).To(Equal("success"))
 
 		// Validate event_data structure (Gap #6) - OGEN-MIGRATION
-		// Per Q4 Answer: Flat structure with PipelineRunName field
-		execEventData := executionEvent.EventData.GetWorkflowExecutionAuditPayload()
-		Expect(execEventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
+		// Per Q4 Answer: Flat structure with PipelinerunName field
+		execEventData, ok := executionEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
-		// Access flat fields directly
-		Expect(execEventData.Value.WorkflowID).To(Equal("k8s-restart-pod-v1"))
-		Expect(execEventData.Value.PipelineRunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
-		Expect(execEventData.Value.PipelineRunName.Value).ToNot(BeEmpty())
+		// Access flat fields directly (note: PipelinerunName, not PipelineRunName)
+		Expect(execEventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
+		Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
+		Expect(execEventData.PipelinerunName.Value).ToNot(BeEmpty())
 		})
 	})
 
@@ -312,11 +312,11 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 
 		// Validate event_data structure - OGEN-MIGRATION
 		// Per Q4 Answer: Flat structure, no nested selected_workflow_ref
-		eventData := selectionEvent.EventData.GetWorkflowExecutionAuditPayload()
-		Expect(eventData.Nil).To(BeFalse(), "EventData should be WorkflowExecutionAuditPayload")
+		eventData, ok := selectionEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 		// Access flat fields directly
-		Expect(eventData.Value.WorkflowID).To(Equal("k8s-scale-deployment-v1"))
+		Expect(eventData.WorkflowID).To(Equal("k8s-scale-deployment-v1"))
 		})
 	})
 })
@@ -327,34 +327,31 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 // ========================================
 
 // queryAuditEvents queries Data Storage for audit events
-// DD-API-001: Uses OpenAPI client
+// DD-API-001: Uses ogen OpenAPI client
 // DD-TESTING-001: Type-safe query with optional event type filter
 func queryAuditEvents(
-	client *ogenclient.ClientWithResponses,
+	client *ogenclient.Client,
 	correlationID string,
 	eventType *string,
 ) ([]ogenclient.AuditEvent, error) {
-	limit := 100
-	params := &ogenclient.QueryAuditEventsParams{
-		CorrelationId: &correlationID,
-		EventType:     eventType,
-		Limit:         &limit,
+	params := ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		Limit:         ogenclient.NewOptInt(100),
+	}
+	if eventType != nil {
+		params.EventType = ogenclient.NewOptString(*eventType)
 	}
 
-	resp, err := client.QueryAuditEventsWithResponse(context.Background(), params)
+	resp, err := client.QueryAuditEvents(context.Background(), params)
 	if err != nil {
 		return nil, err
 	}
 
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode())
-	}
-
-	if resp.JSON200 == nil || resp.JSON200.Data == nil {
+	if len(resp.Data) == 0 {
 		return []ogenclient.AuditEvent{}, nil
 	}
 
-	return *resp.JSON200.Data, nil
+	return resp.Data, nil
 }
 
 // countEventsByType groups events by type and returns counts
@@ -383,7 +380,7 @@ func filterEventsByType(events []ogenclient.AuditEvent, eventType string) []ogen
 func validateEventMetadata(event ogenclient.AuditEvent, category, correlationID string) {
 	Expect(event.EventType).ToNot(BeEmpty())
 	Expect(string(event.EventCategory)).To(Equal(category))
-	Expect(event.CorrelationId).To(Equal(correlationID))
+	Expect(event.CorrelationID).To(Equal(correlationID))
 	Expect(string(event.EventOutcome)).ToNot(BeEmpty())
-	Expect(event.ActorId).ToNot(BeNil())
+	Expect(event.ActorID.IsSet()).To(BeTrue())
 }

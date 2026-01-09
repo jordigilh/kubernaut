@@ -443,6 +443,96 @@ type WorkflowExecutionAuditPayload struct {
 
 ---
 
+### **❓ FOLLOW-UP DISCOVERY: Dedicated Webhook Types Already Exist!** (AI Assistant)
+
+**Date**: January 8, 2026 23:30 PST  
+**Discovered By**: AI Assistant (post-Q2 response analysis)
+
+**Finding**: The ogen schema already includes **dedicated webhook payload types** that exactly match the webhook code's current fields!
+
+#### **Schema Discovery**
+
+**File**: `pkg/datastorage/ogen-client/oas_schemas_gen.go` lines 12189-12262
+
+```go
+// WorkflowExecutionWebhookAuditPayload - Dedicated webhook type
+type WorkflowExecutionWebhookAuditPayload struct {
+    EventType     string    `json:"event_type"`
+    WorkflowName  string    `json:"workflow_name"`      // ✅ EXACT MATCH with webhook code!
+    ClearReason   string    `json:"clear_reason"`       // ✅ EXACT MATCH with webhook code!
+    ClearedAt     time.Time `json:"cleared_at"`         // ✅ EXACT MATCH with webhook code!
+    PreviousState WorkflowExecutionWebhookAuditPayloadPreviousState // ✅ EXACT MATCH!
+    NewState      WorkflowExecutionWebhookAuditPayloadNewState      // ✅ EXACT MATCH!
+}
+
+// Constructor (line 2572)
+func NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(
+    v WorkflowExecutionWebhookAuditPayload) AuditEventRequestEventData
+
+// Similar dedicated types exist for:
+// - NotificationAuditPayload (lines 5591-5962) - for notification webhooks
+// - RemediationApprovalAuditPayload (lines 9936-10024) - for approval webhooks
+```
+
+#### **Current Webhook Code** (Already Correct!)
+
+**File**: `pkg/webhooks/workflowexecution_handler.go` lines 114-120
+
+```go
+// ❌ ONLY ISSUE: Missing ogenclient import!
+payload := WorkflowExecutionAuditPayload{  // Should be: ogenclient.WorkflowExecutionWebhookAuditPayload
+    WorkflowName:  wfe.Name,                // ✅ Perfect match!
+    ClearReason:   wfe.Status.BlockClearance.ClearReason,  // ✅ Perfect match!
+    ClearedAt:     wfe.Status.BlockClearance.ClearedAt.Time, // ✅ Perfect match!
+    PreviousState: "Blocked",               // ✅ Enum value exists!
+    NewState:      "Running",               // ✅ Enum value exists!
+}
+```
+
+#### **Comparison: Q2 Answer vs. Dedicated Types**
+
+| Aspect | Q2 Answer (ExecutionName Mapping) | Dedicated Webhook Types (Discovered) |
+|--------|-----------------------------------|-------------------------------------|
+| **Schema Type** | `WorkflowExecutionAuditPayload` | `WorkflowExecutionWebhookAuditPayload` |
+| **Field Mapping** | Required (5+ fields) | ✅ **NONE** (exact match!) |
+| **Code Changes** | Moderate (change all fields) | ✅ **Minimal** (import + constructor only) |
+| **Implementation Time** | 40 minutes | ✅ **10 minutes** (4x faster!) |
+| **Field Examples** | `ExecutionName`, `Notes`, `Phase` | `WorkflowName`, `ClearReason`, `PreviousState` |
+| **Semantic Correctness** | Execution events (mixed) | ✅ **Dedicated webhook events** |
+| **Discriminator** | `workflowexecution.workflow.*` | ✅ `webhook.workflow.unblocked` |
+| **Webhook Code Match** | Requires field changes | ✅ **Already uses correct fields!** |
+
+#### **❓ CLARIFICATION QUESTION FOR PLATFORM TEAM** 🚨
+
+**Should we use**:
+- [ ] **Keep Q2 Answer (Option A)**: Map webhook fields to `WorkflowExecutionAuditPayload.ExecutionName`, `Notes`, `Phase`
+  - Changes required: All 5 webhook fields need mapping
+  - Time: 40 minutes (as estimated)
+  - Result: Webhooks use same payload as execution events
+
+- [ ] **Use Dedicated Webhook Types (New Option)**: Use `WorkflowExecutionWebhookAuditPayload` (already in schema!)
+  - Changes required: Add import + use correct constructor
+  - Time: ✅ **10 minutes** (just import and constructor!)
+  - Result: Webhooks use dedicated webhook payload types
+  - **Code already uses correct fields** - no mapping needed!
+
+**AI Recommendation**: **Use dedicated webhook types** because:
+1. ✅ **Webhook code already correct** - just missing import!
+2. ✅ **4x faster** (10 min vs 40 min)
+3. ✅ **More semantically correct** (webhook events ≠ execution events)
+4. ✅ **Schema designed for this** - dedicated types exist for webhooks
+5. ✅ **Consistent with other webhooks** (Notification, RemediationApproval use dedicated types too)
+
+**Platform Team Response**:
+> _[AWAITING CLARIFICATION - Which approach?]_
+>
+> - [ ] **Keep Q2 Answer**: Map to ExecutionName/Notes/Phase (40 min)
+> - [ ] **Use Dedicated Types**: Use WorkflowExecutionWebhookAuditPayload (10 min)
+>
+> **Reason for choice**: _[To be filled]_
+
+---
+
 #### **Q3: Are Webhook Tests Also Unmigrated?**
 
 Document claims webhook tests are migrated, but if business logic doesn't compile, tests can't either.
@@ -478,9 +568,27 @@ Document claims webhook tests are migrated, but if business logic doesn't compil
 >    - Run AuthWebhook E2E: `make test-e2e-authwebhook`
 >    - Confirm no runtime errors
 >
-> **Total Time**: ~55-60 minutes for complete webhook migration
+> **Total Time**: ~55-60 minutes for complete webhook migration (with Q2 ExecutionName mapping)  
+> **OR**: ~25-30 minutes (if using dedicated webhook types - see Q2 follow-up above)
 >
 > **Pattern Reference**: Use `pkg/workflowexecution/audit/manager.go` as the reference implementation for all patterns (imports, constructors, OptString usage).
+
+---
+
+### **📋 SUMMARY: All 3 Webhook Types Have Dedicated Schema Types** (AI Discovery)
+
+| Webhook Handler | Current Code Fields | Ogen Schema Type | Schema Lines | Constructor |
+|----------------|---------------------|------------------|--------------|-------------|
+| **WorkflowExecution** | `WorkflowName`, `ClearReason`, `ClearedAt`, `PreviousState`, `NewState` | `WorkflowExecutionWebhookAuditPayload` | 12189-12262 | `NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData()` |
+| **Notification** | `NotificationID`, `Type`, `Priority`, `Status`, `Action` | `NotificationAuditPayload` | 5591-5962 | `NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData()` |
+| **RemediationApproval** | `RequestName`, `Decision`, `DecidedBy`, `DecidedAt`, `Confidence` | `RemediationApprovalAuditPayload` | 9936-10024 | _(Need to verify discriminator)_ |
+
+**Key Insight**: All webhook handlers already use fields that **exactly match their dedicated schema types**!
+
+**If using dedicated types**: All 3 webhooks just need: import + constructor (10 min each = 30 min total)  
+**If using Q2 mapping**: All 3 webhooks need: field mapping + constructors (40 min each = 120 min total)
+
+**Time Savings with Dedicated Types**: **90 minutes** (120 min - 30 min)
 
 ---
 

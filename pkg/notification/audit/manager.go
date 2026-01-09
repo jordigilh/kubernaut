@@ -108,13 +108,17 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 	}
 
 	// Extract correlation ID (BR-NOT-064: Use remediation_id for tracing)
-	// Use metadata["remediationRequestName"] as correlation_id
+	// Priority: RemediationRequestRef.Name > Metadata["remediationRequestName"] > Notification UID
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use dedicated RemediationRequestRef field (proper design)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else if notification.Spec.Metadata != nil {
+		// Fallback: Legacy metadata field (backward compatibility)
 		correlationID = notification.Spec.Metadata["remediationRequestName"]
 	}
 	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
+		// Final fallback: Notification UID for standalone notifications
 		// UID ensures unique correlation across notifications (per ADR-032)
 		correlationID = string(notification.UID)
 	}

@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -69,7 +70,7 @@ type NotificationPhase string
 const (
 	NotificationPhasePending       NotificationPhase = "Pending"
 	NotificationPhaseSending       NotificationPhase = "Sending"
-	NotificationPhaseRetrying      NotificationPhase = "Retrying"      // Partial failure with retries remaining (non-terminal)
+	NotificationPhaseRetrying      NotificationPhase = "Retrying" // Partial failure with retries remaining (non-terminal)
 	NotificationPhaseSent          NotificationPhase = "Sent"
 	NotificationPhasePartiallySent NotificationPhase = "PartiallySent"
 	NotificationPhaseFailed        NotificationPhase = "Failed"
@@ -172,6 +173,12 @@ type ActionLink struct {
 //
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (DD-NOT-005)"
 type NotificationRequestSpec struct {
+	// Reference to parent RemediationRequest (if applicable)
+	// Used for audit correlation and lineage tracking (BR-NOT-064)
+	// Optional: NotificationRequest can be standalone (e.g., system-generated alerts)
+	// +optional
+	RemediationRequestRef *corev1.ObjectReference `json:"remediationRequestRef,omitempty"`
+
 	// Type of notification (escalation, simple, status-update)
 	// +kubebuilder:validation:Required
 	Type NotificationType `json:"type"`

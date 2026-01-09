@@ -22,6 +22,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -68,18 +69,21 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 				Name:      "test-notification",
 				Namespace: "default",
 			},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Subject:  "Test Notification",
-				Body:     "Test body",
-				Priority: "critical",
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelSlack,
-				},
-				// BR-NOT-064: Correlation ID from Spec.Metadata (not Labels)
-				Metadata: map[string]string{
-					"remediationRequestName": "test-remediation-123",
-				},
+		Spec: notificationv1alpha1.NotificationRequestSpec{
+			// BR-NOT-064: Correlation ID from RemediationRequestRef (proper design)
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: "remediation.kubernaut.ai/v1alpha1",
+				Kind:       "RemediationRequest",
+				Name:       "test-remediation-123",
+				Namespace:  "default",
 			},
+			Subject:  "Test Notification",
+			Body:     "Test body",
+			Priority: "critical",
+			Channels: []notificationv1alpha1.Channel{
+				notificationv1alpha1.ChannelSlack,
+			},
+		},
 		}
 	})
 
