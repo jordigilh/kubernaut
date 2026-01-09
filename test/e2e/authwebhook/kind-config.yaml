@@ -11,8 +11,6 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
   - role: control-plane
-    # Control plane does not need extra port mappings (uses NodePort from worker)
-  - role: worker
     extraMounts:
       # Mount for coverage data collection (DD-TEST-007)
       # Using relative path for podman compatibility (like datastorage)

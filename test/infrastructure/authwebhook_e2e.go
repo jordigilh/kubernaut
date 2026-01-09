@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -393,11 +394,22 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 3: Apply webhook deployment (creates webhook configurations with empty caBundle)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
+	// Read and substitute namespace in manifest
+	manifestPath := filepath.Join(workspaceRoot, "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
+	manifestContent, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	// Replace ${WEBHOOK_NAMESPACE} with actual namespace
+	substitutedManifest := strings.ReplaceAll(string(manifestContent), "${WEBHOOK_NAMESPACE}", namespace)
+
+	// Apply substituted manifest via kubectl
 	cmd = exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
-		"-n", namespace,
-		"-f", "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
-	cmd.Dir = workspaceRoot // Run from workspace root
+		"-f", "-") // Read from stdin
+	cmd.Stdin = strings.NewReader(substitutedManifest)
+	cmd.Dir = workspaceRoot
 
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Deployment failed: %s\n", output)
