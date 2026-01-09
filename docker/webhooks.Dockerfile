@@ -1,58 +1,49 @@
 # Webhooks Service - Multi-Architecture Dockerfile using Red Hat UBI9
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
+# Per ADR-028-EXCEPTION-001: Using upstream Go builder mirrored to quay.io for ARM64 compatibility
 
-# Build stage - Red Hat UBI9 Go 1.25 toolset (latest stable)
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+# Build stage - Upstream Go 1.25 (ADR-028-EXCEPTION-001: ARM64 runtime fix)
+# FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+# REASON: ARM64 crash with taggedPointerPack bug
+FROM quay.io/jordigilh/golang:1.25-bookworm AS builder
+# Using ADR-028 compliant mirror for ARM64 compatibility
 
-# Auto-detect target architecture from --platform flag
-# Podman/Docker automatically set TARGETARCH when --platform is specified
-ARG TARGETARCH
-ARG GOOS=linux
-# Use TARGETARCH if set (multi-arch build), otherwise detect from runtime
-ARG GOARCH=${TARGETARCH:-amd64}
-# Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
+# Build arguments for multi-architecture support
 ARG GOFLAGS=""
+ARG GOOS=linux
+ARG GOARCH=amd64
 
-# Switch to root for package installation
-USER root
-
-# Install build dependencies (dnf update required for security compliance)
-RUN dnf update -y && \
-	dnf install -y git ca-certificates tzdata && \
-	dnf clean all
-
-# Switch back to default user for security
-USER 1001
+# Install build dependencies (upstream Debian image uses apt-get)
+RUN apt-get update && \
+	apt-get install -y git ca-certificates tzdata && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/*
 
 # Set working directory
-WORKDIR /opt/app-root/src
+WORKDIR /workspace
 
 # Copy go mod files
-COPY --chown=1001:0 go.mod go.sum ./
+COPY go.mod go.sum ./
 
 # Copy source code
-COPY --chown=1001:0 . .
+COPY . .
 
 # Build the Webhooks service binary
-# CGO_ENABLED=0 for static linking (no C dependencies)
-# GOOS and GOARCH from build args for multi-architecture support
-# GOFLAGS can include -cover for E2E coverage profiling (E2E_COVERAGE_COLLECTION.md)
-# -mod=mod: Automatically download dependencies during build (no separate go mod download step)
-#
-# DD-TEST-007: Coverage build uses SIMPLE flags (per SP team guidance)
+# Per ADR-028-EXCEPTION-001: Using upstream Go 1.25.5 for ARM64 compatibility
+# -mod=mod: Automatically download dependencies during build (DD-BUILD-001)
+# DD-TEST-007: Coverage build uses SIMPLE flags
 # - Coverage: No -ldflags, -a, or -installsuffix (breaks coverage instrumentation)
 # - Production: Keep all optimizations for size/performance
-# NOTE: vendor/ excluded in .dockerignore, so we use -mod=mod
-# Toolchain pinned to go1.25.3 in go.mod to match UBI9 go-toolset:1.25
 RUN if [ "${GOFLAGS}" = "-cover" ]; then \
-	echo "Building with coverage instrumentation (simple build per DD-TEST-007)..."; \
+	echo "🔬 Building with E2E coverage instrumentation (DD-TEST-007)..."; \
+	echo "   Simple build (no -a, -installsuffix, -extldflags)"; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-o webhooks \
 	./cmd/webhooks/main.go; \
 	else \
-	echo "Building production binary (with symbol stripping)..."; \
+	echo "🚀 Production build with optimizations..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
 	-ldflags='-w -s -extldflags "-static"' \
@@ -73,7 +64,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root webhooks-user
 
 # Copy the binary from builder stage
-COPY --from=builder /opt/app-root/src/webhooks /usr/local/bin/webhooks
+COPY --from=builder /workspace/webhooks /usr/local/bin/webhooks
 
 # Set proper permissions
 RUN chmod +x /usr/local/bin/webhooks
