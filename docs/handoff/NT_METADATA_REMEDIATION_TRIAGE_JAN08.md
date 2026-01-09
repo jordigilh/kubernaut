@@ -12,37 +12,99 @@
 
 All other child CRDs have **specific fields** for parent RemediationRequest reference:
 
-| CRD | Field | Type | Purpose |
-|-----|-------|------|---------|
-| **AIAnalysis** | `RemediationRequestRef` | `corev1.ObjectReference` | Parent reference |
-| **AIAnalysis** | `RemediationID` | `string` | Audit correlation |
-| **WorkflowExecution** | `RemediationRequestRef` | `corev1.ObjectReference` | Parent reference |
-| **SignalProcessing** | `RemediationRequestRef` | `ObjectReference` | Parent reference |
-| **RemediationApprovalRequest** | `RemediationRequestRef` | `corev1.ObjectReference` | Parent reference (owner) |
-| **NotificationRequest** | ❌ **None** | - | Uses `Metadata["remediationRequestName"]` |
+| CRD | Field | Type | Audit Correlation | Status |
+|-----|-------|------|------------------|--------|
+| **SignalProcessing** | `RemediationRequestRef` | `corev1.ObjectReference` | Uses `RemediationRequestRef.Name` | ✅ **CORRECT** |
+| **WorkflowExecution** | `RemediationRequestRef` | `corev1.ObjectReference` | Uses `RemediationRequestRef.Name` | ✅ **CORRECT** |
+| **RemediationApprovalRequest** | `RemediationRequestRef` | `corev1.ObjectReference` | Uses `RemediationRequestRef.Name` | ✅ **CORRECT** |
+| **AIAnalysis** | `RemediationRequestRef` | `corev1.ObjectReference` | ⚠️ Uses separate `RemediationID` field | ⚠️ **INCONSISTENT** |
+| **AIAnalysis** | `RemediationID` | `string` | `string(rr.UID)` - **REDUNDANT** | ⚠️ **SHOULD USE `.Name`** |
+| **NotificationRequest** | ❌ **None** | - | Uses `Metadata["remediationRequestName"]` | ❌ **MISSING FIELD** |
 
-**Evidence**:
+**Evidence - CRD Spec Fields**:
 ```go
-// AIAnalysisSpec (api/aianalysis/v1alpha1/aianalysis_types.go:42-47)
-RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-RemediationID string `json:"remediationId"`
-
-// WorkflowExecutionSpec (api/workflowexecution/v1alpha1/workflowexecution_types.go:136)
-RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
-
-// SignalProcessingSpec (api/signalprocessing/v1alpha1/signalprocessing_types.go:49)
+// SignalProcessing - CORRECT PATTERN ✅
 RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
+// Audit: Uses sp.Spec.RemediationRequestRef.Name (pkg/signalprocessing/audit/client.go:146)
 
-// RemediationApprovalRequestSpec (api/remediation/v1alpha1/remediationapprovalrequest_types.go:68)
+// WorkflowExecution - CORRECT PATTERN ✅
+RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+// Audit: Uses wfe.Spec.RemediationRequestRef.Name (pkg/workflowexecution/audit/manager.go:159)
+
+// RemediationApprovalRequest - CORRECT PATTERN ✅
 RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
 
-// NotificationRequestSpec (api/notification/v1alpha1/notificationrequest_types.go:212)
+// AIAnalysis - INCONSISTENT PATTERN ⚠️
+RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+RemediationID string `json:"remediationId"` // ⚠️ REDUNDANT - should use RemediationRequestRef.Name
+// Audit: Uses analysis.Spec.RemediationID (pkg/aianalysis/audit/audit.go:150)
+// Creator: Sets RemediationID = string(rr.UID) (pkg/remediationorchestrator/creator/aianalysis.go:108)
+
+// NotificationRequest - MISSING FIELD ❌
 Metadata map[string]string `json:"metadata,omitempty"` // ❌ Generic map, not specific field
+// Audit: Uses Metadata["remediationRequestName"] with fallback to notification UID
+```
+
+**Audit Correlation Usage**:
+```go
+// SignalProcessing (pkg/signalprocessing/audit/client.go:146)
+audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
+
+// WorkflowExecution (pkg/workflowexecution/audit/manager.go:159)
+correlationID := wfe.Spec.RemediationRequestRef.Name
+audit.SetCorrelationID(event, correlationID)
+
+// AIAnalysis (pkg/aianalysis/audit/audit.go:150) - ⚠️ INCONSISTENT
+audit.SetCorrelationID(event, analysis.Spec.RemediationID) // Should use RemediationRequestRef.Name
+
+// Notification (pkg/notification/audit/manager.go:114) - ❌ MISSING
+correlationID := notification.Spec.Metadata["remediationRequestName"] // Optional map key
+if correlationID == "" {
+    correlationID = string(notification.UID) // Fallback
+}
 ```
 
 ---
 
 ## 🚨 **ROOT CAUSE ANALYSIS**
+
+### **Architectural Inconsistency: AIAnalysis Has Redundant `RemediationID` Field**
+
+**Discovery**: AIAnalysis is the ONLY CRD with a separate `RemediationID` field for audit correlation.
+
+**Standard Pattern** (SignalProcessing, WorkflowExecution, RemediationApprovalRequest):
+```go
+// CRD Spec
+RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+
+// Audit correlation uses RemediationRequestRef.Name
+audit.SetCorrelationID(event, crd.Spec.RemediationRequestRef.Name)
+```
+
+**AIAnalysis Pattern** (INCONSISTENT):
+```go
+// CRD Spec
+RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+RemediationID string `json:"remediationId"` // ⚠️ REDUNDANT
+
+// Audit correlation uses separate field
+audit.SetCorrelationID(event, analysis.Spec.RemediationID) // Should use RemediationRequestRef.Name
+```
+
+**Why This Matters**:
+1. **Architectural Inconsistency**: AIAnalysis deviates from the standard pattern without justification
+2. **Field Redundancy**: `RemediationID` is set to `string(rr.UID)`, but `RemediationRequestRef.UID` already exists
+3. **Maintenance Burden**: Two fields to keep in sync instead of one canonical source
+4. **Developer Confusion**: New developers must learn a different pattern for AIAnalysis
+
+**Hypothesis**: `RemediationID` was added before the `RemediationRequestRef` pattern was standardized across all CRDs.
+
+**Recommendation**: Future cleanup should:
+- Remove `RemediationID` field from AIAnalysis
+- Update `pkg/aianalysis/audit/audit.go` to use `analysis.Spec.RemediationRequestRef.Name`
+- Align AIAnalysis with SignalProcessing/WorkflowExecution pattern
+
+---
 
 ### **Why NotificationRequest is Different**
 
@@ -162,7 +224,7 @@ Spec: notificationv1.NotificationRequestSpec{
 
 ## ✅ **RECOMMENDED OPTIONS**
 
-### **Option A: Add Dedicated Field (BREAKING CHANGE)**
+### **Option A: Add Dedicated Field + Align with Standard Pattern (BREAKING CHANGE)**
 
 **Pros**:
 - Consistent with all other CRDs
@@ -175,7 +237,7 @@ Spec: notificationv1.NotificationRequestSpec{
 - Requires CRD migration
 - All NotificationRequest creators must be updated
 
-**Implementation**:
+**Implementation** (Follow SignalProcessing/WorkflowExecution Pattern):
 ```go
 // api/notification/v1alpha1/notificationrequest_types.go
 type NotificationRequestSpec struct {
@@ -189,18 +251,40 @@ type NotificationRequestSpec struct {
     Subject  string `json:"subject"`
     Body     string `json:"body"`
     
-    // Keep Metadata for other contextual information
+    // Keep Metadata for other contextual information (NOT for remediationRequestName)
     // +optional
     Metadata map[string]string `json:"metadata,omitempty"`
 }
 ```
 
+**Audit Manager Update** (Follow WorkflowExecution Pattern):
+```go
+// pkg/notification/audit/manager.go
+// OLD (lines 110-120):
+correlationID := ""
+if notification.Spec.Metadata != nil {
+    correlationID = notification.Spec.Metadata["remediationRequestName"]
+}
+if correlationID == "" {
+    correlationID = string(notification.UID)
+}
+
+// NEW (align with WorkflowExecution pattern):
+correlationID := ""
+if notification.Spec.RemediationRequestRef != nil {
+    correlationID = notification.Spec.RemediationRequestRef.Name
+} else {
+    // Fallback for standalone notifications (no parent RR)
+    correlationID = string(notification.UID)
+}
+```
+
 **Migration Path**:
-1. Add `RemediationRequestRef` as optional field
-2. Update audit manager to prefer `RemediationRequestRef.Name` over `Metadata["remediationRequestName"]`
-3. Update RemediationOrchestrator to set `RemediationRequestRef`
+1. Add `RemediationRequestRef` as optional field to NotificationRequestSpec
+2. Update audit manager to use `RemediationRequestRef.Name` (like SignalProcessing/WorkflowExecution)
+3. Update RemediationOrchestrator to set `RemediationRequestRef` when creating notifications
 4. Deprecate `Metadata["remediationRequestName"]` pattern
-5. Eventually remove fallback logic
+5. Eventually remove `Metadata["remediationRequestName"]` fallback logic
 
 ---
 
@@ -258,6 +342,29 @@ Spec: notificationv1.NotificationRequestSpec{
 
 ---
 
+## 🔧 **BROADER ARCHITECTURAL ALIGNMENT OPPORTUNITY**
+
+**Discovery**: This triage revealed TWO architectural inconsistencies:
+
+1. **NotificationRequest**: Missing `RemediationRequestRef` entirely (uses `Metadata` map)
+2. **AIAnalysis**: Has redundant `RemediationID` field (duplicates `RemediationRequestRef.UID`)
+
+**Unified Standard Pattern** (SignalProcessing, WorkflowExecution, RemediationApprovalRequest):
+```go
+// CRD Spec
+RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
+
+// Audit correlation
+audit.SetCorrelationID(event, crd.Spec.RemediationRequestRef.Name)
+```
+
+**Future Cleanup**:
+- **NotificationRequest**: Add `RemediationRequestRef` field (Option A)
+- **AIAnalysis**: Remove `RemediationID` field, use `RemediationRequestRef.Name` for audit
+- **Result**: ALL child CRDs follow the same pattern - no exceptions
+
+---
+
 ## 🎯 **RECOMMENDATION**
 
 **IMMEDIATE**: **Option B** (Fix production code)
@@ -308,21 +415,28 @@ Spec: notificationv1.NotificationRequestSpec{
 
 ## 📊 **CONFIDENCE ASSESSMENT**
 
-**Triage Confidence**: **95%**
+**Triage Confidence**: **98%**
 - ✅ Identified root cause (missing Metadata in production)
-- ✅ Found design inconsistency (no dedicated field)
+- ✅ Found design inconsistency (NotificationRequest missing RemediationRequestRef)
+- ✅ Discovered AIAnalysis architectural inconsistency (redundant RemediationID field)
+- ✅ Verified standard pattern across SignalProcessing, WorkflowExecution, RemediationApprovalRequest
 - ✅ Documented all creation sites
 - ✅ Proposed clear fix options
 
+**Key Insight**: NotificationRequest should follow the **standard pattern** (SignalProcessing/WorkflowExecution), NOT AIAnalysis's pattern (which itself needs cleanup).
+
 **Fix Confidence (Option B)**: **100%**
-- Simple string field addition
+- Simple Metadata field addition
 - Low risk
 - Restores audit lineage
+- No API changes required
 
-**Fix Confidence (Option A)**: **85%**
+**Fix Confidence (Option A)**: **90%**
 - Requires API migration
 - Medium complexity
+- Aligns NotificationRequest with standard pattern
 - Benefits outweigh costs for long-term consistency
+- Also enables future AIAnalysis cleanup (remove redundant RemediationID)
 
 ---
 
