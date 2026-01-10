@@ -196,8 +196,12 @@ func CountFilesInPod(ctx context.Context, pattern string) (int, error) {
 }
 
 // EventuallyCountFilesInPod is a Gomega-friendly wrapper for counting files
+// DD-NOT-006: Includes initial delay to account for virtiofs sync latency on macOS + Podman
 func EventuallyCountFilesInPod(pattern string) func() (int, error) {
 	return func() (int, error) {
+		// virtiofs sync latency: 100-500ms on macOS Podman
+		// Add delay to ensure files are synced before checking
+		time.Sleep(500 * time.Millisecond)
 		return CountFilesInPod(context.Background(), pattern)
 	}
 }
