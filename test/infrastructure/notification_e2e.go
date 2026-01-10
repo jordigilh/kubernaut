@@ -380,16 +380,18 @@ func deployNotificationConfigMap(namespace, kubeconfigPath string, writer io.Wri
 		return nil
 	}
 
-	applyCmd := exec.Command("kubectl", "apply", "-f", configMapPath, "-n", namespace)
-	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
+	// Use envsubst to replace ${NAMESPACE} placeholder in ConfigMap
+	// This allows data_storage_url to dynamically reference the correct namespace
+	envsubstCmd := exec.Command("sh", "-c", fmt.Sprintf("export NAMESPACE=%s && envsubst < %s | kubectl apply -n %s -f -", namespace, configMapPath, namespace))
+	envsubstCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
+	envsubstCmd.Stdout = writer
+	envsubstCmd.Stderr = writer
 
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply ConfigMap: %w", err)
+	if err := envsubstCmd.Run(); err != nil {
+		return fmt.Errorf("failed to apply ConfigMap with envsubst: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ConfigMap deployed in namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "   ConfigMap deployed in namespace: %s (envsubst applied)\n", namespace)
 	return nil
 }
 
