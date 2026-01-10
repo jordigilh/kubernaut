@@ -136,20 +136,25 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			Expect(notification.Status.FailedDeliveries).To(Equal(0),
 				"Should have 0 failed deliveries")
 
-			By("Verifying file audit trail was created")
-			// NOTE: Search in shared e2eFileOutputDir (no test-specific subdirectory after FileDeliveryConfig removal)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-critical-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1),
-				"File channel should create audit trail for critical notification in shared directory")
+		By("Verifying file audit trail was created")
+		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+		pattern := "notification-e2e-priority-critical-*.json"
 
-			By("Validating priority field preserved in file audit")
-			fileContent, err := os.ReadFile(files[0])
-			Expect(err).ToNot(HaveOccurred())
+		Eventually(EventuallyCountFilesInPod(pattern),
+			5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"File should be created in pod within 5 seconds")
 
-			var savedNotification notificationv1alpha1.NotificationRequest
-			err = json.Unmarshal(fileContent, &savedNotification)
-			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
+		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
+		defer CleanupCopiedFile(copiedFilePath)
+
+		By("Validating priority field preserved in file audit")
+		fileContent, err := os.ReadFile(copiedFilePath)
+		Expect(err).ToNot(HaveOccurred())
+
+		var savedNotification notificationv1alpha1.NotificationRequest
+		err = json.Unmarshal(fileContent, &savedNotification)
+		Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
 
 			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
 				"Priority field must be preserved in file audit (BR-NOT-052)")
@@ -231,27 +236,28 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 		By("Verifying file audit trails created for all priorities")
 		for _, p := range priorities {
-			// DD-NOT-006 v2: Add explicit wait for file sync (macOS Podman VM delay)
-			Eventually(func() int {
-				files, _ := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+p.name+"-*.json"))
-				return len(files)
-			}, 2*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
-				"File for "+p.name+" should appear within 2 seconds (macOS Podman sync delay)")
+			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+			pattern := "notification-" + p.name + "-*.json"
 
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+p.name+"-*.json"))
+			Eventually(EventuallyCountFilesInPod(pattern),
+				5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+				"File for "+p.name+" should be created in pod within 5 seconds")
+
+			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod for "+p.name)
+			defer CleanupCopiedFile(copiedFilePath)
+
+			// Validate priority preserved in file
+			fileContent, err := os.ReadFile(copiedFilePath)
 			Expect(err).ToNot(HaveOccurred())
 
-				// Validate priority preserved in file
-				fileContent, err := os.ReadFile(files[0])
-				Expect(err).ToNot(HaveOccurred())
+			var savedNotification notificationv1alpha1.NotificationRequest
+			err = json.Unmarshal(fileContent, &savedNotification)
+			Expect(err).ToNot(HaveOccurred())
 
-				var savedNotification notificationv1alpha1.NotificationRequest
-				err = json.Unmarshal(fileContent, &savedNotification)
-				Expect(err).ToNot(HaveOccurred())
-
-				Expect(savedNotification.Spec.Priority).To(Equal(p.priority),
-					"Priority must be preserved in file audit for "+p.name)
-			}
+			Expect(savedNotification.Spec.Priority).To(Equal(p.priority),
+				"Priority must be preserved in file audit for "+p.name)
+		}
 
 			By("BUSINESS OUTCOME VALIDATION (BR-NOT-052)")
 			// ✅ All priorities delivered successfully
@@ -331,27 +337,28 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 				"Should have 0 failed deliveries")
 
 		By("Verifying file audit trail contains priority metadata")
-		// DD-NOT-006 v2: Add explicit wait for file sync (macOS Podman VM delay)
-		Eventually(func() int {
-			files, _ := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-high-multi-*.json"))
-			return len(files)
-		}, 2*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
-			"File should appear within 2 seconds (macOS Podman sync delay)")
+		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+		pattern := "notification-e2e-priority-high-multi-*.json"
 
-		files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-high-multi-*.json"))
+		Eventually(EventuallyCountFilesInPod(pattern),
+			5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"File should be created in pod within 5 seconds")
+
+		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
+		defer CleanupCopiedFile(copiedFilePath)
+
+		fileContent, err := os.ReadFile(copiedFilePath)
 		Expect(err).ToNot(HaveOccurred())
 
-			fileContent, err := os.ReadFile(files[0])
-			Expect(err).ToNot(HaveOccurred())
+		var savedNotification notificationv1alpha1.NotificationRequest
+		err = json.Unmarshal(fileContent, &savedNotification)
+		Expect(err).ToNot(HaveOccurred())
 
-			var savedNotification notificationv1alpha1.NotificationRequest
-			err = json.Unmarshal(fileContent, &savedNotification)
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityHigh),
-				"Priority must be preserved in file audit")
-			Expect(savedNotification.Spec.Metadata["severity"]).To(Equal("high"),
-				"Severity metadata must be preserved")
+		Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityHigh),
+			"Priority must be preserved in file audit")
+		Expect(savedNotification.Spec.Metadata["severity"]).To(Equal("high"),
+			"Severity metadata must be preserved")
 
 			By("Verifying delivery attempts recorded for all channels")
 			Expect(notification.Status.DeliveryAttempts).To(HaveLen(3),

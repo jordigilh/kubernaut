@@ -53,7 +53,7 @@ import (
 // Test Scenario:
 // 1. Create NotificationRequest CRD
 // 2. Wait for controller to update Phase to Sent
-// 3. Verify controller emitted "notification.message.sent" audit event
+// 3. Verify controller emitted string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) audit event
 // 4. Verify ADR-034 compliance
 //
 // Expected Results:
@@ -171,7 +171,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		By("Verifying controller emitted audit event for message sent")
 		Eventually(func() int {
 			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString("notification.message.sent"),
+				EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
 				EventCategory: ogenclient.NewOptString("notification"),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
@@ -198,7 +198,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// Find controller-emitted sent event and validate ADR-034 compliance
 		var foundSentEvent *ogenclient.AuditEvent
 		for i := range events {
-			if events[i].EventType == "notification.message.sent" {
+			if events[i].EventType == string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) {
 				foundSentEvent = &events[i]
 				break
 			}

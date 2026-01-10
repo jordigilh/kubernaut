@@ -54,7 +54,7 @@ import (
 // Test Scenario:
 // 1. Create 3 NotificationRequests with same remediation context
 // 2. Wait for controller to process all 3 notifications (phase → Sent)
-// 3. Verify controller emitted 3 "notification.message.sent" audit events
+// 3. Verify controller emitted 3 string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) audit events
 // 4. Verify all events share same correlation_id (remediation request name)
 // 5. Verify all events follow ADR-034 format
 //
@@ -175,7 +175,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		Eventually(func() int {
 			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString("notification.message.sent"),
+				EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
 				EventCategory: ogenclient.NewOptString("notification"),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
@@ -239,7 +239,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 			// Increment count for this event type
 			switch event.EventType {
-			case "notification.message.sent":
+			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
 				notificationEvents[notificationID].sentCount++
 			case "notification.message.acknowledged":
 				notificationEvents[notificationID].acknowledgedCount++
