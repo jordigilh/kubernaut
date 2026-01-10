@@ -270,11 +270,18 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				return notification.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			By("Validating priority field in file (BR-NOT-056)")
-			// Note: Controller may reconcile multiple times, creating multiple files (expected)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-validation-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1), "Should create at least one file")
+		By("Validating priority field in file (BR-NOT-056)")
+		// Note: Controller may reconcile multiple times, creating multiple files (expected)
+		// DD-NOT-006 v2: Add explicit wait for file sync (macOS Podman VM delay)
+		// Files take 200-600ms to sync from pod to host via hostPath volume
+		Eventually(func() int {
+			files, _ := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-validation-*.json"))
+			return len(files)
+		}, 2*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
+			"File should appear on host within 2 seconds (macOS Podman sync delay)")
+
+		files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-validation-*.json"))
+		Expect(err).ToNot(HaveOccurred())
 
 			// Read the first file (if multiple reconciliations occurred, any file is valid)
 			fileContent, err := os.ReadFile(files[0])

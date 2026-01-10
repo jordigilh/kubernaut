@@ -173,7 +173,18 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	// Scenario 2: Partial Failure Handling
 	// ========================================
 	Context("Scenario 2: One channel fails, others succeed", func() {
-		It("should mark as PartiallySent when file delivery fails but console/log succeed", func() {
+		// PIt: This test is currently pending because the FileDeliveryConfig field
+		// was removed from the CRD (DD-NOT-006 v2).
+		// The controller now writes to a fixed, configured output directory,
+		// making it impossible for E2E tests to specify an invalid directory
+		// to simulate file delivery failures.
+		//
+		// Re-enable this test if a new mechanism for simulating file write failures
+		// (e.g., a mock filesystem, in-memory adapter, or test-only configuration) 
+		// is introduced.
+		//
+		// Related: 05_retry_exponential_backoff_test.go (also pending for same reason)
+		PIt("should mark as PartiallySent when file delivery fails but console/log succeed", func() {
 		By("Creating NotificationRequest with file channel pointing to invalid directory")
 
 		notification := &notificationv1alpha1.NotificationRequest{

@@ -222,11 +222,11 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 
 		for _, event := range events {
 		// Extract notification_id from EventData discriminated union
-		// ogen: Access specific payload type from discriminated union
+		// ogen: NotificationAuditPayload is the correct field for notification events
+		// NotificationID is wrapped in OptString (ogen optional type)
 		notificationID := ""
-		if event.EventData.Type != "" {
-			// Access NotificationMessageSentPayload from discriminated union
-			notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
+		if event.EventData.Type != "" && event.EventData.NotificationAuditPayload.NotificationID.IsSet() {
+			notificationID = event.EventData.NotificationAuditPayload.NotificationID.Value
 		}
 
 			Expect(notificationID).ToNot(BeEmpty(),

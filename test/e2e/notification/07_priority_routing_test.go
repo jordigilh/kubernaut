@@ -229,12 +229,17 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					"Notification "+p.name+" should be delivered")
 			}
 
-			By("Verifying file audit trails created for all priorities")
-			for _, p := range priorities {
-				files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+p.name+"-*.json"))
-				Expect(err).ToNot(HaveOccurred())
-				Expect(len(files)).To(BeNumerically(">=", 1),
-					"File audit trail should exist for "+p.name)
+		By("Verifying file audit trails created for all priorities")
+		for _, p := range priorities {
+			// DD-NOT-006 v2: Add explicit wait for file sync (macOS Podman VM delay)
+			Eventually(func() int {
+				files, _ := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+p.name+"-*.json"))
+				return len(files)
+			}, 2*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
+				"File for "+p.name+" should appear within 2 seconds (macOS Podman sync delay)")
+
+			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-"+p.name+"-*.json"))
+			Expect(err).ToNot(HaveOccurred())
 
 				// Validate priority preserved in file
 				fileContent, err := os.ReadFile(files[0])
@@ -325,11 +330,16 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			Expect(notification.Status.FailedDeliveries).To(Equal(0),
 				"Should have 0 failed deliveries")
 
-			By("Verifying file audit trail contains priority metadata")
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-high-multi-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1),
-				"File channel should create audit trail")
+		By("Verifying file audit trail contains priority metadata")
+		// DD-NOT-006 v2: Add explicit wait for file sync (macOS Podman VM delay)
+		Eventually(func() int {
+			files, _ := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-high-multi-*.json"))
+			return len(files)
+		}, 2*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
+			"File should appear within 2 seconds (macOS Podman sync delay)")
+
+		files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-high-multi-*.json"))
+		Expect(err).ToNot(HaveOccurred())
 
 			fileContent, err := os.ReadFile(files[0])
 			Expect(err).ToNot(HaveOccurred())
