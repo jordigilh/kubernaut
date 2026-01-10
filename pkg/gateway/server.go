@@ -34,6 +34,7 @@ import (
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
 	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Ogen generated audit types
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
 
 	corev1 "k8s.io/api/core/v1"
@@ -52,6 +53,16 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	kubecors "github.com/jordigilh/kubernaut/pkg/http/cors"  // BR-HTTP-015: Shared CORS library
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization" // DD-005: Shared sanitization library
+)
+
+// Gateway Audit Event Type Constants (from OpenAPI spec)
+// See: api/openapi/data-storage-v1.yaml - GatewayAuditPayload.event_type enum
+const (
+	EventTypeSignalReceived       = "gateway.signal.received"       // BR-GATEWAY-190: New signal received, RR created
+	EventTypeSignalDeduplicated   = "gateway.signal.deduplicated"   // BR-GATEWAY-191: Duplicate signal detected
+	EventTypeCRDCreated           = "gateway.crd.created"           // DD-AUDIT-003: RR CRD successfully created
+	EventTypeCRDFailed            = "gateway.crd.failed"            // DD-AUDIT-003: RR CRD creation failed
+	CategoryGateway               = "gateway"                       // Service-level category per ADR-034
 )
 
 // Server is the main Gateway HTTP server
@@ -1223,8 +1234,8 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.signal.received")
-	audit.SetEventCategory(event, "gateway")
+	audit.SetEventType(event, EventTypeSignalReceived)
+	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, "received")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "external", signal.SourceType) // e.g., "prometheus", "kubernetes"
@@ -1248,24 +1259,35 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := GatewayAuditPayload{
-		// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
-		OriginalPayload:   originalPayload, // Gap #1
-		SignalLabels:      labels,          // Gap #2
-		SignalAnnotations: annotations,     // Gap #3
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeSignalReceived, // Required for discriminator
 
 		// Gateway-Specific Metadata
-		SignalType:          signal.SourceType,
-		AlertName:           signal.AlertName,
-		Namespace:           signal.Namespace,
-		Fingerprint:         signal.Fingerprint,
-		Severity:            signal.Severity,
-		ResourceKind:        signal.Resource.Kind,
-		ResourceName:        signal.Resource.Name,
-		RemediationRequest:  fmt.Sprintf("%s/%s", rrNamespace, rrName),
-		DeduplicationStatus: "new",
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, payload)
+
+	// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
+	if originalPayload != nil {
+		payload.OriginalPayload.SetTo(convertMapToJxRaw(originalPayload)) // Gap #1
+	}
+	if labels != nil {
+		payload.SignalLabels.SetTo(labels) // Gap #2
+	}
+	if annotations != nil {
+		payload.SignalAnnotations.SetTo(annotations) // Gap #3
+	}
+
+	// Optional fields
+	payload.Severity.SetTo(toGatewayAuditPayloadSeverity(signal.Severity))
+	payload.ResourceKind.SetTo(signal.Resource.Kind)
+	payload.ResourceName.SetTo(signal.Resource.Name)
+	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	payload.DeduplicationStatus.SetTo(toGatewayAuditPayloadDeduplicationStatus("new"))
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1286,8 +1308,8 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.signal.deduplicated")
-	audit.SetEventCategory(event, "gateway")
+	audit.SetEventType(event, EventTypeSignalDeduplicated)
+	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, "deduplicated")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "external", signal.SourceType)
@@ -1301,22 +1323,33 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := GatewayAuditPayload{
-		// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
-		OriginalPayload:   originalPayload, // Gap #1
-		SignalLabels:      labels,          // Gap #2
-		SignalAnnotations: annotations,     // Gap #3
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeSignalDeduplicated, // Required for discriminator
 
 		// Gateway-Specific Metadata
-		SignalType:          signal.SourceType,
-		AlertName:           signal.AlertName,
-		Namespace:           signal.Namespace,
-		Fingerprint:         signal.Fingerprint,
-		RemediationRequest:  fmt.Sprintf("%s/%s", rrNamespace, rrName),
-		DeduplicationStatus: "duplicate",
-		OccurrenceCount:     occurrenceCount,
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, payload)
+	payload.OccurrenceCount.SetTo(occurrenceCount)
+
+	// RR Reconstruction Fields (Root Level per DD-AUDIT-004)
+	if originalPayload != nil {
+		payload.OriginalPayload.SetTo(convertMapToJxRaw(originalPayload)) // Gap #1
+	}
+	if labels != nil {
+		payload.SignalLabels.SetTo(labels) // Gap #2
+	}
+	if annotations != nil {
+		payload.SignalAnnotations.SetTo(annotations) // Gap #3
+	}
+
+	// Optional fields
+	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	payload.DeduplicationStatus.SetTo(toGatewayAuditPayloadDeduplicationStatus("duplicate"))
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData(payload)
 
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
 		s.logger.Info("DD-AUDIT-003: Failed to emit signal.deduplicated audit event",
@@ -1336,8 +1369,8 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.crd.created")
-	audit.SetEventCategory(event, "gateway")
+	audit.SetEventType(event, EventTypeCRDCreated)
+	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "gateway", "crd-creator") // Gateway's CRD creator component
@@ -1347,17 +1380,22 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := GatewayAuditPayload{
-		SignalType:         signal.SourceType,
-		AlertName:          signal.AlertName,
-		Namespace:          signal.Namespace,
-		Fingerprint:        signal.Fingerprint,
-		Severity:           signal.Severity,
-		ResourceKind:       signal.Resource.Kind,
-		ResourceName:       signal.Resource.Name,
-		RemediationRequest: fmt.Sprintf("%s/%s", rrNamespace, rrName),
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeCRDCreated, // Required for discriminator
+
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, payload)
+
+	// Optional fields
+	payload.Severity.SetTo(toGatewayAuditPayloadSeverity(signal.Severity))
+	payload.ResourceKind.SetTo(signal.Resource.Kind)
+	payload.ResourceName.SetTo(signal.Resource.Name)
+	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1366,7 +1404,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	}
 }
 
-// emitCRDCreationFailedAudit emits 'gateway.crd.creation_failed' audit event (DD-AUDIT-003)
+// emitCRDCreationFailedAudit emits 'gateway.crd.failed' audit event (DD-AUDIT-003)
 // This is called when RemediationRequest CRD creation fails
 func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.NormalizedSignal, err error) {
 	if s.auditStore == nil {
@@ -1378,8 +1416,8 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "gateway.crd.creation_failed")
-	audit.SetEventCategory(event, "gateway")
+	audit.SetEventType(event, EventTypeCRDFailed)
+	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "gateway", "crd-creator")
@@ -1391,19 +1429,27 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	// Translate K8s CRD creation error to ErrorDetails
 	errorDetails := sharedaudit.NewErrorDetailsFromK8sError("gateway", err)
 
+	// Convert shared ErrorDetails to api.ErrorDetails
+	apiErrorDetails := toAPIErrorDetails(errorDetails)
+
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := GatewayAuditPayload{
-		SignalType:   signal.SourceType,
-		AlertName:    signal.AlertName,
-		Namespace:    signal.Namespace,
-		Fingerprint:  signal.Fingerprint,
-		Severity:     signal.Severity,
-		ResourceKind: signal.Resource.Kind,
-		ResourceName: signal.Resource.Name,
-		ErrorDetails: errorDetails, // Gap #7: Standardized error_details for SOC2 compliance
+	payload := api.GatewayAuditPayload{
+		EventType: EventTypeCRDFailed, // Required for discriminator
+
+		SignalType:  toGatewayAuditPayloadSignalType(signal.SourceType),
+		AlertName:   signal.AlertName,
+		Namespace:   signal.Namespace,
+		Fingerprint: signal.Fingerprint,
 	}
-	audit.SetEventData(event, payload)
+
+	// Optional fields
+	payload.Severity.SetTo(toGatewayAuditPayloadSeverity(signal.Severity))
+	payload.ResourceKind.SetTo(signal.Resource.Kind)
+	payload.ResourceName.SetTo(signal.Resource.Name)
+	payload.ErrorDetails.SetTo(apiErrorDetails) // Gap #7: Standardized error_details for SOC2 compliance
+
+	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if storeErr := s.auditStore.StoreAudit(ctx, event); storeErr != nil {

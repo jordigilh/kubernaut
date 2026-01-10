@@ -35,7 +35,7 @@ class GatewayAuditPayload(BaseModel):
     original_payload: Optional[Dict[str, Any]] = Field(default=None, description="Full signal payload for RR.Spec.OriginalPayload reconstruction")
     signal_labels: Optional[Dict[str, StrictStr]] = Field(default=None, description="Signal labels for RR.Spec.SignalLabels reconstruction")
     signal_annotations: Optional[Dict[str, StrictStr]] = Field(default=None, description="Signal annotations for RR.Spec.SignalAnnotations reconstruction")
-    signal_type: StrictStr = Field(description="Source type of the signal")
+    signal_type: StrictStr = Field(description="Source type of the signal (alertmanager=Prometheus AlertManager webhooks, webhook=generic/K8s webhooks)")
     alert_name: StrictStr = Field(description="Name of the alert")
     namespace: StrictStr = Field(description="Kubernetes namespace of the affected resource")
     fingerprint: StrictStr = Field(description="Unique identifier for the signal (deduplication)")
@@ -48,11 +48,18 @@ class GatewayAuditPayload(BaseModel):
     error_details: Optional[ErrorDetails] = None
     __properties: ClassVar[List[str]] = ["event_type", "original_payload", "signal_labels", "signal_annotations", "signal_type", "alert_name", "namespace", "fingerprint", "severity", "resource_kind", "resource_name", "remediation_request", "deduplication_status", "occurrence_count", "error_details"]
 
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('gateway.signal.received', 'gateway.signal.deduplicated', 'gateway.crd.created', 'gateway.crd.failed'):
+            raise ValueError("must be one of enum values ('gateway.signal.received', 'gateway.signal.deduplicated', 'gateway.crd.created', 'gateway.crd.failed')")
+        return value
+
     @field_validator('signal_type')
     def signal_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('prometheus', 'alertmanager', 'webhook'):
-            raise ValueError("must be one of enum values ('prometheus', 'alertmanager', 'webhook')")
+        if value not in ('alertmanager', 'webhook'):
+            raise ValueError("must be one of enum values ('alertmanager', 'webhook')")
         return value
 
     @field_validator('severity')

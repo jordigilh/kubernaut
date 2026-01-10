@@ -131,7 +131,7 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			}, "30s", "500ms").Should(Succeed(), "CRD should be created")
 
 			// BUSINESS VALIDATION 2: CRD has correct metadata from adapter
-			Expect(crd.Spec.SignalType).To(Equal("prometheus-alert"), "Signal type from adapter")
+			Expect(crd.Spec.SignalType).To(Equal("alertmanager"), "Signal type - ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypeAlertManager")
 			// BR-GATEWAY-027: SignalSource is the monitoring system ("prometheus"), not adapter name
 			// This enables LLM to select appropriate investigation tools (Prometheus queries)
 			Expect(crd.Spec.SignalSource).To(Equal("prometheus"), "Signal source is monitoring system")
@@ -246,7 +246,7 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 			}, "30s", "500ms").Should(Succeed(), "CRD should be created")
 
 			// BUSINESS VALIDATION 2: CRD has correct metadata from K8s Event adapter
-			Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"), "Signal type from adapter")
+			Expect(crd.Spec.SignalType).To(Equal("webhook"), "Signal type - ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeWebhook")
 			Expect(crd.Spec.SignalSource).To(Equal("kubernetes-events"), "Signal source from adapter (monitoring system)")
 
 			// Note: Priority validation removed (2025-12-06)

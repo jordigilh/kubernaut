@@ -28,6 +28,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -39,7 +40,7 @@ import (
 
 var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", func() {
 	var (
-		testNamespace = "gw-resilience-test" // Static namespace - created in suite setup
+		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
 		ctx           context.Context
 		gatewayURL    string
 		server        *httptest.Server
@@ -49,6 +50,11 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	BeforeEach(func() {
 		ctx = context.Background()
 		testClient = SetupK8sTestClient(ctx)
+
+		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
+		testNamespace = fmt.Sprintf("gw-resilience-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
+		EnsureTestNamespace(ctx, testClient, testNamespace)
+		RegisterTestNamespace(testNamespace) // Auto-cleanup after test
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -69,24 +75,8 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			server.Close()
 		}
 
-		// Cleanup resources in namespace (but keep namespace alive for next test)
-		if testNamespace != "" && testClient != nil {
-			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
-				client.InNamespace(testNamespace))
-
-			// Wait for all CRDs to be deleted before next test
-			// This prevents test pollution in parallel execution
-			Eventually(func() int {
-				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
-				if err != nil {
-					GinkgoWriter.Printf("Error during cleanup list: %v\n", err)
-					return -1
-				}
-				return len(rrList.Items)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
-				"All CRDs should be deleted before next test starts")
-		}
+		// ✅ FIX: Namespace cleanup handled by RegisterTestNamespace
+		// No manual cleanup needed - each parallel process has its own isolated namespace
 	})
 
 	Context("GW-RES-001: K8s API Unreachable Scenarios (P0)", func() {

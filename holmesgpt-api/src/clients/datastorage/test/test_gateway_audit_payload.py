@@ -36,7 +36,7 @@ class TestGatewayAuditPayload(unittest.TestCase):
         model = GatewayAuditPayload()
         if include_optional:
             return GatewayAuditPayload(
-                event_type = '',
+                event_type = 'gateway.signal.received',
                 original_payload = { },
                 signal_labels = {
                     'key' : ''
@@ -44,7 +44,7 @@ class TestGatewayAuditPayload(unittest.TestCase):
                 signal_annotations = {
                     'key' : ''
                     },
-                signal_type = 'prometheus',
+                signal_type = 'alertmanager',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',
@@ -63,8 +63,8 @@ class TestGatewayAuditPayload(unittest.TestCase):
             )
         else:
             return GatewayAuditPayload(
-                event_type = '',
-                signal_type = 'prometheus',
+                event_type = 'gateway.signal.received',
+                signal_type = 'alertmanager',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',
