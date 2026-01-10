@@ -57,11 +57,12 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 
 	for time.Now().Before(deadline) {
 		// List files in pod matching pattern
-		// Use -exec basename to get just the filename, not the full path
+		// Use -c to specify container and avoid "Defaulted container" messages
 		cmd := exec.CommandContext(ctx, "kubectl",
 			"--kubeconfig", kubeconfigPath,
 			"-n", controllerNamespace,
 			"exec", podName,
+			"-c", "manager",  // Specify container to avoid "Defaulted container" messages
 			"--", "sh", "-c",
 			fmt.Sprintf("cd /tmp/notifications && ls %s 2>/dev/null || true", pattern))
 
@@ -87,11 +88,12 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 	// Read file content from pod using kubectl exec (more reliable than kubectl cp)
 	// foundFile is just the filename (from `cd && ls`), so append to directory
 	filePath := fmt.Sprintf("/tmp/notifications/%s", foundFile)
-	
+
 	cmd := exec.CommandContext(ctx, "kubectl",
 		"--kubeconfig", kubeconfigPath,
 		"-n", controllerNamespace,
 		"exec", podName,
+		"-c", "manager",  // Specify container to avoid "Defaulted container" messages
 		"--", "cat", filePath)
 
 	fileContent, err := cmd.CombinedOutput()
@@ -119,10 +121,12 @@ func ListFilesInPod(ctx context.Context, pattern string) ([]string, error) {
 	}
 
 	// Use cd to get just filenames, not full paths
+	// Specify container to avoid "Defaulted container" messages
 	cmd := exec.CommandContext(ctx, "kubectl",
 		"--kubeconfig", kubeconfigPath,
 		"-n", controllerNamespace,
 		"exec", podName,
+		"-c", "manager",
 		"--", "sh", "-c",
 		fmt.Sprintf("cd /tmp/notifications && ls %s 2>/dev/null || true", pattern))
 
