@@ -545,40 +545,9 @@ func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath 
 		return err
 	}
 
-	// 1. Create ConfigMap for init script
-	initConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "postgresql-init",
-			Namespace: namespace,
-		},
-		Data: map[string]string{
-			"init.sql": `-- V1.0: Standard PostgreSQL (no pgvector extension)
-
--- Create user if not exists (idempotent, race-proof)
--- Fix: PostgreSQL docker entrypoint may not create user before running init scripts
--- This handles Kubernetes secret loading delays and container startup timing
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'slm_user') THEN
-        CREATE ROLE slm_user WITH LOGIN PASSWORD 'test_password';
-    END IF;
-END
-$$;
-
--- Grant permissions to slm_user
-GRANT ALL PRIVILEGES ON DATABASE action_history TO slm_user;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO slm_user;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO slm_user;
-GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
-		},
-	}
-
-	_, err = clientset.CoreV1().ConfigMaps(namespace).Create(ctx, initConfigMap, metav1.CreateOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to create PostgreSQL init ConfigMap: %w", err)
-	}
-
-	// 2. Create Secret for credentials
+	// 1. Create Secret for credentials
+	// Note: PostgreSQL docker entrypoint auto-creates user and database from env vars
+	// No init script needed - POSTGRES_USER gets ownership of POSTGRES_DB automatically
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "postgresql-secret",
@@ -596,7 +565,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
 	}
 
-	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)
+	// 2. Create Service (NodePort for direct access from host - eliminates port-forward instability)
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "postgresql",
@@ -627,7 +596,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL service: %w", err)
 	}
 
-	// 4. Create Deployment
+	// 3. Create Deployment
 	replicas := int32(1)
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -705,10 +674,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 									Name:      "postgresql-data",
 									MountPath: "/var/lib/postgresql/data",
 								},
-								{
-									Name:      "postgresql-init",
-									MountPath: "/docker-entrypoint-initdb.d",
-								},
 							},
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -723,7 +688,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 							ReadinessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"pg_isready", "-U", "slm_user"},
+										Command: []string{"pg_isready", "-U", "slm_user", "-d", "action_history"},
 									},
 								},
 								InitialDelaySeconds: 5,
@@ -733,7 +698,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
-										Command: []string{"pg_isready", "-U", "slm_user"},
+										Command: []string{"pg_isready", "-U", "slm_user", "-d", "action_history"},
 									},
 								},
 								InitialDelaySeconds: 30,
@@ -749,16 +714,6 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
-						{
-							Name: "postgresql-init",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "postgresql-init",
-									},
-								},
-							},
-						},
 					},
 				},
 			},
@@ -770,7 +725,8 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 		return fmt.Errorf("failed to create PostgreSQL deployment: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (ConfigMap + Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL deployed (Secret + Service + Deployment)\n")
+	_, _ = fmt.Fprintf(writer, "   ℹ️  User and database auto-created by PostgreSQL entrypoint\n")
 	return nil
 }
 
