@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -245,18 +246,34 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Subject:  "Critical Alert: System Outage",
 					Body:     "Priority validation test for critical alerts",
-					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Channels: []notificationv1alpha1.Channel{
-250: 						notificationv1alpha1.ChannelConsole,
-					notificationv1alpha1.ChannelFile,  // Add file channel for priority validation test
+				Priority: notificationv1alpha1.NotificationPriorityCritical,
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelConsole,
+					notificationv1alpha1.ChannelFile, // Add file channel for priority validation test
 				},
 				Recipients: []notificationv1alpha1.Recipient{
-						{Slack: "#ops-critical"},
-					},
+					{Slack: "#ops-critical"},
 				},
-			}
+			},
+		}
 
 			err := k8sClient.Create(ctx, notification)
+			if err != nil {
+				// DEBUG: Detailed error logging for k8sClient.Create() failure
+				GinkgoWriter.Printf("\n❌ k8sClient.Create() ERROR DETAILS:\n")
+				GinkgoWriter.Printf("   Error: %v\n", err)
+				GinkgoWriter.Printf("   Error Type: %T\n", err)
+				if statusErr, ok := err.(*errors.StatusError); ok {
+					GinkgoWriter.Printf("   Status Code: %d\n", statusErr.Status().Code)
+					GinkgoWriter.Printf("   Reason: %s\n", statusErr.ErrStatus.Reason)
+					GinkgoWriter.Printf("   Message: %s\n", statusErr.ErrStatus.Message)
+					if statusErr.ErrStatus.Details != nil {
+						GinkgoWriter.Printf("   Details: %+v\n", statusErr.ErrStatus.Details)
+					}
+				}
+				GinkgoWriter.Printf("   Notification Spec: %+v\n", notification.Spec)
+				GinkgoWriter.Printf("   Notification Metadata: %+v\n", notification.ObjectMeta)
+			}
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Waiting for successful delivery")
