@@ -84,12 +84,13 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 	}
 
 	// Copy file from pod to host
-	podPath := fmt.Sprintf("%s/%s:/tmp/notifications/%s",
-		controllerNamespace, podName, foundFile)
+	// kubectl cp format with -n flag: podname:/path (no namespace prefix needed)
+	podPath := fmt.Sprintf("%s:/tmp/notifications/%s", podName, foundFile)
 	hostPath := filepath.Join(tmpDir, filepath.Base(foundFile))
 
 	cmd := exec.CommandContext(ctx, "kubectl",
 		"--kubeconfig", kubeconfigPath,
+		"-n", controllerNamespace,
 		"cp", podPath, hostPath)
 
 	if output, err := cmd.CombinedOutput(); err != nil {
