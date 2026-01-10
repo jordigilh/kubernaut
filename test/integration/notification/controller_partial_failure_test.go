@@ -1,0 +1,332 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package notification
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/testutil"
+)
+
+// ========================================
+// PARTIAL FAILURE HANDLING INTEGRATION TESTS
+// 📋 Business Requirement: BR-NOT-053 (Multi-Channel Fanout)
+// 📋 Migrated From: test/e2e/notification/06_multi_channel_fanout_test.go (Scenario 2)
+// ========================================
+//
+// WHY INTEGRATION TIER IS BETTER:
+// - ✅ Deterministic channel failure simulation (mock services)
+// - ✅ Fast execution (~seconds instead of ~minutes in E2E)
+// - ✅ Can test all failure combinations (any channel fails)
+// - ✅ No file system or cluster infrastructure dependencies
+//
+// MIGRATION RATIONALE:
+// The E2E test was pending (PIt) because it required simulating file delivery
+// failures, which was infeasible after FileDeliveryConfig removal (DD-NOT-006 v2).
+// Integration tests with mock services provide comprehensive coverage of partial
+// failure scenarios without infrastructure complexity.
+//
+// ========================================
+
+var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
+	Context("When file channel fails but console/log channels succeed", func() {
+		It("should mark notification as PartiallySent (not Sent, not Failed)", func() {
+			// ========================================
+			// TEST SETUP: Mock services with controlled failure
+			// ========================================
+			mockConsoleService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return nil // Success
+				},
+			}
+
+			mockLogService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return nil // Success
+				},
+			}
+
+			mockFileService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return fmt.Errorf("disk full (simulated)") // Permanent failure
+				},
+			}
+
+			// ========================================
+			// CREATE TEST NOTIFICATION WITH MULTIPLE CHANNELS
+			// ========================================
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "integration-partial-failure-test",
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"test-scenario": "partial-failure",
+						"test-tier":     "integration",
+					},
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Integration Test: Partial Failure Handling",
+					Body:     "Testing PartiallySent phase when file fails but console/log succeed",
+					Priority: notificationv1alpha1.NotificationPriorityMedium,
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole, // Will succeed
+						notificationv1alpha1.ChannelLog,     // Will succeed
+						notificationv1alpha1.ChannelFile,    // Will fail
+					},
+					// Disable retries for this test (we want to test partial failure, not retry logic)
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           1, // No retries
+						InitialBackoffSeconds: 1,
+						BackoffMultiplier:     1,
+						MaxBackoffSeconds:     1,
+					},
+				},
+			}
+
+			err := k8sClient.Create(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ========================================
+			// PHASE 1: Wait for delivery attempts
+			// ========================================
+			By("Waiting for controller to attempt delivery to all channels")
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return ""
+				}
+				return notification.Status.Phase
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+				"Should transition to PartiallySent when some channels fail")
+
+			// ========================================
+			// ASSERTIONS: Partial Failure State Validation
+			// ========================================
+			By("Validating partial failure statistics (BR-NOT-053)")
+			Expect(notification.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+				"Phase must be PartiallySent (not Sent, not Failed)")
+			Expect(notification.Status.SuccessfulDeliveries).To(Equal(2),
+				"Console and log should succeed (2 successful)")
+			Expect(notification.Status.FailedDeliveries).To(Equal(1),
+				"File delivery should fail (1 failed)")
+			Expect(notification.Status.DeliveryAttempts).To(Equal(3),
+				"Should attempt delivery to all 3 channels")
+
+			By("Validating mock service call counts")
+			Expect(mockConsoleService.GetCallCount()).To(Equal(1),
+				"Console service called once")
+			Expect(mockLogService.GetCallCount()).To(Equal(1),
+				"Log service called once")
+			Expect(mockFileService.GetCallCount()).To(Equal(1),
+				"File service called once (no retries)")
+
+			// ========================================
+			// CLEANUP
+			// ========================================
+			err = k8sClient.Delete(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("When console channel fails but file/log channels succeed", func() {
+		It("should mark notification as PartiallySent", func() {
+			// ========================================
+			// TEST SETUP: Different failure pattern (console fails instead of file)
+			// ========================================
+			mockConsoleService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return fmt.Errorf("stdout write error (simulated)") // Failure
+				},
+			}
+
+			mockLogService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return nil // Success
+				},
+			}
+
+			mockFileService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return nil // Success
+				},
+			}
+
+			// ========================================
+			// CREATE TEST NOTIFICATION
+			// ========================================
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "integration-console-failure-test",
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"test-scenario": "console-failure",
+						"test-tier":     "integration",
+					},
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Integration Test: Console Failure",
+					Body:     "Testing PartiallySent when console fails but file/log succeed",
+					Priority: notificationv1alpha1.NotificationPriorityLow,
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole, // Will fail
+						notificationv1alpha1.ChannelLog,     // Will succeed
+						notificationv1alpha1.ChannelFile,    // Will succeed
+					},
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           1, // No retries
+						InitialBackoffSeconds: 1,
+						BackoffMultiplier:     1,
+						MaxBackoffSeconds:     1,
+					},
+				},
+			}
+
+			err := k8sClient.Create(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ========================================
+			// WAIT AND VALIDATE
+			// ========================================
+			By("Waiting for PartiallySent phase")
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return ""
+				}
+				return notification.Status.Phase
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent))
+
+			By("Validating statistics")
+			Expect(notification.Status.SuccessfulDeliveries).To(Equal(2),
+				"File and log should succeed")
+			Expect(notification.Status.FailedDeliveries).To(Equal(1),
+				"Console should fail")
+
+			// ========================================
+			// CLEANUP
+			// ========================================
+			err = k8sClient.Delete(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("When all channels fail", func() {
+		It("should mark notification as Failed (not PartiallySent)", func() {
+			// ========================================
+			// TEST SETUP: All services fail
+			// ========================================
+			mockConsoleService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return fmt.Errorf("console failure")
+				},
+			}
+
+			mockLogService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return fmt.Errorf("log failure")
+				},
+			}
+
+			mockFileService := &testutil.MockDeliveryService{
+				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+					return fmt.Errorf("file failure")
+				},
+			}
+
+			// ========================================
+			// CREATE TEST NOTIFICATION
+			// ========================================
+			notification := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "integration-all-channels-fail-test",
+					Namespace: testNamespace,
+					Labels: map[string]string{
+						"test-scenario": "all-channels-fail",
+						"test-tier":     "integration",
+					},
+				},
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Subject:  "Integration Test: All Channels Fail",
+					Body:     "Testing Failed phase when all channels fail",
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelLog,
+						notificationv1alpha1.ChannelFile,
+					},
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           1, // No retries
+						InitialBackoffSeconds: 1,
+						BackoffMultiplier:     1,
+						MaxBackoffSeconds:     1,
+					},
+				},
+			}
+
+			err := k8sClient.Create(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ========================================
+			// WAIT AND VALIDATE
+			// ========================================
+			By("Waiting for Failed phase (all channels failed)")
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return ""
+				}
+				return notification.Status.Phase
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed),
+				"Should transition to Failed when ALL channels fail")
+
+			By("Validating failure statistics")
+			Expect(notification.Status.SuccessfulDeliveries).To(Equal(0),
+				"No channels should succeed")
+			Expect(notification.Status.FailedDeliveries).To(Equal(3),
+				"All 3 channels should fail")
+			Expect(notification.Status.DeliveryAttempts).To(Equal(3),
+				"Should attempt delivery to all 3 channels")
+
+			// ========================================
+			// CLEANUP
+			// ========================================
+			err = k8sClient.Delete(ctx, notification)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+})

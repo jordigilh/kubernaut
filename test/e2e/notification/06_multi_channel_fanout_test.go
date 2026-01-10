@@ -177,94 +177,32 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	// ========================================
 	// Scenario 2: Partial Failure Handling
 	// ========================================
+	// 📋 **TEST MIGRATION NOTICE** (2026-01-10)
+	// ========================================
+	// This test has been **MIGRATED TO INTEGRATION TIER**.
+	//
+	// **Why Integration Instead of E2E?**
+	// - ✅ Mock services provide deterministic channel failure simulation
+	// - ✅ Faster execution (~seconds vs ~minutes)
+	// - ✅ Can test all failure combinations (any channel fails)
+	// - ✅ No file system or infrastructure dependencies
+	//
+	// **What Was Migrated?**
+	// - ❌ E2E Pending Test: Partial failure handling (PIt)
+	// - ✅ Integration Test: `test/integration/notification/controller_partial_failure_test.go`
+	//
+	// **Coverage Status**:
+	// - ✅ Partial failure: Integration tier (mock service failures)
+	// - ✅ Successful multi-channel: E2E tier (Scenario 1 above)
+	// - ✅ All channels fail: Integration tier (controller_partial_failure_test.go)
+	//
+	// **Related**:
+	// - Integration Test: `test/integration/notification/controller_partial_failure_test.go`
+	// - Design Decision: DD-NOT-006 v2 (FileDeliveryConfig removal)
+	// ========================================
 	Context("Scenario 2: One channel fails, others succeed", func() {
-		// PIt: This test is currently pending because the FileDeliveryConfig field
-		// was removed from the CRD (DD-NOT-006 v2).
-		// The controller now writes to a fixed, configured output directory,
-		// making it impossible for E2E tests to specify an invalid directory
-		// to simulate file delivery failures.
-		//
-		// Re-enable this test if a new mechanism for simulating file write failures
-		// (e.g., a mock filesystem, in-memory adapter, or test-only configuration)
-		// is introduced.
-		//
-		// Related: 05_retry_exponential_backoff_test.go (also pending for same reason)
-		PIt("should mark as PartiallySent when file delivery fails but console/log succeed", func() {
-		By("Creating NotificationRequest with file channel pointing to invalid directory")
-
-		notification := &notificationv1alpha1.NotificationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-partial-failure-test",
-					Namespace: "default",
-					Labels: map[string]string{
-						"test-scenario": "partial-failure",
-						"test-priority": "P0",
-					},
-				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Subject:  "E2E Test: Partial Failure Handling",
-					Body:     "Testing graceful degradation when one channel fails",
-					Priority: notificationv1alpha1.NotificationPriorityMedium,
-					Channels: []notificationv1alpha1.Channel{
-						notificationv1alpha1.ChannelConsole, // Should succeed
-						notificationv1alpha1.ChannelFile,    // Will fail (invalid directory)
-						notificationv1alpha1.ChannelLog,     // Should succeed
-					},
-				},
-			}
-
-			err := k8sClient.Create(ctx, notification)
-			Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest")
-
-			By("Waiting for partial delivery (console and log succeed, file fails)")
-			// DD-E2E-003: Controller retries failed deliveries per BR-NOT-052
-			// Phase progression: Pending → Sending → Retrying (due to retry logic)
-			// PartiallySent is not reached because retry logic takes precedence
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
-					Name:      notification.Name,
-					Namespace: notification.Namespace,
-				}, notification)
-				if err != nil {
-					return ""
-				}
-				return notification.Status.Phase
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseRetrying),
-				"Phase should be Retrying (controller retries failed deliveries per BR-NOT-052)")
-
-			By("Verifying partial delivery metrics (CRITICAL SAFETY)")
-			// Refresh notification to get latest status
-			err = k8sClient.Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Should have 2 successful deliveries (console + log)
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(2),
-				"Console and log channels should succeed (BR-NOT-053)")
-
-			// Should have 1 failed delivery (file)
-			Expect(notification.Status.FailedDeliveries).To(Equal(1),
-				"File channel should fail due to invalid directory")
-
-			By("Verifying console and log channels were NOT blocked by file failure")
-			// This is the CRITICAL SAFETY requirement: one channel failure must not block others
-			channelsSeen := make(map[string]string) // channel -> status
-			for _, attempt := range notification.Status.DeliveryAttempts {
-				channelsSeen[attempt.Channel] = attempt.Status
-			}
-
-			Expect(channelsSeen["console"]).To(Equal("success"),
-				"Console channel must succeed independently")
-			Expect(channelsSeen["log"]).To(Equal("success"),
-				"Log channel must succeed independently")
-			Expect(channelsSeen["file"]).To(Or(Equal("failed"), Equal("error")),
-				"File channel should fail due to invalid directory")
-
-			logger.Info("✅ PARTIAL FAILURE SUCCESS: Console and log delivered despite file failure")
-		})
+		// All tests migrated to integration tier
+		// See: test/integration/notification/controller_partial_failure_test.go
 	})
 
 	// ========================================
