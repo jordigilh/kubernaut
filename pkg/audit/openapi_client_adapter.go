@@ -205,9 +205,9 @@ func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogencli
 	// Type-safe parameters, contract-validated request/response
 	resp, err := a.client.CreateAuditEventsBatch(ctx, valueEvents)
 	if err != nil {
-		// Network-level error (connection failure, timeout, DNS resolution)
-		// These are retryable per GAP-11 retry logic
-		return NewNetworkError(err)
+		// Parse HTTP status code from ogen error if present
+		// Ogen errors for non-2xx responses contain "unexpected status code: XXX"
+		return err
 	}
 
 	// Ogen returns typed response directly, no status code checking needed
