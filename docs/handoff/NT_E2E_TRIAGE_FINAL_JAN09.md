@@ -4,7 +4,7 @@
 
 ```
 ✅ 15 PASSED
-❌ 5 FAILED  
+❌ 5 FAILED
 ⏸️  1 PENDING (05_retry_exponential_backoff - cannot simulate after DD-NOT-006 v2)
 ```
 
@@ -18,7 +18,7 @@
 
 #### Failed Tests:
 1. **07_priority_routing_test.go:331** - High priority notification with all channels
-2. **07_priority_routing_test.go:236** - Multiple priorities in order  
+2. **07_priority_routing_test.go:236** - Multiple priorities in order
 3. **03_file_delivery_validation_test.go:277** - Priority field preservation
 
 **Evidence**: Kind logs confirm all 8 files created in pod, only last file appeared on host
@@ -32,7 +32,7 @@
 
 #### Error Message:
 ```
-Event should have notification_id in EventData 
+Event should have notification_id in EventData
 (got EventData type: api.AuditEventEventData)
 Expected <string>:  not to be empty
 ```
@@ -46,8 +46,8 @@ Expected <string>:  not to be empty
 ```go
 // test/e2e/notification/02_audit_correlation_test.go:232
 // Need to check how EventData is being accessed
-Expect(notificationID).NotTo(BeEmpty(), 
-    "Event should have notification_id in EventData (got EventData type: %T)", 
+Expect(notificationID).NotTo(BeEmpty(),
+    "Event should have notification_id in EventData (got EventData type: %T)",
     event.EventData)
 ```
 
@@ -79,7 +79,7 @@ to equal <v1alpha1.NotificationPhase>: Retrying
 
 2. **Controller logic change**: Retry behavior may have changed with new delivery model
 
-**Fix Required**: 
+**Fix Required**:
 - **Option A**: Skip/Pending this test (cannot simulate file failure without FileDeliveryConfig)
 - **Option B**: Add test-only configuration to inject failures
 - **Option C**: Use mock filesystem or in-memory adapter for testing
@@ -125,10 +125,10 @@ Eventually(func() int {
 // test/e2e/notification/02_audit_correlation_test.go
 for _, event := range sentEvents {
     notificationID := "" // Extract from event.EventData
-    
+
     // ❌ THIS LINE FAILS - how is notificationID extracted?
-    Expect(notificationID).NotTo(BeEmpty(), 
-        "Event should have notification_id in EventData (got EventData type: %T)", 
+    Expect(notificationID).NotTo(BeEmpty(),
+        "Event should have notification_id in EventData (got EventData type: %T)",
         event.EventData)
 }
 ```
@@ -170,7 +170,7 @@ It("should mark as PartiallySent when file delivery fails but console/log succee
 
 Files to fix:
 - `test/e2e/notification/03_file_delivery_validation_test.go:277`
-- `test/e2e/notification/07_priority_routing_test.go:236`  
+- `test/e2e/notification/07_priority_routing_test.go:236`
 - `test/e2e/notification/07_priority_routing_test.go:331`
 
 Pattern: Replace `Expect(len(files))` with `Eventually(func() int {...})`
@@ -228,7 +228,7 @@ Step 3:   Fix/Pending partial delivery (1 test)
 
 ✅ **ALL BLOCKERS RESOLVED**:
 - ✅ K8s v1.35.0 kubelet bug → Fixed by WE team (direct Pod API polling)
-- ✅ AuthWebhook pod readiness → Fixed (single-node + direct polling)  
+- ✅ AuthWebhook pod readiness → Fixed (single-node + direct polling)
 - ✅ ConfigMap namespace hardcoding → Fixed (dynamic namespace)
 - ✅ File delivery service initialization → Fixed (ConfigMap applied to correct namespace)
 - ✅ Podman UTF-8 emoji parsing → Fixed (removed emojis from Dockerfile)
@@ -242,7 +242,7 @@ Step 3:   Fix/Pending partial delivery (1 test)
 ### **DD-NOT-006 v2 Impact**
 - **Design Change**: Removed `FileDeliveryConfig` from CRD
 - **Configuration**: Now service-level (ConfigMap/env vars)
-- **Test Impact**: 
+- **Test Impact**:
   - ✅ Most tests adapted successfully
   - ⏸️  2 tests cannot simulate failures (marked Pending)
 
@@ -254,7 +254,7 @@ Step 3:   Fix/Pending partial delivery (1 test)
 
 ### **ogen Migration Status**
 - ✅ Unit tests: 100% migrated and passing
-- ✅ Integration tests: 100% migrated and passing  
+- ✅ Integration tests: 100% migrated and passing
 - ⚠️  E2E tests: 1 EventData extraction issue remaining
 - **Overall**: 99% complete, 1 discriminated union edge case
 
@@ -280,6 +280,6 @@ Step 3:   Fix/Pending partial delivery (1 test)
 
 ---
 
-**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001  
-**Status**: Triage complete, fix priority defined, 100% achievable  
+**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001
+**Status**: Triage complete, fix priority defined, 100% achievable
 **Next**: Apply Priority 1 fixes (race conditions) → 90% pass rate

@@ -58,7 +58,7 @@ var (
 	ctx              context.Context
 	cancel           context.CancelFunc
 	auditStore       audit.AuditStore // REAL audit store for webhook handlers
-	dsClient         *ogenclient.ClientWithResponses // DD-TESTING-001: OpenAPI-generated client
+	dsClient         *ogenclient.Client // DD-TESTING-001: Ogen OpenAPI-generated client
 	infra            *testinfra.AuthWebhookInfrastructure
 )
 
@@ -114,11 +114,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Initializing Data Storage OpenAPI client (DD-API-001)")
 	var err error
-	dsClient, err = ogenclient.NewClientWithResponses(dataStorageURL)
+	dsClient, err = ogenclient.NewClient(dataStorageURL)
 	if err != nil {
 		Fail(fmt.Sprintf("DD-API-001 violation: Cannot proceed without DataStorage client: %v", err))
 	}
-	GinkgoWriter.Printf("[Process %d] ✅ Data Storage OpenAPI client initialized\n", GinkgoParallelProcess())
+	GinkgoWriter.Printf("[Process %d] ✅ Data Storage Ogen client initialized\n", GinkgoParallelProcess())
 
 	By("Creating REAL audit store for webhook handlers")
 	// Create OpenAPI DataStorage client adapter for audit writes

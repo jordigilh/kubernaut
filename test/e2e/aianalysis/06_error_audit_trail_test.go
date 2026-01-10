@@ -10,7 +10,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	aianalysisaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
@@ -82,11 +83,11 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 			remediationID := analysis.Spec.RemediationID
 
 			By("Querying Data Storage for HolmesGPT call audit events")
-			// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
-			// Wait for at least one HAPI call event (success or failure)
-			// waitForAuditEvents already uses Eventually() internally
-			hapiEventType := "aianalysis.holmesgpt.call"
-			hapiEvents := waitForAuditEvents(remediationID, hapiEventType, 1)
+		// Per TESTING_GUIDELINES.md: Use Eventually(), NOT time.Sleep()
+		// Wait for at least one HAPI call event (success or failure)
+		// waitForAuditEvents already uses Eventually() internally
+		hapiEventType := aianalysisaudit.EventTypeHolmesGPTCall
+		hapiEvents := waitForAuditEvents(remediationID, hapiEventType, 1)
 
 			By("Validating HolmesGPT call was audited regardless of success/failure")
 			Expect(hapiEvents).ToNot(BeEmpty(),
@@ -94,12 +95,13 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 
 		By("Verifying HTTP status code is captured in audit event")
 		event := hapiEvents[0]
-		eventData, ok := event.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue(), "event_data should be a JSON object")
-		Expect(eventData).To(HaveKey("http_status_code"),
+		// Access strongly-typed payload via discriminated union
+		payload := event.EventData.AIAnalysisHolmesGPTCallPayload
+		Expect(payload).ToNot(BeNil(), "Should have AIAnalysisHolmesGPTCallPayload")
+		Expect(payload.HTTPStatusCode).ToNot(BeZero(),
 			"HTTP status code MUST be captured for all HAPI calls")
 
-		statusCode := int(eventData["http_status_code"].(float64))
+		statusCode := payload.HTTPStatusCode
 		GinkgoWriter.Printf("📊 HAPI call status code: %d\n", statusCode)
 
 		// Status code could be 200 (success), 500 (error), or timeout
@@ -161,12 +163,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(),
 				"Controller MUST create audit trail even if analysis doesn't complete (ADR-032 §1)")
 
-			By("Verifying audit events have correct correlation_id")
-			for _, event := range events {
-				// ✅ Type-safe field access (OpenAPI generated)
-				Expect(event.CorrelationId).To(Equal(remediationID),
-					"All audit events must have correlation_id matching remediation_id")
-			}
+		By("Verifying audit events have correct correlation_id")
+		for _, event := range events {
+			// ✅ Type-safe field access (OpenAPI generated)
+			Expect(event.CorrelationID).To(Equal(remediationID),
+				"All audit events must have correlation_id matching remediation_id")
+		}
 
 			By("Checking current AIAnalysis state")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
@@ -236,11 +238,11 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(),
 				"Controller MUST generate audit events even during error scenarios")
 
-			By("Checking for error audit events if present")
-			errorEvents := []dsgen.AuditEvent{}
-			for _, event := range events {
-				if event.EventType == "aianalysis.error.occurred" {
-					errorEvents = append(errorEvents, event)
+		By("Checking for error audit events if present")
+		errorEvents := []dsgen.AuditEvent{}
+		for _, event := range events {
+			if event.EventType == aianalysisaudit.EventTypeError {
+				errorEvents = append(errorEvents, event)
 				}
 			}
 
@@ -401,12 +403,12 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 				testutil.ValidateAuditEventHasRequiredFields(event)
 
 				// Additional E2E-specific validation
-				Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryAnalysis),
-					"AIAnalysis events should have category 'analysis'")
+			Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryAnalysis),
+				"AIAnalysis events should have category 'analysis'")
 
-				Expect(event.CorrelationId).To(Equal(remediationID),
-					"correlation_id should match remediation_id")
-			}
+			Expect(event.CorrelationID).To(Equal(remediationID),
+				"correlation_id should match remediation_id")
+		}
 
 			GinkgoWriter.Printf("✅ All %d audit events have complete metadata\n", len(events))
 		})

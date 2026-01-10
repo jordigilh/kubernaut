@@ -36,6 +36,7 @@ class TestWorkflowSearchAuditPayload(unittest.TestCase):
         model = WorkflowSearchAuditPayload()
         if include_optional:
             return WorkflowSearchAuditPayload(
+                event_type = 'workflow.catalog.search_completed',
                 query = datastorage.models.query_metadata.QueryMetadata(
                     top_k = 5, 
                     min_score = 0.7, 
@@ -81,6 +82,7 @@ class TestWorkflowSearchAuditPayload(unittest.TestCase):
             )
         else:
             return WorkflowSearchAuditPayload(
+                event_type = 'workflow.catalog.search_completed',
                 query = datastorage.models.query_metadata.QueryMetadata(
                     top_k = 5, 
                     min_score = 0.7, 

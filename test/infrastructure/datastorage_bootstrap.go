@@ -510,7 +510,7 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 //	        "MOCK_LLM":     "true",
 //	    },
 //	    BuildContext:    ".",                     // Optional: build if needed
-//	    BuildDockerfile: "holmesgpt-api/Dockerfile",
+//	    BuildDockerfile: "holmesgpt-api/Dockerfile.e2e", // Use E2E Dockerfile (minimal deps, faster builds)
 //	    HealthCheck: &HealthCheckConfig{
 //	        URL:     "http://127.0.0.1:18120/health",
 //	        Timeout: 30 * time.Second,

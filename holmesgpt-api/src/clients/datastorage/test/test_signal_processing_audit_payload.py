@@ -36,7 +36,7 @@ class TestSignalProcessingAuditPayload(unittest.TestCase):
         model = SignalProcessingAuditPayload()
         if include_optional:
             return SignalProcessingAuditPayload(
-                event_type = '',
+                event_type = 'signalprocessing.signal.processed',
                 phase = 'Pending',
                 signal = 'high-memory-payment-api-abc123',
                 severity = 'critical',
@@ -62,7 +62,7 @@ class TestSignalProcessingAuditPayload(unittest.TestCase):
             )
         else:
             return SignalProcessingAuditPayload(
-                event_type = '',
+                event_type = 'signalprocessing.signal.processed',
                 phase = 'Pending',
                 signal = 'high-memory-payment-api-abc123',
         )

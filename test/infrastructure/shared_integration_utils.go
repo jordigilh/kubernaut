@@ -959,7 +959,11 @@ spec:
 func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArgs []string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  🔨 Building %s image: %s\n", name, imageTag)
 
-	args := []string{"build", "-t", imageTag, "-f", dockerfile}
+	// ✅ FIX: Resolve Dockerfile path relative to project root
+	// Ensures podman finds the Dockerfile when run from any working directory
+	dockerfilePath := filepath.Join(projectRoot, dockerfile)
+
+	args := []string{"build", "-t", imageTag, "-f", dockerfilePath}
 	args = append(args, buildArgs...)
 	args = append(args, projectRoot)
 
@@ -975,23 +979,44 @@ func buildImageWithArgs(name, imageTag, dockerfile, projectRoot string, buildArg
 	return nil
 }
 
-// loadImageToKind loads a pre-built Docker image into a Kind cluster
-// This is used by E2E tests after building service images
+// loadImageToKind loads a pre-built podman image into a Kind cluster using tar archive
+// This is the AUTHORITATIVE pattern per DD-TEST-001 for podman-to-Kind image transfer
+// Per DataStorage E2E (working implementation): podman save → tar → kind load image-archive
 func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  📦 Loading image into Kind cluster: %s\n", imageName)
 
-	// Add localhost prefix if not present (Kind expects it)
+	// Add localhost prefix if not present (podman/Kind convention)
 	if !strings.HasPrefix(imageName, "localhost/") {
 		imageName = "localhost/" + imageName
 	}
 
-	cmd := exec.Command("kind", "load", "docker-image", imageName, "--name", clusterName)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	// Generate unique tar filename to avoid collisions in parallel tests
+	// Replace ':' in image name with '-' to create valid filename
+	safeImageName := strings.ReplaceAll(filepath.Base(imageName), ":", "-")
+	tarFile := fmt.Sprintf("/tmp/%s-%d.tar", safeImageName, time.Now().UnixNano())
 
-	if err := cmd.Run(); err != nil {
+	// Step 1: Save podman image to tar archive
+	saveCmd := exec.Command("podman", "save", imageName, "-o", tarFile)
+	saveCmd.Stdout = writer
+	saveCmd.Stderr = writer
+
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("failed to save image to tar: %w", err)
+	}
+
+	// Step 2: Load tar archive into Kind cluster
+	loadCmd := exec.Command("kind", "load", "image-archive", tarFile, "--name", clusterName)
+	loadCmd.Stdout = writer
+	loadCmd.Stderr = writer
+
+	if err := loadCmd.Run(); err != nil {
+		// Clean up tar file on failure
+		_ = os.Remove(tarFile)
 		return fmt.Errorf("failed to load image into Kind: %w", err)
 	}
+
+	// Step 3: Clean up tar file after successful load
+	_ = os.Remove(tarFile)
 
 	_, _ = fmt.Fprintf(writer, "  ✅ Image loaded into Kind cluster\n")
 	return nil

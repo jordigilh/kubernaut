@@ -25,23 +25,23 @@ info:
 
     **Authentication & Authorization (Production/E2E)**:
     All requests to DataStorage are protected by an OAuth-proxy sidecar:
-    
+
     1. **Client Authentication**: Services authenticate with Kubernetes ServiceAccount tokens
        - Token mounted at: `/var/run/secrets/kubernetes.io/serviceaccount/token`
        - Clients inject: `Authorization: Bearer <token>` header
        - See DD-AUTH-005 for client implementation patterns
-    
+
     2. **OAuth-Proxy Validation**: The sidecar validates requests
        - Validates JWT token signature and expiration
        - Performs Subject Access Review (SAR) to check RBAC permissions
        - Injects `X-Auth-Request-User` header with authenticated user identity
        - Returns HTTP 401 if token invalid, HTTP 403 if SAR fails
-    
+
     3. **Handler Enforcement**: DataStorage handlers extract user identity
        - Legal hold operations REQUIRE `X-Auth-Request-User` header
        - HTTP 401 returned if header missing (authentication failed)
        - User identity stored in audit events for SOC2 compliance
-    
+
     **Routing Flow**:
     ```
     Client → data-storage-service:8080 (Service)
@@ -50,11 +50,11 @@ info:
            ↓
          DataStorage:8081 (X-Auth-Request-User header)
     ```
-    
+
     **Integration Tests**:
     Integration tests run without oauth-proxy. Use `testutil.NewMockUserTransport()`
     to inject mock `X-Auth-Request-User` headers directly.
-    
+
     **SOC2 Compliance**:
     - All legal hold operations attributed to authenticated users
     - Audit trail captures placed_by/released_by from X-Auth-Request-User
@@ -755,6 +755,166 @@ paths:
                   total:
                     type: integer
 
+  /api/v1/audit/export:
+    get:
+      tags:
+        - Audit Write API
+      summary: Export audit events with digital signature
+      description: |
+        Exports audit events matching the specified filters with cryptographic signatures
+        for tamper detection and compliance verification.
+
+        **Business Requirement**: BR-AUDIT-007 (Audit Export)
+        **SOC2 Requirements**: CC8.1 (Audit Export), AU-9 (Audit Protection)
+
+        **Behavior**:
+        - Success: Returns 200 OK with signed export (JSON or CSV)
+        - Validation Error: Returns 400 Bad Request (invalid date range, etc.)
+        - Unauthorized: Returns 401 if X-Auth-Request-User header missing
+        - Too Many Records: Returns 413 Payload Too Large (>10,000 events, use pagination)
+
+        **Authorization**: Requires X-Auth-Request-User header (oauth-proxy authenticated)
+
+        **Export Formats**:
+        - JSON: Complete event data with hash chain verification
+        - CSV: Flattened tabular format for spreadsheet analysis
+
+        **Hash Chain Verification**:
+        - Each export includes hash chain integrity status
+        - Tampered events flagged with `hash_chain_valid: false`
+        - Chain verification performed at export time
+
+        **Digital Signature**:
+        - Export signed with service x509 certificate
+        - Signature included in `export_metadata.signature` field
+        - Detached signature available via `include_detached_signature=true`
+
+        **Pagination**:
+        - Use `offset` and `limit` for large result sets
+        - Maximum limit: 10,000 events per export
+        - Signature covers ALL pages (use same query for verification)
+
+        **Metrics Emitted**:
+        - `datastorage_export_successes_total{format="json|csv"}`
+        - `datastorage_export_failures_total{reason="unauthorized|validation|..."}`
+      operationId: exportAuditEvents
+      parameters:
+        - name: start_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Start of time range (ISO 8601)
+          example: "2026-01-01T00:00:00Z"
+        - name: end_time
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: End of time range (ISO 8601)
+          example: "2026-01-07T23:59:59Z"
+        - name: correlation_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by correlation ID
+          example: "remediation-123"
+        - name: event_category
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by event category
+          example: "remediation_approval"
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+          description: Export format (json or csv)
+        - name: include_detached_signature
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Include detached signature file in response
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          description: Pagination offset
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10000
+            default: 1000
+          description: Maximum records per export
+        - name: redact_pii
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: |
+            Enable PII (Personally Identifiable Information) redaction in audit export.
+
+            **SOC2 Privacy Compliance**: Redacts sensitive data to comply with data minimization principles.
+
+            **Redaction Rules**:
+            - Emails: user@domain.com → u***@d***.com
+            - IP Addresses: 192.168.1.1 → 192.***.*.***
+            - Phone Numbers: +1-555-1234 → +1-***-****
+
+            **Fields Redacted**:
+            - event_data.user_email
+            - event_data.source_ip
+            - event_data.phone_number
+            - exported_by (if email)
+
+            **Use Cases**:
+            - Sharing exports with external auditors
+            - Compliance reports for legal teams
+            - Anonymized analysis and research
+
+            Note: Redaction occurs AFTER hash chain verification to maintain integrity.
+      responses:
+        '200':
+          description: Export generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditExportResponse'
+        '400':
+          description: Validation error (invalid date range, etc.)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '401':
+          description: Unauthorized - X-Auth-Request-User header required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+        '413':
+          description: Payload Too Large - result set exceeds maximum (use pagination)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
   /api/v1/audit/legal-hold/{correlation_id}:
     delete:
       tags:
@@ -1147,9 +1307,9 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, signalprocessing, workflow, execution, orchestration, webhook]
+          enum: [gateway, notification, analysis, signalprocessing, workflow, workflowexecution, orchestration, webhook]
           description: |
-            Service-level event category (ADR-034 v1.4).
+            Service-level event category (ADR-034 v1.5).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
             Values:
             - gateway: Gateway Service
@@ -1157,7 +1317,7 @@ components:
             - analysis: AI Analysis Service
             - signalprocessing: Signal Processing Service
             - workflow: Workflow Catalog Service
-            - execution: Remediation Execution Service
+            - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
             - orchestration: Remediation Orchestrator Service
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
           example: gateway
@@ -1208,12 +1368,86 @@ components:
           nullable: true
         event_data:
           description: |
-            Service-specific event data as structured Go type.
-            Accepts any JSON-marshalable type (structs, maps, etc.).
-            V1.0: Eliminates map[string]interface{} - use structured types directly.
+            Service-specific event data as structured type.
+            V2.0: Typed schemas documented below for API validation.
+            Go client uses interface{} for clean code ergonomics.
             See DD-AUDIT-004 for structured type requirements.
-          x-go-type: interface{}
-          x-go-type-skip-optional-pointer: true
+          oneOf:
+            - $ref: '#/components/schemas/GatewayAuditPayload'
+            - $ref: '#/components/schemas/RemediationOrchestratorAuditPayload'
+            - $ref: '#/components/schemas/SignalProcessingAuditPayload'
+            - $ref: '#/components/schemas/AIAnalysisAuditPayload'
+            - $ref: '#/components/schemas/WorkflowExecutionAuditPayload'
+            - $ref: '#/components/schemas/NotificationAuditPayload'
+            - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
+            - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
+            - $ref: '#/components/schemas/WorkflowSearchAuditPayload'
+            - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
+            - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
+            - $ref: '#/components/schemas/AIAnalysisPhaseTransitionPayload'
+            - $ref: '#/components/schemas/AIAnalysisHolmesGPTCallPayload'
+            - $ref: '#/components/schemas/AIAnalysisApprovalDecisionPayload'
+            - $ref: '#/components/schemas/AIAnalysisRegoEvaluationPayload'
+            - $ref: '#/components/schemas/AIAnalysisErrorPayload'
+            - $ref: '#/components/schemas/NotificationMessageSentPayload'
+            - $ref: '#/components/schemas/NotificationMessageFailedPayload'
+            - $ref: '#/components/schemas/NotificationMessageAcknowledgedPayload'
+            - $ref: '#/components/schemas/NotificationMessageEscalatedPayload'
+            - $ref: '#/components/schemas/HolmesGPTResponsePayload'
+            - $ref: '#/components/schemas/LLMRequestPayload'
+            - $ref: '#/components/schemas/LLMResponsePayload'
+            - $ref: '#/components/schemas/LLMToolCallPayload'
+            - $ref: '#/components/schemas/WorkflowValidationPayload'
+          discriminator:
+            propertyName: event_type
+            mapping:
+              'gateway.signal.received': '#/components/schemas/GatewayAuditPayload'
+              'gateway.signal.deduplicated': '#/components/schemas/GatewayAuditPayload'
+              'gateway.crd.created': '#/components/schemas/GatewayAuditPayload'
+              'gateway.crd.failed': '#/components/schemas/GatewayAuditPayload'
+              'orchestrator.lifecycle.started': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.failed': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.transitioned': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.requested': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.approved': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.rejected': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'signalprocessing.signal.processed': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.phase.transition': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.classification.decision': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.business.classified': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.enrichment.completed': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.error.occurred': '#/components/schemas/SignalProcessingAuditPayload'
+              'aianalysis.analysis.completed': '#/components/schemas/AIAnalysisAuditPayload'
+              'aianalysis.analysis.failed': '#/components/schemas/AIAnalysisAuditPayload'
+              'workflowexecution.workflow.started': '#/components/schemas/WorkflowExecutionAuditPayload'
+              'workflowexecution.workflow.completed': '#/components/schemas/WorkflowExecutionAuditPayload'
+              'workflowexecution.workflow.failed': '#/components/schemas/WorkflowExecutionAuditPayload'
+              'workflowexecution.selection.completed': '#/components/schemas/WorkflowExecutionAuditPayload'  # Gap #5 (BR-AUDIT-005) - ADR-034 v1.5
+              'workflowexecution.execution.started': '#/components/schemas/WorkflowExecutionAuditPayload'    # Gap #6 (BR-AUDIT-005) - ADR-034 v1.5
+              'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
+              'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
+              'webhook.workflow.unblocked': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
+              'webhook.approval.decided': '#/components/schemas/RemediationApprovalAuditPayload'
+              'workflow.catalog.search_completed': '#/components/schemas/WorkflowSearchAuditPayload'
+              'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
+              'datastorage.workflow.updated': '#/components/schemas/WorkflowCatalogUpdatedPayload'
+              'aianalysis.phase.transition': '#/components/schemas/AIAnalysisPhaseTransitionPayload'
+              'aianalysis.holmesgpt.call': '#/components/schemas/AIAnalysisHolmesGPTCallPayload'
+              'aianalysis.approval.decision': '#/components/schemas/AIAnalysisApprovalDecisionPayload'
+              'aianalysis.rego.evaluation': '#/components/schemas/AIAnalysisRegoEvaluationPayload'
+              'aianalysis.error.occurred': '#/components/schemas/AIAnalysisErrorPayload'
+              'notification.message.sent': '#/components/schemas/NotificationMessageSentPayload'
+              'notification.message.failed': '#/components/schemas/NotificationMessageFailedPayload'
+              'notification.message.acknowledged': '#/components/schemas/NotificationMessageAcknowledgedPayload'
+              'notification.message.escalated': '#/components/schemas/NotificationMessageEscalatedPayload'
+              'holmesgpt.response.complete': '#/components/schemas/HolmesGPTResponsePayload'
+              'llm_request': '#/components/schemas/LLMRequestPayload'
+              'llm_response': '#/components/schemas/LLMResponsePayload'
+              'llm_tool_call': '#/components/schemas/LLMToolCallPayload'
+              'workflow_validation_attempt': '#/components/schemas/WorkflowValidationPayload'
+          # Removed x-go-type override to use proper oneOf discriminator
+          # Let oapi-codegen generate appropriate union type from oneOf schemas
 
     AuditEventResponse:
       type: object
@@ -1703,47 +1937,1426 @@ components:
           type: string
           description: "Who is disabling the workflow"
 
-  securitySchemes:
-    oauthProxyAuth:
-      type: apiKey
-      in: header
-      name: X-Auth-Request-User
-      description: |
-        Authenticated user identity injected by OAuth-proxy sidecar.
+    AuditExportResponse:
+      type: object
+      description: Signed audit export with tamper-evident hash chain verification
+      required:
+        - export_metadata
+        - events
+        - hash_chain_verification
+      properties:
+        export_metadata:
+          type: object
+          required:
+            - export_timestamp
+            - export_format
+            - total_events
+            - signature
+          properties:
+            export_timestamp:
+              type: string
+              format: date-time
+              description: When this export was generated
+              example: "2026-01-07T20:30:00Z"
+            export_format:
+              type: string
+              enum: [json, csv]
+              description: Format of exported data
+            query_filters:
+              type: object
+              description: Filters applied to this export
+              properties:
+                start_time:
+                  type: string
+                  format: date-time
+                end_time:
+                  type: string
+                  format: date-time
+                correlation_id:
+                  type: string
+                event_category:
+                  type: string
+                offset:
+                  type: integer
+                limit:
+                  type: integer
+            total_events:
+              type: integer
+              description: Total number of events in this export
+              example: 127
+            signature:
+              type: string
+              description: Digital signature of export (base64-encoded)
+              example: "PLACEHOLDER_SIGNATURE"
+            signature_algorithm:
+              type: string
+              description: Signature algorithm used
+              example: "SHA256withRSA"
+            certificate_fingerprint:
+              type: string
+              description: SHA256 fingerprint of signing certificate
+              example: "3a:f7:12:9c:..."
+            exported_by:
+              type: string
+              description: User who initiated the export (from X-Auth-Request-User)
+              example: "system:serviceaccount:kubernaut-system:auditor"
+        events:
+          type: array
+          description: Audit events matching the query filters
+          items:
+            type: object
+            description: Audit event with hash chain metadata
+            properties:
+              event_id:
+                type: string
+                format: uuid
+              version:
+                type: string
+              event_type:
+                type: string
+              event_timestamp:
+                type: string
+                format: date-time
+              event_category:
+                type: string
+              event_action:
+                type: string
+              event_outcome:
+                type: string
+              correlation_id:
+                type: string
+              event_data:
+                type: object
+                additionalProperties: true
+              event_hash:
+                type: string
+                description: SHA256 hash of this event
+              previous_event_hash:
+                type: string
+                description: Hash of previous event in chain
+              hash_chain_valid:
+                type: boolean
+                description: Whether this event's hash chain is valid
+              legal_hold:
+                type: boolean
+                description: Whether this event is under legal hold
+        hash_chain_verification:
+          type: object
+          required:
+            - total_events_verified
+            - valid_chain_events
+            - broken_chain_events
+            - verification_timestamp
+          properties:
+            total_events_verified:
+              type: integer
+              description: Total events with hash chain data
+              example: 127
+            valid_chain_events:
+              type: integer
+              description: Events with valid hash chains
+              example: 127
+            broken_chain_events:
+              type: integer
+              description: Events with broken hash chains (tampered)
+              example: 0
+            chain_integrity_percentage:
+              type: number
+              format: float
+              minimum: 0.0
+              maximum: 100.0
+              description: Percentage of events with valid chains
+              example: 100.0
+            verification_timestamp:
+              type: string
+              format: date-time
+              description: When verification was performed
+            tampered_event_ids:
+              type: array
+              description: String UUIDs of tampered events (if any)
+              items:
+                type: string
+        detached_signature:
+          type: string
+          description: Detached PEM-encoded signature (if requested)
+          example: "-----BEGIN SIGNATURE-----\n..."
 
-        **Business Requirement**: BR-AUDIT-006 (Legal Hold & Retention)
-        **SOC2 Gap**: Gap #8 (Audit trail for legal hold placement/release)
-        **Design Decision**: DD-AUTH-004 (OAuth-proxy sidecar authentication)
+    # ========================================
+    # Typed Audit Event Data Schemas (DD-AUDIT-004 V2.0)
+    # Generated from pkg/*/audit_types.go - January 8, 2026
+    # ========================================
 
-        **How It Works**:
-        1. Clients send requests with `Authorization: Bearer <ServiceAccount-token>`
-        2. OAuth-proxy validates JWT token and checks RBAC (Subject Access Review)
-        3. OAuth-proxy injects `X-Auth-Request-User` header with authenticated identity
-        4. DataStorage handlers extract user identity for audit trail attribution
+    ErrorDetails:
+      type: object
+      required: [message, code, component, retry_possible]
+      description: Standardized error information for audit events (BR-AUDIT-005 Gap #7)
+      properties:
+        message:
+          type: string
+          description: Human-readable error description
+          example: "Holmes API request timeout after 30s"
+        code:
+          type: string
+          description: Machine-readable error classification (ERR_[CATEGORY]_[SPECIFIC])
+          example: "ERR_UPSTREAM_TIMEOUT"
+        component:
+          type: string
+          description: Service emitting the error
+          enum: [gateway, aianalysis, workflowexecution, remediationorchestrator, signalprocessing, webhooks]
+          example: "gateway"
+        retry_possible:
+          type: boolean
+          description: Whether the operation can be retried (true=transient, false=permanent)
+          example: true
+        stack_trace:
+          type: array
+          items:
+            type: string
+          description: Top N stack frames for debugging (optional, 5-10 frames max)
+          example: ["/path/to/file.go:123 function.Name"]
 
-        **Production/E2E Behavior**:
-        - OAuth-proxy automatically injects this header after successful authentication
-        - Clients do NOT manually set this header
-        - DataStorage handlers return HTTP 401 if header missing
+    # ========================================
+    # Gateway Audit Payload
+    # From: pkg/gateway/audit_types.go
+    # ========================================
 
-        **Integration Test Behavior**:
-        - Tests run without oauth-proxy sidecar
-        - Tests use `testutil.NewMockUserTransport()` to inject mock header
-        - Example: `X-Auth-Request-User: test-service@integration.test`
+    GatewayAuditPayload:
+      type: object
+      required: [signal_type, alert_name, namespace, fingerprint, event_type]
+      description: Type-safe audit event payload for Gateway (signal.received, signal.deduplicated, crd.created, crd.failed)
+      properties:
+        event_type:
+          type: string
+          enum: ['gateway.signal.received', 'gateway.signal.deduplicated', 'gateway.crd.created', 'gateway.crd.failed']
+          description: Event type for discriminator (matches parent event_type)
+        # RR Reconstruction Fields (BR-AUDIT-005 Gaps #1, #2, #3)
+        original_payload:
+          type: object
+          additionalProperties: true
+          description: Full signal payload for RR.Spec.OriginalPayload reconstruction
+        signal_labels:
+          type: object
+          additionalProperties:
+            type: string
+          description: Signal labels for RR.Spec.SignalLabels reconstruction
+        signal_annotations:
+          type: object
+          additionalProperties:
+            type: string
+          description: Signal annotations for RR.Spec.SignalAnnotations reconstruction
 
-        **Header Value Format**:
-        - ServiceAccount format: `system:serviceaccount:<namespace>:<name>`
-        - Example: `system:serviceaccount:kubernaut-system:gateway-service`
-        - Integration test format: `<service-name>@integration.test`
+        # Gateway-Specific Metadata
+        signal_type:
+          type: string
+          enum: [prometheus-alert, kubernetes-event]
+          description: Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager, kubernetes-event=Kubernetes events)
+          example: "prometheus-alert"
+        alert_name:
+          type: string
+          description: Name of the alert
+          example: "HighMemoryUsage"
+        namespace:
+          type: string
+          description: Kubernetes namespace of the affected resource
+          example: "payment"
+        fingerprint:
+          type: string
+          description: Unique identifier for the signal (deduplication)
+          example: "abc123"
+        severity:
+          type: string
+          enum: [critical, warning, info]
+          description: Severity level of the signal
+          example: "critical"
+        resource_kind:
+          type: string
+          description: Kubernetes resource kind
+          example: "Deployment"
+        resource_name:
+          type: string
+          description: Name of the affected Kubernetes resource
+          example: "payment-api"
+        remediation_request:
+          type: string
+          description: Created RemediationRequest reference (namespace/name)
+          example: "payment/restart-payment-api-2025-12-17-abc123"
 
-        **SOC2 Compliance**:
-        This header enables attribution of legal hold operations to specific
-        authenticated users, meeting SOC2 CC8.1 (tamper-evident logs) and
-        AU-9 (protection of audit information) requirements.
+        # Deduplication Fields (conditional)
+        deduplication_status:
+          type: string
+          enum: [new, duplicate]
+          description: Whether this is a new or duplicate signal
+        occurrence_count:
+          type: integer
+          format: int32
+          description: Number of times this signal has been seen
 
-        **See Also**:
-        - DD-AUTH-005: Client authentication pattern documentation
-        - deploy/data-storage/deployment.yaml: OAuth-proxy configuration
-        - pkg/shared/auth/transport.go: Go client authentication
-        - holmesgpt-api/src/clients/datastorage_auth_session.py: Python client
+        # Error Fields (conditional)
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
+
+    # ========================================
+    # RemediationOrchestrator Audit Payload
+    # From: pkg/remediationorchestrator/audit_types.go
+    # ========================================
+
+    RemediationOrchestratorAuditPayload:
+      type: object
+      required: [rr_name, namespace, event_type]
+      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
+      properties:
+        event_type:
+          type: string
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
+          description: Event type for discriminator (matches parent event_type)
+        # Core Orchestration Fields
+        rr_name:
+          type: string
+          description: Name of the RemediationRequest being orchestrated
+          example: "restart-payment-api-2025-12-17-abc123"
+        namespace:
+          type: string
+          description: Kubernetes namespace of the RemediationRequest
+          example: "payment"
+        outcome:
+          type: string
+          enum: [Success, Failed, Pending]
+          description: Final outcome of the orchestration
+        duration_ms:
+          type: integer
+          format: int64
+          description: Orchestration duration in milliseconds
+
+        # Failure Fields (conditional)
+        failure_phase:
+          type: string
+          enum: [SignalProcessing, AIAnalysis, WorkflowExecution, Approval]
+          description: Phase where the failure occurred
+        failure_reason:
+          type: string
+          enum: [Timeout, ValidationError, InfrastructureError, ApprovalRejected, Unknown]
+          description: Categorized failure reason
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
+
+        # Transition Fields (conditional)
+        from_phase:
+          type: string
+          description: Phase being transitioned from
+        to_phase:
+          type: string
+          description: Phase being transitioned to
+        transition_reason:
+          type: string
+          description: Reason for the transition
+
+        # Approval Fields (conditional)
+        rar_name:
+          type: string
+          description: Name of the RemediationApprovalRequest
+          example: "approve-payment-api-restart-2025-12-17-xyz789"
+        required_by:
+          type: string
+          format: date-time
+          description: Approval deadline (RFC3339)
+        workflow_id:
+          type: string
+          description: Selected workflow identifier
+        confidence_str:
+          type: string
+          description: Workflow selection confidence as string
+        decision:
+          type: string
+          enum: [Approved, Rejected, Pending]
+          description: Approval decision
+        approved_by:
+          type: string
+          description: User who approved the request
+        rejected_by:
+          type: string
+          description: User who rejected the request
+        rejection_reason:
+          type: string
+          description: Reason for rejection
+        message:
+          type: string
+          description: Additional message or context for the event
+        reason:
+          type: string
+          description: Reason for manual review or other actions
+        sub_reason:
+          type: string
+          description: Sub-categorization of the reason
+        notification_name:
+          type: string
+          description: Associated notification name
+
+    # ========================================
+    # SignalProcessing Audit Payload
+    # From: pkg/signalprocessing/audit_types.go
+    # ========================================
+
+    SignalProcessingAuditPayload:
+      type: object
+      required: [phase, signal, event_type]
+      description: Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decision, business.classified, enrichment.completed, error.occurred)
+      properties:
+        event_type:
+          type: string
+          enum: ['signalprocessing.signal.processed', 'signalprocessing.phase.transition', 'signalprocessing.classification.decision', 'signalprocessing.business.classified', 'signalprocessing.enrichment.completed', 'signalprocessing.error.occurred']
+          description: Event type for discriminator (matches parent event_type)
+        # Core Signal Fields
+        phase:
+          type: string
+          enum: [Pending, Enriching, Classifying, Categorizing, Completed, Failed]
+          description: Current phase of the SignalProcessing
+        signal:
+          type: string
+          description: Name of the signal being processed
+          example: "high-memory-payment-api-abc123"
+        severity:
+          type: string
+          enum: [critical, warning, info]
+          description: Severity level of the signal
+
+        # Classification Fields (conditional)
+        environment:
+          type: string
+          enum: [production, staging, development]
+          description: Classified environment
+        environment_source:
+          type: string
+          enum: [rego, labels, default]
+          description: Source of the environment classification
+        priority:
+          type: string
+          enum: [P0, P1, P2, P3, P4]
+          description: Assigned priority
+        priority_source:
+          type: string
+          enum: [rego, severity, default]
+          description: Source of the priority assignment
+        criticality:
+          type: string
+          enum: [critical, high, medium, low]
+          description: Business criticality classification
+        sla_requirement:
+          type: string
+          description: SLA requirement for remediation
+          example: "5m"
+
+        # Kubernetes Context Fields (conditional)
+        has_owner_chain:
+          type: boolean
+          description: Whether the resource has an owner chain
+        owner_chain_length:
+          type: integer
+          description: Length of the owner chain
+        degraded_mode:
+          type: boolean
+          description: Whether context enrichment was degraded
+        has_pdb:
+          type: boolean
+          description: Whether the resource has a PodDisruptionBudget
+        has_hpa:
+          type: boolean
+          description: Whether the resource has a HorizontalPodAutoscaler
+
+        # Enrichment Fields (conditional)
+        duration_ms:
+          type: integer
+          description: Enrichment duration in milliseconds
+        has_namespace:
+          type: boolean
+          description: Whether namespace context was enriched
+        has_pod:
+          type: boolean
+          description: Whether pod context was enriched
+        has_deployment:
+          type: boolean
+          description: Whether deployment context was enriched
+
+        # Business Classification Fields (conditional)
+        business_unit:
+          type: string
+          description: Owning business unit
+
+        # Phase Transition Fields (conditional)
+        from_phase:
+          type: string
+          description: Phase being transitioned from
+        to_phase:
+          type: string
+          description: Phase being transitioned to
+
+        # Error Fields (conditional)
+        error:
+          type: string
+          description: Error message if processing failed
+
+    # ========================================
+    # AIAnalysis Audit Payload
+    # From: pkg/aianalysis/audit_types.go
+    # ========================================
+
+    AIAnalysisAuditPayload:
+      type: object
+      required: [analysis_name, namespace, phase, approval_required, degraded_mode, warnings_count, event_type]
+      description: Type-safe audit event payload for AIAnalysis (analysis.completed, analysis.failed)
+      properties:
+        event_type:
+          type: string
+          enum: ['aianalysis.analysis.completed', 'aianalysis.analysis.failed']
+          description: Event type for discriminator (matches parent event_type)
+        analysis_name:
+          type: string
+          description: Name of the AIAnalysis CRD
+          example: "diagnose-payment-api-2025-12-17-abc123"
+        namespace:
+          type: string
+          description: Kubernetes namespace of the AIAnalysis
+          example: "payment"
+        phase:
+          type: string
+          enum: [Pending, Analyzing, Completed, Failed]
+          description: Current phase of the AIAnalysis
+        approval_required:
+          type: boolean
+          description: Whether manual approval is required
+        approval_reason:
+          type: string
+          description: Reason for approval requirement
+        degraded_mode:
+          type: boolean
+          description: Whether operating in degraded mode
+        warnings_count:
+          type: integer
+          description: Number of warnings encountered
+        confidence:
+          type: number
+          format: float
+          description: Workflow selection confidence (0.0-1.0)
+        workflow_id:
+          type: string
+          description: Selected workflow identifier
+        target_in_owner_chain:
+          type: boolean
+          description: Whether target is in owner chain
+        reason:
+          type: string
+          description: Primary failure reason
+        sub_reason:
+          type: string
+          description: Detailed failure sub-reason
+        provider_response_summary:
+          $ref: '#/components/schemas/ProviderResponseSummary'
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
+
+    # ========================================
+    # WorkflowExecution Audit Payload
+    # From: pkg/workflowexecution/audit_types.go
+    # ========================================
+
+    WorkflowExecutionAuditPayload:
+      type: object
+      required: [workflow_id, workflow_version, target_resource, phase, container_image, execution_name, event_type]
+      description: Type-safe audit event payload for WorkflowExecution (workflow.started, workflow.completed, workflow.failed)
+      properties:
+        event_type:
+          type: string
+          enum: ['workflowexecution.workflow.started', 'workflowexecution.workflow.completed', 'workflowexecution.workflow.failed', 'workflowexecution.selection.completed', 'workflowexecution.execution.started']
+          description: Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution events use 'workflowexecution' prefix.
+        # Core Workflow Fields
+        workflow_id:
+          type: string
+          description: ID of the workflow being executed
+          example: "kubectl-restart-deployment"
+        workflow_version:
+          type: string
+          description: Version of the workflow being executed
+          example: "v1.0.0"
+        target_resource:
+          type: string
+          description: Kubernetes resource being acted upon (format depends on scope)
+          example: "payment/deployment/payment-api"
+        phase:
+          type: string
+          enum: [Pending, Running, Completed, Failed]
+          description: Current phase of the WorkflowExecution
+        container_image:
+          type: string
+          description: Tekton PipelineRun container image
+          example: "ghcr.io/kubernaut/kubectl-actions:v1.28"
+        execution_name:
+          type: string
+          description: Name of the WorkflowExecution CRD
+          example: "restart-payment-api-2025-12-17-abc123"
+
+        # Timing Fields (conditional)
+        started_at:
+          type: string
+          format: date-time
+          description: When the PipelineRun started execution
+        completed_at:
+          type: string
+          format: date-time
+          description: When the PipelineRun finished (success or failure)
+        duration:
+          type: string
+          description: Human-readable execution duration
+          example: "2m30s"
+
+        # Failure Fields (conditional)
+        failure_reason:
+          type: string
+          enum: [OOMKilled, DeadlineExceeded, Forbidden, ImagePullBackOff, ConfigurationError, ResourceExhausted, TaskFailed, Unknown]
+          description: Categorized failure reason
+        failure_message:
+          type: string
+          description: Detailed failure message from Tekton
+        failed_task_name:
+          type: string
+          description: Name of the failed TaskRun (if identified)
+        error_details:
+          $ref: '#/components/schemas/ErrorDetails'
+
+        # PipelineRun Reference (conditional)
+        pipelinerun_name:
+          type: string
+          description: Name of the associated Tekton PipelineRun
+          example: "restart-payment-api-2025-12-17-abc123-run"
+
+    # ========================================
+    # Webhooks Audit Payloads
+    # From: pkg/webhooks/audit_types.go
+    # ========================================
+
+    NotificationAuditPayload:
+      type: object
+      required: [event_type]
+      description: Type-safe audit event payload for NotificationRequest webhooks (notification.cancelled, notification.acknowledged)
+      properties:
+        event_type:
+          type: string
+          enum: ['webhook.notification.cancelled', 'webhook.notification.acknowledged']
+          description: Event type for discriminator (matches parent event_type)
+        notification_id:
+          type: string
+          description: Name of the NotificationRequest
+          example: "alert-payment-api-2025-12-17-abc123"
+        notification_name:
+          type: string
+          description: Alias for notification_id
+        type:
+          type: string
+          enum: [escalation, simple, status-update, approval, manual-review]
+          description: Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40)
+        notification_type:
+          type: string
+          enum: [escalation, simple, status-update, approval, manual-review]
+          description: Alias for type (matches CRD NotificationType enum)
+        priority:
+          type: string
+          enum: [critical, high, medium, low]
+          description: Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50)
+        final_status:
+          type: string
+          enum: [Pending, Sending, Sent, Failed, Cancelled]
+          description: Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65)
+        recipients:
+          type: array
+          items:
+            type: object
+            properties:
+              email:
+                type: string
+                description: Email address (for email channel)
+                example: "user@example.com"
+              slack:
+                type: string
+                description: Slack channel or user (#channel-name or @username)
+                example: "#alerts"
+              teams:
+                type: string
+                description: Teams channel or user
+                example: "team@company.com"
+              phone:
+                type: string
+                description: Phone number in E.164 format
+                example: "+1234567890"
+              webhookURL:
+                type: string
+                description: Webhook URL for webhook channel
+                example: "https://example.com/webhook"
+            description: Notification recipient (matches CRD Recipient struct)
+          description: Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102)
+        cancelled_by:
+          type: string
+          description: Username who cancelled the notification
+        user_uid:
+          type: string
+          description: UID of the user who performed the action
+        user_groups:
+          type: array
+          items:
+            type: string
+          description: Groups of the user who performed the action
+        action:
+          type: string
+          enum: [notification_cancelled, notification_acknowledged]
+          description: Webhook action performed
+
+    WorkflowExecutionWebhookAuditPayload:
+      type: object
+      required: [workflow_name, clear_reason, cleared_at, previous_state, new_state, event_type]
+      description: Type-safe audit event payload for WorkflowExecution webhooks (workflow.unblocked)
+      properties:
+        event_type:
+          type: string
+          enum: ['webhook.workflow.unblocked']
+          description: Event type for discriminator (matches parent event_type)
+        workflow_name:
+          type: string
+          description: Name of the WorkflowExecution
+          example: "restart-payment-api-2025-12-17-abc123"
+        clear_reason:
+          type: string
+          description: Reason for clearing the block
+          example: "Manual approval by ops team"
+        cleared_at:
+          type: string
+          format: date-time
+          description: When the block was cleared
+        previous_state:
+          type: string
+          enum: [Blocked]
+          description: State before unblocking (always "Blocked")
+        new_state:
+          type: string
+          enum: [Running]
+          description: State after unblocking (always "Running")
+
+    RemediationApprovalAuditPayload:
+      type: object
+      required: [request_name, decision, decided_at, decision_message, ai_analysis_ref, event_type]
+      description: Type-safe audit event payload for RemediationApprovalRequest webhooks (approval.decided)
+      properties:
+        event_type:
+          type: string
+          enum: ['webhook.approval.decided']
+          description: Event type for discriminator (matches parent event_type)
+        request_name:
+          type: string
+          description: Name of the RemediationApprovalRequest
+          example: "approve-payment-api-2025-12-17-abc123"
+        decision:
+          type: string
+          enum: [Approved, Rejected]
+          description: Approval decision
+        decided_at:
+          type: string
+          format: date-time
+          description: When the decision was made
+        decision_message:
+          type: string
+          description: Reason for the decision
+        ai_analysis_ref:
+          type: string
+          description: Name of the referenced AIAnalysis
+
+    # ========================================
+    # DataStorage Audit Payloads
+    # From: pkg/datastorage/audit/
+    # ========================================
+
+    # Workflow Catalog Events
+    WorkflowCatalogCreatedPayload:
+      type: object
+      required: [workflow_id, workflow_name, version, status, is_latest_version, execution_engine, name]
+      description: Audit payload for workflow catalog creation (datastorage.workflow.created)
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+          description: Unique workflow identifier (UUID)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        workflow_name:
+          type: string
+          description: Human-readable workflow name
+          example: "restart-oomkilled-pod"
+        version:
+          type: string
+          description: Workflow version
+          example: "1.0.0"
+        status:
+          type: string
+          enum: [active, disabled, archived]
+          description: Workflow status
+          example: "active"
+        is_latest_version:
+          type: boolean
+          description: Whether this is the latest version
+          example: true
+        execution_engine:
+          type: string
+          description: Workflow execution engine
+          example: "argo"
+        name:
+          type: string
+          description: Display name
+          example: "Restart OOMKilled Pod"
+        description:
+          type: string
+          description: Workflow description
+          example: "Restarts pods that were terminated due to OOM"
+        labels:
+          type: object
+          additionalProperties: true
+          description: Workflow labels
+
+    WorkflowCatalogUpdatedPayload:
+      type: object
+      required: [workflow_id, updated_fields]
+      description: Audit payload for workflow catalog updates (datastorage.workflow.updated)
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+          description: Unique workflow identifier (UUID)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        updated_fields:
+          $ref: '#/components/schemas/WorkflowCatalogUpdatedFields'
+
+    WorkflowCatalogUpdatedFields:
+      type: object
+      description: Fields that were updated in the workflow catalog
+      properties:
+        status:
+          type: string
+          description: Updated workflow status
+          example: "disabled"
+        disabled_by:
+          type: string
+          description: User who disabled the workflow (only for status=disabled)
+          example: "admin@example.com"
+        disabled_reason:
+          type: string
+          description: Reason for disabling (only for status=disabled)
+          example: "Security vulnerability detected"
+        version:
+          type: string
+          description: Updated version
+          example: "1.0.1"
+        description:
+          type: string
+          description: Updated description
+          example: "Updated workflow description"
+
+    # Workflow Search Events
+    WorkflowSearchAuditPayload:
+      type: object
+      required: [event_type, query, results, search_metadata]
+      description: Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1)
+      properties:
+        event_type:
+          type: string
+          enum: ['workflow.catalog.search_completed']
+          description: Discriminator for event data union type
+        query:
+          $ref: '#/components/schemas/QueryMetadata'
+        results:
+          $ref: '#/components/schemas/ResultsMetadata'
+        search_metadata:
+          $ref: '#/components/schemas/SearchExecutionMetadata'
+
+    QueryMetadata:
+      type: object
+      required: [top_k]
+      description: Search query parameters (BR-AUDIT-025)
+      properties:
+        top_k:
+          type: integer
+          format: int32
+          description: Maximum number of results to return
+          example: 5
+        min_score:
+          type: number
+          format: double
+          description: Minimum similarity score threshold
+          example: 0.7
+        filters:
+          $ref: '#/components/schemas/WorkflowSearchFilters'
+
+    ResultsMetadata:
+      type: object
+      required: [total_found, returned, workflows]
+      description: Search results metadata (BR-AUDIT-027)
+      properties:
+        total_found:
+          type: integer
+          format: int32
+          description: Total number of workflows matching the query
+          example: 10
+        returned:
+          type: integer
+          format: int32
+          description: Number of workflows returned in this response
+          example: 5
+        workflows:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkflowResultAudit'
+
+    WorkflowResultAudit:
+      type: object
+      required: [workflow_id, title, rank, scoring]
+      description: Audit information for a single workflow result (BR-AUDIT-027)
+      properties:
+        workflow_id:
+          type: string
+          format: uuid
+          description: Workflow UUID (DD-WORKFLOW-002 v3.0)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        title:
+          type: string
+          description: Workflow title
+          example: "Restart OOMKilled Pod"
+        rank:
+          type: integer
+          format: int32
+          description: Search result ranking (1-indexed)
+          example: 1
+        scoring:
+          $ref: '#/components/schemas/ScoringV1Audit'
+        owner:
+          type: string
+          description: Workflow owner
+          example: "platform-team"
+        maintainer:
+          type: string
+          description: Workflow maintainer
+          example: "alice@example.com"
+        description:
+          type: string
+          description: Workflow description
+          example: "Restarts pods that were OOMKilled"
+        labels:
+          type: object
+          additionalProperties: true
+          description: Workflow labels
+
+    ScoringV1Audit:
+      type: object
+      required: [confidence]
+      description: V1.0 scoring (confidence only per DD-WORKFLOW-004 v2.0)
+      properties:
+        confidence:
+          type: number
+          format: double
+          description: Overall confidence score (0.0-1.0)
+          example: 0.95
+          minimum: 0
+          maximum: 1
+
+    SearchExecutionMetadata:
+      type: object
+      required: [duration_ms, embedding_dimensions, embedding_model]
+      description: Search execution details (BR-AUDIT-028)
+      properties:
+        duration_ms:
+          type: integer
+          format: int64
+          description: Search execution time in milliseconds
+          example: 150
+        embedding_dimensions:
+          type: integer
+          format: int32
+          description: Embedding vector dimensionality
+          example: 768
+        embedding_model:
+          type: string
+          description: Embedding model used
+          example: "text-embedding-3-small"
+
+    # ========================================
+    # AIAnalysis Internal Event Payloads
+    # From: pkg/aianalysis/audit/event_types.go
+    # ========================================
+
+    AIAnalysisPhaseTransitionPayload:
+      type: object
+      required: [old_phase, new_phase]
+      description: Phase transition event payload (aianalysis.phase.transition)
+      properties:
+        old_phase:
+          type: string
+          description: Previous phase
+          example: "Investigating"
+        new_phase:
+          type: string
+          description: New phase
+          example: "Analyzing"
+
+    AIAnalysisHolmesGPTCallPayload:
+      type: object
+      required: [endpoint, http_status_code, duration_ms]
+      description: HolmesGPT API call event payload (aianalysis.holmesgpt.call)
+      properties:
+        endpoint:
+          type: string
+          description: API endpoint called
+          example: "/api/v1/investigate"
+        http_status_code:
+          type: integer
+          format: int32
+          description: HTTP status code
+          example: 200
+        duration_ms:
+          type: integer
+          format: int32
+          description: Call duration in milliseconds
+          example: 1500
+
+    AIAnalysisApprovalDecisionPayload:
+      type: object
+      required: [approval_required, approval_reason, auto_approved, decision, reason, environment]
+      description: Approval decision event payload (aianalysis.approval.decision)
+      properties:
+        approval_required:
+          type: boolean
+          description: Whether manual approval is required
+          example: true
+        approval_reason:
+          type: string
+          description: Reason for approval requirement
+          example: "Production environment requires manual approval"
+        auto_approved:
+          type: boolean
+          description: Whether auto-approved
+          example: false
+        decision:
+          type: string
+          description: Decision made
+          example: "requires_approval"
+        reason:
+          type: string
+          description: Reason for decision
+          example: "Rego policy requires manual approval for production"
+        environment:
+          type: string
+          description: Environment context
+          example: "production"
+        confidence:
+          type: number
+          format: double
+          description: Workflow confidence level (optional)
+          example: 0.95
+        workflow_id:
+          type: string
+          description: Selected workflow identifier (optional)
+          example: "restart-oomkilled-pod"
+
+    AIAnalysisRegoEvaluationPayload:
+      type: object
+      required: [outcome, degraded, duration_ms, reason]
+      description: Rego policy evaluation event payload (aianalysis.rego.evaluation)
+      properties:
+        outcome:
+          type: string
+          description: Evaluation outcome
+          example: "allow"
+        degraded:
+          type: boolean
+          description: Whether evaluation ran in degraded mode
+          example: false
+        duration_ms:
+          type: integer
+          format: int32
+          description: Evaluation duration in milliseconds
+          example: 50
+        reason:
+          type: string
+          description: Reason for the evaluation outcome
+          example: "Policy allows auto-approval for non-production"
+
+    AIAnalysisErrorPayload:
+      type: object
+      required: [phase, error_message]
+      description: Error event payload (aianalysis.error.occurred)
+      properties:
+        phase:
+          type: string
+          description: Phase in which error occurred
+          example: "Investigating"
+        error_message:
+          type: string
+          description: Error message
+          example: "HolmesGPT API timeout after 30s"
+
+    ProviderResponseSummary:
+      type: object
+      required: [incident_id, analysis_preview, needs_human_review, warnings_count]
+      description: Summary of Holmes API response from AIAnalysis consumer perspective (BR-AUDIT-005 v2.0 Gap #4)
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier
+          example: "incident-payment-api-2025-12-17-abc123"
+        analysis_preview:
+          type: string
+          description: First 500 chars of analysis
+          example: "Root cause: Database connection pool exhausted..."
+        selected_workflow_id:
+          type: string
+          description: Selected workflow identifier (if any)
+          example: "restart-payment-api-v1.2"
+        needs_human_review:
+          type: boolean
+          description: Whether human review is required
+        warnings_count:
+          type: integer
+          description: Number of warnings from Holmes
+          example: 2
+
+    # ========================================
+    # Notification Event Payloads
+    # From: pkg/notification/audit/event_types.go
+    # ========================================
+
+    NotificationMessageSentPayload:
+      type: object
+      required: [notification_id, channel, subject, body, priority, type]
+      description: Message sent event payload (notification.message.sent)
+      properties:
+        notification_id:
+          type: string
+          description: Name of the NotificationRequest CRD
+        channel:
+          type: string
+          description: Delivery channel
+        subject:
+          type: string
+          description: Notification subject line
+        body:
+          type: string
+          description: Notification message body
+        priority:
+          type: string
+          description: Notification priority level
+        type:
+          type: string
+          description: Notification type
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    NotificationMessageFailedPayload:
+      type: object
+      required: [notification_id, channel, subject, body, priority, error_type]
+      description: Message failed event payload (notification.message.failed)
+      properties:
+        notification_id:
+          type: string
+        channel:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        priority:
+          type: string
+        error_type:
+          type: string
+        error:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    NotificationMessageAcknowledgedPayload:
+      type: object
+      required: [notification_id, subject, priority]
+      description: Message acknowledged event payload (notification.message.acknowledged)
+      properties:
+        notification_id:
+          type: string
+        subject:
+          type: string
+        priority:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    NotificationMessageEscalatedPayload:
+      type: object
+      required: [notification_id, subject, priority, reason]
+      description: Message escalated event payload (notification.message.escalated)
+      properties:
+        notification_id:
+          type: string
+        subject:
+          type: string
+        priority:
+          type: string
+        reason:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+
+    # ========================================
+    # HolmesGPT API Event Payloads
+    # From: holmesgpt-api/src/models/audit_models.py
+    # ========================================
+
+    HolmesGPTResponsePayload:
+      type: object
+      required: [event_id, incident_id, response_data]
+      description: HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier
+          example: "evt-hapi-123-abc"
+        incident_id:
+          type: string
+          description: Incident correlation ID from request
+          example: "incident-payment-api-2025-12-17-abc123"
+        response_data:
+          $ref: '#/components/schemas/IncidentResponseData'
+
+    IncidentResponseData:
+      type: object
+      required: [incident_id, analysis, root_cause_analysis, confidence, timestamp]
+      description: Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no additionalProperties)
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier from request
+          example: "incident-payment-api-2025-12-17-abc123"
+        analysis:
+          type: string
+          description: Natural language analysis from LLM
+          example: "Root cause analysis indicates..."
+        root_cause_analysis:
+          type: object
+          description: Structured RCA with summary, severity, contributing_factors
+          required: [summary, severity, contributing_factors]
+          properties:
+            summary:
+              type: string
+              description: Brief RCA summary
+            severity:
+              type: string
+              description: Incident severity
+              example: "high"
+            contributing_factors:
+              type: array
+              items:
+                type: string
+              description: List of contributing factors
+          additionalProperties: false
+        selected_workflow:
+          type: object
+          description: Selected workflow with workflow_id, containerImage, confidence, parameters (optional)
+          properties:
+            workflow_id:
+              type: string
+            container_image:
+              type: string
+            confidence:
+              type: number
+              format: float
+              minimum: 0.0
+              maximum: 1.0
+            parameters:
+              type: object
+              additionalProperties: true
+          additionalProperties: false
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Overall confidence in analysis
+          example: 0.85
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO timestamp of analysis completion
+        needs_human_review:
+          type: boolean
+          default: false
+          description: True when AI could not produce reliable result
+        human_review_reason:
+          type: string
+          enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error]
+          description: Structured reason when needs_human_review=true
+        target_in_owner_chain:
+          type: boolean
+          default: true
+          description: Whether RCA target was found in OwnerChain
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Non-fatal warnings (e.g., OwnerChain validation issues)
+        alternative_workflows:
+          type: array
+          items:
+            type: object
+            properties:
+              workflow_id:
+                type: string
+              rationale:
+                type: string
+            additionalProperties: false
+          description: Other workflows considered but not selected
+
+    LLMRequestPayload:
+      type: object
+      required: [event_id, incident_id, model, prompt_length, prompt_preview]
+      description: LLM API request event payload (llm_request)
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id)
+        model:
+          type: string
+          description: LLM model identifier
+          example: "gpt-4"
+        prompt_length:
+          type: integer
+          minimum: 0
+          description: Length of prompt sent to LLM
+        prompt_preview:
+          type: string
+          description: First 500 characters of prompt for audit
+        max_tokens:
+          type: integer
+          minimum: 0
+          description: Maximum tokens requested
+        toolsets_enabled:
+          type: array
+          items:
+            type: string
+          description: List of enabled toolsets
+        mcp_servers:
+          type: array
+          items:
+            type: string
+          description: List of MCP servers
+
+    LLMResponsePayload:
+      type: object
+      required: [event_id, incident_id, has_analysis, analysis_length, analysis_preview]
+      description: LLM API response event payload (llm_response)
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id)
+        has_analysis:
+          type: boolean
+          description: Whether LLM provided analysis
+        analysis_length:
+          type: integer
+          minimum: 0
+          description: Length of LLM response
+        analysis_preview:
+          type: string
+          description: First 500 characters of response for audit
+        tokens_used:
+          type: integer
+          minimum: 0
+          description: Tokens consumed by LLM
+        tool_call_count:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Number of tool calls made by LLM
+
+    LLMToolCallPayload:
+      type: object
+      required: [event_id, incident_id, tool_call_index, tool_name, tool_result]
+      description: LLM tool call event payload (llm_tool_call)
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id)
+        tool_call_index:
+          type: integer
+          minimum: 0
+          description: Sequential index of tool call in conversation
+        tool_name:
+          type: string
+          description: Name of tool invoked
+          example: "search_workflow_catalog"
+        tool_arguments:
+          type: object
+          additionalProperties: true
+          description: Arguments passed to tool (flexible for different tools)
+        tool_result:
+          description: Full result returned by tool
+        tool_result_preview:
+          type: string
+          description: First 500 characters of tool result
+
+    WorkflowValidationPayload:
+      type: object
+      required: [event_id, incident_id, attempt, max_attempts, is_valid]
+      description: Workflow validation attempt event payload (workflow_validation_attempt)
+      properties:
+        event_id:
+          type: string
+          description: Unique event identifier
+        incident_id:
+          type: string
+          description: Incident correlation ID (remediation_id)
+        attempt:
+          type: integer
+          minimum: 1
+          description: Current validation attempt number
+        max_attempts:
+          type: integer
+          minimum: 1
+          description: Maximum validation attempts allowed
+        is_valid:
+          type: boolean
+          description: Whether validation succeeded
+        errors:
+          type: array
+          items:
+            type: string
+          description: List of validation error messages
+        validation_errors:
+          type: string
+          description: Combined validation error messages (for backward compatibility)
+        workflow_id:
+          type: string
+          description: Workflow ID being validated
+        workflow_name:
+          type: string
+          description: Name of workflow being validated
+        human_review_reason:
+          type: string
+          description: Reason code if needs_human_review (final attempt)
+        is_final_attempt:
+          type: boolean
+          default: false
+          description: Whether this is the final validation attempt
 

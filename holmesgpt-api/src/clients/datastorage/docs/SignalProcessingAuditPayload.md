@@ -1,6 +1,6 @@
 # SignalProcessingAuditPayload
 
-Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decided)
+Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decision, business.classified, enrichment.completed, error.occurred)
 
 ## Properties
 

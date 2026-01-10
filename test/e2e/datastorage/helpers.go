@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
 )
@@ -178,21 +178,90 @@ func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
 // DD-API-001: OpenAPI Client Helper Functions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// Minimal Payload Constructors for E2E API Testing
+// These create minimal valid payloads to test DataStorage API functionality
+
+func newMinimalGatewayPayload(signalType, alertName string) ogenclient.AuditEventRequestEventData {
+	return ogenclient.AuditEventRequestEventData{
+		Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+		GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+			EventType: ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+			SignalType:  ogenclient.GatewayAuditPayloadSignalType(signalType),
+			AlertName:   alertName,
+			Namespace:   "default",
+			Fingerprint: "test-fingerprint",
+		},
+	}
+}
+
+func newMinimalAIAnalysisPayload(analysisName string) ogenclient.AuditEventRequestEventData {
+	return ogenclient.AuditEventRequestEventData{
+		Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+		AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+			EventType: ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+			AnalysisName:     analysisName,
+			Namespace:        "default",
+			Phase:            "Completed",
+			ApprovalRequired: false,
+		},
+	}
+}
+
+func newMinimalWorkflowPayload(workflowID string) ogenclient.AuditEventRequestEventData {
+	return ogenclient.AuditEventRequestEventData{
+		Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData,
+		WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
+			EventType: ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
+			WorkflowID:      workflowID,
+			WorkflowVersion: "1.0.0",
+			TargetResource:  "test-resource",
+			Phase:           "Running",
+		},
+	}
+}
+
+func newMinimalGenericPayload() ogenclient.AuditEventRequestEventData {
+	// Use WorkflowSearchAuditPayload as a minimal generic payload for testing
+	return ogenclient.AuditEventRequestEventData{
+		Type: ogenclient.WorkflowSearchAuditPayloadAuditEventRequestEventData,
+		WorkflowSearchAuditPayload: ogenclient.WorkflowSearchAuditPayload{
+			EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+			Query: ogenclient.QueryMetadata{
+				TopK: 10,
+			},
+			Results: ogenclient.ResultsMetadata{
+				TotalFound: 0,
+				Returned:   0,
+				Workflows:  []ogenclient.WorkflowResultAudit{},
+			},
+			SearchMetadata: ogenclient.SearchExecutionMetadata{
+				DurationMs:          100,
+				EmbeddingDimensions: 1536,
+				EmbeddingModel:      "text-embedding-ada-002",
+			},
+		},
+	}
+}
+
 // createAuditEventOpenAPI creates an audit event using the OpenAPI client (type-safe)
-// Returns the CreateAuditEventResponse which contains JSON201/JSON202 for success
+// Returns the event ID from the ogen response
 //
 // Authority: DD-API-001 (OpenAPI Client Mandate)
 // Replaces: postAuditEvent (raw HTTP helper)
-func createAuditEventOpenAPI(ctx context.Context, client *dsgen.ClientWithResponses, event dsgen.AuditEventRequest) *dsgen.CreateAuditEventResponse {
-	resp, err := client.CreateAuditEventWithResponse(ctx, event)
+func createAuditEventOpenAPI(ctx context.Context, client *ogenclient.Client, event ogenclient.AuditEventRequest) string {
+	resp, err := client.CreateAuditEvent(ctx, &event)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create audit event via OpenAPI client")
 
-	// Log response details if not 2xx status
-	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
-		_, _ = fmt.Fprintf(GinkgoWriter, "❌ HTTP %d Response Body: %s\n", resp.StatusCode(), string(resp.Body))
+	// Ogen returns concrete types - extract event ID
+	switch r := resp.(type) {
+	case *ogenclient.CreateAuditEventCreated:
+		return r.EventID.String()
+	case *ogenclient.CreateAuditEventAccepted:
+		return r.EventID.String()
+	default:
+		Fail(fmt.Sprintf("Unexpected response type: %T", resp))
+		return ""
 	}
-
-	return resp
 }
 
 // DD-API-001: Backward compatibility helpers removed

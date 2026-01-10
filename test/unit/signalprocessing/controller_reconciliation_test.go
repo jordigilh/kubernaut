@@ -52,7 +52,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
@@ -61,10 +61,10 @@ import (
 
 // mockAuditStore implements audit.AuditStore for testing
 type mockAuditStore struct {
-	events []*dsgen.AuditEventRequest
+	events []*ogenclient.AuditEventRequest
 }
 
-func (m *mockAuditStore) StoreAudit(_ context.Context, event *dsgen.AuditEventRequest) error {
+func (m *mockAuditStore) StoreAudit(_ context.Context, event *ogenclient.AuditEventRequest) error {
 	m.events = append(m.events, event)
 	return nil
 }

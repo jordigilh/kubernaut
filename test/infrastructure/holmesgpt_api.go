@@ -217,7 +217,6 @@ nodes:
   - containerPort: 30387
     hostPort: 30387
     protocol: TCP
-- role: worker
 `
 
 	// Write kind config to temp file

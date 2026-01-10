@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -98,7 +99,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 		By("Waiting for audit event to be persisted to Data Storage (DD-TESTING-001)")
 		// Webhook uses nr.Name as correlation ID
 		// Per DD-TESTING-001: Use Eventually() for async polling, NOT time.Sleep()
-		deleteEventType := "notification.request.cancelled"
+		deleteEventType := string(ogenclient.NotificationAuditPayloadEventTypeWebhookNotificationCancelled)
 		events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001 Pattern 4)")
@@ -114,11 +115,14 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
 			// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
-		Expect(*event.ActorID).To(Equal("admin"),
+		Expect(event.ActorID.IsSet()).To(BeTrue(), "ActorID should be set")
+		Expect(event.ActorID.Value).To(Equal("admin"),
 			"actor_id column should contain authenticated operator")
-		Expect(*event.ResourceID).ToNot(BeEmpty(),
+		Expect(event.ResourceID.IsSet()).To(BeTrue(), "ResourceID should be set")
+		Expect(event.ResourceID.Value).ToNot(BeEmpty(),
 			"resource_id column should contain CRD UID (per audit.SetResource)")
-		Expect(*event.Namespace).To(Equal(namespace),
+		Expect(event.Namespace.IsSet()).To(BeTrue(), "Namespace should be set")
+		Expect(event.Namespace.Value).To(Equal(namespace),
 			"namespace column should contain CRD namespace")
 		Expect(event.EventAction).To(Equal("deleted"),
 			"event_action column should be 'deleted' for DELETE operation")
@@ -135,9 +139,9 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 		GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		GinkgoWriter.Printf("✅ INT-NR-01 PASSED: DELETE Attribution via Structured Columns\n")
-		GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorID)
-		GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceID)
-		GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", *event.Namespace)
+		GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", event.ActorID.Value)
+		GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", event.ResourceID.Value)
+		GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", event.Namespace.Value)
 		GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
 			GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
 			GinkgoWriter.Printf("   • Event category: %s\n", event.EventCategory)
@@ -221,11 +225,31 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			createAndWaitForCRD(ctx, k8sClient, nr)
 
-			By("Controller marks notification as Sending (processing started)")
-			nr.Status.Phase = notificationv1.NotificationPhaseSending
-			nr.Status.TotalAttempts = 1
-			Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
-				"Status update to Sending should succeed")
+		By("Controller marks notification as Sending (processing started)")
+		nr.Status.Phase = notificationv1.NotificationPhaseSending
+		nr.Status.TotalAttempts = 1
+		Expect(k8sClient.Status().Update(ctx, nr)).To(Succeed(),
+			"Status update to Sending should succeed")
+
+		By("Waiting for status update to be reflected in etcd")
+		// Fix: Wait for status update to be persisted before DELETE
+		// Without this, webhook may see stale "Pending" status instead of "Sending"
+		Eventually(func() notificationv1.NotificationPhase {
+			var updated notificationv1.NotificationRequest
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: nrName, Namespace: namespace}, &updated); err != nil {
+				return ""
+			}
+			return updated.Status.Phase
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(notificationv1.NotificationPhaseSending),
+			"Status should be reflected as Sending before DELETE")
+
+		By("Re-fetching CRD to ensure DELETE webhook sees updated status")
+		// Critical: Refetch the object so DELETE request includes the updated status
+		// The webhook validates the object as-is in the DELETE request
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: nrName, Namespace: namespace}, nr)).To(Succeed(),
+			"Should refetch updated CRD before DELETE")
+		Expect(nr.Status.Phase).To(Equal(notificationv1.NotificationPhaseSending),
+			"Refetched object should have Sending status")
 
 		By("Operator cancels notification mid-processing (DELETE)")
 		// Per BR-AUTH-001: DELETE captures attribution via audit trail
@@ -242,7 +266,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 		By("Waiting for audit event to be persisted (DD-TESTING-001)")
 		// Webhook uses nr.Name as correlation ID
-		deleteEventType := "notification.request.cancelled"
+		deleteEventType := string(ogenclient.NotificationAuditPayloadEventTypeWebhookNotificationCancelled)
 		events := waitForAuditEvents(dsClient, nrName, deleteEventType, 1)
 
 			By("Validating exact event count (DD-TESTING-001)")
@@ -256,11 +280,14 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 		By("Validating structured columns (per DD-WEBHOOK-003 + ADR-034 v1.4)")
 		// Per DD-WEBHOOK-003: Attribution fields in structured columns, NOT event_data
-		Expect(*event.ActorID).To(Equal("admin"),
+		Expect(event.ActorID.IsSet()).To(BeTrue(), "ActorID should be set")
+		Expect(event.ActorID.Value).To(Equal("admin"),
 			"actor_id column should contain authenticated operator")
-	Expect(*event.ResourceID).ToNot(BeEmpty(),
+	Expect(event.ResourceID.IsSet()).To(BeTrue(), "ResourceID should be set")
+	Expect(event.ResourceID.Value).ToNot(BeEmpty(),
 		"resource_id column should contain CRD UID (per audit.SetResource)")
-		Expect(*event.Namespace).To(Equal(namespace),
+		Expect(event.Namespace.IsSet()).To(BeTrue(), "Namespace should be set")
+		Expect(event.Namespace.Value).To(Equal(namespace),
 			"namespace column should contain CRD namespace")
 		Expect(event.EventAction).To(Equal("deleted"),
 			"event_action column should be 'deleted' for DELETE operation")
@@ -277,9 +304,9 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	GinkgoWriter.Printf("✅ INT-NR-03 PASSED: Mid-Processing Cancellation via Structured Columns\n")
-	GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", *event.ActorID)
-	GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", *event.ResourceID)
-	GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", *event.Namespace)
+	GinkgoWriter.Printf("   • Cancelled by: %s (actor_id column)\n", event.ActorID.Value)
+	GinkgoWriter.Printf("   • Resource: %s (resource_id column)\n", event.ResourceID.Value)
+	GinkgoWriter.Printf("   • Namespace: %s (namespace column)\n", event.Namespace.Value)
 	GinkgoWriter.Printf("   • Action: %s (event_action column)\n", event.EventAction)
 	GinkgoWriter.Printf("   • Event type: %s\n", event.EventType)
 		GinkgoWriter.Printf("   • Audit captured during 'Sending' phase (mid-processing)\n")

@@ -35,7 +35,7 @@ class GatewayAuditPayload(BaseModel):
     original_payload: Optional[Dict[str, Any]] = Field(default=None, description="Full signal payload for RR.Spec.OriginalPayload reconstruction")
     signal_labels: Optional[Dict[str, StrictStr]] = Field(default=None, description="Signal labels for RR.Spec.SignalLabels reconstruction")
     signal_annotations: Optional[Dict[str, StrictStr]] = Field(default=None, description="Signal annotations for RR.Spec.SignalAnnotations reconstruction")
-    signal_type: StrictStr = Field(description="Source type of the signal (alertmanager=Prometheus AlertManager webhooks, webhook=generic/K8s webhooks)")
+    signal_type: StrictStr = Field(description="Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager, kubernetes-event=Kubernetes events)")
     alert_name: StrictStr = Field(description="Name of the alert")
     namespace: StrictStr = Field(description="Kubernetes namespace of the affected resource")
     fingerprint: StrictStr = Field(description="Unique identifier for the signal (deduplication)")
@@ -58,8 +58,8 @@ class GatewayAuditPayload(BaseModel):
     @field_validator('signal_type')
     def signal_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('alertmanager', 'webhook'):
-            raise ValueError("must be one of enum values ('alertmanager', 'webhook')")
+        if value not in ('prometheus-alert', 'kubernetes-event'):
+            raise ValueError("must be one of enum values ('prometheus-alert', 'kubernetes-event')")
         return value
 
     @field_validator('severity')

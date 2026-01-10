@@ -31,24 +31,26 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
-// Event type constants (per DD-AUDIT-003)
+// Event type constants (per DD-AUDIT-003 and ADR-034 Table 3)
 const (
 	// EventTypeSignalProcessed is emitted when signal processing completes
 	EventTypeSignalProcessed = "signalprocessing.signal.processed"
 	// EventTypePhaseTransition is emitted on phase changes
 	EventTypePhaseTransition = "signalprocessing.phase.transition"
-	// EventTypeClassificationDecision is emitted when classification is made
+	// EventTypeClassificationDecision is emitted when classification is made (ADR-034 Table 3)
 	EventTypeClassificationDecision = "signalprocessing.classification.decision"
 	// EventTypeBusinessClassified is emitted when business classification is applied
 	// AUDIT-06: Separate event for business unit/criticality/SLA (per integration-test-plan.md v1.1.0)
 	EventTypeBusinessClassified = "signalprocessing.business.classified"
-	// EventTypeEnrichmentComplete is emitted when K8s enrichment completes
+	// EventTypeEnrichmentComplete is emitted when K8s enrichment completes (ADR-034 Service Requirements)
 	EventTypeEnrichmentComplete = "signalprocessing.enrichment.completed"
-	// EventTypeError is emitted on errors
+	// EventTypeError is emitted on errors (ADR-034 Service Requirements)
 	EventTypeError = "signalprocessing.error.occurred"
+	// CategorySignalProcessing is the service-level category per ADR-034 v1.2
+	CategorySignalProcessing = "signalprocessing"
 )
 
 // AuditClient handles audit event storage using pkg/audit shared library.
@@ -74,48 +76,63 @@ func NewAuditClient(store audit.AuditStore, log logr.Logger) *AuditClient {
 func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := signalprocessing.SignalProcessingAuditPayload{
-		Phase:    string(sp.Status.Phase),
-		Signal:   sp.Spec.Signal.Name,
-		Severity: sp.Spec.Signal.Severity,
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypeSignalProcessed, // Required for discriminator
+		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
+		Signal:    sp.Spec.Signal.Name,
+	}
+	if sev := toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity); sev != "" {
+		payload.Severity.SetTo(sev)
 	}
 
 	// Add environment classification if present
 	// Note: Confidence field removed per DD-SP-001 V1.1
 	if sp.Status.EnvironmentClassification != nil {
-		payload.Environment = string(sp.Status.EnvironmentClassification.Environment)
-		payload.EnvironmentSource = sp.Status.EnvironmentClassification.Source
+		if env := toSignalProcessingAuditPayloadEnvironment(string(sp.Status.EnvironmentClassification.Environment)); env != "" {
+			payload.Environment.SetTo(env)
+		}
+		if envSrc := toSignalProcessingAuditPayloadEnvironmentSource(sp.Status.EnvironmentClassification.Source); envSrc != "" {
+			payload.EnvironmentSource.SetTo(envSrc)
+		}
 	}
 
 	// Add priority assignment if present
 	// Note: Confidence field removed per DD-SP-001 V1.1
 	if sp.Status.PriorityAssignment != nil {
-		payload.Priority = string(sp.Status.PriorityAssignment.Priority)
-		payload.PrioritySource = sp.Status.PriorityAssignment.Source
+		if priority := toSignalProcessingAuditPayloadPriority(string(sp.Status.PriorityAssignment.Priority)); priority != "" {
+			payload.Priority.SetTo(priority)
+		}
+		if prioritySrc := toSignalProcessingAuditPayloadPrioritySource(sp.Status.PriorityAssignment.Source); prioritySrc != "" {
+			payload.PrioritySource.SetTo(prioritySrc)
+		}
 	}
 
 	// Add business classification if present
 	// Note: OverallConfidence field removed per DD-SP-001 V1.1
 	if sp.Status.BusinessClassification != nil {
-		payload.Criticality = string(sp.Status.BusinessClassification.Criticality)
-		payload.SLARequirement = sp.Status.BusinessClassification.SLARequirement
+		if crit := toSignalProcessingAuditPayloadCriticality(string(sp.Status.BusinessClassification.Criticality)); crit != "" {
+			payload.Criticality.SetTo(crit)
+		}
+		if sp.Status.BusinessClassification.SLARequirement != "" {
+			payload.SLARequirement.SetTo(sp.Status.BusinessClassification.SLARequirement)
+		}
 	}
 
 	// Add K8s context indicators
 	if sp.Status.KubernetesContext != nil {
-		payload.HasOwnerChain = len(sp.Status.KubernetesContext.OwnerChain) > 0
-		payload.OwnerChainLength = len(sp.Status.KubernetesContext.OwnerChain)
-		payload.DegradedMode = sp.Status.KubernetesContext.DegradedMode
+		payload.HasOwnerChain.SetTo(len(sp.Status.KubernetesContext.OwnerChain) > 0)
+		payload.OwnerChainLength.SetTo(len(sp.Status.KubernetesContext.OwnerChain))
+		payload.DegradedMode.SetTo(sp.Status.KubernetesContext.DegradedMode)
 
 		if sp.Status.KubernetesContext.DetectedLabels != nil {
-			payload.HasPDB = sp.Status.KubernetesContext.DetectedLabels.HasPDB
-			payload.HasHPA = sp.Status.KubernetesContext.DetectedLabels.HasHPA
+			payload.HasPdb.SetTo(sp.Status.KubernetesContext.DetectedLabels.HasPDB)
+			payload.HasHpa.SetTo(sp.Status.KubernetesContext.DetectedLabels.HasHPA)
 		}
 	}
 
 	// Add error if present
 	if sp.Status.Error != "" {
-		payload.Error = sp.Status.Error
+		payload.Error.SetTo(sp.Status.Error)
 	}
 
 	// Determine outcome
@@ -130,7 +147,7 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalProcessed)
-	audit.SetEventCategory(event, "signalprocessing")
+	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, "processed")
 	audit.SetEventOutcome(event, apiOutcome)
 	audit.SetActor(event, "service", "signalprocessing-controller")
@@ -146,14 +163,14 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 
-	// Set structured payload directly (DD-AUDIT-004 V2.2)
-	audit.SetEventData(event, payload)
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData(payload)
 
 	// Fire-and-forget (per ADR-038)
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write audit event",
 			"event_type", event.EventType,
-			"correlation_id", event.CorrelationId,
+			"correlation_id", event.CorrelationID,
 		)
 		// Don't fail reconciliation on audit failure (graceful degradation)
 	}
@@ -163,18 +180,19 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, from, to string) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := signalprocessing.SignalProcessingAuditPayload{
-		FromPhase: from,
-		ToPhase:   to,
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypePhaseTransition, // Required for discriminator
 		Signal:    sp.Spec.Signal.Name,
-		Phase:     string(sp.Status.Phase),
+		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
+	payload.FromPhase.SetTo(from)
+	payload.ToPhase.SetTo(to)
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypePhaseTransition)
-	audit.SetEventCategory(event, "signalprocessing")
+	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, "phase_transition")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
@@ -188,8 +206,8 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 
-	// Set structured payload directly (DD-AUDIT-004 V2.2)
-	audit.SetEventData(event, payload)
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write phase transition audit")
@@ -201,32 +219,45 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := signalprocessing.SignalProcessingAuditPayload{
-		Signal:   sp.Spec.Signal.Name,
-		Severity: sp.Spec.Signal.Severity,
-		Phase:    string(sp.Status.Phase),
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypeClassificationDecision, // Required for discriminator
+		Signal:    sp.Spec.Signal.Name,
+		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
+	payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity))
 
 	// Add all classification results
 	// Note: Confidence fields removed per DD-SP-001 V1.1
 	if sp.Status.EnvironmentClassification != nil {
-		payload.Environment = string(sp.Status.EnvironmentClassification.Environment)
-		payload.EnvironmentSource = sp.Status.EnvironmentClassification.Source
+		if env := toSignalProcessingAuditPayloadEnvironment(string(sp.Status.EnvironmentClassification.Environment)); env != "" {
+			payload.Environment.SetTo(env)
+		}
+		if envSrc := toSignalProcessingAuditPayloadEnvironmentSource(sp.Status.EnvironmentClassification.Source); envSrc != "" {
+			payload.EnvironmentSource.SetTo(envSrc)
+		}
 	}
 	if sp.Status.PriorityAssignment != nil {
-		payload.Priority = string(sp.Status.PriorityAssignment.Priority)
-		payload.PrioritySource = sp.Status.PriorityAssignment.Source
+		if priority := toSignalProcessingAuditPayloadPriority(string(sp.Status.PriorityAssignment.Priority)); priority != "" {
+			payload.Priority.SetTo(priority)
+		}
+		if prioritySrc := toSignalProcessingAuditPayloadPrioritySource(sp.Status.PriorityAssignment.Source); prioritySrc != "" {
+			payload.PrioritySource.SetTo(prioritySrc)
+		}
 	}
 	if sp.Status.BusinessClassification != nil {
-		payload.Criticality = string(sp.Status.BusinessClassification.Criticality)
-		payload.SLARequirement = sp.Status.BusinessClassification.SLARequirement
+		if crit := toSignalProcessingAuditPayloadCriticality(string(sp.Status.BusinessClassification.Criticality)); crit != "" {
+			payload.Criticality.SetTo(crit)
+		}
+		if sp.Status.BusinessClassification.SLARequirement != "" {
+			payload.SLARequirement.SetTo(sp.Status.BusinessClassification.SLARequirement)
+		}
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeClassificationDecision)
-	audit.SetEventCategory(event, "signalprocessing")
+	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, "classification")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
@@ -240,8 +271,8 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 
-	// Set structured payload directly (DD-AUDIT-004 V2.2)
-	audit.SetEventData(event, payload)
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write classification audit")
@@ -260,28 +291,33 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := signalprocessing.SignalProcessingAuditPayload{
-		Signal:   sp.Spec.Signal.Name,
-		Severity: sp.Spec.Signal.Severity,
-		Phase:    string(sp.Status.Phase),
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypeBusinessClassified, // Required for discriminator
+		Signal:    sp.Spec.Signal.Name,
+		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
+	}
+	if sev := toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity); sev != "" {
+		payload.Severity.SetTo(sev)
 	}
 
 	// Add business classification details
 	if sp.Status.BusinessClassification.BusinessUnit != "" {
-		payload.BusinessUnit = sp.Status.BusinessClassification.BusinessUnit
+		payload.BusinessUnit.SetTo(sp.Status.BusinessClassification.BusinessUnit)
 	}
 	if sp.Status.BusinessClassification.Criticality != "" {
-		payload.Criticality = string(sp.Status.BusinessClassification.Criticality)
+		if crit := toSignalProcessingAuditPayloadCriticality(string(sp.Status.BusinessClassification.Criticality)); crit != "" {
+			payload.Criticality.SetTo(crit)
+		}
 	}
 	if sp.Status.BusinessClassification.SLARequirement != "" {
-		payload.SLARequirement = sp.Status.BusinessClassification.SLARequirement
+		payload.SLARequirement.SetTo(sp.Status.BusinessClassification.SLARequirement)
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeBusinessClassified)
-	audit.SetEventCategory(event, "signalprocessing")
+	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, "classification")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
@@ -295,8 +331,8 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 
-	// Set structured payload directly (DD-AUDIT-004 V2.2)
-	audit.SetEventData(event, payload)
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write business classification audit")
@@ -307,25 +343,26 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, durationMs int) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := signalprocessing.SignalProcessingAuditPayload{
-		Signal:     sp.Spec.Signal.Name,
-		Phase:      string(sp.Status.Phase),
-		DurationMs: durationMs,
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypeEnrichmentComplete, // Required for discriminator
+		Signal:    sp.Spec.Signal.Name,
+		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
+	payload.DurationMs.SetTo(durationMs)
 
 	if sp.Status.KubernetesContext != nil {
-		payload.HasNamespace = sp.Status.KubernetesContext.Namespace != nil
-		payload.HasPod = sp.Status.KubernetesContext.Pod != nil
-		payload.HasDeployment = sp.Status.KubernetesContext.Deployment != nil
-		payload.OwnerChainLength = len(sp.Status.KubernetesContext.OwnerChain)
-		payload.DegradedMode = sp.Status.KubernetesContext.DegradedMode
+		payload.HasNamespace.SetTo(sp.Status.KubernetesContext.Namespace != nil)
+		payload.HasPod.SetTo(sp.Status.KubernetesContext.Pod != nil)
+		payload.HasDeployment.SetTo(sp.Status.KubernetesContext.Deployment != nil)
+		payload.OwnerChainLength.SetTo(len(sp.Status.KubernetesContext.OwnerChain))
+		payload.DegradedMode.SetTo(sp.Status.KubernetesContext.DegradedMode)
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeEnrichmentComplete)
-	audit.SetEventCategory(event, "signalprocessing")
+	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, "enrichment")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
@@ -340,8 +377,8 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 
-	// Set structured payload directly (DD-AUDIT-004 V2.2)
-	audit.SetEventData(event, payload)
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData(payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write enrichment audit")
@@ -352,17 +389,18 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, phase string, err error) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := signalprocessing.SignalProcessingAuditPayload{
-		Phase:  phase,
-		Error:  err.Error(),
-		Signal: sp.Spec.Signal.Name,
+	payload := api.SignalProcessingAuditPayload{
+		EventType: EventTypeError, // Required for discriminator
+		Phase:     toSignalProcessingAuditPayloadPhase(phase),
+		Signal:    sp.Spec.Signal.Name,
 	}
+	payload.Error.SetTo(err.Error())
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeError)
-	audit.SetEventCategory(event, "signalprocessing")
+	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, "error")
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "service", "signalprocessing-controller")
@@ -376,8 +414,8 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 
-	// Set structured payload directly (DD-AUDIT-004 V2.2)
-	audit.SetEventData(event, payload)
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData(payload)
 
 	if storeErr := c.store.StoreAudit(ctx, event); storeErr != nil {
 		c.log.Error(storeErr, "Failed to write error audit")

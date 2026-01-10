@@ -156,10 +156,10 @@ func queryAuditEvents(
 	eventType *string,
 ) ([]ogenclient.AuditEvent, error) {
 	params := ogenclient.QueryAuditEventsParams{}
-	
+
 	// Set CorrelationID using OptString.SetTo()
 	params.CorrelationID.SetTo(correlationID)
-	
+
 	// Set Limit using OptInt.SetTo()
 	params.Limit.SetTo(100)
 
@@ -273,7 +273,7 @@ func validateEventData(event ogenclient.AuditEvent, expectedFields map[string]in
 	// Ogen discriminated unions implement json.Marshaler (Q6 answer)
 	eventDataBytes, err := json.Marshal(event.EventData)
 	Expect(err).ToNot(HaveOccurred(), "event_data should marshal to JSON")
-	
+
 	var eventData map[string]interface{}
 	err = json.Unmarshal(eventDataBytes, &eventData)
 	Expect(err).ToNot(HaveOccurred(), "event_data JSON should unmarshal to map")
@@ -285,8 +285,14 @@ func validateEventData(event ogenclient.AuditEvent, expectedFields map[string]in
 
 		if expectedValue != nil {
 			actualValue := eventData[field]
+			// DEBUG: Print actual value for troubleshooting
+			if actualValue != expectedValue {
+				GinkgoWriter.Printf("⚠️  Field mismatch: %s\n", field)
+				GinkgoWriter.Printf("   Expected: %v (type: %T)\n", expectedValue, expectedValue)
+				GinkgoWriter.Printf("   Actual:   %v (type: %T)\n", actualValue, actualValue)
+			}
 			Expect(actualValue).To(Equal(expectedValue),
-				fmt.Sprintf("event_data['%s'] should equal '%v'", field, expectedValue))
+				fmt.Sprintf("event_data['%s'] should equal '%v' (actual: '%v')", field, expectedValue, actualValue))
 		}
 	}
 }

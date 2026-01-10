@@ -1307,9 +1307,9 @@ components:
           type: string
           minLength: 1
           maxLength: 50
-          enum: [gateway, notification, analysis, signalprocessing, workflow, execution, orchestration, webhook]
+          enum: [gateway, notification, analysis, signalprocessing, workflow, workflowexecution, orchestration, webhook]
           description: |
-            Service-level event category (ADR-034 v1.4).
+            Service-level event category (ADR-034 v1.5).
             Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
             Values:
             - gateway: Gateway Service
@@ -1317,7 +1317,7 @@ components:
             - analysis: AI Analysis Service
             - signalprocessing: Signal Processing Service
             - workflow: Workflow Catalog Service
-            - execution: Remediation Execution Service
+            - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
             - orchestration: Remediation Orchestrator Service
             - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution)
           example: gateway
@@ -1409,16 +1409,22 @@ components:
               'orchestrator.lifecycle.completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.failed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.transitioned': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.requested': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.approved': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.approval.rejected': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'signalprocessing.signal.processed': '#/components/schemas/SignalProcessingAuditPayload'
               'signalprocessing.phase.transition': '#/components/schemas/SignalProcessingAuditPayload'
-              'signalprocessing.classification.decided': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.classification.decision': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.business.classified': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.enrichment.completed': '#/components/schemas/SignalProcessingAuditPayload'
+              'signalprocessing.error.occurred': '#/components/schemas/SignalProcessingAuditPayload'
               'aianalysis.analysis.completed': '#/components/schemas/AIAnalysisAuditPayload'
               'aianalysis.analysis.failed': '#/components/schemas/AIAnalysisAuditPayload'
               'workflowexecution.workflow.started': '#/components/schemas/WorkflowExecutionAuditPayload'
               'workflowexecution.workflow.completed': '#/components/schemas/WorkflowExecutionAuditPayload'
               'workflowexecution.workflow.failed': '#/components/schemas/WorkflowExecutionAuditPayload'
-              'workflow.selection.completed': '#/components/schemas/WorkflowExecutionAuditPayload'  # Gap #5 (BR-AUDIT-005)
-              'execution.workflow.started': '#/components/schemas/WorkflowExecutionAuditPayload'    # Gap #6 (BR-AUDIT-005)
+              'workflowexecution.selection.completed': '#/components/schemas/WorkflowExecutionAuditPayload'  # Gap #5 (BR-AUDIT-005) - ADR-034 v1.5
+              'workflowexecution.execution.started': '#/components/schemas/WorkflowExecutionAuditPayload'    # Gap #6 (BR-AUDIT-005) - ADR-034 v1.5
               'webhook.notification.cancelled': '#/components/schemas/NotificationAuditPayload'
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'webhook.workflow.unblocked': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
@@ -2121,6 +2127,7 @@ components:
       properties:
         event_type:
           type: string
+          enum: ['gateway.signal.received', 'gateway.signal.deduplicated', 'gateway.crd.created', 'gateway.crd.failed']
           description: Event type for discriminator (matches parent event_type)
         # RR Reconstruction Fields (BR-AUDIT-005 Gaps #1, #2, #3)
         original_payload:
@@ -2141,9 +2148,9 @@ components:
         # Gateway-Specific Metadata
         signal_type:
           type: string
-          enum: [prometheus, alertmanager, webhook]
-          description: Source type of the signal
-          example: "prometheus"
+          enum: [prometheus-alert, kubernetes-event]
+          description: Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager, kubernetes-event=Kubernetes events)
+          example: "prometheus-alert"
         alert_name:
           type: string
           description: Name of the alert
@@ -2196,10 +2203,11 @@ components:
     RemediationOrchestratorAuditPayload:
       type: object
       required: [rr_name, namespace, event_type]
-      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned)
+      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
       properties:
         event_type:
           type: string
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -2242,6 +2250,47 @@ components:
           type: string
           description: Reason for the transition
 
+        # Approval Fields (conditional)
+        rar_name:
+          type: string
+          description: Name of the RemediationApprovalRequest
+          example: "approve-payment-api-restart-2025-12-17-xyz789"
+        required_by:
+          type: string
+          format: date-time
+          description: Approval deadline (RFC3339)
+        workflow_id:
+          type: string
+          description: Selected workflow identifier
+        confidence_str:
+          type: string
+          description: Workflow selection confidence as string
+        decision:
+          type: string
+          enum: [Approved, Rejected, Pending]
+          description: Approval decision
+        approved_by:
+          type: string
+          description: User who approved the request
+        rejected_by:
+          type: string
+          description: User who rejected the request
+        rejection_reason:
+          type: string
+          description: Reason for rejection
+        message:
+          type: string
+          description: Additional message or context for the event
+        reason:
+          type: string
+          description: Reason for manual review or other actions
+        sub_reason:
+          type: string
+          description: Sub-categorization of the reason
+        notification_name:
+          type: string
+          description: Associated notification name
+
     # ========================================
     # SignalProcessing Audit Payload
     # From: pkg/signalprocessing/audit_types.go
@@ -2250,15 +2299,16 @@ components:
     SignalProcessingAuditPayload:
       type: object
       required: [phase, signal, event_type]
-      description: Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decided)
+      description: Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decision, business.classified, enrichment.completed, error.occurred)
       properties:
         event_type:
           type: string
+          enum: ['signalprocessing.signal.processed', 'signalprocessing.phase.transition', 'signalprocessing.classification.decision', 'signalprocessing.business.classified', 'signalprocessing.enrichment.completed', 'signalprocessing.error.occurred']
           description: Event type for discriminator (matches parent event_type)
         # Core Signal Fields
         phase:
           type: string
-          enum: [Pending, Classifying, Completed, Failed]
+          enum: [Pending, Enriching, Classifying, Categorizing, Completed, Failed]
           description: Current phase of the SignalProcessing
         signal:
           type: string
@@ -2356,6 +2406,7 @@ components:
       properties:
         event_type:
           type: string
+          enum: ['aianalysis.analysis.completed', 'aianalysis.analysis.failed']
           description: Event type for discriminator (matches parent event_type)
         analysis_name:
           type: string
@@ -2414,7 +2465,8 @@ components:
       properties:
         event_type:
           type: string
-          description: Event type for discriminator (matches parent event_type)
+          enum: ['workflowexecution.workflow.started', 'workflowexecution.workflow.completed', 'workflowexecution.workflow.failed', 'workflowexecution.selection.completed', 'workflowexecution.execution.started']
+          description: Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution events use 'workflowexecution' prefix.
         # Core Workflow Fields
         workflow_id:
           type: string
@@ -2487,6 +2539,7 @@ components:
       properties:
         event_type:
           type: string
+          enum: ['webhook.notification.cancelled', 'webhook.notification.acknowledged']
           description: Event type for discriminator (matches parent event_type)
         notification_id:
           type: string
@@ -2497,24 +2550,47 @@ components:
           description: Alias for notification_id
         type:
           type: string
-          enum: [email, slack, pagerduty]
-          description: Notification type
+          enum: [escalation, simple, status-update, approval, manual-review]
+          description: Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40)
         notification_type:
           type: string
-          enum: [email, slack, pagerduty]
-          description: Alias for type
+          enum: [escalation, simple, status-update, approval, manual-review]
+          description: Alias for type (matches CRD NotificationType enum)
         priority:
           type: string
-          enum: [P0, P1, P2, P3, P4]
-          description: Notification priority
+          enum: [critical, high, medium, low]
+          description: Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50)
         final_status:
           type: string
-          enum: [Pending, Sent, Failed, Cancelled]
-          description: Final status of the notification
+          enum: [Pending, Sending, Sent, Failed, Cancelled]
+          description: Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65)
         recipients:
-          type: object
-          additionalProperties: true
-          description: Notification recipients (structured type from CRD)
+          type: array
+          items:
+            type: object
+            properties:
+              email:
+                type: string
+                description: Email address (for email channel)
+                example: "user@example.com"
+              slack:
+                type: string
+                description: Slack channel or user (#channel-name or @username)
+                example: "#alerts"
+              teams:
+                type: string
+                description: Teams channel or user
+                example: "team@company.com"
+              phone:
+                type: string
+                description: Phone number in E.164 format
+                example: "+1234567890"
+              webhookURL:
+                type: string
+                description: Webhook URL for webhook channel
+                example: "https://example.com/webhook"
+            description: Notification recipient (matches CRD Recipient struct)
+          description: Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102)
         cancelled_by:
           type: string
           description: Username who cancelled the notification
@@ -2538,6 +2614,7 @@ components:
       properties:
         event_type:
           type: string
+          enum: ['webhook.workflow.unblocked']
           description: Event type for discriminator (matches parent event_type)
         workflow_name:
           type: string
@@ -2567,6 +2644,7 @@ components:
       properties:
         event_type:
           type: string
+          enum: ['webhook.approval.decided']
           description: Event type for discriminator (matches parent event_type)
         request_name:
           type: string
@@ -2648,19 +2726,43 @@ components:
           description: Unique workflow identifier (UUID)
           example: "550e8400-e29b-41d4-a716-446655440000"
         updated_fields:
-          type: object
-          additionalProperties: true
-          description: Fields that were updated (field name -> new value)
-          example:
-            status: "disabled"
-            description: "Updated description"
+          $ref: '#/components/schemas/WorkflowCatalogUpdatedFields'
+
+    WorkflowCatalogUpdatedFields:
+      type: object
+      description: Fields that were updated in the workflow catalog
+      properties:
+        status:
+          type: string
+          description: Updated workflow status
+          example: "disabled"
+        disabled_by:
+          type: string
+          description: User who disabled the workflow (only for status=disabled)
+          example: "admin@example.com"
+        disabled_reason:
+          type: string
+          description: Reason for disabling (only for status=disabled)
+          example: "Security vulnerability detected"
+        version:
+          type: string
+          description: Updated version
+          example: "1.0.1"
+        description:
+          type: string
+          description: Updated description
+          example: "Updated workflow description"
 
     # Workflow Search Events
     WorkflowSearchAuditPayload:
       type: object
-      required: [query, results, search_metadata]
+      required: [event_type, query, results, search_metadata]
       description: Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1)
       properties:
+        event_type:
+          type: string
+          enum: ['workflow.catalog.search_completed']
+          description: Discriminator for event data union type
         query:
           $ref: '#/components/schemas/QueryMetadata'
         results:
@@ -3015,9 +3117,13 @@ components:
 
     HolmesGPTResponsePayload:
       type: object
-      required: [event_id, incident_id, response_data]
+      required: [event_type, event_id, incident_id, response_data]
       description: HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
       properties:
+        event_type:
+          type: string
+          enum: ['holmesgpt.response.complete']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3027,23 +3133,105 @@ components:
           description: Incident correlation ID from request
           example: "incident-payment-api-2025-12-17-abc123"
         response_data:
+          $ref: '#/components/schemas/IncidentResponseData'
+
+    IncidentResponseData:
+      type: object
+      required: [incident_id, analysis, root_cause_analysis, confidence, timestamp]
+      description: Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no additionalProperties)
+      properties:
+        incident_id:
+          type: string
+          description: Incident identifier from request
+          example: "incident-payment-api-2025-12-17-abc123"
+        analysis:
+          type: string
+          description: Natural language analysis from LLM
+          example: "Root cause analysis indicates..."
+        root_cause_analysis:
           type: object
-          description: Complete IncidentResponse structure (all fields) for SOC2 Type II compliance
-          additionalProperties: true
-          example:
-            incident_id: "incident-payment-api-2025-12-17-abc123"
-            analysis: "Root cause analysis text..."
-            root_cause_analysis: {}
-            selected_workflow: {}
-            confidence: 0.85
-            needs_human_review: false
-            timestamp: "2025-01-08T10:30:00Z"
+          description: Structured RCA with summary, severity, contributing_factors
+          required: [summary, severity, contributing_factors]
+          properties:
+            summary:
+              type: string
+              description: Brief RCA summary
+            severity:
+              type: string
+              description: Incident severity
+              example: "high"
+            contributing_factors:
+              type: array
+              items:
+                type: string
+              description: List of contributing factors
+          additionalProperties: false
+        selected_workflow:
+          type: object
+          description: Selected workflow with workflow_id, containerImage, confidence, parameters (optional)
+          properties:
+            workflow_id:
+              type: string
+            container_image:
+              type: string
+            confidence:
+              type: number
+              format: float
+              minimum: 0.0
+              maximum: 1.0
+            parameters:
+              type: object
+              additionalProperties: true
+          additionalProperties: false
+        confidence:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+          description: Overall confidence in analysis
+          example: 0.85
+        timestamp:
+          type: string
+          format: date-time
+          description: ISO timestamp of analysis completion
+        needs_human_review:
+          type: boolean
+          default: false
+          description: True when AI could not produce reliable result
+        human_review_reason:
+          type: string
+          enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error]
+          description: Structured reason when needs_human_review=true
+        target_in_owner_chain:
+          type: boolean
+          default: true
+          description: Whether RCA target was found in OwnerChain
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Non-fatal warnings (e.g., OwnerChain validation issues)
+        alternative_workflows:
+          type: array
+          items:
+            type: object
+            properties:
+              workflow_id:
+                type: string
+              rationale:
+                type: string
+            additionalProperties: false
+          description: Other workflows considered but not selected
 
     LLMRequestPayload:
       type: object
-      required: [event_id, incident_id, model, prompt_length, prompt_preview]
+      required: [event_type, event_id, incident_id, model, prompt_length, prompt_preview]
       description: LLM API request event payload (llm_request)
       properties:
+        event_type:
+          type: string
+          enum: ['llm_request']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3078,9 +3266,13 @@ components:
 
     LLMResponsePayload:
       type: object
-      required: [event_id, incident_id, has_analysis, analysis_length, analysis_preview]
+      required: [event_type, event_id, incident_id, has_analysis, analysis_length, analysis_preview]
       description: LLM API response event payload (llm_response)
       properties:
+        event_type:
+          type: string
+          enum: ['llm_response']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3109,9 +3301,13 @@ components:
 
     LLMToolCallPayload:
       type: object
-      required: [event_id, incident_id, tool_call_index, tool_name, tool_result]
+      required: [event_type, event_id, incident_id, tool_call_index, tool_name, tool_result]
       description: LLM tool call event payload (llm_tool_call)
       properties:
+        event_type:
+          type: string
+          enum: ['llm_tool_call']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3138,9 +3334,13 @@ components:
 
     WorkflowValidationPayload:
       type: object
-      required: [event_id, incident_id, attempt, max_attempts, is_valid]
+      required: [event_type, event_id, incident_id, attempt, max_attempts, is_valid]
       description: Workflow validation attempt event payload (workflow_validation_attempt)
       properties:
+        event_type:
+          type: string
+          enum: ['workflow_validation_attempt']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier

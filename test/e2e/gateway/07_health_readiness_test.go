@@ -27,6 +27,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // Test 07: Health & Readiness Endpoints
@@ -158,7 +160,7 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		// Send some alerts to create load
 		for i := 0; i < 5; i++ {
 			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-				AlertName: fmt.Sprintf("HealthTest-%d-%d", i, time.Now().UnixNano()),
+				AlertName: fmt.Sprintf("HealthTest-%d-%s", i, uuid.New().String()[:8]),
 				Namespace: "default",
 				PodName:   fmt.Sprintf("health-test-pod-%d", i),
 				Severity:  "info",

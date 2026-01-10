@@ -32,6 +32,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/google/uuid"
 )
 
 // Test 04: Metrics Endpoint (BR-GATEWAY-017)
@@ -63,7 +65,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("metrics-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("metrics-%d-%s", processID, uuid.New().String()[:8])
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
@@ -145,7 +147,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("")
 		testLogger.Info("Step 3: Send alert and verify metrics update")
 
-		alertName := fmt.Sprintf("MetricsTest-%d", time.Now().UnixNano())
+		alertName := fmt.Sprintf("MetricsTest-%s", uuid.New().String()[:8])
 		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: alertName,
 			Namespace: testNamespace,

@@ -35,7 +35,7 @@ class AuditEvent(BaseModel):
     version: Annotated[str, Field(min_length=1, strict=True, max_length=20)] = Field(description="Schema version (e.g., \"1.0\")")
     event_type: Annotated[str, Field(min_length=1, strict=True, max_length=100)] = Field(description="Event type identifier (e.g., gateway.signal.received)")
     event_timestamp: datetime = Field(description="ISO 8601 timestamp when the event occurred")
-    event_category: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Service-level event category (ADR-034 v1.4). Per ADR-034 v1.2: event_category MUST match the service name that emits the event. Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - execution: Remediation Execution Service - orchestration: Remediation Orchestrator Service - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution) ")
+    event_category: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Service-level event category (ADR-034 v1.5). Per ADR-034 v1.2: event_category MUST match the service name that emits the event. Values: - gateway: Gateway Service - notification: Notification Service - analysis: AI Analysis Service - signalprocessing: Signal Processing Service - workflow: Workflow Catalog Service - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5) - orchestration: Remediation Orchestrator Service - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution) ")
     event_action: Annotated[str, Field(min_length=1, strict=True, max_length=50)] = Field(description="Action performed (ADR-034)")
     event_outcome: StrictStr = Field(description="Result of the event")
     actor_type: Optional[StrictStr] = None
@@ -56,8 +56,8 @@ class AuditEvent(BaseModel):
     @field_validator('event_category')
     def event_category_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'execution', 'orchestration', 'webhook'):
-            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'execution', 'orchestration', 'webhook')")
+        if value not in ('gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook'):
+            raise ValueError("must be one of enum values ('gateway', 'notification', 'analysis', 'signalprocessing', 'workflow', 'workflowexecution', 'orchestration', 'webhook')")
         return value
 
     @field_validator('event_outcome')

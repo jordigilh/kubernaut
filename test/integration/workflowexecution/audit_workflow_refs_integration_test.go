@@ -120,12 +120,13 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 	// TEST 1: Happy Path - Both Events Emitted
 	// ========================================
 	Context("when workflow is selected and execution starts", func() {
-		It("should emit both workflow.selection.completed and execution.workflow.started events", func() {
-			// BUSINESS SCENARIO:
-			// 1. WorkflowExecution CRD created by Remediation Orchestrator
-			// 2. Controller selects workflow from spec.WorkflowRef
-			// 3. Controller creates Tekton PipelineRun
-			// 4. MUST emit 2 audit events for SOC2 compliance
+	It("should emit both workflowexecution.selection.completed and workflowexecution.execution.started events (ADR-034 v1.5)", func() {
+		// BUSINESS SCENARIO:
+		// 1. WorkflowExecution CRD created by Remediation Orchestrator
+		// 2. Controller selects workflow from spec.WorkflowRef
+		// 3. Controller creates Tekton PipelineRun
+		// 4. MUST emit 2 audit events for SOC2 compliance
+		// Per ADR-034 v1.5: All event types prefixed with "workflowexecution"
 
 			By("1. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
 			wfeName := fmt.Sprintf("gap56-happy-%s", uuid.New().String()[:8])
@@ -177,39 +178,39 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			}
 			GinkgoWriter.Printf("📊 Query result: %d events found\n", len(events))
 
-				// Count by type to check if Gap 5-6 events are present
-				eventCounts := countEventsByType(events)
-				hasSelection := eventCounts["workflow.selection.completed"] >= 1
-				hasExecution := eventCounts["execution.workflow.started"] >= 1
-				return hasSelection && hasExecution
-			}, 60*time.Second, 1*time.Second).Should(BeTrue(),
-				"Should have workflow.selection.completed and execution.workflow.started events (Gap 5-6)")
+			// Count by type to check if Gap 5-6 events are present (ADR-034 v1.5)
+			eventCounts := countEventsByType(events)
+			hasSelection := eventCounts["workflowexecution.selection.completed"] >= 1
+			hasExecution := eventCounts["workflowexecution.execution.started"] >= 1
+			return hasSelection && hasExecution
+		}, 60*time.Second, 1*time.Second).Should(BeTrue(),
+			"Should have workflowexecution.selection.completed and workflowexecution.execution.started events (Gap 5-6, ADR-034 v1.5)")
 
 			By("3. Validate exact event counts per type (DD-TESTING-001)")
 			allEvents, err := queryAuditEvents(dsClient, correlationID, nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Count events by type (DD-TESTING-001: Deterministic validation)
-			eventCounts := countEventsByType(allEvents)
+		// Count events by type (DD-TESTING-001: Deterministic validation)
+		eventCounts := countEventsByType(allEvents)
 
-			// Gap 5-6: Validate exactly 1 of each required event type
-			Expect(eventCounts["workflow.selection.completed"]).To(Equal(1),
-				"Gap 5: Should have exactly 1 workflow.selection.completed event")
-			Expect(eventCounts["execution.workflow.started"]).To(Equal(1),
-				"Gap 6: Should have exactly 1 execution.workflow.started event")
+		// Gap 5-6: Validate exactly 1 of each required event type (per ADR-034 v1.5)
+		Expect(eventCounts["workflowexecution.selection.completed"]).To(Equal(1),
+			"Gap 5: Should have exactly 1 workflowexecution.selection.completed event (ADR-034 v1.5)")
+		Expect(eventCounts["workflowexecution.execution.started"]).To(Equal(1),
+			"Gap 6: Should have exactly 1 workflowexecution.execution.started event (ADR-034 v1.5)")
 
-			// Workflow may complete during test - if so, validate exactly 1 completion event
-			if completionCount, exists := eventCounts["workflow.completed"]; exists {
+		// Workflow may complete during test - if so, validate exactly 1 completion event (per ADR-034 v1.5)
+		if completionCount, exists := eventCounts["workflowexecution.workflow.completed"]; exists {
 				Expect(completionCount).To(Equal(1),
 					"If workflow completed, should have exactly 1 workflow.completed event")
 			}
 
-			By("4. Validate workflow.selection.completed event structure")
-			selectionEvents := filterEventsByType(allEvents, "workflow.selection.completed")
-			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
+		By("4. Validate workflowexecution.selection.completed event structure (ADR-034 v1.5)")
+		selectionEvents := filterEventsByType(allEvents, "workflowexecution.selection.completed")
+		Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
-		selectionEvent := selectionEvents[0]
-		validateEventMetadata(selectionEvent, "workflow", correlationID)
+	selectionEvent := selectionEvents[0]
+	validateEventMetadata(selectionEvent, "workflowexecution", correlationID)
 		Expect(selectionEvent.ActorID.Value).To(Equal("workflowexecution-controller"))
 		Expect(string(selectionEvent.EventOutcome)).To(Equal("success"))
 
@@ -224,12 +225,12 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		Expect(eventData.ContainerImage).ToNot(BeEmpty())
 		Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
-		By("5. Validate execution.workflow.started event structure")
-		executionEvents := filterEventsByType(allEvents, "execution.workflow.started")
-		Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
+	By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
+	executionEvents := filterEventsByType(allEvents, "workflowexecution.execution.started")
+	Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
 
-		executionEvent := executionEvents[0]
-		validateEventMetadata(executionEvent, "execution", correlationID)
+	executionEvent := executionEvents[0]
+	validateEventMetadata(executionEvent, "workflowexecution", correlationID)
 		Expect(executionEvent.ActorID.Value).To(Equal("workflowexecution-controller"))
 		Expect(string(executionEvent.EventOutcome)).To(Equal("success"))
 
@@ -249,7 +250,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 	// TEST 2: Selection Only - Execution Not Started
 	// ========================================
 	Context("when workflow is selected but execution hasn't started yet", func() {
-		It("should emit workflow.selection.completed event immediately", func() {
+		It("should emit workflowexecution.selection.completed event immediately (ADR-034 v1.5)", func() {
 			// BUSINESS SCENARIO:
 			// Testing CRD controller async behavior - workflow selection
 			// happens before PipelineRun creation (timing validation)
@@ -286,29 +287,30 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 				_ = k8sClient.Delete(ctx, wfe)
 			}()
 
-		By("2. Wait for workflow.selection.completed event (fast path)")
-		// DD-TESTING-001: Deterministic event count (exactly 1 event)
-		// Flush INSIDE Eventually to ensure controller has reconciled and buffered event first
-		Eventually(func() int {
-			flushAuditBuffer() // Flush on each poll attempt
-			selectionType := "workflow.selection.completed"
-			events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
-			if err != nil {
-				return 0
-			}
-			return len(events)
-		}, 30*time.Second, 1*time.Second).Should(Equal(1),
-			"Should have exactly 1 workflow.selection.completed event")
+	By("2. Wait for workflowexecution.selection.completed event (fast path)")
+	// DD-TESTING-001: Deterministic event count (exactly 1 event)
+	// Flush INSIDE Eventually to ensure controller has reconciled and buffered event first
+	// Per ADR-034 v1.5: event type is "workflowexecution.selection.completed"
+	Eventually(func() int {
+		flushAuditBuffer() // Flush on each poll attempt
+		selectionType := "workflowexecution.selection.completed"
+		events, err := queryAuditEvents(dsClient, correlationID, &selectionType)
+		if err != nil {
+			return 0
+		}
+		return len(events)
+	}, 30*time.Second, 1*time.Second).Should(Equal(1),
+		"Should have exactly 1 workflowexecution.selection.completed event (ADR-034 v1.5)")
 
-			By("3. Validate selection event is present")
-			selectionType := "workflow.selection.completed"
-			selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
+		By("3. Validate selection event is present")
+		selectionType := "workflowexecution.selection.completed"
+		selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
 
-		// Validate event structure
-		selectionEvent := selectionEvents[0]
-		validateEventMetadata(selectionEvent, "workflow", correlationID)
+	// Validate event structure (per ADR-034 v1.5: category is "workflowexecution")
+	selectionEvent := selectionEvents[0]
+	validateEventMetadata(selectionEvent, "workflowexecution", correlationID)
 
 		// Validate event_data structure - OGEN-MIGRATION
 		// Per Q4 Answer: Flat structure, no nested selected_workflow_ref

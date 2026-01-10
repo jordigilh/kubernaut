@@ -17,7 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
-
+from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictInt, StrictStr, field_validator
 from pydantic import Field
@@ -29,7 +29,7 @@ except ImportError:
 
 class RemediationOrchestratorAuditPayload(BaseModel):
     """
-    Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned)
+    Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     rr_name: StrictStr = Field(description="Name of the RemediationRequest being orchestrated")
@@ -42,7 +42,26 @@ class RemediationOrchestratorAuditPayload(BaseModel):
     from_phase: Optional[StrictStr] = Field(default=None, description="Phase being transitioned from")
     to_phase: Optional[StrictStr] = Field(default=None, description="Phase being transitioned to")
     transition_reason: Optional[StrictStr] = Field(default=None, description="Reason for the transition")
-    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason"]
+    rar_name: Optional[StrictStr] = Field(default=None, description="Name of the RemediationApprovalRequest")
+    required_by: Optional[datetime] = Field(default=None, description="Approval deadline (RFC3339)")
+    workflow_id: Optional[StrictStr] = Field(default=None, description="Selected workflow identifier")
+    confidence_str: Optional[StrictStr] = Field(default=None, description="Workflow selection confidence as string")
+    decision: Optional[StrictStr] = Field(default=None, description="Approval decision")
+    approved_by: Optional[StrictStr] = Field(default=None, description="User who approved the request")
+    rejected_by: Optional[StrictStr] = Field(default=None, description="User who rejected the request")
+    rejection_reason: Optional[StrictStr] = Field(default=None, description="Reason for rejection")
+    message: Optional[StrictStr] = Field(default=None, description="Additional message or context for the event")
+    reason: Optional[StrictStr] = Field(default=None, description="Reason for manual review or other actions")
+    sub_reason: Optional[StrictStr] = Field(default=None, description="Sub-categorization of the reason")
+    notification_name: Optional[StrictStr] = Field(default=None, description="Associated notification name")
+    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected'):
+            raise ValueError("must be one of enum values ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected')")
+        return value
 
     @field_validator('outcome')
     def outcome_validate_enum(cls, value):
@@ -72,6 +91,16 @@ class RemediationOrchestratorAuditPayload(BaseModel):
 
         if value not in ('Timeout', 'ValidationError', 'InfrastructureError', 'ApprovalRejected', 'Unknown'):
             raise ValueError("must be one of enum values ('Timeout', 'ValidationError', 'InfrastructureError', 'ApprovalRejected', 'Unknown')")
+        return value
+
+    @field_validator('decision')
+    def decision_validate_enum(cls, value):
+        """Validates the enum"""
+        if value is None:
+            return value
+
+        if value not in ('Approved', 'Rejected', 'Pending'):
+            raise ValueError("must be one of enum values ('Approved', 'Rejected', 'Pending')")
         return value
 
     model_config = {
@@ -136,7 +165,19 @@ class RemediationOrchestratorAuditPayload(BaseModel):
             "error_details": ErrorDetails.from_dict(obj.get("error_details")) if obj.get("error_details") is not None else None,
             "from_phase": obj.get("from_phase"),
             "to_phase": obj.get("to_phase"),
-            "transition_reason": obj.get("transition_reason")
+            "transition_reason": obj.get("transition_reason"),
+            "rar_name": obj.get("rar_name"),
+            "required_by": obj.get("required_by"),
+            "workflow_id": obj.get("workflow_id"),
+            "confidence_str": obj.get("confidence_str"),
+            "decision": obj.get("decision"),
+            "approved_by": obj.get("approved_by"),
+            "rejected_by": obj.get("rejected_by"),
+            "rejection_reason": obj.get("rejection_reason"),
+            "message": obj.get("message"),
+            "reason": obj.get("reason"),
+            "sub_reason": obj.get("sub_reason"),
+            "notification_name": obj.get("notification_name")
         })
         return _obj
 

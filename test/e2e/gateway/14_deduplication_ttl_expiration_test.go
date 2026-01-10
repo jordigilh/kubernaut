@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Ordered, func() {
@@ -106,7 +108,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		processID := GinkgoParallelProcess()
-		alertName := fmt.Sprintf("TTLExpirationTest-p%d-%d", processID, time.Now().UnixNano())
+		alertName := fmt.Sprintf("TTLExpirationTest-p%d-%s", processID, uuid.New().String()[:8])
 
 		// Create deterministic alert payload
 		alertPayload := map[string]interface{}{
@@ -197,7 +199,7 @@ var _ = Describe("Test 14: Deduplication TTL Expiration (BR-GATEWAY-012)", Order
 
 		testLogger.Info("Step 4: Send same alert again after TTL expiration")
 		// Create a new unique alert name for post-TTL test
-		postTTLAlertName := fmt.Sprintf("PostTTL-p%d-%d", processID, time.Now().UnixNano())
+		postTTLAlertName := fmt.Sprintf("PostTTL-p%d-%s", processID, uuid.New().String()[:8])
 		postTTLPayload := map[string]interface{}{
 			"status": "firing",
 			"labels": map[string]interface{}{

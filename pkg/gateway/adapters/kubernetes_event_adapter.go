@@ -115,12 +115,12 @@ func (a *KubernetesEventAdapter) GetSourceService() string {
 	return "kubernetes-events"
 }
 
-// GetSourceType returns the signal type identifier
+// GetSourceType returns the signal type identifier (BR-GATEWAY-027)
 //
-// Returns "kubernetes-event" to distinguish Kubernetes events from other signal types.
-// Used for metrics, logging, and signal classification.
+// Returns "kubernetes-event" per OpenAPI enum validation and authoritative documentation.
+// Used for metrics, logging, signal classification, and audit events.
 func (a *KubernetesEventAdapter) GetSourceType() string {
-	return SourceTypeWebhook // K8s events arrive via webhook/API
+	return SourceTypeKubernetesEvent // Kubernetes events
 }
 
 // Parse converts Kubernetes Event JSON to NormalizedSignal

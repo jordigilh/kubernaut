@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029)", Ordered, func() {
@@ -330,7 +332,7 @@ var _ = Describe("Test 11: Fingerprint Stability (BR-GATEWAY-004, BR-GATEWAY-029
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 			processID := GinkgoParallelProcess()
-			alertName := fmt.Sprintf("DedupeTest-p%d-%d", processID, time.Now().UnixNano())
+			alertName := fmt.Sprintf("DedupeTest-p%d-%s", processID, uuid.New().String()[:8])
 
 			// Create deterministic alert
 			payloadBytes := createPrometheusWebhookPayloadWithTimestamp(PrometheusAlertPayload{

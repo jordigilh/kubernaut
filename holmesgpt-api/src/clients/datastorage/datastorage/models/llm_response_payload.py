@@ -19,7 +19,7 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List, Optional
-from pydantic import BaseModel, StrictBool, StrictStr
+from pydantic import BaseModel, StrictBool, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
 try:
@@ -31,6 +31,7 @@ class LLMResponsePayload(BaseModel):
     """
     LLM API response event payload (llm_response)
     """ # noqa: E501
+    event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
     incident_id: StrictStr = Field(description="Incident correlation ID (remediation_id)")
     has_analysis: StrictBool = Field(description="Whether LLM provided analysis")
@@ -38,7 +39,14 @@ class LLMResponsePayload(BaseModel):
     analysis_preview: StrictStr = Field(description="First 500 characters of response for audit")
     tokens_used: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Tokens consumed by LLM")
     tool_call_count: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=0, description="Number of tool calls made by LLM")
-    __properties: ClassVar[List[str]] = ["event_id", "incident_id", "has_analysis", "analysis_length", "analysis_preview", "tokens_used", "tool_call_count"]
+    __properties: ClassVar[List[str]] = ["event_type", "event_id", "incident_id", "has_analysis", "analysis_length", "analysis_preview", "tokens_used", "tool_call_count"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('llm_response'):
+            raise ValueError("must be one of enum values ('llm_response')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -89,6 +97,7 @@ class LLMResponsePayload(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "event_type": obj.get("event_type"),
             "event_id": obj.get("event_id"),
             "incident_id": obj.get("incident_id"),
             "has_analysis": obj.get("has_analysis"),

@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
@@ -45,29 +45,25 @@ func queryAuditEvents(
 	// This allows querying cross-service events (llm_request, workflow_validation, etc.)
 	limit := 100
 
-	params := &dsgen.QueryAuditEventsParams{
-		CorrelationId: &correlationID,
-		Limit:         &limit,
+	params := dsgen.QueryAuditEventsParams{
+		CorrelationID: dsgen.NewOptString(correlationID),
+		Limit:         dsgen.NewOptInt(limit),
 	}
 
 	if eventType != nil {
-		params.EventType = eventType
+		params.EventType = dsgen.NewOptString(*eventType)
 	}
 
-	resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), params)
+	resp, err := dsClient.QueryAuditEvents(context.Background(), params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query DataStorage: %w", err)
 	}
 
-	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
-	}
-
-	if resp.JSON200.Data == nil {
+	if resp.Data == nil {
 		return []dsgen.AuditEvent{}, nil
 	}
 
-	return *resp.JSON200.Data, nil
+	return resp.Data, nil
 }
 
 // countEventsByType counts occurrences of each event type in the given events
@@ -241,11 +237,11 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			By("Validating correlation_id matches remediation_id")
 			for _, event := range events {
-				// P0: Use testutil validator for baseline field validation
-				testutil.ValidateAuditEventHasRequiredFields(event) // ✅ OpenAPI type validation
+			// P0: Use testutil validator for baseline field validation
+			testutil.ValidateAuditEventHasRequiredFields(event) // ✅ OpenAPI type validation
 
-				Expect(event.CorrelationId).To(Equal(remediationID),
-					"All audit events must have correlation_id = remediation_id for traceability")
+			Expect(event.CorrelationID).To(Equal(remediationID),
+				"All audit events must have correlation_id = remediation_id for traceability")
 			}
 
 			By("Validating event_data payloads are valid JSON")
@@ -314,21 +310,22 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 		By("Validating phase transition event_data structure")
 		for _, event := range phaseEvents {
-			eventData, ok := event.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			// Access strongly-typed payload via discriminated union
+			payload := event.EventData.AIAnalysisPhaseTransitionPayload
+			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisPhaseTransitionPayload")
 
-				// Per DD-AUDIT-004: PhaseTransitionPayload structure
-				Expect(eventData).To(HaveKey("old_phase"), "Should record old phase")
-				Expect(eventData).To(HaveKey("new_phase"), "Should record new phase")
+			// Per DD-AUDIT-004: PhaseTransitionPayload structure
+			Expect(payload.OldPhase).ToNot(BeEmpty(), "Should record old phase")
+			Expect(payload.NewPhase).ToNot(BeEmpty(), "Should record new phase")
 
-				oldPhase := eventData["old_phase"].(string)
-				newPhase := eventData["new_phase"].(string)
+			oldPhase := payload.OldPhase
+			newPhase := payload.NewPhase
 
-				// Verify phase transition is valid
-				validPhases := []string{"Pending", "Investigating", "Analyzing", "Completed", "Failed"}
-				Expect(validPhases).To(ContainElement(oldPhase), "old_phase should be a valid phase")
-				Expect(validPhases).To(ContainElement(newPhase), "new_phase should be a valid phase")
-			}
+			// Verify phase transition is valid
+			validPhases := []string{"Pending", "Investigating", "Analyzing", "Completed", "Failed"}
+			Expect(validPhases).To(ContainElement(oldPhase), "old_phase should be a valid phase")
+			Expect(validPhases).To(ContainElement(newPhase), "new_phase should be a valid phase")
+		}
 		})
 
 		It("should audit HolmesGPT-API calls with correct endpoint and status", func() {
@@ -375,24 +372,25 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 		By("Validating HolmesGPT-API call event_data structure")
 		for _, event := range hapiEvents {
-			eventData, ok := event.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue())
+			// Access strongly-typed payload via discriminated union
+			payload := event.EventData.AIAnalysisHolmesGPTCallPayload
+			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisHolmesGPTCallPayload")
 
-				// Per DD-AUDIT-004: HolmesGPTCallPayload structure
-				Expect(eventData).To(HaveKey("endpoint"), "Should record API endpoint called")
-				Expect(eventData).To(HaveKey("http_status_code"), "Should record HTTP status code")
-				Expect(eventData).To(HaveKey("duration_ms"), "Should record call duration")
+			// Per DD-AUDIT-004: HolmesGPTCallPayload structure
+			Expect(payload.Endpoint).ToNot(BeEmpty(), "Should record API endpoint called")
+			Expect(payload.HTTPStatusCode).ToNot(BeZero(), "Should record HTTP status code")
+			Expect(payload.DurationMs).ToNot(BeZero(), "Should record call duration")
 
-				// Verify endpoint is valid
-				endpoint := eventData["endpoint"].(string)
-				Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
-					"Endpoint should be incident/analyze or recovery/investigate")
+			// Verify endpoint is valid
+			endpoint := payload.Endpoint
+			Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
+				"Endpoint should be incident/analyze or recovery/investigate")
 
-				// Verify HTTP status is 2xx for successful calls
-				statusCode := int(eventData["http_status_code"].(float64))
-				Expect(statusCode).To(BeNumerically(">=", 200), "Status code should be 2xx for success")
-				Expect(statusCode).To(BeNumerically("<", 300), "Status code should be 2xx for success")
-			}
+			// Verify HTTP status is 2xx for successful calls
+			statusCode := payload.HTTPStatusCode
+			Expect(statusCode).To(BeNumerically(">=", 200), "Status code should be 2xx for success")
+			Expect(statusCode).To(BeNumerically("<", 300), "Status code should be 2xx for success")
+		}
 		})
 
 		It("should audit Rego policy evaluations with correct outcome", func() {
@@ -444,24 +442,23 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 		By("Validating Rego evaluation event_data structure")
 		event := regoEvents[0] // Should be only one Rego evaluation per analysis
-		eventData, ok := event.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue())
+		// Access strongly-typed payload via discriminated union
+		payload := event.EventData.AIAnalysisRegoEvaluationPayload
+		Expect(payload).ToNot(BeNil(), "Should have AIAnalysisRegoEvaluationPayload")
 
-			// Per DD-AUDIT-004: RegoEvaluationPayload structure
-			Expect(eventData).To(HaveKey("outcome"), "Should record policy outcome (approved/requires_approval)")
-			Expect(eventData).To(HaveKey("degraded"), "Should record if policy ran in degraded mode")
-			Expect(eventData).To(HaveKey("duration_ms"), "Should record evaluation duration")
-			Expect(eventData).To(HaveKey("reason"), "Should record evaluation reason")
+		// Per DD-AUDIT-004: RegoEvaluationPayload structure
+		Expect(payload.Outcome).ToNot(BeEmpty(), "Should record policy outcome (approved/requires_approval)")
+		Expect(payload.DurationMs).ToNot(BeZero(), "Should record evaluation duration")
+		Expect(payload.Reason).ToNot(BeEmpty(), "Should record evaluation reason")
 
-			// Verify outcome is valid
-			outcome := eventData["outcome"].(string)
-			Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
-				"Outcome should be 'approved' or 'requires_approval'")
+		// Verify outcome is valid
+		outcome := payload.Outcome
+		Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
+			"Outcome should be 'approved' or 'requires_approval'")
 
-			// Verify degraded flag is boolean
-			degraded, ok := eventData["degraded"].(bool)
-			Expect(ok).To(BeTrue(), "degraded should be a boolean")
-			_ = degraded // Use the variable
+		// Verify degraded flag is boolean
+		degraded := payload.Degraded
+		_ = degraded // Use the variable
 		})
 
 		It("should audit approval decisions with correct approval_required flag", func() {
@@ -518,25 +515,22 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 		By("Validating approval decision event_data structure")
 		event := approvalEvents[0]
-		eventData, ok := event.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue())
+		// Access strongly-typed payload via discriminated union
+		payload := event.EventData.AIAnalysisApprovalDecisionPayload
+		Expect(payload).ToNot(BeNil(), "Should have AIAnalysisApprovalDecisionPayload")
 
-			// Per DD-AUDIT-004: ApprovalDecisionPayload structure
-			Expect(eventData).To(HaveKey("approval_required"), "Should record if approval is required")
-			Expect(eventData).To(HaveKey("approval_reason"), "Should record reason for approval decision")
-			Expect(eventData).To(HaveKey("auto_approved"), "Should record if auto-approved")
+		// Per DD-AUDIT-004: ApprovalDecisionPayload structure
+		Expect(payload.ApprovalReason).ToNot(BeEmpty(), "Should record reason for approval decision")
 
-			// Verify approval_required matches CR status
-			approvalRequired, ok := eventData["approval_required"].(bool)
-			Expect(ok).To(BeTrue(), "approval_required should be a boolean")
-			Expect(approvalRequired).To(BeTrue(),
-				"audit event approval_required should match CR status.ApprovalRequired")
+		// Verify approval_required matches CR status
+		approvalRequired := payload.ApprovalRequired
+		Expect(approvalRequired).To(BeTrue(),
+			"audit event approval_required should match CR status.ApprovalRequired")
 
-			// Verify auto_approved is false for production
-			autoApproved, ok := eventData["auto_approved"].(bool)
-			Expect(ok).To(BeTrue(), "auto_approved should be a boolean")
-			Expect(autoApproved).To(BeFalse(),
-				"Production should not be auto-approved")
+		// Verify auto_approved is false for production
+		autoApproved := payload.AutoApproved
+		Expect(autoApproved).To(BeFalse(),
+			"Production should not be auto-approved")
 		})
 	})
 })

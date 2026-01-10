@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)
@@ -64,9 +66,9 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 
 		// Generate unique namespaces
 		processID := GinkgoParallelProcess()
-		timestamp := time.Now().UnixNano()
-		testNamespace1 = fmt.Sprintf("tenant-a-%d-%d", processID, timestamp)
-		testNamespace2 = fmt.Sprintf("tenant-b-%d-%d", processID, timestamp)
+		timestamp := uuid.New().String()[:8]
+		testNamespace1 = fmt.Sprintf("tenant-a-%d-%s", processID, timestamp)
+		testNamespace2 = fmt.Sprintf("tenant-b-%d-%s", processID, timestamp)
 
 		testLogger.Info("Creating test namespaces...",
 			"namespace1", testNamespace1,
@@ -126,7 +128,7 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		testLogger.Info("")
 
 		// Use same alert name for both namespaces to test isolation
-		alertName := fmt.Sprintf("IsolationTest-%d", time.Now().UnixNano())
+		alertName := fmt.Sprintf("IsolationTest-%s", uuid.New().String()[:8])
 
 		// Step 1: Send alerts to namespace 1 - enough to trigger storm threshold
 		testLogger.Info("Step 1: Send 10 alerts to namespace 1 (trigger storm threshold)")

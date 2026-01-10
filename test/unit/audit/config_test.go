@@ -22,32 +22,32 @@ var _ = Describe("audit.Config", func() {
 	})
 
 	Describe("audit.RecommendedConfig", func() {
-		It("should return gateway config with 2x buffer", func() {
-			config := audit.RecommendedConfig("gateway")
+	It("should return gateway config with 2x buffer", func() {
+		config := audit.RecommendedConfig("gateway")
 
-			Expect(config.BufferSize).To(Equal(20000)) // 2x default
-			Expect(config.BatchSize).To(Equal(1000))
-			Expect(config.FlushInterval).To(Equal(1 * time.Second))
-			Expect(config.MaxRetries).To(Equal(3))
-		})
+		Expect(config.BufferSize).To(Equal(30000)) // DD-AUDIT-004: MEDIUM tier (updated from 20000)
+		Expect(config.BatchSize).To(Equal(1000))
+		Expect(config.FlushInterval).To(Equal(1 * time.Second))
+		Expect(config.MaxRetries).To(Equal(3))
+	})
 
-		It("should return ai-analysis config with 1.5x buffer", func() {
-			config := audit.RecommendedConfig("ai-analysis")
+	It("should return ai-analysis config with 1.5x buffer", func() {
+		config := audit.RecommendedConfig("ai-analysis")
 
-			Expect(config.BufferSize).To(Equal(15000)) // 1.5x default
-			Expect(config.BatchSize).To(Equal(1000))
-			Expect(config.FlushInterval).To(Equal(1 * time.Second))
-			Expect(config.MaxRetries).To(Equal(3))
-		})
+		Expect(config.BufferSize).To(Equal(20000)) // DD-AUDIT-004: LOW tier (updated from 15000)
+		Expect(config.BatchSize).To(Equal(1000))
+		Expect(config.FlushInterval).To(Equal(1 * time.Second))
+		Expect(config.MaxRetries).To(Equal(3))
+	})
 
-		It("should return default config for unknown service", func() {
-			config := audit.RecommendedConfig("unknown-service")
+	It("should return default config for unknown service", func() {
+		config := audit.RecommendedConfig("unknown-service")
 
-			Expect(config.BufferSize).To(Equal(10000))
-			Expect(config.BatchSize).To(Equal(1000))
-			Expect(config.FlushInterval).To(Equal(1 * time.Second))
-			Expect(config.MaxRetries).To(Equal(3))
-		})
+		Expect(config.BufferSize).To(Equal(30000)) // DD-AUDIT-004: MEDIUM tier default (updated from 10000)
+		Expect(config.BatchSize).To(Equal(1000))
+		Expect(config.FlushInterval).To(Equal(1 * time.Second))
+		Expect(config.MaxRetries).To(Equal(3))
+	})
 	})
 
 	Describe("Validate", func() {

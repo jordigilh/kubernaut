@@ -31,11 +31,11 @@ File delivery service initialized
 
 ### **Controller Startup**
 ```log
-2026-01-10T14:10:01Z  INFO  Starting EventSource  
+2026-01-10T14:10:01Z  INFO  Starting EventSource
   {"controller": "notificationrequest", "source": "kind source: *v1alpha1.NotificationRequest"}
-2026-01-10T14:10:01Z  INFO  Starting Controller  
+2026-01-10T14:10:01Z  INFO  Starting Controller
   {"controller": "notificationrequest"}
-2026-01-10T14:10:01Z  INFO  Starting workers  
+2026-01-10T14:10:01Z  INFO  Starting workers
   {"controller": "notificationrequest", "worker count": 1}
 ```
 
@@ -47,8 +47,8 @@ File delivery service initialized
 
 ### **Evidence: Audit Timer Ticks with Zero Activity**
 ```log
-2026-01-10T14:15:24.289Z  INFO  audit.audit-store  
-  ⏰ Timer tick received  
+2026-01-10T14:15:24.289Z  INFO  audit.audit-store
+  ⏰ Timer tick received
   tick_number: 323
   batch_size_before_flush: 0       ← No events processed
   buffer_utilization: 0            ← No events in buffer
@@ -59,7 +59,7 @@ This pattern repeats for **368 ticks (6+ minutes)** with **ZERO events** ever pr
 ### **Missing Log Patterns**
 **Expected patterns that NEVER appeared**:
 - ❌ No `"Reconciling NotificationRequest"` logs
-- ❌ No `"Delivering notification via"` logs  
+- ❌ No `"Delivering notification via"` logs
 - ❌ No `"File delivery successful"` logs
 - ❌ No `"e2e-priority-validation"` or other test notification names
 - ❌ No errors or failures during processing
@@ -162,6 +162,6 @@ kubectl get crd notificationrequests.kubernaut.ai --kubeconfig <path>
 
 ---
 
-**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001  
-**Status**: Investigation needed - controller healthy but no notifications processed  
+**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001
+**Status**: Investigation needed - controller healthy but no notifications processed
 **Next**: Live debugging with single test run

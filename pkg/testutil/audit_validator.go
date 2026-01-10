@@ -32,17 +32,17 @@ type ExpectedAuditEvent struct {
 	EventType     string
 	EventCategory ogenclient.AuditEventEventCategory // Use response type, not request type
 	EventAction   string
-	EventOutcome  ogenclient.AuditEventEventOutcome
-	CorrelationID string
 
 	// Optional fields (validated only if non-empty/non-nil)
-	Severity     *string // Pointer type per schema
-	ActorID      *string
-	ActorType    *string
-	ResourceID   *string
-	ResourceType *string
-	Namespace    *string
-	ClusterName  *string
+	EventOutcome  *ogenclient.AuditEventEventOutcome // Optional: may vary (e.g., HolmesGPT errors)
+	CorrelationID string
+	Severity      *string // Pointer type per schema
+	ActorID       *string
+	ActorType     *string
+	ResourceID    *string
+	ResourceType  *string
+	Namespace     *string
+	ClusterName   *string
 
 	// EventData fields (validated if non-nil)
 	EventDataFields map[string]interface{}
@@ -76,8 +76,11 @@ func ValidateAuditEvent(event ogenclient.AuditEvent, expected ExpectedAuditEvent
 	Expect(event.EventAction).To(Equal(expected.EventAction),
 		"Audit event action mismatch")
 
-	Expect(event.EventOutcome).To(Equal(expected.EventOutcome),
-		"Audit event outcome mismatch")
+	// Validate optional EventOutcome (may vary based on actual outcome)
+	if expected.EventOutcome != nil {
+		Expect(event.EventOutcome).To(Equal(*expected.EventOutcome),
+			"Audit event outcome mismatch")
+	}
 
 	if expected.CorrelationID != "" {
 		Expect(event.CorrelationID).To(Equal(expected.CorrelationID),
@@ -180,7 +183,7 @@ func (m *AuditEventMatcher) Match(actual interface{}) (bool, error) {
 	if event.EventAction != m.expected.EventAction {
 		return false, nil
 	}
-	if event.EventOutcome != m.expected.EventOutcome {
+	if m.expected.EventOutcome != nil && event.EventOutcome != *m.expected.EventOutcome {
 		return false, nil
 	}
 	if m.expected.CorrelationID != "" && event.CorrelationID != m.expected.CorrelationID {
@@ -233,6 +236,12 @@ func (m *AuditEventMatcher) NegatedFailureMessage(actual interface{}) string {
 // StringPtr returns a pointer to the given string.
 func StringPtr(s string) *string {
 	return &s
+}
+
+// EventOutcomePtr returns a pointer to the given EventOutcome.
+// Usage: EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess)
+func EventOutcomePtr(outcome ogenclient.AuditEventEventOutcome) *ogenclient.AuditEventEventOutcome {
+	return &outcome
 }
 
 // IntPtr returns a pointer to the given int.

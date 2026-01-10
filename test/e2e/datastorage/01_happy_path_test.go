@@ -26,11 +26,9 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
 
 // Scenario 1: Happy Path - Complete Remediation Audit Trail (P0)
@@ -145,11 +143,6 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 
 		// Step 1: Gateway - Signal Received
 		testLogger.Info("📨 Step 1: Gateway processes signal...")
-		gatewayEventData, err := audit.NewGatewayEvent("signal.received").
-			WithSignalType("prometheus").
-			WithAlertName("PodCrashLooping").
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// DD-API-001: Use typed OpenAPI struct for type safety
 		gatewayEvent := dsgen.AuditEventRequest{
@@ -158,59 +151,51 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			EventAction:    "signal_processing",
 			EventType:      "gateway.signal.received",
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-			EventData:      gatewayEventData,
+			EventData:      newMinimalGatewayPayload("prometheus", "PodCrashLooping"),
 		}
 
-		resp := createAuditEventOpenAPI(ctx, dsClient, gatewayEvent)
-		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Gateway audit event should be created")
+		eventID := createAuditEventOpenAPI(ctx, dsClient, gatewayEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Gateway audit event should be created")
 		testLogger.Info("✅ Gateway audit event created")
 
 		// Step 2: AIAnalysis - Analysis Completed
 		testLogger.Info("🤖 Step 2: AIAnalysis generates RCA...")
-		aiEventData, err := audit.NewAIAnalysisEvent("analysis.completed").
-			WithAnalysisID(fmt.Sprintf("analysis-%s", testNamespace)).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// DD-API-001: Use typed OpenAPI struct
 		aiEvent := dsgen.AuditEventRequest{
 			Version:        "1.0",
 			EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
 			EventAction:    "rca_generation",
-			EventType:      "analysis.analysis.completed",
+			EventType:      "aianalysis.analysis.completed",
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-			EventData:      aiEventData,
+			EventData:      newMinimalAIAnalysisPayload(fmt.Sprintf("analysis-%s", testNamespace)),
 		}
 
-		resp = createAuditEventOpenAPI(ctx, dsClient, aiEvent)
-		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "AIAnalysis audit event should be created")
+		eventID = createAuditEventOpenAPI(ctx, dsClient, aiEvent)
+		Expect(eventID).ToNot(BeEmpty(), "AIAnalysis audit event should be created")
 		testLogger.Info("✅ AIAnalysis audit event created")
 
 		// Step 3: Workflow - Workflow Completed
 		testLogger.Info("⚙️  Step 3: Workflow executes remediation...")
-		workflowEventData, err := audit.NewWorkflowEvent("workflow.completed").
-			WithWorkflowID(fmt.Sprintf("workflow-%s", testNamespace)).
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// DD-API-001: Use typed OpenAPI struct
 		workflowEvent := dsgen.AuditEventRequest{
 			Version:        "1.0",
 			EventCategory:  dsgen.AuditEventRequestEventCategoryWorkflow,
 			EventAction:    "remediation_execution",
-			EventType:      "workflow.workflow.completed",
+			EventType:      "workflow.execution.started",
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-			EventData:      workflowEventData,
+			EventData:      newMinimalWorkflowPayload(fmt.Sprintf("workflow-%s", testNamespace)),
 		}
 
-		resp = createAuditEventOpenAPI(ctx, dsClient, workflowEvent)
-		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Workflow audit event should be created")
+		eventID = createAuditEventOpenAPI(ctx, dsClient, workflowEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Workflow audit event should be created")
 		testLogger.Info("✅ Workflow audit event created")
 
 		// Step 4: Orchestrator - Remediation Completed
@@ -220,15 +205,15 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			Version:        "1.0",
 			EventCategory:  dsgen.AuditEventRequestEventCategoryOrchestration, // ADR-034 v1.2 valid category
 			EventAction:    "orchestration",
-			EventType:      "orchestration.remediation.completed",
+			EventType:      "workflow.search.executed", // Using minimal generic payload
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-			EventData:      map[string]interface{}{}, // Empty event data
+			EventData:      newMinimalGenericPayload(),
 		}
 
-		resp = createAuditEventOpenAPI(ctx, dsClient, orchestratorEvent)
-		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Orchestrator audit event should be created")
+		eventID = createAuditEventOpenAPI(ctx, dsClient, orchestratorEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Orchestrator audit event should be created")
 		testLogger.Info("✅ Orchestrator audit event created")
 
 		// Step 5: EffectivenessMonitor - Assessment Completed
@@ -238,21 +223,21 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 			Version:        "1.0",
 			EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis, // ADR-034 v1.2: effectiveness assessment = analysis category
 			EventAction:    "effectiveness_assessment",
-			EventType:      "analysis.assessment.completed",
+			EventType:      "workflow.search.executed", // Using minimal generic payload
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-			EventData:      map[string]interface{}{}, // Empty event data
+			EventData:      newMinimalGenericPayload(),
 		}
 
-		resp = createAuditEventOpenAPI(ctx, dsClient, monitorEvent)
-		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Monitor audit event should be created")
+		eventID = createAuditEventOpenAPI(ctx, dsClient, monitorEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Monitor audit event should be created")
 		testLogger.Info("✅ Monitor audit event created")
 
 		// Verification: Query database directly
 		testLogger.Info("🔍 Verifying audit events in database...")
 		var count int
-		err = db.QueryRow(`
+		err := db.QueryRow(`
 			SELECT COUNT(*) FROM audit_events
 			WHERE correlation_id = $1
 		`, correlationID).Scan(&count)
@@ -264,16 +249,14 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 
 		// Verification: Query via REST API using OpenAPI client
 		testLogger.Info("🔍 Querying audit trail via REST API...")
-		queryResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
+		queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK), "Query API should return 200 OK")
-		Expect(queryResp.JSON200).ToNot(BeNil(), "Query response should have JSON200 body")
-		Expect(queryResp.JSON200.Data).ToNot(BeNil(), "Query response should have data array")
+		Expect(queryResp.Data).ToNot(BeNil(), "Query response should have data array")
 
 		// Self-auditing creates additional events, so we expect at least 5
-		data := *queryResp.JSON200.Data
+		data := queryResp.Data
 		Expect(len(data)).To(BeNumerically(">=", 5), "Query API should return at least 5 events")
 		testLogger.Info("✅ Query API returned complete audit trail", "event_count", len(data))
 

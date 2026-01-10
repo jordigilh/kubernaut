@@ -25,6 +25,10 @@ WORKDIR /opt/app-root/src
 # NOTE: No trailing slash on source - copies directory itself, not just contents
 COPY --chown=1001:0 dependencies ../dependencies
 
+# Copy DataStorage OpenAPI client (referenced in requirements-e2e.txt)
+# Destination must match path in requirements: src/clients/datastorage/
+COPY --chown=1001:0 holmesgpt-api/src/clients/datastorage ./src/clients/datastorage
+
 # Copy E2E requirements (minimal - no google-cloud-aiplatform 1.5GB)
 COPY --chown=1001:0 holmesgpt-api/requirements-e2e.txt ./requirements.txt
 

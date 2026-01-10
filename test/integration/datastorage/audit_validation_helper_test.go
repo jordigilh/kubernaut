@@ -17,11 +17,13 @@ package datastorage
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
@@ -36,7 +38,7 @@ import (
 var _ = Describe("Audit Event Validation Helper",  func() {
 	var (
 		baseURL string
-		client  *dsgen.ClientWithResponses
+		client  *ogenclient.Client
 		ctx     context.Context
 	)
 
@@ -48,7 +50,7 @@ var _ = Describe("Audit Event Validation Helper",  func() {
 		baseURL = datastorageURL
 
 		// Create OpenAPI client
-		client, err = dsgen.NewClientWithResponses(baseURL)
+		client, err = ogenclient.NewClient(baseURL)
 		Expect(err).ToNot(HaveOccurred())
 	})
 
@@ -57,46 +59,63 @@ var _ = Describe("Audit Event Validation Helper",  func() {
 			// BR-STORAGE-019: Write API with structured validation
 			// BR-STORAGE-020: Audit event ingestion
 
-			// ARRANGE: Create test audit event using OpenAPI client
+			// ARRANGE: Create test audit event using valid discriminated union types
 			correlationID := generateTestID()
-			eventData := map[string]interface{}{
-				"test_field": "test_value",
+
+			// Use valid event type from discriminator mapping
+			eventData := ogenclient.AuditEventRequestEventData{
+				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					AlertName:   "ValidationTest",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				},
 			}
 
-			auditEvent := createAuditEventRequest(
-				"test.validation.event",
-				"gateway",
-				"test_action",
-				"success",
-				correlationID,
-				eventData,
-			)
+			auditEvent := ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "gateway.signal.received",
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventAction:    "test_action",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				CorrelationID:  correlationID,
+				EventData:      eventData,
+			}
 
-			// ACT: Post audit event
-			eventID, err := postAuditEvent(ctx, client, auditEvent)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(eventID).ToNot(BeEmpty())
+		// ACT: Post audit event
+		eventID, err := postAuditEvent(ctx, client, auditEvent)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(eventID).ToNot(BeEmpty())
 
-			// Query the event back
-			resp, err := client.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode()).To(Equal(200))
-			Expect(resp.JSON200).ToNot(BeNil())
-			Expect(resp.JSON200.Data).ToNot(BeNil())
+	// CRITICAL: When using HTTP API (postAuditEvent), the DataStorage server writes to 'public' schema
+	// We must temporarily switch to 'public' schema to query the event back
+	// (Process-specific schemas are for direct DB tests, not HTTP API tests)
+	usePublicSchema()
+	defer func() {
+		// Restore process-specific schema after test
+		_, _ = db.Exec(fmt.Sprintf("SET search_path TO %s, public", schemaName))
+	}()
 
-			data := *resp.JSON200.Data
-			Expect(data).To(HaveLen(1), "should return exactly one event")
+	// Query the event back
+	resp, err := client.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+		CorrelationID: ogenclient.NewOptString(correlationID),
+	})
+	Expect(err).ToNot(HaveOccurred())
+	Expect(resp.Data).ToNot(BeNil())
+	Expect(resp.Data).To(HaveLen(1), "should return exactly one event")
 
-			// ASSERT: Validate using testutil helper (V1.0 maturity requirement)
-			testutil.ValidateAuditEvent(data[0], testutil.ExpectedAuditEvent{
-				EventType:     "test.validation.event",
-				EventCategory: dsgen.AuditEventEventCategoryGateway,
-				EventAction:   "test_action",
-				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
-				CorrelationID: correlationID,
-			})
+		// ASSERT: Validate using testutil helper (V1.0 maturity requirement)
+		expectedOutcome := ogenclient.AuditEventEventOutcomeSuccess
+		testutil.ValidateAuditEvent(resp.Data[0], testutil.ExpectedAuditEvent{
+			EventType:     "gateway.signal.received",
+			EventCategory: ogenclient.AuditEventEventCategoryGateway,
+			EventAction:   "test_action",
+			EventOutcome:  &expectedOutcome,
+			CorrelationID: correlationID,
+		})
 		})
 	})
 })

@@ -23,6 +23,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -122,22 +123,48 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	// Per DD-WEBHOOK-003 lines 335-340: Business context ONLY (attribution in structured columns)
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := NotificationAuditPayload{
-		// Business context fields (per DD-WEBHOOK-003)
-		NotificationName: nr.Name,                   // Business field
-		NotificationType: string(nr.Spec.Type),      // Business field
-		Priority:         string(nr.Spec.Priority),  // Business field (useful for audit completeness)
-		FinalStatus:      string(nr.Status.Phase),   // Business field (per DD-WEBHOOK-003 line 338)
-		Recipients:       nr.Spec.Recipients,        // Business field (per DD-WEBHOOK-003 line 339)
+	payload := api.NotificationAuditPayload{
+		EventType: "webhook.notification.cancelled",
 	}
+	// Business context fields (per DD-WEBHOOK-003)
+	payload.NotificationName.SetTo(nr.Name)
+	payload.NotificationType.SetTo(toNotificationAuditPayloadNotificationType(string(nr.Spec.Type)))
+	payload.Priority.SetTo(toNotificationAuditPayloadPriority(string(nr.Spec.Priority)))
+	payload.FinalStatus.SetTo(toNotificationAuditPayloadFinalStatus(string(nr.Status.Phase)))
+	// Recipients field (per DD-AUDIT-004: Structured types for all CRD data)
+	// Convert CRD Recipient array to ogen-generated structured type
+	if len(nr.Spec.Recipients) > 0 {
+		recipients := make([]api.NotificationAuditPayloadRecipientsItem, len(nr.Spec.Recipients))
+		for i, r := range nr.Spec.Recipients {
+			item := api.NotificationAuditPayloadRecipientsItem{}
+			if r.Email != "" {
+				item.Email.SetTo(r.Email)
+			}
+			if r.Slack != "" {
+				item.Slack.SetTo(r.Slack)
+			}
+			if r.Teams != "" {
+				item.Teams.SetTo(r.Teams)
+			}
+			if r.Phone != "" {
+				item.Phone.SetTo(r.Phone)
+			}
+			if r.WebhookURL != "" {
+				item.WebhookURL.SetTo(r.WebhookURL)
+			}
+			recipients[i] = item
+		}
+		payload.Recipients = recipients
+	}
+
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: nr.Name (via audit.SetResource)
 	// - namespace: nr.Namespace (via audit.SetNamespace)
 	// - event_action: "deleted" (via audit.SetEventAction)
-	audit.SetEventData(auditEvent, payload)
+	auditEvent.EventData = api.NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData(payload)
 	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
-		auditEvent.EventType, auditEvent.CorrelationId)
+		auditEvent.EventType, auditEvent.CorrelationID)
 
 	// Store audit event asynchronously (buffered write)
 	fmt.Printf("💾 Storing audit event to Data Storage...\n")

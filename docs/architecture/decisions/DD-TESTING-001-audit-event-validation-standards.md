@@ -472,6 +472,58 @@ It("should audit Rego evaluation", func() {
 
 ---
 
+### **Anti-Pattern 6: Invalid event_category Enum Values in Unit Tests**
+
+**❌ FORBIDDEN** (OpenAPI Validation Failure)
+
+```go
+// ❌ FORBIDDEN: Uses invalid event_category value
+func createTestEvent() *ogenclient.AuditEventRequest {
+    event := audit.NewAuditEventRequest()
+    audit.SetEventCategory(event, "test") // INVALID - not in OpenAPI enum!
+    // ... rest of event setup
+    return event
+}
+```
+
+**Why Forbidden**:
+- **OpenAPI validation rejects invalid enum values** at runtime
+- Tests fail with validation errors instead of testing business logic
+- Since embedded OpenAPI specs are regenerated for server-side validation, **ALL audit events** (including test fixtures) are validated against the schema
+- Using placeholder values like `"test"` causes cryptic validation errors
+
+**Impact**: Tests that were passing before OpenAPI schema regeneration will suddenly fail with:
+```
+ERROR: Invalid audit event (OpenAPI validation)
+Error at "/event_category": value is not one of the allowed values
+Value: "test"
+```
+
+**Valid `event_category` Enum Values** (per OpenAPI schema):
+- `"gateway"` - Gateway Service
+- `"notification"` - Notification Service
+- `"analysis"` - AI Analysis Service
+- `"signalprocessing"` - Signal Processing Service
+- `"workflow"` - Workflow Catalog Service
+- `"workflowexecution"` - WorkflowExecution Controller
+- `"orchestration"` - Remediation Orchestrator Service
+- `"webhook"` - Authentication Webhook Service
+
+**Correct Pattern**:
+```go
+// ✅ CORRECT: Uses valid event_category from OpenAPI enum
+func createTestEvent() *ogenclient.AuditEventRequest {
+    event := audit.NewAuditEventRequest()
+    audit.SetEventCategory(event, "gateway") // DD-TESTING-001: Valid enum value
+    // ... rest of event setup
+    return event
+}
+```
+
+**Enforcement**: Unit tests MUST use valid enum values for all OpenAPI-validated fields.
+
+---
+
 ## 💡 **Implementation Examples**
 
 ### **Example 1: AIAnalysis E2E Full Audit Trail Test**
@@ -556,6 +608,32 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 - ✅ Verify audit methods called with correct parameters
 - ✅ Validate event_data payload structure matches DD-AUDIT-004
 - ✅ Verify error handling for audit failures
+- ✅ **Use valid `event_category` enum values** (see below)
+
+**⚠️ CRITICAL: Valid Event Category Values**
+
+Unit tests that create audit events **MUST** use valid `event_category` values from the OpenAPI schema enum:
+- `"gateway"` - Gateway Service
+- `"notification"` - Notification Service
+- `"analysis"` - AI Analysis Service
+- `"signalprocessing"` - Signal Processing Service
+- `"workflow"` - Workflow Catalog Service
+- `"workflowexecution"` - WorkflowExecution Controller
+- `"orchestration"` - Remediation Orchestrator Service
+- `"webhook"` - Authentication Webhook Service
+
+**❌ FORBIDDEN**: Using placeholder values like `"test"` will cause OpenAPI validation failures.
+
+**Rationale**: Since we regenerate embedded OpenAPI specs for server-side validation, all audit events (including test fixtures) are validated against the schema. Using invalid enum values causes tests to fail with validation errors.
+
+**Example Fix**:
+```go
+// ❌ BAD - Uses invalid event_category
+audit.SetEventCategory(event, "test")
+
+// ✅ GOOD - Uses valid event_category from enum
+audit.SetEventCategory(event, "gateway") // DD-TESTING-001: Valid enum value
+```
 
 **Example**:
 
@@ -570,7 +648,7 @@ It("should call audit client with correct Rego evaluation payload", func() {
 
     // Verify audit method called
     Expect(mockAuditClient.RecordRegoEvaluationCalled).To(BeTrue())
-    
+
     // Verify payload structure
     payload := mockAuditClient.LastRegoPayload
     Expect(payload.Outcome).To(Equal("approved"))
@@ -597,7 +675,7 @@ It("should call audit client with correct Rego evaluation payload", func() {
 It("should persist Rego evaluation events to Data Storage", func() {
     // Integration test setup with real Data Storage + PostgreSQL
     analysis := createTestAIAnalysis()
-    
+
     Eventually(func() string {
         _ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
         return string(analysis.Status.Phase)
@@ -605,10 +683,10 @@ It("should persist Rego evaluation events to Data Storage", func() {
 
     // Query Data Storage using OpenAPI client
     regoEvents := waitForAuditEvents(analysis.Spec.RemediationID, "aianalysis.rego.evaluation", 1)
-    
+
     // Validate exact count
     Expect(len(regoEvents)).To(Equal(1))
-    
+
     // Validate event_data structure
     eventData := regoEvents[0].EventData.(map[string]interface{})
     Expect(eventData).To(HaveKey("outcome"))

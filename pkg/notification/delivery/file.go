@@ -110,16 +110,10 @@ func NewFileDeliveryService(outputDir string) *FileDeliveryService {
 func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// TDD GREEN: Use FileDeliveryConfig from CRD if specified, otherwise use constructor outputDir
+	// Use service-level configuration (constructor outputDir)
+	// Per design decision: Channel-specific config should NOT be in CRD
 	outputDir := s.outputDir
-	format := "json" // Default format
-
-	if notification.Spec.FileDeliveryConfig != nil {
-		outputDir = notification.Spec.FileDeliveryConfig.OutputDirectory
-		if notification.Spec.FileDeliveryConfig.Format != "" {
-			format = notification.Spec.FileDeliveryConfig.Format
-		}
-	}
+	format := "json" // Default format (hardcoded for E2E simplicity)
 
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {

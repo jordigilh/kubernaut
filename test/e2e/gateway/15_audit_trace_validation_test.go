@@ -35,6 +35,8 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
+
+	"github.com/google/uuid"
 )
 
 // Test 15: Audit Trace Validation (DD-AUDIT-003)
@@ -79,7 +81,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("audit-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("audit-%d-%s", processID, uuid.New().String()[:8])
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
@@ -240,7 +242,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			EventType:     gateway.EventTypeSignalReceived,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "received",
-			EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+			EventOutcome: testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
 			ResourceType:  testutil.StringPtr("Signal"),
 			ResourceID:    testutil.StringPtr(fingerprint),
@@ -287,7 +289,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			EventType:     gateway.EventTypeCRDCreated,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "created",
-			EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+			EventOutcome: testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
 			ResourceType:  testutil.StringPtr("RemediationRequest"),
 			Namespace:     testutil.StringPtr(testNamespace),

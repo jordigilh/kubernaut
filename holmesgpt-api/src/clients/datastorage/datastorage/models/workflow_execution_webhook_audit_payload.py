@@ -38,6 +38,13 @@ class WorkflowExecutionWebhookAuditPayload(BaseModel):
     new_state: StrictStr = Field(description="State after unblocking (always \"Running\")")
     __properties: ClassVar[List[str]] = ["event_type", "workflow_name", "clear_reason", "cleared_at", "previous_state", "new_state"]
 
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('webhook.workflow.unblocked'):
+            raise ValueError("must be one of enum values ('webhook.workflow.unblocked')")
+        return value
+
     @field_validator('previous_state')
     def previous_state_validate_enum(cls, value):
         """Validates the enum"""

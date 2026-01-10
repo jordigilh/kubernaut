@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // GatewayResponse represents the Gateway API response
@@ -238,6 +240,6 @@ func GetLastK8sClientError() error {
 // This ensures test isolation when running in parallel
 func GenerateUniqueNamespace(prefix string) string {
 	processID := GinkgoParallelProcess()
-	timestamp := time.Now().UnixNano()
-	return fmt.Sprintf("%s-%d-%d", prefix, processID, timestamp)
+	timestamp := uuid.New().String()[:8]
+	return fmt.Sprintf("%s-%d-%s", prefix, processID, timestamp)
 }

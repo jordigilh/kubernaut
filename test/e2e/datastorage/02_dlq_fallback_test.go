@@ -25,11 +25,9 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
 
 // Scenario 2: DLQ Fallback - Service Outage Response (P0)
@@ -150,17 +148,13 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 	})
 
 	It("should preserve audit events during PostgreSQL network partition using DLQ", func() {
+		var err error
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test: DLQ Fallback During Network Partition")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Step 1: Write event successfully (baseline)
 		testLogger.Info("✅ Step 1: Write baseline event to PostgreSQL...")
-		baselineEventData, err := audit.NewGatewayEvent("signal.received").
-			WithSignalType("prometheus").
-			WithAlertName("PodCrashLooping").
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// DD-API-001: Use typed OpenAPI struct
 		baselineEvent := dsgen.AuditEventRequest{
@@ -168,14 +162,14 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
 			EventType:      "gateway.signal.received",
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 			EventAction:    "baseline_write",
-			EventData:      baselineEventData,
+			EventData:      newMinimalGatewayPayload("prometheus", "PodCrashLooping"),
 		}
 
-		resp := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
-		Expect(resp.StatusCode()).To(Equal(http.StatusCreated), "Baseline event should be created")
+		eventID := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
+		Expect(eventID).ToNot(BeEmpty(), "Baseline event should be created")
 		testLogger.Info("✅ Baseline event written successfully")
 
 		// Verify baseline event in database
@@ -208,11 +202,6 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 
 		// Step 3: Attempt to write event during network partition → should fallback to DLQ
 		testLogger.Info("📨 Step 3: Writing event during network partition (should fallback to DLQ)...")
-		outageEventData, err := audit.NewGatewayEvent("signal.received").
-			WithSignalType("prometheus").
-			WithAlertName("NodeNotReady").
-			Build()
-		Expect(err).ToNot(HaveOccurred())
 
 		// DD-API-001: Use typed OpenAPI struct
 		outageEvent := dsgen.AuditEventRequest{
@@ -220,16 +209,15 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
 			EventType:      "gateway.signal.received",
 			EventTimestamp: time.Now().UTC(),
-			CorrelationId:  correlationID,
+			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 			EventAction:    "network_partition_write",
-			EventData:      outageEventData,
+			EventData:      newMinimalGatewayPayload("prometheus", "NodeNotReady"),
 		}
 
-		resp = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
-		// During network partition, the service should accept the event (202 Accepted) and queue it
-		Expect(resp.StatusCode()).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
-			"Event should be accepted during network partition (DLQ fallback)")
+		eventID = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
+		// During network partition, the service should accept the event (DLQ fallback)
+		Expect(eventID).ToNot(BeEmpty(), "Event should be accepted during network partition (DLQ fallback)")
 		testLogger.Info("✅ Event accepted during network partition (DLQ fallback)")
 
 		// Step 4: Verify DLQ fallback behavior

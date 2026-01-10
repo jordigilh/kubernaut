@@ -161,7 +161,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			crd := crds[0]
 			Expect(crd.Spec.SignalName).To(Equal("MetadataTest"))
 			Expect(crd.Spec.Severity).To(Equal("critical"))
-			Expect(crd.Spec.SignalType).To(Equal("alertmanager")) // ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypeAlertManager constant
+			Expect(crd.Spec.SignalType).To(Equal("prometheus-alert")) // ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypePrometheusAlert constant
 			Expect(crd.Spec.TargetType).To(Equal("kubernetes"))
 			Expect(crd.Spec.SignalFingerprint).NotTo(BeEmpty())
 		})

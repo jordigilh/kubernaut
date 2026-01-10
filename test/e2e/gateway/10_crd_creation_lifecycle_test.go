@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-021)
@@ -54,7 +56,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 
 		// Unique namespace for parallel execution
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("crd-lifecycle-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("crd-lifecycle-%d-%s", processID, uuid.New().String()[:8])
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 10: CRD Creation Lifecycle - Setup")
@@ -91,7 +93,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		// Step 1: Send alerts to trigger CRD creation
 		testLogger.Info("Step 1: Send alerts to trigger CRD creation")
 
-		alertName := fmt.Sprintf("CRDLifecycleTest-%d", time.Now().UnixNano())
+		alertName := fmt.Sprintf("CRDLifecycleTest-%s", uuid.New().String()[:8])
 		podName := "lifecycle-test-pod"
 		severity := "critical"
 		summary := "CRD lifecycle test alert"

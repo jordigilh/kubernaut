@@ -17,14 +17,15 @@ limitations under the License.
 package remediationorchestrator
 
 import (
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // =============================================================================
@@ -56,31 +57,49 @@ import (
 // =============================================================================
 
 var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Standardization", func() {
+	var (
+		dsClient *ogenclient.Client
+	)
+
+	BeforeEach(func() {
+		// Create Data Storage OpenAPI client using shared dataStorageBaseURL from suite_test.go
+		// Per DD-TEST-001 v2.2: Avoids brittle hardcoded ports
+		var err error
+		dsClient, err = ogenclient.NewClient(dataStorageBaseURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage OpenAPI client")
+	})
+
 	Context("Gap #7 Scenario 1: Timeout Configuration Error", func() {
 		It("should emit standardized error_details on invalid timeout configuration", func() {
 			// Given: RemediationRequest CRD with invalid timeout configuration
-			testID := fmt.Sprintf("timeout-err-%d", time.Now().Unix())
-			rrName := fmt.Sprintf("test-rr-%s", testID)
-			// correlationID := rrName
+			testNamespace := createTestNamespace("error-audit")
+			defer func() {
+				// Async namespace cleanup
+				go func() {
+					deleteTestNamespace(testNamespace)
+				}()
+			}()
 
+			fingerprint := GenerateTestFingerprint(testNamespace, "timeout-error")
+			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      rrName,
-					Namespace: "default",
+					Name:      "rr-timeout-error",
+					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "test-fingerprint-" + testID,
-					SignalName:        "TestAlert",
-					SignalType:        "alert",
+					SignalFingerprint: fingerprint,
+					SignalName:        "IntegrationTestSignal",
+					Severity:          "warning",
+					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      "test-pod",
 						Namespace: "default",
 					},
-					Severity:     "critical",
-					FiringTime:   metav1.Now(),
-					ReceivedTime: metav1.Now(),
+					FiringTime:   now,
+					ReceivedTime: now,
 					// Invalid timeout configuration (negative duration)
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						Global: &metav1.Duration{Duration: -100 * time.Second}, // Invalid: negative
@@ -92,122 +111,49 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 			err := k8sClient.Create(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Cleanup
-			defer func() {
-				_ = k8sClient.Delete(ctx, rr)
-			}()
+			correlationID := string(rr.UID)
 
-			Fail("IMPLEMENTATION REQUIRED: Need to determine timeout validation behavior\n" +
-				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing functionality\n" +
-				"  Next step: Verify controller emits failure audit on invalid timeout config")
+			// Then: Should transition to Failed due to invalid timeout config
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseFailed), "RR should transition to Failed on invalid timeout")
 
-			// Then: Should emit orchestrator.lifecycle.completed (failure) with error_details
-			// eventType := "orchestrator.lifecycle.completed"
+			// Wait for audit batch to flush (1s flush interval + buffer)
+			time.Sleep(3 * time.Second)
 
-			// Wait for error event
-			// Eventually(func() int {
-			// 	resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			// 		EventType:     &eventType,
-			// 		CorrelationId: &correlationID,
-			// 		EventOutcome:  ptr("failure"),
-			// 	})
-			// 	if resp.JSON200 == nil {
-			// 		return 0
-			// 	}
-			// 	return *resp.JSON200.Pagination.Total
-			// }, 60*time.Second, 2*time.Second).Should(Equal(1),
-			// 	"Should find exactly 1 orchestrator.lifecycle.completed (failure) event")
+			// Query for orchestrator.lifecycle.completed (failure) audit event
+			eventType := "orchestrator.lifecycle.completed"
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				var failureEvents []ogenclient.AuditEvent
+				allEvents := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+				// Filter for failure outcome
+				for _, e := range allEvents {
+					if string(e.EventOutcome) == "failure" {
+						failureEvents = append(failureEvents, e)
+					}
+				}
+				events = failureEvents
+				return len(events)
+			}, "10s", "500ms").Should(Equal(1), "Should find exactly 1 orchestrator.lifecycle.completed (failure) event")
 
-			// Validate Gap #7: error_details (WILL FAIL - not standardized yet)
-			// resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			// 	EventType:     &eventType,
-			// 	CorrelationId: &correlationID,
-			// 	EventOutcome:  ptr("failure"),
-			// })
-			// events := *resp.JSON200.Data
-			// Expect(len(events)).To(Equal(1))
-			//
-			// eventData := events[0].EventData.(map[string]interface{})
-			// Expect(eventData).To(HaveKey("error_details"))
-			//
-			// errorDetails := eventData["error_details"].(map[string]interface{})
-			// Expect(errorDetails).To(HaveKey("message"))
-			// Expect(errorDetails["message"]).To(ContainSubstring("timeout"))
-			// Expect(errorDetails).To(HaveKey("code"))
-			// Expect(errorDetails["code"]).To(Equal("ERR_INVALID_TIMEOUT_CONFIG"))
-			// Expect(errorDetails).To(HaveKey("component"))
-			// Expect(errorDetails["component"]).To(Equal("remediationorchestrator"))
-			// Expect(errorDetails).To(HaveKey("retry_possible"))
-			// Expect(errorDetails["retry_possible"]).To(BeFalse()) // Invalid config is permanent
+			// Validate Gap #7: error_details
+			event := events[0]
+			payload := event.EventData.RemediationOrchestratorAuditPayload
+			Expect(payload.ErrorDetails.IsSet()).To(BeTrue(), "error_details should be present")
+			errorDetails := payload.ErrorDetails.Value
+
+			Expect(errorDetails.Code).To(ContainSubstring("ERR_INVALID_TIMEOUT_CONFIG"))
+			Expect(errorDetails.Message).To(ContainSubstring("timeout"))
+			Expect(errorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentRemediationorchestrator))
+			Expect(errorDetails.RetryPossible).To(BeFalse(), "Invalid config is permanent error")
 		})
 	})
 
-	Context("Gap #7 Scenario 2: Child CRD Creation Failure", func() {
-		It("should emit standardized error_details on child CRD creation failure", func() {
-			// Given: RemediationRequest CRD that will fail to create child CRDs
-			testID := fmt.Sprintf("child-crd-err-%d", time.Now().Unix())
-			rrName := fmt.Sprintf("test-rr-%s", testID)
-			// correlationID := rrName
-
-			rr := &remediationv1.RemediationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      rrName,
-					Namespace: "default",
-				},
-				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "test-fingerprint-" + testID,
-					SignalName:        "TestAlert",
-					SignalType:        "alert",
-					TargetType:        "kubernetes",
-					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: "default",
-					},
-					Severity:     "critical",
-					FiringTime:   metav1.Now(),
-					ReceivedTime: metav1.Now(),
-				},
-			}
-
-			// When: Create RemediationRequest CRD
-			// Note: Triggering K8s CRD creation failure is complex in test environment
-			// This may require mocking or specific K8s RBAC configuration
-			err := k8sClient.Create(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Cleanup
-			defer func() {
-				_ = k8sClient.Delete(ctx, rr)
-			}()
-
-			Fail("IMPLEMENTATION REQUIRED: Need mechanism to trigger child CRD creation failure\n" +
-				"  Per TESTING_GUIDELINES.md: Tests MUST fail to show missing infrastructure\n" +
-				"  Next step: Configure K8s RBAC or API errors to simulate child CRD failures")
-
-			// Then: Should emit orchestrator.lifecycle.completed (failure) with error_details
-			// eventType := "orchestrator.lifecycle.completed"
-
-			// Wait for error event
-			// Eventually(func() int {
-			// 	resp, _ := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			// 		EventType:     &eventType,
-			// 		CorrelationId: &correlationID,
-			// 		EventOutcome:  ptr("failure"),
-			// 	})
-			// 	if resp.JSON200 == nil {
-			// 		return 0
-			// 	}
-			// 	return *resp.JSON200.Pagination.Total
-			// }, 60*time.Second, 2*time.Second).Should(Equal(1),
-			// 	"Should find exactly 1 orchestrator.lifecycle.completed (failure) event")
-
-			// Validate Gap #7: error_details (WILL FAIL - not standardized yet)
-			// errorDetails := eventData["error_details"].(map[string]interface{})
-			// Expect(errorDetails["message"]).To(ContainSubstring("create"))
-			// Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"))
-			// Expect(errorDetails["component"]).To(Equal("remediationorchestrator"))
-			// Expect(errorDetails["retry_possible"]).To(BeTrue()) // K8s creation may be transient
-		})
-	})
+	// Gap #7 Scenario 2: REMOVED - Moved to unit tests (DD-TEST-008)
+	// Rationale: Error code mapping is pure business logic, best tested in unit tests
+	// Integration Scenario 1 already validates end-to-end error_details flow
+	// See: test/unit/remediationorchestrator/audit/manager_test.go - "Gap #7: Error Code Mapping Logic"
+	// See: docs/handoff/RO_GAP7_SCENARIO2_TIER_ANALYSIS_JAN10.md
 })

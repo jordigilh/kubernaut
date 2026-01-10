@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Test 21: CRD Lifecycle Operations (BR-GATEWAY-068, BR-GATEWAY-076, BR-GATEWAY-077)
@@ -64,7 +66,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations", Ordered, Label("crd-lifecy
 
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("crd-lifecycle-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("crd-lifecycle-%d-%s", processID, uuid.New().String()[:8])
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace

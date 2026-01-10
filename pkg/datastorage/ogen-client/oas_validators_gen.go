@@ -46,6 +46,17 @@ func (s *AIAnalysisAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Phase.Validate(); err != nil {
 			return err
 		}
@@ -96,6 +107,17 @@ func (s *AIAnalysisAuditPayload) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s AIAnalysisAuditPayloadEventType) Validate() error {
+	switch s {
+	case "aianalysis.analysis.completed":
+		return nil
+	case "aianalysis.analysis.failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s AIAnalysisAuditPayloadPhase) Validate() error {
@@ -262,7 +284,7 @@ func (s AuditEventEventCategory) Validate() error {
 		return nil
 	case "workflow":
 		return nil
-	case "execution":
+	case "workflowexecution":
 		return nil
 	case "orchestration":
 		return nil
@@ -280,12 +302,12 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
-	case AuditEventEventDataSignalprocessingClassificationDecidedAuditEventEventData, AuditEventEventDataSignalprocessingPhaseTransitionAuditEventEventData, AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData:
+	case AuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData, AuditEventEventDataSignalprocessingClassificationDecisionAuditEventEventData, AuditEventEventDataSignalprocessingEnrichmentCompletedAuditEventEventData, AuditEventEventDataSignalprocessingErrorOccurredAuditEventEventData, AuditEventEventDataSignalprocessingPhaseTransitionAuditEventEventData, AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData:
 		if err := s.SignalProcessingAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -295,7 +317,7 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventEventDataExecutionWorkflowStartedAuditEventEventData, AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		if err := s.WorkflowExecutionAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -349,7 +371,10 @@ func (s AuditEventEventData) Validate() error {
 	case NotificationMessageEscalatedPayloadAuditEventEventData:
 		return nil // no validation needed
 	case HolmesGPTResponsePayloadAuditEventEventData:
-		return nil // no validation needed
+		if err := s.HolmesGPTResponsePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case LLMRequestPayloadAuditEventEventData:
 		if err := s.LLMRequestPayload.Validate(); err != nil {
 			return err
@@ -537,7 +562,7 @@ func (s AuditEventRequestEventCategory) Validate() error {
 		return nil
 	case "workflow":
 		return nil
-	case "execution":
+	case "workflowexecution":
 		return nil
 	case "orchestration":
 		return nil
@@ -555,12 +580,12 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataSignalprocessingClassificationDecidedAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData:
+	case AuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData:
 		if err := s.SignalProcessingAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -570,7 +595,7 @@ func (s AuditEventRequestEventData) Validate() error {
 			return err
 		}
 		return nil
-	case AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		if err := s.WorkflowExecutionAuditPayload.Validate(); err != nil {
 			return err
 		}
@@ -624,7 +649,10 @@ func (s AuditEventRequestEventData) Validate() error {
 	case NotificationMessageEscalatedPayloadAuditEventRequestEventData:
 		return nil // no validation needed
 	case HolmesGPTResponsePayloadAuditEventRequestEventData:
-		return nil // no validation needed
+		if err := s.HolmesGPTResponsePayload.Validate(); err != nil {
+			return err
+		}
+		return nil
 	case LLMRequestPayloadAuditEventRequestEventData:
 		if err := s.LLMRequestPayload.Validate(); err != nil {
 			return err
@@ -1053,6 +1081,17 @@ func (s *GatewayAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.SignalType.Validate(); err != nil {
 			return err
 		}
@@ -1134,6 +1173,21 @@ func (s GatewayAuditPayloadDeduplicationStatus) Validate() error {
 	}
 }
 
+func (s GatewayAuditPayloadEventType) Validate() error {
+	switch s {
+	case "gateway.signal.received":
+		return nil
+	case "gateway.signal.deduplicated":
+		return nil
+	case "gateway.crd.created":
+		return nil
+	case "gateway.crd.failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s GatewayAuditPayloadSeverity) Validate() error {
 	switch s {
 	case "critical":
@@ -1149,11 +1203,9 @@ func (s GatewayAuditPayloadSeverity) Validate() error {
 
 func (s GatewayAuditPayloadSignalType) Validate() error {
 	switch s {
-	case "prometheus":
+	case "prometheus-alert":
 		return nil
-	case "alertmanager":
-		return nil
-	case "webhook":
+	case "kubernetes-event":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1238,12 +1290,228 @@ func (s HealthCheckServiceUnavailableStatus) Validate() error {
 	}
 }
 
+func (s *HolmesGPTResponsePayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := s.ResponseData.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "response_data",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s HolmesGPTResponsePayloadEventType) Validate() error {
+	switch s {
+	case "holmesgpt.response.complete":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *IncidentResponseData) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.RootCauseAnalysis.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "root_cause_analysis",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.SelectedWorkflow.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "selected_workflow",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.Float{
+			MinSet:        true,
+			Min:           0,
+			MaxSet:        true,
+			Max:           1,
+			MinExclusive:  false,
+			MaxExclusive:  false,
+			MultipleOfSet: false,
+			MultipleOf:    nil,
+			Pattern:       nil,
+		}).Validate(float64(s.Confidence)); err != nil {
+			return errors.Wrap(err, "float")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "confidence",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.HumanReviewReason.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "human_review_reason",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s IncidentResponseDataHumanReviewReason) Validate() error {
+	switch s {
+	case "workflow_not_found":
+		return nil
+	case "image_mismatch":
+		return nil
+	case "parameter_validation_failed":
+		return nil
+	case "no_matching_workflows":
+		return nil
+	case "low_confidence":
+		return nil
+	case "llm_parsing_error":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *IncidentResponseDataRootCauseAnalysis) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.ContributingFactors == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "contributing_factors",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *IncidentResponseDataSelectedWorkflow) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Confidence.Get(); ok {
+			if err := func() error {
+				if err := (validate.Float{
+					MinSet:        true,
+					Min:           0,
+					MaxSet:        true,
+					Max:           1,
+					MinExclusive:  false,
+					MaxExclusive:  false,
+					MultipleOfSet: false,
+					MultipleOf:    nil,
+					Pattern:       nil,
+				}).Validate(float64(value)); err != nil {
+					return errors.Wrap(err, "float")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "confidence",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *LLMRequestPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := (validate.Int{
 			MinSet:        true,
@@ -1299,12 +1567,32 @@ func (s *LLMRequestPayload) Validate() error {
 	return nil
 }
 
+func (s LLMRequestPayloadEventType) Validate() error {
+	switch s {
+	case "llm_request":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *LLMResponsePayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := (validate.Int{
 			MinSet:        true,
@@ -1388,12 +1676,32 @@ func (s *LLMResponsePayload) Validate() error {
 	return nil
 }
 
+func (s LLMResponsePayloadEventType) Validate() error {
+	switch s {
+	case "llm_response":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *LLMToolCallPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := (validate.Int{
 			MinSet:        true,
@@ -1419,6 +1727,15 @@ func (s *LLMToolCallPayload) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s LLMToolCallPayloadEventType) Validate() error {
+	switch s {
+	case "llm_tool_call":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s ListWorkflowsStatus) Validate() error {
@@ -1738,6 +2055,17 @@ func (s *NotificationAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Type.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -1844,9 +2172,22 @@ func (s NotificationAuditPayloadAction) Validate() error {
 	}
 }
 
+func (s NotificationAuditPayloadEventType) Validate() error {
+	switch s {
+	case "webhook.notification.cancelled":
+		return nil
+	case "webhook.notification.acknowledged":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s NotificationAuditPayloadFinalStatus) Validate() error {
 	switch s {
 	case "Pending":
+		return nil
+	case "Sending":
 		return nil
 	case "Sent":
 		return nil
@@ -1861,11 +2202,15 @@ func (s NotificationAuditPayloadFinalStatus) Validate() error {
 
 func (s NotificationAuditPayloadNotificationType) Validate() error {
 	switch s {
-	case "email":
+	case "escalation":
 		return nil
-	case "slack":
+	case "simple":
 		return nil
-	case "pagerduty":
+	case "status-update":
+		return nil
+	case "approval":
+		return nil
+	case "manual-review":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1874,15 +2219,13 @@ func (s NotificationAuditPayloadNotificationType) Validate() error {
 
 func (s NotificationAuditPayloadPriority) Validate() error {
 	switch s {
-	case "P0":
+	case "critical":
 		return nil
-	case "P1":
+	case "high":
 		return nil
-	case "P2":
+	case "medium":
 		return nil
-	case "P3":
-		return nil
-	case "P4":
+	case "low":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -1891,11 +2234,15 @@ func (s NotificationAuditPayloadPriority) Validate() error {
 
 func (s NotificationAuditPayloadType) Validate() error {
 	switch s {
-	case "email":
+	case "escalation":
 		return nil
-	case "slack":
+	case "simple":
 		return nil
-	case "pagerduty":
+	case "status-update":
+		return nil
+	case "approval":
+		return nil
+	case "manual-review":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -2225,6 +2572,17 @@ func (s *RemediationApprovalAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Decision.Validate(); err != nil {
 			return err
 		}
@@ -2252,12 +2610,32 @@ func (s RemediationApprovalAuditPayloadDecision) Validate() error {
 	}
 }
 
+func (s RemediationApprovalAuditPayloadEventType) Validate() error {
+	switch s {
+	case "webhook.approval.decided":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *RemediationOrchestratorAuditPayload) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if value, ok := s.Outcome.Get(); ok {
 			if err := func() error {
@@ -2330,10 +2708,62 @@ func (s *RemediationOrchestratorAuditPayload) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.Decision.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "decision",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s RemediationOrchestratorAuditPayloadDecision) Validate() error {
+	switch s {
+	case "Approved":
+		return nil
+	case "Rejected":
+		return nil
+	case "Pending":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s RemediationOrchestratorAuditPayloadEventType) Validate() error {
+	switch s {
+	case "orchestrator.lifecycle.started":
+		return nil
+	case "orchestrator.lifecycle.completed":
+		return nil
+	case "orchestrator.lifecycle.failed":
+		return nil
+	case "orchestrator.lifecycle.transitioned":
+		return nil
+	case "orchestrator.approval.requested":
+		return nil
+	case "orchestrator.approval.approved":
+		return nil
+	case "orchestrator.approval.rejected":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s RemediationOrchestratorAuditPayloadFailurePhase) Validate() error {
@@ -2988,6 +3418,17 @@ func (s *SignalProcessingAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Phase.Validate(); err != nil {
 			return err
 		}
@@ -3153,11 +3594,34 @@ func (s SignalProcessingAuditPayloadEnvironmentSource) Validate() error {
 	}
 }
 
+func (s SignalProcessingAuditPayloadEventType) Validate() error {
+	switch s {
+	case "signalprocessing.signal.processed":
+		return nil
+	case "signalprocessing.phase.transition":
+		return nil
+	case "signalprocessing.classification.decision":
+		return nil
+	case "signalprocessing.business.classified":
+		return nil
+	case "signalprocessing.enrichment.completed":
+		return nil
+	case "signalprocessing.error.occurred":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s SignalProcessingAuditPayloadPhase) Validate() error {
 	switch s {
 	case "Pending":
 		return nil
+	case "Enriching":
+		return nil
 	case "Classifying":
+		return nil
+	case "Categorizing":
 		return nil
 	case "Completed":
 		return nil
@@ -3254,6 +3718,17 @@ func (s *WorkflowExecutionAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Phase.Validate(); err != nil {
 			return err
 		}
@@ -3306,6 +3781,23 @@ func (s *WorkflowExecutionAuditPayload) Validate() error {
 	return nil
 }
 
+func (s WorkflowExecutionAuditPayloadEventType) Validate() error {
+	switch s {
+	case "workflowexecution.workflow.started":
+		return nil
+	case "workflowexecution.workflow.completed":
+		return nil
+	case "workflowexecution.workflow.failed":
+		return nil
+	case "workflowexecution.selection.completed":
+		return nil
+	case "workflowexecution.execution.started":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s WorkflowExecutionAuditPayloadFailureReason) Validate() error {
 	switch s {
 	case "OOMKilled":
@@ -3351,6 +3843,17 @@ func (s *WorkflowExecutionWebhookAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.PreviousState.Validate(); err != nil {
 			return err
 		}
@@ -3376,6 +3879,15 @@ func (s *WorkflowExecutionWebhookAuditPayload) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s WorkflowExecutionWebhookAuditPayloadEventType) Validate() error {
+	switch s {
+	case "webhook.workflow.unblocked":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s WorkflowExecutionWebhookAuditPayloadNewState) Validate() error {
@@ -3463,6 +3975,17 @@ func (s *WorkflowSearchAuditPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Query.Validate(); err != nil {
 			return err
 		}
@@ -3488,6 +4011,15 @@ func (s *WorkflowSearchAuditPayload) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s WorkflowSearchAuditPayloadEventType) Validate() error {
+	switch s {
+	case "workflow.catalog.search_completed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s *WorkflowSearchFilters) Validate() error {
@@ -3983,6 +4515,17 @@ func (s *WorkflowValidationPayload) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := (validate.Int{
 			MinSet:        true,
 			Min:           1,
@@ -4028,4 +4571,13 @@ func (s *WorkflowValidationPayload) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s WorkflowValidationPayloadEventType) Validate() error {
+	switch s {
+	case "workflow_validation_attempt":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }

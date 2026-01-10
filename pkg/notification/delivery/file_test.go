@@ -62,10 +62,6 @@ var _ = Describe("FileDeliveryService", func() {
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelFile,
 					},
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: invalidDir,
-						Format:          "json",
-					},
 				},
 			}
 
@@ -100,10 +96,6 @@ var _ = Describe("FileDeliveryService", func() {
 					Body:    "Testing that delivery succeeds with writable directory",
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelFile,
-					},
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: writableDir,
-						Format:          "json",
 					},
 				},
 			}
@@ -141,10 +133,6 @@ var _ = Describe("FileDeliveryService", func() {
 					Body:    "Testing NT-BUG-006: File write errors should be retryable",
 					Channels: []notificationv1alpha1.Channel{
 						notificationv1alpha1.ChannelFile,
-					},
-					FileDeliveryConfig: &notificationv1alpha1.FileDeliveryConfig{
-						OutputDirectory: readOnlyFileDir,
-						Format:          "json",
 					},
 				},
 			}

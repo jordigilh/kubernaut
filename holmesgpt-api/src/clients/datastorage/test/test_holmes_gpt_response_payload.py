@@ -36,15 +36,69 @@ class TestHolmesGPTResponsePayload(unittest.TestCase):
         model = HolmesGPTResponsePayload()
         if include_optional:
             return HolmesGPTResponsePayload(
+                event_type = 'holmesgpt.response.complete',
                 event_id = 'evt-hapi-123-abc',
                 incident_id = 'incident-payment-api-2025-12-17-abc123',
-                response_data = {"incident_id":"incident-payment-api-2025-12-17-abc123","analysis":"Root cause analysis text...","root_cause_analysis":{},"selected_workflow":{},"confidence":0.85,"needs_human_review":false,"timestamp":"2025-01-08T10:30:00Z"}
+                response_data = datastorage.models.incident_response_data.IncidentResponseData(
+                    incident_id = 'incident-payment-api-2025-12-17-abc123', 
+                    analysis = 'Root cause analysis indicates...', 
+                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_root_cause_analysis(
+                        summary = '', 
+                        severity = 'high', 
+                        contributing_factors = [
+                            ''
+                            ], ), 
+                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
+                        workflow_id = '', 
+                        container_image = '', 
+                        confidence = 0.0, 
+                        parameters = { }, ), 
+                    confidence = 0.85, 
+                    timestamp = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
+                    needs_human_review = True, 
+                    human_review_reason = 'workflow_not_found', 
+                    target_in_owner_chain = True, 
+                    warnings = [
+                        ''
+                        ], 
+                    alternative_workflows = [
+                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternative_workflows_inner(
+                            workflow_id = '', 
+                            rationale = '', )
+                        ], )
             )
         else:
             return HolmesGPTResponsePayload(
+                event_type = 'holmesgpt.response.complete',
                 event_id = 'evt-hapi-123-abc',
                 incident_id = 'incident-payment-api-2025-12-17-abc123',
-                response_data = {"incident_id":"incident-payment-api-2025-12-17-abc123","analysis":"Root cause analysis text...","root_cause_analysis":{},"selected_workflow":{},"confidence":0.85,"needs_human_review":false,"timestamp":"2025-01-08T10:30:00Z"},
+                response_data = datastorage.models.incident_response_data.IncidentResponseData(
+                    incident_id = 'incident-payment-api-2025-12-17-abc123', 
+                    analysis = 'Root cause analysis indicates...', 
+                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_root_cause_analysis(
+                        summary = '', 
+                        severity = 'high', 
+                        contributing_factors = [
+                            ''
+                            ], ), 
+                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
+                        workflow_id = '', 
+                        container_image = '', 
+                        confidence = 0.0, 
+                        parameters = { }, ), 
+                    confidence = 0.85, 
+                    timestamp = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
+                    needs_human_review = True, 
+                    human_review_reason = 'workflow_not_found', 
+                    target_in_owner_chain = True, 
+                    warnings = [
+                        ''
+                        ], 
+                    alternative_workflows = [
+                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternative_workflows_inner(
+                            workflow_id = '', 
+                            rationale = '', )
+                        ], ),
         )
         """
 

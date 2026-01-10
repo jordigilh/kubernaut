@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, BR-GATEWAY-101)", Serial, Ordered, func() {
@@ -114,7 +116,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		processID := GinkgoParallelProcess()
-		alertName := fmt.Sprintf("RedisFailTest-p%d-%d", processID, time.Now().UnixNano())
+		alertName := fmt.Sprintf("RedisFailTest-p%d-%s", processID, uuid.New().String()[:8])
 
 		testLogger.Info("Step 1: Verify Gateway is healthy with Redis")
 		Eventually(func() error {
@@ -222,7 +224,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 
 		testLogger.Info("Step 4: Send alerts during Redis unavailability")
 		const alertsDuringFailure = 3
-		failureAlertName := fmt.Sprintf("DuringFailure-p%d-%d", processID, time.Now().UnixNano())
+		failureAlertName := fmt.Sprintf("DuringFailure-p%d-%s", processID, uuid.New().String()[:8])
 
 		failurePayload := map[string]interface{}{
 			"status": "firing",

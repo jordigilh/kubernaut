@@ -6,6 +6,7 @@ LLM API request event payload (llm_request)
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
+**event_type** | **str** | Event type for discriminator (matches parent event_type) | 
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
 **model** | **str** | LLM model identifier | 

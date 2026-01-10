@@ -1,8 +1,8 @@
 # Notification E2E - Failing Tests Root Cause Analysis
 
-**Date**: January 10, 2026  
-**Status**: 🔍 INVESTIGATION COMPLETE  
-**Finding**: 1 test has wrong channel config, 4 tests likely have controller config issue  
+**Date**: January 10, 2026
+**Status**: 🔍 INVESTIGATION COMPLETE
+**Finding**: 1 test has wrong channel config, 4 tests likely have controller config issue
 **Authority**: DD-NOT-006 v2
 
 ---
@@ -154,7 +154,7 @@ grep -r "file.*output_dir" test/e2e/notification/manifests/
 
 **Less Likely But Possible**: The failing tests may be hitting a race condition where:
 1. Notification is created
-2. Controller reconciles and marks as "Sent"  
+2. Controller reconciles and marks as "Sent"
 3. But file hasn't actually been written to disk yet
 4. Test checks for file immediately and finds 0 files
 5. Eventually timeout (5 seconds) expires before file appears
@@ -191,7 +191,7 @@ Temporarily modify one failing test to log controller events:
 By("Checking controller logs for file service registration")
 podName, _ := getNotificationControllerPodName(kubeconfigPath, "notification-e2e")
 cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-    "-n", "notification-e2e", "logs", podName, 
+    "-n", "notification-e2e", "logs", podName,
     "--tail=100")
 output, _ := cmd.CombinedOutput()
 logger.Info("Controller logs", "output", string(output))
@@ -246,7 +246,7 @@ Eventually(EventuallyFindFileInPod("notification-*.json"),
 
 ---
 
-**Prepared By**: AI Assistant  
-**Status**: 🔍 INVESTIGATION COMPLETE - Need controller logs/config review  
-**Next Action**: Review notification-controller-config ConfigMap and deployment  
+**Prepared By**: AI Assistant
+**Status**: 🔍 INVESTIGATION COMPLETE - Need controller logs/config review
+**Next Action**: Review notification-controller-config ConfigMap and deployment
 **Authority**: DD-NOT-006 v2

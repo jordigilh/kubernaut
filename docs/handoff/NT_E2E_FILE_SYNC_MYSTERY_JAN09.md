@@ -68,7 +68,7 @@ to be >=
 
 ### **Changes Made:**
 1. ✅ Added `Eventually()` waits (3 locations) - **CODE CHANGE**
-2. ✅ Fixed EventData extraction (1 location) - **CODE CHANGE**  
+2. ✅ Fixed EventData extraction (1 location) - **CODE CHANGE**
 3. ✅ Marked partial delivery test as Pending - **TEST CHANGE**
 4. ✅ Git commit at 20:19 EST
 5. ✅ Test run at 20:21 EST
@@ -85,7 +85,7 @@ to be >=
 
 ### **Theory 2: Build/Image Issue**
 **Likelihood**: MEDIUM
-**Rationale**: 
+**Rationale**:
 - Dockerfile builds controller image for Kind
 - Image might be cached from 18:48 run
 - New test run might not have rebuilt image with latest code
@@ -260,7 +260,7 @@ make test-e2e-notification
 
 ---
 
-**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001  
-**Status**: Investigation required - files stopped appearing after fixes applied  
-**Next**: Run Test 4 (Podman restart) as first diagnostic step  
+**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001
+**Status**: Investigation required - files stopped appearing after fixes applied
+**Next**: Run Test 4 (Podman restart) as first diagnostic step
 **Urgency**: HIGH - blocking E2E test completion

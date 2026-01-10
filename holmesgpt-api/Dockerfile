@@ -53,7 +53,9 @@ RUN dnf install -y --setopt=install_weak_deps=False ca-certificates tzdata && \
 WORKDIR /opt/app-root/src
 
 # Copy Python dependencies from builder (includes HolmesGPT SDK in site-packages)
+# CRITICAL: Copy BOTH lib and lib64 - some packages install to lib64 (e.g., uvicorn, httptools)
 COPY --from=builder /opt/app-root/lib/python3.12/site-packages /opt/app-root/lib/python3.12/site-packages
+COPY --from=builder /opt/app-root/lib64/python3.12/site-packages /opt/app-root/lib64/python3.12/site-packages
 COPY --from=builder /opt/app-root/bin /opt/app-root/bin
 
 # Copy application code

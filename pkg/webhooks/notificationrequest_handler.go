@@ -25,6 +25,7 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	admissionv1 "k8s.io/api/admission/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -104,18 +105,20 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	// Set event data payload
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := NotificationAuditPayload{
-		NotificationID: nr.Name,
-		Type:           string(nr.Spec.Type),
-		Priority:       string(nr.Spec.Priority),
-		CancelledBy:    authCtx.Username,
-		UserUID:        authCtx.UID,
-		UserGroups:     authCtx.Groups,
-		Action:         "notification_cancelled",
+	payload := api.NotificationAuditPayload{
+		EventType: "webhook.notification.cancelled",
 	}
-	audit.SetEventData(auditEvent, payload)
+	payload.NotificationID.SetTo(nr.Name)
+	payload.Type.SetTo(toNotificationAuditPayloadType(string(nr.Spec.Type)))
+	payload.Priority.SetTo(toNotificationAuditPayloadPriority(string(nr.Spec.Priority)))
+	payload.CancelledBy.SetTo(authCtx.Username)
+	payload.UserUID.SetTo(authCtx.UID)
+	payload.UserGroups = authCtx.Groups // array, not optional
+	payload.Action.SetTo(api.NotificationAuditPayloadActionNotificationCancelled)
+
+	auditEvent.EventData = api.NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData(payload)
 	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
-		auditEvent.EventType, auditEvent.CorrelationId)
+		auditEvent.EventType, auditEvent.CorrelationID)
 
 	// Store audit event asynchronously (buffered write)
 	fmt.Printf("💾 Storing audit event to Data Storage...\n")

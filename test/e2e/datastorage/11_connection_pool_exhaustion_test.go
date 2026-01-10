@@ -26,6 +26,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // ========================================
@@ -77,7 +79,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 					err        error
 				}, concurrentRequests)
 
-				testID := fmt.Sprintf("test-pool-%d", time.Now().UnixNano())
+				testID := fmt.Sprintf("test-pool-%s", uuid.New().String()[:8])
 				startTime := time.Now()
 
 				GinkgoWriter.Printf("🚀 Starting %d concurrent audit writes (pool size: %d)...\n",
@@ -212,7 +214,7 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 			// ARRANGE: Create burst (50 requests)
 			GinkgoWriter.Println("🚀 Creating burst traffic...")
 			var wg sync.WaitGroup
-			testID := fmt.Sprintf("test-pool-%d", time.Now().UnixNano())
+			testID := fmt.Sprintf("test-pool-%s", uuid.New().String()[:8])
 
 			for i := 0; i < 50; i++ {
 				wg.Add(1)

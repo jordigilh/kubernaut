@@ -43,7 +43,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -59,7 +60,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			testNamespace string
 			testRR        *remediationv1.RemediationRequest
 			correlationID string
-			dsClient      *dsgen.ClientWithResponses
+			dsClient      *dsgen.Client
 		)
 
 		BeforeEach(func() {
@@ -69,7 +70,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// ✅ DD-API-001: Use OpenAPI generated client (MANDATORY)
 			// Per DD-API-001: Direct HTTP usage is FORBIDDEN - bypasses type safety
 			var err error
-			dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+			dsClient, err = dsgen.NewClient(dataStorageURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 			// Create RemediationRequest
@@ -131,32 +132,26 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			eventCategory := "orchestration"
 			limit := 100
 
-			// ✅ MANDATORY: Use generated client with type-safe parameters
-			resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventCategory: &eventCategory,
-				Limit:         &limit,
-			})
+		// ✅ MANDATORY: Use generated client with type-safe parameters
+		resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			EventCategory: dsgen.NewOptString(eventCategory),
+			Limit:         dsgen.NewOptInt(limit),
+		})
 
-			if err != nil {
-				return nil, 0, fmt.Errorf("failed to query DataStorage: %w", err)
-			}
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to query DataStorage: %w", err)
+		}
 
-			if resp.JSON200 == nil {
-				return nil, 0, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
-			}
+		// Access typed response directly (ogen pattern)
+		total := 0
+		if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
+			total = resp.Pagination.Value.Total.Value
+		}
 
-			total := 0
-			if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-				total = *resp.JSON200.Pagination.Total
-			}
+		events := resp.Data
 
-			events := []dsgen.AuditEvent{}
-			if resp.JSON200.Data != nil {
-				events = *resp.JSON200.Data
-			}
-
-			return events, total, nil
+		return events, total, nil
 		}
 
 		It("should successfully emit audit events to DataStorage service", func() {
@@ -185,9 +180,9 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// Find lifecycle.started event (proves audit client is wired)
 			var foundLifecycleStarted bool
 			for _, event := range events {
-				if event.EventType == "orchestrator.lifecycle.started" {
+				if event.EventType == roaudit.EventTypeLifecycleStarted {
 					foundLifecycleStarted = true
-					Expect(event.CorrelationId).To(Equal(correlationID))
+					Expect(event.CorrelationID).To(Equal(correlationID))
 					break
 				}
 			}
@@ -229,7 +224,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			}
 
 			// Check for lifecycle.started (should always be present first)
-			hasLifecycleStarted := eventTypes["orchestrator.lifecycle.started"]
+			hasLifecycleStarted := eventTypes[roaudit.EventTypeLifecycleStarted]
 
 			// Check for phase transition or lifecycle completion/failure
 			hasPhaseTransitionOrCompletion := eventTypes["orchestrator.phase.transitioned"] ||
@@ -255,7 +250,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			eventTypes[event.EventType] = true
 		}
 
-		Expect(eventTypes).To(HaveKey("orchestrator.lifecycle.started"),
+		Expect(eventTypes).To(HaveKey(roaudit.EventTypeLifecycleStarted),
 			"Expected lifecycle.started event")
 
 		// Should have at least one phase transition or lifecycle completion/failure

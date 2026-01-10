@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Parallel Execution: ✅ ENABLED
@@ -60,7 +62,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique namespace for this test
-		testNamespace = fmt.Sprintf("rate-limit-%d", time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("rate-limit-%s", uuid.New().String()[:8])
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		// Deploy Redis and Gateway in test namespace

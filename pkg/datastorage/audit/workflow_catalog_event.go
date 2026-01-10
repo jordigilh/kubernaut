@@ -16,11 +16,13 @@ limitations under the License.
 package audit
 
 import (
+	"encoding/json"
+
 	"github.com/google/uuid"
 
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -83,20 +85,32 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	// Convert status enum
 	status := ogenclient.WorkflowCatalogCreatedPayloadStatus(workflow.Status)
 
-	payload := &ogenclient.WorkflowCatalogCreatedPayload{
-		WorkflowID:       workflowUUID,
-		WorkflowName:     workflow.WorkflowName,
-		Version:          workflow.Version,
-		Status:           status,
-		IsLatestVersion:  workflow.IsLatestVersion,
-		ExecutionEngine:  string(workflow.ExecutionEngine), // Convert enum to string
-		Name:             workflow.Name,
-		Description:      &workflow.Description,
-		Labels:           &labelsMap,
+	payload := ogenclient.WorkflowCatalogCreatedPayload{
+		WorkflowID:      workflowUUID,
+		WorkflowName:    workflow.WorkflowName,
+		Version:         workflow.Version,
+		Status:          status,
+		IsLatestVersion: workflow.IsLatestVersion,
+		ExecutionEngine: string(workflow.ExecutionEngine), // Convert enum to string
+		Name:            workflow.Name,
+	}
+	// Set optional fields using .SetTo()
+	if workflow.Description != "" {
+		payload.Description.SetTo(workflow.Description)
+	}
+	if len(labelsMap) > 0 {
+		// Convert map[string]interface{} to map[string]jx.Raw
+		labels := make(ogenclient.WorkflowCatalogCreatedPayloadLabels)
+		for k, v := range labelsMap {
+			// Marshal each value to JSON bytes (jx.Raw)
+			jsonBytes, _ := json.Marshal(v)
+			labels[k] = jsonBytes
+		}
+		payload.Labels.SetTo(labels)
 	}
 
-	// Direct assignment (no envelope, no map conversion)
-	pkgaudit.SetEventData(auditEvent, payload)
+	// Use ogen union constructor (OGEN-MIGRATION)
+	auditEvent.EventData = ogenclient.NewWorkflowCatalogCreatedPayloadAuditEventRequestEventData(payload)
 
 	return auditEvent, nil
 }
@@ -104,7 +118,7 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 // NewWorkflowUpdatedAuditEvent creates an audit event for workflow updates
 // BR-STORAGE-183: Audit workflow updates (business logic operation)
 // DD-AUDIT-004 V2.0: Uses OpenAPI-generated typed schemas (no unstructured data)
-func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields map[string]interface{}) (*ogenclient.AuditEventRequest, error) {
+func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields ogenclient.WorkflowCatalogUpdatedFields) (*ogenclient.AuditEventRequest, error) {
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.updated")
@@ -124,13 +138,13 @@ func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields map[string]in
 		workflowUUID = uuid.Nil
 	}
 
-	payload := &ogenclient.WorkflowCatalogUpdatedPayload{
+	payload := ogenclient.WorkflowCatalogUpdatedPayload{
 		WorkflowID:    workflowUUID,
-		UpdatedFields: updatedFields, // Not a pointer in generated type
+		UpdatedFields: updatedFields,
 	}
 
-	// Direct assignment (no envelope, no map conversion)
-	pkgaudit.SetEventData(auditEvent, payload)
+	// Use ogen union constructor (OGEN-MIGRATION)
+	auditEvent.EventData = ogenclient.NewWorkflowCatalogUpdatedPayloadAuditEventRequestEventData(payload)
 
 	return auditEvent, nil
 }

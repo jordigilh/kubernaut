@@ -213,9 +213,11 @@ class BufferedAuditStore:
             with self._lock:
                 self._dropped_count += 1
 
+            # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+            event_type = getattr(event, 'event_type', 'unknown')
             logger.warning(
                 f"⚠️ DD-AUDIT-002: Audit buffer full, dropping event - "
-                f"event_type={event.get('event_type', 'unknown')}, "
+                f"event_type={event_type}, "
                 f"dropped_count={self._dropped_count}"
             )
             return False
@@ -447,8 +449,9 @@ class BufferedAuditStore:
 
             except ApiException as e:
                 # OpenAPI client exception (HTTP errors, timeouts, etc.)
-                event_type = event.get("event_type", "unknown")
-                correlation_id = event.get("correlation_id", "")
+                # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+                event_type = getattr(event, "event_type", "unknown")
+                correlation_id = getattr(event, "correlation_id", "")
 
                 logger.warning(
                     f"⚠️ DD-AUDIT-002: OpenAPI audit write failed - "
@@ -464,8 +467,9 @@ class BufferedAuditStore:
 
             except Exception as e:
                 # Validation errors (Pydantic), unexpected errors
-                event_type = event.get("event_type", "unknown")
-                correlation_id = event.get("correlation_id", "")
+                # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+                event_type = getattr(event, "event_type", "unknown")
+                correlation_id = getattr(event, "correlation_id", "")
 
                 logger.error(
                     f"❌ DD-AUDIT-002: Unexpected error in audit write - "
@@ -476,8 +480,9 @@ class BufferedAuditStore:
                 return False
 
         # Final failure: Drop event
-        event_type = event.get("event_type", "unknown")
-        correlation_id = event.get("correlation_id", "")
+        # V3.0: OGEN MIGRATION - Use attribute access on Pydantic model
+        event_type = getattr(event, "event_type", "unknown")
+        correlation_id = getattr(event, "correlation_id", "")
 
         logger.error(
             f"❌ DD-AUDIT-002: Dropping audit event after max retries - "

@@ -169,7 +169,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 			hapiConfigDir: "/etc/holmesgpt:ro", // Mount HAPI config directory
 		},
 		BuildContext:    projectRoot,
-		BuildDockerfile: "holmesgpt-api/Dockerfile",
+		BuildDockerfile: "holmesgpt-api/Dockerfile.e2e", // E2E Dockerfile: minimal dependencies, no lib64 issues
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
 			Timeout: 300 * time.Second, // HAPI build takes ~100s (Python wheels, dependencies)

@@ -28,7 +28,7 @@ except ImportError:
 
 class SignalProcessingAuditPayload(BaseModel):
     """
-    Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decided)
+    Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition, classification.decision, business.classified, enrichment.completed, error.occurred)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     phase: StrictStr = Field(description="Current phase of the SignalProcessing")
@@ -55,11 +55,18 @@ class SignalProcessingAuditPayload(BaseModel):
     error: Optional[StrictStr] = Field(default=None, description="Error message if processing failed")
     __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "has_pdb", "has_hpa", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "error"]
 
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('signalprocessing.signal.processed', 'signalprocessing.phase.transition', 'signalprocessing.classification.decision', 'signalprocessing.business.classified', 'signalprocessing.enrichment.completed', 'signalprocessing.error.occurred'):
+            raise ValueError("must be one of enum values ('signalprocessing.signal.processed', 'signalprocessing.phase.transition', 'signalprocessing.classification.decision', 'signalprocessing.business.classified', 'signalprocessing.enrichment.completed', 'signalprocessing.error.occurred')")
+        return value
+
     @field_validator('phase')
     def phase_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('Pending', 'Classifying', 'Completed', 'Failed'):
-            raise ValueError("must be one of enum values ('Pending', 'Classifying', 'Completed', 'Failed')")
+        if value not in ('Pending', 'Enriching', 'Classifying', 'Categorizing', 'Completed', 'Failed'):
+            raise ValueError("must be one of enum values ('Pending', 'Enriching', 'Classifying', 'Categorizing', 'Completed', 'Failed')")
         return value
 
     @field_validator('severity')

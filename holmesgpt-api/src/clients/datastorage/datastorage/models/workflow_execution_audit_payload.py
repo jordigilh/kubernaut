@@ -31,7 +31,7 @@ class WorkflowExecutionAuditPayload(BaseModel):
     """
     Type-safe audit event payload for WorkflowExecution (workflow.started, workflow.completed, workflow.failed)
     """ # noqa: E501
-    event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
+    event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution events use 'workflowexecution' prefix.")
     workflow_id: StrictStr = Field(description="ID of the workflow being executed")
     workflow_version: StrictStr = Field(description="Version of the workflow being executed")
     target_resource: StrictStr = Field(description="Kubernetes resource being acted upon (format depends on scope)")
@@ -47,6 +47,13 @@ class WorkflowExecutionAuditPayload(BaseModel):
     error_details: Optional[ErrorDetails] = None
     pipelinerun_name: Optional[StrictStr] = Field(default=None, description="Name of the associated Tekton PipelineRun")
     __properties: ClassVar[List[str]] = ["event_type", "workflow_id", "workflow_version", "target_resource", "phase", "container_image", "execution_name", "started_at", "completed_at", "duration", "failure_reason", "failure_message", "failed_task_name", "error_details", "pipelinerun_name"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('workflowexecution.workflow.started', 'workflowexecution.workflow.completed', 'workflowexecution.workflow.failed', 'workflowexecution.selection.completed', 'workflowexecution.execution.started'):
+            raise ValueError("must be one of enum values ('workflowexecution.workflow.started', 'workflowexecution.workflow.completed', 'workflowexecution.workflow.failed', 'workflowexecution.selection.completed', 'workflowexecution.execution.started')")
+        return value
 
     @field_validator('phase')
     def phase_validate_enum(cls, value):

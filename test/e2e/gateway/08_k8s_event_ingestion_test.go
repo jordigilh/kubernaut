@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)
@@ -56,7 +58,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 		// Unique namespace for parallel execution
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("k8s-event-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("k8s-event-%d-%s", processID, uuid.New().String()[:8])
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 08: Kubernetes Event Ingestion - Setup")
@@ -110,7 +112,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 					"namespace": testNamespace,
 				},
 				"metadata": map[string]interface{}{
-					"name":      fmt.Sprintf("event-%d-%d", i, time.Now().UnixNano()),
+					"name":      fmt.Sprintf("event-%d-%s", i, uuid.New().String()[:8]),
 					"namespace": testNamespace,
 				},
 				"firstTimestamp": time.Now().Format(time.RFC3339),

@@ -6,9 +6,10 @@ HolmesGPT API response completion event payload (holmesgpt.response.complete) - 
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
+**event_type** | **str** | Event type for discriminator (matches parent event_type) | 
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID from request | 
-**response_data** | **Dict[str, object]** | Complete IncidentResponse structure (all fields) for SOC2 Type II compliance | 
+**response_data** | [**IncidentResponseData**](IncidentResponseData.md) |  | 
 
 ## Example
 

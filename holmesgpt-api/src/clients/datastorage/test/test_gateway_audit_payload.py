@@ -44,7 +44,7 @@ class TestGatewayAuditPayload(unittest.TestCase):
                 signal_annotations = {
                     'key' : ''
                     },
-                signal_type = 'alertmanager',
+                signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',
@@ -64,7 +64,7 @@ class TestGatewayAuditPayload(unittest.TestCase):
         else:
             return GatewayAuditPayload(
                 event_type = 'gateway.signal.received',
-                signal_type = 'alertmanager',
+                signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',

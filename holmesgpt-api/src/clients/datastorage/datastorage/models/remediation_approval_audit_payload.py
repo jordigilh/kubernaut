@@ -38,6 +38,13 @@ class RemediationApprovalAuditPayload(BaseModel):
     ai_analysis_ref: StrictStr = Field(description="Name of the referenced AIAnalysis")
     __properties: ClassVar[List[str]] = ["event_type", "request_name", "decision", "decided_at", "decision_message", "ai_analysis_ref"]
 
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('webhook.approval.decided'):
+            raise ValueError("must be one of enum values ('webhook.approval.decided')")
+        return value
+
     @field_validator('decision')
     def decision_validate_enum(cls, value):
         """Validates the enum"""

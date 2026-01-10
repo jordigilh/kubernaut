@@ -36,7 +36,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
         model = AuditEventRequestEventData()
         if include_optional:
             return AuditEventRequestEventData(
-                event_type = '',
+                event_type = 'workflow_validation_attempt',
                 original_payload = { },
                 signal_labels = {
                     'key' : ''
@@ -44,7 +44,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 signal_annotations = {
                     'key' : ''
                     },
-                signal_type = 'prometheus',
+                signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',
@@ -68,6 +68,18 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 from_phase = '',
                 to_phase = '',
                 transition_reason = '',
+                rar_name = 'approve-payment-api-restart-2025-12-17-xyz789',
+                required_by = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
+                workflow_id = '',
+                confidence_str = '',
+                decision = 'requires_approval',
+                approved_by = '',
+                rejected_by = '',
+                rejection_reason = '',
+                message = '',
+                reason = '',
+                sub_reason = '',
+                notification_name = '',
                 phase = 'Investigating',
                 signal = 'high-memory-payment-api-abc123',
                 environment = 'production',
@@ -91,10 +103,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 approval_reason = 'Production environment requires manual approval',
                 warnings_count = 56,
                 confidence = 0.95,
-                workflow_id = '',
                 target_in_owner_chain = True,
-                reason = '',
-                sub_reason = '',
                 provider_response_summary = datastorage.models.provider_response_summary.ProviderResponseSummary(
                     incident_id = 'incident-payment-api-2025-12-17-abc123', 
                     analysis_preview = 'Root cause: Database connection pool exhausted...', 
@@ -112,11 +121,17 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 failed_task_name = '',
                 pipelinerun_name = 'restart-payment-api-2025-12-17-abc123-run',
                 notification_id = '',
-                notification_name = '',
                 type = '',
-                notification_type = 'email',
+                notification_type = 'escalation',
                 final_status = 'Pending',
-                recipients = { },
+                recipients = [
+                    datastorage.models.notification_audit_payload_recipients_inner.NotificationAuditPayload_recipients_inner(
+                        email = 'user@example.com', 
+                        slack = '#alerts', 
+                        teams = 'team@company.com', 
+                        phone = '+1234567890', 
+                        webhook_url = 'https://example.com/webhook', )
+                    ],
                 cancelled_by = '',
                 user_uid = '',
                 user_groups = [
@@ -129,7 +144,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 previous_state = 'Blocked',
                 new_state = 'Running',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
-                decision = 'requires_approval',
                 decided_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 decision_message = '',
                 ai_analysis_ref = '',
@@ -182,7 +196,12 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 name = 'Restart OOMKilled Pod',
                 description = 'Restarts pods that were terminated due to OOM',
                 labels = { },
-                updated_fields = {status=disabled, description=Updated description},
+                updated_fields = datastorage.models.workflow_catalog_updated_fields.WorkflowCatalogUpdatedFields(
+                    status = 'disabled', 
+                    disabled_by = 'admin@example.com', 
+                    disabled_reason = 'Security vulnerability detected', 
+                    version = '1.0.1', 
+                    description = 'Updated workflow description', ),
                 old_phase = 'Investigating',
                 new_phase = 'Analyzing',
                 endpoint = '/api/v1/investigate',
@@ -199,7 +218,33 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 error_type = '',
                 event_id = '',
                 incident_id = '',
-                response_data = {incident_id=incident-payment-api-2025-12-17-abc123, analysis=Root cause analysis text..., root_cause_analysis={}, selected_workflow={}, confidence=0.85, needs_human_review=false, timestamp=2025-01-08T10:30:00Z},
+                response_data = datastorage.models.incident_response_data.IncidentResponseData(
+                    incident_id = 'incident-payment-api-2025-12-17-abc123', 
+                    analysis = 'Root cause analysis indicates...', 
+                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_root_cause_analysis(
+                        summary = '', 
+                        severity = 'high', 
+                        contributing_factors = [
+                            ''
+                            ], ), 
+                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
+                        workflow_id = '', 
+                        container_image = '', 
+                        confidence = 0.0, 
+                        parameters = { }, ), 
+                    confidence = 0.85, 
+                    timestamp = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
+                    needs_human_review = True, 
+                    human_review_reason = 'workflow_not_found', 
+                    target_in_owner_chain = True, 
+                    warnings = [
+                        ''
+                        ], 
+                    alternative_workflows = [
+                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternative_workflows_inner(
+                            workflow_id = '', 
+                            rationale = '', )
+                        ], ),
                 model = 'gpt-4',
                 prompt_length = 0,
                 prompt_preview = '',
@@ -232,14 +277,17 @@ class TestAuditEventRequestEventData(unittest.TestCase):
             )
         else:
             return AuditEventRequestEventData(
-                event_type = '',
-                signal_type = 'prometheus',
+                event_type = 'workflow_validation_attempt',
+                signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',
                 rr_name = 'restart-payment-api-2025-12-17-abc123',
                 outcome = 'allow',
                 duration_ms = 50,
+                workflow_id = '',
+                decision = 'requires_approval',
+                reason = '',
                 phase = 'Investigating',
                 signal = 'high-memory-payment-api-abc123',
                 environment = 'production',
@@ -249,8 +297,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 approval_required = True,
                 approval_reason = 'Production environment requires manual approval',
                 warnings_count = 56,
-                workflow_id = '',
-                reason = '',
                 workflow_version = 'v1.0.0',
                 target_resource = 'payment/deployment/payment-api',
                 container_image = 'ghcr.io/kubernaut/kubectl-actions:v1.28',
@@ -263,7 +309,6 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 previous_state = 'Blocked',
                 new_state = 'Running',
                 request_name = 'approve-payment-api-2025-12-17-abc123',
-                decision = 'requires_approval',
                 decided_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 decision_message = '',
                 ai_analysis_ref = '',
@@ -314,7 +359,12 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 is_latest_version = True,
                 execution_engine = 'argo',
                 name = 'Restart OOMKilled Pod',
-                updated_fields = {status=disabled, description=Updated description},
+                updated_fields = datastorage.models.workflow_catalog_updated_fields.WorkflowCatalogUpdatedFields(
+                    status = 'disabled', 
+                    disabled_by = 'admin@example.com', 
+                    disabled_reason = 'Security vulnerability detected', 
+                    version = '1.0.1', 
+                    description = 'Updated workflow description', ),
                 old_phase = 'Investigating',
                 new_phase = 'Analyzing',
                 endpoint = '/api/v1/investigate',
@@ -328,7 +378,33 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 error_type = '',
                 event_id = '',
                 incident_id = '',
-                response_data = {incident_id=incident-payment-api-2025-12-17-abc123, analysis=Root cause analysis text..., root_cause_analysis={}, selected_workflow={}, confidence=0.85, needs_human_review=false, timestamp=2025-01-08T10:30:00Z},
+                response_data = datastorage.models.incident_response_data.IncidentResponseData(
+                    incident_id = 'incident-payment-api-2025-12-17-abc123', 
+                    analysis = 'Root cause analysis indicates...', 
+                    root_cause_analysis = datastorage.models.incident_response_data_root_cause_analysis.IncidentResponseData_root_cause_analysis(
+                        summary = '', 
+                        severity = 'high', 
+                        contributing_factors = [
+                            ''
+                            ], ), 
+                    selected_workflow = datastorage.models.incident_response_data_selected_workflow.IncidentResponseData_selected_workflow(
+                        workflow_id = '', 
+                        container_image = '', 
+                        confidence = 0.0, 
+                        parameters = { }, ), 
+                    confidence = 0.85, 
+                    timestamp = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'), 
+                    needs_human_review = True, 
+                    human_review_reason = 'workflow_not_found', 
+                    target_in_owner_chain = True, 
+                    warnings = [
+                        ''
+                        ], 
+                    alternative_workflows = [
+                        datastorage.models.incident_response_data_alternative_workflows_inner.IncidentResponseData_alternative_workflows_inner(
+                            workflow_id = '', 
+                            rationale = '', )
+                        ], ),
                 model = 'gpt-4',
                 prompt_length = 0,
                 prompt_preview = '',

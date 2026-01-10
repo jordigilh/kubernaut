@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -66,10 +66,10 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First workflow creation should return 201 Created")
 
-			var createdWorkflow dsgen.RemediationWorkflow
-			err = json.NewDecoder(resp1.Body).Decode(&createdWorkflow)
-			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
-			Expect(createdWorkflow.WorkflowId).ToNot(BeNil(), "Created workflow should have ID")
+		var createdWorkflow ogenclient.RemediationWorkflow
+		err = json.NewDecoder(resp1.Body).Decode(&createdWorkflow)
+		Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
+		Expect(createdWorkflow.WorkflowID.Set).To(BeTrue(), "Created workflow should have ID")
 
 			// Step 2: Attempt to create the same workflow again (should return 409 Conflict)
 			GinkgoWriter.Printf("\n🔄 Creating duplicate workflow (expecting 409 Conflict)...\n")
@@ -111,19 +111,21 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
 			GinkgoWriter.Printf("   - Error detail: '%s'\n", detail)
 
-			// Step 4: Verify only one workflow exists in database using ListWorkflows API
-			listClient, err := dsgen.NewClientWithResponses(datastorageURL)
-			Expect(err).ToNot(HaveOccurred())
+		// Step 4: Verify only one workflow exists in database using ListWorkflows API
+		listClient, err := ogenclient.NewClient(datastorageURL)
+		Expect(err).ToNot(HaveOccurred())
 
-			listResp, err := listClient.ListWorkflowsWithResponse(ctx, &dsgen.ListWorkflowsParams{})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(listResp.StatusCode()).To(Equal(200))
-			Expect(listResp.JSON200).ToNot(BeNil())
-			Expect(listResp.JSON200.Workflows).ToNot(BeNil())
+		listResp, err := listClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
+		Expect(err).ToNot(HaveOccurred())
 
-			// Count workflows with our unique name
-			matchingWorkflows := 0
-			for _, wf := range *listResp.JSON200.Workflows {
+		// Type assert the response
+		listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
+		Expect(ok).To(BeTrue(), "Expected WorkflowListResponse")
+		Expect(listResult.Workflows).ToNot(BeNil())
+
+		// Count workflows with our unique name
+		matchingWorkflows := 0
+		for _, wf := range listResult.Workflows {
 				if wf.WorkflowName == uniqueWorkflowName {
 					matchingWorkflows++
 				}
@@ -166,18 +168,18 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 })
 
 // Helper function to create a test workflow request
-func createTestWorkflowRequest(workflowName, version string) *dsgen.RemediationWorkflow {
+func createTestWorkflowRequest(workflowName, version string) *ogenclient.RemediationWorkflow {
 	name := "Test Duplicate Workflow"
 	description := "Test workflow for duplicate detection"
 	content := "apiVersion: kubernaut.io/v1alpha1\nkind: WorkflowSchema\nmetadata:\n  name: test"
 	contentHash := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	executionEngine := string(models.ExecutionEngineTekton)
-	status := dsgen.RemediationWorkflowStatusActive
+	status := ogenclient.RemediationWorkflowStatusActive
 	containerImage := testContainerImage
 	containerDigest := testContainerDigest
 
 	// Create mandatory labels (per ADR-033)
-	labels := dsgen.MandatoryLabels{
+	labels := ogenclient.MandatoryLabels{
 		Component:   "pod",
 		Environment: "test",
 		Priority:    "P2",
@@ -185,7 +187,7 @@ func createTestWorkflowRequest(workflowName, version string) *dsgen.RemediationW
 		SignalType:  "OOMKilled",
 	}
 
-	return &dsgen.RemediationWorkflow{
+	return &ogenclient.RemediationWorkflow{
 		WorkflowName:    workflowName,
 		Version:         version,
 		Name:            name,
@@ -193,17 +195,17 @@ func createTestWorkflowRequest(workflowName, version string) *dsgen.RemediationW
 		Content:         content,
 		ContentHash:     contentHash,
 		Labels:          labels,
-		CustomLabels:    &dsgen.CustomLabels{},
-		DetectedLabels:  &dsgen.DetectedLabels{},
+		CustomLabels:    ogenclient.OptCustomLabels{},
+		DetectedLabels:  ogenclient.OptDetectedLabels{},
 		ExecutionEngine: executionEngine,
 		Status:          status,
-		ContainerImage:  &containerImage,
-		ContainerDigest: &containerDigest,
+		ContainerImage:  ogenclient.NewOptString(containerImage),
+		ContainerDigest: ogenclient.NewOptString(containerDigest),
 	}
 }
 
 // Helper function to create a workflow via HTTP
-func createWorkflowHTTP(client *http.Client, baseURL string, workflow *dsgen.RemediationWorkflow) (*http.Response, error) {
+func createWorkflowHTTP(client *http.Client, baseURL string, workflow *ogenclient.RemediationWorkflow) (*http.Response, error) {
 	body, err := json.Marshal(workflow)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal workflow: %w", err)

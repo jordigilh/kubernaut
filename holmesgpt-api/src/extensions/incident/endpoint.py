@@ -84,6 +84,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     # with provider_response_summary (consumer perspective + business context)
     try:
         audit_store = get_audit_store()
+        logger.info(f"Audit store available: {audit_store is not None}")
         if audit_store:
             # Convert IncidentResponse to dict for audit storage
             # BR-HAPI-212: In mock mode, result is already a dict
@@ -95,8 +96,8 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
                 response_dict = result.dict()
 
             audit_event = create_hapi_response_complete_event(
-                incident_id=request.incident_id,
-                remediation_id=request.remediation_id,
+                incident_id=incident_req.incident_id,
+                remediation_id=incident_req.remediation_id,
                 response_data=response_dict
             )
             audit_store.store_audit(audit_event)

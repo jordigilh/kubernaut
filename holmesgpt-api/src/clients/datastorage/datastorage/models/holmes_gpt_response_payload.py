@@ -19,8 +19,9 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
+from datastorage.models.incident_response_data import IncidentResponseData
 try:
     from typing import Self
 except ImportError:
@@ -30,10 +31,18 @@ class HolmesGPTResponsePayload(BaseModel):
     """
     HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
     """ # noqa: E501
+    event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
     incident_id: StrictStr = Field(description="Incident correlation ID from request")
-    response_data: Dict[str, Any] = Field(description="Complete IncidentResponse structure (all fields) for SOC2 Type II compliance")
-    __properties: ClassVar[List[str]] = ["event_id", "incident_id", "response_data"]
+    response_data: IncidentResponseData
+    __properties: ClassVar[List[str]] = ["event_type", "event_id", "incident_id", "response_data"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('holmesgpt.response.complete'):
+            raise ValueError("must be one of enum values ('holmesgpt.response.complete')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -72,6 +81,9 @@ class HolmesGPTResponsePayload(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of response_data
+        if self.response_data:
+            _dict['response_data'] = self.response_data.to_dict()
         return _dict
 
     @classmethod
@@ -84,9 +96,10 @@ class HolmesGPTResponsePayload(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "event_type": obj.get("event_type"),
             "event_id": obj.get("event_id"),
             "incident_id": obj.get("incident_id"),
-            "response_data": obj.get("response_data")
+            "response_data": IncidentResponseData.from_dict(obj.get("response_data")) if obj.get("response_data") is not None else None
         })
         return _obj
 

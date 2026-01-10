@@ -49,6 +49,13 @@ class AIAnalysisAuditPayload(BaseModel):
     error_details: Optional[ErrorDetails] = None
     __properties: ClassVar[List[str]] = ["event_type", "analysis_name", "namespace", "phase", "approval_required", "approval_reason", "degraded_mode", "warnings_count", "confidence", "workflow_id", "target_in_owner_chain", "reason", "sub_reason", "provider_response_summary", "error_details"]
 
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('aianalysis.analysis.completed', 'aianalysis.analysis.failed'):
+            raise ValueError("must be one of enum values ('aianalysis.analysis.completed', 'aianalysis.analysis.failed')")
+        return value
+
     @field_validator('phase')
     def phase_validate_enum(cls, value):
         """Validates the enum"""

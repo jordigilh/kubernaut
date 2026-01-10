@@ -19,7 +19,7 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List, Optional
-from pydantic import BaseModel, StrictBool, StrictStr
+from pydantic import BaseModel, StrictBool, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
 try:
@@ -31,6 +31,7 @@ class WorkflowValidationPayload(BaseModel):
     """
     Workflow validation attempt event payload (workflow_validation_attempt)
     """ # noqa: E501
+    event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
     incident_id: StrictStr = Field(description="Incident correlation ID (remediation_id)")
     attempt: Annotated[int, Field(strict=True, ge=1)] = Field(description="Current validation attempt number")
@@ -42,7 +43,14 @@ class WorkflowValidationPayload(BaseModel):
     workflow_name: Optional[StrictStr] = Field(default=None, description="Name of workflow being validated")
     human_review_reason: Optional[StrictStr] = Field(default=None, description="Reason code if needs_human_review (final attempt)")
     is_final_attempt: Optional[StrictBool] = Field(default=False, description="Whether this is the final validation attempt")
-    __properties: ClassVar[List[str]] = ["event_id", "incident_id", "attempt", "max_attempts", "is_valid", "errors", "validation_errors", "workflow_id", "workflow_name", "human_review_reason", "is_final_attempt"]
+    __properties: ClassVar[List[str]] = ["event_type", "event_id", "incident_id", "attempt", "max_attempts", "is_valid", "errors", "validation_errors", "workflow_id", "workflow_name", "human_review_reason", "is_final_attempt"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('workflow_validation_attempt'):
+            raise ValueError("must be one of enum values ('workflow_validation_attempt')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -93,6 +101,7 @@ class WorkflowValidationPayload(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "event_type": obj.get("event_type"),
             "event_id": obj.get("event_id"),
             "incident_id": obj.get("incident_id"),
             "attempt": obj.get("attempt"),

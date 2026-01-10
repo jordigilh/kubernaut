@@ -353,17 +353,30 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	// Gap #5: Record workflow selection audit event (BR-AUDIT-005)
 	// Emitted AFTER validation, BEFORE PipelineRun creation
 	// Provides visibility into which workflow was selected for execution
+	// IDEMPOTENCY: Only emit once - skip if PipelineRun already exists
 	// ========================================
-	if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe); err != nil {
-		logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
-		// Non-blocking: workflow execution continues
-		// Audit condition will be updated later
+	// Check if PipelineRun already exists to ensure idempotency (prevent duplicate events on re-reconciliation)
+	pr := r.BuildPipelineRun(wfe)
+	existingPR := &tektonv1.PipelineRun{}
+	prExists := false
+	if err := r.Get(ctx, client.ObjectKey{Name: pr.Name, Namespace: r.ExecutionNamespace}, existingPR); err == nil {
+		prExists = true
+	}
+
+	if !prExists {
+		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe); err != nil {
+			logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
+			// Non-blocking: workflow execution continues
+			// Audit condition will be updated later
+		}
+	} else {
+		logger.V(2).Info("Skipping workflow.selection.completed audit event - PipelineRun already exists",
+			"pipelineRun", pr.Name)
 	}
 
 	// ========================================
-	// Step 2: Build and create PipelineRun
+	// Step 2: Create PipelineRun (already built above for idempotency check)
 	// ========================================
-	pr := r.BuildPipelineRun(wfe)
 	logger.Info("Creating PipelineRun",
 		"pipelineRun", pr.Name,
 		"namespace", pr.Namespace,

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -35,7 +35,7 @@ import (
 
 var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datastorage", "gap-5.3", "p1"), func() {
 	var (
-		client *dsgen.ClientWithResponses
+		client *ogenclient.Client
 		ctx    context.Context
 	)
 
@@ -84,23 +84,20 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 			}
 
 			event := createAuditEventRequest(
-				"pod.created",
-				"gateway", // Valid ADR-034 service category (was "resource" - not valid)
+				"gateway.signal.received", // Valid event type from OpenAPI spec discriminator mapping
+				"gateway",                 // Valid ADR-034 service category
 				"created",
 				"success",
 				correlationID,
 				eventData,
 			)
 
-			firstRequestStart := time.Now()
-			resp, err := client.CreateAuditEventWithResponse(ctx, event)
-			firstRequestDuration := time.Since(firstRequestStart)
+		firstRequestStart := time.Now()
+		eventID, err := postAuditEvent(ctx, client, event)
+		firstRequestDuration := time.Since(firstRequestStart)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode()).To(SatisfyAny(
-				Equal(http.StatusCreated),
-				Equal(http.StatusAccepted),
-			), "First request should succeed")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(eventID).ToNot(BeEmpty(), "First request should succeed")
 
 			GinkgoWriter.Printf("First request completed in %v\n", firstRequestDuration)
 
@@ -126,15 +123,12 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 				eventData2,
 			)
 
-			secondRequestStart := time.Now()
-			resp2, err := client.CreateAuditEventWithResponse(ctx, event2)
-			secondRequestDuration := time.Since(secondRequestStart)
+		secondRequestStart := time.Now()
+		eventID2, err := postAuditEvent(ctx, client, event2)
+		secondRequestDuration := time.Since(secondRequestStart)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp2.StatusCode()).To(SatisfyAny(
-				Equal(http.StatusCreated),
-				Equal(http.StatusAccepted),
-			))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(eventID2).ToNot(BeEmpty())
 
 			GinkgoWriter.Printf("Second request completed in %v\n", secondRequestDuration)
 

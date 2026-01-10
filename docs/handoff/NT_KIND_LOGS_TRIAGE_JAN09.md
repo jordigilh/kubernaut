@@ -2,8 +2,8 @@
 
 ## 🔍 **TRIAGE SUMMARY**
 
-**Log Directory**: `/tmp/notification-e2e-logs-20260109-190615`  
-**Issue**: 8 files created successfully in pod, but only 1 appeared on host  
+**Log Directory**: `/tmp/notification-e2e-logs-20260109-190615`
+**Issue**: 8 files created successfully in pod, but only 1 appeared on host
 **Root Cause**: **Race condition** - Tests check for files before container→host sync completes
 
 ---
@@ -202,10 +202,10 @@ cm := &corev1.ConfigMap{
 ### **Volume Mount Verification**
 
 ```
-Jan 10 00:02:01 kubelet[710]: I0110 00:02:01.865180     710 reconciler_common.go:251] 
-  "operationExecutor.VerifyControllerAttachedVolume started for volume \"notification-output\" 
-   (UniqueName: \"kubernetes.io/host-path/18f5b029-a13e-4204-80d2-e6746445298e-notification-output\") 
-   pod \"notification-controller-6dc46ffbdd-rlnx4\" (UID: \"18f5b029-a13e-4204-80d2-e6746445298e\") " 
+Jan 10 00:02:01 kubelet[710]: I0110 00:02:01.865180     710 reconciler_common.go:251]
+  "operationExecutor.VerifyControllerAttachedVolume started for volume \"notification-output\"
+   (UniqueName: \"kubernetes.io/host-path/18f5b029-a13e-4204-80d2-e6746445298e-notification-output\")
+   pod \"notification-controller-6dc46ffbdd-rlnx4\" (UID: \"18f5b029-a13e-4204-80d2-e6746445298e\") "
    pod="notification-e2e/notification-controller-6dc46ffbdd-rlnx4"
 ```
 
@@ -254,7 +254,7 @@ Eventually(func() int {
 
 ## 📊 **EXPECTED RESULTS AFTER FIX**
 
-**Current**: 16/20 passing (80%)  
+**Current**: 16/20 passing (80%)
 **After Fix**: 20/20 passing (100%) ⭐
 
 **Fixed Tests**:
@@ -272,8 +272,8 @@ Eventually(func() int {
 
 ---
 
-**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001  
-**Created**: 2026-01-09  
+**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001
+**Created**: 2026-01-09
 **Status**: ✅ **TRIAGE COMPLETE** - Race condition identified, fix recommended
 
 **Key Finding**: File delivery works perfectly in pod. Issue is macOS Podman volume mount sync delay (~200-600ms). Tests need explicit wait for files to appear on host.

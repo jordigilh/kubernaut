@@ -37,6 +37,3 @@ nodes:
         # Higher limits prevent CRD creation delays during parallel testing
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-
-

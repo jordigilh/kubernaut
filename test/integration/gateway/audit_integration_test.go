@@ -262,7 +262,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"actor_type should be 'external' for AlertManager/K8s Events")
 
 			// Field 7: actor_id
-			Expect(event.ActorID.Value).To(Equal("alertmanager"),
+			Expect(event.ActorID.Value).To(Equal("prometheus-alert"),
 				"actor_id should be signal source type constant (alertmanager or webhook)")
 
 			// Field 8: resource_type
@@ -293,7 +293,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			gatewayPayload := event.EventData.GatewayAuditPayload
 
 			// Field 12: signal_type
-			Expect(string(gatewayPayload.SignalType)).To(Equal("alertmanager"),
+			Expect(string(gatewayPayload.SignalType)).To(Equal("prometheus-alert"),
 				"signal_type should be 'alertmanager' constant (matches OpenAPI enum)")
 
 			// Field 13: alert_name
@@ -348,7 +348,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ OUTCOME 2: Accountability - identifies signal source
 			Expect(event.ActorType.Value).To(Equal("external"),
 				"Business outcome: actor_type='external' identifies this as external signal (not internal system)")
-			Expect(event.ActorID.Value).To(Equal("alertmanager"),
+			Expect(event.ActorID.Value).To(Equal("prometheus-alert"),
 				"Business outcome: actor_id identifies specific source system for troubleshooting")
 
 			// ✅ OUTCOME 3: Resource tracking for debugging
@@ -479,7 +479,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"actor_type should be 'external' for AlertManager/K8s Events")
 
 			// Field 7: actor_id
-			Expect(event.ActorID.Value).To(Equal("alertmanager"),
+			Expect(event.ActorID.Value).To(Equal("prometheus-alert"),
 				"actor_id should be signal source type constant (alertmanager or webhook)")
 
 			// Field 8: resource_type
@@ -510,7 +510,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			gatewayPayload := event.EventData.GatewayAuditPayload
 
 			// Field 12: signal_type
-			Expect(string(gatewayPayload.SignalType)).To(Equal("alertmanager"),
+			Expect(string(gatewayPayload.SignalType)).To(Equal("prometheus-alert"),
 				"signal_type should be 'alertmanager' constant (matches OpenAPI enum)")
 
 			// Field 13: alert_name

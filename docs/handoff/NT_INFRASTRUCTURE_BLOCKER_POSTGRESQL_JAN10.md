@@ -1,9 +1,9 @@
 # Notification E2E - PostgreSQL Infrastructure Blocker [RESOLVED]
 
-**Date**: January 10, 2026  
-**Status**: ✅ RESOLVED  
-**Severity**: Was Critical - Now Fixed  
-**Authority**: DD-NOT-006 v2  
+**Date**: January 10, 2026
+**Status**: ✅ RESOLVED
+**Severity**: Was Critical - Now Fixed
+**Authority**: DD-NOT-006 v2
 **Resolution Commit**: `75ea441b8`
 
 ---

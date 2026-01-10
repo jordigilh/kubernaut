@@ -6,6 +6,7 @@ LLM tool call event payload (llm_tool_call)
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
+**event_type** | **str** | Event type for discriminator (matches parent event_type) | 
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
 **tool_call_index** | **int** | Sequential index of tool call in conversation | 

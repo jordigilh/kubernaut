@@ -86,6 +86,10 @@ import (
 const (
 	timeout  = 60 * time.Second // Longer timeout for RO orchestration
 	interval = 250 * time.Millisecond
+
+	// ROIntegrationDataStoragePort is the DataStorage API port for RO integration tests
+	// Per DD-TEST-001 v2.2: Each service gets a unique port to enable parallel test execution
+	ROIntegrationDataStoragePort = 18140
 )
 
 // Package-level variables for test environment
@@ -97,6 +101,10 @@ var (
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
+
+	// dataStorageBaseURL is the base URL for DataStorage API calls
+	// Uses ROIntegrationDataStoragePort to avoid brittle hardcoded ports (DD-TEST-001 v2.2)
+	dataStorageBaseURL = fmt.Sprintf("http://127.0.0.1:%d", ROIntegrationDataStoragePort)
 )
 
 func TestRemediationOrchestratorIntegration(t *testing.T) {
@@ -132,9 +140,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per DD-TEST-001 v2.2: PostgreSQL=15435, Redis=16381, Immudb=13325, DS=18140
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "remediationorchestrator",
-		PostgresPort:    15435, // DD-TEST-001 v2.2
-		RedisPort:       16381, // DD-TEST-001 v2.2
-		DataStoragePort: 18140, // DD-TEST-001 v2.2
+		PostgresPort:    15435,                      // DD-TEST-001 v2.2
+		RedisPort:       16381,                      // DD-TEST-001 v2.2
+		DataStoragePort: ROIntegrationDataStoragePort, // DD-TEST-001 v2.2
 		MetricsPort:     19140,
 		ConfigDir:       "test/integration/remediationorchestrator/config",
 	}, GinkgoWriter)
@@ -222,14 +230,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Setting up the RemediationOrchestrator controller")
 	// Create RO reconciler with manager client, scheme, and audit store
 	// Per ADR-032 §1: Audit is MANDATORY for P0 services (RO is P0)
-	// Integration tests use real DataStorage API at http://127.0.0.1:18140
+	// Integration tests use real DataStorage API at dataStorageBaseURL (DD-TEST-001 v2.2)
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	// Note: Using 127.0.0.1 instead of "localhost" to force IPv4
 	// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
 	mockTransport := testutil.NewMockUserTransport("test-remediationorchestrator@integration.test")
 	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		"http://127.0.0.1:18140",
+		dataStorageBaseURL,
 		5*time.Second,
 		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
 	)
@@ -243,7 +251,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		MaxRetries:    3,
 	}
 	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create audit store - ensure DataStorage is running at http://localhost:18140")
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed to create audit store - ensure DataStorage is running at %s", dataStorageBaseURL))
 
 	By("Initializing RemediationOrchestrator metrics (DD-METRICS-001)")
 	// Per DD-METRICS-001: Metrics must be initialized and injected for integration tests
@@ -366,7 +374,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  • REAL services available:")
 	GinkgoWriter.Println("    - PostgreSQL: localhost:15435")
 	GinkgoWriter.Println("    - Redis: localhost:16381")
-	GinkgoWriter.Println("    - Data Storage: http://localhost:18140")
+	GinkgoWriter.Printf("    - Data Storage: %s\n", dataStorageBaseURL)
 	GinkgoWriter.Println("")
 
 	// Serialize REST config to pass to all processes

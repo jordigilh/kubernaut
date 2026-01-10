@@ -15,7 +15,7 @@
 Files written in pod take 200-600ms to sync to macOS host (Podman VM overhead).
 Tests check immediately and fail.
 
-### **Root Cause** 
+### **Root Cause**
 ```go
 // CURRENT (BROKEN):
 files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-*.json"))
@@ -223,7 +223,7 @@ Mark test as `PIt` (Pending) with clear explanation, similar to `05_retry_expone
 		// to simulate file delivery failures.
 		//
 		// Re-enable this test if a new mechanism for simulating file write failures
-		// (e.g., a mock filesystem, in-memory adapter, or test-only configuration) 
+		// (e.g., a mock filesystem, in-memory adapter, or test-only configuration)
 		// is introduced.
 		//
 		// Related: 05_retry_exponential_backoff_test.go (also pending for same reason)

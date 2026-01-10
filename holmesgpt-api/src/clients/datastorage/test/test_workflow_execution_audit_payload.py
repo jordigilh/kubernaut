@@ -36,7 +36,7 @@ class TestWorkflowExecutionAuditPayload(unittest.TestCase):
         model = WorkflowExecutionAuditPayload()
         if include_optional:
             return WorkflowExecutionAuditPayload(
-                event_type = '',
+                event_type = 'workflowexecution.workflow.started',
                 workflow_id = 'kubectl-restart-deployment',
                 workflow_version = 'v1.0.0',
                 target_resource = 'payment/deployment/payment-api',
@@ -59,7 +59,7 @@ class TestWorkflowExecutionAuditPayload(unittest.TestCase):
             )
         else:
             return WorkflowExecutionAuditPayload(
-                event_type = '',
+                event_type = 'workflowexecution.workflow.started',
                 workflow_id = 'kubectl-restart-deployment',
                 workflow_version = 'v1.0.0',
                 target_resource = 'payment/deployment/payment-api',

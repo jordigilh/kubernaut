@@ -18,12 +18,12 @@ package datastorage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -52,7 +52,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
+var _ = Describe("Audit Events Batch Write API Integration Tests", func() {
 	var testCorrelationID string
 
 	BeforeEach(func() {
@@ -93,104 +93,95 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 				// - Sends to POST /api/v1/audit/events/batch
 				// - Expects 201 Created with array of event_ids
 
-				By("Building 3 Gateway events using structured builder")
-				gatewayData1, _ := audit.NewGatewayEvent("gateway.signal.received").
-					WithSignalType("prometheus").
-					WithAlertName("BatchTest1").
-					Build()
-				gatewayData2, _ := audit.NewGatewayEvent("gateway.crd.created").
-					WithSignalType("prometheus").
-					WithAlertName("BatchTest2").
-					Build()
-				gatewayData3, _ := audit.NewGatewayEvent("gateway.notification.sent").
-					WithSignalType("prometheus").
-					WithAlertName("BatchTest3").
-					Build()
+				By("Building 3 Gateway events using ogen types")
+				ctx := context.Background()
+				client, err := createOpenAPIClient(datastorageURL)
+				Expect(err).ToNot(HaveOccurred())
 
-				By("Creating batch payload (JSON array per DD-AUDIT-002)")
-				events := []map[string]interface{}{
+				timestamp := time.Now().Add(-5 * time.Second).UTC()
+				events := []ogenclient.AuditEventRequest{
 					{
-						"version":         "1.0",
-						"event_type":      "gateway.signal.received",
-						"event_category":  "gateway",
-						"event_action":    "signal_received",
-						"event_outcome":   "success",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  testCorrelationID + "-1",
-						"event_data":      gatewayData1,
+						Version:        "1.0",
+						EventType:      "gateway.signal.received",
+						EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+						EventAction:    "signal_received",
+						EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventTimestamp: timestamp,
+						CorrelationID:  testCorrelationID + "-1",
+						EventData: ogenclient.AuditEventRequestEventData{
+							Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+								AlertName:   "BatchTest1",
+								Namespace:   "default",
+								Fingerprint: "test-fingerprint-1",
+							},
+						},
 					},
 					{
-						"version":         "1.0",
-						"event_type":      "gateway.crd.created",
-						"event_category":  "gateway",
-						"event_action":    "crd_created",
-						"event_outcome":   "success",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  testCorrelationID + "-2",
-						"event_data":      gatewayData2,
+						Version:        "1.0",
+						EventType:      "gateway.crd.created",
+						EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+						EventAction:    "crd_created",
+						EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventTimestamp: timestamp,
+						CorrelationID:  testCorrelationID + "-2",
+						EventData: ogenclient.AuditEventRequestEventData{
+							Type: ogenclient.AuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData,
+							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+								AlertName:   "BatchTest2",
+								Namespace:   "default",
+								Fingerprint: "test-fingerprint-2",
+							},
+						},
 					},
 					{
-						"version":         "1.0",
-						"event_type":      "gateway.notification.sent",
-						"event_category":  "gateway",
-						"event_action":    "notification_sent",
-						"event_outcome":   "success",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  testCorrelationID + "-3",
-						"event_data":      gatewayData3,
+						Version:        "1.0",
+						EventType:      "gateway.signal.received",
+						EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+						EventAction:    "signal_received",
+						EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventTimestamp: timestamp,
+						CorrelationID:  testCorrelationID + "-3",
+						EventData: ogenclient.AuditEventRequestEventData{
+							Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+								AlertName:   "BatchTest3",
+								Namespace:   "default",
+								Fingerprint: "test-fingerprint-3",
+							},
+						},
 					},
 				}
 
-				body, err := json.Marshal(events)
+				By("Sending batch using ogen client")
+				eventIDs, err := postAuditEventBatch(ctx, client, events)
 				Expect(err).ToNot(HaveOccurred())
-
-				By("Sending POST request to /api/v1/audit/events/batch")
-				req, err := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
-				Expect(err).ToNot(HaveOccurred())
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := http.DefaultClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				By("Verifying 201 Created response")
-				if resp.StatusCode != http.StatusCreated {
-					bodyBytes, _ := io.ReadAll(resp.Body)
-					GinkgoWriter.Printf("ERROR: Got status %d, body: %s\n", resp.StatusCode, string(bodyBytes))
-				}
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-
-				By("Verifying response contains event_ids array")
-				var response map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&response)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(response).To(HaveKey("event_ids"))
-
-				eventIDs, ok := response["event_ids"].([]interface{})
-				Expect(ok).To(BeTrue(), "event_ids should be an array")
 				Expect(eventIDs).To(HaveLen(3), "Should return 3 event_ids")
 
 				By("Verifying all event_ids are valid UUIDs")
-				for _, id := range eventIDs {
-					idStr, ok := id.(string)
-					Expect(ok).To(BeTrue())
+				for _, idStr := range eventIDs {
 					Expect(idStr).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
 				}
 
-			// ✅ CORRECTNESS: All events persisted in database
-			By("Verifying all 3 events persisted in database (CORRECTNESS)")
-			for i, id := range eventIDs {
-				idStr := id.(string)
-				// Handle async HTTP API processing - data may not be committed immediately
-				Eventually(func() int {
-					var count int
-					err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE event_id = $1", idStr).Scan(&count)
-					if err != nil {
-						return -1
-					}
-					return count
-				}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Event %d should exist in database", i+1)
-			}
+				// ✅ CORRECTNESS: All events persisted in database
+				By("Verifying all 3 events persisted in database (CORRECTNESS)")
+				for i, idStr := range eventIDs {
+					// Handle async HTTP API processing - data may not be committed immediately
+					Eventually(func() int {
+						var count int
+						err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE event_id = $1", idStr).Scan(&count)
+						if err != nil {
+							return -1
+						}
+						return count
+					}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Event %d should exist in database", i+1)
+				}
 
 				// ✅ CORRECTNESS: Verify event content matches sent payload
 				By("Verifying event content matches sent payload (CORRECTNESS)")
@@ -199,7 +190,7 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 					SELECT event_type, correlation_id
 					FROM audit_events
 					WHERE event_id = $1
-				`, eventIDs[0].(string)).Scan(&dbEventType, &dbCorrelationID)
+				`, eventIDs[0]).Scan(&dbEventType, &dbCorrelationID)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(dbEventType).To(Equal("gateway.signal.received"))
 				Expect(dbCorrelationID).To(Equal(testCorrelationID + "-1"))
@@ -336,55 +327,59 @@ var _ = Describe("Audit Events Batch Write API Integration Tests",  func() {
 		// ========================================
 		When("batch contains 100 events", func() {
 			It("should persist all events efficiently", FlakeAttempts(3), func() {
-				By("Creating batch of 100 events")
-				events := make([]map[string]interface{}, 100)
+				By("Creating batch of 100 events using ogen types")
+				ctx := context.Background()
+				client, err := createOpenAPIClient(datastorageURL)
+				Expect(err).ToNot(HaveOccurred())
+
+				timestamp := time.Now().Add(-5 * time.Second).UTC()
+				events := make([]ogenclient.AuditEventRequest, 100)
 				for i := 0; i < 100; i++ {
-					events[i] = map[string]interface{}{
-						"version":         "1.0",
-						"event_type":      "gateway.signal.received",
-						"event_category":  "gateway",
-						"event_action":    "signal_received",
-						"event_outcome":   "success",
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  testCorrelationID + "-large",
-						"event_data":      map[string]interface{}{"index": i},
+					events[i] = ogenclient.AuditEventRequest{
+						Version:        "1.0",
+						EventType:      "gateway.signal.received",
+						EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+						EventAction:    "signal_received",
+						EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventTimestamp: timestamp,
+						CorrelationID:  testCorrelationID + "-large",
+						EventData: ogenclient.AuditEventRequestEventData{
+							Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+							GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+								EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+								SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+								AlertName:   "LargeBatchTest",
+								Namespace:   "default",
+								Fingerprint: "test-fingerprint-large",
+							},
+						},
 					}
 				}
 
-				body, _ := json.Marshal(events)
-				req, _ := http.NewRequest("POST", datastorageURL+"/api/v1/audit/events/batch", bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
-
+				By("Sending batch using ogen client")
 				start := time.Now()
-				resp, err := http.DefaultClient.Do(req)
+				eventIDs, err := postAuditEventBatch(ctx, client, events)
 				duration := time.Since(start)
 				Expect(err).ToNot(HaveOccurred())
-				defer func() { _ = resp.Body.Close() }()
-
-				By("Verifying 201 Created response")
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
 				By("Verifying response contains 100 event_ids")
-				var response map[string]interface{}
-				_ = json.NewDecoder(resp.Body).Decode(&response)
-				eventIDs, _ := response["event_ids"].([]interface{})
 				Expect(eventIDs).To(HaveLen(100))
 
-			// ✅ CORRECTNESS: All 100 events in database
-			By("Verifying all 100 events persisted in database")
-			// Handle async HTTP API processing - large batch may take longer to commit
-			Eventually(func() int {
-				var count int
-				err := db.QueryRow(`
-					SELECT COUNT(*) FROM audit_events
-					WHERE correlation_id = $1
-				`, testCorrelationID+"-large").Scan(&count)
-				if err != nil {
-					return -1
-				}
-				return count
-			}, 10*time.Second, 100*time.Millisecond).Should(Equal(100),
-				"All 100 events should be persisted in database after async processing")
+				// ✅ CORRECTNESS: All 100 events in database
+				By("Verifying all 100 events persisted in database")
+				// Handle async HTTP API processing - large batch may take longer to commit
+				Eventually(func() int {
+					var count int
+					err := db.QueryRow(`
+						SELECT COUNT(*) FROM audit_events
+						WHERE correlation_id = $1
+					`, testCorrelationID+"-large").Scan(&count)
+					if err != nil {
+						return -1
+					}
+					return count
+				}, 10*time.Second, 100*time.Millisecond).Should(Equal(100),
+					"All 100 events should be persisted in database after async processing")
 
 				// Performance check (should be <5s for 100 events)
 				Expect(duration).To(BeNumerically("<", 5*time.Second),

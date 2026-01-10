@@ -28,6 +28,8 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // Test 09: Signal Validation & Rejection (BR-GATEWAY-003, BR-GATEWAY-043)
@@ -134,7 +136,7 @@ var _ = Describe("Test 09: Signal Validation & Rejection (BR-GATEWAY-003)", Orde
 		testLogger.Info("Step 4: Verify Gateway accepts valid payload")
 
 		validPayload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-			AlertName: fmt.Sprintf("ValidationTest-%d", time.Now().UnixNano()),
+			AlertName: fmt.Sprintf("ValidationTest-%s", uuid.New().String()[:8]),
 			Namespace: "default",
 			PodName:   "validation-test-pod",
 			Severity:  "warning",

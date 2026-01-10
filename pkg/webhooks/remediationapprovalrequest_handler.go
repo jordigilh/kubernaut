@@ -25,6 +25,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -111,19 +112,20 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// Per DD-WEBHOOK-003 lines 314-318: Business context ONLY (attribution in structured columns)
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := RemediationApprovalAuditPayload{
+	payload := api.RemediationApprovalAuditPayload{
+		EventType:       "webhook.approval.decided",
 		RequestName:     rar.Name,
-		Decision:        string(rar.Status.Decision),
+		Decision:        toRemediationApprovalAuditPayloadDecision(string(rar.Status.Decision)),
 		DecidedAt:       rar.Status.DecidedAt.Time,
-		DecisionMessage: rar.Status.DecisionMessage,  // Per DD-WEBHOOK-003 line 316
-		AIAnalysisRef:   rar.Spec.AIAnalysisRef.Name, // Per DD-WEBHOOK-003 line 317
+		DecisionMessage: rar.Status.DecisionMessage, // Per DD-WEBHOOK-003 line 316
+		AiAnalysisRef:   rar.Spec.AIAnalysisRef.Name, // Per DD-WEBHOOK-003 line 317 (note: lowercase 'i' in ogen)
 	}
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: rar.Name (via audit.SetResource)
 	// - namespace: rar.Namespace (via audit.SetNamespace)
 	// - event_action: "approval_decided" (via audit.SetEventAction)
-	audit.SetEventData(auditEvent, payload)
+	auditEvent.EventData = api.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {

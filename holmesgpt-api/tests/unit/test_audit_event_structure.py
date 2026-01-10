@@ -207,7 +207,7 @@ class TestAuditEventStructure:
             attempt=1, max_attempts=3,
             is_valid=True, errors=[]
         )
-        assert event3["event_outcome"] == "success"
+        assert event3.event_outcome == "success"
 
     def test_tool_call_event_structure(self):
         """ADR-034: Tool call event has required envelope and data fields."""

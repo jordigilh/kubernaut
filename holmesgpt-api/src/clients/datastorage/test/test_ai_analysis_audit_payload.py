@@ -36,7 +36,7 @@ class TestAIAnalysisAuditPayload(unittest.TestCase):
         model = AIAnalysisAuditPayload()
         if include_optional:
             return AIAnalysisAuditPayload(
-                event_type = '',
+                event_type = 'aianalysis.analysis.completed',
                 analysis_name = 'diagnose-payment-api-2025-12-17-abc123',
                 namespace = 'payment',
                 phase = 'Pending',
@@ -64,7 +64,7 @@ class TestAIAnalysisAuditPayload(unittest.TestCase):
             )
         else:
             return AIAnalysisAuditPayload(
-                event_type = '',
+                event_type = 'aianalysis.analysis.completed',
                 analysis_name = 'diagnose-payment-api-2025-12-17-abc123',
                 namespace = 'payment',
                 phase = 'Pending',
