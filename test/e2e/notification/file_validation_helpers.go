@@ -57,16 +57,17 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 
 	for time.Now().Before(deadline) {
 		// List files in pod matching pattern
+		// Use -exec basename to get just the filename, not the full path
 		cmd := exec.CommandContext(ctx, "kubectl",
 			"--kubeconfig", kubeconfigPath,
 			"-n", controllerNamespace,
 			"exec", podName,
 			"--", "sh", "-c",
-			fmt.Sprintf("ls /tmp/notifications/%s 2>/dev/null || true", pattern))
+			fmt.Sprintf("cd /tmp/notifications && ls %s 2>/dev/null || true", pattern))
 
 		output, err := cmd.CombinedOutput()
 		if err == nil && len(output) > 0 {
-			// Found at least one file
+			// Found at least one file (just filename, not full path)
 			files := strings.Split(strings.TrimSpace(string(output)), "\n")
 			if len(files) > 0 && files[0] != "" {
 				foundFile = files[0]
@@ -85,8 +86,9 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 
 	// Copy file from pod to host
 	// kubectl cp format with -n flag: podname:/path (no namespace prefix needed)
+	// foundFile is just the filename (from `cd && ls`), so append to directory
 	podPath := fmt.Sprintf("%s:/tmp/notifications/%s", podName, foundFile)
-	hostPath := filepath.Join(tmpDir, filepath.Base(foundFile))
+	hostPath := filepath.Join(tmpDir, foundFile)
 
 	cmd := exec.CommandContext(ctx, "kubectl",
 		"--kubeconfig", kubeconfigPath,
@@ -109,12 +111,13 @@ func ListFilesInPod(ctx context.Context, pattern string) ([]string, error) {
 		return nil, fmt.Errorf("failed to get pod name: %w", err)
 	}
 
+	// Use cd to get just filenames, not full paths
 	cmd := exec.CommandContext(ctx, "kubectl",
 		"--kubeconfig", kubeconfigPath,
 		"-n", controllerNamespace,
 		"exec", podName,
 		"--", "sh", "-c",
-		fmt.Sprintf("ls /tmp/notifications/%s 2>/dev/null || true", pattern))
+		fmt.Sprintf("cd /tmp/notifications && ls %s 2>/dev/null || true", pattern))
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
