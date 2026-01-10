@@ -36,7 +36,7 @@ class TestRemediationOrchestratorAuditPayload(unittest.TestCase):
         model = RemediationOrchestratorAuditPayload()
         if include_optional:
             return RemediationOrchestratorAuditPayload(
-                event_type = '',
+                event_type = 'orchestrator.lifecycle.started',
                 rr_name = 'restart-payment-api-2025-12-17-abc123',
                 namespace = 'payment',
                 outcome = 'Success',
@@ -51,11 +51,23 @@ class TestRemediationOrchestratorAuditPayload(unittest.TestCase):
                     stack_trace = ["/path/to/file.go:123 function.Name"], ),
                 from_phase = '',
                 to_phase = '',
-                transition_reason = ''
+                transition_reason = '',
+                rar_name = 'approve-payment-api-restart-2025-12-17-xyz789',
+                required_by = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
+                workflow_id = '',
+                confidence_str = '',
+                decision = 'Approved',
+                approved_by = '',
+                rejected_by = '',
+                rejection_reason = '',
+                message = '',
+                reason = '',
+                sub_reason = '',
+                notification_name = ''
             )
         else:
             return RemediationOrchestratorAuditPayload(
-                event_type = '',
+                event_type = 'orchestrator.lifecycle.started',
                 rr_name = 'restart-payment-api-2025-12-17-abc123',
                 namespace = 'payment',
         )

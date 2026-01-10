@@ -27,6 +27,8 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
+
+	"github.com/google/uuid"
 )
 
 // WorkflowExecution Lifecycle E2E Tests
@@ -42,7 +44,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 	Context("BR-WE-001: Remediation Completes Within SLA", func() {
 		It("should execute workflow to completion", func() {
 			// Unique target for this test
-			testName := fmt.Sprintf("e2e-lifecycle-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-lifecycle-%s", uuid.New().String()[:8])
 			targetResource := "default/deployment/test-app"
 			wfe := createTestWFE(testName, targetResource)
 
@@ -122,8 +124,8 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 	Context("BR-WE-004: Failure Details Actionable", func() {
 		It("should populate failure details when workflow fails", func() {
 			// Create a WFE that uses the intentionally failing pipeline
-			testName := fmt.Sprintf("e2e-failure-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/fail-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-failure-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/fail-test-%s", uuid.New().String()[:8])
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -193,8 +195,8 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 			// Business Outcome: Controller handles edge cases gracefully without crashing
 			// This validates that missing CompletionTime doesn't cause panics or deadlocks
 
-			testName := fmt.Sprintf("e2e-cooldown-no-completion-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/cooldown-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-cooldown-no-completion-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/cooldown-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {

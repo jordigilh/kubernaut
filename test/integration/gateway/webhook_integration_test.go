@@ -435,8 +435,8 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			crd := crdList.Items[0]
 			Expect(crd.Spec.SignalName).To(Equal("OOMKilled"),
 				"Event reason helps AI identify root cause")
-			Expect(crd.Spec.SignalType).To(Equal("webhook"),
-				"Signal type - ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeWebhook")
+			Expect(crd.Spec.SignalType).To(Equal("kubernetes-event"),
+				"Signal type - ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeKubernetesEvent")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ K8s events trigger remediation workflow
@@ -573,7 +573,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// Find the CRD for this event
 			var targetCRD *remediationv1alpha1.RemediationRequest
 			for i := range crdList.Items {
-				if crdList.Items[i].Spec.SignalType == "webhook" { // ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeWebhook
+				if crdList.Items[i].Spec.SignalType == "kubernetes-event" { // ✅ ADAPTER-CONSTANT: KubernetesEventAdapter uses SourceTypeKubernetesEvent
 					targetCRD = &crdList.Items[i]
 					break
 				}

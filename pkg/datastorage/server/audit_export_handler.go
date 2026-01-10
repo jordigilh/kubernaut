@@ -21,9 +21,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
+	"strconv"
+
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/pii"
@@ -328,7 +330,7 @@ func (s *Server) buildExportResponse(
 	// Add detached signature if requested
 	if includeDetachedSignature {
 		detachedSig := s.buildDetachedSignature(signature, algorithm, certFingerprint)
-		response.DetachedSignature = &detachedSig
+		response.DetachedSignature.SetTo(detachedSig)
 	}
 
 	return &response, nil
@@ -399,20 +401,34 @@ Certificate-Fingerprint: %s
 func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) error {
 	redactor := pii.NewRedactor()
 
-	// Redact exported_by field (if it's an email)
-	if response.ExportMetadata.ExportedBy != nil && *response.ExportMetadata.ExportedBy != "" {
-		redacted := redactor.RedactString(*response.ExportMetadata.ExportedBy)
-		response.ExportMetadata.ExportedBy = &redacted
+	// Redact exported_by field (if it's an email) - OGEN-MIGRATION: Use OptString pattern
+	if response.ExportMetadata.ExportedBy.IsSet() && response.ExportMetadata.ExportedBy.Value != "" {
+		redacted := redactor.RedactString(response.ExportMetadata.ExportedBy.Value)
+		response.ExportMetadata.ExportedBy.SetTo(redacted)
 	}
 
-	// Redact PII in event_data fields
+	// Redact PII in event_data fields - OGEN-MIGRATION: OptAuditExportResponseEventsItemEventData
 	for i := range response.Events {
 		event := &response.Events[i]
-		if event.EventData != nil {
-			// event.EventData is already *map[string]interface{} in the generated type
-			// Apply redaction to the map
-			redactedData := redactor.RedactMapByFieldNames(*event.EventData, pii.PIIFields)
-			event.EventData = &redactedData
+		if event.EventData.IsSet() {
+			// event.EventData is OptAuditExportResponseEventsItemEventData (map[string]jx.Raw)
+			// Convert to map[string]interface{} for redaction, then back
+			eventDataMap := make(map[string]interface{})
+			for k, v := range event.EventData.Value {
+				var val interface{}
+				json.Unmarshal(v, &val)
+				eventDataMap[k] = val
+			}
+
+			redactedData := redactor.RedactMapByFieldNames(eventDataMap, pii.PIIFields)
+
+			// Convert back to map[string]jx.Raw
+			redactedOgen := make(api.AuditExportResponseEventsItemEventData)
+			for k, v := range redactedData {
+				jsonBytes, _ := json.Marshal(v)
+				redactedOgen[k] = jsonBytes
+			}
+			event.EventData.SetTo(redactedOgen)
 		}
 	}
 

@@ -175,40 +175,9 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	})
 
 	// ========================================
-	// Scenario 2: Partial Failure Handling
+	// Scenario 2: Log Channel Structured Output
 	// ========================================
-	// 📋 **TEST MIGRATION NOTICE** (2026-01-10)
-	// ========================================
-	// This test has been **MIGRATED TO INTEGRATION TIER**.
-	//
-	// **Why Integration Instead of E2E?**
-	// - ✅ Mock services provide deterministic channel failure simulation
-	// - ✅ Faster execution (~seconds vs ~minutes)
-	// - ✅ Can test all failure combinations (any channel fails)
-	// - ✅ No file system or infrastructure dependencies
-	//
-	// **What Was Migrated?**
-	// - ❌ E2E Pending Test: Partial failure handling (PIt)
-	// - ✅ Integration Test: `test/integration/notification/controller_partial_failure_test.go`
-	//
-	// **Coverage Status**:
-	// - ✅ Partial failure: Integration tier (mock service failures)
-	// - ✅ Successful multi-channel: E2E tier (Scenario 1 above)
-	// - ✅ All channels fail: Integration tier (controller_partial_failure_test.go)
-	//
-	// **Related**:
-	// - Integration Test: `test/integration/notification/controller_partial_failure_test.go`
-	// - Design Decision: DD-NOT-006 v2 (FileDeliveryConfig removal)
-	// ========================================
-	Context("Scenario 2: One channel fails, others succeed", func() {
-		// All tests migrated to integration tier
-		// See: test/integration/notification/controller_partial_failure_test.go
-	})
-
-	// ========================================
-	// Scenario 3: Log Channel Structured Output
-	// ========================================
-	Context("Scenario 3: Log channel outputs structured JSON", func() {
+	Context("Scenario 2: Log channel outputs structured JSON", func() {
 		It("should output notification as structured JSON to stdout", func() {
 			By("Creating NotificationRequest with log channel only")
 

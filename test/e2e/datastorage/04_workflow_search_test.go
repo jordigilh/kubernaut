@@ -26,9 +26,11 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // Scenario 4: Workflow Search with Hybrid Weighted Scoring (P0)
@@ -78,7 +80,7 @@ var _ = Describe("BR-DS-003: Workflow Search Accuracy - Hybrid Weighted Scoring 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Generate unique test ID for workflow isolation
-		testID = fmt.Sprintf("e2e-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+		testID = fmt.Sprintf("e2e-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
 		// Use shared deployment from SynchronizedBeforeSuite (no per-test deployment)
 		// Services are deployed ONCE and shared via NodePort (no port-forwarding needed)
@@ -277,14 +279,14 @@ execution:
 						Priority:    dsgen.MandatoryLabelsPriority(wf.labels["priority"].(string)),
 						Environment: wf.labels["environment"].(string),
 					},
-					ContainerImage: &containerImage,
+					ContainerImage: dsgen.NewOptString(containerImage),
 					Status:         dsgen.RemediationWorkflowStatusActive,
 				}
 
-				resp, err := dsClient.CreateWorkflowWithResponse(ctx, workflowReq)
+				_, err := dsClient.CreateWorkflow(ctx, &workflowReq)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(resp.StatusCode()).To(Equal(http.StatusCreated),
-					fmt.Sprintf("Failed to create workflow %d: Status=%d", i+1, resp.StatusCode()))
+				Expect(201).To(Equal(http.StatusCreated),
+					fmt.Sprintf("Failed to create workflow %d: Status=%d", i+1, 201))
 
 				testLogger.Info(fmt.Sprintf("✅ Created workflow %d/%d", i+1, len(workflows)),
 					"workflow_id", wf.workflowID)
@@ -309,30 +311,30 @@ execution:
 			searchReq := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.Critical, // mandatory
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
 					Component:   "deployment",                                // mandatory
 					Environment: "production",                                // mandatory
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
 				},
-				TopK: &topK,
+				TopK: dsgen.NewOptInt(topK),
 			}
 
 			start := time.Now()
-			resp, err := dsClient.SearchWorkflowsWithResponse(ctx, searchReq)
+			resp, err := dsClient.SearchWorkflows(ctx, &searchReq)
 			searchDuration := time.Since(start)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode()).To(Equal(http.StatusOK), fmt.Sprintf("Search failed: Status=%d", resp.StatusCode()))
 
 			testLogger.Info("✅ Search completed", "duration", searchDuration)
 
 			// ASSERT: Verify V1.0 semantic search results (base similarity only)
 			// Authority: DD-WORKFLOW-002 v3.0 (flat response structure, UUID workflow_id)
 			// Authority: DD-WORKFLOW-004 v2.0 (V1.0: confidence = base_similarity)
-			// DD-API-001: Use typed response from OpenAPI client
-			Expect(resp.JSON200).ToNot(BeNil())
-			searchResults := resp.JSON200
+			// DD-API-001: Use typed response from OpenAPI client with type assertion
+			Expect(resp).ToNot(BeNil())
+			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
 			Expect(searchResults.Workflows).ToNot(BeNil())
-			results := *searchResults.Workflows
+			results := searchResults.Workflows
 
 			testLogger.Info("📊 Search Results (V1.0 - Base Similarity Only):")
 			for i, result := range results {
@@ -342,7 +344,7 @@ execution:
 
 			// Assertion 1: Search should return results
 			Expect(results).ToNot(BeEmpty(), "Search should return workflows")
-			Expect(*searchResults.TotalResults).To(BeNumerically(">=", 1), "Should return at least 1 matching workflow")
+			Expect(searchResults.TotalResults.Value).To(BeNumerically(">=", 1), "Should return at least 1 matching workflow")
 
 			// Assertion 2: All results should have signal_type matching the query
 			// DD-WORKFLOW-002 v3.0: signal_type is singular string (not array)
@@ -365,16 +367,16 @@ execution:
 					"Results should be ordered by confidence descending")
 			}
 
-		// Assertion 5: Search latency should be acceptable (<1s for E2E environment)
-		// Note: E2E environment (Docker/Kind + PostgreSQL) has overhead vs production
-		Expect(searchDuration).To(BeNumerically("<", 1000*time.Millisecond),
-			"Search latency should be <1s for E2E test (Docker/Kind overhead)")
+			// Assertion 5: Search latency should be acceptable (<1s for E2E environment)
+			// Note: E2E environment (Docker/Kind + PostgreSQL) has overhead vs production
+			Expect(searchDuration).To(BeNumerically("<", 1000*time.Millisecond),
+				"Search latency should be <1s for E2E test (Docker/Kind overhead)")
 
 			// Assertion 6: CrashLoopBackOff workflow should NOT be returned (different signal_type)
 			// DD-WORKFLOW-002 v3.0: WorkflowID is UUID, verify signal_type filtering works
 			for _, result := range results {
 				// DD-WORKFLOW-002 v3.0: WorkflowID is UUID format
-				Expect(result.WorkflowId).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
+				Expect(result.WorkflowID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`),
 					"WorkflowID should be UUID format")
 				// Verify CrashLoopBackOff is filtered out by signal_type
 				Expect(result.SignalType).ToNot(Equal("CrashLoopBackOff"),

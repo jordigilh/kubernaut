@@ -110,7 +110,7 @@ var _ = BeforeSuite(func() {
     // Register webhook handlers (pkg/authwebhook not yet implemented, will be in GREEN phase)
     // For now, we'll register placeholder handlers that will be replaced
     authenticator := authwebhook.NewAuthenticator()
-    
+
     webhookServer.Register("/mutate-workflowexecution",
         authwebhook.NewWorkflowExecutionHandler(authenticator))
     webhookServer.Register("/mutate-remediationapprovalrequest",

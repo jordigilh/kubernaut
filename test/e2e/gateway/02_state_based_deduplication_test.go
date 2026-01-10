@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Test 02: State-Based Deduplication (DD-GATEWAY-009)
@@ -63,7 +65,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("dedup-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("dedup-%d-%s", processID, uuid.New().String()[:8])
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
@@ -113,7 +115,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		// Step 1: Send multiple alerts with same alertname to trigger storm threshold
 		// This ensures CRD creation via storm aggregation
 		testLogger.Info("Step 1: Send 5 alerts with same alertname to trigger storm threshold")
-		alertName1 := fmt.Sprintf("DedupTest1-%d", time.Now().UnixNano())
+		alertName1 := fmt.Sprintf("DedupTest1-%s", uuid.New().String()[:8])
 
 		for i := 0; i < 5; i++ {
 			podName := fmt.Sprintf("dedup-pod-%d", i)
@@ -188,7 +190,7 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		// Step 3: Send different alert (different alertname) - also trigger threshold
 		testLogger.Info("")
 		testLogger.Info("Step 3: Send 5 alerts with different alertname")
-		alertName2 := fmt.Sprintf("DedupTest2-%d", time.Now().UnixNano())
+		alertName2 := fmt.Sprintf("DedupTest2-%s", uuid.New().String()[:8])
 
 		for i := 0; i < 5; i++ {
 			podName := fmt.Sprintf("dedup2-pod-%d", i)

@@ -19,10 +19,10 @@ package audit
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	pkgaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -146,23 +146,10 @@ func NewWorkflowSearchAuditEventBuilder(
 // - CorrelationID: remediation_id from request
 // - EventData: Structured WorkflowSearchEventData (as map)
 //
-// DD-AUDIT-002 V2.0: Uses OpenAPI types directly
+// DD-AUDIT-002 V2.0: Uses OpenAPI types directly (no unstructured data!)
 func (b *WorkflowSearchAuditEventBuilder) Build() (*ogenclient.AuditEventRequest, error) {
 	// Generate resource ID from query hash
 	resourceID := b.generateQueryHash()
-
-	// Build structured event_data
-	eventData := b.buildEventData()
-	eventDataBytes, err := json.Marshal(eventData)
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert to map for OpenAPI type
-	var eventDataMap map[string]interface{}
-	if err := json.Unmarshal(eventDataBytes, &eventDataMap); err != nil {
-		return nil, err
-	}
 
 	// Calculate duration in milliseconds
 	durationMs := int(b.duration.Milliseconds())
@@ -177,7 +164,15 @@ func (b *WorkflowSearchAuditEventBuilder) Build() (*ogenclient.AuditEventRequest
 	pkgaudit.SetActor(event, "service", "datastorage")
 	pkgaudit.SetResource(event, "workflow_catalog", resourceID)
 	pkgaudit.SetDuration(event, durationMs)
-	pkgaudit.SetEventData(event, eventDataMap)
+
+	// Build structured event_data using ogen-generated types (OGEN-MIGRATION)
+	payload := ogenclient.WorkflowSearchAuditPayload{
+		EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+		Query:          b.buildQueryMetadataOgen(),
+		Results:        b.buildResultsMetadataOgen(),
+		SearchMetadata: b.buildSearchMetadataOgen(),
+	}
+	event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
 
 	// BR-AUDIT-023: Use remediation_id as correlation_id if provided, else use query hash
 	if b.request.RemediationID != "" {
@@ -271,6 +266,114 @@ func (b *WorkflowSearchAuditEventBuilder) buildSearchMetadata() SearchExecutionM
 	}
 }
 
+// ========================================
+// OGEN-MIGRATION: New builder methods for ogen types
+// ========================================
+
+// buildQueryMetadataOgen constructs QueryMetadata using ogen-generated types.
+func (b *WorkflowSearchAuditEventBuilder) buildQueryMetadataOgen() ogenclient.QueryMetadata {
+	query := ogenclient.QueryMetadata{
+		TopK: int32(b.request.TopK),
+	}
+
+	// Set optional fields
+	if b.request.MinScore > 0 {
+		query.MinScore.SetTo(b.request.MinScore)
+	}
+
+	if b.request.Filters != nil {
+		// Convert models.WorkflowSearchFilters to ogenclient.WorkflowSearchFilters
+		// Map the mandatory labels from models to ogen types
+		filters := ogenclient.WorkflowSearchFilters{
+			SignalType:  b.request.Filters.SignalType,
+			Component:   b.request.Filters.Component,
+			Environment: b.request.Filters.Environment,
+		}
+
+		// Map enum fields
+		switch b.request.Filters.Severity {
+		case "critical":
+			filters.Severity = ogenclient.WorkflowSearchFiltersSeverityCritical
+		case "high":
+			filters.Severity = ogenclient.WorkflowSearchFiltersSeverityHigh
+		case "medium":
+			filters.Severity = ogenclient.WorkflowSearchFiltersSeverityMedium
+		case "low":
+			filters.Severity = ogenclient.WorkflowSearchFiltersSeverityLow
+		}
+
+		switch b.request.Filters.Priority {
+		case "P0":
+			filters.Priority = ogenclient.WorkflowSearchFiltersPriorityP0
+		case "P1":
+			filters.Priority = ogenclient.WorkflowSearchFiltersPriorityP1
+		case "P2":
+			filters.Priority = ogenclient.WorkflowSearchFiltersPriorityP2
+		case "P3":
+			filters.Priority = ogenclient.WorkflowSearchFiltersPriorityP3
+		}
+
+		query.Filters.SetTo(filters)
+	}
+
+	return query
+}
+
+// buildResultsMetadataOgen constructs ResultsMetadata using ogen-generated types.
+func (b *WorkflowSearchAuditEventBuilder) buildResultsMetadataOgen() ogenclient.ResultsMetadata {
+	workflows := make([]ogenclient.WorkflowResultAudit, 0, len(b.response.Workflows))
+
+	for i, result := range b.response.Workflows {
+		workflow := b.buildWorkflowMetadataOgen(result, i+1)
+		workflows = append(workflows, workflow)
+	}
+
+	return ogenclient.ResultsMetadata{
+		TotalFound: int32(b.response.TotalResults),
+		Returned:   int32(len(b.response.Workflows)),
+		Workflows:  workflows,
+	}
+}
+
+// buildWorkflowMetadataOgen constructs WorkflowResultAudit using ogen-generated types.
+func (b *WorkflowSearchAuditEventBuilder) buildWorkflowMetadataOgen(result models.WorkflowSearchResult, rank int) ogenclient.WorkflowResultAudit {
+	// Parse WorkflowID string to UUID
+	workflowUUID, err := uuid.Parse(result.WorkflowID)
+	if err != nil {
+		// Fallback to zero UUID if parse fails
+		workflowUUID = uuid.Nil
+	}
+
+	workflow := ogenclient.WorkflowResultAudit{
+		WorkflowID: workflowUUID,
+		Title:      result.Title,
+		Rank:       int32(rank),
+		Scoring: ogenclient.ScoringV1Audit{
+			Confidence: result.Confidence,
+		},
+	}
+
+	// Set optional fields
+	if result.Description != "" {
+		workflow.Description.SetTo(result.Description)
+	}
+
+	// Note: models.WorkflowSearchResult doesn't have Owner/Maintainer/Labels fields
+	// These are part of the full Workflow model, not the search result
+	// The search result focuses on scoring and core identification fields
+
+	return workflow
+}
+
+// buildSearchMetadataOgen constructs SearchExecutionMetadata using ogen-generated types.
+func (b *WorkflowSearchAuditEventBuilder) buildSearchMetadataOgen() ogenclient.SearchExecutionMetadata {
+	return ogenclient.SearchExecutionMetadata{
+		DurationMs:          b.duration.Milliseconds(),
+		EmbeddingDimensions: 768, // all-mpnet-base-v2
+		EmbeddingModel:      "all-mpnet-base-v2",
+	}
+}
+
 // generateQueryHash generates a unique identifier for the search query.
 // V1.0: Hash based on filters (label-only search, no query text)
 func (b *WorkflowSearchAuditEventBuilder) generateQueryHash() string {
@@ -341,15 +444,15 @@ func ValidateWorkflowAuditEvent(event *ogenclient.AuditEventRequest) error {
 		return &ValidationError{Field: "event", Message: "event is nil"}
 	}
 
-	if event.EventData == nil {
-		return &ValidationError{Field: "event_data", Message: "event_data is nil"}
+	// V2.0: Use ogen discriminated union (DD-AUDIT-004, OGEN-MIGRATION)
+	// EventData is now a struct with discriminated union, not an interface
+	if !event.EventData.IsWorkflowSearchAuditPayload() {
+		return &ValidationError{Field: "event_data", Message: "event_data must be WorkflowSearchAuditPayload"}
 	}
 
-	// V2.0: Direct type assertion to OpenAPI-generated struct (DD-AUDIT-004)
-	// No backwards compatibility needed (pre-release product)
-	eventData, ok := event.EventData.(*ogenclient.WorkflowSearchAuditPayload)
+	eventData, ok := event.EventData.GetWorkflowSearchAuditPayload()
 	if !ok {
-		return &ValidationError{Field: "event_data", Message: "event_data must be *ogenclient.WorkflowSearchAuditPayload"}
+		return &ValidationError{Field: "event_data", Message: "failed to get WorkflowSearchAuditPayload from event_data"}
 	}
 
 	// Query field validation (using OpenAPI-generated types)

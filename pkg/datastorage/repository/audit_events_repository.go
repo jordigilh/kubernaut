@@ -308,7 +308,7 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal event_data: %w", err)
 	}
-	
+
 	// Normalize: unmarshal and remarshal to match PostgreSQL's representation
 	var normalizedEventData map[string]interface{}
 	if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {

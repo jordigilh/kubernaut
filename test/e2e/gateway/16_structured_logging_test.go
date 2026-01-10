@@ -31,6 +31,8 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/google/uuid"
 )
 
 var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-GATEWAY-075)", Ordered, func() {
@@ -105,7 +107,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		processID := GinkgoParallelProcess()
-		uniqueMarker := fmt.Sprintf("LoggingTest-p%d-%d", processID, time.Now().UnixNano())
+		uniqueMarker := fmt.Sprintf("LoggingTest-p%d-%s", processID, uuid.New().String()[:8])
 
 		testLogger.Info("Step 1: Send alert with unique marker")
 		alertPayload := map[string]interface{}{

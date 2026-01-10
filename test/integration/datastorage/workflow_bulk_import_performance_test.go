@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -35,7 +35,7 @@ import (
 
 var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations",  Label("integration", "datastorage", "gap-4.2", "p1"), func() {
 	var (
-		client *dsgen.ClientWithResponses
+		client *ogenclient.Client
 		ctx    context.Context
 	)
 
@@ -78,51 +78,46 @@ var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations",  Label("integratio
 				content := fmt.Sprintf(`{"steps":[{"action":"scale","replicas":%d}]}`, i)
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-				// Build typed workflow request
-				workflowName := fmt.Sprintf("bulk-import-%s-workflow-%d", testID, i)
-				version := "v1.0.0"
-				name := fmt.Sprintf("Bulk Import Test Workflow %d", i)
-				description := fmt.Sprintf("Test workflow %d for bulk import performance", i)
-				status := dsgen.RemediationWorkflowStatusActive
-				executionEngine := "argo-workflows"
+			// Build typed workflow request
+			workflowName := fmt.Sprintf("bulk-import-%s-workflow-%d", testID, i)
+			version := "v1.0.0"
+			name := fmt.Sprintf("Bulk Import Test Workflow %d", i)
+			description := fmt.Sprintf("Test workflow %d for bulk import performance", i)
+			status := ogenclient.RemediationWorkflowStatusActive
+			executionEngine := "argo-workflows"
 
-				// V1.0: Use structured MandatoryLabels
-				labels := dsgen.MandatoryLabels{
-					SignalType:  "bulk-import-test",
-					Severity:    "low",
-					Component:   fmt.Sprintf("component-%d", i%10), // 10 different components
-					Priority:    "P2",
-					Environment: "testing",
-				}
+			// V1.0: Use structured MandatoryLabels
+			labels := ogenclient.MandatoryLabels{
+				SignalType:  "bulk-import-test",
+				Severity:    "low",
+				Component:   fmt.Sprintf("component-%d", i%10), // 10 different components
+				Priority:    "P2",
+				Environment: "testing",
+			}
 
-				workflow := dsgen.RemediationWorkflow{
-					WorkflowName:    workflowName,
-					Version:         version,
-					Name:            name,
-					Description:     description,
-					Content:         content,
-					ContentHash:     contentHash,
-					Labels:          labels,
-					CustomLabels:    &dsgen.CustomLabels{},
-					DetectedLabels:  &dsgen.DetectedLabels{},
-					ExecutionEngine: executionEngine,
-					Status:          status,
-				}
+			workflow := ogenclient.RemediationWorkflow{
+				WorkflowName:    workflowName,
+				Version:         version,
+				Name:            name,
+				Description:     description,
+				Content:         content,
+				ContentHash:     contentHash,
+				Labels:          labels,
+				CustomLabels:    ogenclient.OptCustomLabels{},
+				DetectedLabels:  ogenclient.OptDetectedLabels{},
+				ExecutionEngine: executionEngine,
+				Status:          status,
+			}
 
-				// Use OpenAPI client to create workflow
-				resp, err := client.CreateWorkflowWithResponse(ctx, workflow)
-				if err != nil {
-					GinkgoWriter.Printf("❌ Failed to create workflow %d: %v\n", i, err)
-					failedWorkflows = append(failedWorkflows, i)
-					continue
-				}
+		// Use OpenAPI client to create workflow
+		_, err := createWorkflow(ctx, client, workflow)
+			if err != nil {
+				GinkgoWriter.Printf("❌ Failed to create workflow %d: %v\n", i, err)
+				failedWorkflows = append(failedWorkflows, i)
+				continue
+			}
 
-				if resp.StatusCode() == 201 {
-					successCount++
-				} else {
-					GinkgoWriter.Printf("❌ Workflow %d: HTTP %d\n", i, resp.StatusCode())
-					failedWorkflows = append(failedWorkflows, i)
-				}
+			successCount++
 
 				// Progress indicator every 50 workflows
 				if (i+1)%50 == 0 {
@@ -172,30 +167,29 @@ var _ = Describe("GAP 4.2: Workflow Catalog Bulk Operations",  Label("integratio
 
 			// ACT: Execute workflow search after bulk import using OpenAPI client
 			topK := 10
-			// V1.0: Use generated enum types
-			filters := dsgen.WorkflowSearchFilters{
-				SignalType:  "bulk-import-test",
-				Severity:    dsgen.Low,
-				Component:   "component-0",
-				Priority:    dsgen.WorkflowSearchFiltersPriorityP2,
-				Environment: "testing",
-			}
+		// V1.0: Use generated enum types
+		filters := ogenclient.WorkflowSearchFilters{
+			SignalType:  "bulk-import-test",
+			Severity:    ogenclient.WorkflowSearchFiltersSeverityLow,
+			Component:   "component-0",
+			Priority:    ogenclient.WorkflowSearchFiltersPriorityP2,
+			Environment: "testing",
+		}
 
-			searchRequest := dsgen.WorkflowSearchRequest{
-				Filters: filters,
-				TopK:    &topK,
-			}
+		searchRequest := ogenclient.WorkflowSearchRequest{
+			Filters: filters,
+			TopK:    ogenclient.NewOptInt(topK),
+		}
 
-			// Measure search latency
-			startTime := time.Now()
-			resp, err := client.SearchWorkflowsWithResponse(ctx, searchRequest)
-			searchDuration := time.Since(startTime)
+		// Measure search latency
+		startTime := time.Now()
+	searchResult, err := searchWorkflows(ctx, client, searchRequest)
+	searchDuration := time.Since(startTime)
 
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode()).To(Equal(200))
-			Expect(resp.JSON200).ToNot(BeNil())
+	Expect(err).ToNot(HaveOccurred())
+		Expect(searchResult).ToNot(BeNil())
 
-			// ASSERT: Search remains performant (<500ms)
+		// ASSERT: Search remains performant (<500ms)
 			Expect(searchDuration.Milliseconds()).To(BeNumerically("<", 500),
 				fmt.Sprintf("Search after bulk import took %dms, exceeds 500ms target", searchDuration.Milliseconds()))
 

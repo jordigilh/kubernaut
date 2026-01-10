@@ -17,6 +17,7 @@ limitations under the License.
 package datastorage
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,12 +61,14 @@ var _ = Describe("Config Integration Tests (ADR-030)", func() {
 
 	Context("Main Application Config Loading", func() {
 		It("should load config and secrets from CONFIG_PATH and start successfully", func() {
-			validYAML := `
+			// Use unique port per parallel process to avoid conflicts
+			serverPort := 18090 + GinkgoParallelProcess()
+			validYAML := fmt.Sprintf(`
 server:
-  port: 18090 # DD-TEST-001
+  port: %d # DD-TEST-001 + process offset
   host: "127.0.0.1"
   read_timeout: 30s
-  write_timeout: 30s
+  write_timeout: 30s`, serverPort) + `
 database:
   host: localhost
   port: 15433 # DD-TEST-001
@@ -141,12 +144,14 @@ logging:
 		})
 
 		It("should fail to start if database secret file is missing", func() {
-			validYAML := `
+			// Use unique port per parallel process to avoid conflicts
+			serverPort := 18090 + GinkgoParallelProcess()
+			validYAML := fmt.Sprintf(`
 server:
-  port: 18090 # DD-TEST-001
+  port: %d # DD-TEST-001 + process offset
   host: "127.0.0.1"
   read_timeout: 30s
-  write_timeout: 30s
+  write_timeout: 30s`, serverPort) + `
 database:
   host: localhost
   port: 15433 # DD-TEST-001

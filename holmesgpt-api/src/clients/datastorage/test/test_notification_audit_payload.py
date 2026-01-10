@@ -36,14 +36,21 @@ class TestNotificationAuditPayload(unittest.TestCase):
         model = NotificationAuditPayload()
         if include_optional:
             return NotificationAuditPayload(
-                event_type = '',
+                event_type = 'webhook.notification.cancelled',
                 notification_id = 'alert-payment-api-2025-12-17-abc123',
                 notification_name = '',
-                type = 'email',
-                notification_type = 'email',
-                priority = 'P0',
+                type = 'escalation',
+                notification_type = 'escalation',
+                priority = 'critical',
                 final_status = 'Pending',
-                recipients = { },
+                recipients = [
+                    datastorage.models.notification_audit_payload_recipients_inner.NotificationAuditPayload_recipients_inner(
+                        email = 'user@example.com', 
+                        slack = '#alerts', 
+                        teams = 'team@company.com', 
+                        phone = '+1234567890', 
+                        webhook_url = 'https://example.com/webhook', )
+                    ],
                 cancelled_by = '',
                 user_uid = '',
                 user_groups = [
@@ -53,7 +60,7 @@ class TestNotificationAuditPayload(unittest.TestCase):
             )
         else:
             return NotificationAuditPayload(
-                event_type = '',
+                event_type = 'webhook.notification.cancelled',
         )
         """
 

@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
 	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
@@ -269,8 +270,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create audit helpers
-	auditHelpers := notification.NewAuditHelpers("notification-controller")
+	// Create audit manager (direct usage, no wrapper needed)
+	auditManager := notificationaudit.NewManager("notification-controller")
 
 	logger.Info("Audit store initialized",
 		"buffer_size", auditConfig.BufferSize,
@@ -376,7 +377,7 @@ func main() {
 		Metrics:              metricsRecorder,                                    // DD-METRICS-001: Injected metrics
 		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
 		AuditStore:           auditStore,                                         // ADR-032: Audit store
-		AuditHelpers:         auditHelpers,                                       // Audit helpers
+		AuditManager:         auditManager,                                       // Direct audit manager (no wrapper)
 		StatusManager:        statusManager,                                      // Pattern 2: Status Manager (P1)
 	}).SetupWithManager(mgr); err != nil {
 		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")

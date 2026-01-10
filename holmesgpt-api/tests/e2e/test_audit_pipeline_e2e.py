@@ -380,9 +380,15 @@ class TestAuditPipelineE2E:
         # ADR-034: incident_id and prompt info are in event_data
         event = llm_requests[0]
         assert event.correlation_id == unique_remediation_id
-        event_data = event.event_data if hasattr(event, 'event_data') else {}
-        assert event_data.get("incident_id") == unique_incident_id
-        assert "prompt_length" in event_data or "prompt_preview" in event_data
+        # event_data is a oneOf discriminated union - access actual_instance
+        event_data = event.event_data if hasattr(event, 'event_data') else None
+        assert event_data is not None, "event_data should be present"
+        assert hasattr(event_data, 'actual_instance'), "event_data should have actual_instance (oneOf wrapper)"
+        payload = event_data.actual_instance
+        assert hasattr(payload, 'incident_id'), "payload should have incident_id"
+        assert payload.incident_id == unique_incident_id
+        assert hasattr(payload, 'prompt_length') or hasattr(payload, 'prompt_preview'), \
+            "payload should have prompt_length or prompt_preview"
 
     def test_llm_response_event_persisted(
         self,
@@ -435,10 +441,14 @@ class TestAuditPipelineE2E:
         # ADR-034: Fields are in event_data
         event = llm_responses[0]
         assert event.correlation_id == unique_remediation_id
-        event_data = event.event_data if hasattr(event, 'event_data') else {}
-        assert event_data.get("incident_id") == unique_incident_id
-        assert "has_analysis" in event_data
-        assert "analysis_length" in event_data
+        # event_data is a oneOf discriminated union - access actual_instance
+        event_data = event.event_data if hasattr(event, 'event_data') else None
+        assert event_data is not None, "event_data should be present"
+        assert hasattr(event_data, 'actual_instance'), "event_data should have actual_instance (oneOf wrapper)"
+        payload = event_data.actual_instance
+        assert hasattr(payload, 'incident_id') and payload.incident_id == unique_incident_id
+        assert hasattr(payload, 'has_analysis'), "payload should have has_analysis"
+        assert hasattr(payload, 'analysis_length'), "payload should have analysis_length"
 
     def test_validation_attempt_event_persisted(
         self,
@@ -492,11 +502,15 @@ class TestAuditPipelineE2E:
         # ADR-034: Fields are in event_data
         event = validation_events[0]
         assert event.correlation_id == unique_remediation_id
-        event_data = event.event_data if hasattr(event, 'event_data') else {}
-        assert event_data.get("incident_id") == unique_incident_id
-        assert "attempt" in event_data
-        assert "max_attempts" in event_data
-        assert "is_valid" in event_data
+        # event_data is a oneOf discriminated union - access actual_instance
+        event_data = event.event_data if hasattr(event, 'event_data') else None
+        assert event_data is not None, "event_data should be present"
+        assert hasattr(event_data, 'actual_instance'), "event_data should have actual_instance (oneOf wrapper)"
+        payload = event_data.actual_instance
+        assert hasattr(payload, 'incident_id') and payload.incident_id == unique_incident_id
+        assert hasattr(payload, 'attempt'), "payload should have attempt"
+        assert hasattr(payload, 'max_attempts'), "payload should have max_attempts"
+        assert hasattr(payload, 'is_valid'), "payload should have is_valid"
 
     def test_complete_audit_trail_persisted(
         self,
@@ -559,7 +573,11 @@ class TestAuditPipelineE2E:
         # (exclude Data Storage self-audit events which have different structure)
         for event in hapi_events:
             assert event.correlation_id == unique_remediation_id, f"Inconsistent correlation_id in {event.event_type}"
-            event_data = event.event_data if hasattr(event, 'event_data') else {}
-            assert event_data.get("incident_id") == unique_incident_id, f"Inconsistent incident_id in {event.event_type}"
+            # event_data is a oneOf discriminated union - access actual_instance
+            event_data = event.event_data if hasattr(event, 'event_data') else None
+            if event_data is not None and hasattr(event_data, 'actual_instance'):
+                payload = event_data.actual_instance
+                if hasattr(payload, 'incident_id'):
+                    assert payload.incident_id == unique_incident_id, f"Inconsistent incident_id in {event.event_type}"
 
 

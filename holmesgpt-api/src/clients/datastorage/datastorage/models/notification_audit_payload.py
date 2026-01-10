@@ -21,6 +21,7 @@ import json
 from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
+from datastorage.models.notification_audit_payload_recipients_inner import NotificationAuditPayloadRecipientsInner
 try:
     from typing import Self
 except ImportError:
@@ -33,16 +34,23 @@ class NotificationAuditPayload(BaseModel):
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     notification_id: Optional[StrictStr] = Field(default=None, description="Name of the NotificationRequest")
     notification_name: Optional[StrictStr] = Field(default=None, description="Alias for notification_id")
-    type: Optional[StrictStr] = Field(default=None, description="Notification type")
-    notification_type: Optional[StrictStr] = Field(default=None, description="Alias for type")
-    priority: Optional[StrictStr] = Field(default=None, description="Notification priority")
-    final_status: Optional[StrictStr] = Field(default=None, description="Final status of the notification")
-    recipients: Optional[Dict[str, Any]] = Field(default=None, description="Notification recipients (structured type from CRD)")
+    type: Optional[StrictStr] = Field(default=None, description="Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40)")
+    notification_type: Optional[StrictStr] = Field(default=None, description="Alias for type (matches CRD NotificationType enum)")
+    priority: Optional[StrictStr] = Field(default=None, description="Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50)")
+    final_status: Optional[StrictStr] = Field(default=None, description="Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65)")
+    recipients: Optional[List[NotificationAuditPayloadRecipientsInner]] = Field(default=None, description="Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102)")
     cancelled_by: Optional[StrictStr] = Field(default=None, description="Username who cancelled the notification")
     user_uid: Optional[StrictStr] = Field(default=None, description="UID of the user who performed the action")
     user_groups: Optional[List[StrictStr]] = Field(default=None, description="Groups of the user who performed the action")
     action: Optional[StrictStr] = Field(default=None, description="Webhook action performed")
     __properties: ClassVar[List[str]] = ["event_type", "notification_id", "notification_name", "type", "notification_type", "priority", "final_status", "recipients", "cancelled_by", "user_uid", "user_groups", "action"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('webhook.notification.cancelled', 'webhook.notification.acknowledged'):
+            raise ValueError("must be one of enum values ('webhook.notification.cancelled', 'webhook.notification.acknowledged')")
+        return value
 
     @field_validator('type')
     def type_validate_enum(cls, value):
@@ -50,8 +58,8 @@ class NotificationAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('email', 'slack', 'pagerduty'):
-            raise ValueError("must be one of enum values ('email', 'slack', 'pagerduty')")
+        if value not in ('escalation', 'simple', 'status-update', 'approval', 'manual-review'):
+            raise ValueError("must be one of enum values ('escalation', 'simple', 'status-update', 'approval', 'manual-review')")
         return value
 
     @field_validator('notification_type')
@@ -60,8 +68,8 @@ class NotificationAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('email', 'slack', 'pagerduty'):
-            raise ValueError("must be one of enum values ('email', 'slack', 'pagerduty')")
+        if value not in ('escalation', 'simple', 'status-update', 'approval', 'manual-review'):
+            raise ValueError("must be one of enum values ('escalation', 'simple', 'status-update', 'approval', 'manual-review')")
         return value
 
     @field_validator('priority')
@@ -70,8 +78,8 @@ class NotificationAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('P0', 'P1', 'P2', 'P3', 'P4'):
-            raise ValueError("must be one of enum values ('P0', 'P1', 'P2', 'P3', 'P4')")
+        if value not in ('critical', 'high', 'medium', 'low'):
+            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low')")
         return value
 
     @field_validator('final_status')
@@ -80,8 +88,8 @@ class NotificationAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('Pending', 'Sent', 'Failed', 'Cancelled'):
-            raise ValueError("must be one of enum values ('Pending', 'Sent', 'Failed', 'Cancelled')")
+        if value not in ('Pending', 'Sending', 'Sent', 'Failed', 'Cancelled'):
+            raise ValueError("must be one of enum values ('Pending', 'Sending', 'Sent', 'Failed', 'Cancelled')")
         return value
 
     @field_validator('action')
@@ -131,6 +139,13 @@ class NotificationAuditPayload(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of each item in recipients (list)
+        _items = []
+        if self.recipients:
+            for _item in self.recipients:
+                if _item:
+                    _items.append(_item.to_dict())
+            _dict['recipients'] = _items
         return _dict
 
     @classmethod
@@ -150,7 +165,7 @@ class NotificationAuditPayload(BaseModel):
             "notification_type": obj.get("notification_type"),
             "priority": obj.get("priority"),
             "final_status": obj.get("final_status"),
-            "recipients": obj.get("recipients"),
+            "recipients": [NotificationAuditPayloadRecipientsInner.from_dict(_item) for _item in obj.get("recipients")] if obj.get("recipients") is not None else None,
             "cancelled_by": obj.get("cancelled_by"),
             "user_uid": obj.get("user_uid"),
             "user_groups": obj.get("user_groups"),

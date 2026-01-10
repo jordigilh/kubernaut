@@ -6,7 +6,7 @@ Type-safe audit event payload for WorkflowExecution (workflow.started, workflow.
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**event_type** | **str** | Event type for discriminator (matches parent event_type) | 
+**event_type** | **str** | Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution events use &#39;workflowexecution&#39; prefix. | 
 **workflow_id** | **str** | ID of the workflow being executed | 
 **workflow_version** | **str** | Version of the workflow being executed | 
 **target_resource** | **str** | Kubernetes resource being acted upon (format depends on scope) | 

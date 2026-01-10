@@ -59,6 +59,8 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+
+	"github.com/google/uuid"
 )
 
 // Test constants for timeout and polling intervals
@@ -287,7 +289,7 @@ func deleteKindCluster(name string) {
 // ============================================================================
 
 func createTestNamespace(prefix string) string {
-	name := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	name := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,

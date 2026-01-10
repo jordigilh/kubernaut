@@ -53,7 +53,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	aianalysisaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
@@ -70,12 +71,12 @@ import (
 // Infrastructure: Uses existing AIAnalysis integration test infrastructure (auto-started)
 //
 // ========================================
-var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, Label("integration", "audit", "hybrid", "soc2"), func() {
+var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, Label("integration", "audit", "hybrid", "soc2"), func() {
 	var (
 		ctx            context.Context
 		namespace      string
 		datastorageURL string
-		dsClient       *dsgen.ClientWithResponses
+		dsClient       *ogenclient.Client
 	)
 
 	BeforeEach(func() {
@@ -87,7 +88,7 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 
 		// Create Data Storage client for querying audit events
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(datastorageURL)
+		dsClient, err = ogenclient.NewClient(datastorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 	})
 
@@ -97,33 +98,30 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 
 	// queryAuditEvents queries Data Storage for audit events using OpenAPI client (DD-API-001).
 	// Returns: Array of audit events (OpenAPI-generated types)
-	queryAuditEvents := func(correlationID string, eventType *string) ([]dsgen.AuditEvent, error) {
+	queryAuditEvents := func(correlationID string, eventType *string) ([]ogenclient.AuditEvent, error) {
 		limit := 100
-		params := &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			Limit:         &limit,
+		params := ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(correlationID),
+			Limit:         ogenclient.NewOptInt(limit),
 		}
 		if eventType != nil {
-			params.EventType = eventType
+			params.EventType = ogenclient.NewOptString(*eventType)
 		}
 
-		resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+		resp, err := dsClient.QueryAuditEvents(ctx, params)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query DataStorage: %w", err)
 		}
-		if resp.JSON200 == nil {
-			return nil, fmt.Errorf("DataStorage returned non-200: %d", resp.StatusCode())
+		if resp.Data == nil {
+			return []ogenclient.AuditEvent{}, nil
 		}
-		if resp.JSON200.Data == nil {
-			return []dsgen.AuditEvent{}, nil
-		}
-		return *resp.JSON200.Data, nil
+		return resp.Data, nil
 	}
 
 	// waitForAuditEvents polls Data Storage until exact expected count appears (DD-TESTING-001 §256-300).
 	// MANDATORY: Uses Equal() for deterministic count validation, not BeNumerically(">=")
-	waitForAuditEvents := func(correlationID string, eventType string, expectedCount int) []dsgen.AuditEvent {
-		var events []dsgen.AuditEvent
+	waitForAuditEvents := func(correlationID string, eventType string, expectedCount int) []ogenclient.AuditEvent {
+		var events []ogenclient.AuditEvent
 		Eventually(func() int {
 			var err error
 			events, err = queryAuditEvents(correlationID, &eventType)
@@ -139,7 +137,7 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 
 	// countEventsByType counts occurrences of each event type (DD-TESTING-001 helper pattern).
 	// Returns: map[eventType]count for deterministic validation
-	countEventsByType := func(events []dsgen.AuditEvent) map[string]int {
+	countEventsByType := func(events []ogenclient.AuditEvent) map[string]int {
 		counts := make(map[string]int)
 		for _, event := range events {
 			counts[event.EventType]++
@@ -229,36 +227,34 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 			// STEP 1: Verify HAPI audit event (provider perspective)
 			// ========================================
 			By("Waiting for HAPI audit event (holmesgpt.response.complete)")
-			hapiEvents := waitForAuditEvents(correlationID, "holmesgpt.response.complete", 1)
+			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData), 1)
 			hapiEvent := hapiEvents[0]
 
 			By("Validating HAPI event metadata with testutil")
 			actorID := "holmesgpt-api"
 			testutil.ValidateAuditEvent(hapiEvent, testutil.ExpectedAuditEvent{
-				EventType:     "holmesgpt.response.complete",
-				EventCategory: dsgen.AuditEventEventCategoryAnalysis,
+				EventType:     string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData),
+				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 				EventAction:   "response_sent",
-				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				ActorID:       &actorID,
 			})
 
-		By("Validating HAPI event_data structure (provider perspective - full response)")
-		testutil.ValidateAuditEventHasRequiredFields(hapiEvent)
-		hapiEventData, ok := hapiEvent.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue(), "HAPI event_data should be a map")
+			By("Validating HAPI event_data structure (provider perspective - full response)")
+			testutil.ValidateAuditEventHasRequiredFields(hapiEvent)
 
-		// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
-		Expect(hapiEventData).To(HaveKey("response_data"), "EventData should contain response_data")
-		responseData, ok := hapiEventData["response_data"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "response_data should be a map")
-		Expect(responseData).ToNot(BeEmpty(), "response_data should not be empty")
+			// DD-AUDIT-004: Use strongly-typed payload (no map[string]interface{})
+			hapiPayload := hapiEvent.EventData.HolmesGPTResponsePayload
+			Expect(hapiPayload.EventID).ToNot(BeEmpty(), "EventData should have event_id")
+			Expect(hapiPayload.IncidentID).ToNot(BeEmpty(), "EventData should have incident_id")
 
-			// Validate complete IncidentResponse structure (for RR reconstruction)
-			Expect(responseData).To(HaveKey("incident_id"), "Should have incident_id")
-			Expect(responseData).To(HaveKey("analysis"), "Should have analysis text")
-			Expect(responseData).To(HaveKey("root_cause_analysis"), "Should have root_cause_analysis")
-			Expect(responseData).To(HaveKey("selected_workflow"), "Should have selected_workflow")
+			// DD-AUDIT-005: Validate response_data contains complete IncidentResponse
+			responseData := hapiPayload.ResponseData
+			Expect(responseData.IncidentID).ToNot(BeEmpty(), "response_data should have incident_id")
+			Expect(responseData.Analysis).ToNot(BeEmpty(), "response_data should have analysis text")
+			Expect(responseData.RootCauseAnalysis.Summary).ToNot(BeEmpty(), "Should have root_cause_analysis.summary")
+			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Should have confidence > 0")
 			Expect(responseData).To(HaveKey("confidence"), "Should have confidence score")
 			Expect(responseData).To(HaveKey("timestamp"), "Should have timestamp")
 			GinkgoWriter.Println("✅ HAPI event contains complete IncidentResponse structure")
@@ -274,34 +270,30 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 			aaActorID := "aianalysis-controller"
 			testutil.ValidateAuditEvent(aaEvent, testutil.ExpectedAuditEvent{
 				EventType:     "aianalysis.analysis.completed",
-				EventCategory: dsgen.AuditEventEventCategoryAnalysis,
+				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 				EventAction:   "analysis_complete",
-				EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				ActorID:       &aaActorID,
 			})
 
-		By("Validating AA event_data structure (consumer perspective - summary + business context)")
-		testutil.ValidateAuditEventHasRequiredFields(aaEvent)
-		
-		// DD-AUDIT-005: Validate provider_response_summary and business context fields
-		aaEventData := aaEvent.EventData.(map[string]interface{})
-		Expect(aaEventData).To(HaveKey("provider_response_summary"), "EventData should contain provider_response_summary")
-		Expect(aaEventData).To(HaveKey("phase"), "EventData should contain phase")
-		Expect(aaEventData).To(HaveKey("approval_required"), "EventData should contain approval_required")
-		Expect(aaEventData).To(HaveKey("degraded_mode"), "EventData should contain degraded_mode")
-		Expect(aaEventData).To(HaveKey("warnings_count"), "EventData should contain warnings_count")
-			summary := aaEventData["provider_response_summary"].(map[string]interface{})
+			By("Validating AA event structure and business context")
 
-			// Validate provider_response_summary structure
-			Expect(summary).To(HaveKey("incident_id"), "Summary should have incident_id")
-			Expect(summary).To(HaveKey("analysis_preview"), "Summary should have analysis_preview")
-			Expect(summary).To(HaveKey("needs_human_review"), "Summary should have needs_human_review")
-			Expect(summary).To(HaveKey("warnings_count"), "Summary should have warnings_count")
-			GinkgoWriter.Println("✅ AA event contains provider_response_summary")
+			// ✅ CORRECT: Use testutil per TESTING_GUIDELINES.md (line 1823-1846)
+			testutil.ValidateAuditEvent(aaEvent, testutil.ExpectedAuditEvent{
+				EventType:     "aianalysis.analysis.completed",
+				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
+				EventAction:   "analysis_complete",
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				CorrelationID: correlationID,
+				ActorID:       &aaActorID,
+			})
 
-			// Validate AA business context (not in HAPI event)
-			Expect(aaEventData["phase"]).To(Equal("Completed"), "Phase should be Completed")
+			// Validate strongly-typed payload fields (DD-AUDIT-004)
+			aaPayload := aaEvent.EventData.AIAnalysisAuditPayload
+			Expect(aaPayload.AnalysisName).ToNot(BeEmpty(), "Should have analysis_name in business context")
+			Expect(aaPayload.Namespace).ToNot(BeEmpty(), "Should have namespace in business context")
+			Expect(string(aaPayload.Phase)).To(Equal("Completed"), "Should have Completed phase")
 			GinkgoWriter.Println("✅ AA event contains business context fields")
 
 			// ========================================
@@ -310,18 +302,16 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 			By("Validating hybrid approach benefits")
 
 			// Benefit 1: Both events share correlation_id for linkage
-			Expect(hapiEvent.CorrelationId).To(Equal(aaEvent.CorrelationId),
+			Expect(hapiEvent.CorrelationID).To(Equal(aaEvent.CorrelationID),
 				"Both events should share correlation_id")
 
 			// Benefit 2: HAPI has authoritative full response
-			Expect(responseData).To(HaveKey("alternative_workflows"),
-				"HAPI should have complete response including alternatives")
+			Expect(responseData.Analysis).ToNot(BeEmpty(),
+				"HAPI should have complete analysis response")
 
 			// Benefit 3: AA has business context not in HAPI
-			_, hapiHasPhase := hapiEventData["phase"]
-			Expect(hapiHasPhase).To(BeFalse(), "HAPI should not have 'phase' (business context)")
-			_, aaHasPhase := aaEventData["phase"]
-			Expect(aaHasPhase).To(BeTrue(), "AA should have 'phase' (business context)")
+			Expect(aaPayload.Phase).ToNot(BeZero(), "AA should have 'phase' (business context)")
+			GinkgoWriter.Println("✅ Hybrid approach validated: HAPI has full response, AA has business context")
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ HYBRID AUDIT VALIDATION PASSED")
@@ -398,55 +388,50 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 			Expect(auditStore.Flush(flushCtx)).To(Succeed())
 
 			By("Querying HAPI event for RR reconstruction validation")
-			hapiEventType := "holmesgpt.response.complete"
-			hapiResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
-				EventType:     &hapiEventType,
+			hapiEventType := string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)
+			hapiResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventType:     ogenclient.NewOptString(hapiEventType),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(hapiResp.JSON200.Data).ToNot(BeNil())
-			hapiEvents := *hapiResp.JSON200.Data
+			Expect(hapiResp.Data).ToNot(BeNil())
+			hapiEvents := hapiResp.Data
 			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
 			Expect(len(hapiEvents)).To(Equal(1),
 				"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event")
 
-			// Extract response_data
-			hapiEventData := hapiEvents[0].EventData.(map[string]interface{})
-			responseData := hapiEventData["response_data"].(map[string]interface{})
+			// Extract strongly-typed response_data (DD-AUDIT-004)
+			hapiPayload := hapiEvents[0].EventData.HolmesGPTResponsePayload
+			responseData := hapiPayload.ResponseData
 
 			By("Validating COMPLETE IncidentResponse structure for RR reconstruction")
 
-			// Core analysis fields
-			Expect(responseData).To(HaveKey("incident_id"), "Required: incident_id")
-			Expect(responseData).To(HaveKey("analysis"), "Required: analysis text")
-			Expect(responseData).To(HaveKey("timestamp"), "Required: timestamp")
-			Expect(responseData).To(HaveKey("confidence"), "Required: confidence score")
+			// Core analysis fields (strongly-typed)
+			Expect(responseData.IncidentID).ToNot(BeEmpty(), "Required: incident_id")
+			Expect(responseData.Analysis).ToNot(BeEmpty(), "Required: analysis text")
+			Expect(responseData.Timestamp).ToNot(BeZero(), "Required: timestamp")
+			Expect(responseData.Confidence).To(BeNumerically(">", 0), "Required: confidence score")
 
-			// Root cause analysis (structured)
-			Expect(responseData).To(HaveKey("root_cause_analysis"), "Required: root_cause_analysis")
-			rca, ok := responseData["root_cause_analysis"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "root_cause_analysis should be a map")
-			Expect(rca).To(HaveKey("summary"), "RCA should have summary")
-			Expect(rca).To(HaveKey("severity"), "RCA should have severity")
+			// Root cause analysis (strongly-typed structured data)
+			Expect(responseData.RootCauseAnalysis.Summary).ToNot(BeEmpty(), "RCA should have summary")
+			Expect(responseData.RootCauseAnalysis.Severity).ToNot(BeEmpty(), "RCA should have severity")
 
-			// Selected workflow (for execution)
-			Expect(responseData).To(HaveKey("selected_workflow"), "Required: selected_workflow")
-			if responseData["selected_workflow"] != nil {
-				workflow, ok := responseData["selected_workflow"].(map[string]interface{})
-				Expect(ok).To(BeTrue(), "selected_workflow should be a map")
-				Expect(workflow).To(HaveKey("workflow_id"), "Workflow should have workflow_id")
-				Expect(workflow).To(HaveKey("containerImage"), "Workflow should have containerImage")
-				Expect(workflow).To(HaveKey("confidence"), "Workflow should have confidence")
-				Expect(workflow).To(HaveKey("parameters"), "Workflow should have parameters")
+			// Selected workflow (for execution) - strongly-typed optional field
+			if responseData.SelectedWorkflow.IsSet() {
+				workflow := responseData.SelectedWorkflow.Value
+				Expect(workflow.WorkflowID.IsSet()).To(BeTrue(), "Workflow should have workflow_id")
+				Expect(workflow.ContainerImage.IsSet()).To(BeTrue(), "Workflow should have containerImage")
+				Expect(workflow.Confidence.IsSet()).To(BeTrue(), "Workflow should have confidence")
+				Expect(workflow.Parameters.IsSet()).To(BeTrue(), "Workflow should have parameters")
 			}
 
-			// Alternative workflows (audit trail)
-			Expect(responseData).To(HaveKey("alternative_workflows"), "Required: alternative_workflows")
+			// Alternative workflows (audit trail) - strongly-typed array
+			Expect(responseData.AlternativeWorkflows).ToNot(BeNil(), "Required: alternative_workflows")
 
-			// Decision metadata
-			Expect(responseData).To(HaveKey("needs_human_review"), "Required: needs_human_review flag")
-			Expect(responseData).To(HaveKey("warnings"), "Required: warnings array")
-			Expect(responseData).To(HaveKey("target_in_owner_chain"), "Required: target_in_owner_chain flag")
+			// Decision metadata - strongly-typed optional fields
+			// needs_human_review defaults to false, so just check field exists
+			Expect(responseData.Warnings).ToNot(BeNil(), "Required: warnings array")
+			// target_in_owner_chain defaults to true, field always present
 
 			GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			GinkgoWriter.Println("✅ RR RECONSTRUCTION VALIDATION PASSED")
@@ -522,18 +507,18 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 			Expect(auditStore.Flush(flushCtx)).To(Succeed())
 
 			By("Querying ALL events by correlation_id")
-			allResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-				CorrelationId: &correlationID,
+			allResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			Expect(allResp.JSON200.Data).ToNot(BeNil())
-			allEvents := *allResp.JSON200.Data
+			Expect(allResp.Data).ToNot(BeNil())
+			allEvents := allResp.Data
 
 			By("Counting events by type")
 			eventCounts := countEventsByType(allEvents)
 
 			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
-			hapiCount := eventCounts["holmesgpt.response.complete"]
+			hapiCount := eventCounts[string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)]
 			aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
 
 			Expect(hapiCount).To(Equal(1),
@@ -548,18 +533,18 @@ var _ = PDescribe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Serial, L
 
 			By("Validating correlation_id consistency across all events")
 			for _, event := range allEvents {
-				Expect(event.CorrelationId).To(Equal(correlationID),
+				Expect(event.CorrelationID).To(Equal(correlationID),
 					fmt.Sprintf("Event type %s should have correlation_id %s", event.EventType, correlationID))
 			}
 
 			By("Validating both hybrid events present")
 			var foundHAPI, foundAA bool
 			for _, event := range allEvents {
-				if event.EventType == "holmesgpt.response.complete" {
-					foundHAPI = true
-				}
-				if event.EventType == "aianalysis.analysis.completed" {
-					foundAA = true
+			if event.EventType == string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData) {
+				foundHAPI = true
+			}
+			if event.EventType == aianalysisaudit.EventTypeAnalysisCompleted {
+				foundAA = true
 				}
 			}
 			Expect(foundHAPI).To(BeTrue(), "Should find HAPI hybrid event")

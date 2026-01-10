@@ -32,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-092)", Serial, Ordered, func() {
@@ -107,7 +109,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		processID := GinkgoParallelProcess()
-		alertName := fmt.Sprintf("RestartTest-p%d-%d", processID, time.Now().UnixNano())
+		alertName := fmt.Sprintf("RestartTest-p%d-%s", processID, uuid.New().String()[:8])
 
 		testLogger.Info("Step 1: Send alerts before restart")
 		const preRestartAlerts = 3
@@ -194,7 +196,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 
 		testLogger.Info("Step 4: Send alerts after restart")
 		const postRestartAlerts = 3
-		postRestartAlertName := fmt.Sprintf("PostRestart-p%d-%d", processID, time.Now().UnixNano())
+		postRestartAlertName := fmt.Sprintf("PostRestart-p%d-%s", processID, uuid.New().String()[:8])
 
 		postRestartPayload := map[string]interface{}{
 			"status": "firing",

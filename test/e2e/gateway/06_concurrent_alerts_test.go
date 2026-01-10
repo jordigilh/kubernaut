@@ -34,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
 )
 
 // Test 06: Concurrent Alert Handling (BR-GATEWAY-008)
@@ -65,7 +67,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("concurrent-%d-%d", processID, time.Now().UnixNano())
+		testNamespace = fmt.Sprintf("concurrent-%d-%s", processID, uuid.New().String()[:8])
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
@@ -129,7 +131,7 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 
 		// Use a SINGLE alert name so alerts aggregate together (DD-GATEWAY-008)
 		// This triggers storm aggregation when threshold is reached
-		sharedAlertName := fmt.Sprintf("ConcurrentStormAlert-%d", time.Now().UnixNano())
+		sharedAlertName := fmt.Sprintf("ConcurrentStormAlert-%s", uuid.New().String()[:8])
 
 		for g := 0; g < numGoroutines; g++ {
 			wg.Add(1)

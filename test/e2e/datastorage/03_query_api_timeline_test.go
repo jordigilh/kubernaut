@@ -24,11 +24,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 )
 
 // Scenario 3: Query API Timeline - Multi-Filter Retrieval (P0)
@@ -135,11 +133,8 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// Use timestamps 10 minutes in the past to avoid clock skew issues between host and container
 		baseTimestamp := time.Now().UTC().Add(-10 * time.Minute)
 		for i := 1; i <= 4; i++ {
-			eventData, err := audit.NewGatewayEvent("signal.received").
-				WithSignalType("prometheus").
-				WithAlertName(fmt.Sprintf("Alert-%d", i)).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
+			// Use helper function for strongly-typed payload
+			eventData := newMinimalGatewayPayload("prometheus", fmt.Sprintf("Alert-%d", i))
 
 			// DD-API-001: Use typed OpenAPI struct
 			event := dsgen.AuditEventRequest{
@@ -148,23 +143,21 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventAction:    fmt.Sprintf("gateway_op_%d", i),
 				EventType:      "gateway.signal.received",
 				EventTimestamp: baseTimestamp.Add(time.Duration(i) * time.Second),
-				CorrelationId:  correlationID,
+				CorrelationID:  correlationID,
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
 			}
-			resp := createAuditEventOpenAPI(ctx, dsClient, event)
-			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
+			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			// Verify event was created
+			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond) // Small delay to ensure chronological order
 		}
 		testLogger.Info("✅ Created 4 Gateway events")
 
 		// AIAnalysis events (3 events)
 		for i := 1; i <= 3; i++ {
-			eventData, err := audit.NewAIAnalysisEvent("analysis.completed").
-				WithAnalysisID(fmt.Sprintf("analysis-%d", i)).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
+			// Use helper function for strongly-typed payload
+			eventData := newMinimalAIAnalysisPayload(fmt.Sprintf("analysis-%d", i))
 
 			// DD-API-001: Use typed OpenAPI struct
 			event := dsgen.AuditEventRequest{
@@ -173,23 +166,21 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventAction:    fmt.Sprintf("ai_op_%d", i),
 				EventType:      "analysis.analysis.completed",
 				EventTimestamp: baseTimestamp.Add(time.Duration(4+i) * time.Second),
-				CorrelationId:  correlationID,
+				CorrelationID:  correlationID,
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
 			}
-			resp := createAuditEventOpenAPI(ctx, dsClient, event)
-			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
+			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			// Verify event was created
+			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 AIAnalysis events")
 
 		// Workflow events (3 events)
 		for i := 1; i <= 3; i++ {
-			eventData, err := audit.NewWorkflowEvent("workflow.completed").
-				WithWorkflowID(fmt.Sprintf("workflow-%d", i)).
-				Build()
-			Expect(err).ToNot(HaveOccurred())
+			// Use helper function for strongly-typed payload
+			eventData := newMinimalWorkflowPayload(fmt.Sprintf("workflow-%d", i))
 
 			// DD-API-001: Use typed OpenAPI struct
 			event := dsgen.AuditEventRequest{
@@ -198,13 +189,13 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 				EventAction:    fmt.Sprintf("workflow_op_%d", i),
 				EventType:      "workflow.workflow.completed",
 				EventTimestamp: baseTimestamp.Add(time.Duration(7+i) * time.Second),
-				CorrelationId:  correlationID,
+				CorrelationID:  correlationID,
 				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 				EventData:      eventData,
 			}
-			resp := createAuditEventOpenAPI(ctx, dsClient, event)
-			// Accept both 201 (direct write) and 202 (DLQ fallback)
-			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusAccepted)))
+			eventID := createAuditEventOpenAPI(ctx, dsClient, event)
+			// Verify event was created
+			Expect(eventID).ToNot(BeEmpty())
 			time.Sleep(100 * time.Millisecond)
 		}
 		testLogger.Info("✅ Created 3 Workflow events")
@@ -213,15 +204,15 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// Step 2: Query by correlation_id → verify all 10 events returned
 		testLogger.Info("🔍 Step 2: Query by correlation_id...")
 		// DD-API-001: Use typed OpenAPI client for queries
-		queryResp, err := dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
+		queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data := *queryResp.JSON200.Data
+		data := queryResp.Data
 		// Note: Self-auditing may add extra events (datastorage.audit.written)
 		// We expect at least 10 events (the ones we created), but may have more
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events")
@@ -231,16 +222,16 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("🔍 Step 3: Query by event_category=gateway...")
 		// DD-API-001: Use typed OpenAPI client with event_category filter
 		gatewayCategory := "gateway"
-		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventCategory: &gatewayCategory,
+		queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			EventCategory: dsgen.NewOptString(gatewayCategory),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data = *queryResp.JSON200.Data
+		data = queryResp.Data
 		Expect(data).To(HaveLen(4), "Should return 4 Gateway events")
 
 		// Verify all events are from gateway event_category (ADR-034)
@@ -253,16 +244,16 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("🔍 Step 4: Query by event_type=analysis.analysis.completed...")
 		// DD-API-001: Use typed OpenAPI client with event_type filter
 		eventType := "analysis.analysis.completed"
-		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventType:     &eventType,
+		queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			EventType:     dsgen.NewOptString(eventType),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data = *queryResp.JSON200.Data
+		data = queryResp.Data
 		Expect(data).To(HaveLen(3), "Should return 3 AIAnalysis events")
 
 		// Verify all events have correct event_type
@@ -277,17 +268,17 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// DD-API-001: Use typed OpenAPI client with time range filters (Since/Until)
 		startTimeStr := startTime.Format(time.RFC3339)
 		endTimeStr := endTime.Format(time.RFC3339)
-		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			Since:         &startTimeStr,
-			Until:         &endTimeStr,
+		queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Since:         dsgen.NewOptString(startTimeStr),
+			Until:         dsgen.NewOptString(endTimeStr),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data = *queryResp.JSON200.Data
+		data = queryResp.Data
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events within time range")
 		testLogger.Info("✅ Query by time_range returned events", "count", len(data))
 
@@ -296,57 +287,57 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		// DD-API-001: Use typed OpenAPI client with pagination parameters
 		limit := 5
 		offset := 0
-		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			Limit:         &limit,
-			Offset:        &offset,
+		queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Limit:         dsgen.NewOptInt(limit),
+			Offset:        dsgen.NewOptInt(offset),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data = *queryResp.JSON200.Data
+		data = queryResp.Data
 		Expect(data).To(HaveLen(5), "Should return first 5 events")
 
 		// Store first event ID for comparison
-		firstPageFirstEventID := data[0].EventId.String()
+		firstPageFirstEventID := data[0].EventID.Value.String()
 		testLogger.Info("✅ Pagination (limit=5, offset=0) returned 5 events")
 
 		// Step 7: Query with pagination (limit=5, offset=5) → verify next 5 events
 		testLogger.Info("🔍 Step 7: Query with pagination (limit=5, offset=5)...")
 		// DD-API-001: Use typed OpenAPI client with offset pagination
 		offset = 5
-		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			Limit:         &limit,
-			Offset:        &offset,
+		queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Limit:         dsgen.NewOptInt(limit),
+			Offset:        dsgen.NewOptInt(offset),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data = *queryResp.JSON200.Data
+		data = queryResp.Data
 		Expect(data).To(HaveLen(5), "Should return next 5 events")
 
 		// Verify second page has different events
-		secondPageFirstEventID := data[0].EventId.String()
+		secondPageFirstEventID := data[0].EventID.Value.String()
 		Expect(secondPageFirstEventID).ToNot(Equal(firstPageFirstEventID), "Second page should have different events")
 		testLogger.Info("✅ Pagination (limit=5, offset=5) returned next 5 events")
 
 		// Step 8: Verify chronological order
 		testLogger.Info("🔍 Step 8: Verifying chronological order...")
 		// DD-API-001: Use typed OpenAPI client for chronological verification
-		queryResp, err = dsClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
+		queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
 		})
 		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.StatusCode()).To(Equal(http.StatusOK))
-		Expect(queryResp.JSON200).ToNot(BeNil())
-		Expect(queryResp.JSON200.Data).ToNot(BeNil())
+		Expect(queryResp).To(Equal(http.StatusOK))
+		Expect(queryResp).ToNot(BeNil())
+		Expect(queryResp.Data).ToNot(BeNil())
 
-		data = *queryResp.JSON200.Data
+		data = queryResp.Data
 
 		// Sort events by timestamp (API doesn't guarantee order)
 		sort.Slice(data, func(i, j int) bool {

@@ -239,7 +239,7 @@ k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
 
 ---
 
-**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001  
-**Status**: ROOT CAUSE IDENTIFIED - k8sClient setup issue in E2E tests  
-**Next**: Fix k8sClient scheme registration and retry tests  
+**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001
+**Status**: ROOT CAUSE IDENTIFIED - k8sClient setup issue in E2E tests
+**Next**: Fix k8sClient scheme registration and retry tests
 **Cluster**: STILL ALIVE for further debugging (run `kind delete cluster --name notification-e2e` when done)

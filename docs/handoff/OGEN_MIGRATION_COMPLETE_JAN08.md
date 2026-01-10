@@ -290,9 +290,34 @@ $ make test-unit-holmesgpt-api
 
 ## 🚨 **CRITICAL: Webhook Migration Status - COMPILATION ERRORS**
 
-**Date**: January 8, 2026 23:00 PST
+**Date**: January 8, 2026 23:00 PST (Initial) | 23:30 PST (Updated)
 **Discovered By**: AI Assistant (post-migration validation)
 **Severity**: 🔴 **BLOCKING** - Code does not compile
+
+### **⏸️ CURRENT STATUS: AWAITING Q4 ARCHITECTURAL CLARIFICATION**
+
+**Platform Team Action Required**:
+- ✅ Q1 Answered: Oversight - migration incomplete
+- ✅ Q2 Answered: Use ExecutionName mapping (40 min)
+- ✅ Q3 Answered: Assume tests need migration
+- ⏸️ **Q4 ARCHITECTURAL QUESTION**: Which event namespace strategy for webhooks? - **BLOCKING**
+
+**Critical Architectural Decision**:
+
+After examining the Q2 reference file (`pkg/workflowexecution/audit/manager.go`), AI discovered that Q2's ExecutionName mapping implies webhook events should use the **service namespace** (e.g., `workflowexecution.block.cleared`) rather than a separate **webhook namespace** (e.g., `webhook.workflow.unblocked`).
+
+**This conflicts with the dedicated webhook types** (`WorkflowExecutionWebhookAuditPayload`) found in the ogen schema, which use a webhook namespace.
+
+**Two Conflicting Patterns**:
+1. **Service Namespace**: `workflowexecution.block.cleared` (implied by Q2)
+   - Unified event streams per service
+   - Requires field mapping (40 min)
+
+2. **Webhook Namespace**: `webhook.workflow.unblocked` (dedicated types)
+   - Separate webhook event stream
+   - No field mapping needed (10 min)
+
+**Scroll to Q4 section below** for detailed architectural analysis and clarification questions.
 
 ### **Compilation Errors**
 
@@ -410,7 +435,7 @@ type WorkflowExecutionAuditPayload struct {
 **AI Recommendation**: **Option A** (use existing fields, no schema changes needed)
 
 **Platform Team Response**:
-> **ANSWER: A) Use existing ogen fields** ✅ **APPROVED**
+> **ANSWER: A) Use existing ogen fields** ✅ **APPROVED** (⚠️ See Q2 Follow-Up below for faster alternative discovered!)
 >
 > **Rationale**:
 > 1. ✅ **No schema changes needed** - Faster, less risky, no downstream impacts
@@ -445,7 +470,7 @@ type WorkflowExecutionAuditPayload struct {
 
 ### **❓ FOLLOW-UP DISCOVERY: Dedicated Webhook Types Already Exist!** (AI Assistant)
 
-**Date**: January 8, 2026 23:30 PST  
+**Date**: January 8, 2026 23:30 PST
 **Discovered By**: AI Assistant (post-Q2 response analysis)
 
 **Finding**: The ogen schema already includes **dedicated webhook payload types** that exactly match the webhook code's current fields!
@@ -568,10 +593,226 @@ Document claims webhook tests are migrated, but if business logic doesn't compil
 >    - Run AuthWebhook E2E: `make test-e2e-authwebhook`
 >    - Confirm no runtime errors
 >
-> **Total Time**: ~55-60 minutes for complete webhook migration (with Q2 ExecutionName mapping)  
+> **Total Time**: ~55-60 minutes for complete webhook migration (with Q2 ExecutionName mapping)
 > **OR**: ~25-30 minutes (if using dedicated webhook types - see Q2 follow-up above)
 >
 > **Pattern Reference**: Use `pkg/workflowexecution/audit/manager.go` as the reference implementation for all patterns (imports, constructors, OptString usage).
+
+---
+
+### **❓ Q4: Webhook Event Namespace Architecture - ARCHITECTURAL CLARIFICATION NEEDED** 🚨
+
+**Date**: January 8, 2026 23:45 PST
+**Discovered By**: AI Assistant (during reference file analysis)
+**Severity**: 🔴 **BLOCKING** - Impacts all webhook implementation decisions
+
+#### **Context: Two Conflicting Patterns Discovered**
+
+After examining `pkg/workflowexecution/audit/manager.go` (the Q2 reference file), I discovered that the Q2 ExecutionName mapping approach implies a **fundamentally different architectural pattern** than the dedicated webhook types.
+
+---
+
+#### **Pattern 1: Service Namespace** (Implied by Q2 Answer)
+
+**Event Type Convention** (from manager.go lines 70-76):
+```go
+const (
+    EventTypeStarted            = "workflowexecution.workflow.started"
+    EventTypeCompleted          = "workflowexecution.workflow.completed"
+    EventTypeFailed             = "workflowexecution.workflow.failed"
+    EventTypeSelectionCompleted = "workflowexecution.selection.completed"
+    EventTypeExecutionStarted   = "workflowexecution.execution.started"
+)
+```
+
+**Pattern**: `[service].[subcategory].[action]`
+
+**For webhook events, this would mean**:
+```go
+// WorkflowExecution webhooks
+EventTypeBlockCleared = "workflowexecution.block.cleared"
+
+// Notification webhooks
+EventTypeNotificationCancelled = "notification.webhook.cancelled"
+
+// RemediationApproval webhooks
+EventTypeApprovalGranted = "remediationapproval.approval.granted"
+```
+
+**Payload Type**: `WorkflowExecutionAuditPayload` (shared with controller events)
+
+**Discriminator Constructor**:
+```go
+api.NewAuditEventRequestEventDataWorkflowexecutionBlockClearedAuditEventRequestEventData(payload)
+```
+
+---
+
+#### **Pattern 2: Webhook Namespace** (Dedicated Types in Schema)
+
+**Event Type Convention** (from ogen schema):
+```go
+// Separate webhook namespace
+type WorkflowExecutionWebhookAuditPayload struct {
+    EventType     string    // "webhook.workflow.unblocked"
+    WorkflowName  string
+    ClearReason   string
+    // ... webhook-specific fields
+}
+```
+
+**Pattern**: `webhook.[service].[action]`
+
+**Payload Type**: `WorkflowExecutionWebhookAuditPayload` (dedicated webhook type)
+
+**Discriminator Constructor**:
+```go
+api.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(payload)
+```
+
+---
+
+#### **🎯 CRITICAL ARCHITECTURAL QUESTION**
+
+**Which namespace strategy should webhook events use?**
+
+**Option A: Service Namespace** (Implied by Q2)
+- Event types: `workflowexecution.block.cleared`, `notification.webhook.cancelled`
+- Payload type: Service audit payload (e.g., `WorkflowExecutionAuditPayload`)
+- Field mapping: Required (webhook fields → service fields)
+- Discriminator: Service-specific (e.g., `workflowexecution.*`)
+
+**Option B: Webhook Namespace** (Dedicated Types)
+- Event types: `webhook.workflow.unblocked`, `webhook.notification.cancelled`
+- Payload type: Dedicated webhook payload (e.g., `WorkflowExecutionWebhookAuditPayload`)
+- Field mapping: None (exact match)
+- Discriminator: Webhook-specific (e.g., `webhook.*`)
+
+---
+
+#### **📊 Architectural Implications**
+
+| Aspect | Service Namespace (Option A) | Webhook Namespace (Option B) |
+|--------|------------------------------|------------------------------|
+| **Audit Query Pattern** | `event_type LIKE 'workflowexecution.%'` captures both controller + webhook events | `event_type LIKE 'webhook.%'` for all webhooks across services |
+| **Event Segregation** | Mixed: controller and webhook events together | Separate: webhooks isolated from controller events |
+| **Payload Consistency** | Same payload structure for controller + webhook | Different payload structures (specialized) |
+| **OpenAPI Discriminators** | Need to add: `workflowexecution.block.cleared` to spec | Already exist: `webhook.*` discriminators in schema |
+| **Implementation Effort** | 40 min (field mapping required) | 10 min (fields already match) |
+| **Semantic Correctness** | Webhooks are "workflow execution events" | Webhooks are "webhook events" |
+
+---
+
+#### **🔍 AI Analysis: What I Observed in Reference File**
+
+**From `pkg/workflowexecution/audit/manager.go`**:
+
+1. **ALL events use service namespace** (`workflowexecution.*`):
+   - Lines 70-76: Event type constants
+   - Line 55-57: Service-level category
+
+2. **Discriminator naming pattern**:
+   - Format: `[service].[subcategory].[action]`
+   - Example: `workflowexecution.execution.started`
+
+3. **No webhook-specific events found** in reference file (controller events only)
+
+**AI Interpretation**:
+> "It looks like the platform team wants ALL events from the WorkflowExecution service (both controller AND webhooks) to use the `workflowexecution.*` namespace for unified audit queries."
+
+**BUT**: This is an **assumption** based on the pattern, not an explicit statement!
+
+---
+
+#### **❓ CLARIFICATION REQUEST FOR PLATFORM TEAM** 🚨
+
+**Question 1: Event Namespace Strategy**
+
+Which namespace should webhook events use?
+
+- [ ] **Option A: Service Namespace** - Webhooks use service discriminator (e.g., `workflowexecution.block.cleared`)
+  - **Rationale**: Unified event stream per service - single query captures controller + webhook events
+  - **Trade-off**: Requires field mapping, 40 min implementation
+  - **Query Example**: `SELECT * FROM audit_events WHERE event_type LIKE 'workflowexecution.%'`
+
+- [ ] **Option B: Webhook Namespace** - Webhooks use dedicated discriminator (e.g., `webhook.workflow.unblocked`)
+  - **Rationale**: Webhook events are semantically different - separate namespace for isolation
+  - **Trade-off**: Split event streams, but faster implementation (10 min)
+  - **Query Example**: `SELECT * FROM audit_events WHERE event_type LIKE 'webhook.%'`
+
+**Question 2: OpenAPI Discriminators**
+
+If Option A (Service Namespace), do the discriminators already exist in the OpenAPI spec?
+
+- [ ] **YES** - Discriminators like `workflowexecution.block.cleared` are already in `data-storage-v1.yaml`
+- [ ] **NO** - Need to add new discriminators to OpenAPI spec first (requires schema update)
+- [ ] **UNSURE** - Need to check schema (AI can verify)
+
+**Question 3: Architectural Intent**
+
+What is the primary goal of the Q2 ExecutionName mapping approach?
+
+- [ ] **Unified Event Streams** - Single query per service captures all events (controller + webhook)
+- [ ] **Payload Consistency** - All events from a service use the same payload structure
+- [ ] **Legacy Compatibility** - Dedicated webhook types are deprecated/legacy
+- [ ] **Other** - Please explain: _________________
+
+---
+
+#### **🎯 AI Recommendation**
+
+**Before implementing any webhook migration**, we need explicit clarification on:
+
+1. ✅ **Event namespace strategy** (Service vs. Webhook namespace)
+2. ✅ **Discriminator availability** (Do they exist in OpenAPI spec?)
+3. ✅ **Architectural intent** (Why was Q2 ExecutionName mapping chosen?)
+
+**Once clarified**, implementation path is clear:
+- **Option A**: Define event constants + field mapping + verify constructors exist
+- **Option B**: Import dedicated types + use existing constructors
+
+---
+
+**Platform Team Response**:
+> **Short Answer**: ✅ **Option B: Webhook Namespace** (`webhook.workflow.unblocked`)
+>
+> **Q4.1: Event Namespace Strategy** → ✅ **Option B: Webhook Namespace**
+> - ✅ Use: `webhook.workflow.unblocked`, `webhook.notification.cancelled`, `webhook.approval.decided`
+> - ❌ Reject: Service namespace (`workflowexecution.block.cleared`)
+>
+> **Q4.2: OpenAPI Discriminators** → ✅ **YES - Discriminators ALREADY EXIST**
+> - All 4 webhook event types defined in `data-storage-v1.yaml` (lines 1428-1431)
+> - Webhook business code already uses correct patterns (90% complete)
+> - Only test files need migration
+>
+> **Q4.3: Architectural Intent** → ✅ **Event Source Clarity**
+> - Webhooks are architecturally distinct from controllers
+> - Different attribution sources: operators (webhooks) vs services (controllers)
+> - Dedicated payload types capture webhook-specific fields
+>
+> **Rationale**:
+>
+> 1. **✅ Already Implemented (90% Complete)**
+>    - OpenAPI spec has all webhook discriminators
+>    - Webhook handlers already use `NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData()`
+>    - Only test files need updates
+>
+> 2. **✅ Architectural Clarity**
+>    - Webhooks = operator actions (`actor_type: user`, `cleared_by: email@domain.com`)
+>    - Controllers = service actions (`actor_type: service`, `actor_id: service-name`)
+>    - Query pattern: `event_type LIKE 'webhook.%'` → all operator actions via webhooks
+>
+> 3. **✅ Type Safety**
+>    - Dedicated webhook payload types with webhook-specific fields
+>    - No field mapping needed (exact match)
+>
+> 4. **✅ 4x Faster Implementation**
+>    - Option B: 30 minutes (test file updates only)
+>    - Option A: 120 minutes (field mapping + test updates)
+>
+> 5. **✅ SOC2 Compliance (DD-WEBHOOK-003)**
+>    - Separate event streams for operator attribution vs service attribution
+>    - Clear audit trail: WHO (operator) did WHAT (action) via webhook
 
 ---
 
@@ -585,7 +826,7 @@ Document claims webhook tests are migrated, but if business logic doesn't compil
 
 **Key Insight**: All webhook handlers already use fields that **exactly match their dedicated schema types**!
 
-**If using dedicated types**: All 3 webhooks just need: import + constructor (10 min each = 30 min total)  
+**If using dedicated types**: All 3 webhooks just need: import + constructor (10 min each = 30 min total)
 **If using Q2 mapping**: All 3 webhooks need: field mapping + constructors (40 min each = 120 min total)
 
 **Time Savings with Dedicated Types**: **90 minutes** (120 min - 30 min)
@@ -649,19 +890,26 @@ func (h *WorkflowExecutionAuthHandler) Handle(...) {
 ### **⏱️ NEXT STEPS**
 
 **IMMEDIATE** (Platform Team):
-1. [ ] Answer Q1 (migration status)
-2. [ ] Answer Q2 (payload field mapping strategy) - **BLOCKING**
-3. [ ] Answer Q3 (test migration scope)
+1. [x] ~~Answer Q1 (migration status)~~ ✅ **ANSWERED: Oversight**
+2. [x] ~~Answer Q2 (payload field mapping strategy)~~ ✅ **ANSWERED: Use ExecutionName mapping**
+3. [x] ~~Answer Q3 (test migration scope)~~ ✅ **ANSWERED: Assume tests need migration**
+4. [x] ~~Answer Q4: Webhook Event Namespace Architecture~~ ✅ **ANSWERED: Webhook Namespace (Option B)**
 
-**AFTER PLATFORM TEAM RESPONSE** (AI Assistant):
-4. [ ] Implement webhook migration (40-65 min)
-5. [ ] Validate compilation and tests
-6. [ ] Update migration status document
-7. [ ] Add webhook example to Team Migration Guide
+**NOW** (AI Assistant):
+5. [ ] **IN PROGRESS**: Implement webhook test migration (~30 minutes)
+6. [ ] Validate compilation and tests
+7. [ ] Update migration status document
+8. [ ] Complete E2E validation
 
 ---
 
-**STATUS**: ⏸️ **BLOCKED - AWAITING PLATFORM TEAM RESPONSE**
+**STATUS**: ✅ **Q4 ANSWERED - IMPLEMENTING NOW**
+
+**Decision**: Use **dedicated webhook types** with **webhook namespace** (`webhook.*`)
+- ✅ Business code already 90% complete!
+- ✅ Only 3 test files need updates (30 min total)
+- ✅ No field mapping needed (exact match)
+- ✅ Implementation approved by user - proceeding now
 
 ---
 

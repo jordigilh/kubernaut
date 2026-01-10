@@ -50,7 +50,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
@@ -224,6 +224,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		).Observe(time.Since(startTime).Seconds())
 		r.Metrics.ReconcileTotal.WithLabelValues(rr.Namespace, string(rr.Status.OverallPhase)).Inc()
 	}()
+
+	// BR-AUDIT-005 Gap #7: Validate timeout configuration (fail fast on invalid config)
+	// Per test requirement: Negative timeouts should be rejected with ERR_INVALID_TIMEOUT_CONFIG
+	if err := r.validateTimeoutConfig(ctx, rr); err != nil {
+		logger.Error(err, "Invalid timeout configuration, transitioning to Failed")
+		return r.transitionToFailed(ctx, rr, "configuration", err.Error())
+	}
 
 	// ========================================
 	// OBSERVED GENERATION CHECK (DD-CONTROLLER-001 Pattern B - Phase-Aware)
@@ -977,7 +984,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToCompleted(ctx, rr, "Remediated")
+		return r.transitionToCompleted(ctx, rr, "Remediated") // CRD enum: Remediated, NoActionRequired, ManualReviewRequired
 	case "Failed":
 		logger.Info("WorkflowExecution failed, transitioning to Failed")
 		// ========================================
@@ -1712,32 +1719,26 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 
 	correlationID := string(rr.UID)
 
-	// Build approval requested event data
-	approvalData := map[string]interface{}{
-		"workflow_id":      workflowID,
-		"confidence_score": confidence,
-		"approval_reason":  approvalReason, // From AIAnalysis.Status.ApprovalReason
-		"namespace":        rr.Namespace,
-		"rr_name":          rr.Name,
-		"signal_name":      rr.Spec.SignalName,
-		"severity":         rr.Spec.Severity,
-	}
+	// Calculate RAR name using deterministic naming pattern
+	rarName := fmt.Sprintf("rar-%s", rr.Name)
 
-	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
-	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
-	event.EventType = "orchestrator.approval.requested"
-	event.EventCategory = dsgen.AuditEventRequestEventCategoryOrchestration
-	event.EventAction = "approval_requested"
-	event.EventOutcome = audit.OutcomePending
-	// Use canonical service name constant (roaudit.ServiceName = "remediationorchestrator-controller")
-	// Pattern: CRD controllers use "<service>-controller", stateless services use "<service>"
-	actorID := roaudit.ServiceName
-	actorType := "service"
-	event.ActorId = &actorID
-	event.ActorType = &actorType
-	event.CorrelationId = correlationID
-	event.EventData = approvalData
+	// Calculate requiredBy timestamp (7 days from now per ADR-040)
+	requiredBy := metav1.Now().Add(7 * 24 * time.Hour)
+
+	// Build event using audit manager's build method (refactored per TODO comment)
+	event, err := r.auditManager.BuildApprovalRequestedEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		rarName,
+		workflowID,
+		fmt.Sprintf("%.2f", confidence),
+		requiredBy,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build approval requested audit event")
+		return
+	}
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store approval requested audit event")
@@ -1761,43 +1762,56 @@ func (r *Reconciler) emitApprovalDecisionAudit(ctx context.Context, rr *remediat
 
 	correlationID := string(rr.UID)
 
-	// Build approval decision event data
-	decisionData := map[string]interface{}{
-		"decision":         decision,
-		"decided_by":       decidedBy,
-		"decision_message": decisionMessage,
-		"namespace":        rr.Namespace,
-		"rr_name":          rr.Name,
-		"signal_name":      rr.Spec.SignalName,
-	}
-
 	// Determine event type and outcome based on decision
 	var eventType string
-	var outcome dsgen.AuditEventRequestEventOutcome
+	var outcome api.AuditEventRequestEventOutcome
+	var action string
 
 	switch decision {
 	case "Approved":
-		eventType = "orchestrator.approval.approved"
+		eventType = roaudit.EventTypeApprovalApproved
 		outcome = audit.OutcomeSuccess
+		action = roaudit.ActionApproved
 	case "Rejected":
-		eventType = "orchestrator.approval.rejected"
+		eventType = roaudit.EventTypeApprovalRejected
 		outcome = audit.OutcomeFailure
+		action = roaudit.ActionRejected
 	default:
 		logger.Info("Unknown approval decision", "decision", decision)
 		return
 	}
 
-	actorType := "user"
-	event := &dsgen.AuditEventRequest{
-		Version:       "1.0", // OpenAPI schema requires minLength: 1
-		EventType:     eventType,
-		EventCategory: dsgen.AuditEventRequestEventCategoryOrchestration,
-		EventAction:   strings.ToLower(decision), // "approved" or "rejected"
-		EventOutcome:  outcome,
-		ActorId:       &decidedBy,
-		ActorType:     &actorType,
-		CorrelationId: correlationID,
-		EventData:     decisionData,
+	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, eventType)
+	audit.SetEventCategory(event, roaudit.CategoryOrchestration)
+	audit.SetEventAction(event, action)
+	audit.SetEventOutcome(event, outcome)
+	audit.SetActor(event, "user", decidedBy)
+	audit.SetResource(event, "RemediationRequest", rr.Name)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, rr.Namespace)
+
+	// Build payload using ogen types
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventType(eventType),
+		RrName:    rr.Name,
+		Namespace: rr.Namespace,
+		Decision:  roaudit.ToOptDecision(decision), // ToOptDecision returns Opt type, assign directly
+	}
+	if decision == "Approved" {
+		payload.ApprovedBy.SetTo(decidedBy)
+	} else {
+		payload.RejectedBy.SetTo(decidedBy)
+		payload.RejectionReason.SetTo(decisionMessage)
+	}
+
+	// Use the correct union constructor based on decision
+	if decision == "Approved" {
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(payload)
+	} else {
+		event.EventData = api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
 	}
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1822,33 +1836,31 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 
 	correlationID := string(rr.UID)
 
-	// Build timeout event data (reuse lifecycle.completed format with outcome=failure)
-	timeoutData := map[string]interface{}{
-		"outcome":        "failure",
-		"failure_phase":  timeoutPhase,
-		"failure_reason": fmt.Sprintf("%s timeout", timeoutType),
-		"timeout_type":   timeoutType,
-		"duration_ms":    durationMs,
-		"namespace":      rr.Namespace,
-		"rr_name":        rr.Name,
-		"signal_name":    rr.Spec.SignalName,
-	}
+	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
+	// Reuse lifecycle.completed event type with outcome=failure for timeouts
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, roaudit.EventTypeLifecycleCompleted)
+	audit.SetEventCategory(event, roaudit.CategoryOrchestration)
+	audit.SetEventAction(event, roaudit.ActionCompleted)
+	audit.SetEventOutcome(event, audit.OutcomeFailure)
+	audit.SetActor(event, "service", roaudit.ServiceName)
+	audit.SetResource(event, "RemediationRequest", rr.Name)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, rr.Namespace)
+	audit.SetDuration(event, int(durationMs))
 
-	actorID := "remediation-orchestrator"
-	actorType := "service"
-	durationMsInt := int(durationMs)
-	event := &dsgen.AuditEventRequest{
-		Version:       "1.0", // OpenAPI schema requires minLength: 1
-		EventType:     "orchestrator.lifecycle.completed",
-		EventCategory: dsgen.AuditEventRequestEventCategoryOrchestration,
-		EventAction:   "completed",
-		EventOutcome:  audit.OutcomeFailure,
-		ActorId:       &actorID,
-		ActorType:     &actorType,
-		CorrelationId: correlationID,
-		DurationMs:    &durationMsInt,
-		EventData:     timeoutData,
+	// Build payload using ogen types (timeout is represented as failure)
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
+		RrName:    rr.Name,
+		Namespace: rr.Namespace,
 	}
+	payload.FailurePhase = roaudit.ToOptFailurePhase(timeoutPhase)
+	payload.FailureReason = roaudit.ToOptFailureReason(fmt.Sprintf("%s timeout", timeoutType))
+	payload.DurationMs.SetTo(durationMs)
+
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(payload)
 
 	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
 		logger.Error(err, "Failed to store timeout audit event", "timeoutType", timeoutType)
@@ -2248,6 +2260,37 @@ func (r *Reconciler) getConsecutiveFailureThreshold() int {
 		return r.consecutiveBlock.threshold
 	}
 	return 3 // default
+}
+
+// validateTimeoutConfig validates the timeout configuration in RemediationRequest.Spec.TimeoutConfig.
+// BR-AUDIT-005 Gap #7: Validates that all timeouts are non-negative.
+// Returns error with ERR_INVALID_TIMEOUT_CONFIG code if validation fails.
+func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+	if rr.Spec.TimeoutConfig == nil {
+		return nil // No custom timeout config, use defaults
+	}
+
+	// Validate Global timeout
+	if rr.Spec.TimeoutConfig.Global != nil && rr.Spec.TimeoutConfig.Global.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Global timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Global.Duration)
+	}
+
+	// Validate Processing timeout
+	if rr.Spec.TimeoutConfig.Processing != nil && rr.Spec.TimeoutConfig.Processing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Processing timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Processing.Duration)
+	}
+
+	// Validate Analyzing timeout
+	if rr.Spec.TimeoutConfig.Analyzing != nil && rr.Spec.TimeoutConfig.Analyzing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Analyzing timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Analyzing.Duration)
+	}
+
+	// Validate Executing timeout
+	if rr.Spec.TimeoutConfig.Executing != nil && rr.Spec.TimeoutConfig.Executing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Executing timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Executing.Duration)
+	}
+
+	return nil
 }
 
 // safeStringValue safely dereferences a string pointer.

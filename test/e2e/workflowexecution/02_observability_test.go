@@ -33,10 +33,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+
+	"github.com/google/uuid"
 )
 
 // WorkflowExecution Observability E2E Tests
@@ -54,14 +56,14 @@ import (
 // V1.0 Maturity Requirement: Use OpenAPI client instead of raw HTTP (P1 enhancement)
 // Per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md: E2E tests SHOULD use OpenAPI client for type-safe responses
 //
-// All audit queries now use dsgen.NewClientWithResponses() for type-safe dsgen.AuditEvent responses.
+// All audit queries now use ogenclient.NewClientWithResponses() for type-safe ogenclient.AuditEvent responses.
 
 var _ = Describe("WorkflowExecution Observability E2E", func() {
 	Context("BR-WE-005: Audit Events for Execution Lifecycle", func() {
 		It("should emit Kubernetes events for phase transitions", func() {
 			// Business Outcome: Operators can track workflow lifecycle via K8s events
-			testName := fmt.Sprintf("e2e-events-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/events-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-events-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/events-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -119,8 +121,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	Context("BR-WE-007: Handle Externally Deleted PipelineRun", func() {
 		It("should mark WFE as Failed when PipelineRun is deleted externally", func() {
 			// Business Outcome: Operators see clear failure reason when PR deleted
-			testName := fmt.Sprintf("e2e-extdel-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/extdel-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-extdel-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/extdel-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -196,8 +198,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Note: Metrics endpoint is exposed via NodePort in E2E environment
 
 			// First, run a workflow to generate metrics
-			testName := fmt.Sprintf("e2e-metrics-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/metrics-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-metrics-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/metrics-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -243,9 +245,9 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Verify expected business metrics are present
 			// Using constants from pkg/workflowexecution/metrics to prevent typos (DRY principle)
 			expectedMetrics := []string{
-				wemetrics.MetricNameExecutionTotal,        // Execution count by outcome
-				wemetrics.MetricNameExecutionDuration,     // Execution duration histogram
-				wemetrics.MetricNamePipelineRunCreations,  // PipelineRun creation counter
+				wemetrics.MetricNameExecutionTotal,       // Execution count by outcome
+				wemetrics.MetricNameExecutionDuration,    // Execution duration histogram
+				wemetrics.MetricNamePipelineRunCreations, // PipelineRun creation counter
 			}
 
 			for _, metric := range expectedMetrics {
@@ -293,8 +295,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, initialCompletedCount)
 
 			// Run a workflow that will complete successfully
-			testName := fmt.Sprintf("e2e-metrics-completed-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/metrics-completed-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-metrics-completed-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/metrics-completed-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -361,8 +363,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, initialFailedCount)
 
 			// Run a workflow with invalid image (will fail)
-			testName := fmt.Sprintf("e2e-metrics-failed-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/metrics-failed-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-metrics-failed-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/metrics-failed-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			// Use invalid workflow image to trigger failure
@@ -436,8 +438,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					"  Deploy Data Storage to Kind cluster before running E2E tests")
 
 			By("Creating a WorkflowExecution to generate audit events")
-			testName := fmt.Sprintf("e2e-audit-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/audit-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-audit-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/audit-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -457,66 +459,58 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				return false
 			}, 120*time.Second).Should(BeTrue())
 
+			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
+			time.Sleep(3 * time.Second)
+
 			By("Querying Data Storage for audit events via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
 			// Query DS audit events API for events with this WFE's correlation ID
 			// This verifies the full flow: Controller -> pkg/audit -> DS -> PostgreSQL
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageServiceURL)
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflow"
-			var auditEvents []dsgen.AuditEvent
+			eventCategory := "workflowexecution" // Per ADR-034 v1.5
+			var auditEvents []ogenclient.AuditEvent
 			Eventually(func() int {
-				resp, err := auditClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &wfe.Name,
+				resp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(wfe.Spec.RemediationRequestRef.Name), // Use RemediationRequest Name as correlation ID
 				})
 
 				// DEBUG: Comprehensive response logging (Dec 28, 2025 investigation)
-				GinkgoWriter.Printf("🔍 Query: event_category=%s, correlation_id=%s\n", eventCategory, wfe.Name)
+				GinkgoWriter.Printf("🔍 Query: event_category=%s, correlation_id=%s\n", eventCategory, wfe.Spec.RemediationRequestRef.Name)
 
 				if err != nil {
 					GinkgoWriter.Printf("⚠️ Audit query failed: %v\n", err)
 					return 0
 				}
 
-				GinkgoWriter.Printf("🔍 Response: status=%d, JSON200 nil? %v\n", resp.StatusCode(), resp.JSON200 == nil)
-
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-					GinkgoWriter.Printf("⚠️ Status not 200 or JSON200 nil. Body length: %d bytes\n", len(resp.Body))
-					if len(resp.Body) > 0 && len(resp.Body) < 500 {
-						GinkgoWriter.Printf("⚠️ Response body: %s\n", string(resp.Body))
-					}
-					return 0
+				auditEvents = resp.Data
+				totalCount := len(auditEvents)
+				GinkgoWriter.Printf("✅ Found %d events\n", totalCount)
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					GinkgoWriter.Printf("📊 Total in DB: %d\n", resp.Pagination.Value.Total.Value)
 				}
-
-				if resp.JSON200.Data != nil {
-					auditEvents = *resp.JSON200.Data
-					GinkgoWriter.Printf("✅ Found %d events, Total in DB: %d\n",
-						len(auditEvents), *resp.JSON200.Pagination.Total)
-				} else {
-					GinkgoWriter.Printf("⚠️ JSON200.Data is nil\n")
-				}
-				return len(auditEvents)
+				return totalCount
 			}, 60*time.Second).Should(BeNumerically(">=", 2),
 				"BLOCKED: Expected at least 2 audit events (started + completed/failed). "+
 					"If this fails, verify Data Storage batch endpoint is implemented. "+
 					"See NOTICE_DATASTORAGE_AUDIT_BATCH_ENDPOINT_MISSING.md")
 
 			By("Verifying audit event content")
-			// Verify we have the expected event types
+			// Verify we have the expected event types (Per ADR-034 v1.5: workflowexecution.* prefix)
 			eventTypes := make(map[string]bool)
 			for _, event := range auditEvents {
 				eventTypes[event.EventType] = true
 				GinkgoWriter.Printf("✅ Found audit event: %s\n", event.EventType)
 			}
 
-			Expect(eventTypes).To(HaveKey("workflow.started"),
-				"Expected workflow.started audit event")
+			Expect(eventTypes).To(HaveKey("workflowexecution.execution.started"),
+				"Expected workflowexecution.execution.started audit event (Gap #6, ADR-034 v1.5)")
 			Expect(eventTypes).To(Or(
-				HaveKey("workflow.completed"),
-				HaveKey("workflow.failed"),
-			), "Expected workflow.completed or workflow.failed audit event")
+				HaveKey("workflowexecution.workflow.completed"),
+				HaveKey("workflowexecution.workflow.failed"),
+			), "Expected workflowexecution.workflow.completed or workflowexecution.workflow.failed audit event (ADR-034 v1.5)")
 
 			GinkgoWriter.Println("✅ BR-WE-005: Audit events persisted to Data Storage PostgreSQL")
 		})
@@ -532,8 +526,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"Data Storage REQUIRED but not deployed in cluster")
 
 			By("Creating a WorkflowExecution that will fail")
-			testName := fmt.Sprintf("e2e-audit-failure-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/audit-fail-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-audit-failure-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/audit-fail-test-%s", uuid.New().String()[:8])
 
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
@@ -577,92 +571,85 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				return ""
 			}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
+			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
+			time.Sleep(3 * time.Second)
+
 			By("Querying Data Storage for workflow.failed audit event via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
 			// Use correlation ID to find this specific WFE's events
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageServiceURL)
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflow"
-			var failedEvent *dsgen.AuditEvent
+			eventCategory := "workflowexecution" // Per ADR-034 v1.5
+			var failedEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
-				resp, err := auditClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &wfe.Name,
+				resp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(wfe.Spec.RemediationRequestRef.Name), // Use RemediationRequest Name as correlation ID
 				})
 
 				// DEBUG: Comprehensive response logging (Dec 28, 2025 investigation)
-				GinkgoWriter.Printf("🔍 Query: event_category=%s, correlation_id=%s\n", eventCategory, wfe.Name)
+				GinkgoWriter.Printf("🔍 Query: event_category=%s, correlation_id=%s\n", eventCategory, wfe.Spec.RemediationRequestRef.Name)
 
 				if err != nil {
 					GinkgoWriter.Printf("⚠️ Audit query failed: %v\n", err)
 					return false
 				}
 
-				GinkgoWriter.Printf("🔍 Response: status=%d, JSON200 nil? %v\n", resp.StatusCode(), resp.JSON200 == nil)
+				auditEvents := resp.Data
+				GinkgoWriter.Printf("✅ Found %d events\n", len(auditEvents))
 
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil || resp.JSON200.Data == nil {
-					GinkgoWriter.Printf("⚠️ Status not 200 or JSON200/Data nil. Body length: %d bytes\n", len(resp.Body))
-					if len(resp.Body) > 0 && len(resp.Body) < 500 {
-						GinkgoWriter.Printf("⚠️ Response body: %s\n", string(resp.Body))
-					}
-					return false
-				}
-
-				GinkgoWriter.Printf("✅ Found %d events, Total in DB: %d\n",
-					len(*resp.JSON200.Data), *resp.JSON200.Pagination.Total)
-
-				// Find workflow.failed event
-				for i := range *resp.JSON200.Data {
-					event := &(*resp.JSON200.Data)[i]
+				// Find workflowexecution.workflow.failed event (per ADR-034 v1.5)
+				for i := range auditEvents {
+					event := &auditEvents[i]
 					GinkgoWriter.Printf("   Event %d: type=%s\n", i, event.EventType)
-					if event.EventType == "workflow.failed" {
+					if event.EventType == "workflowexecution.workflow.failed" {
 						failedEvent = event
 						return true
 					}
 				}
-				GinkgoWriter.Printf("⚠️ workflow.failed event not found in %d events\n", len(*resp.JSON200.Data))
+				GinkgoWriter.Printf("⚠️ workflowexecution.workflow.failed event not found in %d events\n", len(auditEvents))
 				return false
 			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
-				"workflow.failed audit event should be present in Data Storage")
+				"workflowexecution.workflow.failed audit event should be present in Data Storage (ADR-034 v1.5)")
 
-			By("Verifying workflow.failed event includes complete failure details")
+			By("Verifying workflowexecution.workflow.failed event includes complete failure details (ADR-034 v1.5)")
 			Expect(failedEvent).ToNot(BeNil())
 
 			// V1.0 Maturity Requirement: Use testutil.ValidateAuditEvent (P0 - MANDATORY)
 			// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Tests MUST use testutil validators
 			By("Validating audit event structure with testutil.ValidateAuditEvent")
 			testutil.ValidateAuditEvent(*failedEvent, testutil.ExpectedAuditEvent{
-				EventType:     "workflow.failed",
-				EventCategory: dsgen.AuditEventEventCategoryWorkflow,
+				EventType:     "workflowexecution.workflow.failed", // Per ADR-034 v1.5
+				EventCategory: ogenclient.AuditEventEventCategoryWorkflowexecution,
 				EventAction:   "failed", // EventAction = last part after "." (audit.go:109)
-				EventOutcome:  dsgen.AuditEventEventOutcomeFailure,
-				CorrelationID: wfe.Name,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
+				CorrelationID: wfe.Spec.RemediationRequestRef.Name, // RemediationRequest name is the correlation ID
 			})
-			GinkgoWriter.Println("✅ testutil.ValidateAuditEvent passed for workflow.failed event")
+			GinkgoWriter.Println("✅ testutil.ValidateAuditEvent passed for workflowexecution.workflow.failed event (ADR-034 v1.5)")
 
-		// Additional business-specific validation (complements testutil validation)
-		Expect(failedEvent.EventOutcome).To(Equal(dsgen.AuditEventEventOutcomeFailure))
-		Expect(failedEvent.EventData).ToNot(BeNil())
+			// Additional business-specific validation (complements testutil validation)
+			Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
+			Expect(failedEvent.EventData).ToNot(BeNil())
 
-		// Extract and validate event_data payload (type-safe access via dsgen.AuditEvent)
-		eventData, ok := failedEvent.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue(), "event_data should be an object")
+			// Extract and validate event_data payload (type-safe access via ogen client)
+			eventData, ok := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
-		// Validate WorkflowExecutionAuditPayload failure fields
-		Expect(eventData["workflow_id"]).ToNot(BeEmpty())
-		Expect(eventData["workflow_version"]).ToNot(BeEmpty())
-		Expect(eventData["target_resource"]).ToNot(BeEmpty())
-		Expect(eventData["phase"]).To(Equal("Failed"))
+			// Validate WorkflowExecutionAuditPayload failure fields
+			Expect(eventData.WorkflowID).ToNot(BeEmpty())
+			Expect(eventData.WorkflowVersion).ToNot(BeEmpty())
+			Expect(eventData.TargetResource).ToNot(BeEmpty())
+			Expect(string(eventData.Phase)).To(Equal("Failed"))
 
-		// Critical: Verify failure details are included
-		Expect(eventData["failure_reason"]).ToNot(BeEmpty(), "failure_reason MUST be populated in workflow.failed events")
-		Expect(eventData["failure_message"]).ToNot(BeEmpty(), "failure_message MUST be populated in workflow.failed events")
+			// Critical: Verify failure details are included
+			Expect(eventData.FailureReason.IsSet()).To(BeTrue(), "failure_reason MUST be populated in workflowexecution.workflow.failed events")
+			Expect(eventData.FailureMessage.IsSet()).To(BeTrue(), "failure_message MUST be populated in workflowexecution.workflow.failed events")
 
-		GinkgoWriter.Printf("✅ workflow.failed audit event validated:\n")
-		GinkgoWriter.Printf("   - Failure Reason: %v\n", eventData["failure_reason"])
-		GinkgoWriter.Printf("   - Failure Message: %v\n", eventData["failure_message"])
-		GinkgoWriter.Printf("   - Execution Phase: %v\n", eventData["execution_phase"])
+			GinkgoWriter.Printf("✅ workflowexecution.workflow.failed audit event validated:\n")
+			GinkgoWriter.Printf("   - Failure Reason: %v\n", eventData.FailureReason.Value)
+			GinkgoWriter.Printf("   - Failure Message: %v\n", eventData.FailureMessage.Value)
+			GinkgoWriter.Printf("   - Execution Phase: %v\n", eventData.Phase)
 		})
 
 		It("should persist audit events with correct WorkflowExecutionAuditPayload fields", func() {
@@ -676,8 +663,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				"Data Storage REQUIRED but not deployed in cluster")
 
 			By("Creating a successful WorkflowExecution to generate complete audit trail")
-			testName := fmt.Sprintf("e2e-audit-fields-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/audit-fields-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-audit-fields-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/audit-fields-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {
@@ -698,55 +685,47 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				Equal(workflowexecutionv1alpha1.PhaseFailed),
 			))
 
+			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
+			time.Sleep(3 * time.Second)
+
 			By("Querying Data Storage for all audit events via OpenAPI client")
 			// V1.0 MANDATORY: Use OpenAPI client instead of raw HTTP (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
-			auditClient, err := dsgen.NewClientWithResponses(dataStorageServiceURL)
+			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflow"
-			var auditEvents []dsgen.AuditEvent
+			eventCategory := "workflowexecution" // Per ADR-034 v1.5
+			var auditEvents []ogenclient.AuditEvent
 			Eventually(func() int {
-				resp, err := auditClient.QueryAuditEventsWithResponse(ctx, &dsgen.QueryAuditEventsParams{
-					EventCategory: &eventCategory,
-					CorrelationId: &wfe.Name,
+				resp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(wfe.Spec.RemediationRequestRef.Name), // Use RemediationRequest Name as correlation ID
 				})
 
 				// DEBUG: Comprehensive response logging (Dec 28, 2025 investigation)
-				GinkgoWriter.Printf("🔍 Query: event_category=%s, correlation_id=%s\n", eventCategory, wfe.Name)
+				GinkgoWriter.Printf("🔍 Query: event_category=%s, correlation_id=%s\n", eventCategory, wfe.Spec.RemediationRequestRef.Name)
 
 				if err != nil {
 					GinkgoWriter.Printf("⚠️ Audit query failed: %v\n", err)
 					return 0
 				}
 
-				GinkgoWriter.Printf("🔍 Response: status=%d, JSON200 nil? %v\n", resp.StatusCode(), resp.JSON200 == nil)
-
-				if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-					GinkgoWriter.Printf("⚠️ Status not 200 or JSON200 nil. Body length: %d bytes\n", len(resp.Body))
-					if len(resp.Body) > 0 && len(resp.Body) < 500 {
-						GinkgoWriter.Printf("⚠️ Response body: %s\n", string(resp.Body))
-					}
-					return 0
+				auditEvents = resp.Data
+				totalCount := len(auditEvents)
+				GinkgoWriter.Printf("✅ Found %d events\n", totalCount)
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					GinkgoWriter.Printf("📊 Total in DB: %d\n", resp.Pagination.Value.Total.Value)
 				}
-
-				if resp.JSON200.Data != nil {
-					auditEvents = *resp.JSON200.Data
-					GinkgoWriter.Printf("✅ Found %d events, Total in DB: %d\n",
-						len(auditEvents), *resp.JSON200.Pagination.Total)
-					for i, event := range auditEvents {
-						GinkgoWriter.Printf("   Event %d: type=%s\n", i, event.EventType)
-					}
-				} else {
-					GinkgoWriter.Printf("⚠️ JSON200.Data is nil\n")
+				for i, event := range auditEvents {
+					GinkgoWriter.Printf("   Event %d: type=%s\n", i, event.EventType)
 				}
-				return len(auditEvents)
+				return totalCount
 			}, 60*time.Second).Should(BeNumerically(">=", 2),
 				"Expected at least 2 audit events")
 
-			By("Validating workflow.started event payload fields")
-			var startedEvent *dsgen.AuditEvent
+			By("Validating workflowexecution.execution.started event payload fields (Gap #6, ADR-034 v1.5)")
+			var startedEvent *ogenclient.AuditEvent
 			for i := range auditEvents {
-				if auditEvents[i].EventType == "workflow.started" {
+				if auditEvents[i].EventType == "workflowexecution.execution.started" {
 					startedEvent = &auditEvents[i]
 					break
 				}
@@ -754,36 +733,36 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			// DEBUG: Show all event types if not found
 			if startedEvent == nil {
-				GinkgoWriter.Printf("⚠️ workflow.started not found. Available event types:\n")
+				GinkgoWriter.Printf("⚠️ workflowexecution.execution.started not found. Available event types:\n")
 				for i := range auditEvents {
 					GinkgoWriter.Printf("   %d: %s\n", i, auditEvents[i].EventType)
 				}
 			}
 
-			Expect(startedEvent).ToNot(BeNil(), "workflow.started event not found")
+			Expect(startedEvent).ToNot(BeNil(), "workflowexecution.execution.started event not found (Gap #6, ADR-034 v1.5)")
 
-			// Extract event_data (nested object in audit event)
-			eventData, ok := startedEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be a map")
+			// Extract event_data using type-safe ogen client method
+			eventData, ok := startedEvent.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
 			// Validate CORE fields (5 fields - always present)
 			GinkgoWriter.Println("✅ Validating CORE audit fields...")
-			Expect(eventData["workflow_id"]).To(Equal(wfe.Spec.WorkflowRef.WorkflowID),
+			Expect(eventData.WorkflowID).To(Equal(wfe.Spec.WorkflowRef.WorkflowID),
 				"workflow_id should match")
-			Expect(eventData["target_resource"]).To(Equal(targetResource),
+			Expect(eventData.TargetResource).To(Equal(targetResource),
 				"target_resource should match")
-			Expect(eventData["phase"]).ToNot(BeEmpty(),
+			Expect(string(eventData.Phase)).ToNot(BeEmpty(),
 				"phase should be present")
-			Expect(eventData["container_image"]).To(Equal(wfe.Spec.WorkflowRef.ContainerImage),
+			Expect(eventData.ContainerImage).To(Equal(wfe.Spec.WorkflowRef.ContainerImage),
 				"container_image should match")
-			Expect(eventData["execution_name"]).To(Equal(wfe.Name),
+			Expect(eventData.ExecutionName).To(Equal(wfe.Name),
 				"execution_name should match")
 
-			By("Validating workflow.completed or workflow.failed event payload fields")
-			var terminalEvent *dsgen.AuditEvent
+			By("Validating workflowexecution.workflow.completed or workflowexecution.workflow.failed event payload fields (ADR-034 v1.5)")
+			var terminalEvent *ogenclient.AuditEvent
 			var terminalEventType string
 			for i := range auditEvents {
-				if auditEvents[i].EventType == "workflow.completed" || auditEvents[i].EventType == "workflow.failed" {
+				if auditEvents[i].EventType == "workflowexecution.workflow.completed" || auditEvents[i].EventType == "workflowexecution.workflow.failed" {
 					terminalEvent = &auditEvents[i]
 					terminalEventType = auditEvents[i].EventType
 					break
@@ -791,29 +770,29 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			}
 			Expect(terminalEvent).ToNot(BeNil(), "terminal event (completed/failed) not found")
 
-			terminalEventData, ok := terminalEvent.EventData.(map[string]interface{})
-			Expect(ok).To(BeTrue(), "terminal event_data should be a map")
+			terminalEventData, ok := terminalEvent.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "terminal EventData should be WorkflowExecutionAuditPayload")
 
 			// Validate TIMING fields (3 fields - present when Running/Completed/Failed)
 			GinkgoWriter.Printf("✅ Validating TIMING fields for %s...\n", terminalEventType)
-			Expect(terminalEventData["started_at"]).ToNot(BeNil(),
+			Expect(terminalEventData.StartedAt.IsSet()).To(BeTrue(),
 				"started_at should be present in terminal event")
-			Expect(terminalEventData["completed_at"]).ToNot(BeNil(),
+			Expect(terminalEventData.CompletedAt.IsSet()).To(BeTrue(),
 				"completed_at should be present in terminal event")
-			Expect(terminalEventData["duration"]).ToNot(BeEmpty(),
+			Expect(terminalEventData.Duration.IsSet()).To(BeTrue(),
 				"duration should be present in terminal event")
 
 			// Validate PIPELINERUN REFERENCE field (1 field - present when PipelineRun created)
 			GinkgoWriter.Println("✅ Validating PIPELINERUN REFERENCE field...")
-			Expect(terminalEventData["pipelinerun_name"]).ToNot(BeEmpty(),
+			Expect(terminalEventData.PipelinerunName.IsSet()).To(BeTrue(),
 				"pipelinerun_name should be present")
 
 			// If workflow failed, validate FAILURE fields (3 fields)
-			if terminalEventType == "workflow.failed" {
+			if terminalEventType == "workflowexecution.workflow.failed" {
 				GinkgoWriter.Println("✅ Validating FAILURE fields...")
-				Expect(terminalEventData["failure_reason"]).ToNot(BeEmpty(),
+				Expect(terminalEventData.FailureReason.IsSet()).To(BeTrue(),
 					"failure_reason should be present in failed event")
-				Expect(terminalEventData["failure_message"]).ToNot(BeEmpty(),
+				Expect(terminalEventData.FailureMessage.IsSet()).To(BeTrue(),
 					"failure_message should be present in failed event")
 				// failed_task_name is optional (only when specific TaskRun identified)
 			}
@@ -824,7 +803,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("   Core fields: ✅ (5/5)\n")
 			GinkgoWriter.Printf("   Timing fields: ✅ (3/3)\n")
 			GinkgoWriter.Printf("   PipelineRun reference: ✅ (1/1)\n")
-			if terminalEventType == "workflow.failed" {
+			if terminalEventType == "workflowexecution.workflow.failed" {
 				GinkgoWriter.Printf("   Failure fields: ✅ (validated)\n")
 			}
 		})
@@ -833,8 +812,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	Context("BR-WE-003: Monitor Execution Status (Status Sync)", func() {
 		It("should sync WFE status with PipelineRun status accurately", func() {
 			// Business Outcome: WFE status accurately reflects execution state
-			testName := fmt.Sprintf("e2e-sync-%d", time.Now().UnixNano())
-			targetResource := fmt.Sprintf("default/deployment/sync-test-%d", time.Now().UnixNano())
+			testName := fmt.Sprintf("e2e-sync-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/sync-test-%s", uuid.New().String()[:8])
 			wfe := createTestWFE(testName, targetResource)
 
 			defer func() {

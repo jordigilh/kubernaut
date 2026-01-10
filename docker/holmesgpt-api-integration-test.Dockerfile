@@ -23,6 +23,10 @@ WORKDIR /workspace
 COPY holmesgpt-api/requirements-e2e.txt holmesgpt-api/requirements-test.txt ./holmesgpt-api/
 COPY dependencies/holmesgpt ./dependencies/holmesgpt
 
+# Copy DataStorage OpenAPI client (referenced in requirements-e2e.txt)
+# Destination must match path in requirements: src/clients/datastorage/
+COPY holmesgpt-api/src/clients/datastorage ./src/clients/datastorage
+
 # Install holmesgpt package first (avoids relative path issues in requirements.txt)
 # The requirements-e2e.txt line references "../dependencies/holmesgpt/" which doesn't resolve in container context
 RUN pip3.12 install --no-cache-dir --break-system-packages /workspace/dependencies/holmesgpt

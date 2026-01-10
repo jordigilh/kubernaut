@@ -37,12 +37,22 @@ class TestWorkflowCatalogUpdatedPayload(unittest.TestCase):
         if include_optional:
             return WorkflowCatalogUpdatedPayload(
                 workflow_id = '550e8400-e29b-41d4-a716-446655440000',
-                updated_fields = {"status":"disabled","description":"Updated description"}
+                updated_fields = datastorage.models.workflow_catalog_updated_fields.WorkflowCatalogUpdatedFields(
+                    status = 'disabled', 
+                    disabled_by = 'admin@example.com', 
+                    disabled_reason = 'Security vulnerability detected', 
+                    version = '1.0.1', 
+                    description = 'Updated workflow description', )
             )
         else:
             return WorkflowCatalogUpdatedPayload(
                 workflow_id = '550e8400-e29b-41d4-a716-446655440000',
-                updated_fields = {"status":"disabled","description":"Updated description"},
+                updated_fields = datastorage.models.workflow_catalog_updated_fields.WorkflowCatalogUpdatedFields(
+                    status = 'disabled', 
+                    disabled_by = 'admin@example.com', 
+                    disabled_reason = 'Security vulnerability detected', 
+                    version = '1.0.1', 
+                    description = 'Updated workflow description', ),
         )
         """
 

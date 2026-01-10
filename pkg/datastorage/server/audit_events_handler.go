@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
 
 	dsclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
@@ -134,9 +133,9 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// 4. Handle parent_event_id FK constraint (query parent's event_date)
-	if req.ParentEventId != nil {
-		parentEventID := uuid.UUID(*req.ParentEventId)
+	// 4. Handle parent_event_id FK constraint (query parent's event_date) - OGEN-MIGRATION: OptNilUUID
+	if req.ParentEventID.IsSet() {
+		parentEventID := req.ParentEventID.Value
 		var parentDate time.Time
 		err = s.db.QueryRowContext(ctx,
 			"SELECT event_date FROM audit_events WHERE event_id = $1",
@@ -168,7 +167,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	s.logger.V(1).Info("Request parsed and validated successfully",
 		"event_type", req.EventType,
 		"event_category", string(req.EventCategory),
-		"correlation_id", req.CorrelationId)
+		"correlation_id", req.CorrelationID)
 
 	// 6. Persist to database via repository
 	s.logger.V(1).Info("Writing audit event to database...")
@@ -185,13 +184,13 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		s.logger.Error(err, "Database write failed",
 			"event_type", req.EventType,
-			"correlation_id", req.CorrelationId,
+			"correlation_id", req.CorrelationID,
 			"duration_seconds", duration)
 
 		// DD-009: DLQ fallback on database errors
 		s.logger.Info("Attempting DLQ fallback for audit event",
 			"event_type", req.EventType,
-			"correlation_id", req.CorrelationId,
+			"correlation_id", req.CorrelationID,
 			"db_error", err.Error())
 
 		// Create a FRESH context for DLQ write (not tied to original request timeout)
@@ -207,7 +206,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 		if dlqErr := s.dlqClient.EnqueueAuditEvent(dlqCtx, dlqAuditEvent, err); dlqErr != nil {
 			s.logger.Error(dlqErr, "DLQ fallback also failed - data loss risk",
 				"event_type", req.EventType,
-				"correlation_id", req.CorrelationId,
+				"correlation_id", req.CorrelationID,
 				"original_error", err.Error())
 
 			// Both database and DLQ failed - return 500
@@ -217,7 +216,7 @@ func (s *Server) handleCreateAuditEvent(w http.ResponseWriter, r *http.Request) 
 
 		s.logger.Info("DLQ fallback succeeded",
 			"event_type", req.EventType,
-			"correlation_id", req.CorrelationId)
+			"correlation_id", req.CorrelationID)
 
 	// Record DLQ fallback metric
 	// Metrics are guaranteed non-nil by constructor

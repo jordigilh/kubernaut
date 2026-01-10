@@ -118,7 +118,7 @@ func (s *AIAnalysisApprovalDecisionPayload) SetWorkflowID(val OptString) {
 // Ref: #/components/schemas/AIAnalysisAuditPayload
 type AIAnalysisAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType AIAnalysisAuditPayloadEventType `json:"event_type"`
 	// Name of the AIAnalysis CRD.
 	AnalysisName string `json:"analysis_name"`
 	// Kubernetes namespace of the AIAnalysis.
@@ -148,7 +148,7 @@ type AIAnalysisAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *AIAnalysisAuditPayload) GetEventType() string {
+func (s *AIAnalysisAuditPayload) GetEventType() AIAnalysisAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -223,7 +223,7 @@ func (s *AIAnalysisAuditPayload) GetErrorDetails() OptErrorDetails {
 }
 
 // SetEventType sets the value of EventType.
-func (s *AIAnalysisAuditPayload) SetEventType(val string) {
+func (s *AIAnalysisAuditPayload) SetEventType(val AIAnalysisAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -295,6 +295,48 @@ func (s *AIAnalysisAuditPayload) SetProviderResponseSummary(val OptProviderRespo
 // SetErrorDetails sets the value of ErrorDetails.
 func (s *AIAnalysisAuditPayload) SetErrorDetails(val OptErrorDetails) {
 	s.ErrorDetails = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type AIAnalysisAuditPayloadEventType string
+
+const (
+	AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted AIAnalysisAuditPayloadEventType = "aianalysis.analysis.completed"
+	AIAnalysisAuditPayloadEventTypeAianalysisAnalysisFailed    AIAnalysisAuditPayloadEventType = "aianalysis.analysis.failed"
+)
+
+// AllValues returns all AIAnalysisAuditPayloadEventType values.
+func (AIAnalysisAuditPayloadEventType) AllValues() []AIAnalysisAuditPayloadEventType {
+	return []AIAnalysisAuditPayloadEventType{
+		AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+		AIAnalysisAuditPayloadEventTypeAianalysisAnalysisFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AIAnalysisAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted:
+		return []byte(s), nil
+	case AIAnalysisAuditPayloadEventTypeAianalysisAnalysisFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AIAnalysisAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch AIAnalysisAuditPayloadEventType(data) {
+	case AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted:
+		*s = AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted
+		return nil
+	case AIAnalysisAuditPayloadEventTypeAianalysisAnalysisFailed:
+		*s = AIAnalysisAuditPayloadEventTypeAianalysisAnalysisFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Current phase of the AIAnalysis.
@@ -514,7 +556,7 @@ type AuditEvent struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.4).
+	// Service-level event category (ADR-034 v1.5).
 	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
@@ -522,7 +564,7 @@ type AuditEvent struct {
 	// - analysis: AI Analysis Service
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow Catalog Service
-	// - execution: Remediation Execution Service
+	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 	// - orchestration: Remediation Orchestrator Service
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 	EventCategory AuditEventEventCategory `json:"event_category"`
@@ -741,7 +783,7 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 	s.EventDate = val
 }
 
-// Service-level event category (ADR-034 v1.4).
+// Service-level event category (ADR-034 v1.5).
 // Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
@@ -749,20 +791,20 @@ func (s *AuditEvent) SetEventDate(val OptNilDate) {
 // - analysis: AI Analysis Service
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow Catalog Service
-// - execution: Remediation Execution Service
+// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 // - orchestration: Remediation Orchestrator Service
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 type AuditEventEventCategory string
 
 const (
-	AuditEventEventCategoryGateway          AuditEventEventCategory = "gateway"
-	AuditEventEventCategoryNotification     AuditEventEventCategory = "notification"
-	AuditEventEventCategoryAnalysis         AuditEventEventCategory = "analysis"
-	AuditEventEventCategorySignalprocessing AuditEventEventCategory = "signalprocessing"
-	AuditEventEventCategoryWorkflow         AuditEventEventCategory = "workflow"
-	AuditEventEventCategoryExecution        AuditEventEventCategory = "execution"
-	AuditEventEventCategoryOrchestration    AuditEventEventCategory = "orchestration"
-	AuditEventEventCategoryWebhook          AuditEventEventCategory = "webhook"
+	AuditEventEventCategoryGateway           AuditEventEventCategory = "gateway"
+	AuditEventEventCategoryNotification      AuditEventEventCategory = "notification"
+	AuditEventEventCategoryAnalysis          AuditEventEventCategory = "analysis"
+	AuditEventEventCategorySignalprocessing  AuditEventEventCategory = "signalprocessing"
+	AuditEventEventCategoryWorkflow          AuditEventEventCategory = "workflow"
+	AuditEventEventCategoryWorkflowexecution AuditEventEventCategory = "workflowexecution"
+	AuditEventEventCategoryOrchestration     AuditEventEventCategory = "orchestration"
+	AuditEventEventCategoryWebhook           AuditEventEventCategory = "webhook"
 )
 
 // AllValues returns all AuditEventEventCategory values.
@@ -773,7 +815,7 @@ func (AuditEventEventCategory) AllValues() []AuditEventEventCategory {
 		AuditEventEventCategoryAnalysis,
 		AuditEventEventCategorySignalprocessing,
 		AuditEventEventCategoryWorkflow,
-		AuditEventEventCategoryExecution,
+		AuditEventEventCategoryWorkflowexecution,
 		AuditEventEventCategoryOrchestration,
 		AuditEventEventCategoryWebhook,
 	}
@@ -792,7 +834,7 @@ func (s AuditEventEventCategory) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case AuditEventEventCategoryWorkflow:
 		return []byte(s), nil
-	case AuditEventEventCategoryExecution:
+	case AuditEventEventCategoryWorkflowexecution:
 		return []byte(s), nil
 	case AuditEventEventCategoryOrchestration:
 		return []byte(s), nil
@@ -821,8 +863,8 @@ func (s *AuditEventEventCategory) UnmarshalText(data []byte) error {
 	case AuditEventEventCategoryWorkflow:
 		*s = AuditEventEventCategoryWorkflow
 		return nil
-	case AuditEventEventCategoryExecution:
-		*s = AuditEventEventCategoryExecution
+	case AuditEventEventCategoryWorkflowexecution:
+		*s = AuditEventEventCategoryWorkflowexecution
 		return nil
 	case AuditEventEventCategoryOrchestration:
 		*s = AuditEventEventCategoryOrchestration
@@ -874,45 +916,51 @@ type AuditEventEventDataType string
 
 // Possible values for AuditEventEventDataType.
 const (
-	AuditEventEventDataGatewayCrdCreatedAuditEventEventData                     AuditEventEventDataType = "gateway.crd.created"
-	AuditEventEventDataGatewayCrdFailedAuditEventEventData                      AuditEventEventDataType = "gateway.crd.failed"
-	AuditEventEventDataGatewaySignalDeduplicatedAuditEventEventData             AuditEventEventDataType = "gateway.signal.deduplicated"
-	AuditEventEventDataGatewaySignalReceivedAuditEventEventData                 AuditEventEventDataType = "gateway.signal.received"
-	AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData        AuditEventEventDataType = "orchestrator.lifecycle.completed"
-	AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData           AuditEventEventDataType = "orchestrator.lifecycle.failed"
-	AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData          AuditEventEventDataType = "orchestrator.lifecycle.started"
-	AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData     AuditEventEventDataType = "orchestrator.lifecycle.transitioned"
-	AuditEventEventDataSignalprocessingClassificationDecidedAuditEventEventData AuditEventEventDataType = "signalprocessing.classification.decided"
-	AuditEventEventDataSignalprocessingPhaseTransitionAuditEventEventData       AuditEventEventDataType = "signalprocessing.phase.transition"
-	AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData       AuditEventEventDataType = "signalprocessing.signal.processed"
-	AuditEventEventDataAianalysisAnalysisCompletedAuditEventEventData           AuditEventEventDataType = "aianalysis.analysis.completed"
-	AuditEventEventDataAianalysisAnalysisFailedAuditEventEventData              AuditEventEventDataType = "aianalysis.analysis.failed"
-	AuditEventEventDataExecutionWorkflowStartedAuditEventEventData              AuditEventEventDataType = "execution.workflow.started"
-	AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData            AuditEventEventDataType = "workflow.selection.completed"
-	AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData    AuditEventEventDataType = "workflowexecution.workflow.completed"
-	AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData       AuditEventEventDataType = "workflowexecution.workflow.failed"
-	AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData      AuditEventEventDataType = "workflowexecution.workflow.started"
-	AuditEventEventDataWebhookNotificationAcknowledgedAuditEventEventData       AuditEventEventDataType = "webhook.notification.acknowledged"
-	AuditEventEventDataWebhookNotificationCancelledAuditEventEventData          AuditEventEventDataType = "webhook.notification.cancelled"
-	WorkflowExecutionWebhookAuditPayloadAuditEventEventData                     AuditEventEventDataType = "webhook.workflow.unblocked"
-	RemediationApprovalAuditPayloadAuditEventEventData                          AuditEventEventDataType = "webhook.approval.decided"
-	WorkflowSearchAuditPayloadAuditEventEventData                               AuditEventEventDataType = "workflow.catalog.search_completed"
-	WorkflowCatalogCreatedPayloadAuditEventEventData                            AuditEventEventDataType = "datastorage.workflow.created"
-	WorkflowCatalogUpdatedPayloadAuditEventEventData                            AuditEventEventDataType = "datastorage.workflow.updated"
-	AIAnalysisPhaseTransitionPayloadAuditEventEventData                         AuditEventEventDataType = "aianalysis.phase.transition"
-	AIAnalysisHolmesGPTCallPayloadAuditEventEventData                           AuditEventEventDataType = "aianalysis.holmesgpt.call"
-	AIAnalysisApprovalDecisionPayloadAuditEventEventData                        AuditEventEventDataType = "aianalysis.approval.decision"
-	AIAnalysisRegoEvaluationPayloadAuditEventEventData                          AuditEventEventDataType = "aianalysis.rego.evaluation"
-	AIAnalysisErrorPayloadAuditEventEventData                                   AuditEventEventDataType = "aianalysis.error.occurred"
-	NotificationMessageSentPayloadAuditEventEventData                           AuditEventEventDataType = "notification.message.sent"
-	NotificationMessageFailedPayloadAuditEventEventData                         AuditEventEventDataType = "notification.message.failed"
-	NotificationMessageAcknowledgedPayloadAuditEventEventData                   AuditEventEventDataType = "notification.message.acknowledged"
-	NotificationMessageEscalatedPayloadAuditEventEventData                      AuditEventEventDataType = "notification.message.escalated"
-	HolmesGPTResponsePayloadAuditEventEventData                                 AuditEventEventDataType = "holmesgpt.response.complete"
-	LLMRequestPayloadAuditEventEventData                                        AuditEventEventDataType = "llm_request"
-	LLMResponsePayloadAuditEventEventData                                       AuditEventEventDataType = "llm_response"
-	LLMToolCallPayloadAuditEventEventData                                       AuditEventEventDataType = "llm_tool_call"
-	WorkflowValidationPayloadAuditEventEventData                                AuditEventEventDataType = "workflow_validation_attempt"
+	AuditEventEventDataGatewayCrdCreatedAuditEventEventData                      AuditEventEventDataType = "gateway.crd.created"
+	AuditEventEventDataGatewayCrdFailedAuditEventEventData                       AuditEventEventDataType = "gateway.crd.failed"
+	AuditEventEventDataGatewaySignalDeduplicatedAuditEventEventData              AuditEventEventDataType = "gateway.signal.deduplicated"
+	AuditEventEventDataGatewaySignalReceivedAuditEventEventData                  AuditEventEventDataType = "gateway.signal.received"
+	AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData           AuditEventEventDataType = "orchestrator.approval.approved"
+	AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData           AuditEventEventDataType = "orchestrator.approval.rejected"
+	AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData          AuditEventEventDataType = "orchestrator.approval.requested"
+	AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData         AuditEventEventDataType = "orchestrator.lifecycle.completed"
+	AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData            AuditEventEventDataType = "orchestrator.lifecycle.failed"
+	AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData           AuditEventEventDataType = "orchestrator.lifecycle.started"
+	AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData      AuditEventEventDataType = "orchestrator.lifecycle.transitioned"
+	AuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData     AuditEventEventDataType = "signalprocessing.business.classified"
+	AuditEventEventDataSignalprocessingClassificationDecisionAuditEventEventData AuditEventEventDataType = "signalprocessing.classification.decision"
+	AuditEventEventDataSignalprocessingEnrichmentCompletedAuditEventEventData    AuditEventEventDataType = "signalprocessing.enrichment.completed"
+	AuditEventEventDataSignalprocessingErrorOccurredAuditEventEventData          AuditEventEventDataType = "signalprocessing.error.occurred"
+	AuditEventEventDataSignalprocessingPhaseTransitionAuditEventEventData        AuditEventEventDataType = "signalprocessing.phase.transition"
+	AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData        AuditEventEventDataType = "signalprocessing.signal.processed"
+	AuditEventEventDataAianalysisAnalysisCompletedAuditEventEventData            AuditEventEventDataType = "aianalysis.analysis.completed"
+	AuditEventEventDataAianalysisAnalysisFailedAuditEventEventData               AuditEventEventDataType = "aianalysis.analysis.failed"
+	AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData      AuditEventEventDataType = "workflowexecution.execution.started"
+	AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData    AuditEventEventDataType = "workflowexecution.selection.completed"
+	AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData     AuditEventEventDataType = "workflowexecution.workflow.completed"
+	AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData        AuditEventEventDataType = "workflowexecution.workflow.failed"
+	AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData       AuditEventEventDataType = "workflowexecution.workflow.started"
+	AuditEventEventDataWebhookNotificationAcknowledgedAuditEventEventData        AuditEventEventDataType = "webhook.notification.acknowledged"
+	AuditEventEventDataWebhookNotificationCancelledAuditEventEventData           AuditEventEventDataType = "webhook.notification.cancelled"
+	WorkflowExecutionWebhookAuditPayloadAuditEventEventData                      AuditEventEventDataType = "webhook.workflow.unblocked"
+	RemediationApprovalAuditPayloadAuditEventEventData                           AuditEventEventDataType = "webhook.approval.decided"
+	WorkflowSearchAuditPayloadAuditEventEventData                                AuditEventEventDataType = "workflow.catalog.search_completed"
+	WorkflowCatalogCreatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.created"
+	WorkflowCatalogUpdatedPayloadAuditEventEventData                             AuditEventEventDataType = "datastorage.workflow.updated"
+	AIAnalysisPhaseTransitionPayloadAuditEventEventData                          AuditEventEventDataType = "aianalysis.phase.transition"
+	AIAnalysisHolmesGPTCallPayloadAuditEventEventData                            AuditEventEventDataType = "aianalysis.holmesgpt.call"
+	AIAnalysisApprovalDecisionPayloadAuditEventEventData                         AuditEventEventDataType = "aianalysis.approval.decision"
+	AIAnalysisRegoEvaluationPayloadAuditEventEventData                           AuditEventEventDataType = "aianalysis.rego.evaluation"
+	AIAnalysisErrorPayloadAuditEventEventData                                    AuditEventEventDataType = "aianalysis.error.occurred"
+	NotificationMessageSentPayloadAuditEventEventData                            AuditEventEventDataType = "notification.message.sent"
+	NotificationMessageFailedPayloadAuditEventEventData                          AuditEventEventDataType = "notification.message.failed"
+	NotificationMessageAcknowledgedPayloadAuditEventEventData                    AuditEventEventDataType = "notification.message.acknowledged"
+	NotificationMessageEscalatedPayloadAuditEventEventData                       AuditEventEventDataType = "notification.message.escalated"
+	HolmesGPTResponsePayloadAuditEventEventData                                  AuditEventEventDataType = "holmesgpt.response.complete"
+	LLMRequestPayloadAuditEventEventData                                         AuditEventEventDataType = "llm_request"
+	LLMResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "llm_response"
+	LLMToolCallPayloadAuditEventEventData                                        AuditEventEventDataType = "llm_tool_call"
+	WorkflowValidationPayloadAuditEventEventData                                 AuditEventEventDataType = "workflow_validation_attempt"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -928,7 +976,7 @@ func (s AuditEventEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -938,7 +986,7 @@ func (s AuditEventEventData) IsRemediationOrchestratorAuditPayload() bool {
 // IsSignalProcessingAuditPayload reports whether AuditEventEventData is SignalProcessingAuditPayload.
 func (s AuditEventEventData) IsSignalProcessingAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataSignalprocessingClassificationDecidedAuditEventEventData, AuditEventEventDataSignalprocessingPhaseTransitionAuditEventEventData, AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData:
+	case AuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData, AuditEventEventDataSignalprocessingClassificationDecisionAuditEventEventData, AuditEventEventDataSignalprocessingEnrichmentCompletedAuditEventEventData, AuditEventEventDataSignalprocessingErrorOccurredAuditEventEventData, AuditEventEventDataSignalprocessingPhaseTransitionAuditEventEventData, AuditEventEventDataSignalprocessingSignalProcessedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -958,7 +1006,7 @@ func (s AuditEventEventData) IsAIAnalysisAuditPayload() bool {
 // IsWorkflowExecutionAuditPayload reports whether AuditEventEventData is WorkflowExecutionAuditPayload.
 func (s AuditEventEventData) IsWorkflowExecutionAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataExecutionWorkflowStartedAuditEventEventData, AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
+	case AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowCompletedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowFailedAuditEventEventData, AuditEventEventDataWorkflowexecutionWorkflowStartedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -1134,6 +1182,27 @@ func (s AuditEventEventData) GetRemediationOrchestratorAuditPayload() (v Remedia
 	return s.RemediationOrchestratorAuditPayload, true
 }
 
+// NewAuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, v)
+	return s
+}
+
 // NewAuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
 func NewAuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
@@ -1180,10 +1249,31 @@ func (s AuditEventEventData) GetSignalProcessingAuditPayload() (v SignalProcessi
 	return s.SignalProcessingAuditPayload, true
 }
 
-// NewAuditEventEventDataSignalprocessingClassificationDecidedAuditEventEventData returns new AuditEventEventData from SignalProcessingAuditPayload.
-func NewAuditEventEventDataSignalprocessingClassificationDecidedAuditEventEventData(v SignalProcessingAuditPayload) AuditEventEventData {
+// NewAuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData returns new AuditEventEventData from SignalProcessingAuditPayload.
+func NewAuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData(v SignalProcessingAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetSignalProcessingAuditPayload(AuditEventEventDataSignalprocessingClassificationDecidedAuditEventEventData, v)
+	s.SetSignalProcessingAuditPayload(AuditEventEventDataSignalprocessingBusinessClassifiedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataSignalprocessingClassificationDecisionAuditEventEventData returns new AuditEventEventData from SignalProcessingAuditPayload.
+func NewAuditEventEventDataSignalprocessingClassificationDecisionAuditEventEventData(v SignalProcessingAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetSignalProcessingAuditPayload(AuditEventEventDataSignalprocessingClassificationDecisionAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataSignalprocessingEnrichmentCompletedAuditEventEventData returns new AuditEventEventData from SignalProcessingAuditPayload.
+func NewAuditEventEventDataSignalprocessingEnrichmentCompletedAuditEventEventData(v SignalProcessingAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetSignalProcessingAuditPayload(AuditEventEventDataSignalprocessingEnrichmentCompletedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataSignalprocessingErrorOccurredAuditEventEventData returns new AuditEventEventData from SignalProcessingAuditPayload.
+func NewAuditEventEventDataSignalprocessingErrorOccurredAuditEventEventData(v SignalProcessingAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetSignalProcessingAuditPayload(AuditEventEventDataSignalprocessingErrorOccurredAuditEventEventData, v)
 	return s
 }
 
@@ -1251,17 +1341,17 @@ func (s AuditEventEventData) GetWorkflowExecutionAuditPayload() (v WorkflowExecu
 	return s.WorkflowExecutionAuditPayload, true
 }
 
-// NewAuditEventEventDataExecutionWorkflowStartedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
-func NewAuditEventEventDataExecutionWorkflowStartedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
+// NewAuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataExecutionWorkflowStartedAuditEventEventData, v)
+	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData, v)
 	return s
 }
 
-// NewAuditEventEventDataWorkflowSelectionCompletedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
-func NewAuditEventEventDataWorkflowSelectionCompletedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
+// NewAuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData returns new AuditEventEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData(v WorkflowExecutionAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
-	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataWorkflowSelectionCompletedAuditEventEventData, v)
+	s.SetWorkflowExecutionAuditPayload(AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData, v)
 	return s
 }
 
@@ -1774,7 +1864,7 @@ type AuditEventRequest struct {
 	EventType string `json:"event_type"`
 	// ISO 8601 timestamp when the event occurred.
 	EventTimestamp time.Time `json:"event_timestamp"`
-	// Service-level event category (ADR-034 v1.4).
+	// Service-level event category (ADR-034 v1.5).
 	// Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 	// Values:
 	// - gateway: Gateway Service
@@ -1782,7 +1872,7 @@ type AuditEventRequest struct {
 	// - analysis: AI Analysis Service
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow Catalog Service
-	// - execution: Remediation Execution Service
+	// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 	// - orchestration: Remediation Orchestrator Service
 	// - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 	EventCategory AuditEventRequestEventCategory `json:"event_category"`
@@ -1978,7 +2068,7 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 	s.EventData = val
 }
 
-// Service-level event category (ADR-034 v1.4).
+// Service-level event category (ADR-034 v1.5).
 // Per ADR-034 v1.2: event_category MUST match the service name that emits the event.
 // Values:
 // - gateway: Gateway Service
@@ -1986,20 +2076,20 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - analysis: AI Analysis Service
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow Catalog Service
-// - execution: Remediation Execution Service
+// - workflowexecution: WorkflowExecution Controller (ADR-034 v1.5)
 // - orchestration: Remediation Orchestrator Service
 // - webhook: Authentication Webhook Service (SOC2 CC8.1 operator attribution).
 type AuditEventRequestEventCategory string
 
 const (
-	AuditEventRequestEventCategoryGateway          AuditEventRequestEventCategory = "gateway"
-	AuditEventRequestEventCategoryNotification     AuditEventRequestEventCategory = "notification"
-	AuditEventRequestEventCategoryAnalysis         AuditEventRequestEventCategory = "analysis"
-	AuditEventRequestEventCategorySignalprocessing AuditEventRequestEventCategory = "signalprocessing"
-	AuditEventRequestEventCategoryWorkflow         AuditEventRequestEventCategory = "workflow"
-	AuditEventRequestEventCategoryExecution        AuditEventRequestEventCategory = "execution"
-	AuditEventRequestEventCategoryOrchestration    AuditEventRequestEventCategory = "orchestration"
-	AuditEventRequestEventCategoryWebhook          AuditEventRequestEventCategory = "webhook"
+	AuditEventRequestEventCategoryGateway           AuditEventRequestEventCategory = "gateway"
+	AuditEventRequestEventCategoryNotification      AuditEventRequestEventCategory = "notification"
+	AuditEventRequestEventCategoryAnalysis          AuditEventRequestEventCategory = "analysis"
+	AuditEventRequestEventCategorySignalprocessing  AuditEventRequestEventCategory = "signalprocessing"
+	AuditEventRequestEventCategoryWorkflow          AuditEventRequestEventCategory = "workflow"
+	AuditEventRequestEventCategoryWorkflowexecution AuditEventRequestEventCategory = "workflowexecution"
+	AuditEventRequestEventCategoryOrchestration     AuditEventRequestEventCategory = "orchestration"
+	AuditEventRequestEventCategoryWebhook           AuditEventRequestEventCategory = "webhook"
 )
 
 // AllValues returns all AuditEventRequestEventCategory values.
@@ -2010,7 +2100,7 @@ func (AuditEventRequestEventCategory) AllValues() []AuditEventRequestEventCatego
 		AuditEventRequestEventCategoryAnalysis,
 		AuditEventRequestEventCategorySignalprocessing,
 		AuditEventRequestEventCategoryWorkflow,
-		AuditEventRequestEventCategoryExecution,
+		AuditEventRequestEventCategoryWorkflowexecution,
 		AuditEventRequestEventCategoryOrchestration,
 		AuditEventRequestEventCategoryWebhook,
 	}
@@ -2029,7 +2119,7 @@ func (s AuditEventRequestEventCategory) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryWorkflow:
 		return []byte(s), nil
-	case AuditEventRequestEventCategoryExecution:
+	case AuditEventRequestEventCategoryWorkflowexecution:
 		return []byte(s), nil
 	case AuditEventRequestEventCategoryOrchestration:
 		return []byte(s), nil
@@ -2058,8 +2148,8 @@ func (s *AuditEventRequestEventCategory) UnmarshalText(data []byte) error {
 	case AuditEventRequestEventCategoryWorkflow:
 		*s = AuditEventRequestEventCategoryWorkflow
 		return nil
-	case AuditEventRequestEventCategoryExecution:
-		*s = AuditEventRequestEventCategoryExecution
+	case AuditEventRequestEventCategoryWorkflowexecution:
+		*s = AuditEventRequestEventCategoryWorkflowexecution
 		return nil
 	case AuditEventRequestEventCategoryOrchestration:
 		*s = AuditEventRequestEventCategoryOrchestration
@@ -2111,45 +2201,51 @@ type AuditEventRequestEventDataType string
 
 // Possible values for AuditEventRequestEventDataType.
 const (
-	AuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData                     AuditEventRequestEventDataType = "gateway.crd.created"
-	AuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData                      AuditEventRequestEventDataType = "gateway.crd.failed"
-	AuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData             AuditEventRequestEventDataType = "gateway.signal.deduplicated"
-	AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData                 AuditEventRequestEventDataType = "gateway.signal.received"
-	AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData        AuditEventRequestEventDataType = "orchestrator.lifecycle.completed"
-	AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.lifecycle.failed"
-	AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData          AuditEventRequestEventDataType = "orchestrator.lifecycle.started"
-	AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData     AuditEventRequestEventDataType = "orchestrator.lifecycle.transitioned"
-	AuditEventRequestEventDataSignalprocessingClassificationDecidedAuditEventRequestEventData AuditEventRequestEventDataType = "signalprocessing.classification.decided"
-	AuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData       AuditEventRequestEventDataType = "signalprocessing.phase.transition"
-	AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData       AuditEventRequestEventDataType = "signalprocessing.signal.processed"
-	AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData           AuditEventRequestEventDataType = "aianalysis.analysis.completed"
-	AuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData              AuditEventRequestEventDataType = "aianalysis.analysis.failed"
-	AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData              AuditEventRequestEventDataType = "execution.workflow.started"
-	AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData            AuditEventRequestEventDataType = "workflow.selection.completed"
-	AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData    AuditEventRequestEventDataType = "workflowexecution.workflow.completed"
-	AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData       AuditEventRequestEventDataType = "workflowexecution.workflow.failed"
-	AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData      AuditEventRequestEventDataType = "workflowexecution.workflow.started"
-	AuditEventRequestEventDataWebhookNotificationAcknowledgedAuditEventRequestEventData       AuditEventRequestEventDataType = "webhook.notification.acknowledged"
-	AuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData          AuditEventRequestEventDataType = "webhook.notification.cancelled"
-	WorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "webhook.workflow.unblocked"
-	RemediationApprovalAuditPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "webhook.approval.decided"
-	WorkflowSearchAuditPayloadAuditEventRequestEventData                                      AuditEventRequestEventDataType = "workflow.catalog.search_completed"
-	WorkflowCatalogCreatedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "datastorage.workflow.created"
-	WorkflowCatalogUpdatedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "datastorage.workflow.updated"
-	AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "aianalysis.phase.transition"
-	AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "aianalysis.holmesgpt.call"
-	AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData                               AuditEventRequestEventDataType = "aianalysis.approval.decision"
-	AIAnalysisRegoEvaluationPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aianalysis.rego.evaluation"
-	AIAnalysisErrorPayloadAuditEventRequestEventData                                          AuditEventRequestEventDataType = "aianalysis.error.occurred"
-	NotificationMessageSentPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "notification.message.sent"
-	NotificationMessageFailedPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "notification.message.failed"
-	NotificationMessageAcknowledgedPayloadAuditEventRequestEventData                          AuditEventRequestEventDataType = "notification.message.acknowledged"
-	NotificationMessageEscalatedPayloadAuditEventRequestEventData                             AuditEventRequestEventDataType = "notification.message.escalated"
-	HolmesGPTResponsePayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "holmesgpt.response.complete"
-	LLMRequestPayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_request"
-	LLMResponsePayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "llm_response"
-	LLMToolCallPayloadAuditEventRequestEventData                                              AuditEventRequestEventDataType = "llm_tool_call"
-	WorkflowValidationPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "workflow_validation_attempt"
+	AuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData                      AuditEventRequestEventDataType = "gateway.crd.created"
+	AuditEventRequestEventDataGatewayCrdFailedAuditEventRequestEventData                       AuditEventRequestEventDataType = "gateway.crd.failed"
+	AuditEventRequestEventDataGatewaySignalDeduplicatedAuditEventRequestEventData              AuditEventRequestEventDataType = "gateway.signal.deduplicated"
+	AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData                  AuditEventRequestEventDataType = "gateway.signal.received"
+	AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.approval.approved"
+	AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.approval.rejected"
+	AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData          AuditEventRequestEventDataType = "orchestrator.approval.requested"
+	AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData         AuditEventRequestEventDataType = "orchestrator.lifecycle.completed"
+	AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData            AuditEventRequestEventDataType = "orchestrator.lifecycle.failed"
+	AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.lifecycle.started"
+	AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData      AuditEventRequestEventDataType = "orchestrator.lifecycle.transitioned"
+	AuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData     AuditEventRequestEventDataType = "signalprocessing.business.classified"
+	AuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData AuditEventRequestEventDataType = "signalprocessing.classification.decision"
+	AuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData    AuditEventRequestEventDataType = "signalprocessing.enrichment.completed"
+	AuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData          AuditEventRequestEventDataType = "signalprocessing.error.occurred"
+	AuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData        AuditEventRequestEventDataType = "signalprocessing.phase.transition"
+	AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData        AuditEventRequestEventDataType = "signalprocessing.signal.processed"
+	AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData            AuditEventRequestEventDataType = "aianalysis.analysis.completed"
+	AuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData               AuditEventRequestEventDataType = "aianalysis.analysis.failed"
+	AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData      AuditEventRequestEventDataType = "workflowexecution.execution.started"
+	AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData    AuditEventRequestEventDataType = "workflowexecution.selection.completed"
+	AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData     AuditEventRequestEventDataType = "workflowexecution.workflow.completed"
+	AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData        AuditEventRequestEventDataType = "workflowexecution.workflow.failed"
+	AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData       AuditEventRequestEventDataType = "workflowexecution.workflow.started"
+	AuditEventRequestEventDataWebhookNotificationAcknowledgedAuditEventRequestEventData        AuditEventRequestEventDataType = "webhook.notification.acknowledged"
+	AuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData           AuditEventRequestEventDataType = "webhook.notification.cancelled"
+	WorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData                             AuditEventRequestEventDataType = "webhook.workflow.unblocked"
+	RemediationApprovalAuditPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "webhook.approval.decided"
+	WorkflowSearchAuditPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "workflow.catalog.search_completed"
+	WorkflowCatalogCreatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.created"
+	WorkflowCatalogUpdatedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "datastorage.workflow.updated"
+	AIAnalysisPhaseTransitionPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "aianalysis.phase.transition"
+	AIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "aianalysis.holmesgpt.call"
+	AIAnalysisApprovalDecisionPayloadAuditEventRequestEventData                                AuditEventRequestEventDataType = "aianalysis.approval.decision"
+	AIAnalysisRegoEvaluationPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "aianalysis.rego.evaluation"
+	AIAnalysisErrorPayloadAuditEventRequestEventData                                           AuditEventRequestEventDataType = "aianalysis.error.occurred"
+	NotificationMessageSentPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "notification.message.sent"
+	NotificationMessageFailedPayloadAuditEventRequestEventData                                 AuditEventRequestEventDataType = "notification.message.failed"
+	NotificationMessageAcknowledgedPayloadAuditEventRequestEventData                           AuditEventRequestEventDataType = "notification.message.acknowledged"
+	NotificationMessageEscalatedPayloadAuditEventRequestEventData                              AuditEventRequestEventDataType = "notification.message.escalated"
+	HolmesGPTResponsePayloadAuditEventRequestEventData                                         AuditEventRequestEventDataType = "holmesgpt.response.complete"
+	LLMRequestPayloadAuditEventRequestEventData                                                AuditEventRequestEventDataType = "llm_request"
+	LLMResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_response"
+	LLMToolCallPayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_tool_call"
+	WorkflowValidationPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "workflow_validation_attempt"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -2165,7 +2261,7 @@ func (s AuditEventRequestEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventRequestEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -2175,7 +2271,7 @@ func (s AuditEventRequestEventData) IsRemediationOrchestratorAuditPayload() bool
 // IsSignalProcessingAuditPayload reports whether AuditEventRequestEventData is SignalProcessingAuditPayload.
 func (s AuditEventRequestEventData) IsSignalProcessingAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataSignalprocessingClassificationDecidedAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData:
+	case AuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingPhaseTransitionAuditEventRequestEventData, AuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -2195,7 +2291,7 @@ func (s AuditEventRequestEventData) IsAIAnalysisAuditPayload() bool {
 // IsWorkflowExecutionAuditPayload reports whether AuditEventRequestEventData is WorkflowExecutionAuditPayload.
 func (s AuditEventRequestEventData) IsWorkflowExecutionAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
+	case AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowFailedAuditEventRequestEventData, AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -2371,6 +2467,27 @@ func (s AuditEventRequestEventData) GetRemediationOrchestratorAuditPayload() (v 
 	return s.RemediationOrchestratorAuditPayload, true
 }
 
+// NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, v)
+	return s
+}
+
 // NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
 func NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
@@ -2417,10 +2534,31 @@ func (s AuditEventRequestEventData) GetSignalProcessingAuditPayload() (v SignalP
 	return s.SignalProcessingAuditPayload, true
 }
 
-// NewAuditEventRequestEventDataSignalprocessingClassificationDecidedAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingAuditPayload.
-func NewAuditEventRequestEventDataSignalprocessingClassificationDecidedAuditEventRequestEventData(v SignalProcessingAuditPayload) AuditEventRequestEventData {
+// NewAuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingAuditPayload.
+func NewAuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData(v SignalProcessingAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetSignalProcessingAuditPayload(AuditEventRequestEventDataSignalprocessingClassificationDecidedAuditEventRequestEventData, v)
+	s.SetSignalProcessingAuditPayload(AuditEventRequestEventDataSignalprocessingBusinessClassifiedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingAuditPayload.
+func NewAuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData(v SignalProcessingAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetSignalProcessingAuditPayload(AuditEventRequestEventDataSignalprocessingClassificationDecisionAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingAuditPayload.
+func NewAuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData(v SignalProcessingAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetSignalProcessingAuditPayload(AuditEventRequestEventDataSignalprocessingEnrichmentCompletedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData returns new AuditEventRequestEventData from SignalProcessingAuditPayload.
+func NewAuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData(v SignalProcessingAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetSignalProcessingAuditPayload(AuditEventRequestEventDataSignalprocessingErrorOccurredAuditEventRequestEventData, v)
 	return s
 }
 
@@ -2488,17 +2626,17 @@ func (s AuditEventRequestEventData) GetWorkflowExecutionAuditPayload() (v Workfl
 	return s.WorkflowExecutionAuditPayload, true
 }
 
-// NewAuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
-func NewAuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
+// NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData, v)
+	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData, v)
 	return s
 }
 
-// NewAuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
-func NewAuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
+// NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData returns new AuditEventRequestEventData from WorkflowExecutionAuditPayload.
+func NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData(v WorkflowExecutionAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
-	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData, v)
+	s.SetWorkflowExecutionAuditPayload(AuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -4234,14 +4372,15 @@ func (*ExportAuditEventsUnauthorized) exportAuditEventsRes() {}
 // Ref: #/components/schemas/GatewayAuditPayload
 type GatewayAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType GatewayAuditPayloadEventType `json:"event_type"`
 	// Full signal payload for RR.Spec.OriginalPayload reconstruction.
 	OriginalPayload OptGatewayAuditPayloadOriginalPayload `json:"original_payload"`
 	// Signal labels for RR.Spec.SignalLabels reconstruction.
 	SignalLabels OptGatewayAuditPayloadSignalLabels `json:"signal_labels"`
 	// Signal annotations for RR.Spec.SignalAnnotations reconstruction.
 	SignalAnnotations OptGatewayAuditPayloadSignalAnnotations `json:"signal_annotations"`
-	// Source type of the signal.
+	// Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager,
+	// kubernetes-event=Kubernetes events).
 	SignalType GatewayAuditPayloadSignalType `json:"signal_type"`
 	// Name of the alert.
 	AlertName string `json:"alert_name"`
@@ -4265,7 +4404,7 @@ type GatewayAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *GatewayAuditPayload) GetEventType() string {
+func (s *GatewayAuditPayload) GetEventType() GatewayAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -4340,7 +4479,7 @@ func (s *GatewayAuditPayload) GetErrorDetails() OptErrorDetails {
 }
 
 // SetEventType sets the value of EventType.
-func (s *GatewayAuditPayload) SetEventType(val string) {
+func (s *GatewayAuditPayload) SetEventType(val GatewayAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -4456,6 +4595,62 @@ func (s *GatewayAuditPayloadDeduplicationStatus) UnmarshalText(data []byte) erro
 	}
 }
 
+// Event type for discriminator (matches parent event_type).
+type GatewayAuditPayloadEventType string
+
+const (
+	GatewayAuditPayloadEventTypeGatewaySignalReceived     GatewayAuditPayloadEventType = "gateway.signal.received"
+	GatewayAuditPayloadEventTypeGatewaySignalDeduplicated GatewayAuditPayloadEventType = "gateway.signal.deduplicated"
+	GatewayAuditPayloadEventTypeGatewayCrdCreated         GatewayAuditPayloadEventType = "gateway.crd.created"
+	GatewayAuditPayloadEventTypeGatewayCrdFailed          GatewayAuditPayloadEventType = "gateway.crd.failed"
+)
+
+// AllValues returns all GatewayAuditPayloadEventType values.
+func (GatewayAuditPayloadEventType) AllValues() []GatewayAuditPayloadEventType {
+	return []GatewayAuditPayloadEventType{
+		GatewayAuditPayloadEventTypeGatewaySignalReceived,
+		GatewayAuditPayloadEventTypeGatewaySignalDeduplicated,
+		GatewayAuditPayloadEventTypeGatewayCrdCreated,
+		GatewayAuditPayloadEventTypeGatewayCrdFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GatewayAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case GatewayAuditPayloadEventTypeGatewaySignalReceived:
+		return []byte(s), nil
+	case GatewayAuditPayloadEventTypeGatewaySignalDeduplicated:
+		return []byte(s), nil
+	case GatewayAuditPayloadEventTypeGatewayCrdCreated:
+		return []byte(s), nil
+	case GatewayAuditPayloadEventTypeGatewayCrdFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GatewayAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch GatewayAuditPayloadEventType(data) {
+	case GatewayAuditPayloadEventTypeGatewaySignalReceived:
+		*s = GatewayAuditPayloadEventTypeGatewaySignalReceived
+		return nil
+	case GatewayAuditPayloadEventTypeGatewaySignalDeduplicated:
+		*s = GatewayAuditPayloadEventTypeGatewaySignalDeduplicated
+		return nil
+	case GatewayAuditPayloadEventTypeGatewayCrdCreated:
+		*s = GatewayAuditPayloadEventTypeGatewayCrdCreated
+		return nil
+	case GatewayAuditPayloadEventTypeGatewayCrdFailed:
+		*s = GatewayAuditPayloadEventTypeGatewayCrdFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Full signal payload for RR.Spec.OriginalPayload reconstruction.
 type GatewayAuditPayloadOriginalPayload map[string]jx.Raw
 
@@ -4541,32 +4736,29 @@ func (s *GatewayAuditPayloadSignalLabels) init() GatewayAuditPayloadSignalLabels
 	return m
 }
 
-// Source type of the signal.
+// Signal type identifier for classification and metrics (prometheus-alert=Prometheus AlertManager,
+// kubernetes-event=Kubernetes events).
 type GatewayAuditPayloadSignalType string
 
 const (
-	GatewayAuditPayloadSignalTypePrometheus   GatewayAuditPayloadSignalType = "prometheus"
-	GatewayAuditPayloadSignalTypeAlertmanager GatewayAuditPayloadSignalType = "alertmanager"
-	GatewayAuditPayloadSignalTypeWebhook      GatewayAuditPayloadSignalType = "webhook"
+	GatewayAuditPayloadSignalTypePrometheusAlert GatewayAuditPayloadSignalType = "prometheus-alert"
+	GatewayAuditPayloadSignalTypeKubernetesEvent GatewayAuditPayloadSignalType = "kubernetes-event"
 )
 
 // AllValues returns all GatewayAuditPayloadSignalType values.
 func (GatewayAuditPayloadSignalType) AllValues() []GatewayAuditPayloadSignalType {
 	return []GatewayAuditPayloadSignalType{
-		GatewayAuditPayloadSignalTypePrometheus,
-		GatewayAuditPayloadSignalTypeAlertmanager,
-		GatewayAuditPayloadSignalTypeWebhook,
+		GatewayAuditPayloadSignalTypePrometheusAlert,
+		GatewayAuditPayloadSignalTypeKubernetesEvent,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s GatewayAuditPayloadSignalType) MarshalText() ([]byte, error) {
 	switch s {
-	case GatewayAuditPayloadSignalTypePrometheus:
+	case GatewayAuditPayloadSignalTypePrometheusAlert:
 		return []byte(s), nil
-	case GatewayAuditPayloadSignalTypeAlertmanager:
-		return []byte(s), nil
-	case GatewayAuditPayloadSignalTypeWebhook:
+	case GatewayAuditPayloadSignalTypeKubernetesEvent:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -4576,14 +4768,11 @@ func (s GatewayAuditPayloadSignalType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *GatewayAuditPayloadSignalType) UnmarshalText(data []byte) error {
 	switch GatewayAuditPayloadSignalType(data) {
-	case GatewayAuditPayloadSignalTypePrometheus:
-		*s = GatewayAuditPayloadSignalTypePrometheus
+	case GatewayAuditPayloadSignalTypePrometheusAlert:
+		*s = GatewayAuditPayloadSignalTypePrometheusAlert
 		return nil
-	case GatewayAuditPayloadSignalTypeAlertmanager:
-		*s = GatewayAuditPayloadSignalTypeAlertmanager
-		return nil
-	case GatewayAuditPayloadSignalTypeWebhook:
-		*s = GatewayAuditPayloadSignalTypeWebhook
+	case GatewayAuditPayloadSignalTypeKubernetesEvent:
+		*s = GatewayAuditPayloadSignalTypeKubernetesEvent
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -4727,12 +4916,18 @@ func (s *HealthCheckServiceUnavailableStatus) UnmarshalText(data []byte) error {
 // perspective (DD-AUDIT-005).
 // Ref: #/components/schemas/HolmesGPTResponsePayload
 type HolmesGPTResponsePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType HolmesGPTResponsePayloadEventType `json:"event_type"`
 	// Unique event identifier.
 	EventID string `json:"event_id"`
 	// Incident correlation ID from request.
-	IncidentID string `json:"incident_id"`
-	// Complete IncidentResponse structure (all fields) for SOC2 Type II compliance.
-	ResponseData HolmesGPTResponsePayloadResponseData `json:"response_data"`
+	IncidentID   string               `json:"incident_id"`
+	ResponseData IncidentResponseData `json:"response_data"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *HolmesGPTResponsePayload) GetEventType() HolmesGPTResponsePayloadEventType {
+	return s.EventType
 }
 
 // GetEventID returns the value of EventID.
@@ -4746,8 +4941,13 @@ func (s *HolmesGPTResponsePayload) GetIncidentID() string {
 }
 
 // GetResponseData returns the value of ResponseData.
-func (s *HolmesGPTResponsePayload) GetResponseData() HolmesGPTResponsePayloadResponseData {
+func (s *HolmesGPTResponsePayload) GetResponseData() IncidentResponseData {
 	return s.ResponseData
+}
+
+// SetEventType sets the value of EventType.
+func (s *HolmesGPTResponsePayload) SetEventType(val HolmesGPTResponsePayloadEventType) {
+	s.EventType = val
 }
 
 // SetEventID sets the value of EventID.
@@ -4761,14 +4961,369 @@ func (s *HolmesGPTResponsePayload) SetIncidentID(val string) {
 }
 
 // SetResponseData sets the value of ResponseData.
-func (s *HolmesGPTResponsePayload) SetResponseData(val HolmesGPTResponsePayloadResponseData) {
+func (s *HolmesGPTResponsePayload) SetResponseData(val IncidentResponseData) {
 	s.ResponseData = val
 }
 
-// Complete IncidentResponse structure (all fields) for SOC2 Type II compliance.
-type HolmesGPTResponsePayloadResponseData map[string]jx.Raw
+// Event type for discriminator (matches parent event_type).
+type HolmesGPTResponsePayloadEventType string
 
-func (s *HolmesGPTResponsePayloadResponseData) init() HolmesGPTResponsePayloadResponseData {
+const (
+	HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete HolmesGPTResponsePayloadEventType = "holmesgpt.response.complete"
+)
+
+// AllValues returns all HolmesGPTResponsePayloadEventType values.
+func (HolmesGPTResponsePayloadEventType) AllValues() []HolmesGPTResponsePayloadEventType {
+	return []HolmesGPTResponsePayloadEventType{
+		HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s HolmesGPTResponsePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *HolmesGPTResponsePayloadEventType) UnmarshalText(data []byte) error {
+	switch HolmesGPTResponsePayloadEventType(data) {
+	case HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete:
+		*s = HolmesGPTResponsePayloadEventTypeHolmesgptResponseComplete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no
+// additionalProperties).
+// Ref: #/components/schemas/IncidentResponseData
+type IncidentResponseData struct {
+	// Incident identifier from request.
+	IncidentID string `json:"incident_id"`
+	// Natural language analysis from LLM.
+	Analysis string `json:"analysis"`
+	// Structured RCA with summary, severity, contributing_factors.
+	RootCauseAnalysis IncidentResponseDataRootCauseAnalysis `json:"root_cause_analysis"`
+	// Selected workflow with workflow_id, containerImage, confidence, parameters (optional).
+	SelectedWorkflow OptIncidentResponseDataSelectedWorkflow `json:"selected_workflow"`
+	// Overall confidence in analysis.
+	Confidence float32 `json:"confidence"`
+	// ISO timestamp of analysis completion.
+	Timestamp time.Time `json:"timestamp"`
+	// True when AI could not produce reliable result.
+	NeedsHumanReview OptBool `json:"needs_human_review"`
+	// Structured reason when needs_human_review=true.
+	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"human_review_reason"`
+	// Whether RCA target was found in OwnerChain.
+	TargetInOwnerChain OptBool `json:"target_in_owner_chain"`
+	// Non-fatal warnings (e.g., OwnerChain validation issues).
+	Warnings []string `json:"warnings"`
+	// Other workflows considered but not selected.
+	AlternativeWorkflows []IncidentResponseDataAlternativeWorkflowsItem `json:"alternative_workflows"`
+}
+
+// GetIncidentID returns the value of IncidentID.
+func (s *IncidentResponseData) GetIncidentID() string {
+	return s.IncidentID
+}
+
+// GetAnalysis returns the value of Analysis.
+func (s *IncidentResponseData) GetAnalysis() string {
+	return s.Analysis
+}
+
+// GetRootCauseAnalysis returns the value of RootCauseAnalysis.
+func (s *IncidentResponseData) GetRootCauseAnalysis() IncidentResponseDataRootCauseAnalysis {
+	return s.RootCauseAnalysis
+}
+
+// GetSelectedWorkflow returns the value of SelectedWorkflow.
+func (s *IncidentResponseData) GetSelectedWorkflow() OptIncidentResponseDataSelectedWorkflow {
+	return s.SelectedWorkflow
+}
+
+// GetConfidence returns the value of Confidence.
+func (s *IncidentResponseData) GetConfidence() float32 {
+	return s.Confidence
+}
+
+// GetTimestamp returns the value of Timestamp.
+func (s *IncidentResponseData) GetTimestamp() time.Time {
+	return s.Timestamp
+}
+
+// GetNeedsHumanReview returns the value of NeedsHumanReview.
+func (s *IncidentResponseData) GetNeedsHumanReview() OptBool {
+	return s.NeedsHumanReview
+}
+
+// GetHumanReviewReason returns the value of HumanReviewReason.
+func (s *IncidentResponseData) GetHumanReviewReason() OptIncidentResponseDataHumanReviewReason {
+	return s.HumanReviewReason
+}
+
+// GetTargetInOwnerChain returns the value of TargetInOwnerChain.
+func (s *IncidentResponseData) GetTargetInOwnerChain() OptBool {
+	return s.TargetInOwnerChain
+}
+
+// GetWarnings returns the value of Warnings.
+func (s *IncidentResponseData) GetWarnings() []string {
+	return s.Warnings
+}
+
+// GetAlternativeWorkflows returns the value of AlternativeWorkflows.
+func (s *IncidentResponseData) GetAlternativeWorkflows() []IncidentResponseDataAlternativeWorkflowsItem {
+	return s.AlternativeWorkflows
+}
+
+// SetIncidentID sets the value of IncidentID.
+func (s *IncidentResponseData) SetIncidentID(val string) {
+	s.IncidentID = val
+}
+
+// SetAnalysis sets the value of Analysis.
+func (s *IncidentResponseData) SetAnalysis(val string) {
+	s.Analysis = val
+}
+
+// SetRootCauseAnalysis sets the value of RootCauseAnalysis.
+func (s *IncidentResponseData) SetRootCauseAnalysis(val IncidentResponseDataRootCauseAnalysis) {
+	s.RootCauseAnalysis = val
+}
+
+// SetSelectedWorkflow sets the value of SelectedWorkflow.
+func (s *IncidentResponseData) SetSelectedWorkflow(val OptIncidentResponseDataSelectedWorkflow) {
+	s.SelectedWorkflow = val
+}
+
+// SetConfidence sets the value of Confidence.
+func (s *IncidentResponseData) SetConfidence(val float32) {
+	s.Confidence = val
+}
+
+// SetTimestamp sets the value of Timestamp.
+func (s *IncidentResponseData) SetTimestamp(val time.Time) {
+	s.Timestamp = val
+}
+
+// SetNeedsHumanReview sets the value of NeedsHumanReview.
+func (s *IncidentResponseData) SetNeedsHumanReview(val OptBool) {
+	s.NeedsHumanReview = val
+}
+
+// SetHumanReviewReason sets the value of HumanReviewReason.
+func (s *IncidentResponseData) SetHumanReviewReason(val OptIncidentResponseDataHumanReviewReason) {
+	s.HumanReviewReason = val
+}
+
+// SetTargetInOwnerChain sets the value of TargetInOwnerChain.
+func (s *IncidentResponseData) SetTargetInOwnerChain(val OptBool) {
+	s.TargetInOwnerChain = val
+}
+
+// SetWarnings sets the value of Warnings.
+func (s *IncidentResponseData) SetWarnings(val []string) {
+	s.Warnings = val
+}
+
+// SetAlternativeWorkflows sets the value of AlternativeWorkflows.
+func (s *IncidentResponseData) SetAlternativeWorkflows(val []IncidentResponseDataAlternativeWorkflowsItem) {
+	s.AlternativeWorkflows = val
+}
+
+type IncidentResponseDataAlternativeWorkflowsItem struct {
+	WorkflowID OptString `json:"workflow_id"`
+	Rationale  OptString `json:"rationale"`
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetRationale returns the value of Rationale.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) GetRationale() OptString {
+	return s.Rationale
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetRationale sets the value of Rationale.
+func (s *IncidentResponseDataAlternativeWorkflowsItem) SetRationale(val OptString) {
+	s.Rationale = val
+}
+
+// Structured reason when needs_human_review=true.
+type IncidentResponseDataHumanReviewReason string
+
+const (
+	IncidentResponseDataHumanReviewReasonWorkflowNotFound          IncidentResponseDataHumanReviewReason = "workflow_not_found"
+	IncidentResponseDataHumanReviewReasonImageMismatch             IncidentResponseDataHumanReviewReason = "image_mismatch"
+	IncidentResponseDataHumanReviewReasonParameterValidationFailed IncidentResponseDataHumanReviewReason = "parameter_validation_failed"
+	IncidentResponseDataHumanReviewReasonNoMatchingWorkflows       IncidentResponseDataHumanReviewReason = "no_matching_workflows"
+	IncidentResponseDataHumanReviewReasonLowConfidence             IncidentResponseDataHumanReviewReason = "low_confidence"
+	IncidentResponseDataHumanReviewReasonLlmParsingError           IncidentResponseDataHumanReviewReason = "llm_parsing_error"
+)
+
+// AllValues returns all IncidentResponseDataHumanReviewReason values.
+func (IncidentResponseDataHumanReviewReason) AllValues() []IncidentResponseDataHumanReviewReason {
+	return []IncidentResponseDataHumanReviewReason{
+		IncidentResponseDataHumanReviewReasonWorkflowNotFound,
+		IncidentResponseDataHumanReviewReasonImageMismatch,
+		IncidentResponseDataHumanReviewReasonParameterValidationFailed,
+		IncidentResponseDataHumanReviewReasonNoMatchingWorkflows,
+		IncidentResponseDataHumanReviewReasonLowConfidence,
+		IncidentResponseDataHumanReviewReasonLlmParsingError,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s IncidentResponseDataHumanReviewReason) MarshalText() ([]byte, error) {
+	switch s {
+	case IncidentResponseDataHumanReviewReasonWorkflowNotFound:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonImageMismatch:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonParameterValidationFailed:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonNoMatchingWorkflows:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonLowConfidence:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonLlmParsingError:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *IncidentResponseDataHumanReviewReason) UnmarshalText(data []byte) error {
+	switch IncidentResponseDataHumanReviewReason(data) {
+	case IncidentResponseDataHumanReviewReasonWorkflowNotFound:
+		*s = IncidentResponseDataHumanReviewReasonWorkflowNotFound
+		return nil
+	case IncidentResponseDataHumanReviewReasonImageMismatch:
+		*s = IncidentResponseDataHumanReviewReasonImageMismatch
+		return nil
+	case IncidentResponseDataHumanReviewReasonParameterValidationFailed:
+		*s = IncidentResponseDataHumanReviewReasonParameterValidationFailed
+		return nil
+	case IncidentResponseDataHumanReviewReasonNoMatchingWorkflows:
+		*s = IncidentResponseDataHumanReviewReasonNoMatchingWorkflows
+		return nil
+	case IncidentResponseDataHumanReviewReasonLowConfidence:
+		*s = IncidentResponseDataHumanReviewReasonLowConfidence
+		return nil
+	case IncidentResponseDataHumanReviewReasonLlmParsingError:
+		*s = IncidentResponseDataHumanReviewReasonLlmParsingError
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Structured RCA with summary, severity, contributing_factors.
+type IncidentResponseDataRootCauseAnalysis struct {
+	// Brief RCA summary.
+	Summary string `json:"summary"`
+	// Incident severity.
+	Severity string `json:"severity"`
+	// List of contributing factors.
+	ContributingFactors []string `json:"contributing_factors"`
+}
+
+// GetSummary returns the value of Summary.
+func (s *IncidentResponseDataRootCauseAnalysis) GetSummary() string {
+	return s.Summary
+}
+
+// GetSeverity returns the value of Severity.
+func (s *IncidentResponseDataRootCauseAnalysis) GetSeverity() string {
+	return s.Severity
+}
+
+// GetContributingFactors returns the value of ContributingFactors.
+func (s *IncidentResponseDataRootCauseAnalysis) GetContributingFactors() []string {
+	return s.ContributingFactors
+}
+
+// SetSummary sets the value of Summary.
+func (s *IncidentResponseDataRootCauseAnalysis) SetSummary(val string) {
+	s.Summary = val
+}
+
+// SetSeverity sets the value of Severity.
+func (s *IncidentResponseDataRootCauseAnalysis) SetSeverity(val string) {
+	s.Severity = val
+}
+
+// SetContributingFactors sets the value of ContributingFactors.
+func (s *IncidentResponseDataRootCauseAnalysis) SetContributingFactors(val []string) {
+	s.ContributingFactors = val
+}
+
+// Selected workflow with workflow_id, containerImage, confidence, parameters (optional).
+type IncidentResponseDataSelectedWorkflow struct {
+	WorkflowID     OptString                                         `json:"workflow_id"`
+	ContainerImage OptString                                         `json:"container_image"`
+	Confidence     OptFloat32                                        `json:"confidence"`
+	Parameters     OptIncidentResponseDataSelectedWorkflowParameters `json:"parameters"`
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *IncidentResponseDataSelectedWorkflow) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetContainerImage returns the value of ContainerImage.
+func (s *IncidentResponseDataSelectedWorkflow) GetContainerImage() OptString {
+	return s.ContainerImage
+}
+
+// GetConfidence returns the value of Confidence.
+func (s *IncidentResponseDataSelectedWorkflow) GetConfidence() OptFloat32 {
+	return s.Confidence
+}
+
+// GetParameters returns the value of Parameters.
+func (s *IncidentResponseDataSelectedWorkflow) GetParameters() OptIncidentResponseDataSelectedWorkflowParameters {
+	return s.Parameters
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *IncidentResponseDataSelectedWorkflow) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetContainerImage sets the value of ContainerImage.
+func (s *IncidentResponseDataSelectedWorkflow) SetContainerImage(val OptString) {
+	s.ContainerImage = val
+}
+
+// SetConfidence sets the value of Confidence.
+func (s *IncidentResponseDataSelectedWorkflow) SetConfidence(val OptFloat32) {
+	s.Confidence = val
+}
+
+// SetParameters sets the value of Parameters.
+func (s *IncidentResponseDataSelectedWorkflow) SetParameters(val OptIncidentResponseDataSelectedWorkflowParameters) {
+	s.Parameters = val
+}
+
+type IncidentResponseDataSelectedWorkflowParameters map[string]jx.Raw
+
+func (s *IncidentResponseDataSelectedWorkflowParameters) init() IncidentResponseDataSelectedWorkflowParameters {
 	m := *s
 	if m == nil {
 		m = map[string]jx.Raw{}
@@ -4780,6 +5335,8 @@ func (s *HolmesGPTResponsePayloadResponseData) init() HolmesGPTResponsePayloadRe
 // LLM API request event payload (llm_request).
 // Ref: #/components/schemas/LLMRequestPayload
 type LLMRequestPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType LLMRequestPayloadEventType `json:"event_type"`
 	// Unique event identifier.
 	EventID string `json:"event_id"`
 	// Incident correlation ID (remediation_id).
@@ -4796,6 +5353,11 @@ type LLMRequestPayload struct {
 	ToolsetsEnabled []string `json:"toolsets_enabled"`
 	// List of MCP servers.
 	McpServers []string `json:"mcp_servers"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *LLMRequestPayload) GetEventType() LLMRequestPayloadEventType {
+	return s.EventType
 }
 
 // GetEventID returns the value of EventID.
@@ -4838,6 +5400,11 @@ func (s *LLMRequestPayload) GetMcpServers() []string {
 	return s.McpServers
 }
 
+// SetEventType sets the value of EventType.
+func (s *LLMRequestPayload) SetEventType(val LLMRequestPayloadEventType) {
+	s.EventType = val
+}
+
 // SetEventID sets the value of EventID.
 func (s *LLMRequestPayload) SetEventID(val string) {
 	s.EventID = val
@@ -4878,9 +5445,46 @@ func (s *LLMRequestPayload) SetMcpServers(val []string) {
 	s.McpServers = val
 }
 
+// Event type for discriminator (matches parent event_type).
+type LLMRequestPayloadEventType string
+
+const (
+	LLMRequestPayloadEventTypeLlmRequest LLMRequestPayloadEventType = "llm_request"
+)
+
+// AllValues returns all LLMRequestPayloadEventType values.
+func (LLMRequestPayloadEventType) AllValues() []LLMRequestPayloadEventType {
+	return []LLMRequestPayloadEventType{
+		LLMRequestPayloadEventTypeLlmRequest,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s LLMRequestPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case LLMRequestPayloadEventTypeLlmRequest:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *LLMRequestPayloadEventType) UnmarshalText(data []byte) error {
+	switch LLMRequestPayloadEventType(data) {
+	case LLMRequestPayloadEventTypeLlmRequest:
+		*s = LLMRequestPayloadEventTypeLlmRequest
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // LLM API response event payload (llm_response).
 // Ref: #/components/schemas/LLMResponsePayload
 type LLMResponsePayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType LLMResponsePayloadEventType `json:"event_type"`
 	// Unique event identifier.
 	EventID string `json:"event_id"`
 	// Incident correlation ID (remediation_id).
@@ -4895,6 +5499,11 @@ type LLMResponsePayload struct {
 	TokensUsed OptInt `json:"tokens_used"`
 	// Number of tool calls made by LLM.
 	ToolCallCount OptInt `json:"tool_call_count"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *LLMResponsePayload) GetEventType() LLMResponsePayloadEventType {
+	return s.EventType
 }
 
 // GetEventID returns the value of EventID.
@@ -4932,6 +5541,11 @@ func (s *LLMResponsePayload) GetToolCallCount() OptInt {
 	return s.ToolCallCount
 }
 
+// SetEventType sets the value of EventType.
+func (s *LLMResponsePayload) SetEventType(val LLMResponsePayloadEventType) {
+	s.EventType = val
+}
+
 // SetEventID sets the value of EventID.
 func (s *LLMResponsePayload) SetEventID(val string) {
 	s.EventID = val
@@ -4967,9 +5581,46 @@ func (s *LLMResponsePayload) SetToolCallCount(val OptInt) {
 	s.ToolCallCount = val
 }
 
+// Event type for discriminator (matches parent event_type).
+type LLMResponsePayloadEventType string
+
+const (
+	LLMResponsePayloadEventTypeLlmResponse LLMResponsePayloadEventType = "llm_response"
+)
+
+// AllValues returns all LLMResponsePayloadEventType values.
+func (LLMResponsePayloadEventType) AllValues() []LLMResponsePayloadEventType {
+	return []LLMResponsePayloadEventType{
+		LLMResponsePayloadEventTypeLlmResponse,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s LLMResponsePayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case LLMResponsePayloadEventTypeLlmResponse:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *LLMResponsePayloadEventType) UnmarshalText(data []byte) error {
+	switch LLMResponsePayloadEventType(data) {
+	case LLMResponsePayloadEventTypeLlmResponse:
+		*s = LLMResponsePayloadEventTypeLlmResponse
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // LLM tool call event payload (llm_tool_call).
 // Ref: #/components/schemas/LLMToolCallPayload
 type LLMToolCallPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType LLMToolCallPayloadEventType `json:"event_type"`
 	// Unique event identifier.
 	EventID string `json:"event_id"`
 	// Incident correlation ID (remediation_id).
@@ -4984,6 +5635,11 @@ type LLMToolCallPayload struct {
 	ToolResult jx.Raw `json:"tool_result"`
 	// First 500 characters of tool result.
 	ToolResultPreview OptString `json:"tool_result_preview"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *LLMToolCallPayload) GetEventType() LLMToolCallPayloadEventType {
+	return s.EventType
 }
 
 // GetEventID returns the value of EventID.
@@ -5021,6 +5677,11 @@ func (s *LLMToolCallPayload) GetToolResultPreview() OptString {
 	return s.ToolResultPreview
 }
 
+// SetEventType sets the value of EventType.
+func (s *LLMToolCallPayload) SetEventType(val LLMToolCallPayloadEventType) {
+	s.EventType = val
+}
+
 // SetEventID sets the value of EventID.
 func (s *LLMToolCallPayload) SetEventID(val string) {
 	s.EventID = val
@@ -5054,6 +5715,41 @@ func (s *LLMToolCallPayload) SetToolResult(val jx.Raw) {
 // SetToolResultPreview sets the value of ToolResultPreview.
 func (s *LLMToolCallPayload) SetToolResultPreview(val OptString) {
 	s.ToolResultPreview = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type LLMToolCallPayloadEventType string
+
+const (
+	LLMToolCallPayloadEventTypeLlmToolCall LLMToolCallPayloadEventType = "llm_tool_call"
+)
+
+// AllValues returns all LLMToolCallPayloadEventType values.
+func (LLMToolCallPayloadEventType) AllValues() []LLMToolCallPayloadEventType {
+	return []LLMToolCallPayloadEventType{
+		LLMToolCallPayloadEventTypeLlmToolCall,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s LLMToolCallPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case LLMToolCallPayloadEventTypeLlmToolCall:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *LLMToolCallPayloadEventType) UnmarshalText(data []byte) error {
+	switch LLMToolCallPayloadEventType(data) {
+	case LLMToolCallPayloadEventTypeLlmToolCall:
+		*s = LLMToolCallPayloadEventTypeLlmToolCall
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Arguments passed to tool (flexible for different tools).
@@ -5590,21 +6286,23 @@ func (s *NotificationAuditChannel) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/NotificationAuditPayload
 type NotificationAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType NotificationAuditPayloadEventType `json:"event_type"`
 	// Name of the NotificationRequest.
 	NotificationID OptString `json:"notification_id"`
 	// Alias for notification_id.
 	NotificationName OptString `json:"notification_name"`
-	// Notification type.
+	// Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40).
 	Type OptNotificationAuditPayloadType `json:"type"`
-	// Alias for type.
+	// Alias for type (matches CRD NotificationType enum).
 	NotificationType OptNotificationAuditPayloadNotificationType `json:"notification_type"`
-	// Notification priority.
+	// Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50).
 	Priority OptNotificationAuditPayloadPriority `json:"priority"`
-	// Final status of the notification.
+	// Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.
+	// go:60-65).
 	FinalStatus OptNotificationAuditPayloadFinalStatus `json:"final_status"`
-	// Notification recipients (structured type from CRD).
-	Recipients OptNotificationAuditPayloadRecipients `json:"recipients"`
+	// Array of notification recipients from CRD (BR-NOTIFICATION-001, matches
+	// api/notification/v1alpha1/notificationrequest_types.go:80-102).
+	Recipients []NotificationAuditPayloadRecipientsItem `json:"recipients"`
 	// Username who cancelled the notification.
 	CancelledBy OptString `json:"cancelled_by"`
 	// UID of the user who performed the action.
@@ -5616,7 +6314,7 @@ type NotificationAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *NotificationAuditPayload) GetEventType() string {
+func (s *NotificationAuditPayload) GetEventType() NotificationAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -5651,7 +6349,7 @@ func (s *NotificationAuditPayload) GetFinalStatus() OptNotificationAuditPayloadF
 }
 
 // GetRecipients returns the value of Recipients.
-func (s *NotificationAuditPayload) GetRecipients() OptNotificationAuditPayloadRecipients {
+func (s *NotificationAuditPayload) GetRecipients() []NotificationAuditPayloadRecipientsItem {
 	return s.Recipients
 }
 
@@ -5676,7 +6374,7 @@ func (s *NotificationAuditPayload) GetAction() OptNotificationAuditPayloadAction
 }
 
 // SetEventType sets the value of EventType.
-func (s *NotificationAuditPayload) SetEventType(val string) {
+func (s *NotificationAuditPayload) SetEventType(val NotificationAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -5711,7 +6409,7 @@ func (s *NotificationAuditPayload) SetFinalStatus(val OptNotificationAuditPayloa
 }
 
 // SetRecipients sets the value of Recipients.
-func (s *NotificationAuditPayload) SetRecipients(val OptNotificationAuditPayloadRecipients) {
+func (s *NotificationAuditPayload) SetRecipients(val []NotificationAuditPayloadRecipientsItem) {
 	s.Recipients = val
 }
 
@@ -5777,11 +6475,55 @@ func (s *NotificationAuditPayloadAction) UnmarshalText(data []byte) error {
 	}
 }
 
-// Final status of the notification.
+// Event type for discriminator (matches parent event_type).
+type NotificationAuditPayloadEventType string
+
+const (
+	NotificationAuditPayloadEventTypeWebhookNotificationCancelled    NotificationAuditPayloadEventType = "webhook.notification.cancelled"
+	NotificationAuditPayloadEventTypeWebhookNotificationAcknowledged NotificationAuditPayloadEventType = "webhook.notification.acknowledged"
+)
+
+// AllValues returns all NotificationAuditPayloadEventType values.
+func (NotificationAuditPayloadEventType) AllValues() []NotificationAuditPayloadEventType {
+	return []NotificationAuditPayloadEventType{
+		NotificationAuditPayloadEventTypeWebhookNotificationCancelled,
+		NotificationAuditPayloadEventTypeWebhookNotificationAcknowledged,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s NotificationAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case NotificationAuditPayloadEventTypeWebhookNotificationCancelled:
+		return []byte(s), nil
+	case NotificationAuditPayloadEventTypeWebhookNotificationAcknowledged:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *NotificationAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch NotificationAuditPayloadEventType(data) {
+	case NotificationAuditPayloadEventTypeWebhookNotificationCancelled:
+		*s = NotificationAuditPayloadEventTypeWebhookNotificationCancelled
+		return nil
+	case NotificationAuditPayloadEventTypeWebhookNotificationAcknowledged:
+		*s = NotificationAuditPayloadEventTypeWebhookNotificationAcknowledged
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.
+// go:60-65).
 type NotificationAuditPayloadFinalStatus string
 
 const (
 	NotificationAuditPayloadFinalStatusPending   NotificationAuditPayloadFinalStatus = "Pending"
+	NotificationAuditPayloadFinalStatusSending   NotificationAuditPayloadFinalStatus = "Sending"
 	NotificationAuditPayloadFinalStatusSent      NotificationAuditPayloadFinalStatus = "Sent"
 	NotificationAuditPayloadFinalStatusFailed    NotificationAuditPayloadFinalStatus = "Failed"
 	NotificationAuditPayloadFinalStatusCancelled NotificationAuditPayloadFinalStatus = "Cancelled"
@@ -5791,6 +6533,7 @@ const (
 func (NotificationAuditPayloadFinalStatus) AllValues() []NotificationAuditPayloadFinalStatus {
 	return []NotificationAuditPayloadFinalStatus{
 		NotificationAuditPayloadFinalStatusPending,
+		NotificationAuditPayloadFinalStatusSending,
 		NotificationAuditPayloadFinalStatusSent,
 		NotificationAuditPayloadFinalStatusFailed,
 		NotificationAuditPayloadFinalStatusCancelled,
@@ -5801,6 +6544,8 @@ func (NotificationAuditPayloadFinalStatus) AllValues() []NotificationAuditPayloa
 func (s NotificationAuditPayloadFinalStatus) MarshalText() ([]byte, error) {
 	switch s {
 	case NotificationAuditPayloadFinalStatusPending:
+		return []byte(s), nil
+	case NotificationAuditPayloadFinalStatusSending:
 		return []byte(s), nil
 	case NotificationAuditPayloadFinalStatusSent:
 		return []byte(s), nil
@@ -5819,6 +6564,9 @@ func (s *NotificationAuditPayloadFinalStatus) UnmarshalText(data []byte) error {
 	case NotificationAuditPayloadFinalStatusPending:
 		*s = NotificationAuditPayloadFinalStatusPending
 		return nil
+	case NotificationAuditPayloadFinalStatusSending:
+		*s = NotificationAuditPayloadFinalStatusSending
+		return nil
 	case NotificationAuditPayloadFinalStatusSent:
 		*s = NotificationAuditPayloadFinalStatusSent
 		return nil
@@ -5833,32 +6581,40 @@ func (s *NotificationAuditPayloadFinalStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// Alias for type.
+// Alias for type (matches CRD NotificationType enum).
 type NotificationAuditPayloadNotificationType string
 
 const (
-	NotificationAuditPayloadNotificationTypeEmail     NotificationAuditPayloadNotificationType = "email"
-	NotificationAuditPayloadNotificationTypeSlack     NotificationAuditPayloadNotificationType = "slack"
-	NotificationAuditPayloadNotificationTypePagerduty NotificationAuditPayloadNotificationType = "pagerduty"
+	NotificationAuditPayloadNotificationTypeEscalation   NotificationAuditPayloadNotificationType = "escalation"
+	NotificationAuditPayloadNotificationTypeSimple       NotificationAuditPayloadNotificationType = "simple"
+	NotificationAuditPayloadNotificationTypeStatusUpdate NotificationAuditPayloadNotificationType = "status-update"
+	NotificationAuditPayloadNotificationTypeApproval     NotificationAuditPayloadNotificationType = "approval"
+	NotificationAuditPayloadNotificationTypeManualReview NotificationAuditPayloadNotificationType = "manual-review"
 )
 
 // AllValues returns all NotificationAuditPayloadNotificationType values.
 func (NotificationAuditPayloadNotificationType) AllValues() []NotificationAuditPayloadNotificationType {
 	return []NotificationAuditPayloadNotificationType{
-		NotificationAuditPayloadNotificationTypeEmail,
-		NotificationAuditPayloadNotificationTypeSlack,
-		NotificationAuditPayloadNotificationTypePagerduty,
+		NotificationAuditPayloadNotificationTypeEscalation,
+		NotificationAuditPayloadNotificationTypeSimple,
+		NotificationAuditPayloadNotificationTypeStatusUpdate,
+		NotificationAuditPayloadNotificationTypeApproval,
+		NotificationAuditPayloadNotificationTypeManualReview,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s NotificationAuditPayloadNotificationType) MarshalText() ([]byte, error) {
 	switch s {
-	case NotificationAuditPayloadNotificationTypeEmail:
+	case NotificationAuditPayloadNotificationTypeEscalation:
 		return []byte(s), nil
-	case NotificationAuditPayloadNotificationTypeSlack:
+	case NotificationAuditPayloadNotificationTypeSimple:
 		return []byte(s), nil
-	case NotificationAuditPayloadNotificationTypePagerduty:
+	case NotificationAuditPayloadNotificationTypeStatusUpdate:
+		return []byte(s), nil
+	case NotificationAuditPayloadNotificationTypeApproval:
+		return []byte(s), nil
+	case NotificationAuditPayloadNotificationTypeManualReview:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5868,54 +6624,56 @@ func (s NotificationAuditPayloadNotificationType) MarshalText() ([]byte, error) 
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *NotificationAuditPayloadNotificationType) UnmarshalText(data []byte) error {
 	switch NotificationAuditPayloadNotificationType(data) {
-	case NotificationAuditPayloadNotificationTypeEmail:
-		*s = NotificationAuditPayloadNotificationTypeEmail
+	case NotificationAuditPayloadNotificationTypeEscalation:
+		*s = NotificationAuditPayloadNotificationTypeEscalation
 		return nil
-	case NotificationAuditPayloadNotificationTypeSlack:
-		*s = NotificationAuditPayloadNotificationTypeSlack
+	case NotificationAuditPayloadNotificationTypeSimple:
+		*s = NotificationAuditPayloadNotificationTypeSimple
 		return nil
-	case NotificationAuditPayloadNotificationTypePagerduty:
-		*s = NotificationAuditPayloadNotificationTypePagerduty
+	case NotificationAuditPayloadNotificationTypeStatusUpdate:
+		*s = NotificationAuditPayloadNotificationTypeStatusUpdate
+		return nil
+	case NotificationAuditPayloadNotificationTypeApproval:
+		*s = NotificationAuditPayloadNotificationTypeApproval
+		return nil
+	case NotificationAuditPayloadNotificationTypeManualReview:
+		*s = NotificationAuditPayloadNotificationTypeManualReview
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
-// Notification priority.
+// Notification priority (matches api/notification/v1alpha1/notificationrequest_types.go:47-50).
 type NotificationAuditPayloadPriority string
 
 const (
-	NotificationAuditPayloadPriorityP0 NotificationAuditPayloadPriority = "P0"
-	NotificationAuditPayloadPriorityP1 NotificationAuditPayloadPriority = "P1"
-	NotificationAuditPayloadPriorityP2 NotificationAuditPayloadPriority = "P2"
-	NotificationAuditPayloadPriorityP3 NotificationAuditPayloadPriority = "P3"
-	NotificationAuditPayloadPriorityP4 NotificationAuditPayloadPriority = "P4"
+	NotificationAuditPayloadPriorityCritical NotificationAuditPayloadPriority = "critical"
+	NotificationAuditPayloadPriorityHigh     NotificationAuditPayloadPriority = "high"
+	NotificationAuditPayloadPriorityMedium   NotificationAuditPayloadPriority = "medium"
+	NotificationAuditPayloadPriorityLow      NotificationAuditPayloadPriority = "low"
 )
 
 // AllValues returns all NotificationAuditPayloadPriority values.
 func (NotificationAuditPayloadPriority) AllValues() []NotificationAuditPayloadPriority {
 	return []NotificationAuditPayloadPriority{
-		NotificationAuditPayloadPriorityP0,
-		NotificationAuditPayloadPriorityP1,
-		NotificationAuditPayloadPriorityP2,
-		NotificationAuditPayloadPriorityP3,
-		NotificationAuditPayloadPriorityP4,
+		NotificationAuditPayloadPriorityCritical,
+		NotificationAuditPayloadPriorityHigh,
+		NotificationAuditPayloadPriorityMedium,
+		NotificationAuditPayloadPriorityLow,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s NotificationAuditPayloadPriority) MarshalText() ([]byte, error) {
 	switch s {
-	case NotificationAuditPayloadPriorityP0:
+	case NotificationAuditPayloadPriorityCritical:
 		return []byte(s), nil
-	case NotificationAuditPayloadPriorityP1:
+	case NotificationAuditPayloadPriorityHigh:
 		return []byte(s), nil
-	case NotificationAuditPayloadPriorityP2:
+	case NotificationAuditPayloadPriorityMedium:
 		return []byte(s), nil
-	case NotificationAuditPayloadPriorityP3:
-		return []byte(s), nil
-	case NotificationAuditPayloadPriorityP4:
+	case NotificationAuditPayloadPriorityLow:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5925,64 +6683,121 @@ func (s NotificationAuditPayloadPriority) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *NotificationAuditPayloadPriority) UnmarshalText(data []byte) error {
 	switch NotificationAuditPayloadPriority(data) {
-	case NotificationAuditPayloadPriorityP0:
-		*s = NotificationAuditPayloadPriorityP0
+	case NotificationAuditPayloadPriorityCritical:
+		*s = NotificationAuditPayloadPriorityCritical
 		return nil
-	case NotificationAuditPayloadPriorityP1:
-		*s = NotificationAuditPayloadPriorityP1
+	case NotificationAuditPayloadPriorityHigh:
+		*s = NotificationAuditPayloadPriorityHigh
 		return nil
-	case NotificationAuditPayloadPriorityP2:
-		*s = NotificationAuditPayloadPriorityP2
+	case NotificationAuditPayloadPriorityMedium:
+		*s = NotificationAuditPayloadPriorityMedium
 		return nil
-	case NotificationAuditPayloadPriorityP3:
-		*s = NotificationAuditPayloadPriorityP3
-		return nil
-	case NotificationAuditPayloadPriorityP4:
-		*s = NotificationAuditPayloadPriorityP4
+	case NotificationAuditPayloadPriorityLow:
+		*s = NotificationAuditPayloadPriorityLow
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
 
-// Notification recipients (structured type from CRD).
-type NotificationAuditPayloadRecipients map[string]jx.Raw
-
-func (s *NotificationAuditPayloadRecipients) init() NotificationAuditPayloadRecipients {
-	m := *s
-	if m == nil {
-		m = map[string]jx.Raw{}
-		*s = m
-	}
-	return m
+// Notification recipient (matches CRD Recipient struct).
+type NotificationAuditPayloadRecipientsItem struct {
+	// Email address (for email channel).
+	Email OptString `json:"email"`
+	// Slack channel or user (#channel-name or @username).
+	Slack OptString `json:"slack"`
+	// Teams channel or user.
+	Teams OptString `json:"teams"`
+	// Phone number in E.164 format.
+	Phone OptString `json:"phone"`
+	// Webhook URL for webhook channel.
+	WebhookURL OptString `json:"webhookURL"`
 }
 
-// Notification type.
+// GetEmail returns the value of Email.
+func (s *NotificationAuditPayloadRecipientsItem) GetEmail() OptString {
+	return s.Email
+}
+
+// GetSlack returns the value of Slack.
+func (s *NotificationAuditPayloadRecipientsItem) GetSlack() OptString {
+	return s.Slack
+}
+
+// GetTeams returns the value of Teams.
+func (s *NotificationAuditPayloadRecipientsItem) GetTeams() OptString {
+	return s.Teams
+}
+
+// GetPhone returns the value of Phone.
+func (s *NotificationAuditPayloadRecipientsItem) GetPhone() OptString {
+	return s.Phone
+}
+
+// GetWebhookURL returns the value of WebhookURL.
+func (s *NotificationAuditPayloadRecipientsItem) GetWebhookURL() OptString {
+	return s.WebhookURL
+}
+
+// SetEmail sets the value of Email.
+func (s *NotificationAuditPayloadRecipientsItem) SetEmail(val OptString) {
+	s.Email = val
+}
+
+// SetSlack sets the value of Slack.
+func (s *NotificationAuditPayloadRecipientsItem) SetSlack(val OptString) {
+	s.Slack = val
+}
+
+// SetTeams sets the value of Teams.
+func (s *NotificationAuditPayloadRecipientsItem) SetTeams(val OptString) {
+	s.Teams = val
+}
+
+// SetPhone sets the value of Phone.
+func (s *NotificationAuditPayloadRecipientsItem) SetPhone(val OptString) {
+	s.Phone = val
+}
+
+// SetWebhookURL sets the value of WebhookURL.
+func (s *NotificationAuditPayloadRecipientsItem) SetWebhookURL(val OptString) {
+	s.WebhookURL = val
+}
+
+// Notification type (matches api/notification/v1alpha1/notificationrequest_types.go:31-40).
 type NotificationAuditPayloadType string
 
 const (
-	NotificationAuditPayloadTypeEmail     NotificationAuditPayloadType = "email"
-	NotificationAuditPayloadTypeSlack     NotificationAuditPayloadType = "slack"
-	NotificationAuditPayloadTypePagerduty NotificationAuditPayloadType = "pagerduty"
+	NotificationAuditPayloadTypeEscalation   NotificationAuditPayloadType = "escalation"
+	NotificationAuditPayloadTypeSimple       NotificationAuditPayloadType = "simple"
+	NotificationAuditPayloadTypeStatusUpdate NotificationAuditPayloadType = "status-update"
+	NotificationAuditPayloadTypeApproval     NotificationAuditPayloadType = "approval"
+	NotificationAuditPayloadTypeManualReview NotificationAuditPayloadType = "manual-review"
 )
 
 // AllValues returns all NotificationAuditPayloadType values.
 func (NotificationAuditPayloadType) AllValues() []NotificationAuditPayloadType {
 	return []NotificationAuditPayloadType{
-		NotificationAuditPayloadTypeEmail,
-		NotificationAuditPayloadTypeSlack,
-		NotificationAuditPayloadTypePagerduty,
+		NotificationAuditPayloadTypeEscalation,
+		NotificationAuditPayloadTypeSimple,
+		NotificationAuditPayloadTypeStatusUpdate,
+		NotificationAuditPayloadTypeApproval,
+		NotificationAuditPayloadTypeManualReview,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s NotificationAuditPayloadType) MarshalText() ([]byte, error) {
 	switch s {
-	case NotificationAuditPayloadTypeEmail:
+	case NotificationAuditPayloadTypeEscalation:
 		return []byte(s), nil
-	case NotificationAuditPayloadTypeSlack:
+	case NotificationAuditPayloadTypeSimple:
 		return []byte(s), nil
-	case NotificationAuditPayloadTypePagerduty:
+	case NotificationAuditPayloadTypeStatusUpdate:
+		return []byte(s), nil
+	case NotificationAuditPayloadTypeApproval:
+		return []byte(s), nil
+	case NotificationAuditPayloadTypeManualReview:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -5992,14 +6807,20 @@ func (s NotificationAuditPayloadType) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *NotificationAuditPayloadType) UnmarshalText(data []byte) error {
 	switch NotificationAuditPayloadType(data) {
-	case NotificationAuditPayloadTypeEmail:
-		*s = NotificationAuditPayloadTypeEmail
+	case NotificationAuditPayloadTypeEscalation:
+		*s = NotificationAuditPayloadTypeEscalation
 		return nil
-	case NotificationAuditPayloadTypeSlack:
-		*s = NotificationAuditPayloadTypeSlack
+	case NotificationAuditPayloadTypeSimple:
+		*s = NotificationAuditPayloadTypeSimple
 		return nil
-	case NotificationAuditPayloadTypePagerduty:
-		*s = NotificationAuditPayloadTypePagerduty
+	case NotificationAuditPayloadTypeStatusUpdate:
+		*s = NotificationAuditPayloadTypeStatusUpdate
+		return nil
+	case NotificationAuditPayloadTypeApproval:
+		*s = NotificationAuditPayloadTypeApproval
+		return nil
+	case NotificationAuditPayloadTypeManualReview:
+		*s = NotificationAuditPayloadTypeManualReview
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -7587,6 +8408,144 @@ func (o OptHealthCheckServiceUnavailableStatus) Or(d HealthCheckServiceUnavailab
 	return d
 }
 
+// NewOptIncidentResponseDataHumanReviewReason returns new OptIncidentResponseDataHumanReviewReason with value set to v.
+func NewOptIncidentResponseDataHumanReviewReason(v IncidentResponseDataHumanReviewReason) OptIncidentResponseDataHumanReviewReason {
+	return OptIncidentResponseDataHumanReviewReason{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataHumanReviewReason is optional IncidentResponseDataHumanReviewReason.
+type OptIncidentResponseDataHumanReviewReason struct {
+	Value IncidentResponseDataHumanReviewReason
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataHumanReviewReason was set.
+func (o OptIncidentResponseDataHumanReviewReason) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataHumanReviewReason) Reset() {
+	var v IncidentResponseDataHumanReviewReason
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataHumanReviewReason) SetTo(v IncidentResponseDataHumanReviewReason) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataHumanReviewReason) Get() (v IncidentResponseDataHumanReviewReason, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataHumanReviewReason) Or(d IncidentResponseDataHumanReviewReason) IncidentResponseDataHumanReviewReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataSelectedWorkflow returns new OptIncidentResponseDataSelectedWorkflow with value set to v.
+func NewOptIncidentResponseDataSelectedWorkflow(v IncidentResponseDataSelectedWorkflow) OptIncidentResponseDataSelectedWorkflow {
+	return OptIncidentResponseDataSelectedWorkflow{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataSelectedWorkflow is optional IncidentResponseDataSelectedWorkflow.
+type OptIncidentResponseDataSelectedWorkflow struct {
+	Value IncidentResponseDataSelectedWorkflow
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataSelectedWorkflow was set.
+func (o OptIncidentResponseDataSelectedWorkflow) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataSelectedWorkflow) Reset() {
+	var v IncidentResponseDataSelectedWorkflow
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataSelectedWorkflow) SetTo(v IncidentResponseDataSelectedWorkflow) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataSelectedWorkflow) Get() (v IncidentResponseDataSelectedWorkflow, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataSelectedWorkflow) Or(d IncidentResponseDataSelectedWorkflow) IncidentResponseDataSelectedWorkflow {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptIncidentResponseDataSelectedWorkflowParameters returns new OptIncidentResponseDataSelectedWorkflowParameters with value set to v.
+func NewOptIncidentResponseDataSelectedWorkflowParameters(v IncidentResponseDataSelectedWorkflowParameters) OptIncidentResponseDataSelectedWorkflowParameters {
+	return OptIncidentResponseDataSelectedWorkflowParameters{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptIncidentResponseDataSelectedWorkflowParameters is optional IncidentResponseDataSelectedWorkflowParameters.
+type OptIncidentResponseDataSelectedWorkflowParameters struct {
+	Value IncidentResponseDataSelectedWorkflowParameters
+	Set   bool
+}
+
+// IsSet returns true if OptIncidentResponseDataSelectedWorkflowParameters was set.
+func (o OptIncidentResponseDataSelectedWorkflowParameters) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptIncidentResponseDataSelectedWorkflowParameters) Reset() {
+	var v IncidentResponseDataSelectedWorkflowParameters
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptIncidentResponseDataSelectedWorkflowParameters) SetTo(v IncidentResponseDataSelectedWorkflowParameters) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptIncidentResponseDataSelectedWorkflowParameters) Get() (v IncidentResponseDataSelectedWorkflowParameters, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptIncidentResponseDataSelectedWorkflowParameters) Or(d IncidentResponseDataSelectedWorkflowParameters) IncidentResponseDataSelectedWorkflowParameters {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -8253,52 +9212,6 @@ func (o OptNotificationAuditPayloadPriority) Or(d NotificationAuditPayloadPriori
 	return d
 }
 
-// NewOptNotificationAuditPayloadRecipients returns new OptNotificationAuditPayloadRecipients with value set to v.
-func NewOptNotificationAuditPayloadRecipients(v NotificationAuditPayloadRecipients) OptNotificationAuditPayloadRecipients {
-	return OptNotificationAuditPayloadRecipients{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNotificationAuditPayloadRecipients is optional NotificationAuditPayloadRecipients.
-type OptNotificationAuditPayloadRecipients struct {
-	Value NotificationAuditPayloadRecipients
-	Set   bool
-}
-
-// IsSet returns true if OptNotificationAuditPayloadRecipients was set.
-func (o OptNotificationAuditPayloadRecipients) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNotificationAuditPayloadRecipients) Reset() {
-	var v NotificationAuditPayloadRecipients
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptNotificationAuditPayloadRecipients) SetTo(v NotificationAuditPayloadRecipients) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNotificationAuditPayloadRecipients) Get() (v NotificationAuditPayloadRecipients, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNotificationAuditPayloadRecipients) Or(d NotificationAuditPayloadRecipients) NotificationAuditPayloadRecipients {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNotificationAuditPayloadType returns new OptNotificationAuditPayloadType with value set to v.
 func NewOptNotificationAuditPayloadType(v NotificationAuditPayloadType) OptNotificationAuditPayloadType {
 	return OptNotificationAuditPayloadType{
@@ -8661,6 +9574,52 @@ func (o OptRFC7807ProblemFieldErrors) Get() (v RFC7807ProblemFieldErrors, ok boo
 
 // Or returns value if set, or given parameter if does not.
 func (o OptRFC7807ProblemFieldErrors) Or(d RFC7807ProblemFieldErrors) RFC7807ProblemFieldErrors {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationOrchestratorAuditPayloadDecision returns new OptRemediationOrchestratorAuditPayloadDecision with value set to v.
+func NewOptRemediationOrchestratorAuditPayloadDecision(v RemediationOrchestratorAuditPayloadDecision) OptRemediationOrchestratorAuditPayloadDecision {
+	return OptRemediationOrchestratorAuditPayloadDecision{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationOrchestratorAuditPayloadDecision is optional RemediationOrchestratorAuditPayloadDecision.
+type OptRemediationOrchestratorAuditPayloadDecision struct {
+	Value RemediationOrchestratorAuditPayloadDecision
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationOrchestratorAuditPayloadDecision was set.
+func (o OptRemediationOrchestratorAuditPayloadDecision) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationOrchestratorAuditPayloadDecision) Reset() {
+	var v RemediationOrchestratorAuditPayloadDecision
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationOrchestratorAuditPayloadDecision) SetTo(v RemediationOrchestratorAuditPayloadDecision) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationOrchestratorAuditPayloadDecision) Get() (v RemediationOrchestratorAuditPayloadDecision, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationOrchestratorAuditPayloadDecision) Or(d RemediationOrchestratorAuditPayloadDecision) RemediationOrchestratorAuditPayloadDecision {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -9935,7 +10894,7 @@ func (*ReleaseLegalHoldUnauthorized) releaseLegalHoldRes() {}
 // Ref: #/components/schemas/RemediationApprovalAuditPayload
 type RemediationApprovalAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType RemediationApprovalAuditPayloadEventType `json:"event_type"`
 	// Name of the RemediationApprovalRequest.
 	RequestName string `json:"request_name"`
 	// Approval decision.
@@ -9949,7 +10908,7 @@ type RemediationApprovalAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *RemediationApprovalAuditPayload) GetEventType() string {
+func (s *RemediationApprovalAuditPayload) GetEventType() RemediationApprovalAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -9979,7 +10938,7 @@ func (s *RemediationApprovalAuditPayload) GetAiAnalysisRef() string {
 }
 
 // SetEventType sets the value of EventType.
-func (s *RemediationApprovalAuditPayload) SetEventType(val string) {
+func (s *RemediationApprovalAuditPayload) SetEventType(val RemediationApprovalAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -10050,12 +11009,47 @@ func (s *RemediationApprovalAuditPayloadDecision) UnmarshalText(data []byte) err
 	}
 }
 
+// Event type for discriminator (matches parent event_type).
+type RemediationApprovalAuditPayloadEventType string
+
+const (
+	RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided RemediationApprovalAuditPayloadEventType = "webhook.approval.decided"
+)
+
+// AllValues returns all RemediationApprovalAuditPayloadEventType values.
+func (RemediationApprovalAuditPayloadEventType) AllValues() []RemediationApprovalAuditPayloadEventType {
+	return []RemediationApprovalAuditPayloadEventType{
+		RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationApprovalAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationApprovalAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationApprovalAuditPayloadEventType(data) {
+	case RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided:
+		*s = RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed,
-// lifecycle.failed, lifecycle.transitioned).
+// lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected).
 // Ref: #/components/schemas/RemediationOrchestratorAuditPayload
 type RemediationOrchestratorAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType RemediationOrchestratorAuditPayloadEventType `json:"event_type"`
 	// Name of the RemediationRequest being orchestrated.
 	RrName string `json:"rr_name"`
 	// Kubernetes namespace of the RemediationRequest.
@@ -10075,10 +11069,34 @@ type RemediationOrchestratorAuditPayload struct {
 	ToPhase OptString `json:"to_phase"`
 	// Reason for the transition.
 	TransitionReason OptString `json:"transition_reason"`
+	// Name of the RemediationApprovalRequest.
+	RarName OptString `json:"rar_name"`
+	// Approval deadline (RFC3339).
+	RequiredBy OptDateTime `json:"required_by"`
+	// Selected workflow identifier.
+	WorkflowID OptString `json:"workflow_id"`
+	// Workflow selection confidence as string.
+	ConfidenceStr OptString `json:"confidence_str"`
+	// Approval decision.
+	Decision OptRemediationOrchestratorAuditPayloadDecision `json:"decision"`
+	// User who approved the request.
+	ApprovedBy OptString `json:"approved_by"`
+	// User who rejected the request.
+	RejectedBy OptString `json:"rejected_by"`
+	// Reason for rejection.
+	RejectionReason OptString `json:"rejection_reason"`
+	// Additional message or context for the event.
+	Message OptString `json:"message"`
+	// Reason for manual review or other actions.
+	Reason OptString `json:"reason"`
+	// Sub-categorization of the reason.
+	SubReason OptString `json:"sub_reason"`
+	// Associated notification name.
+	NotificationName OptString `json:"notification_name"`
 }
 
 // GetEventType returns the value of EventType.
-func (s *RemediationOrchestratorAuditPayload) GetEventType() string {
+func (s *RemediationOrchestratorAuditPayload) GetEventType() RemediationOrchestratorAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -10132,8 +11150,68 @@ func (s *RemediationOrchestratorAuditPayload) GetTransitionReason() OptString {
 	return s.TransitionReason
 }
 
+// GetRarName returns the value of RarName.
+func (s *RemediationOrchestratorAuditPayload) GetRarName() OptString {
+	return s.RarName
+}
+
+// GetRequiredBy returns the value of RequiredBy.
+func (s *RemediationOrchestratorAuditPayload) GetRequiredBy() OptDateTime {
+	return s.RequiredBy
+}
+
+// GetWorkflowID returns the value of WorkflowID.
+func (s *RemediationOrchestratorAuditPayload) GetWorkflowID() OptString {
+	return s.WorkflowID
+}
+
+// GetConfidenceStr returns the value of ConfidenceStr.
+func (s *RemediationOrchestratorAuditPayload) GetConfidenceStr() OptString {
+	return s.ConfidenceStr
+}
+
+// GetDecision returns the value of Decision.
+func (s *RemediationOrchestratorAuditPayload) GetDecision() OptRemediationOrchestratorAuditPayloadDecision {
+	return s.Decision
+}
+
+// GetApprovedBy returns the value of ApprovedBy.
+func (s *RemediationOrchestratorAuditPayload) GetApprovedBy() OptString {
+	return s.ApprovedBy
+}
+
+// GetRejectedBy returns the value of RejectedBy.
+func (s *RemediationOrchestratorAuditPayload) GetRejectedBy() OptString {
+	return s.RejectedBy
+}
+
+// GetRejectionReason returns the value of RejectionReason.
+func (s *RemediationOrchestratorAuditPayload) GetRejectionReason() OptString {
+	return s.RejectionReason
+}
+
+// GetMessage returns the value of Message.
+func (s *RemediationOrchestratorAuditPayload) GetMessage() OptString {
+	return s.Message
+}
+
+// GetReason returns the value of Reason.
+func (s *RemediationOrchestratorAuditPayload) GetReason() OptString {
+	return s.Reason
+}
+
+// GetSubReason returns the value of SubReason.
+func (s *RemediationOrchestratorAuditPayload) GetSubReason() OptString {
+	return s.SubReason
+}
+
+// GetNotificationName returns the value of NotificationName.
+func (s *RemediationOrchestratorAuditPayload) GetNotificationName() OptString {
+	return s.NotificationName
+}
+
 // SetEventType sets the value of EventType.
-func (s *RemediationOrchestratorAuditPayload) SetEventType(val string) {
+func (s *RemediationOrchestratorAuditPayload) SetEventType(val RemediationOrchestratorAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -10185,6 +11263,192 @@ func (s *RemediationOrchestratorAuditPayload) SetToPhase(val OptString) {
 // SetTransitionReason sets the value of TransitionReason.
 func (s *RemediationOrchestratorAuditPayload) SetTransitionReason(val OptString) {
 	s.TransitionReason = val
+}
+
+// SetRarName sets the value of RarName.
+func (s *RemediationOrchestratorAuditPayload) SetRarName(val OptString) {
+	s.RarName = val
+}
+
+// SetRequiredBy sets the value of RequiredBy.
+func (s *RemediationOrchestratorAuditPayload) SetRequiredBy(val OptDateTime) {
+	s.RequiredBy = val
+}
+
+// SetWorkflowID sets the value of WorkflowID.
+func (s *RemediationOrchestratorAuditPayload) SetWorkflowID(val OptString) {
+	s.WorkflowID = val
+}
+
+// SetConfidenceStr sets the value of ConfidenceStr.
+func (s *RemediationOrchestratorAuditPayload) SetConfidenceStr(val OptString) {
+	s.ConfidenceStr = val
+}
+
+// SetDecision sets the value of Decision.
+func (s *RemediationOrchestratorAuditPayload) SetDecision(val OptRemediationOrchestratorAuditPayloadDecision) {
+	s.Decision = val
+}
+
+// SetApprovedBy sets the value of ApprovedBy.
+func (s *RemediationOrchestratorAuditPayload) SetApprovedBy(val OptString) {
+	s.ApprovedBy = val
+}
+
+// SetRejectedBy sets the value of RejectedBy.
+func (s *RemediationOrchestratorAuditPayload) SetRejectedBy(val OptString) {
+	s.RejectedBy = val
+}
+
+// SetRejectionReason sets the value of RejectionReason.
+func (s *RemediationOrchestratorAuditPayload) SetRejectionReason(val OptString) {
+	s.RejectionReason = val
+}
+
+// SetMessage sets the value of Message.
+func (s *RemediationOrchestratorAuditPayload) SetMessage(val OptString) {
+	s.Message = val
+}
+
+// SetReason sets the value of Reason.
+func (s *RemediationOrchestratorAuditPayload) SetReason(val OptString) {
+	s.Reason = val
+}
+
+// SetSubReason sets the value of SubReason.
+func (s *RemediationOrchestratorAuditPayload) SetSubReason(val OptString) {
+	s.SubReason = val
+}
+
+// SetNotificationName sets the value of NotificationName.
+func (s *RemediationOrchestratorAuditPayload) SetNotificationName(val OptString) {
+	s.NotificationName = val
+}
+
+// Approval decision.
+type RemediationOrchestratorAuditPayloadDecision string
+
+const (
+	RemediationOrchestratorAuditPayloadDecisionApproved RemediationOrchestratorAuditPayloadDecision = "Approved"
+	RemediationOrchestratorAuditPayloadDecisionRejected RemediationOrchestratorAuditPayloadDecision = "Rejected"
+	RemediationOrchestratorAuditPayloadDecisionPending  RemediationOrchestratorAuditPayloadDecision = "Pending"
+)
+
+// AllValues returns all RemediationOrchestratorAuditPayloadDecision values.
+func (RemediationOrchestratorAuditPayloadDecision) AllValues() []RemediationOrchestratorAuditPayloadDecision {
+	return []RemediationOrchestratorAuditPayloadDecision{
+		RemediationOrchestratorAuditPayloadDecisionApproved,
+		RemediationOrchestratorAuditPayloadDecisionRejected,
+		RemediationOrchestratorAuditPayloadDecisionPending,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationOrchestratorAuditPayloadDecision) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationOrchestratorAuditPayloadDecisionApproved:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadDecisionRejected:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadDecisionPending:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationOrchestratorAuditPayloadDecision) UnmarshalText(data []byte) error {
+	switch RemediationOrchestratorAuditPayloadDecision(data) {
+	case RemediationOrchestratorAuditPayloadDecisionApproved:
+		*s = RemediationOrchestratorAuditPayloadDecisionApproved
+		return nil
+	case RemediationOrchestratorAuditPayloadDecisionRejected:
+		*s = RemediationOrchestratorAuditPayloadDecisionRejected
+		return nil
+	case RemediationOrchestratorAuditPayloadDecisionPending:
+		*s = RemediationOrchestratorAuditPayloadDecisionPending
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationOrchestratorAuditPayloadEventType string
+
+const (
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted      RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.started"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted    RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.completed"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed       RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.failed"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.transitioned"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested     RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.requested"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved      RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.approved"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected      RemediationOrchestratorAuditPayloadEventType = "orchestrator.approval.rejected"
+)
+
+// AllValues returns all RemediationOrchestratorAuditPayloadEventType values.
+func (RemediationOrchestratorAuditPayloadEventType) AllValues() []RemediationOrchestratorAuditPayloadEventType {
+	return []RemediationOrchestratorAuditPayloadEventType{
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationOrchestratorAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationOrchestratorAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationOrchestratorAuditPayloadEventType(data) {
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Phase where the failure occurred.
@@ -10955,11 +12219,11 @@ type SearchWorkflowsInternalServerError RFC7807Problem
 func (*SearchWorkflowsInternalServerError) searchWorkflowsRes() {}
 
 // Type-safe audit event payload for SignalProcessing (signal.processed, phase.transition,
-// classification.decided).
+// classification.decision, business.classified, enrichment.completed, error.occurred).
 // Ref: #/components/schemas/SignalProcessingAuditPayload
 type SignalProcessingAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType SignalProcessingAuditPayloadEventType `json:"event_type"`
 	// Current phase of the SignalProcessing.
 	Phase SignalProcessingAuditPayloadPhase `json:"phase"`
 	// Name of the signal being processed.
@@ -11007,7 +12271,7 @@ type SignalProcessingAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *SignalProcessingAuditPayload) GetEventType() string {
+func (s *SignalProcessingAuditPayload) GetEventType() SignalProcessingAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -11122,7 +12386,7 @@ func (s *SignalProcessingAuditPayload) GetError() OptString {
 }
 
 // SetEventType sets the value of EventType.
-func (s *SignalProcessingAuditPayload) SetEventType(val string) {
+func (s *SignalProcessingAuditPayload) SetEventType(val SignalProcessingAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -11390,21 +12654,95 @@ func (s *SignalProcessingAuditPayloadEnvironmentSource) UnmarshalText(data []byt
 	}
 }
 
+// Event type for discriminator (matches parent event_type).
+type SignalProcessingAuditPayloadEventType string
+
+const (
+	SignalProcessingAuditPayloadEventTypeSignalprocessingSignalProcessed        SignalProcessingAuditPayloadEventType = "signalprocessing.signal.processed"
+	SignalProcessingAuditPayloadEventTypeSignalprocessingPhaseTransition        SignalProcessingAuditPayloadEventType = "signalprocessing.phase.transition"
+	SignalProcessingAuditPayloadEventTypeSignalprocessingClassificationDecision SignalProcessingAuditPayloadEventType = "signalprocessing.classification.decision"
+	SignalProcessingAuditPayloadEventTypeSignalprocessingBusinessClassified     SignalProcessingAuditPayloadEventType = "signalprocessing.business.classified"
+	SignalProcessingAuditPayloadEventTypeSignalprocessingEnrichmentCompleted    SignalProcessingAuditPayloadEventType = "signalprocessing.enrichment.completed"
+	SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred          SignalProcessingAuditPayloadEventType = "signalprocessing.error.occurred"
+)
+
+// AllValues returns all SignalProcessingAuditPayloadEventType values.
+func (SignalProcessingAuditPayloadEventType) AllValues() []SignalProcessingAuditPayloadEventType {
+	return []SignalProcessingAuditPayloadEventType{
+		SignalProcessingAuditPayloadEventTypeSignalprocessingSignalProcessed,
+		SignalProcessingAuditPayloadEventTypeSignalprocessingPhaseTransition,
+		SignalProcessingAuditPayloadEventTypeSignalprocessingClassificationDecision,
+		SignalProcessingAuditPayloadEventTypeSignalprocessingBusinessClassified,
+		SignalProcessingAuditPayloadEventTypeSignalprocessingEnrichmentCompleted,
+		SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalProcessingAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingSignalProcessed:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingPhaseTransition:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingClassificationDecision:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingBusinessClassified:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingEnrichmentCompleted:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalProcessingAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch SignalProcessingAuditPayloadEventType(data) {
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingSignalProcessed:
+		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingSignalProcessed
+		return nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingPhaseTransition:
+		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingPhaseTransition
+		return nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingClassificationDecision:
+		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingClassificationDecision
+		return nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingBusinessClassified:
+		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingBusinessClassified
+		return nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingEnrichmentCompleted:
+		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingEnrichmentCompleted
+		return nil
+	case SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred:
+		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Current phase of the SignalProcessing.
 type SignalProcessingAuditPayloadPhase string
 
 const (
-	SignalProcessingAuditPayloadPhasePending     SignalProcessingAuditPayloadPhase = "Pending"
-	SignalProcessingAuditPayloadPhaseClassifying SignalProcessingAuditPayloadPhase = "Classifying"
-	SignalProcessingAuditPayloadPhaseCompleted   SignalProcessingAuditPayloadPhase = "Completed"
-	SignalProcessingAuditPayloadPhaseFailed      SignalProcessingAuditPayloadPhase = "Failed"
+	SignalProcessingAuditPayloadPhasePending      SignalProcessingAuditPayloadPhase = "Pending"
+	SignalProcessingAuditPayloadPhaseEnriching    SignalProcessingAuditPayloadPhase = "Enriching"
+	SignalProcessingAuditPayloadPhaseClassifying  SignalProcessingAuditPayloadPhase = "Classifying"
+	SignalProcessingAuditPayloadPhaseCategorizing SignalProcessingAuditPayloadPhase = "Categorizing"
+	SignalProcessingAuditPayloadPhaseCompleted    SignalProcessingAuditPayloadPhase = "Completed"
+	SignalProcessingAuditPayloadPhaseFailed       SignalProcessingAuditPayloadPhase = "Failed"
 )
 
 // AllValues returns all SignalProcessingAuditPayloadPhase values.
 func (SignalProcessingAuditPayloadPhase) AllValues() []SignalProcessingAuditPayloadPhase {
 	return []SignalProcessingAuditPayloadPhase{
 		SignalProcessingAuditPayloadPhasePending,
+		SignalProcessingAuditPayloadPhaseEnriching,
 		SignalProcessingAuditPayloadPhaseClassifying,
+		SignalProcessingAuditPayloadPhaseCategorizing,
 		SignalProcessingAuditPayloadPhaseCompleted,
 		SignalProcessingAuditPayloadPhaseFailed,
 	}
@@ -11415,7 +12753,11 @@ func (s SignalProcessingAuditPayloadPhase) MarshalText() ([]byte, error) {
 	switch s {
 	case SignalProcessingAuditPayloadPhasePending:
 		return []byte(s), nil
+	case SignalProcessingAuditPayloadPhaseEnriching:
+		return []byte(s), nil
 	case SignalProcessingAuditPayloadPhaseClassifying:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadPhaseCategorizing:
 		return []byte(s), nil
 	case SignalProcessingAuditPayloadPhaseCompleted:
 		return []byte(s), nil
@@ -11432,8 +12774,14 @@ func (s *SignalProcessingAuditPayloadPhase) UnmarshalText(data []byte) error {
 	case SignalProcessingAuditPayloadPhasePending:
 		*s = SignalProcessingAuditPayloadPhasePending
 		return nil
+	case SignalProcessingAuditPayloadPhaseEnriching:
+		*s = SignalProcessingAuditPayloadPhaseEnriching
+		return nil
 	case SignalProcessingAuditPayloadPhaseClassifying:
 		*s = SignalProcessingAuditPayloadPhaseClassifying
+		return nil
+	case SignalProcessingAuditPayloadPhaseCategorizing:
+		*s = SignalProcessingAuditPayloadPhaseCategorizing
 		return nil
 	case SignalProcessingAuditPayloadPhaseCompleted:
 		*s = SignalProcessingAuditPayloadPhaseCompleted
@@ -11789,13 +13137,77 @@ func (s *WorkflowCatalogCreatedPayloadStatus) UnmarshalText(data []byte) error {
 	}
 }
 
+// Fields that were updated in the workflow catalog.
+// Ref: #/components/schemas/WorkflowCatalogUpdatedFields
+type WorkflowCatalogUpdatedFields struct {
+	// Updated workflow status.
+	Status OptString `json:"status"`
+	// User who disabled the workflow (only for status=disabled).
+	DisabledBy OptString `json:"disabled_by"`
+	// Reason for disabling (only for status=disabled).
+	DisabledReason OptString `json:"disabled_reason"`
+	// Updated version.
+	Version OptString `json:"version"`
+	// Updated description.
+	Description OptString `json:"description"`
+}
+
+// GetStatus returns the value of Status.
+func (s *WorkflowCatalogUpdatedFields) GetStatus() OptString {
+	return s.Status
+}
+
+// GetDisabledBy returns the value of DisabledBy.
+func (s *WorkflowCatalogUpdatedFields) GetDisabledBy() OptString {
+	return s.DisabledBy
+}
+
+// GetDisabledReason returns the value of DisabledReason.
+func (s *WorkflowCatalogUpdatedFields) GetDisabledReason() OptString {
+	return s.DisabledReason
+}
+
+// GetVersion returns the value of Version.
+func (s *WorkflowCatalogUpdatedFields) GetVersion() OptString {
+	return s.Version
+}
+
+// GetDescription returns the value of Description.
+func (s *WorkflowCatalogUpdatedFields) GetDescription() OptString {
+	return s.Description
+}
+
+// SetStatus sets the value of Status.
+func (s *WorkflowCatalogUpdatedFields) SetStatus(val OptString) {
+	s.Status = val
+}
+
+// SetDisabledBy sets the value of DisabledBy.
+func (s *WorkflowCatalogUpdatedFields) SetDisabledBy(val OptString) {
+	s.DisabledBy = val
+}
+
+// SetDisabledReason sets the value of DisabledReason.
+func (s *WorkflowCatalogUpdatedFields) SetDisabledReason(val OptString) {
+	s.DisabledReason = val
+}
+
+// SetVersion sets the value of Version.
+func (s *WorkflowCatalogUpdatedFields) SetVersion(val OptString) {
+	s.Version = val
+}
+
+// SetDescription sets the value of Description.
+func (s *WorkflowCatalogUpdatedFields) SetDescription(val OptString) {
+	s.Description = val
+}
+
 // Audit payload for workflow catalog updates (datastorage.workflow.updated).
 // Ref: #/components/schemas/WorkflowCatalogUpdatedPayload
 type WorkflowCatalogUpdatedPayload struct {
 	// Unique workflow identifier (UUID).
-	WorkflowID uuid.UUID `json:"workflow_id"`
-	// Fields that were updated (field name -> new value).
-	UpdatedFields WorkflowCatalogUpdatedPayloadUpdatedFields `json:"updated_fields"`
+	WorkflowID    uuid.UUID                    `json:"workflow_id"`
+	UpdatedFields WorkflowCatalogUpdatedFields `json:"updated_fields"`
 }
 
 // GetWorkflowID returns the value of WorkflowID.
@@ -11804,7 +13216,7 @@ func (s *WorkflowCatalogUpdatedPayload) GetWorkflowID() uuid.UUID {
 }
 
 // GetUpdatedFields returns the value of UpdatedFields.
-func (s *WorkflowCatalogUpdatedPayload) GetUpdatedFields() WorkflowCatalogUpdatedPayloadUpdatedFields {
+func (s *WorkflowCatalogUpdatedPayload) GetUpdatedFields() WorkflowCatalogUpdatedFields {
 	return s.UpdatedFields
 }
 
@@ -11814,20 +13226,8 @@ func (s *WorkflowCatalogUpdatedPayload) SetWorkflowID(val uuid.UUID) {
 }
 
 // SetUpdatedFields sets the value of UpdatedFields.
-func (s *WorkflowCatalogUpdatedPayload) SetUpdatedFields(val WorkflowCatalogUpdatedPayloadUpdatedFields) {
+func (s *WorkflowCatalogUpdatedPayload) SetUpdatedFields(val WorkflowCatalogUpdatedFields) {
 	s.UpdatedFields = val
-}
-
-// Fields that were updated (field name -> new value).
-type WorkflowCatalogUpdatedPayloadUpdatedFields map[string]jx.Raw
-
-func (s *WorkflowCatalogUpdatedPayloadUpdatedFields) init() WorkflowCatalogUpdatedPayloadUpdatedFields {
-	m := *s
-	if m == nil {
-		m = map[string]jx.Raw{}
-		*s = m
-	}
-	return m
 }
 
 // Convenience request to disable a workflow.
@@ -11863,8 +13263,9 @@ func (s *WorkflowDisableRequest) SetUpdatedBy(val OptString) {
 // workflow.failed).
 // Ref: #/components/schemas/WorkflowExecutionAuditPayload
 type WorkflowExecutionAuditPayload struct {
-	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	// Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution
+	// events use 'workflowexecution' prefix.
+	EventType WorkflowExecutionAuditPayloadEventType `json:"event_type"`
 	// ID of the workflow being executed.
 	WorkflowID string `json:"workflow_id"`
 	// Version of the workflow being executed.
@@ -11895,7 +13296,7 @@ type WorkflowExecutionAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *WorkflowExecutionAuditPayload) GetEventType() string {
+func (s *WorkflowExecutionAuditPayload) GetEventType() WorkflowExecutionAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -11970,7 +13371,7 @@ func (s *WorkflowExecutionAuditPayload) GetPipelinerunName() OptString {
 }
 
 // SetEventType sets the value of EventType.
-func (s *WorkflowExecutionAuditPayload) SetEventType(val string) {
+func (s *WorkflowExecutionAuditPayload) SetEventType(val WorkflowExecutionAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -12042,6 +13443,70 @@ func (s *WorkflowExecutionAuditPayload) SetErrorDetails(val OptErrorDetails) {
 // SetPipelinerunName sets the value of PipelinerunName.
 func (s *WorkflowExecutionAuditPayload) SetPipelinerunName(val OptString) {
 	s.PipelinerunName = val
+}
+
+// Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution
+// events use 'workflowexecution' prefix.
+type WorkflowExecutionAuditPayloadEventType string
+
+const (
+	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted    WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.started"
+	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted  WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.completed"
+	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed     WorkflowExecutionAuditPayloadEventType = "workflowexecution.workflow.failed"
+	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted WorkflowExecutionAuditPayloadEventType = "workflowexecution.selection.completed"
+	WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted   WorkflowExecutionAuditPayloadEventType = "workflowexecution.execution.started"
+)
+
+// AllValues returns all WorkflowExecutionAuditPayloadEventType values.
+func (WorkflowExecutionAuditPayloadEventType) AllValues() []WorkflowExecutionAuditPayloadEventType {
+	return []WorkflowExecutionAuditPayloadEventType{
+		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted,
+		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed,
+		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted,
+		WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowExecutionAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted:
+		return []byte(s), nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowExecutionAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowExecutionAuditPayloadEventType(data) {
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted
+		return nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted
+		return nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed
+		return nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted
+		return nil
+	case WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted:
+		*s = WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Categorized failure reason.
@@ -12188,7 +13653,7 @@ func (s *WorkflowExecutionAuditPayloadPhase) UnmarshalText(data []byte) error {
 // Ref: #/components/schemas/WorkflowExecutionWebhookAuditPayload
 type WorkflowExecutionWebhookAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
-	EventType string `json:"event_type"`
+	EventType WorkflowExecutionWebhookAuditPayloadEventType `json:"event_type"`
 	// Name of the WorkflowExecution.
 	WorkflowName string `json:"workflow_name"`
 	// Reason for clearing the block.
@@ -12202,7 +13667,7 @@ type WorkflowExecutionWebhookAuditPayload struct {
 }
 
 // GetEventType returns the value of EventType.
-func (s *WorkflowExecutionWebhookAuditPayload) GetEventType() string {
+func (s *WorkflowExecutionWebhookAuditPayload) GetEventType() WorkflowExecutionWebhookAuditPayloadEventType {
 	return s.EventType
 }
 
@@ -12232,7 +13697,7 @@ func (s *WorkflowExecutionWebhookAuditPayload) GetNewState() WorkflowExecutionWe
 }
 
 // SetEventType sets the value of EventType.
-func (s *WorkflowExecutionWebhookAuditPayload) SetEventType(val string) {
+func (s *WorkflowExecutionWebhookAuditPayload) SetEventType(val WorkflowExecutionWebhookAuditPayloadEventType) {
 	s.EventType = val
 }
 
@@ -12259,6 +13724,41 @@ func (s *WorkflowExecutionWebhookAuditPayload) SetPreviousState(val WorkflowExec
 // SetNewState sets the value of NewState.
 func (s *WorkflowExecutionWebhookAuditPayload) SetNewState(val WorkflowExecutionWebhookAuditPayloadNewState) {
 	s.NewState = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type WorkflowExecutionWebhookAuditPayloadEventType string
+
+const (
+	WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked WorkflowExecutionWebhookAuditPayloadEventType = "webhook.workflow.unblocked"
+)
+
+// AllValues returns all WorkflowExecutionWebhookAuditPayloadEventType values.
+func (WorkflowExecutionWebhookAuditPayloadEventType) AllValues() []WorkflowExecutionWebhookAuditPayloadEventType {
+	return []WorkflowExecutionWebhookAuditPayloadEventType{
+		WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowExecutionWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowExecutionWebhookAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowExecutionWebhookAuditPayloadEventType(data) {
+	case WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked:
+		*s = WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // State after unblocking (always "Running").
@@ -12496,9 +13996,16 @@ func (s *WorkflowResultAuditLabels) init() WorkflowResultAuditLabels {
 // Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1).
 // Ref: #/components/schemas/WorkflowSearchAuditPayload
 type WorkflowSearchAuditPayload struct {
-	Query          QueryMetadata           `json:"query"`
-	Results        ResultsMetadata         `json:"results"`
-	SearchMetadata SearchExecutionMetadata `json:"search_metadata"`
+	// Discriminator for event data union type.
+	EventType      WorkflowSearchAuditPayloadEventType `json:"event_type"`
+	Query          QueryMetadata                       `json:"query"`
+	Results        ResultsMetadata                     `json:"results"`
+	SearchMetadata SearchExecutionMetadata             `json:"search_metadata"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *WorkflowSearchAuditPayload) GetEventType() WorkflowSearchAuditPayloadEventType {
+	return s.EventType
 }
 
 // GetQuery returns the value of Query.
@@ -12516,6 +14023,11 @@ func (s *WorkflowSearchAuditPayload) GetSearchMetadata() SearchExecutionMetadata
 	return s.SearchMetadata
 }
 
+// SetEventType sets the value of EventType.
+func (s *WorkflowSearchAuditPayload) SetEventType(val WorkflowSearchAuditPayloadEventType) {
+	s.EventType = val
+}
+
 // SetQuery sets the value of Query.
 func (s *WorkflowSearchAuditPayload) SetQuery(val QueryMetadata) {
 	s.Query = val
@@ -12529,6 +14041,41 @@ func (s *WorkflowSearchAuditPayload) SetResults(val ResultsMetadata) {
 // SetSearchMetadata sets the value of SearchMetadata.
 func (s *WorkflowSearchAuditPayload) SetSearchMetadata(val SearchExecutionMetadata) {
 	s.SearchMetadata = val
+}
+
+// Discriminator for event data union type.
+type WorkflowSearchAuditPayloadEventType string
+
+const (
+	WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted WorkflowSearchAuditPayloadEventType = "workflow.catalog.search_completed"
+)
+
+// AllValues returns all WorkflowSearchAuditPayloadEventType values.
+func (WorkflowSearchAuditPayloadEventType) AllValues() []WorkflowSearchAuditPayloadEventType {
+	return []WorkflowSearchAuditPayloadEventType{
+		WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowSearchAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowSearchAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowSearchAuditPayloadEventType(data) {
+	case WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted:
+		*s = WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/WorkflowSearchFilters
@@ -13158,6 +14705,8 @@ func (s *WorkflowUpdateRequestStatus) UnmarshalText(data []byte) error {
 // Workflow validation attempt event payload (workflow_validation_attempt).
 // Ref: #/components/schemas/WorkflowValidationPayload
 type WorkflowValidationPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType WorkflowValidationPayloadEventType `json:"event_type"`
 	// Unique event identifier.
 	EventID string `json:"event_id"`
 	// Incident correlation ID (remediation_id).
@@ -13180,6 +14729,11 @@ type WorkflowValidationPayload struct {
 	HumanReviewReason OptString `json:"human_review_reason"`
 	// Whether this is the final validation attempt.
 	IsFinalAttempt OptBool `json:"is_final_attempt"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *WorkflowValidationPayload) GetEventType() WorkflowValidationPayloadEventType {
+	return s.EventType
 }
 
 // GetEventID returns the value of EventID.
@@ -13237,6 +14791,11 @@ func (s *WorkflowValidationPayload) GetIsFinalAttempt() OptBool {
 	return s.IsFinalAttempt
 }
 
+// SetEventType sets the value of EventType.
+func (s *WorkflowValidationPayload) SetEventType(val WorkflowValidationPayloadEventType) {
+	s.EventType = val
+}
+
 // SetEventID sets the value of EventID.
 func (s *WorkflowValidationPayload) SetEventID(val string) {
 	s.EventID = val
@@ -13290,4 +14849,39 @@ func (s *WorkflowValidationPayload) SetHumanReviewReason(val OptString) {
 // SetIsFinalAttempt sets the value of IsFinalAttempt.
 func (s *WorkflowValidationPayload) SetIsFinalAttempt(val OptBool) {
 	s.IsFinalAttempt = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type WorkflowValidationPayloadEventType string
+
+const (
+	WorkflowValidationPayloadEventTypeWorkflowValidationAttempt WorkflowValidationPayloadEventType = "workflow_validation_attempt"
+)
+
+// AllValues returns all WorkflowValidationPayloadEventType values.
+func (WorkflowValidationPayloadEventType) AllValues() []WorkflowValidationPayloadEventType {
+	return []WorkflowValidationPayloadEventType{
+		WorkflowValidationPayloadEventTypeWorkflowValidationAttempt,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s WorkflowValidationPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case WorkflowValidationPayloadEventTypeWorkflowValidationAttempt:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *WorkflowValidationPayloadEventType) UnmarshalText(data []byte) error {
+	switch WorkflowValidationPayloadEventType(data) {
+	case WorkflowValidationPayloadEventTypeWorkflowValidationAttempt:
+		*s = WorkflowValidationPayloadEventTypeWorkflowValidationAttempt
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }

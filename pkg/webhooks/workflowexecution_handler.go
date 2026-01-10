@@ -26,6 +26,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -111,19 +112,20 @@ func (h *WorkflowExecutionAuthHandler) Handle(ctx context.Context, req admission
 	// Per DD-WEBHOOK-003 lines 290-295: Business context ONLY (attribution in structured columns)
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := WorkflowExecutionAuditPayload{
+	payload := api.WorkflowExecutionWebhookAuditPayload{
+		EventType:     "webhook.workflow.unblocked",
 		WorkflowName:  wfe.Name,
 		ClearReason:   wfe.Status.BlockClearance.ClearReason,
 		ClearedAt:     wfe.Status.BlockClearance.ClearedAt.Time,
-		PreviousState: "Blocked", // Per DD-WEBHOOK-003 line 293 (business field)
-		NewState:      "Running", // Per DD-WEBHOOK-003 line 294 (business field)
+		PreviousState: api.WorkflowExecutionWebhookAuditPayloadPreviousStateBlocked,
+		NewState:      api.WorkflowExecutionWebhookAuditPayloadNewStateRunning,
 	}
 	// Note: Attribution fields (WHO, WHAT, WHERE, HOW) are in structured columns:
 	// - actor_id: authCtx.Username (via audit.SetActor)
 	// - resource_name: wfe.Name (via audit.SetResource)
 	// - namespace: wfe.Namespace (via audit.SetNamespace)
 	// - event_action: "block_cleared" (via audit.SetEventAction)
-	audit.SetEventData(auditEvent, payload)
+	auditEvent.EventData = api.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(payload)
 
 	// Store audit event asynchronously (buffered write)
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {

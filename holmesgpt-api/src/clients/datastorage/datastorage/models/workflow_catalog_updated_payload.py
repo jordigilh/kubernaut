@@ -21,6 +21,7 @@ import json
 from typing import Any, ClassVar, Dict, List
 from pydantic import BaseModel, StrictStr
 from pydantic import Field
+from datastorage.models.workflow_catalog_updated_fields import WorkflowCatalogUpdatedFields
 try:
     from typing import Self
 except ImportError:
@@ -31,7 +32,7 @@ class WorkflowCatalogUpdatedPayload(BaseModel):
     Audit payload for workflow catalog updates (datastorage.workflow.updated)
     """ # noqa: E501
     workflow_id: StrictStr = Field(description="Unique workflow identifier (UUID)")
-    updated_fields: Dict[str, Any] = Field(description="Fields that were updated (field name -> new value)")
+    updated_fields: WorkflowCatalogUpdatedFields
     __properties: ClassVar[List[str]] = ["workflow_id", "updated_fields"]
 
     model_config = {
@@ -71,6 +72,9 @@ class WorkflowCatalogUpdatedPayload(BaseModel):
             },
             exclude_none=True,
         )
+        # override the default output from pydantic by calling `to_dict()` of updated_fields
+        if self.updated_fields:
+            _dict['updated_fields'] = self.updated_fields.to_dict()
         return _dict
 
     @classmethod
@@ -84,7 +88,7 @@ class WorkflowCatalogUpdatedPayload(BaseModel):
 
         _obj = cls.model_validate({
             "workflow_id": obj.get("workflow_id"),
-            "updated_fields": obj.get("updated_fields")
+            "updated_fields": WorkflowCatalogUpdatedFields.from_dict(obj.get("updated_fields")) if obj.get("updated_fields") is not None else None
         })
         return _obj
 

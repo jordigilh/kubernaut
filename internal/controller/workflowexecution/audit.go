@@ -99,11 +99,10 @@ func (r *WorkflowExecutionReconciler) RecordAuditEvent(
 	// Build audit event per ADR-034 schema (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	// Event type = action (e.g., "workflow.started")
+	// Event type = action (e.g., "workflowexecution.workflow.started")
 	// Service context is provided by event_category and actor fields
-	// WE-BUG-002: Remove "workflowexecution." prefix to match test expectations
 	audit.SetEventType(event, action)
-	audit.SetEventCategory(event, "workflow")
+	audit.SetEventCategory(event, "workflowexecution") // Per ADR-034 v1.5 (2026-01-08)
 	// Event action = just the action part (e.g., "started" from "workflow.started")
 	// Split on "." and take the last part
 	parts := strings.Split(action, ".")
@@ -141,7 +140,6 @@ func (r *WorkflowExecutionReconciler) RecordAuditEvent(
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
 	payload := ogenclient.WorkflowExecutionAuditPayload{
-		EventType:       action, // Required for discriminator (matches event_type)
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,

@@ -30,6 +30,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -524,12 +525,17 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			updatedFields := map[string]interface{}{
-				"status": workflow.Status,
-			}
+			// Build structured updated fields (ogen type - no more map[string]interface{}!)
+			updatedFields := api.WorkflowCatalogUpdatedFields{}
+			updatedFields.Status.SetTo(workflow.Status)
+
 			if updateReq.Status != nil && *updateReq.Status == "disabled" {
-				updatedFields["disabled_by"] = getStringValue(workflow.DisabledBy)
-				updatedFields["disabled_reason"] = getStringValue(workflow.DisabledReason)
+				if disabledBy := getStringValue(workflow.DisabledBy); disabledBy != "" {
+					updatedFields.DisabledBy.SetTo(disabledBy)
+				}
+				if disabledReason := getStringValue(workflow.DisabledReason); disabledReason != "" {
+					updatedFields.DisabledReason.SetTo(disabledReason)
+				}
 			}
 
 			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
@@ -635,11 +641,11 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			updatedFields := map[string]interface{}{
-				"status":          "disabled",
-				"disabled_by":     updatedBy,
-				"disabled_reason": reason,
-			}
+			// Build structured updated fields (OGEN-MIGRATION)
+			updatedFields := api.WorkflowCatalogUpdatedFields{}
+			updatedFields.Status.SetTo("disabled")
+			updatedFields.DisabledBy.SetTo(updatedBy)
+			updatedFields.DisabledReason.SetTo(reason)
 
 			auditEvent, err := dsaudit.NewWorkflowUpdatedAuditEvent(workflow.WorkflowID, updatedFields)
 			if err != nil {

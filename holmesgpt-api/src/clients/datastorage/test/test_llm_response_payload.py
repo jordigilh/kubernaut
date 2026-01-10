@@ -36,6 +36,7 @@ class TestLLMResponsePayload(unittest.TestCase):
         model = LLMResponsePayload()
         if include_optional:
             return LLMResponsePayload(
+                event_type = 'llm_response',
                 event_id = '',
                 incident_id = '',
                 has_analysis = True,
@@ -46,6 +47,7 @@ class TestLLMResponsePayload(unittest.TestCase):
             )
         else:
             return LLMResponsePayload(
+                event_type = 'llm_response',
                 event_id = '',
                 incident_id = '',
                 has_analysis = True,

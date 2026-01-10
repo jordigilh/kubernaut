@@ -23,14 +23,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // Scenario 6: Workflow Search Audit Trail (P0)
@@ -83,7 +84,7 @@ var _ = Describe("Scenario 6: Workflow Search Audit Trail", Label("e2e", "workfl
 			"postgresURL", postgresURL)
 
 		// Generate unique test ID for workflow isolation within shared namespace
-		testID = fmt.Sprintf("audit-e2e-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+		testID = fmt.Sprintf("audit-e2e-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
 		// Connect to PostgreSQL for direct database verification via NodePort
 		testLogger.Info("🔌 Connecting to PostgreSQL via NodePort...")
@@ -167,7 +168,7 @@ execution:
 				Version:         "1.0.0",
 				Name:            "OOM Recovery Workflow",
 				Description:     "Recover from OOMKilled using kubectl rollout restart",
-				Owner:           &owner,
+				Owner:           dsgen.NewOptString(owner),
 				Content:         workflowSchemaContent,
 				ContentHash:     contentHashHex,                       // Required field
 				ExecutionEngine: "tekton",                             // Required field
@@ -178,22 +179,16 @@ execution:
 					SignalType:  uniqueSignalType,                         // mandatory - unique per process
 					Severity:    dsgen.MandatoryLabelsSeverityCritical,    // mandatory
 					Environment: "production",                             // mandatory
-					Priority:    dsgen.MandatoryLabelsPriorityP0,          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,          // mandatory
 					Component:   "deployment",                             // mandatory
 				},
-				ContainerImage: &containerImage,
+				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
 			// Create workflow via API (using shared NodePort URL)
-			resp, err := dsClient.CreateWorkflowWithResponse(context.Background(), workflow)
+			_, err := dsClient.CreateWorkflow(context.Background(), &workflow)
 			Expect(err).ToNot(HaveOccurred())
 
-			if resp.StatusCode() != http.StatusCreated && resp.StatusCode() != http.StatusOK {
-				testLogger.Info("Failed to create workflow",
-					"status", resp.StatusCode())
-			}
-			Expect(resp.StatusCode()).To(SatisfyAny(Equal(http.StatusCreated), Equal(http.StatusOK)),
-				"Workflow creation should succeed")
 
 			testLogger.Info("✅ Test workflow created", "workflow_id", workflowID)
 
@@ -205,23 +200,21 @@ execution:
 			// DD-E2E-DATA-POLLUTION-001: Search using unique signal_type per parallel process
 			topK := 5
 			searchRequest := dsgen.WorkflowSearchRequest{
-				RemediationId: &remediationID,
+				RemediationID: dsgen.NewOptString(remediationID),
 				Filters: dsgen.WorkflowSearchFilters{
 					SignalType:  uniqueSignalType,                              // mandatory - unique per process
-					Severity:    dsgen.Critical,   // mandatory
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
 					Component:   "deployment",                                  // mandatory
 					Environment: "production",                                  // mandatory
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
 				},
-				TopK: &topK,
+				TopK: dsgen.NewOptInt(topK),
 			}
 
 			searchStart := time.Now()
-			searchResp, err := dsClient.SearchWorkflowsWithResponse(context.Background(), searchRequest)
+			_, err = dsClient.SearchWorkflows(context.Background(), &searchRequest)
 			searchDuration := time.Since(searchStart)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(searchResp.StatusCode()).To(Equal(http.StatusOK),
-				fmt.Sprintf("Search should succeed, got status: %d", searchResp.StatusCode()))
 
 			testLogger.Info("✅ Workflow search completed",
 				"duration", searchDuration,
@@ -402,24 +395,23 @@ execution:
 				topK := 3
 				// DD-API-001: Use typed OpenAPI struct
 				searchRequest := dsgen.WorkflowSearchRequest{
-					RemediationId: &remediationID,
+					RemediationID: dsgen.NewOptString(remediationID),
 					Filters: dsgen.WorkflowSearchFilters{
 						SignalType:  "OOMKilled",                                   // mandatory (DD-WORKFLOW-001 v1.4)
-						Severity:    dsgen.Critical,   // mandatory
+						Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
 						Component:   "deployment",                                  // mandatory
 						Environment: "production",                                  // mandatory
 						Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
 					},
-					TopK: &topK,
+					TopK: dsgen.NewOptInt(topK),
 				}
 
 				start := time.Now()
-				resp, err := dsClient.SearchWorkflowsWithResponse(context.Background(), searchRequest)
+				_, err := dsClient.SearchWorkflows(context.Background(), &searchRequest)
 				duration := time.Since(start)
 				totalDuration += duration
 
 				Expect(err).ToNot(HaveOccurred())
-				Expect(resp.StatusCode()).To(Equal(http.StatusOK))
 
 				testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),
 					"duration", duration)

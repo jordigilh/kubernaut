@@ -1,25 +1,30 @@
-# Multi-stage build for WorkflowExecution controller using Red Hat UBI9 Go toolset
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+# Multi-stage build for WorkflowExecution controller
+# CRITICAL (Jan 9, 2026): ALL Red Hat UBI9 go-toolset versions crash on ARM64
+# - go-toolset:1.24 (Go 1.24.6) → taggedPointerPack fatal error ❌
+# - go-toolset:1.25 (Go 1.25.3) → taggedPointerPack fatal error ❌
+# - golang:1.25-bookworm (Go 1.25.5) → Works ✅
+#
+# Root cause: Red Hat's ARM64 Go runtime has pointer tagging bug
+# Workaround: Use upstream Go builder mirrored to quay.io (avoids Docker Hub rate limits)
+# ADR-028 Compliance: Image mirrored to approved quay.io/jordigilh/* registry
+# Runtime stage still uses UBI9 for full Red Hat compliance
+# See: docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md
+FROM quay.io/jordigilh/golang:1.25-bookworm AS builder
 
-# Switch to root for package installation
-USER root
-
-# Install additional build dependencies if needed
-RUN dnf update -y && \
-	dnf install -y git ca-certificates tzdata && \
-	dnf clean all
-
-# Switch back to default user for security
-USER 1001
+# Install build dependencies
+RUN apt-get update && \
+	apt-get install -y git ca-certificates tzdata && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/*
 
 # Set working directory
-WORKDIR /opt/app-root/src
+WORKDIR /workspace
 
 # Copy go mod files
-COPY --chown=1001:0 go.mod go.sum ./
+COPY go.mod go.sum ./
 
 # Copy source code
-COPY --chown=1001:0 . .
+COPY . .
 
 # Build the WorkflowExecution controller binary
 # -mod=mod: Automatically download dependencies during build (per DD-BUILD-001)
@@ -59,7 +64,7 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root workflowexecution-user
 
 # Copy the binary from builder stage
-COPY --from=builder /opt/app-root/src/workflowexecution /usr/local/bin/workflowexecution
+COPY --from=builder /workspace/workflowexecution /usr/local/bin/workflowexecution
 
 # Set proper permissions
 RUN chmod +x /usr/local/bin/workflowexecution

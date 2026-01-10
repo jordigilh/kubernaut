@@ -27,6 +27,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/google/uuid"
 )
 
 // ========================================
@@ -631,7 +633,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 						"actor_type":      "service",
 						"actor_id":        fmt.Sprintf("%s-service", tc.Service),
 						"resource_type":   "Test",
-						"resource_id":     fmt.Sprintf("test-%s-%d", tc.Service, time.Now().UnixNano()),
+						"resource_id":     fmt.Sprintf("test-%s-%s", tc.Service, uuid.New().String()[:8]),
 						"correlation_id":  fmt.Sprintf("test-gap-1.1-%s", tc.EventType),
 						"event_data":      tc.SampleEventData, // Structured event data (not unstructured!)
 					}

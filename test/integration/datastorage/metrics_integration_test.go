@@ -18,13 +18,14 @@ package datastorage
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -100,40 +101,40 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			Expect(err).ToNot(HaveOccurred())
 			baselineMetrics := baselineBody.String()
 
-			// Create audit event using unified endpoint (ADR-034)
-			eventData, err := audit.NewGatewayEvent("signal.received").
-				WithSignalType("prometheus").
-				WithAlertName("MetricsTest").
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			eventPayload := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "gateway",
-				"event_type":      "gateway.signal.received",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-				"correlation_id":  fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
-				"event_outcome":   "success",
-				"event_action":    "metrics_test",
-				"actor_type":      "service",          // ADR-034 required
-				"actor_id":        "gateway-service",  // ADR-034 required
-				"resource_type":   "signal",           // ADR-034 required
-				"resource_id":     "metrics-test-001", // ADR-034 required
-				"event_data":      eventData,
+			// Create audit event using ogen client (ADR-034)
+			eventData := ogenclient.AuditEventRequestEventData{
+				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					AlertName:   "MetricsTest",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				},
 			}
 
-			payload, _ := json.Marshal(eventPayload)
-			resp, err := http.Post(
-				datastorageURL+"/api/v1/audit/events",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+			eventRequest := ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventType:      "gateway.signal.received",
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				CorrelationID:  fmt.Sprintf("metrics-test-%d", time.Now().UnixNano()),
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				EventAction:    "metrics_test",
+				ActorType:      ogenclient.NewOptString("service"),
+				ActorID:        ogenclient.NewOptString("gateway-service"),
+				ResourceType:   ogenclient.NewOptString("signal"),
+				ResourceID:     ogenclient.NewOptString("metrics-test-001"),
+				EventData:      eventData,
+			}
 
-			// Should succeed
-			Expect(resp.StatusCode).To(Equal(201),
-				"Audit write MUST succeed with 201 Created")
+			// Use ogen client to post event (handles optional fields properly)
+			ctx := context.Background()
+			client, err := createOpenAPIClient(datastorageURL)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = postAuditEvent(ctx, client, eventRequest)
+			Expect(err).ToNot(HaveOccurred(), "Audit write MUST succeed with 201 Created")
 
 			// Get updated metrics
 			updatedResp, err := http.Get(datastorageURL + "/metrics")
@@ -172,33 +173,36 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 
 			// Create audit event with past timestamp (2 seconds ago)
 			pastTimestamp := time.Now().UTC().Add(-2 * time.Second)
-			eventData, err := audit.NewGatewayEvent("signal.received").
-				WithSignalType("prometheus").
-				WithAlertName("LagTest").
-				Build()
-			Expect(err).ToNot(HaveOccurred())
 
-			eventPayload := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "gateway",
-				"event_type":      "gateway.signal.received",
-				"event_timestamp": pastTimestamp.Format(time.RFC3339Nano),
-				"correlation_id":  fmt.Sprintf("lag-test-%d", time.Now().UnixNano()),
-				"event_outcome":   "success",
-				"event_action":    "lag_test",
-				"event_data":      eventData,
+			eventData := ogenclient.AuditEventRequestEventData{
+				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					AlertName:   "LagTest",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				},
 			}
 
-			payload, _ := json.Marshal(eventPayload)
-			resp, err := http.Post(
-				datastorageURL+"/api/v1/audit/events",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+			eventRequest := ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventType:      "gateway.signal.received",
+				EventTimestamp: pastTimestamp,
+				CorrelationID:  fmt.Sprintf("lag-test-%d", time.Now().UnixNano()),
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				EventAction:    "lag_test",
+				EventData:      eventData,
+			}
 
-			Expect(resp.StatusCode).To(Equal(201))
+			// Use ogen client to post event (handles optional fields properly)
+			ctx := context.Background()
+			client, err := createOpenAPIClient(datastorageURL)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = postAuditEvent(ctx, client, eventRequest)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Get metrics
 			metricsResp, err := http.Get(datastorageURL + "/metrics")
@@ -290,33 +294,35 @@ var _ = Describe("BR-STORAGE-019: Prometheus Metrics Integration", Ordered, func
 			// ADR-034: Use unified audit events endpoint
 
 			// Create valid audit event
-			eventData, err := audit.NewGatewayEvent("signal.received").
-				WithSignalType("prometheus").
-				WithAlertName("DurationTest").
-				Build()
-			Expect(err).ToNot(HaveOccurred())
-
-			eventPayload := map[string]interface{}{
-				"version":         "1.0",
-				"event_category":  "gateway",
-				"event_type":      "gateway.signal.received",
-				"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-				"correlation_id":  fmt.Sprintf("duration-test-%d", time.Now().UnixNano()),
-				"event_outcome":   "success",
-				"event_action":    "duration_test",
-				"event_data":      eventData,
+			eventData := ogenclient.AuditEventRequestEventData{
+				Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+				GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+					EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+					SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+					AlertName:   "DurationTest",
+					Namespace:   "default",
+					Fingerprint: "test-fingerprint",
+				},
 			}
 
-			payload, _ := json.Marshal(eventPayload)
-			resp, err := http.Post(
-				datastorageURL+"/api/v1/audit/events",
-				"application/json",
-				bytes.NewBuffer(payload),
-			)
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+			eventRequest := ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+				EventType:      "gateway.signal.received",
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				CorrelationID:  fmt.Sprintf("duration-test-%d", time.Now().UnixNano()),
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				EventAction:    "duration_test",
+				EventData:      eventData,
+			}
 
-			Expect(resp.StatusCode).To(Equal(201))
+			// Use ogen client to post event (handles optional fields properly)
+			ctx := context.Background()
+			client, err := createOpenAPIClient(datastorageURL)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, err = postAuditEvent(ctx, client, eventRequest)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Get metrics
 			metricsResp, err := http.Get(datastorageURL + "/metrics")

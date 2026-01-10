@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -207,7 +209,7 @@ func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogencli
 	if err != nil {
 		// Parse HTTP status code from ogen error if present
 		// Ogen errors for non-2xx responses contain "unexpected status code: XXX"
-		return err
+		return parseOgenError(err)
 	}
 
 	// Ogen returns typed response directly, no status code checking needed
@@ -216,4 +218,38 @@ func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogencli
 
 	// Success (2xx status code)
 	return nil
+}
+
+// parseOgenError extracts HTTP status code from ogen errors and returns appropriate error type.
+//
+// Ogen returns errors for non-2xx responses with message format:
+// "decode response: unexpected status code: 400"
+//
+// This function:
+// - Extracts the status code from the error message
+// - Returns HTTPError for 4xx/5xx codes (with correct retry semantics)
+// - Returns NetworkError for other errors (connection failures, timeouts)
+//
+// Error Type Mapping (compatible with HTTPDataStorageClient):
+// - 4xx: HTTPError (NOT retryable - client errors)
+// - 5xx: HTTPError (retryable - server errors)
+// - Other: NetworkError (retryable - network failures)
+func parseOgenError(err error) error {
+	errMsg := err.Error()
+
+	// Check for HTTP status code in ogen error message
+	// Format: "decode response: unexpected status code: 400"
+	if strings.Contains(errMsg, "unexpected status code:") {
+		parts := strings.Split(errMsg, "unexpected status code:")
+		if len(parts) == 2 {
+			statusStr := strings.TrimSpace(parts[1])
+			if statusCode, parseErr := strconv.Atoi(statusStr); parseErr == nil {
+				// Create HTTPError with extracted status code
+				return NewHTTPError(statusCode, fmt.Sprintf("HTTP %d error from Data Storage API", statusCode))
+			}
+		}
+	}
+
+	// Not an HTTP error - treat as network error (connection failure, timeout, etc.)
+	return NewNetworkError(err)
 }

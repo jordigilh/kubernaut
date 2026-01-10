@@ -160,7 +160,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				EventType:     "notification.message.sent",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
-				EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: string(notification.UID),
 			})
 
@@ -231,7 +231,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				EventType:     "notification.message.sent",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
-				EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 			})
 
 			// Cleanup
@@ -431,7 +431,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				EventType:     "notification.message.acknowledged",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "acknowledged",
-				EventOutcome:  ogenclient.AuditEventEventOutcomeSuccess,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: string(notification.UID),
 				ActorType:     &actorType,
 				ActorID:       &actorID,
@@ -583,7 +583,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				EventType:     "notification.message.failed",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent", // Action was "sent" (attempted), outcome is "failure"
-				EventOutcome:  ogenclient.AuditEventEventOutcomeFailure,
+				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
 			})
 
 			// Verify error details are included in event_data

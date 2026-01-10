@@ -1,18 +1,18 @@
 package adapters
 
 // Signal source type constants for Gateway adapters
-// These represent the origin/protocol of incoming signals and are used for:
-// - Signal classification and routing
-// - Metrics and observability
-// - Audit event categorization (mapped to OpenAPI audit enums)
+// These represent the signal type identifier used for classification, metrics, and logging.
+// Per BR-GATEWAY-027: Distinguish signal types for adapter-specific metrics and classification.
 //
 // Valid values match OpenAPI spec: api/openapi/data-storage-v1.yaml (GatewayAuditPayload.signal_type enum)
 const (
-	// SourceTypeAlertManager represents signals from Prometheus AlertManager webhooks
-	// Used by: PrometheusAdapter (processes AlertManager webhook format)
-	SourceTypeAlertManager = "alertmanager"
+	// SourceTypePrometheusAlert represents alert signals from Prometheus AlertManager
+	// Used by: PrometheusAdapter
+	// BR-GATEWAY-027: Returns "prometheus-alert" for signal type classification
+	SourceTypePrometheusAlert = "prometheus-alert"
 
-	// SourceTypeWebhook represents signals from generic webhooks
-	// Used by: KubernetesEventAdapter (K8s events via webhook/API), custom webhook adapters
-	SourceTypeWebhook = "webhook"
+	// SourceTypeKubernetesEvent represents event signals from Kubernetes API
+	// Used by: KubernetesEventAdapter
+	// BR-GATEWAY-027: Returns "kubernetes-event" for signal type classification
+	SourceTypeKubernetesEvent = "kubernetes-event"
 )

@@ -97,26 +97,27 @@ func ConvertAuditEventRequest(req ogenclient.AuditEventRequest) (*audit.AuditEve
 		EventData:      eventDataJSON,
 	}
 
-	// Optional fields
-	if req.ParentEventID != nil {
-		parentUUID := uuid.UUID(*req.ParentEventID)
+	// Optional fields (ogen OptNil types)
+	if req.ParentEventID.IsSet() {
+		parentUUID := req.ParentEventID.Value
 		event.ParentEventID = &parentUUID
 	}
 
-	if req.Namespace != nil {
-		event.Namespace = req.Namespace
+	if req.Namespace.IsSet() {
+		event.Namespace = &req.Namespace.Value
 	}
 
-	if req.ClusterName != nil {
-		event.ClusterName = req.ClusterName
+	if req.ClusterName.IsSet() {
+		event.ClusterName = &req.ClusterName.Value
 	}
 
-	if req.Severity != nil {
-		event.Severity = req.Severity
+	if req.Severity.IsSet() {
+		event.Severity = &req.Severity.Value
 	}
 
 	if req.DurationMs.IsSet() {
-		event.DurationMs = &req.DurationMs.Value
+		durationValue := int(req.DurationMs.Value)
+		event.DurationMs = &durationValue
 	}
 
 	return event, nil
@@ -198,7 +199,7 @@ func ConvertToRepositoryAuditEvent(event *audit.AuditEvent) (*repository.AuditEv
 //   - ogenclient.AuditEventResponse: OpenAPI response type
 func ConvertToAuditEventResponse(event *repository.AuditEvent) ogenclient.AuditEventResponse {
 	return ogenclient.AuditEventResponse{
-		EventId:        event.EventID,
+		EventID:        event.EventID,
 		EventTimestamp: event.EventTimestamp,
 		Message:        fmt.Sprintf("audit event %s created successfully", event.EventID),
 	}

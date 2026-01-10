@@ -26,7 +26,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -96,38 +95,38 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 		WarningsCount:    len(analysis.Status.Warnings),
 	}
 
-	// Optional fields
+	// Optional fields (OGEN-MIGRATION: Use .SetTo() for optional fields)
 	if analysis.Status.ApprovalReason != "" {
-		payload.ApprovalReason = &analysis.Status.ApprovalReason
+		payload.ApprovalReason.SetTo(analysis.Status.ApprovalReason)
 	}
 	if analysis.Status.SelectedWorkflow != nil {
 		confidence := float32(analysis.Status.SelectedWorkflow.Confidence)
-		payload.Confidence = &confidence
-		payload.WorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+		payload.Confidence.SetTo(confidence)
+		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
 	}
 	if analysis.Status.TargetInOwnerChain != nil {
-		payload.TargetInOwnerChain = analysis.Status.TargetInOwnerChain
+		payload.TargetInOwnerChain.SetTo(*analysis.Status.TargetInOwnerChain)
 	}
 	if analysis.Status.Reason != "" {
-		payload.Reason = &analysis.Status.Reason
+		payload.Reason.SetTo(analysis.Status.Reason)
 	}
 	if analysis.Status.SubReason != "" {
-		payload.SubReason = &analysis.Status.SubReason
+		payload.SubReason.SetTo(analysis.Status.SubReason)
 	}
 
 	// DD-AUDIT-005: Add provider response summary (consumer perspective)
 	// This complements the holmesgpt.response.complete event (provider perspective)
 	if analysis.Status.InvestigationID != "" {
-		summary := &ogenclient.ProviderResponseSummary{
+		summary := ogenclient.ProviderResponseSummary{
 			IncidentID:       analysis.Status.InvestigationID,
 			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
 			NeedsHumanReview: determineNeedsHumanReview(analysis),
 			WarningsCount:    len(analysis.Status.Warnings),
 		}
 		if analysis.Status.SelectedWorkflow != nil {
-			summary.SelectedWorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+			summary.SelectedWorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
 		}
-		payload.ProviderResponseSummary = summary
+		payload.ProviderResponseSummary.SetTo(summary)
 	}
 
 	// Determine outcome
@@ -149,7 +148,8 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
-	audit.SetEventData(event, payload) // V2.2: Direct struct assignment
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(*payload)
 
 	// Fire-and-forget (per Risk #4 / DD-AUDIT-002)
 	if err := c.store.StoreAudit(ctx, event); err != nil {
@@ -191,7 +191,8 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
-	audit.SetEventData(event, payload) // V2.2: Direct struct assignment
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(*payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write phase transition audit")
@@ -219,7 +220,8 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
-	audit.SetEventData(event, payload) // V2.2: Direct struct assignment
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAIAnalysisErrorPayloadAuditEventRequestEventData(*payload)
 
 	// Note: error_message DB column is populated by Data Storage from event_data JSON
 	// Per ADR-034: Error details stored in event_data for query-ability
@@ -236,7 +238,7 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 	// Build structured payload using OpenAPI-generated type
 	payload := &ogenclient.AIAnalysisHolmesGPTCallPayload{
 		Endpoint:       endpoint,
-		HttpStatusCode: int32(statusCode),
+		HTTPStatusCode: int32(statusCode),
 		DurationMs:     int32(durationMs),
 	}
 
@@ -260,7 +262,8 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
 	audit.SetDuration(event, durationMs)
-	audit.SetEventData(event, payload) // V2.2: Direct struct assignment
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(*payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write HolmesGPT call audit")
@@ -287,8 +290,8 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 
 	// Conditional fields (type-safe pointers)
 	if analysis.Status.SelectedWorkflow != nil {
-		payload.Confidence = &analysis.Status.SelectedWorkflow.Confidence
-		payload.WorkflowID = &analysis.Status.SelectedWorkflow.WorkflowID
+		payload.Confidence.SetTo(analysis.Status.SelectedWorkflow.Confidence)
+		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
 	}
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
@@ -302,7 +305,8 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
-	audit.SetEventData(event, payload) // V2.2: Direct struct assignment
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAIAnalysisApprovalDecisionPayloadAuditEventRequestEventData(*payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write approval decision audit")
@@ -344,7 +348,8 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
 	audit.SetNamespace(event, analysis.Namespace)
 	audit.SetDuration(event, durationMs)
-	audit.SetEventData(event, payload) // V2.2: Direct struct assignment
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAIAnalysisRegoEvaluationPayloadAuditEventRequestEventData(*payload)
 
 	if err := c.store.StoreAudit(ctx, event); err != nil {
 		c.log.Error(err, "Failed to write Rego evaluation audit")
@@ -391,11 +396,11 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 	if analysis.Status.ApprovalRequired {
 		// High-severity approval reasons suggest human review needed
 		highSeverityReasons := map[string]bool{
-			"WorkflowNotFound":              true,
-			"NoMatchingWorkflows":           true,
-			"LowConfidence":                 true,
-			"LLMParsingError":               true,
-			"InvestigationInconclusive":     true,
+			"WorkflowNotFound":          true,
+			"NoMatchingWorkflows":       true,
+			"LowConfidence":             true,
+			"LLMParsingError":           true,
+			"InvestigationInconclusive": true,
 		}
 		if highSeverityReasons[analysis.Status.SubReason] {
 			return true
@@ -489,15 +494,77 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
-	payload := aianalysis.AIAnalysisAuditPayload{
+	payload := ogenclient.AIAnalysisAuditPayload{
 		AnalysisName: analysis.Name,
 		Namespace:    analysis.Namespace,
-		Phase:        string(analysis.Status.Phase),
-		ErrorDetails: errorDetails, // Gap #7: Standardized error_details for SOC2 compliance
+		Phase:        toAIAnalysisAuditPayloadPhase(string(analysis.Status.Phase)),
+		ErrorDetails: toOptErrorDetails(errorDetails), // Gap #7: Standardized error_details for SOC2 compliance
 	}
-	audit.SetEventData(event, payload)
+	// Use ogen union constructor (OGEN-MIGRATION)
+	// Determine which constructor based on phase
+	if analysis.Status.Phase == "Failed" {
+		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(payload)
+	} else {
+		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(payload)
+	}
 
 	// Store audit event
 	return c.store.StoreAudit(ctx, event)
 }
 
+// ========================================
+// OGEN-MIGRATION: Helper functions for type conversion
+// ========================================
+
+// toAIAnalysisAuditPayloadPhase converts string phase to ogen enum type.
+func toAIAnalysisAuditPayloadPhase(phase string) ogenclient.AIAnalysisAuditPayloadPhase {
+	switch phase {
+	case "Pending":
+		return ogenclient.AIAnalysisAuditPayloadPhasePending
+	case "Analyzing":
+		return ogenclient.AIAnalysisAuditPayloadPhaseAnalyzing
+	case "Completed":
+		return ogenclient.AIAnalysisAuditPayloadPhaseCompleted
+	case "Failed":
+		return ogenclient.AIAnalysisAuditPayloadPhaseFailed
+	default:
+		return "" // Should not happen with valid CRD phases
+	}
+}
+
+// toOptErrorDetails converts sharedaudit.ErrorDetails to ogenclient.OptErrorDetails.
+func toOptErrorDetails(errorDetails *sharedaudit.ErrorDetails) ogenclient.OptErrorDetails {
+	if errorDetails == nil {
+		return ogenclient.OptErrorDetails{}
+	}
+
+	ogenErrorDetails := ogenclient.ErrorDetails{
+		Message:       errorDetails.Message,
+		Code:          errorDetails.Code,
+		RetryPossible: errorDetails.RetryPossible,
+	}
+
+	// Convert Component enum
+	switch errorDetails.Component {
+	case "gateway":
+		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentGateway
+	case "aianalysis":
+		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentAianalysis
+	case "workflowexecution":
+		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentWorkflowexecution
+	case "webhooks":
+		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentWebhooks
+	case "remediationorchestrator":
+		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentRemediationorchestrator
+	case "signalprocessing":
+		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentSignalprocessing
+	}
+
+	// Set StackTrace ([]string, not optional)
+	if len(errorDetails.StackTrace) > 0 {
+		ogenErrorDetails.StackTrace = errorDetails.StackTrace
+	}
+	var result ogenclient.OptErrorDetails
+	result.SetTo(ogenErrorDetails)
+	return result
+}

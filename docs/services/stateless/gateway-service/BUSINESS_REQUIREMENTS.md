@@ -724,26 +724,26 @@ This document provides a comprehensive list of all business requirements for the
 - [ ] CRD validation MUST accept any string value (not enum-restricted)
 - [ ] Audit trail MUST log external→CRD field mappings for debugging
 
-**Rationale**: 
+**Rationale**:
 - **Separation of Concerns**: Policy logic (severity/environment/priority determination) belongs in SignalProcessing where full Kubernetes context is available
 - **Operator Control**: Severity/environment mappings are operator-defined via SignalProcessing Rego policies, not hardcoded in Gateway
 - **Customer Extensibility**: Customers can use ANY severity scheme (Sev1-4, P0-P4, Critical/High/Medium/Low) without Gateway code changes
 - **Architectural Consistency**: Matches DD-CATEGORIZATION-001 pattern where Gateway ingests, SignalProcessing categorizes
 
-**Implementation**: 
+**Implementation**:
 - `pkg/gateway/adapters/prometheus/adapter.go`: Remove `determineSeverity()` hardcoded switch
 - `pkg/gateway/adapters/k8s_event/adapter.go`: Remove `mapSeverity()` hardcoded logic
 - `api/signalprocessing/v1alpha1/signalprocessing_types.go`: Remove `+kubebuilder:validation:Enum` from `Spec.Severity`
 
-**Tests**: 
+**Tests**:
 - `test/unit/gateway/adapters/prometheus_adapter_test.go`: Verify pass-through (input "Sev1" → output "Sev1")
 - `test/integration/gateway/custom_severity_test.go`: End-to-end with non-standard severity values
 
-**Related BRs**: 
+**Related BRs**:
 - BR-SP-105 (SignalProcessing Severity Determination)
 - BR-GATEWAY-005 (Signal Metadata Extraction - amended to clarify "extract not interpret")
 
-**Decision Reference**: 
+**Decision Reference**:
 - [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) (Environment/Priority consolidation)
 - [DD-SEVERITY-001](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md) (Severity refactoring plan)
 - [TRIAGE-SEVERITY-EXTENSIBILITY](../../../architecture/decisions/TRIAGE-SEVERITY-EXTENSIBILITY.md) (Architectural gap analysis)

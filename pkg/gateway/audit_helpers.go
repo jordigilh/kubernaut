@@ -27,12 +27,12 @@ import (
 // toGatewayAuditPayloadSignalType converts string to api.GatewayAuditPayloadSignalType enum
 func toGatewayAuditPayloadSignalType(value string) api.GatewayAuditPayloadSignalType {
 	switch value {
-	case adapters.SourceTypeAlertManager:
-		return api.GatewayAuditPayloadSignalTypeAlertmanager
-	case adapters.SourceTypeWebhook:
-		return api.GatewayAuditPayloadSignalTypeWebhook
+	case adapters.SourceTypePrometheusAlert:
+		return api.GatewayAuditPayloadSignalTypePrometheusAlert
+	case adapters.SourceTypeKubernetesEvent:
+		return api.GatewayAuditPayloadSignalTypeKubernetesEvent
 	default:
-		return "" // ❌ Invalid signal_type: must be [alertmanager, webhook] per OpenAPI spec
+		return "" // ❌ Invalid signal_type: must be [prometheus-alert, kubernetes-event] per OpenAPI spec
 	}
 }
 

@@ -10,7 +10,7 @@ Name | Type | Description | Notes
 **original_payload** | **Dict[str, object]** | Full signal payload for RR.Spec.OriginalPayload reconstruction | [optional] 
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
-**signal_type** | **str** | Source type of the signal | 
+**signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
 **alert_name** | **str** | Name of the alert | 
 **namespace** | **str** | Kubernetes namespace of the AIAnalysis | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
@@ -29,6 +29,18 @@ Name | Type | Description | Notes
 **from_phase** | **str** | Phase being transitioned from | [optional] 
 **to_phase** | **str** | Phase being transitioned to | [optional] 
 **transition_reason** | **str** | Reason for the transition | [optional] 
+**rar_name** | **str** | Name of the RemediationApprovalRequest | [optional] 
+**required_by** | **datetime** | Approval deadline (RFC3339) | [optional] 
+**workflow_id** | **str** | Workflow ID being validated | 
+**confidence_str** | **str** | Workflow selection confidence as string | [optional] 
+**decision** | **str** | Decision made | 
+**approved_by** | **str** | User who approved the request | [optional] 
+**rejected_by** | **str** | User who rejected the request | [optional] 
+**rejection_reason** | **str** | Reason for rejection | [optional] 
+**message** | **str** | Additional message or context for the event | [optional] 
+**reason** | **str** |  | 
+**sub_reason** | **str** | Detailed failure sub-reason | [optional] 
+**notification_name** | **str** | Alias for notification_id | [optional] 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **environment** | **str** | Environment context | 
@@ -52,10 +64,7 @@ Name | Type | Description | Notes
 **approval_reason** | **str** | Reason for approval requirement | 
 **warnings_count** | **int** | Number of warnings encountered | 
 **confidence** | **float** | Workflow confidence level (optional) | [optional] 
-**workflow_id** | **str** | Workflow ID being validated | 
 **target_in_owner_chain** | **bool** | Whether target is in owner chain | [optional] 
-**reason** | **str** |  | 
-**sub_reason** | **str** | Detailed failure sub-reason | [optional] 
 **provider_response_summary** | [**ProviderResponseSummary**](ProviderResponseSummary.md) |  | [optional] 
 **workflow_version** | **str** | Version of the workflow being executed | 
 **target_resource** | **str** | Kubernetes resource being acted upon (format depends on scope) | 
@@ -68,11 +77,10 @@ Name | Type | Description | Notes
 **failed_task_name** | **str** | Name of the failed TaskRun (if identified) | [optional] 
 **pipelinerun_name** | **str** | Name of the associated Tekton PipelineRun | [optional] 
 **notification_id** | **str** |  | 
-**notification_name** | **str** | Alias for notification_id | [optional] 
 **type** | **str** | Notification type | 
-**notification_type** | **str** | Alias for type | [optional] 
-**final_status** | **str** | Final status of the notification | [optional] 
-**recipients** | **Dict[str, object]** | Notification recipients (structured type from CRD) | [optional] 
+**notification_type** | **str** | Alias for type (matches CRD NotificationType enum) | [optional] 
+**final_status** | **str** | Final status of the notification (matches api/notification/v1alpha1/notificationrequest_types.go:60-65) | [optional] 
+**recipients** | [**List[NotificationAuditPayloadRecipientsInner]**](NotificationAuditPayloadRecipientsInner.md) | Array of notification recipients from CRD (BR-NOTIFICATION-001, matches api/notification/v1alpha1/notificationrequest_types.go:80-102) | [optional] 
 **cancelled_by** | **str** | Username who cancelled the notification | [optional] 
 **user_uid** | **str** | UID of the user who performed the action | [optional] 
 **user_groups** | **List[str]** | Groups of the user who performed the action | [optional] 
@@ -83,7 +91,6 @@ Name | Type | Description | Notes
 **previous_state** | **str** | State before unblocking (always \&quot;Blocked\&quot;) | 
 **new_state** | **str** | State after unblocking (always \&quot;Running\&quot;) | 
 **request_name** | **str** | Name of the RemediationApprovalRequest | 
-**decision** | **str** | Decision made | 
 **decided_at** | **datetime** | When the decision was made | 
 **decision_message** | **str** | Reason for the decision | 
 **ai_analysis_ref** | **str** | Name of the referenced AIAnalysis | 
@@ -97,7 +104,7 @@ Name | Type | Description | Notes
 **name** | **str** | Display name | 
 **description** | **str** | Workflow description | [optional] 
 **labels** | **Dict[str, object]** | Workflow labels | [optional] 
-**updated_fields** | **Dict[str, object]** | Fields that were updated (field name -&gt; new value) | 
+**updated_fields** | [**WorkflowCatalogUpdatedFields**](WorkflowCatalogUpdatedFields.md) |  | 
 **old_phase** | **str** | Previous phase | 
 **new_phase** | **str** | New phase | 
 **endpoint** | **str** | API endpoint called | 
@@ -112,7 +119,7 @@ Name | Type | Description | Notes
 **error_type** | **str** |  | 
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
-**response_data** | **Dict[str, object]** | Complete IncidentResponse structure (all fields) for SOC2 Type II compliance | 
+**response_data** | [**IncidentResponseData**](IncidentResponseData.md) |  | 
 **model** | **str** | LLM model identifier | 
 **prompt_length** | **int** | Length of prompt sent to LLM | 
 **prompt_preview** | **str** | First 500 characters of prompt for audit | 

@@ -128,7 +128,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 					Kind: "Pod",
 					Name: "test-pod",
 			},
-			SourceType: "alertmanager", // ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypeAlertManager
+			SourceType: "prometheus-alert", // ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypePrometheusAlert
 		}
 
 			By("2. Call Gateway business logic - expect failure")

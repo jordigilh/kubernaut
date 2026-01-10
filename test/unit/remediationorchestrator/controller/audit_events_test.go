@@ -32,7 +32,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	"github.com/prometheus/client_golang/prometheus"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -40,11 +40,11 @@ import (
 
 // MockAuditStore captures audit events for verification
 type MockAuditStore struct {
-	Events []*dsgen.AuditEventRequest
+	Events []*ogenclient.AuditEventRequest
 	Errors []error
 }
 
-func (m *MockAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (m *MockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	m.Events = append(m.Events, event)
 	return nil
 }
@@ -63,7 +63,7 @@ func (m *MockAuditStore) Reset() {
 	m.Errors = nil
 }
 
-func (m *MockAuditStore) GetLastEvent() *dsgen.AuditEventRequest {
+func (m *MockAuditStore) GetLastEvent() *ogenclient.AuditEventRequest {
 	if len(m.Events) == 0 {
 		return nil
 	}
@@ -71,8 +71,8 @@ func (m *MockAuditStore) GetLastEvent() *dsgen.AuditEventRequest {
 }
 
 // GetEventsByType filters events by event type
-func (m *MockAuditStore) GetEventsByType(eventType string) []*dsgen.AuditEventRequest {
-	var filtered []*dsgen.AuditEventRequest
+func (m *MockAuditStore) GetEventsByType(eventType string) []*ogenclient.AuditEventRequest {
+	var filtered []*ogenclient.AuditEventRequest
 	for _, event := range m.Events {
 		if event.EventType == eventType {
 			filtered = append(filtered, event)
@@ -172,7 +172,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// Verify phase transition audit event
 			Expect(mockAuditStore.Events).To(HaveLen(1))
 			event := mockAuditStore.GetLastEvent()
-			Expect(event.EventType).To(Equal("orchestrator.phase.transitioned"))
+			Expect(event.EventType).To(Equal("orchestrator.lifecycle.transitioned"))
 			Expect(event.EventAction).To(Equal("transitioned"))
 		})
 

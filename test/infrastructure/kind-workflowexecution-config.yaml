@@ -35,12 +35,3 @@ nodes:
         # Increase controller manager QPS for CRD operations
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-  # Worker node for Tekton TaskRuns
-  # Tekton runs pipeline tasks as pods on worker nodes
-  extraMounts:
-  # DD-TEST-007: Mount coverage directory from host to Kind node for E2E coverage collection
-  # MUST match GOCOVERDIR env var and Kubernetes hostPath volume
-  - hostPath: ./coverdata
-    containerPath: /coverdata
-    readOnly: false

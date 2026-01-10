@@ -62,11 +62,3 @@ nodes:
         # Increase controller manager QPS for CRD operations
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-  extraMounts:
-  # Mount coverage directory from host to Kind node for E2E coverage collection
-  # Per DD-TEST-007: E2E Coverage Capture Standard
-  - hostPath: ./coverdata
-    containerPath: /coverdata
-    readOnly: false
-

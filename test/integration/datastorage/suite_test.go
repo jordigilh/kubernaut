@@ -70,18 +70,23 @@ func TestDataStorageIntegration(t *testing.T) {
 }
 
 var (
-	db                *sqlx.DB // Changed from *sql.DB to support workflow repository
-	redisClient       *redis.Client
+	// Shared infrastructure (set once by process 1, read by all processes)
+	postgresContainer = "datastorage-postgres-test"
+	redisContainer    = "datastorage-redis-test"
+	datastorageURL    string
+	configDir         string           // ADR-030: Directory for config and secret files
+	
+	// Per-process resources (each parallel process has its own instance)
+	// These are created in SynchronizedBeforeSuite Phase 2 (runs on ALL processes)
+	// and closed in SynchronizedAfterSuite Phase 1 (runs on ALL processes)
+	db                *sqlx.DB         // Per-process DB connection with process-specific schema
+	redisClient       *redis.Client    // Per-process Redis client
 	repo              *repository.NotificationAuditRepository
 	dlqClient         *dlq.Client
 	logger            logr.Logger
 	ctx               context.Context
 	cancel            context.CancelFunc
-	postgresContainer = "datastorage-postgres-test"
-	redisContainer    = "datastorage-redis-test"
-	datastorageURL    string
-	configDir         string           // ADR-030: Directory for config and secret files
-	schemaName        string           // Schema name for this parallel process (for isolation)
+	schemaName        string           // Schema name for this parallel process (test_process_N)
 	testServer        *httptest.Server // In-process HTTP server for DataStorage API
 	dsServer          *server.Server   // DataStorage server instance (for graceful shutdown)
 )

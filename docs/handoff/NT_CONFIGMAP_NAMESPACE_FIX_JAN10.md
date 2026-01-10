@@ -1,8 +1,8 @@
 # Notification E2E - ConfigMap Hardcoded Namespace Fix
 
-**Date**: January 10, 2026  
-**Status**: ✅ FIX APPLIED  
-**Commit**: `e44bc899a`  
+**Date**: January 10, 2026
+**Status**: ✅ FIX APPLIED
+**Commit**: `e44bc899a`
 **Authority**: DD-NOT-006 v2
 
 ---
@@ -11,7 +11,7 @@
 
 ### The Problem: Hardcoded Namespace in ConfigMap
 
-**File**: `test/e2e/notification/manifests/notification-configmap.yaml`  
+**File**: `test/e2e/notification/manifests/notification-configmap.yaml`
 **Line**: 91
 
 **Before Fix**:
@@ -54,8 +54,8 @@ applyCmd := exec.Command("kubectl", "apply", "-f", configMapPath, "-n", namespac
 **After**:
 ```go
 // Use envsubst to replace ${NAMESPACE} placeholder in ConfigMap
-envsubstCmd := exec.Command("sh", "-c", 
-    fmt.Sprintf("export NAMESPACE=%s && envsubst < %s | kubectl apply -n %s -f -", 
+envsubstCmd := exec.Command("sh", "-c",
+    fmt.Sprintf("export NAMESPACE=%s && envsubst < %s | kubectl apply -n %s -f -",
         namespace, configMapPath, namespace))
 ```
 
@@ -218,7 +218,7 @@ make test-e2e-notification
 
 ---
 
-**Prepared By**: AI Assistant  
-**Status**: ✅ FIX APPLIED - Ready for verification  
-**Next Action**: Run `make test-e2e-notification` to verify 18-19/19 passing  
+**Prepared By**: AI Assistant
+**Status**: ✅ FIX APPLIED - Ready for verification
+**Next Action**: Run `make test-e2e-notification` to verify 18-19/19 passing
 **Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001

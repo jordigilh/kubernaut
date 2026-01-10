@@ -12,15 +12,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	audit "github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
 // MockDataStorageClient is a mock implementation of audit.DataStorageClient for testing
-// DD-AUDIT-002 V2.0: Uses OpenAPI types (*dsgen.AuditEventRequest)
+// DD-AUDIT-002 V2.0: Uses OpenAPI types (*ogenclient.AuditEventRequest)
 type MockDataStorageClient struct {
 	mu            sync.Mutex
-	batches       [][]*dsgen.AuditEventRequest
+	batches       [][]*ogenclient.AuditEventRequest
 	failureCount  int32
 	attemptCount  int32
 	shouldFail    bool
@@ -31,11 +31,11 @@ type MockDataStorageClient struct {
 
 func NewMockDataStorageClient() *MockDataStorageClient {
 	return &MockDataStorageClient{
-		batches: make([][]*dsgen.AuditEventRequest, 0),
+		batches: make([][]*ogenclient.AuditEventRequest, 0),
 	}
 }
 
-func (m *MockDataStorageClient) StoreBatch(ctx context.Context, events []*dsgen.AuditEventRequest) error {
+func (m *MockDataStorageClient) StoreBatch(ctx context.Context, events []*ogenclient.AuditEventRequest) error {
 	atomic.AddInt32(&m.attemptCount, 1)
 
 	m.mu.Lock()
@@ -69,7 +69,7 @@ func (m *MockDataStorageClient) StoreBatch(ctx context.Context, events []*dsgen.
 	}
 
 	// Success - store the batch
-	batch := make([]*dsgen.AuditEventRequest, len(events))
+	batch := make([]*ogenclient.AuditEventRequest, len(events))
 	copy(batch, events)
 	m.batches = append(m.batches, batch)
 
@@ -138,7 +138,7 @@ func (m *MockDataStorageClient) SetCustomError(err error) {
 func (m *MockDataStorageClient) Reset() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.batches = make([][]*dsgen.AuditEventRequest, 0)
+	m.batches = make([][]*ogenclient.AuditEventRequest, 0)
 	atomic.StoreInt32(&m.failureCount, 0)
 	atomic.StoreInt32(&m.attemptCount, 0)
 	m.shouldFail = false
@@ -146,10 +146,10 @@ func (m *MockDataStorageClient) Reset() {
 }
 
 // MockDLQClient is a mock implementation of audit.DLQClient for testing (GAP-10)
-// DD-AUDIT-002 V2.0: Uses OpenAPI types (*dsgen.AuditEventRequest)
+// DD-AUDIT-002 V2.0: Uses OpenAPI types (*ogenclient.AuditEventRequest)
 type MockDLQClient struct {
 	mu           sync.Mutex
-	events       []*dsgen.AuditEventRequest
+	events       []*ogenclient.AuditEventRequest
 	errors       []error
 	shouldFail   bool
 	enqueueCount int32
@@ -158,12 +158,12 @@ type MockDLQClient struct {
 
 func NewMockDLQClient() *MockDLQClient {
 	return &MockDLQClient{
-		events: make([]*dsgen.AuditEventRequest, 0),
+		events: make([]*ogenclient.AuditEventRequest, 0),
 		errors: make([]error, 0),
 	}
 }
 
-func (m *MockDLQClient) EnqueueAuditEvent(ctx context.Context, event *dsgen.AuditEventRequest, originalError error) error {
+func (m *MockDLQClient) EnqueueAuditEvent(ctx context.Context, event *ogenclient.AuditEventRequest, originalError error) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -199,10 +199,10 @@ func (m *MockDLQClient) SetShouldFail(shouldFail bool) {
 	m.shouldFail = shouldFail
 }
 
-func (m *MockDLQClient) GetEvents() []*dsgen.AuditEventRequest {
+func (m *MockDLQClient) GetEvents() []*ogenclient.AuditEventRequest {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	result := make([]*dsgen.AuditEventRequest, len(m.events))
+	result := make([]*ogenclient.AuditEventRequest, len(m.events))
 	copy(result, m.events)
 	return result
 }
@@ -217,17 +217,26 @@ func (m *MockDLQClient) GetOriginalErrors() []error {
 
 // Helper function to create a test event
 // DD-AUDIT-002 V2.0: Uses OpenAPI types and helper functions
-func createTestEvent() *dsgen.AuditEventRequest {
+func createTestEvent() *ogenclient.AuditEventRequest {
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, "test.event.created")
-	audit.SetEventCategory(event, "test")
+	audit.SetEventCategory(event, "gateway") // DD-TESTING-001: Use valid event_category from OpenAPI enum
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "test-service")
 	audit.SetResource(event, "TestResource", "test-123")
 	audit.SetCorrelationID(event, "corr-123")
-	audit.SetEventData(event, map[string]interface{}{"test": "data"})
+
+	// Use GatewayAuditPayload for test event (ogen migration - discriminated union)
+	payload := ogenclient.GatewayAuditPayload{
+		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
+		SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert, // Updated enum
+		AlertName:   "test-alert",
+		Namespace:   "default",
+		Fingerprint: "test-fingerprint",
+	}
+	audit.SetEventData(event, ogenclient.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload))
 
 	return event
 }
@@ -321,7 +330,7 @@ var _ = Describe("BufferedAuditStore", func() {
 		})
 
 		It("should validate event before buffering", func() {
-			event := &dsgen.AuditEventRequest{} // Invalid (missing required fields)
+			event := &ogenclient.AuditEventRequest{} // Invalid (missing required fields)
 
 			err := store.StoreAudit(ctx, event)
 
@@ -528,7 +537,11 @@ var _ = Describe("BufferedAuditStore", func() {
 	// GAP-10: DLQ Fallback Tests (DD-009, ADR-032 "No Audit Loss")
 	// Authority: DD-009 (Audit Write Error Recovery - Dead Letter Queue Pattern)
 	// Business Requirement: BR-AUDIT-001 (Complete audit trail with no data loss)
-	Describe("DLQ Fallback (GAP-10)", func() {
+	//
+	// NOTE: Client-side DLQ removed in DD-AUDIT-002 V3.0 (see pkg/audit/store.go:101)
+	// Server-side DLQ (in DataStorage service) handles persistence failures
+	// These tests are PENDING until updated to test server-side DLQ behavior
+	PDescribe("DLQ Fallback (GAP-10)", func() {
 		var (
 			mockDLQ *MockDLQClient
 		)

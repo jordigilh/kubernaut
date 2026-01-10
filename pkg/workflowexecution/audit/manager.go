@@ -51,10 +51,10 @@ import (
 // ServiceName is the canonical service identifier for audit events.
 const ServiceName = "workflowexecution-controller"
 
-// Event category for WorkflowExecution audit events (ADR-034 v1.2: Service-level category)
+// Event category for WorkflowExecution audit events (ADR-034 v1.5: Service-level category)
+// Per ADR-034 v1.5: ALL events from WorkflowExecution controller use "workflowexecution" category
 const (
-	CategoryWorkflow  = "workflow"  // Service-level identifier per ADR-034 v1.2
-	CategoryExecution = "execution" // Execution-specific events (Gap #6, BR-AUDIT-005)
+	CategoryWorkflowExecution = "workflowexecution" // Per ADR-034 v1.5 (2026-01-08)
 )
 
 // Event actions for WorkflowExecution audit events (per DD-AUDIT-003)
@@ -64,13 +64,15 @@ const (
 	ActionFailed    = "failed"
 )
 
-// Event types for WorkflowExecution audit events (per ADR-034)
+// Event types for WorkflowExecution audit events (per ADR-034 v1.5 + OpenAPI spec)
+// Per ADR-034 v1.5: ALL event types from WorkflowExecution controller use "workflowexecution" prefix
+// These match the event_type enum values in data-storage-v1.yaml
 const (
-	EventTypeStarted            = "workflow.started"
-	EventTypeCompleted          = "workflow.completed"
-	EventTypeFailed             = "workflow.failed"
-	EventTypeSelectionCompleted = "workflow.selection.completed" // Gap #5 (BR-AUDIT-005)
-	EventTypeExecutionStarted   = "execution.workflow.started"   // Gap #6 (BR-AUDIT-005)
+	EventTypeStarted            = "workflowexecution.workflow.started"    // Per OpenAPI spec discriminator
+	EventTypeCompleted          = "workflowexecution.workflow.completed"  // Per OpenAPI spec discriminator
+	EventTypeFailed             = "workflowexecution.workflow.failed"     // Per OpenAPI spec discriminator
+	EventTypeSelectionCompleted = "workflowexecution.selection.completed" // Gap #5 (BR-AUDIT-005) - Per ADR-034 v1.5
+	EventTypeExecutionStarted   = "workflowexecution.execution.started"   // Gap #6 (BR-AUDIT-005) - Per ADR-034 v1.5
 )
 
 // Manager handles audit trail recording for WorkflowExecution lifecycle events.
@@ -147,8 +149,8 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSelectionCompleted)
-	audit.SetEventCategory(event, CategoryWorkflow)
-	audit.SetEventAction(event, "completed") // "workflow.selection.completed" → "completed"
+	audit.SetEventCategory(event, CategoryWorkflowExecution)
+	audit.SetEventAction(event, "completed") // "workflowexecution.selection.completed" → "completed"
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", ServiceName)
 	audit.SetResource(event, "WorkflowExecution", wfe.Name)
@@ -163,17 +165,21 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	// Gap #5: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	// Handle empty phase (defaults to "Pending" per OpenAPI schema requirement)
+	phase := wfe.Status.Phase
+	if phase == "" {
+		phase = "Pending" // Default phase when selection completes but WFE phase not yet set
+	}
 	payload := api.WorkflowExecutionAuditPayload{
-		EventType:       EventTypeSelectionCompleted, // Required for discriminator
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
 		ExecutionName:   wfe.Name,
-		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
+		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	// Use proper Gap #5 constructor (added to OpenAPI spec discriminator)
-	event.EventData = api.NewAuditEventRequestEventDataWorkflowSelectionCompletedAuditEventRequestEventData(payload)
+	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionSelectionCompletedAuditEventRequestEventData(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
@@ -222,8 +228,8 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeExecutionStarted)
-	audit.SetEventCategory(event, CategoryExecution) // Gap #6: execution category
-	audit.SetEventAction(event, "started")           // "execution.workflow.started" → "started"
+	audit.SetEventCategory(event, CategoryWorkflowExecution) // Per ADR-034 v1.5: workflowexecution category
+	audit.SetEventAction(event, "started")                   // "workflowexecution.execution.started" → "started"
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", ServiceName)
 	audit.SetResource(event, "WorkflowExecution", wfe.Name)
@@ -238,18 +244,22 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
+	// Handle empty phase (defaults to "Pending" per OpenAPI schema requirement)
+	phase := wfe.Status.Phase
+	if phase == "" {
+		phase = "Pending" // Default phase when execution starts but WFE phase not yet set
+	}
 	payload := api.WorkflowExecutionAuditPayload{
-		EventType:       EventTypeExecutionStarted, // Required for discriminator
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		ContainerImage:  wfe.Spec.WorkflowRef.ContainerImage,
 		ExecutionName:   wfe.Name,
-		Phase:           api.WorkflowExecutionAuditPayloadPhase(wfe.Status.Phase),
+		Phase:           api.WorkflowExecutionAuditPayloadPhase(phase),
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	payload.PipelinerunName.SetTo(pipelineRunName)
 	// Use proper Gap #6 constructor (added to OpenAPI spec discriminator)
-	event.EventData = api.NewAuditEventRequestEventDataExecutionWorkflowStartedAuditEventRequestEventData(payload)
+	event.EventData = api.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(payload)
 
 	if err := m.store.StoreAudit(ctx, event); err != nil {
 		m.logger.Error(err, "CRITICAL: Failed to store mandatory audit event",
@@ -294,10 +304,10 @@ func (m *Manager) recordAuditEvent(
 	// Build audit event per ADR-034 schema (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	// Event type = action (e.g., "workflow.started")
+	// Event type = action (e.g., "workflowexecution.workflow.started")
 	// Service context is provided by event_category and actor fields
 	audit.SetEventType(event, action)
-	audit.SetEventCategory(event, CategoryWorkflow)
+	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	// Event action = just the action part (e.g., "started" from "workflow.started")
 	// Split on "." and take the last part
 	parts := strings.Split(action, ".")
@@ -332,7 +342,6 @@ func (m *Manager) recordAuditEvent(
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
 	payload := api.WorkflowExecutionAuditPayload{
-		EventType:       action, // Required for discriminator (matches event_type)
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
@@ -458,7 +467,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeFailed)
-	audit.SetEventCategory(event, CategoryWorkflow)
+	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, ActionFailed)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "service", ServiceName)
@@ -473,7 +482,6 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	// Eliminates map[string]interface{} per 02-go-coding-standards.mdc
 	// Per OGEN-MIGRATION: Use ogen-generated type + union constructor
 	payload := api.WorkflowExecutionAuditPayload{
-		EventType:       EventTypeFailed, // Required for discriminator
 		WorkflowID:      wfe.Spec.WorkflowRef.WorkflowID,
 		WorkflowVersion: wfe.Spec.WorkflowRef.Version,
 		TargetResource:  wfe.Spec.TargetResource,
@@ -536,4 +544,23 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 		"error_code", errorDetails.Code,
 	)
 	return nil
+}
+
+// toWorkflowExecutionAuditPayloadEventType converts event type string to ogen enum
+// Uses constants defined above that match OpenAPI spec event_type enum values
+func toWorkflowExecutionAuditPayloadEventType(eventType string) api.WorkflowExecutionAuditPayloadEventType {
+	switch eventType {
+	case EventTypeStarted:
+		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted
+	case EventTypeCompleted:
+		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted
+	case EventTypeFailed:
+		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed
+	case EventTypeSelectionCompleted:
+		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted
+	case EventTypeExecutionStarted:
+		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted
+	default:
+		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted // default fallback
+	}
 }

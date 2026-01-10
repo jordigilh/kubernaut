@@ -115,13 +115,17 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	builtImages := make(map[string]string)
 
 	// Build WorkflowExecution controller with coverage in parallel
+	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
+	// See: docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md
 	go func() {
+		// Disable coverage on ARM64 (Go runtime crash workaround)
+		enableCoverage := os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64"
 		cfg := E2EImageConfig{
 			ServiceName:      "workflowexecution-controller",
 			ImageName:        "kubernaut/workflowexecution-controller",
 			DockerfilePath:   "docker/workflowexecution-controller.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   true,
+			EnableCoverage:   enableCoverage,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "WorkflowExecution (coverage)", imageName: imageName, err: err}
@@ -397,9 +401,15 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 	}
 
 	// DD-TEST-007: E2E Coverage Collection
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
+	// See: docs/handoff/WE_E2E_RUNTIME_CRASH_JAN09.md
+	// Root cause: taggedPointerPack fatal error in Go 1.25.3 (Red Hat) on ARM64
+	// TODO: Re-enable after switching to upstream Go builder (Solution B)
+	if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64" {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
+	} else if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH == "arm64" {
+		_, _ = fmt.Fprintln(writer, "     ⚠️  Coverage disabled on ARM64 (Go runtime crash workaround)")
 	}
 
 	buildArgs = append(buildArgs, projectRoot)

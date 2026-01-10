@@ -36,6 +36,7 @@ class TestLLMRequestPayload(unittest.TestCase):
         model = LLMRequestPayload()
         if include_optional:
             return LLMRequestPayload(
+                event_type = 'llm_request',
                 event_id = '',
                 incident_id = '',
                 model = 'gpt-4',
@@ -51,6 +52,7 @@ class TestLLMRequestPayload(unittest.TestCase):
             )
         else:
             return LLMRequestPayload(
+                event_type = 'llm_request',
                 event_id = '',
                 incident_id = '',
                 model = 'gpt-4',

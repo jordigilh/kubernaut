@@ -63,66 +63,81 @@ var _ = Describe("OpenAPI Validator Middleware", func() {
 	})
 
 	Describe("Valid Requests", func() {
-		It("should pass validation for valid audit event", func() {
-			// Valid audit event with all required fields
-			body := `{
-				"version": "1.0",
+	It("should pass validation for valid audit event", func() {
+		// Valid audit event with all required fields
+		// Use GatewayAuditPayload structure for gateway.signal.received event type
+		body := `{
+			"version": "1.0",
+			"event_type": "gateway.signal.received",
+			"event_category": "gateway",
+			"event_action": "received",
+			"event_outcome": "success",
+			"correlation_id": "test-correlation-123",
+			"event_timestamp": "2025-12-13T12:00:00Z",
+			"event_data": {
 				"event_type": "gateway.signal.received",
-				"event_category": "gateway",
-				"event_action": "received",
-				"event_outcome": "success",
-				"correlation_id": "test-correlation-123",
-				"event_timestamp": "2025-12-13T12:00:00Z",
-				"event_data": {"test": "data"}
-			}`
+				"signal_type": "prometheus",
+				"alert_name": "HighMemoryUsage",
+				"namespace": "default",
+				"fingerprint": "fp-abc123"
+			}
+		}`
 
-			req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
+		req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
 
-			rr := httptest.NewRecorder()
+		rr := httptest.NewRecorder()
 
-			// Mock handler that should be called after validation
-			handlerCalled := false
-			handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				handlerCalled = true
-				w.WriteHeader(http.StatusCreated)
-			}))
+		// Mock handler that should be called after validation
+		handlerCalled := false
+		handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handlerCalled = true
+			w.WriteHeader(http.StatusCreated)
+		}))
 
-			handler.ServeHTTP(rr, req)
+		handler.ServeHTTP(rr, req)
 
-			Expect(rr.Code).To(Equal(http.StatusCreated))
-			Expect(handlerCalled).To(BeTrue(), "Handler should be called after successful validation")
-		})
+		Expect(rr.Code).To(Equal(http.StatusCreated))
+		Expect(handlerCalled).To(BeTrue(), "Handler should be called after successful validation")
+	})
 
-		It("should pass validation with optional fields", func() {
-			// Audit event with optional fields included
-			body := `{
-				"version": "1.0",
+	It("should pass validation with optional fields", func() {
+		// Audit event with optional fields included
+		// Use GatewayAuditPayload structure with all optional fields
+		body := `{
+			"version": "1.0",
+			"event_type": "gateway.signal.received",
+			"event_category": "gateway",
+			"event_action": "received",
+			"event_outcome": "success",
+			"correlation_id": "test-correlation-123",
+			"event_timestamp": "2025-12-13T12:00:00Z",
+			"event_data": {
 				"event_type": "gateway.signal.received",
-				"event_category": "gateway",
-				"event_action": "received",
-				"event_outcome": "success",
-				"correlation_id": "test-correlation-123",
-				"event_timestamp": "2025-12-13T12:00:00Z",
-				"event_data": {},
-				"actor_type": "service",
-				"actor_id": "gateway-service",
-				"severity": "info"
-			}`
+				"signal_type": "prometheus",
+				"alert_name": "HighMemoryUsage",
+				"namespace": "default",
+				"fingerprint": "fp-abc123",
+				"severity": "critical"
+			},
+			"actor_type": "service",
+			"actor_id": "gateway-service",
+			"severity": "info"
+		}`
 
-			req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
+		req := httptest.NewRequest("POST", "/api/v1/audit/events", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
 
-			rr := httptest.NewRecorder()
+		rr := httptest.NewRecorder()
 
-			handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusCreated)
-			}))
+		handler := validator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+		}))
 
-			handler.ServeHTTP(rr, req)
+		handler.ServeHTTP(rr, req)
 
-			Expect(rr.Code).To(Equal(http.StatusCreated))
-		})
+		Expect(rr.Code).To(Equal(http.StatusCreated))
+	})
 	})
 
 	Describe("Invalid Requests - Missing Required Fields", func() {

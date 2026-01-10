@@ -25,7 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -132,7 +132,7 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 
 			// BEHAVIOR: CorrelationID is a filter hash for audit trail linking
 			// V1.0: Implementation uses SHA256 hash of filters (first 16 hex chars) for deterministic correlation
-			Expect(auditEvent.CorrelationId).To(MatchRegexp(`^[0-9a-f]{16}$`),
+			Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
 				"CorrelationID should be a 16-character hex hash of the filters for audit correlation")
 
 			// Unmarshal event_data to STRUCTURED type (compile-time safe)
@@ -215,7 +215,7 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 
 			// CORRECTNESS: CorrelationID is a deterministic filter hash (16 hex chars)
 			// Same filters should produce same correlation ID for traceability
-			Expect(auditEvent.CorrelationId).To(MatchRegexp(`^[0-9a-f]{16}$`),
+			Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
 				"CorrelationID should be a 16-character hex hash for audit correlation")
 
 			// BEHAVIOR: Same filters produce same correlation ID (deterministic)
@@ -225,7 +225,7 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 				30*time.Millisecond,
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(auditEvent2.CorrelationId).To(Equal(auditEvent.CorrelationId),
+			Expect(auditEvent2.CorrelationID).To(Equal(auditEvent.CorrelationID),
 				"Same filters should produce same correlation ID for deterministic audit linking")
 
 			// BEHAVIOR: Different filters produce different correlation ID
@@ -245,7 +245,7 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 				30*time.Millisecond,
 			)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(auditEvent3.CorrelationId).ToNot(Equal(auditEvent.CorrelationId),
+			Expect(auditEvent3.CorrelationID).ToNot(Equal(auditEvent.CorrelationID),
 				"Different filters should produce different correlation ID")
 		})
 
@@ -256,28 +256,28 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			// BEHAVIOR: Empty results is a valid search outcome (not an error)
 			// CORRECTNESS: Event data accurately reflects zero results
 
-			searchRequest := &models.WorkflowSearchRequest{
-				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "NonExistentSignal",
-					Severity:    "unknown",
-					Component:   "pod",
-					Environment: "production",
-					Priority:    "P1",
-				},
-				TopK: 3,
-			}
+		searchRequest := &models.WorkflowSearchRequest{
+			Filters: &models.WorkflowSearchFilters{
+				SignalType:  "NonExistentSignal",
+				Severity:    "low",
+				Component:   "pod",
+				Environment: "production",
+				Priority:    "P1",
+			},
+			TopK: 3,
+		}
 
-			searchResponse := &models.WorkflowSearchResponse{
-				Workflows:    []models.WorkflowSearchResult{},
-				TotalResults: 0,
-				Filters: &models.WorkflowSearchFilters{
-					SignalType:  "NonExistentSignal",
-					Severity:    "unknown",
-					Component:   "pod",
-					Environment: "production",
-					Priority:    "P1",
-				},
-			}
+		searchResponse := &models.WorkflowSearchResponse{
+			Workflows:    []models.WorkflowSearchResult{},
+			TotalResults: 0,
+			Filters: &models.WorkflowSearchFilters{
+				SignalType:  "NonExistentSignal",
+				Severity:    "low",
+				Component:   "pod",
+				Environment: "production",
+				Priority:    "P1",
+			},
+		}
 
 			auditEvent, err := NewWorkflowSearchAuditEvent(
 				searchRequest,
@@ -288,33 +288,31 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			Expect(err).ToNot(HaveOccurred(),
 				"Empty results should not cause an error")
 
-			// BEHAVIOR: Empty results is still a successful search operation
-			Expect(string(auditEvent.EventOutcome)).To(Equal("success"),
-				"EventOutcome should be 'success' because the search completed without error")
+		// BEHAVIOR: Empty results is still a successful search operation
+		Expect(string(auditEvent.EventOutcome)).To(Equal("success"),
+			"EventOutcome should be 'success' because the search completed without error")
 
-			// Unmarshal to structured type
-			// EventData is now map[string]interface{}, need to marshal then unmarshal
-			eventDataBytes, err := json.Marshal(auditEvent.EventData)
-			Expect(err).ToNot(HaveOccurred())
-			var eventData audit.WorkflowSearchEventData
-			err = json.Unmarshal(eventDataBytes, &eventData)
-			Expect(err).ToNot(HaveOccurred())
+		// Access the WorkflowSearchAuditPayload from the discriminated union
+		payload, ok := auditEvent.EventData.GetWorkflowSearchAuditPayload()
+		Expect(ok).To(BeTrue(), "EventData should contain WorkflowSearchAuditPayload")
+		Expect(payload).NotTo(BeNil(), "Payload should not be nil")
 
-			// CORRECTNESS: Event data accurately reflects zero results
-			Expect(eventData.Results.TotalFound).To(Equal(0),
-				"TotalFound should be 0 when no workflows match")
-			Expect(eventData.Results.Returned).To(Equal(0),
-				"Returned should be 0 when no workflows match")
-			Expect(eventData.Results.Workflows).To(BeEmpty(),
-				"Workflows array should be empty when no workflows match")
+		// CORRECTNESS: Event data accurately reflects zero results
+		Expect(payload.Results.TotalFound).To(Equal(int32(0)),
+			"TotalFound should be 0 when no workflows match")
+		Expect(payload.Results.Returned).To(Equal(int32(0)),
+			"Returned should be 0 when no workflows match")
+		Expect(payload.Results.Workflows).To(BeEmpty(),
+			"Workflows array should be empty when no workflows match")
 
-			// CORRECTNESS: Filters are still captured for debugging
-			Expect(eventData.Query.Filters).NotTo(BeNil(),
-				"Filters should be captured even when no results found for debugging")
-			Expect(eventData.Query.Filters.SignalType).To(Equal("NonExistentSignal"),
-				"SignalType should be captured for debugging")
-			Expect(eventData.Query.Filters.Severity).To(Equal("unknown"),
-				"Severity should be captured for debugging")
+		// CORRECTNESS: Filters are still captured for debugging
+		Expect(payload.Query.Filters.IsSet()).To(BeTrue(),
+			"Filters should be captured even when no results found for debugging")
+		filters := payload.Query.Filters.Value
+		Expect(filters.SignalType).To(Equal("NonExistentSignal"),
+			"SignalType should be captured for debugging")
+		Expect(string(filters.Severity)).To(Equal("low"),
+			"Severity should be captured for debugging")
 		})
 
 		It("should capture complete workflow metadata for each result", func() {
@@ -449,13 +447,18 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			Expect(auditEvent).ToNot(BeNil(),
 				"Audit event should not be nil")
 
-			// CORRECTNESS: Required fields are populated
-			Expect(auditEvent.EventType).ToNot(BeEmpty(),
-				"EventType should always be set")
-			Expect(auditEvent.CorrelationId).To(MatchRegexp(`^[0-9a-f]{16}$`),
-				"CorrelationID should be a 16-character hex hash")
-			Expect(auditEvent.EventData).ToNot(BeEmpty(),
-				"EventData should contain serialized search data")
+		// CORRECTNESS: Required fields are populated
+		Expect(auditEvent.EventType).ToNot(BeEmpty(),
+			"EventType should always be set")
+		Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
+			"CorrelationID should be a 16-character hex hash")
+
+		// EventData is a discriminated union - check it contains WorkflowSearchAuditPayload
+		payload, ok := auditEvent.EventData.GetWorkflowSearchAuditPayload()
+		Expect(ok).To(BeTrue(),
+			"EventData should contain WorkflowSearchAuditPayload")
+		Expect(payload).ToNot(BeNil(),
+			"EventData payload should not be nil")
 		})
 	})
 })
@@ -473,7 +476,7 @@ func NewWorkflowSearchAuditEvent(
 	request *models.WorkflowSearchRequest,
 	response *models.WorkflowSearchResponse,
 	duration time.Duration,
-) (*dsgen.AuditEventRequest, error) {
+) (*ogenclient.AuditEventRequest, error) {
 	// GREEN PHASE: Use actual implementation
 	_ = context.Background() // Prevent unused import error
 	return audit.NewWorkflowSearchAuditEvent(request, response, duration)

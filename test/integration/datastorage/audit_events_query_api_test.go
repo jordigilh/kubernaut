@@ -17,14 +17,14 @@ limitations under the License.
 package datastorage
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/gateway"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -36,60 +36,81 @@ import (
 
 // Helper function to create audit events via Write API
 func createTestAuditEvent(baseURL, service, eventType, correlationID string) error {
-	// Build service-specific event data using structured builders
-	var eventData map[string]interface{}
-	var err error
+	// Build service-specific event data using ogen discriminated union types
+	var eventData ogenclient.AuditEventRequestEventData
+	var eventCategory ogenclient.AuditEventRequestEventCategory
 
 	switch service {
 	case "gateway":
-		eventData, err = audit.NewGatewayEvent(eventType).
-			WithSignalType("prometheus").
-			WithAlertName("TestAlert").
-			Build()
-	case "analysis": // ADR-034: Use "analysis" not "aianalysis"
-		eventData, err = audit.NewAIAnalysisEvent(eventType).
-			WithAnalysisID("test-analysis").
-			Build()
+		eventData = ogenclient.AuditEventRequestEventData{
+			Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:   "TestAlert",
+				Namespace:   "default",
+				Fingerprint: "test-fingerprint",
+			},
+		}
+		eventType = "gateway.signal.received" // Use valid discriminator key
+		eventCategory = ogenclient.AuditEventRequestEventCategoryGateway
+	case "analysis": // ADR-034: event_category is "analysis"
+		eventData = ogenclient.AuditEventRequestEventData{
+			Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+			AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+				EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+				AnalysisName: "test-analysis",
+				Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+			},
+		}
+		eventType = "aianalysis.analysis.completed" // Use valid discriminator key
+		eventCategory = ogenclient.AuditEventRequestEventCategoryAnalysis
 	case "workflow":
-		eventData, err = audit.NewWorkflowEvent(eventType).
-			WithWorkflowID("test-workflow").
-			Build()
+		eventData = ogenclient.AuditEventRequestEventData{
+			Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData,
+			WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
+				EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted,
+				WorkflowID:      "test-workflow",
+				WorkflowVersion: "v1",
+				TargetResource:  "Pod/test-pod",
+				Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseRunning,
+				ContainerImage:  "gcr.io/tekton-releases/tekton:v0.1.0",
+				ExecutionName:   "test-execution",
+			},
+		}
+		eventType = "workflowexecution.workflow.started" // Use valid discriminator key
+		eventCategory = ogenclient.AuditEventRequestEventCategoryWorkflow
 	default:
-		return fmt.Errorf("unsupported service type: %s (must use structured event builder)", service)
+		return fmt.Errorf("unsupported service type: %s (must use ogen discriminated union)", service)
 	}
 
+	// Create ogen-typed request
+	eventRequest := ogenclient.AuditEventRequest{
+		Version:        "1.0",
+		EventCategory:  eventCategory,
+		EventType:      eventType, // MUST match discriminator mapping
+		EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+		CorrelationID:  correlationID,
+		EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+		EventAction:    "test",
+		EventData:      eventData,
+	}
+
+	// Use ogen client to post event (handles optional fields properly)
+	ctx := context.Background()
+	client, err := createOpenAPIClient(baseURL)
 	if err != nil {
 		return err
 	}
 
-	eventPayload := map[string]interface{}{
-		"version":         "1.0",
-		"event_category":  service, // ADR-034: Use event_category instead of service
-		"event_type":      fmt.Sprintf("%s.%s", service, eventType),
-		"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-		"correlation_id":  correlationID,
-		"event_outcome":   "success", // ADR-034: Use event_outcome instead of outcome
-		"event_action":    "test",    // ADR-034: Use event_action instead of operation
-		"event_data":      eventData,
-	}
-	body, _ := json.Marshal(eventPayload)
-	req, _ := http.NewRequest("POST", baseURL, bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
+	_, err = postAuditEvent(ctx, client, eventRequest)
 	if err != nil {
 		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusCreated {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create event: status %d, body: %s", resp.StatusCode, string(bodyBytes))
 	}
 	return nil
 }
 
-var _ = Describe("Audit Events Query API",  func() {
+var _ = Describe("Audit Events Query API", func() {
 	var baseURL string
 
 	BeforeEach(func() {
@@ -104,47 +125,95 @@ var _ = Describe("Audit Events Query API",  func() {
 			// BR-STORAGE-021: Query by correlation_id (remediation timeline)
 			// DD-STORAGE-010: Offset-based pagination
 
-			// ARRANGE: Insert test events for correlation_id "rr-2025-001"
+			// ARRANGE: Insert test events for correlation_id using valid event types
 			correlationID := generateTestID() // Unique per test for isolation
-			eventTypes := []string{
-				"gateway.signal.received",
-				"aianalysis.analysis.started",
-				"aianalysis.analysis.completed",
-				"workflow.workflow.started",
-				"workflow.workflow.completed",
+
+			// Use valid event types from discriminator mapping
+			testEvents := []struct {
+				category  ogenclient.AuditEventRequestEventCategory
+				eventType string
+				eventData ogenclient.AuditEventRequestEventData
+			}{
+				{
+					category:  ogenclient.AuditEventRequestEventCategoryGateway,
+					eventType: "gateway.signal.received",
+					eventData: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+							SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+							AlertName:   "TestAlert0",
+							Namespace:   "default",
+							Fingerprint: "test-fingerprint-0",
+						},
+					},
+				},
+				{
+					category:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+					eventType: "aianalysis.analysis.completed",
+					eventData: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+						AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+							EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+							AnalysisName: "test-analysis-1",
+							Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+						},
+					},
+				},
+				{
+					category:  ogenclient.AuditEventRequestEventCategoryWorkflow,
+					eventType: "workflowexecution.workflow.started",
+					eventData: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionWorkflowStartedAuditEventRequestEventData,
+						WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
+							EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted,
+							WorkflowID:      "test-workflow-2",
+							WorkflowVersion: "v1",
+							TargetResource:  "Pod/test-pod-2",
+							Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseRunning,
+							ContainerImage:  "gcr.io/tekton-releases/tekton:v0.1.0",
+							ExecutionName:   "test-execution-2",
+						},
+					},
+				},
+				{
+					category:  ogenclient.AuditEventRequestEventCategoryWorkflow,
+					eventType: "workflowexecution.workflow.completed",
+					eventData: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData,
+						WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
+							EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+							WorkflowID:      "test-workflow-3",
+							WorkflowVersion: "v1",
+							TargetResource:  "Pod/test-pod-3",
+							Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
+							ContainerImage:  "gcr.io/tekton-releases/tekton:v0.1.0",
+							ExecutionName:   "test-execution-3",
+						},
+					},
+				},
 			}
 
-			for i, eventType := range eventTypes {
-				// Use structured event builder for Gateway events
-				eventData, err := audit.NewGatewayEvent(eventType).
-					WithSignalType("prometheus").
-					WithAlertName(fmt.Sprintf("TestAlert%d", i)).
-					Build()
-				Expect(err).ToNot(HaveOccurred())
+			// Create ogen client for posting events
+			ctx := context.Background()
+			client, err := createOpenAPIClient(datastorageURL)
+			Expect(err).ToNot(HaveOccurred())
 
-				// Create JSON body with all required fields
-				eventPayload := map[string]interface{}{
-					"version":         "1.0",
-					"event_category":  "gateway",
-					"event_type":      eventType,
-					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":  correlationID,
-					"event_outcome":   "success",
-					"event_action":    "test",
-					"event_data":      eventData,
+			for _, evt := range testEvents {
+				eventRequest := ogenclient.AuditEventRequest{
+					Version:        "1.0",
+					EventCategory:  evt.category,
+					EventType:      evt.eventType,
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					CorrelationID:  correlationID,
+					EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+					EventAction:    "test",
+					EventData:      evt.eventData,
 				}
-				body, err := json.Marshal(eventPayload)
-				Expect(err).ToNot(HaveOccurred())
 
-				// Write event via POST endpoint
-				req, err := http.NewRequest("POST", baseURL, bytes.NewBuffer(body))
-				Expect(err).ToNot(HaveOccurred())
-				req.Header.Set("Content-Type", "application/json")
-
-				resp, err := http.DefaultClient.Do(req)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Failed to create audit event: %s", eventType)
-				_ = resp.Body.Close()
+				// Use ogen client to post event (handles optional fields properly)
+				_, err := postAuditEvent(ctx, client, eventRequest)
+				Expect(err).ToNot(HaveOccurred(), "Failed to create audit event: %s", evt.eventType)
 
 				// Add small delay to ensure chronological ordering
 				// Per TESTING_GUIDELINES.md: ACCEPTABLE - testing timing behavior (chronological order)
@@ -152,21 +221,32 @@ var _ = Describe("Audit Events Query API",  func() {
 			}
 
 			// ACT: Query by correlation_id
-			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+			// Use Eventually() to wait for events to be visible (async buffer may delay persistence)
+			var data []interface{}
+			Eventually(func() int {
+				resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
+				if err != nil {
+					return 0
+				}
+				defer func() { _ = resp.Body.Close() }()
 
-			// ASSERT: Response is 200 OK
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				if resp.StatusCode != http.StatusOK {
+					return 0
+				}
 
-			// ASSERT: Response contains all events in chronological order
-			var response map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&response)
-			Expect(err).ToNot(HaveOccurred())
+				var response map[string]interface{}
+				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+					return 0
+				}
 
-			data, ok := response["data"].([]interface{})
-			Expect(ok).To(BeTrue(), "response should have 'data' array")
-			Expect(data).To(HaveLen(5), "should return all 5 events")
+				dataInterface, ok := response["data"].([]interface{})
+				if !ok {
+					return 0
+				}
+
+				data = dataInterface
+				return len(data)
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(4), "should return all 4 events")
 
 			// ASSERT: Events are in chronological order (DESC)
 			for i := 0; i < len(data)-1; i++ {
@@ -179,11 +259,20 @@ var _ = Describe("Audit Events Query API",  func() {
 			}
 
 			// ASSERT: Pagination metadata is present
+			// Query one more time to get full response with pagination metadata
+			resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s", baseURL, correlationID))
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			var response map[string]interface{}
+			err = json.NewDecoder(resp.Body).Decode(&response)
+			Expect(err).ToNot(HaveOccurred())
+
 			pagination, ok := response["pagination"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "response should have 'pagination' object")
 			Expect(pagination["limit"]).To(BeNumerically("==", 50)) // Default limit per OpenAPI spec
 			Expect(pagination["offset"]).To(BeNumerically("==", 0))
-			Expect(pagination["total"]).To(BeNumerically("==", 5))
+			Expect(pagination["total"]).To(BeNumerically("==", 4)) // Fixed: 4 events, not 5
 			Expect(pagination["has_more"]).To(BeFalse())
 		})
 	})
@@ -192,54 +281,90 @@ var _ = Describe("Audit Events Query API",  func() {
 		It("should return only events matching the event_type filter", func() {
 			// BR-STORAGE-022: Query filtering by event_type
 
-			// ARRANGE: Insert events with different event_types
+			// ARRANGE: Insert events with different event_types using valid discriminated unions
 			correlationID := generateTestID() // Unique per test for isolation
-			eventTypes := map[string]int{
-				"gateway.signal.received":       3,
-				"aianalysis.analysis.completed": 2,
-				"workflow.workflow.completed":   1,
+
+			// Create events with different valid event types
+			testCases := []struct {
+				eventType string
+				count     int
+				category  ogenclient.AuditEventRequestEventCategory
+				data      ogenclient.AuditEventRequestEventData
+			}{
+				{
+					eventType: "gateway.signal.received",
+					count:     3,
+					category:  ogenclient.AuditEventRequestEventCategoryGateway,
+					data: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+						GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+							EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+							SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+							AlertName:   "TestAlert-Gateway",
+							Namespace:   "default",
+							Fingerprint: "test-fingerprint",
+						},
+					},
+				},
+				{
+					eventType: "aianalysis.analysis.completed",
+					count:     2,
+					category:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+					data: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+						AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+							EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+							AnalysisName: "test-analysis",
+							Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+						},
+					},
+				},
+				{
+					eventType: "workflowexecution.workflow.completed",
+					count:     1,
+					category:  ogenclient.AuditEventRequestEventCategoryWorkflow,
+					data: ogenclient.AuditEventRequestEventData{
+						Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionWorkflowCompletedAuditEventRequestEventData,
+						WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
+							EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+							WorkflowID:      "test-workflow",
+							WorkflowVersion: "v1",
+							TargetResource:  "Pod/test-pod",
+							Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
+							ContainerImage:  "gcr.io/tekton-releases/tekton:v0.1.0",
+							ExecutionName:   "test-execution",
+						},
+					},
+				},
 			}
 
-			for eventType, count := range eventTypes {
-				for i := 0; i < count; i++ {
-					// Use structured event builder for Gateway events
-					eventData, err := audit.NewGatewayEvent(eventType).
-						WithSignalType("prometheus").
-						WithAlertName(fmt.Sprintf("TestAlert-%s-%d", eventType, i)).
-						Build()
-					Expect(err).ToNot(HaveOccurred())
+			// Create ogen client for posting events
+			ctx := context.Background()
+			client, err := createOpenAPIClient(datastorageURL)
+			Expect(err).ToNot(HaveOccurred())
 
-					// Create JSON body with all required fields
-					eventPayload := map[string]interface{}{
-						"version":         "1.0",
-						"event_category":  "gateway",
-						"event_type":      eventType,
-						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-						"correlation_id":  correlationID,
-						"event_outcome":   "success",
-						"event_action":    "test",
-						"event_data":      eventData,
+			for _, tc := range testCases {
+				for i := 0; i < tc.count; i++ {
+					// Create ogen-typed request
+					eventRequest := ogenclient.AuditEventRequest{
+						Version:        "1.0",
+						EventCategory:  tc.category,
+						EventType:      tc.eventType,
+						EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+						CorrelationID:  correlationID,
+						EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+						EventAction:    "test",
+						EventData:      tc.data,
 					}
-					body, err := json.Marshal(eventPayload)
-					Expect(err).ToNot(HaveOccurred())
 
-					req, err := http.NewRequest("POST", baseURL, bytes.NewBuffer(body))
+					// Use ogen client to post event (handles optional fields properly)
+					_, err := postAuditEvent(ctx, client, eventRequest)
 					Expect(err).ToNot(HaveOccurred())
-					req.Header.Set("Content-Type", "application/json")
-
-					resp, err := http.DefaultClient.Do(req)
-					Expect(err).ToNot(HaveOccurred())
-					if resp.StatusCode != http.StatusCreated {
-						bodyBytes, _ := io.ReadAll(resp.Body)
-						GinkgoWriter.Printf("ERROR: Got status %d, body: %s\n", resp.StatusCode, string(bodyBytes))
-					}
-					Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-					_ = resp.Body.Close()
 				}
 			}
 
 			// ACT: Query by event_type and correlation_id for test isolation
-			targetEventType := "gateway.signal.received"
+			targetEventType := gateway.EventTypeSignalReceived
 			resp, err := http.Get(fmt.Sprintf("%s?event_type=%s&correlation_id=%s", baseURL, targetEventType, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -267,24 +392,24 @@ var _ = Describe("Audit Events Query API",  func() {
 		It("should return only events from the specified service", func() {
 			// BR-STORAGE-022: Query filtering by event_category (ADR-034: service renamed to event_category)
 
-		// ARRANGE: Insert events from different services
-		correlationID := generateTestID() // Unique per test for isolation
-		services := map[string]int{
-			"gateway":  2,
-			"analysis": 3, // ADR-034: Use "analysis" not "aianalysis"
-			"workflow": 1,
-		}
+			// ARRANGE: Insert events from different services
+			correlationID := generateTestID() // Unique per test for isolation
+			services := map[string]int{
+				"gateway":  2,
+				"analysis": 3, // ADR-034: Use "analysis" not "aianalysis"
+				"workflow": 1,
+			}
 
 			for service, count := range services {
 				for i := 0; i < count; i++ {
-					err := createTestAuditEvent(baseURL, service, "test.event", correlationID)
+					err := createTestAuditEvent(datastorageURL, service, "test.event", correlationID)
 					Expect(err).ToNot(HaveOccurred())
 				}
 			}
 
-		// ACT: Query by event_category (ADR-034) and correlation_id for test isolation
-		targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
-		resp, err := http.Get(fmt.Sprintf("%s?event_category=%s&correlation_id=%s", baseURL, targetService, correlationID))
+			// ACT: Query by event_category (ADR-034) and correlation_id for test isolation
+			targetService := "analysis" // ADR-034: Use "analysis" not "aianalysis"
+			resp, err := http.Get(fmt.Sprintf("%s?event_category=%s&correlation_id=%s", baseURL, targetService, correlationID))
 			Expect(err).ToNot(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
 
@@ -319,7 +444,7 @@ var _ = Describe("Audit Events Query API",  func() {
 
 			correlationID := generateTestID() // Unique per test for isolation
 			for i := 0; i < 5; i++ {
-				err := createTestAuditEvent(baseURL, "gateway", "signal.received", correlationID)
+				err := createTestAuditEvent(datastorageURL, "gateway", "signal.received", correlationID)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
@@ -356,7 +481,7 @@ var _ = Describe("Audit Events Query API",  func() {
 			// ARRANGE: Insert events
 			correlationID := generateTestID() // Unique per test for isolation
 			for i := 0; i < 3; i++ {
-				err := createTestAuditEvent(baseURL, "gateway", "signal.received", correlationID)
+				err := createTestAuditEvent(datastorageURL, "gateway", "signal.received", correlationID)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
@@ -387,34 +512,45 @@ var _ = Describe("Audit Events Query API",  func() {
 		It("should return events matching all filters (service=gateway AND outcome=failure)", func() {
 			// BR-STORAGE-022: Multiple filter support
 
-			// ARRANGE: Insert events with different outcomes
+			// ARRANGE: Insert events with different outcomes using ogen types
 			correlationID := generateTestID() // Unique per test for isolation
-			outcomes := []string{"success", "failure", "success", "failure"}
+			outcomes := []ogenclient.AuditEventRequestEventOutcome{
+				ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ogenclient.AuditEventRequestEventOutcomeFailure,
+				ogenclient.AuditEventRequestEventOutcomeSuccess,
+				ogenclient.AuditEventRequestEventOutcomeFailure,
+			}
+			// Create ogen client for posting events
+			ctx := context.Background()
+			client, err := createOpenAPIClient(datastorageURL)
+			Expect(err).ToNot(HaveOccurred())
+
 			for _, outcome := range outcomes {
-				eventData, err := audit.NewGatewayEvent("signal.received").
-					WithSignalType("prometheus").
-					WithAlertName("TestAlert").
-					Build()
-				Expect(err).ToNot(HaveOccurred())
-
-				eventPayload := map[string]interface{}{
-					"version":         "1.0",
-					"event_category":  "gateway",
-					"event_type":      "gateway.signal.received",
-					"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-					"correlation_id":  correlationID,
-					"event_outcome":   outcome,
-					"event_action":    "test",
-					"event_data":      eventData,
+				eventData := ogenclient.AuditEventRequestEventData{
+					Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
+					GatewayAuditPayload: ogenclient.GatewayAuditPayload{
+						EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+						SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+						AlertName:   "TestAlert",
+						Namespace:   "default",
+						Fingerprint: "test-fingerprint",
+					},
 				}
-				body, _ := json.Marshal(eventPayload)
-				req, _ := http.NewRequest("POST", baseURL, bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
 
-				resp, err := http.DefaultClient.Do(req)
+				eventRequest := ogenclient.AuditEventRequest{
+					Version:        "1.0",
+					EventCategory:  ogenclient.AuditEventRequestEventCategoryGateway,
+					EventType:      "gateway.signal.received",
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					CorrelationID:  correlationID,
+					EventOutcome:   outcome,
+					EventAction:    "test",
+					EventData:      eventData,
+				}
+
+				// Use ogen client to post event (handles optional fields properly)
+				_, err := postAuditEvent(ctx, client, eventRequest)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(resp.StatusCode).To(Equal(http.StatusCreated))
-				_ = resp.Body.Close()
 			}
 
 			// ACT: Query with multiple filters (ADR-034 field names)
@@ -468,16 +604,17 @@ var _ = Describe("Audit Events Query API",  func() {
 			testCorrelationID = generateTestID() // Unique per test for isolation
 			correlationID := testCorrelationID
 			for i := 0; i < 75; i++ {
-				err := createTestAuditEvent(baseURL, "gateway", "signal.received", correlationID)
+				err := createTestAuditEvent(datastorageURL, "gateway", "signal.received", correlationID)
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// WAIT: Allow events to be persisted (synchronous write, no buffering)
-			// NOTE: Events are written synchronously by DataStorage HTTP API
-			// Timeout increased from 5s to 10s to account for:
-			// - Parallel test execution (12 processes)
-			// - Database connection contention
-			// - Potential schema isolation overhead
+			// WAIT: Allow events to be persisted (async buffering + flush)
+			// NOTE: Events are buffered by audit store (1s flush interval) + parallel contention
+			// Timeout increased from 10s to 30s to account for:
+			// - Parallel test execution (12 processes) - high contention
+			// - Database connection contention across processes
+			// - Audit store buffering (1s flush interval)
+			// - Schema isolation overhead in parallel mode
 			var response map[string]interface{}
 			Eventually(func() float64 {
 				resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&limit=50&offset=0", baseURL, correlationID))
@@ -505,7 +642,7 @@ var _ = Describe("Audit Events Query API",  func() {
 				}
 
 				return total
-			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
+			}, 30*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 75),
 				"should have at least 75 events after write completes")
 
 			// ACT: Query page 1 (limit=50, offset=0) - now guaranteed to have all events
@@ -576,11 +713,11 @@ var _ = Describe("Audit Events Query API",  func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-		Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
-		Expect(problem["title"]).To(Equal("Validation Error"))
-		Expect(problem["status"]).To(BeNumerically("==", 400))
-		Expect(problem["detail"]).To(ContainSubstring("limit"))
-		Expect(problem["detail"]).To(ContainSubstring("must be at least 1"))
+			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"))
+			Expect(problem["title"]).To(Equal("Validation Error"))
+			Expect(problem["status"]).To(BeNumerically("==", 400))
+			Expect(problem["detail"]).To(ContainSubstring("limit"))
+			Expect(problem["detail"]).To(ContainSubstring("must be at least 1"))
 		})
 
 		It("should return RFC 7807 error for invalid limit (1001)", func() {
@@ -599,11 +736,11 @@ var _ = Describe("Audit Events Query API",  func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-		Expect(problem["detail"]).To(ContainSubstring("limit"))
-		Expect(problem["detail"]).To(ContainSubstring("must be at most 1000"))
-	})
+			Expect(problem["detail"]).To(ContainSubstring("limit"))
+			Expect(problem["detail"]).To(ContainSubstring("must be at most 1000"))
+		})
 
-	It("should return RFC 7807 error for invalid offset (-1)", func() {
+		It("should return RFC 7807 error for invalid offset (-1)", func() {
 			// BR-STORAGE-023: Pagination validation (offset: ≥0)
 
 			// ACT: Query with invalid offset=-1
@@ -619,8 +756,8 @@ var _ = Describe("Audit Events Query API",  func() {
 			err = json.NewDecoder(resp.Body).Decode(&problem)
 			Expect(err).ToNot(HaveOccurred())
 
-		Expect(problem["detail"]).To(ContainSubstring("offset"))
-		Expect(problem["detail"]).To(ContainSubstring("must be at least 0"))
+			Expect(problem["detail"]).To(ContainSubstring("offset"))
+			Expect(problem["detail"]).To(ContainSubstring("must be at least 0"))
 		})
 	})
 

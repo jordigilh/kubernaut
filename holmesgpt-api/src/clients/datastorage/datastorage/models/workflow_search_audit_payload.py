@@ -19,7 +19,8 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictStr, field_validator
+from pydantic import Field
 from datastorage.models.query_metadata import QueryMetadata
 from datastorage.models.results_metadata import ResultsMetadata
 from datastorage.models.search_execution_metadata import SearchExecutionMetadata
@@ -32,10 +33,18 @@ class WorkflowSearchAuditPayload(BaseModel):
     """
     Type-safe audit event payload for workflow search operations (DD-WORKFLOW-014 v2.1)
     """ # noqa: E501
+    event_type: StrictStr = Field(description="Discriminator for event data union type")
     query: QueryMetadata
     results: ResultsMetadata
     search_metadata: SearchExecutionMetadata
-    __properties: ClassVar[List[str]] = ["query", "results", "search_metadata"]
+    __properties: ClassVar[List[str]] = ["event_type", "query", "results", "search_metadata"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('workflow.catalog.search_completed'):
+            raise ValueError("must be one of enum values ('workflow.catalog.search_completed')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -95,6 +104,7 @@ class WorkflowSearchAuditPayload(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "event_type": obj.get("event_type"),
             "query": QueryMetadata.from_dict(obj.get("query")) if obj.get("query") is not None else None,
             "results": ResultsMetadata.from_dict(obj.get("results")) if obj.get("results") is not None else None,
             "search_metadata": SearchExecutionMetadata.from_dict(obj.get("search_metadata")) if obj.get("search_metadata") is not None else None

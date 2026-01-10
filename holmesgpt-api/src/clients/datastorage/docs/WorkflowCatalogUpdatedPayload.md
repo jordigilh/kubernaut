@@ -7,7 +7,7 @@ Audit payload for workflow catalog updates (datastorage.workflow.updated)
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **workflow_id** | **str** | Unique workflow identifier (UUID) | 
-**updated_fields** | **Dict[str, object]** | Fields that were updated (field name -&gt; new value) | 
+**updated_fields** | [**WorkflowCatalogUpdatedFields**](WorkflowCatalogUpdatedFields.md) |  | 
 
 ## Example
 

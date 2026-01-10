@@ -18,12 +18,13 @@ package datastorage
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	dsgen ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -52,7 +53,7 @@ import (
 var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client", "timing"), func() {
 	var (
 		auditStore    audit.AuditStore
-		dsClient      *dsgen.ClientWithResponses
+		dsClient      *ogenclient.Client
 		testCtx       context.Context
 		testCancel    context.CancelFunc
 		correlationID string
@@ -89,9 +90,9 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create OpenAPI client for queries (with auth)
-		dsClient, err = dsgen.NewClientWithResponses(
+		dsClient, err = ogenclient.NewClient(
 			datastorageURL,
-			dsgen.WithHTTPClient(&http.Client{Transport: mockTransport}),
+			ogenclient.WithClient(&http.Client{Transport: mockTransport}),
 		)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -132,39 +133,45 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 	Context("Flush Timing (RO Team Bug Reproduction)", func() {
 		It("should flush event within configured interval (1 second)", func() {
 			By("Creating audit event using REAL audit client")
-			event := &dsgen.AuditEventRequest{
-				Version:        "1.0",
-				EventType:      "test.timing",
-				EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
-				EventAction:    "test_action",
-				EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-				EventTimestamp: time.Now(),
-				CorrelationId:  correlationID,
-				EventData:      map[string]interface{}{"test": "timing"},
-			}
+		// Use valid discriminated union type for event data
+		eventData := ogenclient.AuditEventRequestEventData{
+			Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+			AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+				EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+				AnalysisName: "timing-test-analysis",
+				Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+			},
+		}
+
+		event := &ogenclient.AuditEventRequest{
+			Version:        "1.0",
+			EventType:      "aianalysis.analysis.completed",
+			EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+			EventAction:    "test_action",
+			EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+			EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+			CorrelationID:  correlationID,
+			EventData:      eventData,
+		}
 
 			By("Emitting event through audit.BufferedStore")
 			start := time.Now()
 			err := auditStore.StoreAudit(testCtx, event)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Waiting for event to become queryable in DataStorage")
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
-					CorrelationId: &correlationID,
-				})
-				if err != nil {
-					GinkgoWriter.Printf("Query error: %v\n", err)
+		By("Waiting for event to become queryable in DataStorage")
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+			})
+			if err != nil {
+				GinkgoWriter.Printf("Query error: %v\n", err)
+				return 0
+			}
+			if resp.Data == nil {
 					return 0
 				}
-				if resp.JSON200 == nil {
-					GinkgoWriter.Printf("No JSON200 response (status: %d)\n", resp.StatusCode())
-					return 0
-				}
-				if resp.JSON200.Data == nil {
-					return 0
-				}
-				return len(*resp.JSON200.Data)
+				return len(resp.Data)
 			}, "10s", "100ms").Should(Equal(1), "Event should become queryable")
 
 			elapsed := time.Since(start)
@@ -182,15 +189,25 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 		It("should flush buffered events on Close()", func() {
 			By("Buffering 5 events")
 			for i := 0; i < 5; i++ {
-				event := &dsgen.AuditEventRequest{
+				// Use valid discriminated union type for event data
+				eventData := ogenclient.AuditEventRequestEventData{
+					Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+					AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+						EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+						AnalysisName: fmt.Sprintf("shutdown-test-%d", i),
+						Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+					},
+				}
+
+				event := &ogenclient.AuditEventRequest{
 					Version:        "1.0",
-					EventType:      "test.shutdown",
-					EventCategory:  dsgen.AuditEventRequestEventCategoryAnalysis,
+					EventType:      "aianalysis.analysis.completed",
+					EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
 					EventAction:    "test_shutdown",
-					EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-					EventTimestamp: time.Now(),
-					CorrelationId:  correlationID,
-					EventData:      map[string]interface{}{"test": "shutdown", "index": i},
+					EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+					EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+					CorrelationID:  correlationID,
+					EventData:      eventData,
 				}
 
 				err := auditStore.StoreAudit(testCtx, event)

@@ -2,8 +2,8 @@
 
 ## 🎯 **EXECUTIVE SUMMARY**
 
-**Status**: 14/19 PASSING (74%) - Fixes applied but volume mount sync blocking final 5 tests  
-**Blocker**: macOS Podman VM hostPath volume sync issue - files write successfully in pod but don't appear on host  
+**Status**: 14/19 PASSING (74%) - Fixes applied but volume mount sync blocking final 5 tests
+**Blocker**: macOS Podman VM hostPath volume sync issue - files write successfully in pod but don't appear on host
 **Root Cause**: Not yet determined - investigating Podman VM state, image rebuild, or environmental factors
 
 ---
@@ -13,7 +13,7 @@
 ### **Test Tier Status**
 ```
 ✅ UNIT TESTS:        100% PASSING (all tiers)
-✅ INTEGRATION TESTS: 100% PASSING (all services)  
+✅ INTEGRATION TESTS: 100% PASSING (all services)
 ⚠️  E2E TESTS:        14/19 PASSING (74%)
    - 5 failures: All volume mount sync related
    - 2 pending: Cannot simulate after DD-NOT-006 v2
@@ -31,7 +31,7 @@
 
 ### **Fix 2: ogen Migration Completion**
 **Problem**: Multiple `ogen` client migration issues across test tiers
-**Solution**: 
+**Solution**:
 - Fixed EventData discriminated union access
 - Updated `OptString` field handling
 - Corrected field casing (`CorrelationID` vs `CorrelationId`)
@@ -56,7 +56,7 @@
 ### **Fix 5: Infrastructure Fixes**
 **Problems Resolved**:
 - ✅ Kubernetes v1.35.0 kubelet probe bug (WE team fix - direct Pod API polling)
-- ✅ AuthWebhook deployment namespace issues (WH team fix + our adoption)  
+- ✅ AuthWebhook deployment namespace issues (WH team fix + our adoption)
 - ✅ AuthWebhook readiness probe timing (increased timings)
 - ✅ Podman UTF-8 emoji parsing bug (removed emojis from Dockerfile)
 **Impact**: ✅ All infrastructure now stable
@@ -101,7 +101,7 @@ extraMounts:
 ```
 Controller Pod:  /tmp/notifications
        ↓ (volume mount)
-Kind Node:       /tmp/e2e-notifications  
+Kind Node:       /tmp/e2e-notifications
        ↓ (extraMount)
 Podman VM:       (FUSE layer)
        ↓ (VM mount)
@@ -271,7 +271,7 @@ MEDIUM VALUE (❓ OPEN):
 
 ---
 
-**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001  
-**Status**: 74% E2E passing, volume mount sync under investigation  
-**Recommendation**: User decision on Option A/B/C (continue debugging vs document vs refactor)  
+**Authority**: DD-NOT-006 v2, BR-NOTIFICATION-001
+**Status**: 74% E2E passing, volume mount sync under investigation
+**Recommendation**: User decision on Option A/B/C (continue debugging vs document vs refactor)
 **Confidence**: 85% that remaining issues are environmental (Podman VM), not code-related

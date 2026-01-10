@@ -61,6 +61,8 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+
+	"github.com/google/uuid"
 )
 
 // Global test variables
@@ -312,7 +314,7 @@ var _ = SynchronizedAfterSuite(
 
 // createTestNamespace creates a uniquely named namespace for test isolation.
 func createTestNamespace(prefix string, labels map[string]string) string { //nolint:unused
-	ns := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
 
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{

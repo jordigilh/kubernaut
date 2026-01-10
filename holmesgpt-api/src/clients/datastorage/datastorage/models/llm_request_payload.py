@@ -19,7 +19,7 @@ import json
 
 
 from typing import Any, ClassVar, Dict, List, Optional
-from pydantic import BaseModel, StrictStr
+from pydantic import BaseModel, StrictStr, field_validator
 from pydantic import Field
 from typing_extensions import Annotated
 try:
@@ -31,6 +31,7 @@ class LLMRequestPayload(BaseModel):
     """
     LLM API request event payload (llm_request)
     """ # noqa: E501
+    event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     event_id: StrictStr = Field(description="Unique event identifier")
     incident_id: StrictStr = Field(description="Incident correlation ID (remediation_id)")
     model: StrictStr = Field(description="LLM model identifier")
@@ -39,7 +40,14 @@ class LLMRequestPayload(BaseModel):
     max_tokens: Optional[Annotated[int, Field(strict=True, ge=0)]] = Field(default=None, description="Maximum tokens requested")
     toolsets_enabled: Optional[List[StrictStr]] = Field(default=None, description="List of enabled toolsets")
     mcp_servers: Optional[List[StrictStr]] = Field(default=None, description="List of MCP servers")
-    __properties: ClassVar[List[str]] = ["event_id", "incident_id", "model", "prompt_length", "prompt_preview", "max_tokens", "toolsets_enabled", "mcp_servers"]
+    __properties: ClassVar[List[str]] = ["event_type", "event_id", "incident_id", "model", "prompt_length", "prompt_preview", "max_tokens", "toolsets_enabled", "mcp_servers"]
+
+    @field_validator('event_type')
+    def event_type_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in ('llm_request'):
+            raise ValueError("must be one of enum values ('llm_request')")
+        return value
 
     model_config = {
         "populate_by_name": True,
@@ -90,6 +98,7 @@ class LLMRequestPayload(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
+            "event_type": obj.get("event_type"),
             "event_id": obj.get("event_id"),
             "incident_id": obj.get("incident_id"),
             "model": obj.get("model"),

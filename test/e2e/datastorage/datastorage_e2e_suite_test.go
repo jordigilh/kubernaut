@@ -30,7 +30,7 @@ import (
 
 	"github.com/go-logr/logr"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 	. "github.com/onsi/ginkgo/v2"
@@ -82,7 +82,7 @@ var (
 
 	// Shared OpenAPI client (DD-API-001: OpenAPI Client Mandate)
 	// Replaces raw HTTP client for type-safe API interaction
-	dsClient *dsgen.ClientWithResponses
+	dsClient *dsgen.Client
 
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "datastorage-e2e"
@@ -177,14 +177,15 @@ var _ = SynchronizedBeforeSuite(
 		// E2E tests run externally against Kind cluster, so we use mock user transport
 		// (no oauth-proxy in E2E environment)
 		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for E2E tests...")
-		mockTransport := testutil.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
-		dsClient, err = dsgen.NewClientWithResponses(
-			"http://localhost:28090",
-			dsgen.WithHTTPClient(&http.Client{
-				Timeout:   10 * time.Second,
-				Transport: mockTransport,
-			}),
-		)
+	mockTransport := testutil.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
+	httpClient = &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: mockTransport,
+	}
+	dsClient, err = dsgen.NewClient(
+		"http://localhost:28090",
+		dsgen.WithClient(httpClient),
+	)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 		logger.Info("✅ DataStorage OpenAPI client created", "baseURL", "http://localhost:28090")
 
@@ -296,15 +297,16 @@ var _ = SynchronizedBeforeSuite(
 
 		// DD-API-001: Initialize OpenAPI client for this process
 		// E2E tests run externally against Kind cluster, so we use mock user transport
-		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
-		mockTransport := testutil.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
-		dsClient, err = dsgen.NewClientWithResponses(
-			dataStorageURL,
-			dsgen.WithHTTPClient(&http.Client{
-				Timeout:   10 * time.Second,
-				Transport: mockTransport,
-			}),
-		)
+	logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
+	mockTransport := testutil.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
+	httpClient := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: mockTransport,
+	}
+	dsClient, err = dsgen.NewClient(
+		dataStorageURL,
+		dsgen.WithClient(httpClient),
+	)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 		logger.Info("✅ DataStorage OpenAPI client created", "process", processID, "baseURL", dataStorageURL)
 

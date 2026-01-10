@@ -34,23 +34,23 @@ import (
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
 // MockAuditStore is a tracking mock for testing that implements audit.AuditStore
 type MockAuditStore struct {
-	StoredEvents []*dsgen.AuditEventRequest
+	StoredEvents []*ogenclient.AuditEventRequest
 	CloseCount   int
 }
 
 func NewMockAuditStore() *MockAuditStore {
 	return &MockAuditStore{
-		StoredEvents: make([]*dsgen.AuditEventRequest, 0),
+		StoredEvents: make([]*ogenclient.AuditEventRequest, 0),
 	}
 }
 
-func (m *MockAuditStore) StoreAudit(ctx context.Context, event *dsgen.AuditEventRequest) error {
+func (m *MockAuditStore) StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error {
 	m.StoredEvents = append(m.StoredEvents, event)
 	return nil
 }
@@ -66,8 +66,8 @@ func (m *MockAuditStore) Close() error {
 }
 
 // Helper to find events by type
-func (m *MockAuditStore) GetEventsByType(eventType string) []*dsgen.AuditEventRequest {
-	events := make([]*dsgen.AuditEventRequest, 0)
+func (m *MockAuditStore) GetEventsByType(eventType string) []*ogenclient.AuditEventRequest {
+	events := make([]*ogenclient.AuditEventRequest, 0)
 	for _, event := range m.StoredEvents {
 		if event.EventType == eventType {
 			events = append(events, event)

@@ -18,7 +18,6 @@ package remediationorchestrator
 
 import (
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -30,6 +29,8 @@ import (
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
+	"github.com/google/uuid"
 )
 
 // ========================================
@@ -62,7 +63,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 			now := metav1.Now()
 			testRR := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("rr-cascade-%d", time.Now().UnixNano()),
+					Name:      fmt.Sprintf("rr-cascade-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
@@ -90,7 +91,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 			// Create NotificationRequest with owner reference
 			notif := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-notif-%d", time.Now().UnixNano()),
+					Name:      fmt.Sprintf("test-notif-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
@@ -128,7 +129,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 			now := metav1.Now()
 			testRR := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("rr-multi-%d", time.Now().UnixNano()),
+					Name:      fmt.Sprintf("rr-multi-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
@@ -156,7 +157,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 			// Create multiple NotificationRequests with owner references
 			notif1 := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-notif-1-%d", time.Now().UnixNano()),
+					Name:      fmt.Sprintf("test-notif-1-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{
@@ -171,7 +172,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 
 			notif2 := &notificationv1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-notif-2-%d", time.Now().UnixNano()),
+					Name:      fmt.Sprintf("test-notif-2-%s", uuid.New().String()[:8]),
 					Namespace: testNamespace,
 				},
 				Spec: notificationv1.NotificationRequestSpec{

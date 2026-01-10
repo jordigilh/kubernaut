@@ -10,7 +10,7 @@ Name | Type | Description | Notes
 **original_payload** | **Dict[str, object]** | Full signal payload for RR.Spec.OriginalPayload reconstruction | [optional] 
 **signal_labels** | **Dict[str, str]** | Signal labels for RR.Spec.SignalLabels reconstruction | [optional] 
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
-**signal_type** | **str** | Source type of the signal | 
+**signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
 **alert_name** | **str** | Name of the alert | 
 **namespace** | **str** | Kubernetes namespace of the affected resource | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 

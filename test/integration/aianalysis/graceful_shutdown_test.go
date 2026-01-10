@@ -19,7 +19,6 @@ package aianalysis
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -313,22 +312,21 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", Serial, func() {
 		}
 
 	// Query audit events via Data Storage API
-		dsClient, err := dsgen.NewClientWithResponses(dataStorageURL)
-		Expect(err).NotTo(HaveOccurred())
+	dsClient, err := ogenclient.NewClient(dataStorageURL)
+	Expect(err).NotTo(HaveOccurred())
 
 		correlationID := analysis.Spec.RemediationID
 		eventCategory := "analysis"
-		resp, err := dsClient.QueryAuditEventsWithResponse(context.Background(), &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventCategory: &eventCategory,
+		resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(correlationID),
+			EventCategory: ogenclient.NewOptString(eventCategory),
 		})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode()).To(Equal(http.StatusOK))
-			Expect(resp.JSON200.Data).ToNot(BeNil(), "Response should have data array")
-			Expect(len(*resp.JSON200.Data)).To(BeNumerically(">=", 1),
+			Expect(err).NotTo(HaveOccurred(), "Audit query should succeed")
+			Expect(resp.Data).ToNot(BeNil(), "Response should have data array")
+			Expect(len(resp.Data)).To(BeNumerically(">=", 1),
 				"Audit events must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
 
-			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(*resp.JSON200.Data))
+			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(resp.Data))
 
 			// Cleanup
 			err = k8sClient.Delete(context.Background(), analysis)

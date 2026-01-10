@@ -167,6 +167,7 @@ def create_llm_request_event(
     prompt_preview = prompt[:500] + "..." if len(prompt) > 500 else prompt
 
     event_data_model = LLMRequestEventData(
+        event_type="llm_request",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         model=model,
@@ -177,12 +178,14 @@ def create_llm_request_event(
         mcp_servers=mcp_servers or []
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
+    # AuditEventRequestEventData expects actual_instance to be a Pydantic model
     return _create_adr034_event(
         event_type="llm_request",
         operation="llm_request_sent",
         outcome="success",
         correlation_id=remediation_id or "unknown",
-        event_data=event_data_model.model_dump()
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -213,6 +216,7 @@ def create_llm_response_event(
     """
     # Create structured event_data using Pydantic model for validation
     event_data_model = LLMResponseEventData(
+        event_type="llm_response",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         has_analysis=has_analysis,
@@ -222,12 +226,13 @@ def create_llm_response_event(
         tool_call_count=tool_call_count
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="llm_response",
         operation="llm_response_received",
         outcome="success" if has_analysis else "failure",
         correlation_id=remediation_id or "unknown",
-        event_data=event_data_model.model_dump()
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -262,6 +267,7 @@ def create_tool_call_event(
 
     # Create structured event_data using Pydantic model for validation
     event_data_model = LLMToolCallEventData(
+        event_type="llm_tool_call",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         tool_call_index=tool_call_index,
@@ -271,12 +277,13 @@ def create_tool_call_event(
         tool_result_preview=tool_result_preview
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="llm_tool_call",
         operation="tool_invoked",
         outcome="success",
         correlation_id=remediation_id or "unknown",
-        event_data=event_data_model.model_dump()
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -319,6 +326,7 @@ def create_validation_attempt_event(
     validation_errors_str = "; ".join(errors) if errors else None
 
     event_data_model = WorkflowValidationEventData(
+        event_type="workflow_validation_attempt",  # ✅ FIX: Discriminator required for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         attempt=attempt,
@@ -340,12 +348,13 @@ def create_validation_attempt_event(
     else:
         outcome = "pending"  # Will retry
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="workflow_validation_attempt",
         operation="validation_executed",
         outcome=outcome,
         correlation_id=remediation_id or "unknown",
-        event_data=event_data_model.model_dump()
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 
 
@@ -391,16 +400,18 @@ def create_hapi_response_complete_event(
     """
     # Create structured event_data using Pydantic model for validation
     event_data_model = HAPIResponseEventData(
+        event_type="holmesgpt.response.complete",  # Discriminator for OpenAPI validation
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         response_data=response_data  # Full IncidentResponse
     )
 
+    # V3.0: OGEN MIGRATION - Pass Pydantic model directly, not dict
     return _create_adr034_event(
         event_type="holmesgpt.response.complete",
         operation="response_sent",
         outcome="success",
         correlation_id=remediation_id,
-        event_data=event_data_model.model_dump()
+        event_data=event_data_model  # ← Pass model, not model_dump()
     )
 

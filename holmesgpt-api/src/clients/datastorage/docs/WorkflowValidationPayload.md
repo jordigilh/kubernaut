@@ -6,6 +6,7 @@ Workflow validation attempt event payload (workflow_validation_attempt)
 
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
+**event_type** | **str** | Event type for discriminator (matches parent event_type) | 
 **event_id** | **str** | Unique event identifier | 
 **incident_id** | **str** | Incident correlation ID (remediation_id) | 
 **attempt** | **int** | Current validation attempt number | 
