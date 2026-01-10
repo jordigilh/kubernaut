@@ -84,19 +84,27 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 		return "", fmt.Errorf("file matching pattern %s not found in pod within %v", pattern, timeout)
 	}
 
-	// Copy file from pod to host
-	// kubectl cp format: namespace/podname:/path (no -n flag needed)
+	// Read file content from pod using kubectl exec (more reliable than kubectl cp)
 	// foundFile is just the filename (from `cd && ls`), so append to directory
-	podPath := fmt.Sprintf("%s/%s:/tmp/notifications/%s", controllerNamespace, podName, foundFile)
-	hostPath := filepath.Join(tmpDir, foundFile)
-
+	filePath := fmt.Sprintf("/tmp/notifications/%s", foundFile)
+	
 	cmd := exec.CommandContext(ctx, "kubectl",
 		"--kubeconfig", kubeconfigPath,
-		"cp", podPath, hostPath)
+		"-n", controllerNamespace,
+		"exec", podName,
+		"--", "cat", filePath)
 
-	if output, err := cmd.CombinedOutput(); err != nil {
+	fileContent, err := cmd.CombinedOutput()
+	if err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to copy file from pod: %w (output: %s)", err, string(output))
+		return "", fmt.Errorf("failed to read file from pod: %w (output: %s)", err, string(fileContent))
+	}
+
+	// Write content to temp file on host
+	hostPath := filepath.Join(tmpDir, foundFile)
+	if err := os.WriteFile(hostPath, fileContent, 0644); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", fmt.Errorf("failed to write file to host: %w", err)
 	}
 
 	return hostPath, nil
