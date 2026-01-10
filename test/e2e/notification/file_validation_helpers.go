@@ -149,7 +149,7 @@ func getNotificationPodName(ctx context.Context) (string, error) {
 	}
 
 	pods, err := clientset.CoreV1().Pods(controllerNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "app.kubernetes.io/name=notification",
+		LabelSelector: "app=notification-controller",
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to list pods: %w", err)
