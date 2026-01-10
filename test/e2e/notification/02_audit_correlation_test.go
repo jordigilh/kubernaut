@@ -220,33 +220,37 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		}
 		notificationEvents := make(map[string]*notificationEventCount)
 
-		for _, event := range events {
+	for _, event := range events {
 		// Extract notification_id from EventData discriminated union
-		// ogen: NotificationAuditPayload is the correct field for notification events
-		// NotificationID is wrapped in OptString (ogen optional type)
+		// ogen: Different event types use different payload fields
+		// - notification.message.sent → NotificationMessageSentPayload.NotificationID (string)
+		// - notification.message.acknowledged → NotificationMessageAcknowledgedPayload.NotificationID (string)
 		notificationID := ""
-		if event.EventData.Type != "" && event.EventData.NotificationAuditPayload.NotificationID.IsSet() {
-			notificationID = event.EventData.NotificationAuditPayload.NotificationID.Value
+		switch event.EventType {
+		case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
+			notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
+		case "notification.message.acknowledged":
+			notificationID = event.EventData.NotificationMessageAcknowledgedPayload.NotificationID
+		default:
+			Fail(fmt.Sprintf("Unexpected event type: %s (should be 'notification.message.sent' or 'notification.message.acknowledged')", event.EventType))
 		}
 
-			Expect(notificationID).ToNot(BeEmpty(),
-				"Event should have notification_id in EventData (got EventData type: %T)", event.EventData)
+		Expect(notificationID).ToNot(BeEmpty(),
+			"Event should have notification_id in EventData (got EventType: %s)", event.EventType)
 
-			// Initialize struct for this notification if needed
-			if notificationEvents[notificationID] == nil {
-				notificationEvents[notificationID] = &notificationEventCount{}
-			}
-
-			// Increment count for this event type
-			switch event.EventType {
-			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
-				notificationEvents[notificationID].sentCount++
-			case "notification.message.acknowledged":
-				notificationEvents[notificationID].acknowledgedCount++
-			default:
-				Fail(fmt.Sprintf("Unexpected event type: %s (should be 'sent' or 'acknowledged')", event.EventType))
-			}
+		// Initialize struct for this notification if needed
+		if notificationEvents[notificationID] == nil {
+			notificationEvents[notificationID] = &notificationEventCount{}
 		}
+
+		// Increment count for this event type
+		switch event.EventType {
+		case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
+			notificationEvents[notificationID].sentCount++
+		case "notification.message.acknowledged":
+			notificationEvents[notificationID].acknowledgedCount++
+		}
+	}
 
 		// Verify we have exactly 3 notifications
 		Expect(notificationEvents).To(HaveLen(3),

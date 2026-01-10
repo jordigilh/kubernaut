@@ -199,9 +199,9 @@ func CountFilesInPod(ctx context.Context, pattern string) (int, error) {
 // DD-NOT-006: Includes initial delay to account for virtiofs sync latency on macOS + Podman
 func EventuallyCountFilesInPod(pattern string) func() (int, error) {
 	return func() (int, error) {
-		// virtiofs sync latency: 100-500ms on macOS Podman
-		// Add delay to ensure files are synced before checking
-		time.Sleep(500 * time.Millisecond)
+		// virtiofs sync latency: 100-500ms typical, but can spike to 1-2s under load
+		// Add conservative delay to ensure files are synced before checking
+		time.Sleep(1 * time.Second)
 		return CountFilesInPod(context.Background(), pattern)
 	}
 }
