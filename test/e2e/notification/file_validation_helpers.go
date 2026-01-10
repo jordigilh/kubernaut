@@ -179,9 +179,10 @@ func getNotificationPodName(ctx context.Context) (string, error) {
 
 // EventuallyFindFileInPod is a Gomega-friendly wrapper around WaitForFileInPod
 // that can be used with Eventually()
+// Uses 2 second timeout per poll to allow for file creation lag in Kubernetes
 func EventuallyFindFileInPod(pattern string) func() (string, error) {
 	return func() (string, error) {
-		return WaitForFileInPod(context.Background(), pattern, 500*time.Millisecond)
+		return WaitForFileInPod(context.Background(), pattern, 2*time.Second)
 	}
 }
 
