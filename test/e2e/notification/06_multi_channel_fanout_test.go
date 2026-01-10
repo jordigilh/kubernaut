@@ -131,20 +131,25 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			Expect(notification.Status.FailedDeliveries).To(Equal(0),
 				"Should have 0 failed deliveries")
 
-			By("Verifying file channel created audit file")
-			// NOTE: Search in shared e2eFileOutputDir (no test-specific subdirectory after FileDeliveryConfig removal)
-			files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-multi-channel-fanout-*.json"))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(len(files)).To(BeNumerically(">=", 1),
-				"File channel should create at least one audit file in shared directory")
+		By("Verifying file channel created audit file")
+		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+		pattern := "notification-e2e-multi-channel-fanout-*.json"
 
-			By("Validating file content matches notification")
-			fileContent, err := os.ReadFile(files[0])
-			Expect(err).ToNot(HaveOccurred())
+		Eventually(EventuallyCountFilesInPod(pattern),
+			5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"File should be created in pod within 5 seconds")
 
-			var savedNotification notificationv1alpha1.NotificationRequest
-			err = json.Unmarshal(fileContent, &savedNotification)
-			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
+		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
+		defer CleanupCopiedFile(copiedFilePath)
+
+		By("Validating file content matches notification")
+		fileContent, err := os.ReadFile(copiedFilePath)
+		Expect(err).ToNot(HaveOccurred())
+
+		var savedNotification notificationv1alpha1.NotificationRequest
+		err = json.Unmarshal(fileContent, &savedNotification)
+		Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
 
 			Expect(savedNotification.Name).To(Equal("e2e-multi-channel-fanout"))
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Multi-Channel Fanout"))
@@ -180,7 +185,7 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 		// to simulate file delivery failures.
 		//
 		// Re-enable this test if a new mechanism for simulating file write failures
-		// (e.g., a mock filesystem, in-memory adapter, or test-only configuration) 
+		// (e.g., a mock filesystem, in-memory adapter, or test-only configuration)
 		// is introduced.
 		//
 		// Related: 05_retry_exponential_backoff_test.go (also pending for same reason)

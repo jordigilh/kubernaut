@@ -191,7 +191,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Controller calls auditMessageFailed() which creates notification.message.failed event
 		// BufferedStore flushes to Data Storage → PostgreSQL
 		Eventually(func() int {
-			count := queryAuditEventCount(dsClient, correlationID, "notification.message.failed")
+			count := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Found %d failed audit events for correlation_id=%s\n", count, correlationID)
 			return count
 		}, 15*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
@@ -206,7 +206,7 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Find the failed event
 		var failedEvent *ogenclient.AuditEvent
 		for i := range events {
-			if events[i].EventType == "notification.message.failed" {
+			if events[i].EventType == string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData) {
 				failedEvent = &events[i]
 				break
 			}
@@ -384,8 +384,8 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 
 		// Should have 1 sent event (console) + 1 failed event (email)
 		Eventually(func() bool {
-			sentCount := queryAuditEventCount(dsClient, correlationID, "notification.message.sent")
-			failedCount := queryAuditEventCount(dsClient, correlationID, "notification.message.failed")
+			sentCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageSentPayloadAuditEventEventData))
+			failedCount := queryAuditEventCount(dsClient, correlationID, string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData))
 			GinkgoWriter.Printf("DEBUG: Partial failure - sent=%d, failed=%d\n", sentCount, failedCount)
 			return sentCount >= 1 && failedCount >= 1
 		}, 15*time.Second, 1*time.Second).Should(BeTrue(),
@@ -398,9 +398,9 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Validate channel-specific event_data and field matching
 		var sentEvent, failedEvent *ogenclient.AuditEvent
 		for i := range allEvents {
-			if allEvents[i].EventType == "notification.message.sent" {
+			if allEvents[i].EventType == string(ogenclient.NotificationMessageSentPayloadAuditEventEventData) {
 				sentEvent = &allEvents[i]
-			} else if allEvents[i].EventType == "notification.message.failed" {
+			} else if allEvents[i].EventType == string(ogenclient.NotificationMessageFailedPayloadAuditEventEventData) {
 				failedEvent = &allEvents[i]
 			}
 		}

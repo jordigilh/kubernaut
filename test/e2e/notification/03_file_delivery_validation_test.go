@@ -272,28 +272,27 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 		By("Validating priority field in file (BR-NOT-056)")
 		// Note: Controller may reconcile multiple times, creating multiple files (expected)
-		// DD-NOT-006 v2: Add explicit wait for file sync (macOS Podman VM delay)
-		// Files take 200-600ms to sync from pod to host via hostPath volume
-		Eventually(func() int {
-			files, _ := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-validation-*.json"))
-			return len(files)
-		}, 2*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
-			"File should appear on host within 2 seconds (macOS Podman sync delay)")
+		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+		var copiedFilePath string
+		Eventually(EventuallyFindFileInPod("notification-e2e-priority-validation-*.json"),
+			5*time.Second, 500*time.Millisecond).Should(Not(BeEmpty()),
+			"File should be created in pod within 5 seconds")
 
-		files, err := filepath.Glob(filepath.Join(e2eFileOutputDir, "notification-e2e-priority-validation-*.json"))
+		copiedFilePath, err = WaitForFileInPod(ctx, "notification-e2e-priority-validation-*.json", 5*time.Second)
+		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
+		defer CleanupCopiedFile(copiedFilePath)
+
+		// Read the copied file
+		fileContent, err := os.ReadFile(copiedFilePath)
 		Expect(err).ToNot(HaveOccurred())
 
-			// Read the first file (if multiple reconciliations occurred, any file is valid)
-			fileContent, err := os.ReadFile(files[0])
-			Expect(err).ToNot(HaveOccurred())
+		var savedNotification notificationv1alpha1.NotificationRequest
+		err = json.Unmarshal(fileContent, &savedNotification)
+		Expect(err).ToNot(HaveOccurred())
 
-			var savedNotification notificationv1alpha1.NotificationRequest
-			err = json.Unmarshal(fileContent, &savedNotification)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Verify priority is preserved exactly
-			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
-				"Priority must be preserved as Critical (BR-NOT-056)")
+		// Verify priority is preserved exactly
+		Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
+			"Priority must be preserved as Critical (BR-NOT-056)")
 		})
 	})
 
