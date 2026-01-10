@@ -28,6 +28,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -39,7 +40,7 @@ import (
 
 var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR-GATEWAY-189)", func() {
 	var (
-		testNamespace = "gw-error-test" // Static namespace - created in suite setup
+		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
 		ctx           context.Context
 		gatewayURL    string
 		server        *httptest.Server
@@ -49,6 +50,11 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 	BeforeEach(func() {
 		ctx = context.Background()
 		testClient = SetupK8sTestClient(ctx)
+
+		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
+		testNamespace = fmt.Sprintf("gw-error-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
+		EnsureTestNamespace(ctx, testClient, testNamespace)
+		RegisterTestNamespace(testNamespace) // Auto-cleanup after test
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -69,11 +75,8 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			server.Close()
 		}
 
-		// Cleanup resources in namespace (but keep namespace alive for next test)
-		if testNamespace != "" && testClient != nil {
-			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
-				client.InNamespace(testNamespace))
-		}
+		// ✅ FIX: Namespace cleanup handled by RegisterTestNamespace
+		// No manual cleanup needed - each parallel process has its own isolated namespace
 	})
 
 	Context("GW-ERR-001: Transient Error Retry with Exponential Backoff (P0)", func() {

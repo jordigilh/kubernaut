@@ -32,7 +32,8 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
@@ -57,7 +58,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		testNamespace string
 		httpClient    *http.Client
 		k8sClient     client.Client
-		auditClient   *dsgen.ClientWithResponses
+		auditClient   *dsgen.Client
 	)
 
 	BeforeAll(func() {
@@ -72,7 +73,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// Setup OpenAPI audit client for Data Storage
 		// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: MUST use OpenAPI client for audit tests
 		dataStorageURL := "http://localhost:18091" // Kind hostPort maps to NodePort 30081
-		auditClient, _ = dsgen.NewClientWithResponses(dataStorageURL)
+		auditClient, _ = dsgen.NewClient(dataStorageURL)
 
 		testLogger.Info("OpenAPI audit client initialized", "dataStorageURL", dataStorageURL)
 
@@ -191,33 +192,25 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		var auditEvents []dsgen.AuditEvent
 		Eventually(func() int {
 			// Query using OpenAPI client with typed parameters
-			// Note: No "Service" parameter - use EventCategory instead
-			eventCategory := "gateway"
-			resp, err := auditClient.QueryAuditEventsWithResponse(testCtx, &dsgen.QueryAuditEventsParams{
-				EventCategory: &eventCategory,
-				CorrelationId: &correlationID,
-			})
-			if err != nil {
-				testLogger.Info("Failed to query audit events (will retry)", "error", err)
-				return 0
-			}
+		// Note: No "Service" parameter - use EventCategory instead
+		eventCategory := "gateway"
+		resp, err := auditClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
+			EventCategory: dsgen.NewOptString(eventCategory),
+			CorrelationID: dsgen.NewOptString(correlationID),
+		})
+		if err != nil {
+			testLogger.Info("Failed to query audit events (will retry)", "error", err)
+			return 0
+		}
 
-			if resp.StatusCode() != http.StatusOK || resp.JSON200 == nil {
-				testLogger.Info("Audit query returned non-200 status (will retry)",
-					"status", resp.StatusCode())
-				return 0
-			}
-
-			// Handle pointer types from OpenAPI client
-			if resp.JSON200.Data != nil {
-				auditEvents = *resp.JSON200.Data
-			}
-			total := 0
-			if resp.JSON200.Pagination.Total != nil {
-				total = *resp.JSON200.Pagination.Total
-			}
-			testLogger.Info("Audit events found", "count", total)
-			return total
+	// Access typed response directly (ogen pattern)
+	auditEvents = resp.Data
+	total := 0
+	if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
+		total = resp.Pagination.Value.Total.Value
+	}
+	testLogger.Info("Audit events found", "count", total)
+	return total
 		}, 30*time.Second, 2*time.Second).Should(Equal(2),
 			"BR-GATEWAY-190: Gateway MUST emit exactly 2 audit events (signal.received + crd.created) to Data Storage (DD-TESTING-001)")
 
@@ -231,7 +224,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// Find the 'gateway.signal.received' event
 		var signalEvent *dsgen.AuditEvent
 		for i := range auditEvents {
-			if auditEvents[i].EventType == "gateway.signal.received" {
+			if auditEvents[i].EventType == gateway.EventTypeSignalReceived {
 				signalEvent = &auditEvents[i]
 				break
 			}
@@ -244,7 +237,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 		testutil.ValidateAuditEvent(*signalEvent, testutil.ExpectedAuditEvent{
-			EventType:     "gateway.signal.received",
+			EventType:     gateway.EventTypeSignalReceived,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "received",
 			EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,
@@ -259,26 +252,22 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			"correlation_id", correlationID,
 			"fingerprint", fingerprint)
 
-		By("4. Verify Gateway-specific event_data fields")
-		// Gateway event_data has nested structure: event_data.gateway.{field}
-		// Manual validation required (testutil.ValidateAuditEventDataNotEmpty expects flat keys)
-		eventData, ok := signalEvent.EventData.(map[string]interface{})
-		Expect(ok).To(BeTrue(), "event_data should be a map")
+	By("4. Verify Gateway-specific event_data fields")
+	// Access strongly-typed Gateway payload (ogen discriminated union)
+	gatewayPayload := signalEvent.EventData.GatewayAuditPayload
 
-		gatewayData, ok := eventData["gateway"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "event_data.gateway should exist")
-
-		// Validate Gateway-specific fields exist
-		Expect(gatewayData["signal_type"]).ToNot(BeEmpty(),
-			"Gateway event_data should include signal_type (e.g., 'prometheus-alert')")
-		Expect(gatewayData["alert_name"]).To(Equal("AuditTestAlert"),
-			"Gateway event_data should include alert_name")
-		Expect(gatewayData["namespace"]).To(Equal(testNamespace),
-			"Gateway event_data should include namespace")
-		Expect(gatewayData["remediation_request"]).ToNot(BeEmpty(),
-			"Gateway event_data should include remediation_request reference")
-		Expect(gatewayData["deduplication_status"]).To(Equal("new"),
-			"Gateway event_data should mark first signal as 'new'")
+	// Validate Gateway-specific fields exist (using strongly-typed payload)
+	Expect(gatewayPayload.SignalType).ToNot(BeEmpty(),
+		"Gateway event_data should include signal_type (e.g., 'prometheus-alert')")
+	Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+		"Gateway event_data should include alert_name")
+	Expect(gatewayPayload.Namespace).To(Equal(testNamespace),
+		"Gateway event_data should include namespace")
+	Expect(gatewayPayload.RemediationRequest.Set).To(BeTrue(),
+		"Gateway event_data should include remediation_request reference")
+	Expect(gatewayPayload.DeduplicationStatus.Set).To(BeTrue(), "DeduplicationStatus should be set")
+	Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("new"),
+		"Gateway event_data should mark first signal as 'new'")
 
 		testLogger.Info("✅ All Gateway-specific event_data fields validated")
 
@@ -286,7 +275,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// Find the 'gateway.crd.created' event
 		var crdEvent *dsgen.AuditEvent
 		for i := range auditEvents {
-			if auditEvents[i].EventType == "gateway.crd.created" {
+			if auditEvents[i].EventType == gateway.EventTypeCRDCreated {
 				crdEvent = &auditEvents[i]
 				break
 			}
@@ -295,7 +284,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Validate using testutil.ValidateAuditEvent (P0 requirement per v1.2.0)
 		testutil.ValidateAuditEvent(*crdEvent, testutil.ExpectedAuditEvent{
-			EventType:     "gateway.crd.created",
+			EventType:     gateway.EventTypeCRDCreated,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "created",
 			EventOutcome:  dsgen.AuditEventEventOutcomeSuccess,

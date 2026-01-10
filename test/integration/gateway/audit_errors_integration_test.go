@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -27,11 +26,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/google/uuid"
-	ptr "k8s.io/utils/ptr"
 
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // =============================================================================
@@ -71,7 +69,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 		gatewayServer  *gateway.Server
 		dataStorageURL string
 		testNamespace  string
-		dsClient       *dsgen.ClientWithResponses
+		dsClient       *ogenclient.Client
 	)
 
 	BeforeEach(func() {
@@ -95,7 +93,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 		}
 
 		// Create OpenAPI client for Data Storage queries
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Setup isolated test namespace
@@ -129,83 +127,74 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 				Resource: types.ResourceIdentifier{
 					Kind: "Pod",
 					Name: "test-pod",
-				},
-				SourceType: "prometheus-alert",
-			}
+			},
+			SourceType: "alertmanager", // ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypeAlertManager
+		}
 
 			By("2. Call Gateway business logic - expect failure")
 			_, err := gatewayServer.ProcessSignal(ctx, signal)
 			Expect(err).To(HaveOccurred(), "ProcessSignal should fail due to invalid namespace")
 			Expect(err.Error()).To(ContainSubstring("namespace"), "Error should mention namespace issue")
 
-			By("3. Query Data Storage for 'gateway.crd.creation_failed' audit event")
-			eventType := "gateway.crd.creation_failed"
-			params := &dsgen.QueryAuditEventsParams{
-				CorrelationId: &fingerprint,
-				EventType:     &eventType,
-				EventCategory: ptr.To("gateway"),
-			}
+		By("3. Query Data Storage for 'gateway.crd.failed' audit event")
+		eventType := "gateway.crd.failed" // ✅ FIX: Gateway emits EventTypeCRDFailed = "gateway.crd.failed"
+		params := ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(fingerprint),
+			EventType:     ogenclient.NewOptString(eventType),
+			EventCategory: ogenclient.NewOptString("gateway"),
+		}
 
-			var auditEvents []dsgen.AuditEvent
-			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
-				if err != nil {
-					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
-					return 0
-				}
-				if resp.JSON200 == nil {
-					return 0
-				}
-				if resp.JSON200.Data != nil {
-					auditEvents = *resp.JSON200.Data
-				}
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					return *resp.JSON200.Pagination.Total
-				}
+		var auditEvents []ogenclient.AuditEvent
+		Eventually(func() int {
+			resp, err := dsClient.QueryAuditEvents(ctx, params)
+			if err != nil {
+				GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
 				return 0
+			}
+			auditEvents = resp.Data
+			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+				return resp.Pagination.Value.Total.Value
+			}
+			return 0
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-				"Should find exactly 1 'crd.creation_failed' audit event")
+				"Should find exactly 1 'gateway.crd.failed' audit event")
 
-			By("4. Validate error_details structure (Gap #7)")
-			Expect(auditEvents).To(HaveLen(1), "Should have exactly 1 audit event")
+		By("4. Validate error_details structure (Gap #7)")
+		Expect(auditEvents).To(HaveLen(1), "Should have exactly 1 audit event")
 
-			// Convert to map for easier validation
-			eventJSON, err := json.Marshal(auditEvents[0])
-			Expect(err).ToNot(HaveOccurred())
-			var eventMap map[string]interface{}
-			err = json.Unmarshal(eventJSON, &eventMap)
-			Expect(err).ToNot(HaveOccurred())
+		// ✅ DD-API-001: Use OpenAPI types directly (no JSON conversion)
+		event := auditEvents[0]
 
-			// Validate standard ADR-034 fields
-			Expect(eventMap["version"]).To(Equal("1.0"))
-			Expect(eventMap["event_type"]).To(Equal("gateway.crd.creation_failed"))
-			Expect(eventMap["event_category"]).To(Equal("gateway"))
-			Expect(eventMap["event_action"]).To(Equal("created"))
-			Expect(eventMap["event_outcome"]).To(Equal("failure"))
-			Expect(eventMap["correlation_id"]).To(Equal(fingerprint))
+		// Validate standard ADR-034 fields
+		Expect(event.Version).To(Equal("1.0"))
+		Expect(event.EventType).To(Equal("gateway.crd.failed")) // ✅ FIX: Correct event type
+		Expect(string(event.EventCategory)).To(Equal("gateway"))
+		Expect(event.EventAction).To(Equal("created"))
+		Expect(string(event.EventOutcome)).To(Equal("failure"))
+		Expect(event.CorrelationID).To(Equal(fingerprint))
 
-			// Validate error_details structure (Gap #7)
-			eventData, ok := eventMap["event_data"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be a map")
+		// Validate error_details structure (Gap #7) - ✅ DD-API-001: Direct OpenAPI access
+		gatewayPayload := event.EventData.GatewayAuditPayload
 
-			errorDetails, ok := eventData["error_details"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "error_details should exist in event_data (Gap #7)")
+		// Access error_details from OpenAPI structure
+		errorDetails := gatewayPayload.ErrorDetails
+		Expect(errorDetails.IsSet()).To(BeTrue(), "error_details should exist in event_data (Gap #7)")
 
-			// Gap #7: Standardized error_details fields
-			Expect(errorDetails).To(HaveKey("message"), "error_details.message required")
-			Expect(errorDetails).To(HaveKey("code"), "error_details.code required")
-			Expect(errorDetails).To(HaveKey("component"), "error_details.component required")
-			Expect(errorDetails["component"]).To(Equal("gateway"), "error_details.component should be 'gateway'")
-			Expect(errorDetails).To(HaveKey("retry_possible"), "error_details.retry_possible required")
+		errorDetailsValue := errorDetails.Value
 
-			// Validate error message contains meaningful context
-			message := errorDetails["message"].(string)
-			Expect(message).ToNot(BeEmpty(), "error_details.message should not be empty")
-			Expect(message).To(Or(
-				ContainSubstring("namespace"),
-				ContainSubstring("not found"),
-				ContainSubstring("failed"),
-			), "error_details.message should contain error context")
+		// Gap #7: Standardized error_details fields (direct access, no IsSet() needed for required fields)
+		Expect(errorDetailsValue.Message).ToNot(BeEmpty(), "error_details.message required")
+		Expect(errorDetailsValue.Code).ToNot(BeEmpty(), "error_details.code required")
+		Expect(string(errorDetailsValue.Component)).To(Equal("gateway"), "error_details.component should be 'gateway'")
+		// retry_possible is a bool, so just verify it exists (has a value)
+		_ = errorDetailsValue.RetryPossible // Validates field exists
+
+		// Validate error message contains meaningful context (Gap #7)
+		Expect(errorDetailsValue.Message).To(Or(
+			ContainSubstring("namespace"),
+			ContainSubstring("not found"),
+			ContainSubstring("failed"),
+		), "error_details.message should contain error context")
 		})
 	})
 

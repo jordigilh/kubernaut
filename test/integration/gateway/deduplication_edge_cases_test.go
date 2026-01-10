@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,7 +40,7 @@ import (
 
 var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	var (
-		testNamespace = "gw-dedup-test" // Static namespace - created in suite setup
+		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
 		ctx           context.Context
 		gatewayURL    string
 		server        *httptest.Server
@@ -49,6 +50,12 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		testClient = SetupK8sTestClient(ctx)
+
+		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
+		// This eliminates flakiness caused by tests interfering with each other's data
+		testNamespace = fmt.Sprintf("gw-dedup-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
+		EnsureTestNamespace(ctx, testClient, testNamespace)
+		RegisterTestNamespace(testNamespace) // Auto-cleanup after test
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -69,23 +76,8 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			server.Close()
 		}
 
-		// Cleanup resources in namespace (but keep namespace alive for next test)
-		if testNamespace != "" && testClient != nil {
-			_ = testClient.Client.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
-				client.InNamespace(testNamespace))
-
-			// Wait for all CRDs to be deleted before next test
-			// This prevents test pollution from stale CRDs
-			Eventually(func() int {
-				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
-				if err != nil {
-					return -1 // Error, keep retrying
-				}
-				return len(rrList.Items)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
-				"All CRDs should be deleted before next test starts")
-		}
+		// ✅ FIX: Namespace cleanup handled by RegisterTestNamespace
+		// No manual cleanup needed - each parallel process has its own isolated namespace
 	})
 
 	Context("GW-DEDUP-001: K8s API Failure During Deduplication Check (P0)", func() {
@@ -215,7 +207,8 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// - Network retry: Webhook client retries thinking request failed
 			// - Multi-datacenter: Same alert from different sources
 
-			fingerprint := fmt.Sprintf("concurrent-test-%d", time.Now().Unix())
+			// ✅ FIX: Include parallel process ID to prevent collisions between parallel test runs
+			fingerprint := fmt.Sprintf("concurrent-test-p%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
 			concurrentRequests := 5
 
 			// Send concurrent requests with same fingerprint

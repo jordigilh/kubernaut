@@ -120,7 +120,7 @@ func (a *KubernetesEventAdapter) GetSourceService() string {
 // Returns "kubernetes-event" to distinguish Kubernetes events from other signal types.
 // Used for metrics, logging, and signal classification.
 func (a *KubernetesEventAdapter) GetSourceType() string {
-	return "kubernetes-event"
+	return SourceTypeWebhook // K8s events arrive via webhook/API
 }
 
 // Parse converts Kubernetes Event JSON to NormalizedSignal

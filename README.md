@@ -69,7 +69,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
 
 | Service | Status | Purpose | BR Coverage |
 |---------|--------|---------|-------------|
-| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (377 tests: 222U+118I+37E2E) **100% P0** |
+| **Gateway Service** | ✅ **v1.0 PRODUCTION-READY** | Signal ingestion & deduplication | 20 BRs (395 tests: 240U+118I+37E2E) **100% P0** |
 | **Data Storage Service** | ✅ **v1.0 PRODUCTION-READY** | REST API Gateway for PostgreSQL (ADR-032) | 34 BRs (727 tests: 551U+163I+13E2E) E2E Cov: 70.8% main, 78.2% middleware |
 | **HolmesGPT API** | ✅ **v3.10 PRODUCTION-READY** | AI investigation wrapper | 48 BRs (601 tests: 474U+77I+45E2E+5smoke) |
 | **Notification Service** | ✅ **v1.0 PRODUCTION-READY** | Multi-channel delivery | 17 BRs (358 tests: 225U+112I+21E2E) **100% pass** |
@@ -102,7 +102,7 @@ Kubernaut uses **Kubernetes Custom Resources (CRDs)** for all inter-service comm
   - Plans in authoritative location: `docs/development/SOC2/`
 - ✅ **DD-AUDIT-003 v1.3**: Extended with SOC2-specific event types (`aianalysis.analysis.completed`, `workflow.selection.completed`)
 - 🎉 **V1.0 Core Services Complete**: All 8 services production-ready (December 28, 2025)
-- ✅ **Gateway v1.0**: 377 tests (222U+118I+37E2E), 20 BRs, 100% P0 compliance, K8s-native deduplication (DD-GATEWAY-012), unit tests refactored to eliminate anti-patterns
+- ✅ **Gateway v1.0**: 395 tests (240U+118I+37E2E), 20 BRs, 100% P0 compliance, K8s-native deduplication (DD-GATEWAY-012), unit tests refactored to eliminate anti-patterns
 - ✅ **Signal Processing v1.0**: SOC2-compliant audit traces (original_payload, signal_labels, signal_annotations)
 - ✅ **AI Analysis v1.0**: SOC2-compliant audit traces (provider_data for RR reconstruction)
 - ✅ **Workflow Execution v1.0**: 314 tests (229U+70I+15E2E), DD-TEST-002 infrastructure migration, Redis port 16388 (DD-TEST-001 v1.9)
@@ -315,11 +315,11 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 - **Integration Tests**: **>50% coverage** - Cross-service coordination, CRD-based flows, microservices architecture
 - **E2E Tests**: **<10% coverage** - Critical end-to-end user journeys
 
-**Current Test Status** (as of Dec 28, 2025): ~3,571 tests passing across all tiers
+**Current Test Status** (as of Jan 9, 2026): ~3,589 tests passing across all tiers
 
 | Service | Unit Specs | Integration Specs | E2E Specs | Total |
 |---------|------------|-------------------|-----------|-------|
-| **Gateway v1.0** | 222 | 118 | 37 | **377** |
+| **Gateway v1.0** | 240 | 118 | 37 | **395** |
 | **Data Storage** | 434 | 153 | 84 | **671** |
 | **Signal Processing** | 336 | 96 | 24 | **456** |
 | **AI Analysis** | 222 | 53 | 34 | **309** |
@@ -328,9 +328,9 @@ Kubernaut follows a **defense-in-depth testing pyramid**:
 | **Workflow Execution v1.0** | 229 | 70 | 15 | **314** |
 | **Remediation Orchestrator v1.0** | 432 | 39 | 19 | **490** |
 
-**Total**: ~2,574 unit specs + ~718 integration specs + ~279 E2E specs = **~3,571 test specs**
+**Total**: ~2,592 unit specs + ~718 integration specs + ~279 E2E specs = **~3,589 test specs**
 
-*Note: Gateway v1.0 has 377 tests (222U+118I+37E2E) with 100% pass rate verified December 27, 2025 (hybrid parallel E2E infrastructure per DD-TEST-002, unit tests refactored to eliminate anti-patterns per TESTING_GUIDELINES.md). DataStorage v1.0 has 671 tests (434U+153I+84E2E) with E2E coverage 70.8% main/78.2% middleware. SignalProcessing v1.0 has 456 tests (336U+96I+24E2E). AI Analysis v1.0 has 309 tests (222U+53I+34E2E). Notification Service v1.0 has 358 tests (225U+112I+21E2E) with 100% pass rate verified December 28, 2025 (Kind-based E2E, OpenAPI audit client integration, ActorId filtering per DD-E2E-002). Workflow Execution v1.0 has 314 tests (229U+70I+15E2E) with 100% pass rate (311/311 passing, 3 pending for V1.1), DD-TEST-002 infrastructure migration complete, and parallel testing enabled (port 16388 per DD-TEST-001 v1.9). Remediation Orchestrator v1.0 has 490 tests (432U+39I+19E2E) with SOC2-compliant audit traces, cross-CRD coordination, and comprehensive timeout/blocking management (100% NULL-TESTING compliance per TESTING_GUIDELINES.md, verified December 28, 2025). See WE_FINAL_VALIDATION_DEC_25_2025.md for details.*
+*Note: Gateway v1.0 has 395 tests (240U+118I+37E2E) with 100% pass rate verified December 27, 2025 (hybrid parallel E2E infrastructure per DD-TEST-002, unit tests refactored to eliminate anti-patterns per TESTING_GUIDELINES.md). DataStorage v1.0 has 671 tests (434U+153I+84E2E) with E2E coverage 70.8% main/78.2% middleware. SignalProcessing v1.0 has 456 tests (336U+96I+24E2E). AI Analysis v1.0 has 309 tests (222U+53I+34E2E). Notification Service v1.0 has 358 tests (225U+112I+21E2E) with 100% pass rate verified December 28, 2025 (Kind-based E2E, OpenAPI audit client integration, ActorId filtering per DD-E2E-002). Workflow Execution v1.0 has 314 tests (229U+70I+15E2E) with 100% pass rate (311/311 passing, 3 pending for V1.1), DD-TEST-002 infrastructure migration complete, and parallel testing enabled (port 16388 per DD-TEST-001 v1.9). Remediation Orchestrator v1.0 has 490 tests (432U+39I+19E2E) with SOC2-compliant audit traces, cross-CRD coordination, and comprehensive timeout/blocking management (100% NULL-TESTING compliance per TESTING_GUIDELINES.md, verified December 28, 2025). See WE_FINAL_VALIDATION_DEC_25_2025.md for details.*
 
 ---
 

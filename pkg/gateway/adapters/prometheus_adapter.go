@@ -71,10 +71,10 @@ func (a *PrometheusAdapter) GetSourceService() string {
 
 // GetSourceType returns the signal type identifier
 //
-// Returns "prometheus-alert" to distinguish Prometheus alerts from other signal types.
-// Used for metrics, logging, and signal classification.
+// Returns "prometheus" per OpenAPI enum validation (BR-AUDIT-003).
+// Used for metrics, logging, signal classification, and audit events.
 func (a *PrometheusAdapter) GetSourceType() string {
-	return "prometheus-alert"
+	return SourceTypeAlertManager // AlertManager webhook signals
 }
 
 // Parse converts AlertManager webhook payload to NormalizedSignal
@@ -152,8 +152,8 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		Annotations:  annotations,
 		FiringTime:   alert.StartsAt,
 		ReceivedTime: time.Now(),
-		SourceType:   "prometheus-alert",
-		Source:       a.GetSourceService(), // BR-GATEWAY-027: Use monitoring system name, not adapter name
+		SourceType:   SourceTypeAlertManager, // ✅ Adapter constant
+		Source:       a.GetSourceService(),   // BR-GATEWAY-027: Use monitoring system name, not adapter name
 		RawPayload:   rawData,
 	}, nil
 }

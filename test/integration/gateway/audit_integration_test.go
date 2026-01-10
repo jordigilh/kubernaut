@@ -28,10 +28,9 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	ptr "k8s.io/utils/ptr"
 
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/client"
 )
 
 // =============================================================================
@@ -93,7 +92,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		server            *httptest.Server
 		gatewayURL        string
 		testClient        *K8sTestClient
-		dsClient          *dsgen.ClientWithResponses
+		dsClient          *ogenclient.Client
 		dataStorageURL    string
 		prometheusPayload []byte
 	)
@@ -115,7 +114,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
 		// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
 		var err error
-		dsClient, err = dsgen.NewClientWithResponses(dataStorageURL)
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// MANDATORY: Verify Data Storage is running
@@ -201,52 +200,36 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
 			// Note: Filter by event_type since Gateway emits multiple events per correlation_id (signal.received, crd.created)
-		eventType := "gateway.signal.received"
-		params := &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventType:     &eventType,
-			EventCategory: ptr.To("gateway"), // ADR-034 v1.2 requirement
-		}
+			eventType := "gateway.signal.received"
+			params := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString("gateway"), // ADR-034 v1.2 requirement
+			}
 
 			// Wait for audit event to appear (async write may have small delay)
-			var auditEvents []dsgen.AuditEvent
+			var auditEvents []ogenclient.AuditEvent
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params)
+				resp, err := dsClient.QueryAuditEvents(ctx, params)
 				if err != nil {
 					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
 					return 0
 				}
 
-				if resp.JSON200 == nil {
-					GinkgoWriter.Printf("Audit query returned non-200: %d\n", resp.StatusCode())
-					return 0
-				}
-
-				if resp.JSON200.Data != nil {
-					auditEvents = *resp.JSON200.Data
-				}
+				auditEvents = resp.Data
 
 				total := 0
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					total = *resp.JSON200.Pagination.Total
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					total = resp.Pagination.Value.Total.Value
 				}
 				return total
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"BR-GATEWAY-190: Gateway MUST emit exactly 1 'signal.received' audit event (DD-TESTING-001)")
 
-			// Convert to map format for compatibility with existing validation code
-			auditEventsMap := make([]map[string]interface{}, len(auditEvents))
-			for i, evt := range auditEvents {
-				eventJSON, _ := json.Marshal(evt)
-				var eventMap map[string]interface{}
-				_ = json.Unmarshal(eventJSON, &eventMap)
-				auditEventsMap[i] = eventMap
-			}
-
 			By("3. Verify audit event content - COMPREHENSIVE VALIDATION")
-			Expect(auditEventsMap).To(HaveLen(1), "Should have exactly 1 audit event for this correlation")
+			Expect(auditEvents).To(HaveLen(1), "Should have exactly 1 audit event for this correlation")
 
-			event := auditEventsMap[0]
+			event := auditEvents[0] // ✅ DD-API-001: Use OpenAPI types directly (no JSON conversion)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// STANDARD ADR-034 FIELDS (11 fields)
@@ -254,50 +237,50 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			By("3a. Validate ADR-034 standard fields")
 
-			// Field 1: version
-			Expect(event["version"]).To(Equal("1.0"),
+			// Field 1: version (✅ DD-API-001: Direct OpenAPI type access)
+			Expect(event.Version).To(Equal("1.0"),
 				"version should be '1.0' per ADR-034")
 
 			// Field 2: event_type
-			Expect(event["event_type"]).To(Equal("gateway.signal.received"),
+			Expect(event.EventType).To(Equal("gateway.signal.received"),
 				"event_type should follow ADR-034 format: <service>.<category>.<action>")
 
 			// Field 3: event_category
-			Expect(event["event_category"]).To(Equal("gateway"),
+			Expect(string(event.EventCategory)).To(Equal("gateway"),
 				"event_category should be 'gateway'")
 
 			// Field 4: event_action
-			Expect(event["event_action"]).To(Equal("received"),
+			Expect(event.EventAction).To(Equal("received"),
 				"event_action should be 'received' for signal ingestion")
 
 			// Field 5: event_outcome
-			Expect(event["event_outcome"]).To(Equal("success"),
+			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"event_outcome should be 'success' for processed signal")
 
 			// Field 6: actor_type
-			Expect(event["actor_type"]).To(Equal("external"),
+			Expect(event.ActorType.Value).To(Equal("external"),
 				"actor_type should be 'external' for AlertManager/K8s Events")
 
 			// Field 7: actor_id
-			Expect(event["actor_id"]).To(Equal("prometheus-alert"),
-				"actor_id should be signal source type (prometheus-alert or kubernetes-event)")
+			Expect(event.ActorID.Value).To(Equal("alertmanager"),
+				"actor_id should be signal source type constant (alertmanager or webhook)")
 
 			// Field 8: resource_type
-			Expect(event["resource_type"]).To(Equal("Signal"),
+			Expect(event.ResourceType.Value).To(Equal("Signal"),
 				"resource_type should be 'Signal' for signal ingestion events")
 
 			// Field 9: resource_id
-			Expect(event["resource_id"]).ToNot(BeEmpty(),
+			Expect(event.ResourceID.Value).ToNot(BeEmpty(),
 				"resource_id should be signal fingerprint (SHA256)")
-			Expect(event["resource_id"].(string)).To(HaveLen(64),
+			Expect(event.ResourceID.Value).To(HaveLen(64),
 				"resource_id should be 64-char SHA256 fingerprint")
 
 			// Field 10: correlation_id
-			Expect(event["correlation_id"]).To(Equal(correlationID),
+			Expect(event.CorrelationID).To(Equal(correlationID),
 				"correlation_id should match RemediationRequest name for tracing")
 
 			// Field 11: namespace
-			Expect(event["namespace"]).To(Equal(sharedNamespace),
+			Expect(event.Namespace.Value).To(Equal(sharedNamespace),
 				"namespace should match signal namespace for K8s context")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -306,50 +289,47 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			By("3b. Validate Gateway-specific event_data fields")
 
-			eventData, ok := event["event_data"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data should be a map")
-
-			gatewayData, ok := eventData["gateway"].(map[string]interface{})
-			Expect(ok).To(BeTrue(), "event_data.gateway should exist")
+			// ✅ DD-API-001: Direct OpenAPI type access (no JSON conversion)
+			gatewayPayload := event.EventData.GatewayAuditPayload
 
 			// Field 12: signal_type
-			Expect(gatewayData["signal_type"]).To(Equal("prometheus-alert"),
-				"signal_type should be 'prometheus-alert' per PrometheusAdapter.GetSourceType()")
+			Expect(string(gatewayPayload.SignalType)).To(Equal("alertmanager"),
+				"signal_type should be 'alertmanager' constant (matches OpenAPI enum)")
 
 			// Field 13: alert_name
-			Expect(gatewayData["alert_name"]).To(Equal("AuditTestAlert"),
+			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
 				"alert_name should match Prometheus alert name")
 
 			// Field 14: namespace
-			Expect(gatewayData["namespace"]).To(Equal(sharedNamespace),
+			Expect(gatewayPayload.Namespace).To(Equal(sharedNamespace),
 				"namespace in event_data should match signal namespace")
 
 			// Field 15: fingerprint
-			Expect(gatewayData["fingerprint"]).ToNot(BeEmpty(),
+			Expect(gatewayPayload.Fingerprint).ToNot(BeEmpty(),
 				"fingerprint should be populated in event_data")
-			Expect(gatewayData["fingerprint"].(string)).To(HaveLen(64),
+			Expect(gatewayPayload.Fingerprint).To(HaveLen(64),
 				"fingerprint should be 64-char SHA256 hash")
-			Expect(gatewayData["fingerprint"]).To(Equal(event["resource_id"]),
+			Expect(gatewayPayload.Fingerprint).To(Equal(event.ResourceID.Value),
 				"fingerprint in event_data should match resource_id")
 
 			// Field 16: severity
-			Expect(gatewayData["severity"]).To(Equal("warning"),
+			Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
 				"severity should match alert severity")
 
 			// Field 17: resource_kind
-			Expect(gatewayData["resource_kind"]).To(Equal("Pod"),
+			Expect(gatewayPayload.ResourceKind.Value).To(Equal("Pod"),
 				"resource_kind should match K8s resource kind")
 
 			// Field 18: resource_name
-			Expect(gatewayData["resource_name"]).To(ContainSubstring("audit-test-pod-"),
+			Expect(gatewayPayload.ResourceName.Value).To(ContainSubstring("audit-test-pod-"),
 				"resource_name should match test pod name")
 
 			// Field 19: remediation_request
-			Expect(gatewayData["remediation_request"]).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
+			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
 				"remediation_request should be namespace/name format")
 
 			// Field 20: deduplication_status
-			Expect(gatewayData["deduplication_status"]).To(Equal("new"),
+			Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("new"),
 				"deduplication_status should be 'new' for first signal")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -357,13 +337,41 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 			By("3c. Verify business outcome: Complete audit trail")
-			// This audit event enables:
-			// ✅ End-to-end workflow tracing (correlation_id = RR name)
-			// ✅ Accountability (actor_type/actor_id identifies source)
-			// ✅ Resource tracking (resource_type/resource_id for debugging)
-			// ✅ Kubernetes context (namespace for multi-tenancy)
-			// ✅ Signal metadata (alert_name, severity, resource details)
-			// ✅ Compliance (ADR-034 format for 7-year retention)
+			// BR-GATEWAY-190: Signal.received audit enables operational visibility
+
+			// ✅ OUTCOME 1: End-to-end workflow tracing via correlation_id
+			Expect(event.CorrelationID).To(Equal(correlationID),
+				"Business outcome: correlation_id=RR name enables tracing entire workflow from signal to remediation")
+			Expect(gatewayPayload.RemediationRequest.Value).To(ContainSubstring(correlationID),
+				"Business outcome: remediation_request links audit event to created CRD")
+
+			// ✅ OUTCOME 2: Accountability - identifies signal source
+			Expect(event.ActorType.Value).To(Equal("external"),
+				"Business outcome: actor_type='external' identifies this as external signal (not internal system)")
+			Expect(event.ActorID.Value).To(Equal("alertmanager"),
+				"Business outcome: actor_id identifies specific source system for troubleshooting")
+
+			// ✅ OUTCOME 3: Resource tracking for debugging
+			Expect(event.ResourceType.Value).To(Equal("Signal"),
+				"Business outcome: resource_type='Signal' categorizes audit event for querying")
+			Expect(event.ResourceID.Value).To(Equal(gatewayPayload.Fingerprint),
+				"Business outcome: resource_id=fingerprint enables duplicate signal tracking across time")
+
+			// ✅ OUTCOME 4: Multi-tenancy context
+			Expect(event.Namespace.Value).To(Equal(sharedNamespace),
+				"Business outcome: namespace enables tenant-specific audit queries (SOC2 CC1.4)")
+
+			// ✅ OUTCOME 5: Signal metadata for operations
+			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+				"Business outcome: alert_name enables filtering audit by alert type")
+			Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
+				"Business outcome: severity enables SLA tracking per severity level")
+
+			// ✅ OUTCOME 6: SOC2 compliance - 7-year audit trail
+			Expect(event.Version).To(Equal("1.0"),
+				"Business outcome: ADR-034 v1.0 format ensures audit events remain queryable for compliance")
+			Expect(event.EventType).To(Equal("gateway.signal.received"),
+				"Business outcome: Structured event_type enables automated compliance reporting")
 		})
 	})
 
@@ -413,47 +421,32 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			By("3. Query Data Storage for deduplication audit event")
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
-		eventType2 := "gateway.signal.deduplicated"
-		params2 := &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventType:     &eventType2,
-			EventCategory: ptr.To("gateway"), // ADR-034 v1.2 requirement
-		}
+			eventType2 := "gateway.signal.deduplicated"
+			params2 := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventType:     ogenclient.NewOptString(eventType2),
+				EventCategory: ogenclient.NewOptString("gateway"), // ADR-034 v1.2 requirement
+			}
 
-			var auditEvents2 []dsgen.AuditEvent
+			var auditEvents2 []ogenclient.AuditEvent
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params2)
+				resp, err := dsClient.QueryAuditEvents(ctx, params2)
 				if err != nil {
 					return 0
 				}
 
-				if resp.JSON200 == nil {
-					return 0
-				}
-
-				if resp.JSON200.Data != nil {
-					auditEvents2 = *resp.JSON200.Data
-				}
+				auditEvents2 = resp.Data
 
 				total := 0
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					total = *resp.JSON200.Pagination.Total
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					total = resp.Pagination.Value.Total.Value
 				}
 				return total
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"BR-GATEWAY-191: Gateway MUST emit exactly 1 'signal.deduplicated' audit event (DD-TESTING-001)")
 
-			// Convert to map format for compatibility with existing validation code
-			auditEvents := make([]map[string]interface{}, len(auditEvents2))
-			for i, evt := range auditEvents2 {
-				eventJSON, _ := json.Marshal(evt)
-				var eventMap map[string]interface{}
-				_ = json.Unmarshal(eventJSON, &eventMap)
-				auditEvents[i] = eventMap
-			}
-
 			By("4. Verify deduplication audit event content - COMPREHENSIVE VALIDATION")
-			event := auditEvents[0]
+			event := auditEvents2[0] // ✅ DD-API-001: Use OpenAPI types directly (no JSON conversion)
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// STANDARD ADR-034 FIELDS (11 fields)
@@ -461,50 +454,50 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			By("4a. Validate ADR-034 standard fields")
 
-			// Field 1: version
-			Expect(event["version"]).To(Equal("1.0"),
+			// Field 1: version (✅ DD-API-001: Direct OpenAPI type access)
+			Expect(event.Version).To(Equal("1.0"),
 				"version should be '1.0' per ADR-034")
 
-			// Field 2: event_type
-			Expect(event["event_type"]).To(Equal("gateway.signal.deduplicated"),
+			// Field 2: event_type (✅ DD-API-001: Direct OpenAPI type access)
+			Expect(event.EventType).To(Equal("gateway.signal.deduplicated"),
 				"event_type should follow ADR-034 format: <service>.<category>.<action>")
 
 			// Field 3: event_category
-			Expect(event["event_category"]).To(Equal("gateway"),
+			Expect(string(event.EventCategory)).To(Equal("gateway"),
 				"event_category should be 'gateway'")
 
 			// Field 4: event_action
-			Expect(event["event_action"]).To(Equal("deduplicated"),
+			Expect(event.EventAction).To(Equal("deduplicated"),
 				"event_action should be 'deduplicated' for duplicate signal")
 
 			// Field 5: event_outcome
-			Expect(event["event_outcome"]).To(Equal("success"),
+			Expect(string(event.EventOutcome)).To(Equal("success"),
 				"event_outcome should be 'success' for detected duplicate")
 
 			// Field 6: actor_type
-			Expect(event["actor_type"]).To(Equal("external"),
+			Expect(event.ActorType.Value).To(Equal("external"),
 				"actor_type should be 'external' for AlertManager/K8s Events")
 
 			// Field 7: actor_id
-			Expect(event["actor_id"]).To(Equal("prometheus-alert"),
-				"actor_id should be signal source type")
+			Expect(event.ActorID.Value).To(Equal("alertmanager"),
+				"actor_id should be signal source type constant (alertmanager or webhook)")
 
 			// Field 8: resource_type
-			Expect(event["resource_type"]).To(Equal("Signal"),
+			Expect(event.ResourceType.Value).To(Equal("Signal"),
 				"resource_type should be 'Signal'")
 
 			// Field 9: resource_id
-			Expect(event["resource_id"]).ToNot(BeEmpty(),
+			Expect(event.ResourceID.Value).ToNot(BeEmpty(),
 				"resource_id should be signal fingerprint")
-			Expect(event["resource_id"].(string)).To(HaveLen(64),
+			Expect(event.ResourceID.Value).To(HaveLen(64),
 				"resource_id should be 64-char SHA256 fingerprint")
 
 			// Field 10: correlation_id
-			Expect(event["correlation_id"]).To(Equal(correlationID),
+			Expect(event.CorrelationID).To(Equal(correlationID),
 				"correlation_id should match RemediationRequest name for tracing")
 
 			// Field 11: namespace
-			Expect(event["namespace"]).To(Equal(sharedNamespace),
+			Expect(event.Namespace.Value).To(Equal(sharedNamespace),
 				"namespace should match signal namespace")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -513,39 +506,39 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 			By("4b. Validate Gateway-specific event_data fields")
 
-			eventData := event["event_data"].(map[string]interface{})
-			gatewayData := eventData["gateway"].(map[string]interface{})
+			// ✅ DD-API-001: Direct OpenAPI type access (no JSON conversion)
+			gatewayPayload := event.EventData.GatewayAuditPayload
 
 			// Field 12: signal_type
-			Expect(gatewayData["signal_type"]).To(Equal("prometheus-alert"),
-				"signal_type should be 'prometheus-alert'")
+			Expect(string(gatewayPayload.SignalType)).To(Equal("alertmanager"),
+				"signal_type should be 'alertmanager' constant (matches OpenAPI enum)")
 
 			// Field 13: alert_name
-			Expect(gatewayData["alert_name"]).To(Equal("AuditTestAlert"),
+			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
 				"alert_name should match Prometheus alert name")
 
 			// Field 14: namespace
-			Expect(gatewayData["namespace"]).To(Equal(sharedNamespace),
+			Expect(gatewayPayload.Namespace).To(Equal(sharedNamespace),
 				"namespace in event_data should match signal namespace")
 
 			// Field 15: fingerprint
-			Expect(gatewayData["fingerprint"]).ToNot(BeEmpty(),
+			Expect(gatewayPayload.Fingerprint).ToNot(BeEmpty(),
 				"fingerprint should be populated in event_data")
-			Expect(gatewayData["fingerprint"].(string)).To(HaveLen(64),
+			Expect(gatewayPayload.Fingerprint).To(HaveLen(64),
 				"fingerprint should be 64-char SHA256 hash")
-			Expect(gatewayData["fingerprint"]).To(Equal(event["resource_id"]),
+			Expect(gatewayPayload.Fingerprint).To(Equal(event.ResourceID.Value),
 				"fingerprint in event_data should match resource_id")
 
 			// Field 16: remediation_request
-			Expect(gatewayData["remediation_request"]).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
+			Expect(gatewayPayload.RemediationRequest.Value).To(Equal(fmt.Sprintf("%s/%s", sharedNamespace, correlationID)),
 				"remediation_request should be namespace/name format")
 
 			// Field 17: deduplication_status
-			Expect(gatewayData["deduplication_status"]).To(Equal("duplicate"),
+			Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("duplicate"),
 				"deduplication_status should be 'duplicate' for deduplicated signal")
 
 			// Field 18: occurrence_count
-			Expect(gatewayData["occurrence_count"]).To(Equal(float64(2)),
+			Expect(gatewayPayload.OccurrenceCount.Value).To(Equal(int32(2)),
 				"occurrence_count should be exactly 2 for duplicate (first + one duplicate) (DD-TESTING-001)")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -553,12 +546,29 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 			By("4c. Verify business outcome: Deduplication tracking")
-			// This audit event enables:
-			// ✅ Deduplication visibility (occurrence_count shows persistence)
-			// ✅ No duplicate CRD creation (status='duplicate' confirms dedup)
-			// ✅ SLA tracking (deduplication reduces alert fatigue)
-			// ✅ Correlation (same correlation_id as first signal)
-			// ✅ Compliance (ADR-034 format for audit trail)
+			// BR-GATEWAY-191: Deduplication audit enables operational insights
+
+			// ✅ OUTCOME 1: Deduplication visibility (occurrence_count shows persistence)
+			Expect(gatewayPayload.OccurrenceCount.Value).To(Equal(int32(2)),
+				"Business outcome: occurrence_count=2 proves deduplication is working (not creating duplicate CRDs)")
+
+			// ✅ OUTCOME 2: No duplicate CRD creation confirmed
+			Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("duplicate"),
+				"Business outcome: status='duplicate' confirms signal was deduplicated, not processed as new")
+
+			// ✅ OUTCOME 3: Correlation enables tracing duplicate signals to original RR
+			Expect(event.CorrelationID).To(Equal(correlationID),
+				"Business outcome: Same correlation_id as 'signal.received' enables tracking duplicate signals")
+
+			// ✅ OUTCOME 4: Alert fatigue reduction (SLA metric)
+			// If deduplication is working, we should have exactly 1 RR despite 2 signals
+			// This is validated implicitly by occurrence_count=2 with deduplication_status='duplicate'
+
+			// ✅ OUTCOME 5: SOC2 compliance - audit trail shows deduplication decision
+			Expect(event.EventType).To(Equal("gateway.signal.deduplicated"),
+				"Business outcome: Separate event type enables SOC2 audit trail for deduplication decisions")
+			Expect(string(event.EventOutcome)).To(Equal("success"),
+				"Business outcome: outcome='success' confirms deduplication was intentional, not an error")
 		})
 	})
 
@@ -588,64 +598,78 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
 			eventType3 := "gateway.crd.created"
-		params3 := &dsgen.QueryAuditEventsParams{
-			CorrelationId: &correlationID,
-			EventType:     &eventType3,
-			EventCategory: ptr.To("gateway"), // ADR-034 v1.2 requirement
-		}
+			params3 := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventType:     ogenclient.NewOptString(eventType3),
+				EventCategory: ogenclient.NewOptString("gateway"), // ADR-034 v1.2 requirement
+			}
 
-			var auditEvents3 []dsgen.AuditEvent
+			var auditEvents3 []ogenclient.AuditEvent
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEventsWithResponse(ctx, params3)
+				resp, err := dsClient.QueryAuditEvents(ctx, params3)
 				if err != nil {
 					return 0
 				}
 
-				if resp.JSON200 == nil {
-					return 0
-				}
-
-				if resp.JSON200.Data != nil {
-					auditEvents3 = *resp.JSON200.Data
-				}
+				auditEvents3 = resp.Data
 
 				total := 0
-				if resp.JSON200.Pagination != nil && resp.JSON200.Pagination.Total != nil {
-					total = *resp.JSON200.Pagination.Total
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					total = resp.Pagination.Value.Total.Value
 				}
 				return total
 			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
 				"DD-AUDIT-003: Gateway MUST emit 'crd.created' audit event")
 
-			// Convert to map format for compatibility with existing validation code
-			auditEvents := make([]map[string]interface{}, len(auditEvents3))
-			for i, evt := range auditEvents3 {
-				eventJSON, _ := json.Marshal(evt)
-				var eventMap map[string]interface{}
-				_ = json.Unmarshal(eventJSON, &eventMap)
-				auditEvents[i] = eventMap
-			}
-
 			By("3. Validate crd.created audit event content")
-			event := auditEvents[0]
+			event := auditEvents3[0] // ✅ DD-API-001: Use OpenAPI types directly (no JSON conversion)
 
-			// Critical ADR-034 fields
-			Expect(event["version"]).To(Equal("1.0"), "version should be '1.0' per ADR-034")
-			Expect(event["event_type"]).To(Equal("gateway.crd.created"),
+			// Critical ADR-034 fields (✅ DD-API-001: Direct OpenAPI type access)
+			Expect(event.Version).To(Equal("1.0"), "version should be '1.0' per ADR-034")
+			Expect(event.EventType).To(Equal("gateway.crd.created"),
 				"event_type should be 'gateway.crd.created'")
-			Expect(event["event_category"]).To(Equal("gateway"), "event_category should be 'gateway'")
-			Expect(event["event_action"]).To(Equal("created"), "event_action should be 'created'")
-			Expect(event["event_outcome"]).To(Equal("success"), "event_outcome should be 'success'")
-			Expect(event["resource_type"]).To(Equal("RemediationRequest"),
+			Expect(string(event.EventCategory)).To(Equal("gateway"), "event_category should be 'gateway'")
+			Expect(event.EventAction).To(Equal("created"), "event_action should be 'created'")
+			Expect(string(event.EventOutcome)).To(Equal("success"), "event_outcome should be 'success'")
+			Expect(event.ResourceType.Value).To(Equal("RemediationRequest"),
 				"resource_type should be 'RemediationRequest'")
-			Expect(event["correlation_id"]).To(Equal(correlationID),
+			Expect(event.CorrelationID).To(Equal(correlationID),
 				"correlation_id should match RemediationRequest name")
 
-			// Gateway-specific event_data
-			eventData := event["event_data"].(map[string]interface{})
-			gatewayData := eventData["gateway"].(map[string]interface{})
-			Expect(gatewayData["remediation_request"]).To(ContainSubstring(correlationID),
+			// Gateway-specific event_data (✅ DD-API-001: Direct OpenAPI type access)
+			gatewayPayload := event.EventData.GatewayAuditPayload
+			Expect(gatewayPayload.RemediationRequest.Value).To(ContainSubstring(correlationID),
 				"remediation_request should reference the created RR")
+
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			// BUSINESS OUTCOME VALIDATION
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+			By("3b. Verify business outcome: CRD lifecycle tracking")
+			// BR-GATEWAY-190: CRD.created audit enables Kubernetes resource tracking
+
+			// ✅ OUTCOME 1: CRD creation confirmation
+			Expect(event.ResourceType.Value).To(Equal("RemediationRequest"),
+				"Business outcome: resource_type='RemediationRequest' enables filtering audit by CRD type")
+			Expect(event.EventAction).To(Equal("created"),
+				"Business outcome: event_action='created' enables tracking CRD lifecycle (create → update → delete)")
+
+			// ✅ OUTCOME 2: Resource correlation
+			Expect(event.CorrelationID).To(Equal(correlationID),
+				"Business outcome: correlation_id=RR name enables linking 'signal.received' → 'crd.created' events")
+			Expect(gatewayPayload.RemediationRequest.Value).To(ContainSubstring(correlationID),
+				"Business outcome: remediation_request provides direct reference to created K8s resource")
+
+			// ✅ OUTCOME 3: SOC2 compliance - resource creation audit trail
+			Expect(string(event.EventOutcome)).To(Equal("success"),
+				"Business outcome: outcome='success' confirms CRD was successfully created in K8s API")
+			Expect(event.EventType).To(Equal("gateway.crd.created"),
+				"Business outcome: Separate event type enables querying 'how many CRDs created per day' (SLA metric)")
+
+			// ✅ OUTCOME 4: Debugging support - links signal to K8s resource
+			// If RR is missing or corrupted, this audit event provides complete signal metadata for recreation
+			Expect(gatewayPayload.Fingerprint).ToNot(BeEmpty(),
+				"Business outcome: fingerprint enables finding original signal if RR is deleted")
 		})
 	})
 })

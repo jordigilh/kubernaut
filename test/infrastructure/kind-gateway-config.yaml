@@ -54,12 +54,3 @@ nodes:
         # Higher limits prevent CRD creation delays during parallel testing
         kube-api-qps: "100"
         kube-api-burst: "200"
-- role: worker
-  extraMounts:
-  # Mount coverage directory from host to Kind node for E2E coverage collection
-  # Per DD-TEST-007: E2E Coverage Capture Standard
-  # Path must be consistent: Kind config, K8s volumes, GOCOVERDIR, extraction
-  - hostPath: ./coverdata
-    containerPath: /coverdata
-    readOnly: false
-

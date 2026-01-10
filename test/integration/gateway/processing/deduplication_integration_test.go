@@ -73,7 +73,7 @@ func createTestRR(name, namespace, fingerprintSeed, alertName, severity, phase s
 			SignalFingerprint: fingerprint,
 			SignalName:        alertName,
 			Severity:          severity,
-			SignalType:        "prometheus-alert",
+			SignalType:        "alertmanager", // ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypeAlertManager
 			SignalSource:      "alertmanager",
 			FiringTime:        now,
 			ReceivedTime:      now,

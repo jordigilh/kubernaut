@@ -259,10 +259,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	EnsureTestNamespace(suiteCtx, suiteK8sClient, "kubernaut-system")
 
 	// Ensure static test namespaces exist for new integration tests
-	// These namespaces are shared across all tests for performance (no recreation overhead)
-	EnsureTestNamespace(suiteCtx, suiteK8sClient, "gw-resilience-test")
-	EnsureTestNamespace(suiteCtx, suiteK8sClient, "gw-error-test")
-	EnsureTestNamespace(suiteCtx, suiteK8sClient, "gw-dedup-test")
+	// ✅ FIX: Removed shared namespace pre-creation
+	// All tests now create unique namespaces per parallel process to prevent data pollution
+	// This eliminates flakiness caused by tests interfering with each other's data
 })
 
 // SynchronizedAfterSuite runs cleanup in two phases for parallel execution
