@@ -99,10 +99,10 @@ For preventing duplicate audit events at the phase handler level.
 ```go
 func (r *Reconciler) transitionPhase(ctx context.Context, obj *v1.Object, newPhase Phase) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	
+
 	// Capture current phase BEFORE any modifications
 	oldPhase := obj.Status.Phase
-	
+
 	// ========================================
 	// IDEMPOTENCY CHECK (Prevents Duplicate Audit Events)
 	// Per RO_AUDIT_DUPLICATION_RISK_ANALYSIS_JAN_01_2026.md - Option C
@@ -116,16 +116,16 @@ func (r *Reconciler) transitionPhase(ctx context.Context, obj *v1.Object, newPha
 			"requestedPhase", newPhase)
 		return ctrl.Result{Requeue: true}, nil
 	}
-	
+
 	// Proceed with phase transition
 	obj.Status.Phase = newPhase
 	obj.Status.ObservedGeneration = obj.Generation // Set AFTER completing transition
-	
+
 	// Emit audit event (guaranteed exactly-once per phase change)
 	if oldPhase != newPhase {
 		r.emitPhaseTransitionAudit(ctx, obj, oldPhase, newPhase)
 	}
-	
+
 	// Update status
 	return r.updateStatus(ctx, obj)
 }
@@ -136,29 +136,29 @@ func (r *Reconciler) transitionPhase(ctx context.Context, obj *v1.Object, newPha
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *v1.AIAnalysis) (ctrl.Result, error) {
 	// Capture current phase BEFORE any processing
 	oldPhase := analysis.Status.Phase
-	
+
 	// AA-BUG-009: Idempotency check - Per RO pattern
 	// Skip if we're ALREADY in Completed phase for this generation
 	// This prevents duplicate processing and audit events
-	if analysis.Status.ObservedGeneration == analysis.Generation && 
+	if analysis.Status.ObservedGeneration == analysis.Generation &&
 	   oldPhase == PhaseCompleted {
 		h.log.Info("Already in Completed phase for this generation, skipping",
 			"generation", analysis.Generation,
 			"phase", oldPhase)
 		return ctrl.Result{}, nil
 	}
-	
+
 	// ... process phase ...
-	
+
 	// Set new phase
 	analysis.Status.Phase = PhaseCompleted
 	analysis.Status.ObservedGeneration = analysis.Generation
-	
+
 	// Emit audit ONLY if phase actually changed
 	if analysis.Status.Phase != oldPhase {
 		h.auditClient.RecordAnalysisComplete(ctx, analysis)
 	}
-	
+
 	return ctrl.Result{}, nil
 }
 ```
@@ -628,7 +628,7 @@ if rr.Status.ObservedGeneration == rr.Generation &&
 
 **Discovery**: RemediationOrchestrator team had already solved this with `oldPhase == newPhase` check (RO_AUDIT_DUPLICATION_RISK_ANALYSIS_JAN_01_2026.md - Option C).
 
-**Impact**: 
+**Impact**:
 - Prevents duplicate `aianalysis.analysis.completed` events (AA-BUG-009)
 - Ensures SOC2 audit trail integrity (ADR-032 compliance)
 - Critical for multi-controller test environments (DD-TEST-010)

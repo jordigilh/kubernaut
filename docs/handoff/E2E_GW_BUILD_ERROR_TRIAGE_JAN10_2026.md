@@ -2,8 +2,8 @@
 
 ## 🚨 **CRITICAL BUILD ERRORS**
 
-**Status**: ❌ E2E Gateway tests fail to compile  
-**Root Cause**: Tests moved from integration → E2E still using integration test patterns  
+**Status**: ❌ E2E Gateway tests fail to compile
+**Root Cause**: Tests moved from integration → E2E still using integration test patterns
 **Affected Files**: 15 test files (22-36)
 
 ---
@@ -53,8 +53,8 @@ During Phase 3 of HTTP anti-pattern refactoring, 15 Gateway integration tests we
 ## 🛠️ **FIX STRATEGY**
 
 ### **Option A: Adapt Tests to E2E Patterns** (RECOMMENDED)
-**Effort**: ~2-3 hours  
-**Impact**: Tests become true E2E tests  
+**Effort**: ~2-3 hours
+**Impact**: Tests become true E2E tests
 **Approach**: Systematically refactor each test file
 
 #### **Refactoring Pattern**
@@ -65,7 +65,7 @@ For each test file (22-36):
    // ❌ REMOVE
    - K8sTestClient types
    - gateway package (for StartTestGateway)
-   
+
    // ✅ ADD
    + net/http (for HTTP requests)
    + bytes (for request bodies)
@@ -78,7 +78,7 @@ For each test file (22-36):
    - gatewayServer, err := StartTestGateway(ctx, testClient, dataStorageURL)
    - EnsureTestNamespace(ctx, testClient, testNamespace)
    - RegisterTestNamespace(testNamespace)
-   
+
    // ✅ REPLACE WITH
    + k8sClient := getKubernetesClient() // From deduplication_helpers.go
    + // Use gatewayURL from suite (already deployed)
@@ -92,7 +92,7 @@ For each test file (22-36):
    // ❌ REMOVE
    - payload := GeneratePrometheusAlert(PrometheusAlertOptions{...})
    - resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-   
+
    // ✅ REPLACE WITH
    + payload := createPrometheusWebhookPayload(PrometheusAlertPayload{...})
    + req, _ := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
@@ -106,7 +106,7 @@ For each test file (22-36):
    // ❌ REMOVE
    - if gatewayServer != nil { gatewayServer.Stop(ctx) }
    - k8sClient.Cleanup(ctx)
-   
+
    // ✅ REPLACE WITH
    + // Delete namespace directly
    + ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
@@ -197,6 +197,6 @@ All files need the same pattern of changes:
 
 ---
 
-**Created**: 2026-01-10 23:15 EST  
-**Priority**: P0 - Blocking E2E test execution  
+**Created**: 2026-01-10 23:15 EST
+**Priority**: P0 - Blocking E2E test execution
 **Next**: Start with Phase 1 (simple files)

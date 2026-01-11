@@ -11,7 +11,7 @@
 **Problem**: AIAnalysis controller emitting duplicate `aianalysis.analysis.completed` audit events in multi-controller test environment.
 
 **Root Cause**: Missing phase transition idempotency checks, allowing duplicate audit emissions when:
-- Status update conflicts trigger re-reconciliation  
+- Status update conflicts trigger re-reconciliation
 - Annotation/label changes trigger reconciles when phase hasn't changed
 - Multiple controllers race in parallel test execution (DD-TEST-010)
 
@@ -33,7 +33,7 @@ oldPhase := analysis.Status.Phase
 
 // AA-BUG-009: Idempotency check #1 - Per RO pattern
 // Skip if we're ALREADY in Completed state for this generation
-if analysis.Status.ObservedGeneration == analysis.Generation && 
+if analysis.Status.ObservedGeneration == analysis.Generation &&
    oldPhase == aianalysis.PhaseCompleted {
     h.log.Info("Already in Completed phase for this generation, skipping")
     return ctrl.Result{}, nil
@@ -62,9 +62,9 @@ if analysis.Status.Phase != oldPhase {
 ```go
 // AA-BUG-009: Idempotency check - Per RO pattern
 // Skip if we've ALREADY transitioned out of Investigating phase for this generation
-if analysis.Status.ObservedGeneration == analysis.Generation && 
-   (analysis.Status.Phase == aianalysis.PhaseAnalyzing || 
-    analysis.Status.Phase == aianalysis.PhaseCompleted || 
+if analysis.Status.ObservedGeneration == analysis.Generation &&
+   (analysis.Status.Phase == aianalysis.PhaseAnalyzing ||
+    analysis.Status.Phase == aianalysis.PhaseCompleted ||
     analysis.Status.Phase == aianalysis.PhaseFailed) {
     h.log.Info("Already transitioned out of Investigating phase for this generation",
         "generation", analysis.Generation,
@@ -134,7 +134,7 @@ Added to `docs/architecture/decisions/DD-CONTROLLER-001-observed-generation-idem
 oldPhase := analysis.Status.Phase
 
 // Skip if we're ALREADY in target phase
-if analysis.Status.ObservedGeneration == analysis.Generation && 
+if analysis.Status.ObservedGeneration == analysis.Generation &&
    oldPhase == PhaseCompleted {
     return ctrl.Result{}, nil // Skip, already transitioned
 }
