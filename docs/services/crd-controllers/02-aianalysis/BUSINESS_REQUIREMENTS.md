@@ -62,26 +62,35 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 #### BR-AI-002: Support Multiple Analysis Types
 
+**Status**: ⏸️ **DEFERRED TO v2.0**
+**Authority**: [DD-AIANALYSIS-005](../../../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md) - Multiple Analysis Types Feature Deferral
+
 **Description**: AIAnalysis MUST support multiple analysis types (diagnostic, predictive, prescriptive) through HolmesGPT-API.
 
-**Priority**: P1 (HIGH)
+**Priority**: ~~P1 (HIGH)~~ → Deferred to v2.0 (Jan 2026)
 
 **Rationale**: Different alert types require different investigation approaches. Diagnostic analysis identifies current issues, while predictive/prescriptive provide future guidance.
 
-**Implementation**:
-- HolmesGPT-API determines analysis type based on alert context
-- `status.analysisType`: Captured from HolmesGPT response
-- Investigation flow adapts to analysis type
+**v1.x Reality**:
+- ⚠️ Feature **NOT IMPLEMENTED** - `AnalysisTypes` field exists but is ignored by controller
+- ✅ Single analysis type supported per request
+- ❌ Multiple values in `AnalysisTypes` array are ignored
+- See [DD-AIANALYSIS-005](../../../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md) for full analysis
 
-**Acceptance Criteria**:
-- ✅ HolmesGPT-API handles analysis type determination
-- ✅ AIAnalysis passes through analysis results
+**v1.x Implementation**:
+- Controller makes exactly 1 HAPI call per reconciliation
+- Endpoint determines analysis type (incident/recovery/postexec)
+- Tests MUST use single-value `AnalysisTypes` arrays
 
-**Test Coverage**:
-- Integration: Various alert types trigger appropriate analysis
+**Deferred To v2.0**:
+- Multiple analysis types in single request
+- Diagnostic vs predictive vs prescriptive categorization
+- Pending business requirement validation
 
-**Implementation Files**:
-- `pkg/aianalysis/handlers/investigating.go` (delegates to HolmesGPT-API)
+**v1.x Test Coverage**:
+- ✅ Single incident analysis
+- ✅ Single recovery analysis
+- ✅ Workflow selection from single analysis
 
 ---
 
