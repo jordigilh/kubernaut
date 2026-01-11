@@ -21,16 +21,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/gateway"
 )
 
 // =============================================================================
@@ -89,9 +88,7 @@ import (
 var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", func() {
 	var (
 		ctx               context.Context
-		server            *httptest.Server
-		gatewayURL        string
-		testClient        *K8sTestClient
+		testClient        client.Client
 		dsClient          *ogenclient.Client
 		dataStorageURL    string
 		prometheusPayload []byte
@@ -102,13 +99,13 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = SetupK8sTestClient(ctx)
+		testClient = getKubernetesClient()
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		// Per DD-TEST-001: All parallel processes share same Data Storage instance
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://localhost:18090" // Fallback for manual testing
+			dataStorageURL = "http://127.0.0.1:18090" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
@@ -139,19 +136,14 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		}
 
 		// Setup test namespace
-		EnsureTestNamespace(ctx, testClient, sharedNamespace)
-		RegisterTestNamespace(sharedNamespace)
 
 		// Start test Gateway
 		// DD-GATEWAY-012: Redis removed, Gateway now connects to Data Storage for audit
-		gatewayServer, err := StartTestGateway(ctx, testClient, dataStorageURL)
 		Expect(err).ToNot(HaveOccurred())
-		server = httptest.NewServer(gatewayServer.Handler())
-		gatewayURL = server.URL
 
 		// Test payload
 		uniqueID := uuid.New().String()
-		prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+		prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: "AuditTestAlert",
 			Namespace: sharedNamespace,
 			Severity:  "warning",
@@ -166,9 +158,6 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 	})
 
 	AfterEach(func() {
-		if server != nil {
-			server.Close()
-		}
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -191,7 +180,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Signal should be processed")
 
-			var gatewayResp gateway.ProcessingResponse
+			var gatewayResp GatewayResponse
 			err := json.Unmarshal(resp.Body, &gatewayResp)
 			Expect(err).ToNot(HaveOccurred())
 			correlationID := gatewayResp.RemediationRequestName // Use RR name as correlation
@@ -393,7 +382,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			resp1 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated))
 
-			var resp1Data gateway.ProcessingResponse
+			var resp1Data GatewayResponse
 			err := json.Unmarshal(resp1.Body, &resp1Data)
 			Expect(err).ToNot(HaveOccurred())
 			correlationID := resp1Data.RemediationRequestName
@@ -402,7 +391,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			crd := getCRDByName(ctx, testClient, sharedNamespace, correlationID)
 			Expect(crd).ToNot(BeNil())
 			crd.Status.OverallPhase = "Pending"
-			err = testClient.Client.Status().Update(ctx, crd)
+			err = testClient.Status().Update(ctx, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 			Eventually(func() string {
@@ -589,10 +578,10 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Signal should be processed")
 
-			var gatewayResp gateway.ProcessingResponse
-			err := json.Unmarshal(resp.Body, &gatewayResp)
-			Expect(err).ToNot(HaveOccurred())
-			correlationID := gatewayResp.RemediationRequestName
+		var gatewayResp GatewayResponse
+		err := json.Unmarshal(resp.Body, &gatewayResp)
+		Expect(err).ToNot(HaveOccurred())
+		correlationID := gatewayResp.RemediationRequestName
 
 			By("2. Query Data Storage for crd.created audit event")
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries

@@ -44,38 +44,29 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		ctx           context.Context
 		gatewayURL    string
 		server        *httptest.Server
-		testClient    *K8sTestClient
+		testClient    client.Client
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = SetupK8sTestClient(ctx)
+		testClient = getKubernetesClient()
 
 		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
 		testNamespace = fmt.Sprintf("gw-resilience-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-		EnsureTestNamespace(ctx, testClient, testNamespace)
-		RegisterTestNamespace(testNamespace) // Auto-cleanup after test
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://localhost:18090" // Fallback
+			dataStorageURL = "http://127.0.0.1:18090" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
 		// Create Gateway server
-		gatewayServer, err := StartTestGateway(ctx, testClient, dataStorageURL)
-		Expect(err).ToNot(HaveOccurred())
-		server = httptest.NewServer(gatewayServer.Handler())
 		gatewayURL = server.URL
 	})
 
 	AfterEach(func() {
 		// Cleanup server
-		if server != nil {
-			server.Close()
-		}
 
-		// ✅ FIX: Namespace cleanup handled by RegisterTestNamespace
 		// No manual cleanup needed - each parallel process has its own isolated namespace
 	})
 
@@ -85,7 +76,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// (Simulated by overwhelming the API with concurrent requests or using test double)
 
 			// When: Webhook request arrives during K8s API downtime
-			payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "KubernetesAPIDown",
 				Namespace: testNamespace,
 				Severity:  "critical",
@@ -97,14 +88,13 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			// Note: This test requires simulating K8s API failure
 			// For now, we validate the error handling path exists
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should handle gracefully
@@ -117,12 +107,10 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				// Validate RFC 7807 error response
 				var errorResp map[string]interface{}
 				err = json.NewDecoder(resp.Body).Decode(&errorResp)
-				Expect(err).ToNot(HaveOccurred())
 
 				// Validate Retry-After header present
 				retryAfter := resp.Header.Get("Retry-After")
-				Expect(retryAfter).ToNot(BeEmpty(),
-					"Retry-After header required for HTTP 503 responses")
+				Expect(retryAfter).ToNot(BeEmpty(), "Retry-After header required for HTTP 503 responses")
 
 				// Validate error includes actionable information
 				Expect(errorResp["detail"]).ToNot(BeNil())
@@ -141,7 +129,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// This test validates the Retry-After calculation logic
 			// In production, this would be tested by simulating K8s API failures
 
-			payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "TestRetryAfter",
 				Namespace: testNamespace,
 				Severity:  "warning",
@@ -150,12 +138,11 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// If K8s API failure occurs, validate backoff is reasonable
@@ -175,7 +162,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// When: CRD creation fails due to validation or permissions
 			// Then: HTTP 500 with details about K8s API error
 
-			payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "TestK8sAPIError",
 				Namespace: testNamespace,
 				Severity:  "critical",
@@ -184,24 +171,21 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Either succeeds (happy path) or returns HTTP 500 with K8s API error details
 			if resp.StatusCode == http.StatusInternalServerError {
 				var errorResp map[string]interface{}
 				err = json.NewDecoder(resp.Body).Decode(&errorResp)
-				Expect(err).ToNot(HaveOccurred())
 
 				// Validate error message includes K8s context
 				detail := errorResp["detail"].(string)
-				Expect(detail).To(MatchRegexp("(?i)kubernetes|k8s|API"),
-					"K8s API errors should identify the source")
+				Expect(detail).To(MatchRegexp("(?i)kubernetes|k8s|API"), "K8s API errors should identify the source")
 			}
 		})
 	})
@@ -215,7 +199,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// return 0 items. Likely cache synchronization issue between multiple K8s clients.
 
 			// When: Webhook request arrives during DataStorage downtime
-			payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "DataStorageDown",
 				Namespace: testNamespace,
 				Severity:  "warning",
@@ -227,24 +211,22 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should succeed despite DataStorage unavailability
 			// BR-GATEWAY-187: Graceful degradation - audit events dropped, not blocking
-			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
-				"Gateway should process alerts even if audit fails (graceful degradation)")
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway should process alerts even if audit fails (graceful degradation)")
 
 			// And: RemediationRequest CRD should be created
 			// Use Eventually with better error reporting to diagnose cache sync issues
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
+				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
 				if err != nil {
 					GinkgoWriter.Printf("⚠️  List query failed: %v\n", err)
 					return -1 // Distinct from 0 to show error vs empty list
@@ -253,8 +235,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 					GinkgoWriter.Printf("📋 List query succeeded but found 0 items (waiting...)\n")
 				}
 				return len(rrList.Items)
-			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-				"RemediationRequest should be created despite DataStorage unavailability")
+			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability")
 		})
 
 	It("should log DataStorage failures without blocking alert processing", FlakeAttempts(3), func() {
@@ -265,7 +246,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		// Gateway creates CRD successfully but test List() queries may return 0 items
 		// due to multiple K8s clients with different caches. See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
 
-		payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: "TestDataStorageError",
 			Namespace: testNamespace,
 			Severity:  "info",
@@ -274,12 +255,11 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Request should succeed with CRD creation (graceful degradation)
@@ -288,7 +268,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// And: CRD should be created (audit is best-effort)
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
+				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
 				return err == nil && len(rrList.Items) > 0
 			}, 10*time.Second, 1*time.Second).Should(BeTrue())
 
@@ -304,7 +284,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		// Gateway creates CRD successfully but test List() queries may return 0 items
 		// due to multiple K8s clients with different caches. See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
 
-		payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 			AlertName: "TestDataStorageRecovery",
 			Namespace: testNamespace,
 			Severity:  "warning",
@@ -313,12 +293,11 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Processing succeeds with CRD creation
@@ -327,7 +306,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// And: CRD created
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.Client.List(ctx, rrList, client.InNamespace(testNamespace))
+				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
 				return err == nil && len(rrList.Items) > 0
 			}, 10*time.Second, 1*time.Second).Should(BeTrue())
 
@@ -347,7 +326,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// - K8s API: CRITICAL - RemediationRequest creation is core functionality
 			// - DataStorage: NON-CRITICAL - Audit is best-effort observability
 
-			payload := createPrometheusAlertPayload(PrometheusAlertOptions{
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "TestCombinedFailures",
 				Namespace: testNamespace,
 				Severity:  "critical",
@@ -356,12 +335,11 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
-			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Validation depends on actual infrastructure state

@@ -17,12 +17,16 @@ limitations under the License.
 package gateway
 
 import (
+	"context"
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -53,6 +57,7 @@ type PrometheusAlertPayload struct {
 	Namespace   string            `json:"namespace"`
 	Severity    string            `json:"severity"`
 	PodName     string            `json:"podName"`
+	Resource    ResourceIdentifier `json:"resource"`
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`
 }
@@ -242,4 +247,161 @@ func GenerateUniqueNamespace(prefix string) string {
 	processID := GinkgoParallelProcess()
 	timestamp := uuid.New().String()[:8]
 	return fmt.Sprintf("%s-%d-%s", prefix, processID, timestamp)
+}
+
+// =============================================================================
+// TEMPORARY STUBS for E2E test compilation
+// TODO (GW Team): Properly refactor tests to use E2E patterns
+// =============================================================================
+
+// TODO (GW Team): These are temporary stubs to make tests compile.
+// Tests using these need refactoring to E2E patterns (HTTP → gatewayURL)
+
+type PrometheusAlertOptions struct {
+	AlertName   string
+	Namespace   string
+	Severity    string
+	PodName     string
+	Resource    ResourceIdentifier
+	Labels      map[string]string
+	Annotations map[string]string
+}
+
+type ResourceIdentifier struct {
+	Kind string
+	Name string
+}
+
+// createPrometheusAlertPayload is a compatibility shim
+// TODO (GW Team): Replace calls with createPrometheusWebhookPayload
+func createPrometheusAlertPayload(opts PrometheusAlertOptions) []byte {
+	return createPrometheusWebhookPayload(PrometheusAlertPayload{
+		AlertName:   opts.AlertName,
+		Namespace:   opts.Namespace,
+		Severity:    opts.Severity,
+		PodName:     opts.PodName,
+		Labels:      opts.Labels,
+		Annotations: opts.Annotations,
+	})
+}
+
+
+// sendWebhook is a compatibility shim for E2E tests
+// TODO (GW Team): Replace calls with direct HTTP requests to gatewayURL
+func sendWebhook(baseURL, path string, payload []byte) *WebhookResponse {
+	req, err := http.NewRequest("POST", baseURL+path, bytes.NewBuffer(payload))
+	if err != nil {
+		return &WebhookResponse{StatusCode: 500, Body: []byte(err.Error())}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return &WebhookResponse{StatusCode: 500, Body: []byte(err.Error())}
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	return &WebhookResponse{
+		StatusCode: resp.StatusCode,
+		Body:       bodyBytes,
+		Headers:    resp.Header,
+	}
+}
+
+// TODO (GW Team): Additional stubs for compilation
+
+// GeneratePrometheusAlert generates a Prometheus alert payload (accepts either type)
+func GeneratePrometheusAlert(opts PrometheusAlertPayload) []byte {
+	return createPrometheusWebhookPayload(opts)
+}
+
+// SendWebhook sends a webhook request (compatibility shim)
+func SendWebhook(url string, payload []byte) *WebhookResponse {
+	return sendWebhookRequest(url, "/api/v1/signals/prometheus", payload)
+}
+
+// GetPrometheusMetrics fetches and parses metrics from a Prometheus /metrics endpoint
+// Returns a map of metric names (without labels) to their numeric values
+// Supports Prometheus text exposition format
+func GetPrometheusMetrics(url string) (map[string]float64, error) {
+	resp, err := http.Get(url) //nolint:gosec,noctx // E2E test helper, URL is controlled
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch metrics: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	metrics := make(map[string]float64)
+	scanner := bufio.NewScanner(resp.Body)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse metric line: "metric_name{labels} value timestamp"
+		// or simple format: "metric_name value"
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Extract metric name (before '{' if labels exist)
+		metricName := parts[0]
+		if idx := strings.Index(metricName, "{"); idx > 0 {
+			metricName = metricName[:idx]
+		}
+
+		// Parse value (second field)
+		value, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			// Skip unparseable values (e.g., "NaN", "Inf")
+			continue
+		}
+
+		// Store or sum metrics with same name (for different label combinations)
+		metrics[metricName] += value
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading metrics: %w", err)
+	}
+
+	return metrics, nil
+}
+
+// GetMetricSum sums all metric values that start with the given prefix
+// Used to aggregate counter values across different label combinations
+// Example: GetMetricSum(metrics, "gateway_signals_received_total")
+func GetMetricSum(metrics map[string]float64, prefix string) float64 {
+	sum := 0.0
+	for metricName, value := range metrics {
+		if strings.HasPrefix(metricName, prefix) {
+			sum += value
+		}
+	}
+	return sum
+}
+
+// PrometheusMetrics placeholder type
+type PrometheusMetrics map[string]float64
+
+// ListRemediationRequests lists RRs in a namespace
+// Returns empty slice if listing fails
+func ListRemediationRequests(ctx context.Context, k8sClient client.Client, namespace string) []remediationv1alpha1.RemediationRequest {
+	rrList := &remediationv1alpha1.RemediationRequestList{}
+	err := k8sClient.List(ctx, rrList, client.InNamespace(namespace))
+	if err != nil {
+		// Return empty slice on error - caller can check length
+		return []remediationv1alpha1.RemediationRequest{}
+	}
+	return rrList.Items
 }
