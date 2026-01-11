@@ -436,6 +436,10 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	// AFTER: Atomic refetch → apply all → single Status().Update()
 	// ========================================
 	oldPhase := sp.Status.Phase
+	// SP-BUG-ENRICHMENT-001: Check if enrichment already completed BEFORE status update
+	// This prevents duplicate audit events when controller reconciles same enrichment twice
+	enrichmentAlreadyCompleted := spconditions.IsConditionTrue(sp, spconditions.ConditionEnrichmentComplete)
+
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
 		// Apply enrichment updates after refetch
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Classifying handler after processing
@@ -456,8 +460,9 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 	// Record enrichment completion audit event (BR-SP-090)
 	// ADR-032: Audit is MANDATORY - return error if not configured
 	// RF-SP-003: Track actual enrichment duration for audit metrics
+	// SP-BUG-ENRICHMENT-001: Only emit audit if enrichment wasn't already completed
 	enrichmentDuration := int(time.Since(enrichmentStart).Milliseconds())
-	if err := r.recordEnrichmentCompleteAudit(ctx, sp, k8sCtx, enrichmentDuration); err != nil {
+	if err := r.recordEnrichmentCompleteAudit(ctx, sp, k8sCtx, enrichmentDuration, enrichmentAlreadyCompleted); err != nil {
 		// DD-005: Track phase processing failure (audit failure)
 		r.Metrics.IncrementProcessingTotal("enriching", "failure")
 		r.Metrics.ObserveProcessingDuration("enriching", time.Since(enrichmentStart).Seconds())
@@ -1181,10 +1186,20 @@ func (r *SignalProcessingReconciler) recordPhaseTransitionAudit(ctx context.Cont
 // recordEnrichmentCompleteAudit records an enrichment completion audit event.
 // ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
 // RF-SP-003: Now tracks actual enrichment duration for audit metrics.
-func (r *SignalProcessingReconciler) recordEnrichmentCompleteAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, durationMs int) error {
+// SP-BUG-ENRICHMENT-001: Prevents duplicate audit events when enrichment already completed (race condition mitigation).
+func (r *SignalProcessingReconciler) recordEnrichmentCompleteAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, durationMs int, alreadyCompleted bool) error {
 	if r.AuditClient == nil {
 		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
 	}
+
+	// SP-BUG-ENRICHMENT-001: Idempotency guard - skip if enrichment was already completed before this reconciliation
+	// This prevents duplicate events when controller processes same enrichment phase twice due to K8s cache/watch timing
+	// Similar to SP-BUG-002 for phase transitions
+	if alreadyCompleted {
+		// Enrichment already completed and audited - skip to prevent duplicate
+		return nil
+	}
+
 	// Create a temporary SP with enriched context for audit
 	auditSP := sp.DeepCopy()
 	auditSP.Status.KubernetesContext = k8sCtx
