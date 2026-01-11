@@ -53,7 +53,7 @@
 
 | BR ID | Description | Current Coverage | Business Risk |
 |-------|-------------|------------------|---------------|
-| BR-AI-002 | Multiple analysis types | ❌ None | Medium - Feature unused |
+| BR-AI-002 | Multiple analysis types | ⏸️ Deferred v2.0 | DD-AIANALYSIS-005 (not implemented) |
 | BR-AI-003 | Confidence scoring | 🟡 Partial | High - SLA impact |
 | BR-AI-008 | Historical success rates | ❌ None | Medium - Optimization |
 | BR-AI-010 | Evidence-based explanations | 🟡 Partial | Medium - Operator trust |
@@ -759,13 +759,17 @@ Context("Confidence Threshold Boundary - BR-AI-003, BR-AI-022", func() {
 
 ### Priority 8: Multiple Analysis Types (Low-Medium Impact)
 
-#### 14. **Analysis Type Support - BR-AI-002**
+#### 14. **Analysis Type Support - BR-AI-002** → ⏸️ **DEFERRED TO v2.0**
+
+**Status**: See [DD-AIANALYSIS-005](../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md)
 
 **Business Outcome**: Support diagnostic and predictive analysis types
 
-**Edge Case**: Multiple analysis types in single request
+**v1.x Reality**: Feature not implemented. Single analysis type only.
+
+**Edge Case** (Deferred to v2.0): Multiple analysis types in single request
 ```go
-Context("Multiple Analysis Types - BR-AI-002", func() {
+Context("Multiple Analysis Types - BR-AI-002 [DEFERRED v2.0]", func() {
     It("should support diagnostic analysis type", func() {
         By("Creating analysis with diagnostic type")
         analysis := createTestAnalysis()
@@ -825,7 +829,7 @@ Context("Multiple Analysis Types - BR-AI-002", func() {
 - Supports advanced use cases
 - Lower priority (not commonly used in V1.0)
 
-**Authoritative Reference**: BR-AI-002 (BR_MAPPING.md:85)
+**Authoritative Reference**: [DD-AIANALYSIS-005](../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md) (BR-AI-002 deferred to v2.0)
 
 ---
 

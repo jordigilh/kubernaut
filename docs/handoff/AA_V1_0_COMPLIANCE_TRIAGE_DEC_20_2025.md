@@ -33,7 +33,7 @@ The AIAnalysis service is **APPROVED FOR V1.0 RELEASE** with comprehensive compl
 | BR | Requirement | Status | Evidence |
 |----|-------------|--------|----------|
 | **BR-AI-001** | Contextual analysis of K8s alerts | ✅ | `handlers/investigating.go:316-384` |
-| **BR-AI-002** | Support multiple analysis types | ✅ | HolmesGPT-API integration via ADR-045 |
+| **BR-AI-002** | Support multiple analysis types | ⏸️ Deferred v2.0 | DD-AIANALYSIS-005 (single type only) |
 | **BR-AI-003** | Structured results with confidence scoring | ✅ | `status.selectedWorkflow.confidence` |
 | **BR-AI-007** | Generate actionable recommendations | ✅ | `InvestigatingHandler` produces workflow selection |
 | **BR-AI-012** | Root cause analysis | ✅ | `status.investigationSummary` populated |
