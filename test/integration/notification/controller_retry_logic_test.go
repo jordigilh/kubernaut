@@ -58,6 +58,12 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			// TEST SETUP: Mock file service that always fails with RETRYABLE error
 			// ========================================
+			// BR-NOT-052: "maximum of 5 attempts per channel"
+			// Expected behavior with MaxAttempts=5:
+			//   - Console: 1 attempt (succeeds immediately)
+			//   - File: 5 attempts (all fail, MaxAttempts=5 enforced per channel)
+			//   - Total: 6 attempts recorded in status
+			// ========================================
 			mockFileService := &testutil.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					// Return retryable error so controller will retry
@@ -177,13 +183,13 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			elapsedTime := time.Since(startTime)
 
-			By("Validating retry statistics (BR-NOT-054)")
-			Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
-				"Console delivery should succeed (1 successful)")
-			Expect(notification.Status.FailedDeliveries).To(Equal(1),
-				"File delivery should fail after max retries (1 failed)")
-			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(5),
-				"Should record all 5 delivery attempts (initial + 4 retries)")
+		By("Validating retry statistics (BR-NOT-054)")
+		Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
+			"Console delivery should succeed (1 successful)")
+		Expect(notification.Status.FailedDeliveries).To(Equal(1),
+			"File delivery should fail after max retries (1 failed)")
+		Expect(len(notification.Status.DeliveryAttempts)).To(Equal(6),
+			"Should record 6 total attempts (1 console success + 5 file failures with MaxAttempts=5)")
 
 			By("Validating exponential backoff timing")
 			// Expected minimum time: 1s + 2s + 4s + 8s + 10s = 25s
@@ -197,11 +203,16 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			mockFileCallCount := mockFileService.GetCallCount()
 			mockConsoleCallCount := mockConsoleService.GetCallCount()
 
-			GinkgoWriter.Printf("\n🔍 DEBUG: Mock Call Counts:\n")
-			GinkgoWriter.Printf("  File service calls: %d (expected: 5)\n", mockFileCallCount)
-			GinkgoWriter.Printf("  Console service calls: %d (expected: 1)\n", mockConsoleCallCount)
-			GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 5)\n", len(notification.Status.DeliveryAttempts))
-			GinkgoWriter.Printf("\n🔍 CRITICAL: If file calls=5 but status<5, it's a STATUS RECORDING BUG\n\n")
+		GinkgoWriter.Printf("\n🔍 DEBUG: Mock Call Counts:\n")
+		GinkgoWriter.Printf("  File service calls: %d (expected: 5 per BR-NOT-052 MaxAttempts)\n", mockFileCallCount)
+		GinkgoWriter.Printf("  Console service calls: %d (expected: 1 - succeeded immediately)\n", mockConsoleCallCount)
+		GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 6 total = 1 console + 5 file)\n", len(notification.Status.DeliveryAttempts))
+		GinkgoWriter.Printf("\n🔍 BR-NOT-052: MaxAttempts=5 is enforced PER CHANNEL, not total\n\n")
+
+		Expect(mockFileCallCount).To(Equal(5),
+			"File service should be called exactly 5 times (BR-NOT-052: MaxAttempts=5 per channel)")
+		Expect(mockConsoleCallCount).To(Equal(1),
+			"Console service should be called once (succeeded immediately, no retries needed)")
 
 			Expect(mockFileCallCount).To(Equal(5),
 				"🔍 CRITICAL: File service should be called 5 times - if this fails, controller isn't making 5 attempts")

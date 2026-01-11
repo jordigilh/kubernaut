@@ -165,7 +165,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 			EventAction:    "baseline_write",
-			EventData:      newMinimalGatewayPayload("prometheus", "PodCrashLooping"),
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "PodCrashLooping"),
 		}
 
 		eventID := createAuditEventOpenAPI(ctx, dsClient, baselineEvent)
@@ -212,7 +212,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback Reliability - No Data Loss During Outa
 			CorrelationID:  correlationID,
 			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
 			EventAction:    "network_partition_write",
-			EventData:      newMinimalGatewayPayload("prometheus", "NodeNotReady"),
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "NodeNotReady"),
 		}
 
 		eventID = createAuditEventOpenAPI(ctx, dsClient, outageEvent)
