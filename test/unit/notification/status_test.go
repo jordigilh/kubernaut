@@ -50,7 +50,7 @@ var _ = Describe("BR-NOT-051: Status Tracking", func() {
 			WithStatusSubresource(&notificationv1alpha1.NotificationRequest{}).
 			Build()
 
-		statusManager = status.NewManager(fakeClient)
+		statusManager = status.NewManager(fakeClient, fakeClient)
 	})
 
 	Context("DeliveryAttempts tracking", func() {

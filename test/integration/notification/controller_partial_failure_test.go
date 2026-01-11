@@ -55,6 +55,16 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 	Context("When file channel fails but console/log channels succeed", func() {
 		It("should mark notification as PartiallySent (not Sent, not Failed)", func() {
 			// ========================================
+			// PARALLEL EXECUTION FIX: Lock orchestrator mock sequence
+			// sync.Map provides thread-safety, but we need to serialize:
+			// register mocks → test execution → restore original services
+			// ========================================
+			orchestratorMockLock.Lock()
+			DeferCleanup(func() {
+				orchestratorMockLock.Unlock()
+			})
+
+			// ========================================
 			// TEST SETUP: Mock services with controlled failure
 			// ========================================
 			mockConsoleService := &testutil.MockDeliveryService{
@@ -125,6 +135,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			// PHASE 1: Wait for delivery attempts
 			// ========================================
 			By("Waiting for controller to attempt delivery to all channels")
+			// DD-STATUS-001: Increased timeout for parallel execution (12 procs)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				err := k8sClient.Get(ctx, client.ObjectKey{
 					Name:      notification.Name,
@@ -134,7 +145,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 					return ""
 				}
 				return notification.Status.Phase
-			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
 				"DD-E2E-003: Permanent error (not retryable) → immediate PartiallySent")
 
 			// Ensure phase is stable (no more reconciles) before checking call counts
@@ -153,6 +164,20 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			// ========================================
 			// ASSERTIONS: Partial Failure State Validation
 			// ========================================
+			// DD-STATUS-001: Wait for all delivery attempts to propagate
+			// Increased timeout for parallel execution (12 procs)
+			Eventually(func() int {
+				err := k8sAPIReader.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return -1
+				}
+				return len(notification.Status.DeliveryAttempts)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(3),
+				"DD-STATUS-001: Wait for all 3 channel attempts")
+
 			By("Validating partial failure statistics (BR-NOT-053)")
 			Expect(notification.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
 				"Phase must be PartiallySent (not Sent, not Failed)")
@@ -262,6 +287,19 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				return notification.Status.Phase
 			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent))
 
+			// DD-STATUS-001: Wait for all delivery attempts to propagate
+			Eventually(func() int {
+				err := k8sAPIReader.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return -1
+				}
+				return len(notification.Status.DeliveryAttempts)
+			}, 5*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 3),
+				"DD-STATUS-001: Wait for delivery attempts")
+
 			By("Validating statistics")
 			Expect(notification.Status.SuccessfulDeliveries).To(Equal(2),
 				"File and log should succeed")
@@ -359,6 +397,20 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				return notification.Status.Phase
 			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseFailed),
 				"Should transition to Failed when ALL channels fail")
+
+			// DD-STATUS-001: Wait for all delivery attempts to propagate
+			// Increased timeout for parallel execution (12 procs)
+			Eventually(func() int {
+				err := k8sAPIReader.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return -1
+				}
+				return len(notification.Status.DeliveryAttempts)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(3),
+				"DD-STATUS-001: Wait for all 3 channel attempts")
 
 			By("Validating failure statistics")
 			Expect(notification.Status.SuccessfulDeliveries).To(Equal(0),

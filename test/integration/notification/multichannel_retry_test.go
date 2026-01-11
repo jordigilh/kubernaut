@@ -190,10 +190,10 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 			Expect(notif.Status.SuccessfulDeliveries).To(Equal(1),
 				"Console should succeed (Slack configured to always fail)")
 
-			// CORRECTNESS VALIDATION: Slack retries according to policy (3 attempts)
+			// DD-E2E-003: Counter Semantics - FailedDeliveries counts UNIQUE CHANNELS, not attempts
 			// NT-BUG-005 Fix: MaxAttempts = 3 (reduced for faster test)
-			Expect(notif.Status.FailedDeliveries).To(Equal(3),
-				"Slack should fail all 3 retry attempts (always-fail mode)")
+			Expect(notif.Status.FailedDeliveries).To(Equal(1),
+				"Slack channel fails (1 failed channel, not 3 attempts) - DD-E2E-003")
 
 			// BEHAVIOR VALIDATION: Total attempts = Console (1 success) + Slack (3 failed retries)
 			Expect(notif.Status.DeliveryAttempts).To(HaveLen(4),
@@ -268,27 +268,40 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
 
 			// NT-BUG-005 Fix: Wait for ALL retries to exhaust (not just first failure)
-			// Notification enters Failed phase after attempt 1, but continues retrying
-			// We need to wait until all 3 attempts are recorded before checking counts
+			// DD-STATUS-001: Use API reader to bypass cache in parallel execution
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sAPIReader.Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
 				if err != nil {
 					return false
 				}
-				// Wait for Failed phase AND all 3 attempts exhausted
+				// Wait for Failed phase AND slack channel exhausted (1 unique channel)
+				// Counter semantics: FailedDeliveries = unique channels that ultimately failed
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed &&
-					notif.Status.FailedDeliveries == 3
-			}, 20*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Should mark as Failed when all channels fail after exhausting all 3 retry attempts")
+					notif.Status.FailedDeliveries == 1
+			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
+				"Should mark as Failed when all channels fail after exhausting retry attempts")
+
+			// Verify all 3 delivery attempts were recorded
+			Eventually(func() int {
+				err := k8sAPIReader.Get(ctx, types.NamespacedName{
+					Name:      notifName,
+					Namespace: testNamespace,
+				}, notif)
+				if err != nil {
+					return -1
+				}
+				return len(notif.Status.DeliveryAttempts)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(3),
+				"Should have exactly 3 delivery attempts (1 initial + 2 retries)")
 
 			// CORRECTNESS VALIDATION: Verify exact failure count
 			Expect(notif.Status.SuccessfulDeliveries).To(Equal(0),
 				"No successful deliveries when all channels fail")
-			Expect(notif.Status.FailedDeliveries).To(Equal(3),
-				"Should have exactly 3 failed attempts (verified by Eventually condition)")
+			Expect(notif.Status.FailedDeliveries).To(Equal(1),
+				"Should have exactly 1 failed channel (slack)")
 
 			GinkgoWriter.Printf("✅ All channels failed as expected: %d failed deliveries\n",
 				notif.Status.FailedDeliveries)

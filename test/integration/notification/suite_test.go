@@ -72,6 +72,7 @@ var (
 	testEnv         *envtest.Environment
 	cfg             *rest.Config
 	k8sClient       client.Client
+	k8sAPIReader    client.Reader // DD-STATUS-001: Cache-bypassed reader for test assertions
 	k8sManager      ctrl.Manager
 	testNamespace   string // Default test namespace (kubernaut-notifications)
 	mockSlackServer *httptest.Server
@@ -89,6 +90,11 @@ var (
 	// Original console and slack services for restoration after mock tests
 	originalConsoleService *delivery.ConsoleDeliveryService
 	originalSlackService   *delivery.SlackDeliveryService
+
+	// orchestratorMockLock serializes mock registration/test/cleanup to prevent logical races
+	// sync.Map provides thread-safety, but tests still need to lock the sequence:
+	// register mocks → create NotificationRequest → validate → restore original services
+	orchestratorMockLock sync.Mutex
 )
 
 // SlackWebhookRequest captures mock Slack webhook calls
@@ -223,6 +229,14 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	By("Creating cache-bypassed API reader for test assertions (DD-STATUS-001)")
+	// DD-STATUS-001: Create a DelegatingClient that bypasses cache for NotificationRequest
+	// This ensures tests read fresh status updates from the API server
+	uncachedClient, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred())
+	k8sAPIReader = uncachedClient // Use as API reader for test assertions
+	GinkgoWriter.Println("  ✅ Cache-bypassed API reader initialized (DD-STATUS-001)")
+
 	By("Creating namespaces for testing")
 	// Create kubernaut-notifications namespace for controller
 	testNamespace = "kubernaut-notifications"
@@ -319,8 +333,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("  ✅ Metrics recorder initialized (Pattern 1)")
 
 	// Pattern 2: Create Status Manager for centralized status updates
-	statusManager := notificationstatus.NewManager(k8sManager.GetClient())
-	GinkgoWriter.Println("  ✅ Status Manager initialized (Pattern 2)")
+	// DD-STATUS-001: Pass API reader to bypass cache for fresh refetches
+	statusManager := notificationstatus.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader())
+	GinkgoWriter.Println("  ✅ Status Manager initialized (Pattern 2 + DD-STATUS-001)")
 
 	// DD-NOT-007: Registration Pattern (MANDATORY)
 	// Pattern 3: Create Delivery Orchestrator with NO channel parameters
