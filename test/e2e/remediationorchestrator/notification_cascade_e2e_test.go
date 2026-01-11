@@ -54,8 +54,6 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 
 	Describe("Single NotificationRequest Cascade Deletion", func() {
 		It("should cascade delete NotificationRequest when RemediationRequest is deleted", func() {
-			Skip("PENDING: Awaiting Notification controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO.")
-
 			testNamespace := createTestNamespace("ro-notif-cascade-single")
 			defer deleteTestNamespace(testNamespace)
 
@@ -120,8 +118,6 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 
 	Describe("Multiple NotificationRequests Cascade Deletion", func() {
 		It("should cascade delete multiple NotificationRequests when RemediationRequest is deleted", func() {
-			Skip("PENDING: Awaiting Notification controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO.")
-
 			testNamespace := createTestNamespace("ro-notif-cascade-multi")
 			defer deleteTestNamespace(testNamespace)
 

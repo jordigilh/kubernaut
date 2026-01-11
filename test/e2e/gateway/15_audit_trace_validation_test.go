@@ -74,7 +74,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// Setup OpenAPI audit client for Data Storage
 		// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: MUST use OpenAPI client for audit tests
-		dataStorageURL := "http://localhost:18091" // Kind hostPort maps to NodePort 30081
+		dataStorageURL := "http://127.0.0.1:18091" // Kind hostPort maps to NodePort 30081 - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		auditClient, _ = dsgen.NewClient(dataStorageURL)
 
 		testLogger.Info("OpenAPI audit client initialized", "dataStorageURL", dataStorageURL)
@@ -148,7 +148,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		})
 
 		// Use the package-level gatewayURL variable (set in gateway_e2e_suite_test.go)
-		// gatewayURL = "http://localhost:30080" (NodePort from gateway-deployment.yaml)
+		// gatewayURL = "http://127.0.0.1:8080" (extraPortMapping hostPort - Use 127.0.0.1 for CI/CD IPv4 compatibility)
 		resp, err := func() (*http.Response, error) {
 			req23, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(alertPayload))
 			if err != nil {
@@ -194,25 +194,25 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		var auditEvents []dsgen.AuditEvent
 		Eventually(func() int {
 			// Query using OpenAPI client with typed parameters
-		// Note: No "Service" parameter - use EventCategory instead
-		eventCategory := "gateway"
-		resp, err := auditClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
-			EventCategory: dsgen.NewOptString(eventCategory),
-			CorrelationID: dsgen.NewOptString(correlationID),
-		})
-		if err != nil {
-			testLogger.Info("Failed to query audit events (will retry)", "error", err)
-			return 0
-		}
+			// Note: No "Service" parameter - use EventCategory instead
+			eventCategory := "gateway"
+			resp, err := auditClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
+				EventCategory: dsgen.NewOptString(eventCategory),
+				CorrelationID: dsgen.NewOptString(correlationID),
+			})
+			if err != nil {
+				testLogger.Info("Failed to query audit events (will retry)", "error", err)
+				return 0
+			}
 
-	// Access typed response directly (ogen pattern)
-	auditEvents = resp.Data
-	total := 0
-	if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
-		total = resp.Pagination.Value.Total.Value
-	}
-	testLogger.Info("Audit events found", "count", total)
-	return total
+			// Access typed response directly (ogen pattern)
+			auditEvents = resp.Data
+			total := 0
+			if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
+				total = resp.Pagination.Value.Total.Value
+			}
+			testLogger.Info("Audit events found", "count", total)
+			return total
 		}, 30*time.Second, 2*time.Second).Should(Equal(2),
 			"BR-GATEWAY-190: Gateway MUST emit exactly 2 audit events (signal.received + crd.created) to Data Storage (DD-TESTING-001)")
 
@@ -242,7 +242,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			EventType:     gateway.EventTypeSignalReceived,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "received",
-			EventOutcome: testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
+			EventOutcome:  testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
 			ResourceType:  testutil.StringPtr("Signal"),
 			ResourceID:    testutil.StringPtr(fingerprint),
@@ -254,22 +254,22 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			"correlation_id", correlationID,
 			"fingerprint", fingerprint)
 
-	By("4. Verify Gateway-specific event_data fields")
-	// Access strongly-typed Gateway payload (ogen discriminated union)
-	gatewayPayload := signalEvent.EventData.GatewayAuditPayload
+		By("4. Verify Gateway-specific event_data fields")
+		// Access strongly-typed Gateway payload (ogen discriminated union)
+		gatewayPayload := signalEvent.EventData.GatewayAuditPayload
 
-	// Validate Gateway-specific fields exist (using strongly-typed payload)
-	Expect(gatewayPayload.SignalType).ToNot(BeEmpty(),
-		"Gateway event_data should include signal_type (e.g., 'prometheus-alert')")
-	Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
-		"Gateway event_data should include alert_name")
-	Expect(gatewayPayload.Namespace).To(Equal(testNamespace),
-		"Gateway event_data should include namespace")
-	Expect(gatewayPayload.RemediationRequest.Set).To(BeTrue(),
-		"Gateway event_data should include remediation_request reference")
-	Expect(gatewayPayload.DeduplicationStatus.Set).To(BeTrue(), "DeduplicationStatus should be set")
-	Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("new"),
-		"Gateway event_data should mark first signal as 'new'")
+		// Validate Gateway-specific fields exist (using strongly-typed payload)
+		Expect(gatewayPayload.SignalType).ToNot(BeEmpty(),
+			"Gateway event_data should include signal_type (e.g., 'prometheus-alert')")
+		Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
+			"Gateway event_data should include alert_name")
+		Expect(gatewayPayload.Namespace).To(Equal(testNamespace),
+			"Gateway event_data should include namespace")
+		Expect(gatewayPayload.RemediationRequest.Set).To(BeTrue(),
+			"Gateway event_data should include remediation_request reference")
+		Expect(gatewayPayload.DeduplicationStatus.Set).To(BeTrue(), "DeduplicationStatus should be set")
+		Expect(string(gatewayPayload.DeduplicationStatus.Value)).To(Equal("new"),
+			"Gateway event_data should mark first signal as 'new'")
 
 		testLogger.Info("✅ All Gateway-specific event_data fields validated")
 
@@ -289,7 +289,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 			EventType:     gateway.EventTypeCRDCreated,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "created",
-			EventOutcome: testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
+			EventOutcome:  testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
 			ResourceType:  testutil.StringPtr("RemediationRequest"),
 			Namespace:     testutil.StringPtr(testNamespace),
