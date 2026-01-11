@@ -3,15 +3,18 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
+	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
 // BR-001: Prometheus AlertManager webhook ingestion
@@ -31,13 +34,15 @@ import (
 
 var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests", func() {
 	var (
-		ctx           context.Context
-		cancel        context.CancelFunc
-		testServer    *httptest.Server
-		gatewayServer *gateway.Server
-		k8sClient     *K8sTestClient
-		testNamespace string
-		testCounter   int
+		ctx               context.Context
+		cancel            context.CancelFunc
+		k8sClient         *K8sTestClient
+		k8sClientWrapper  *K8sClientWrapper
+		prometheusAdapter *adapters.PrometheusAdapter
+		crdCreator        *processing.CRDCreator
+		logger            logr.Logger
+		testNamespace     string
+		testCounter       int
 	)
 
 	BeforeEach(func() {
@@ -51,31 +56,24 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			testCounter)
 
 		// Setup test infrastructure
-
 		k8sClient = SetupK8sTestClient(ctx)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required")
-
-		// Clean Redis state
 
 		// Ensure test namespace exists
 		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 		RegisterTestNamespace(testNamespace)
 
-		// Start Gateway server
-		var startErr error
-		gatewayServer, startErr = StartTestGateway(ctx, k8sClient, getDataStorageURL())
-		Expect(startErr).ToNot(HaveOccurred(), "Gateway should start")
-		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should exist")
-
-		// Create HTTP test server
-		testServer = httptest.NewServer(gatewayServer.Handler())
-		Expect(testServer).ToNot(BeNil(), "HTTP test server should exist")
+		// ✅ Initialize business logic components (NO HTTP server)
+		logger = logr.Discard()
+		prometheusAdapter = adapters.NewPrometheusAdapter()
+		k8sClientWrapper = &K8sClientWrapper{Client: k8sClient.Client}
+		crdCreator = processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), testNamespace, &config.RetrySettings{
+			MaxAttempts:    3,
+			InitialBackoff: 100 * time.Millisecond,
+		})
 	})
 
 	AfterEach(func() {
-		if testServer != nil {
-			testServer.Close()
-		}
 		if cancel != nil {
 			cancel()
 		}
@@ -92,7 +90,7 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			// - Integration: Tests with real Kubernetes API (THIS TEST)
 			// - E2E: Tests complete workflows with real cluster
 
-			// STEP 1: Send alert for specific namespace
+			// ✅ Step 1: Parse Prometheus alert
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "K8sAPITest",
 				Namespace: testNamespace,
@@ -102,11 +100,14 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 					Name: "test-pod",
 				},
 			})
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(201), "Alert should be accepted")
+			// ✅ Step 2: Create CRD in K8s
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).ToNot(HaveOccurred(), "Alert should be accepted")
 
-			// STEP 2: Verify CRD created in correct namespace
+			// STEP 3: Verify CRD created in correct namespace
 			var crd remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				crdList := &remediationv1alpha1.RemediationRequestList{}
@@ -142,7 +143,7 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			// WHY: Operators need to filter CRDs by severity, environment, priority
 			// EXPECTED: All labels set correctly for kubectl queries
 
-			// STEP 1: Send production critical alert
+			// ✅ Step 1: Parse production critical alert
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "MetadataTest",
 				Namespace: testNamespace,
@@ -151,11 +152,14 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 					"environment": "production",
 				},
 			})
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(201), "Alert should be accepted")
+			// ✅ Step 2: Create CRD
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).ToNot(HaveOccurred(), "Alert should be accepted")
 
-			// STEP 2: Query CRD using Kubernetes API labels
+			// STEP 3: Query CRD using Kubernetes API labels
 			var crd remediationv1alpha1.RemediationRequest
 			Eventually(func() error {
 				crdList := &remediationv1alpha1.RemediationRequestList{}
@@ -191,15 +195,17 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 			// WHY: Prevents CRD creation failures due to invalid namespaces
 			// EXPECTED: Valid namespace → CRD created, Invalid namespace → fallback to kubernaut-system
 
-			// STEP 1: Create alert for valid namespace (should succeed)
+			// ✅ Step 1: Parse and create alert for valid namespace
 			validPayload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "ValidNamespaceTest",
 				Namespace: testNamespace,
 				Severity:  "warning",
 			})
+			signal1, err := prometheusAdapter.Parse(ctx, validPayload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", validPayload)
-			Expect(resp1.StatusCode).To(Equal(201), "Valid namespace should succeed")
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal1)
+			Expect(err).ToNot(HaveOccurred(), "Valid namespace should succeed")
 
 			// Verify CRD in correct namespace
 			Eventually(func() int {
@@ -208,16 +214,23 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 				return len(crdList.Items)
 			}, "30s", "500ms").Should(Equal(1), "CRD should be in valid namespace")
 
-			// STEP 2: Create alert for invalid namespace (should fallback)
+			// ✅ Step 2: Parse alert for invalid namespace
 			invalidNamespace := fmt.Sprintf("invalid-ns-%d", time.Now().UnixNano())
 			invalidPayload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "InvalidNamespaceTest",
 				Namespace: invalidNamespace,
 				Severity:  "warning",
 			})
+			signal2, err := prometheusAdapter.Parse(ctx, invalidPayload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", invalidPayload)
-			Expect(resp2.StatusCode).To(Equal(201), "Invalid namespace should fallback gracefully")
+			// ✅ Step 3: Create CRD with fallback namespace handling
+			crdCreatorFallback := processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), "kubernaut-system", &config.RetrySettings{
+				MaxAttempts:    3,
+				InitialBackoff: 100 * time.Millisecond,
+			})
+			_, err = crdCreatorFallback.CreateRemediationRequest(ctx, signal2)
+			Expect(err).ToNot(HaveOccurred(), "Invalid namespace should fallback gracefully")
 
 			// Verify CRD in fallback namespace (kubernaut-system)
 			var fallbackCRD *remediationv1alpha1.RemediationRequest
