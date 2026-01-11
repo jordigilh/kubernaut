@@ -202,28 +202,18 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	case signalprocessingv1alpha1.PhaseCategorizing:
 		result, err = r.reconcileCategorizing(ctx, sp, logger)
 	default:
-		// Unknown phase - transition to enriching (DD-PERF-001)
-		oldPhase := sp.Status.Phase
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Phase transition in single API call
-		// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Enriching handler after processing
-		// ========================================
-		err := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
-			sp.Status.Phase = signalprocessingv1alpha1.PhaseEnriching
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-
-		// Record phase transition audit event (BR-SP-090)
-		// ADR-032: Audit is MANDATORY - return error if not configured
-		if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseEnriching)); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		return ctrl.Result{Requeue: true}, nil
+		// SP-BUG-005: Unexpected phase encountered
+		// All valid phases are handled above. If we reach here, it indicates:
+		// 1. Phase value was corrupted
+		// 2. Race condition in K8s cache
+		// 3. Test created resource with invalid phase
+		// Log error and requeue without emitting audit event (prevents extra transitions)
+		logger.Error(fmt.Errorf("unexpected phase: %s", sp.Status.Phase),
+			"Unknown phase encountered - requeueing without transition",
+			"phase", sp.Status.Phase,
+			"resourceVersion", sp.ResourceVersion,
+			"generation", sp.Generation)
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// DD-SHARED-001: Handle transient errors with exponential backoff

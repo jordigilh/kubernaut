@@ -490,6 +490,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		Expect(payload.Endpoint).ToNot(BeEmpty(), "event_data should include HolmesGPT endpoint")
 		Expect(payload.HTTPStatusCode).To(Equal(int32(200)), "Successful HolmesGPT call should return 200")
 		Expect(payload.DurationMs).To(BeNumerically(">", 0), "Duration should be positive")
+
+		// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field (BR-AI-002: Performance tracking)
+		topLevelDuration, hasDuration := event.DurationMs.Get()
+		Expect(hasDuration).To(BeTrue(), "DD-TESTING-001: Top-level duration_ms MUST be set for performance tracking")
+		Expect(topLevelDuration).To(BeNumerically(">", 0), "Top-level duration should be positive")
+		Expect(topLevelDuration).To(Equal(int(payload.DurationMs)), "Top-level and payload durations should match")
 		})
 
 		It("should audit errors during investigation phase", func() {
@@ -973,6 +979,12 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		Expect(payload.Endpoint).ToNot(BeEmpty(), "event_data should include HolmesGPT endpoint")
 		Expect(payload.HTTPStatusCode).ToNot(BeZero(), "event_data should include HTTP status code")
 		Expect(payload.DurationMs).To(BeNumerically(">", 0), "Duration should be positive even for failed calls")
+
+		// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field
+		topLevelDuration, hasDuration := event.DurationMs.Get()
+		Expect(hasDuration).To(BeTrue(), "DD-TESTING-001: Top-level duration_ms MUST be set even for failures")
+		Expect(topLevelDuration).To(BeNumerically(">", 0), "Top-level duration should be positive")
+		Expect(topLevelDuration).To(Equal(int(payload.DurationMs)), "Top-level and payload durations should match")
 		})
 	})
 })

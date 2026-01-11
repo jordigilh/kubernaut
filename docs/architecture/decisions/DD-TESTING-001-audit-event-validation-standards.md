@@ -335,7 +335,54 @@ It("should validate Rego evaluation event_data structure", func() {
 
 ---
 
-### **Pattern 6: Event Category and Outcome Validation**
+### **Pattern 6: Top-Level Optional Field Validation**
+
+**MANDATORY**: Validate top-level optional fields (duration_ms, error_code, error_message) when business requirements specify them.
+
+**Why This Pattern?**
+Services emit audit data in **TWO locations**:
+1. **Top-level fields** (database columns: `duration_ms`, `error_code`, `error_message`)
+2. **event_data payload** (JSONB: structured per DD-AUDIT-004)
+
+Both MUST be validated to ensure complete audit trail integrity.
+
+```go
+// ✅ CORRECT: Validate top-level DurationMs field (BR-SP-090: Performance Tracking)
+It("should capture enrichment duration at top-level for performance tracking", func() {
+    // ... wait for enrichment event ...
+
+    enrichmentEvents := waitForAuditEvents(correlationID, "signalprocessing.enrichment.completed", 1)
+    event := enrichmentEvents[0]
+
+    // Validate top-level duration_ms field (stored in database column)
+    durationMs, hasDuration := event.DurationMs.Get()
+    Expect(hasDuration).To(BeTrue(), "BR-SP-090: Duration MUST be captured for performance tracking")
+    Expect(durationMs).To(BeNumerically(">", 0), "Duration should be positive")
+
+    // ALSO validate duration in event_data payload (per DD-AUDIT-004)
+    payload := event.EventData.SignalProcessingEnrichmentPayload
+    Expect(payload.DurationMs.Value).To(Equal(durationMs), "Top-level and payload durations should match")
+})
+```
+
+**❌ FORBIDDEN: Only validating event_data payload**
+
+```go
+// ❌ INCOMPLETE: Only checks payload, misses top-level field (database bug could go undetected)
+payload := event.EventData.AIAnalysisHolmesGPTCallPayload
+Expect(payload.DurationMs).To(BeNumerically(">", 0)) // event.DurationMs NOT validated!
+```
+
+**When to Apply This Pattern**:
+- ✅ **Performance Tracking** (BR-SP-090): Validate `duration_ms` for timed operations
+- ✅ **Error Tracking**: Validate `error_code` and `error_message` for failure events
+- ✅ **Query API Compliance**: Ensures DataStorage Query API returns all fields
+
+**Detected Bug**: SignalProcessing tests discovered DataStorage Query API was missing `duration_ms`, `error_code`, `error_message` from SELECT clause (January 11, 2026). AIAnalysis tests only validated payload, missing the database-level bug.
+
+---
+
+### **Pattern 7: Event Category and Outcome Validation**
 
 **MANDATORY**: Validate event_category and event_outcome for all events.
 

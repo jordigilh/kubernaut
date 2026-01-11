@@ -727,6 +727,8 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		var parentEventID sql.NullString
 		var actorID, actorType, resourceType, resourceID sql.NullString
 		var severity, namespace, clusterName sql.NullString
+		var errorCode, errorMessage sql.NullString // DD-TESTING-001: Error fields
+		var durationMs sql.NullInt64                // DD-TESTING-001: Performance tracking (BR-SP-090)
 
 		err := rows.Scan(
 			&event.EventID,
@@ -747,6 +749,9 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 			&event.EventDate,
 			&namespace,
 			&clusterName,
+			&durationMs,   // DD-TESTING-001: Added for top-level field validation
+			&errorCode,    // DD-TESTING-001: Added for error validation
+			&errorMessage, // DD-TESTING-001: Added for error validation
 		)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to scan audit event: %w", err)
@@ -779,6 +784,16 @@ func (r *AuditEventsRepository) Query(ctx context.Context, querySQL string, coun
 		}
 		if clusterName.Valid {
 			event.ClusterID = clusterName.String
+		}
+		// DD-TESTING-001: Handle optional fields for comprehensive audit validation
+		if durationMs.Valid {
+			event.DurationMs = int(durationMs.Int64) // BR-SP-090: Performance tracking
+		}
+		if errorCode.Valid {
+			event.ErrorCode = errorCode.String
+		}
+		if errorMessage.Valid {
+			event.ErrorMessage = errorMessage.String
 		}
 
 		// Unmarshal event_data JSONB
