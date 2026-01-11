@@ -90,16 +90,18 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
 		EventAction:   "received",
 		SampleEventData: map[string]interface{}{
-			"alert_name":         "HighCPU",
-			"signal_fingerprint": "fp-abc123",
-			"namespace":          "production",
-			"cluster":            "prod-us-east-1",
-			"is_duplicate":       false,
-			"action":             "created_crd",
+			"event_type":   "gateway.signal.received",      // Required by OpenAPI schema
+			"signal_type":  "prometheus-alert",             // Required enum field
+			"alert_name":   "HighCPU",                      // Required
+			"namespace":    "production",                   // Required
+			"fingerprint":  "fp-abc123",                    // Required (was signal_fingerprint)
+			"cluster":      "prod-us-east-1",               // Optional
+			"is_duplicate": false,                          // Optional
+			"action":       "created_crd",                  // Optional
 		},
 		JSONBQueries: []jsonbQueryTest{
 			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},
-			{Field: "signal_fingerprint", Operator: "->>", Value: "fp-abc123", ExpectedRows: 1},
+			{Field: "fingerprint", Operator: "->>", Value: "fp-abc123", ExpectedRows: 1}, // Updated field name
 			{Field: "is_duplicate", Operator: "->", Value: "false", ExpectedRows: 1},
 		},
 	},
@@ -622,7 +624,13 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 				It("should accept event type via HTTP POST and persist to database", func() {
 					// ARRANGE: Create audit event using structured event_data
 					// E2E tests use maps to validate the HTTP wire protocol exactly as external clients send it
-					// tc.SampleEventData is already structured (map[string]interface{} with typed fields)
+					// OpenAPI discriminated union requires "type" field in event_data for validation
+					eventDataWithDiscriminator := make(map[string]interface{})
+					eventDataWithDiscriminator["type"] = tc.EventType // Discriminator for ogen validation
+					for k, v := range tc.SampleEventData {
+						eventDataWithDiscriminator[k] = v // Merge service-specific fields
+					}
+					
 					auditEvent := map[string]interface{}{
 						"version":         "1.0",
 						"event_type":      tc.EventType,
@@ -635,7 +643,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 						"resource_type":   "Test",
 						"resource_id":     fmt.Sprintf("test-%s-%s", tc.Service, uuid.New().String()[:8]),
 						"correlation_id":  fmt.Sprintf("test-gap-1.1-%s", tc.EventType),
-						"event_data":      tc.SampleEventData, // Structured event data (not unstructured!)
+						"event_data":      eventDataWithDiscriminator, // With discriminator for OpenAPI validation
 					}
 
 					payloadBytes, err := json.Marshal(auditEvent)

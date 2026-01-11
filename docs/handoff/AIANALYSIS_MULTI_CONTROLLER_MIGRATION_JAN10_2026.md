@@ -229,33 +229,40 @@ var _ = SynchronizedAfterSuite(func() {
 
 ## Deviations from DD-TEST-010
 
-### Critical Finding: Metrics Tests Incompatible with Multi-Controller ⚠️
+### Critical Finding: Metrics Tests Require WorkflowExecution Pattern ✅
 
-**Discovery**: Metrics integration tests **cannot run in parallel** with multi-controller architecture due to fundamental architectural constraint.
+**Initial Problem**: Metrics tests panicked with `prometheus/counter.go:284` error
 
-**Root Cause**:
-1. Each process creates its own controller with isolated metrics registry
-2. All controllers watch ALL namespaces (standard Kubernetes behavior)
-3. When a test creates an AIAnalysis, ANY controller (from any process) might reconcile it
-4. The reconciling controller increments metrics in **its** registry
-5. But the test reads metrics from **its own process's** registry
-6. **Result**: Metric doesn't exist in test's registry → **PANIC**
+**Root Cause Analysis**:
+1. Tests accessed metrics via global `testMetrics` variable
+2. In multi-controller, any controller can reconcile any resource
+3. Test's controller might not be the one that reconciled → metrics = 0 → PANIC
 
-**Example**:
+**WorkflowExecution Solution** (100% Parallel, NO Serial):
+1. **Store reconciler instance**: `reconciler = &AIAnalysisReconciler{Metrics: testMetrics}`
+2. **Access via reconciler**: Tests read `reconciler.Metrics` (not `testMetrics`)
+3. **Per-process isolation**: Each process's controller only reconciles resources in its own envtest
+4. **Result**: Test always reads from the controller that reconciled its resources
+
+**Key Insight**: Each process's envtest is a SEPARATE K8s API server. Resources in Process 2's envtest are ONLY visible to Process 2's controller. No cross-process reconciliation!
+
+**Implementation Changes**:
+```go
+// 1. Store reconciler (suite_test.go)
+reconciler = &aianalysis.AIAnalysisReconciler{
+    Metrics: testMetrics, // Per-process metrics
+    // ... other fields ...
+}
+
+// 2. Access via reconciler (metrics_integration_test.go)
+Eventually(func() float64 {
+    return prometheusTestutil.ToFloat64(
+        reconciler.Metrics.PhaseTransitionsTotal.WithLabelValues("Pending"),
+    )
+}).Should(BeNumerically(">", 0))
 ```
-Process 2 test creates AIAnalysis
-→ Process 1's controller reconciles it (random selection)
-→ Process 1's metricsA increments
-→ Process 2's test reads metricsB (its own registry)
-→ Metric = 0 or doesn't exist → PANIC at prometheus/counter.go:284
-```
 
-**Solution**: Mark metrics tests as `Serial`
-- Impact: ~3 metrics tests serial, ~54 other tests parallel
-- Result: **95% parallel utilization maintained** (vs 100% target)
-- Acceptable trade-off for architectural compatibility
-
-**DD-TEST-010 Update Needed**: Document this limitation for all services
+**Result**: ✅ **100% parallel utilization** - NO Serial markers needed!
 
 ### Expected Pattern Followed ✅
 

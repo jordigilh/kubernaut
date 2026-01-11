@@ -134,7 +134,7 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		baseTimestamp := time.Now().UTC().Add(-10 * time.Minute)
 		for i := 1; i <= 4; i++ {
 			// Use helper function for strongly-typed payload
-			eventData := newMinimalGatewayPayload("prometheus", fmt.Sprintf("Alert-%d", i))
+			eventData := newMinimalGatewayPayload("prometheus-alert", fmt.Sprintf("Alert-%d", i))
 
 			// DD-API-001: Use typed OpenAPI struct
 			event := dsgen.AuditEventRequest{

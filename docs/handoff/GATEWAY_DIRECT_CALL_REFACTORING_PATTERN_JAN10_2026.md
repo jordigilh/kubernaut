@@ -109,20 +109,20 @@ var (
 BeforeEach(func() {
     // Start Gateway server
     gatewayServer, _ = StartTestGateway(ctx, k8sClient, dataStorageURL)
-    
+
     // Create HTTP test server
     testServer = httptest.NewServer(gatewayServer.Handler())
 })
 
 It("should process Prometheus alert", func() {
     payload := GeneratePrometheusAlert(...)
-    
+
     // HTTP call
     resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-    
+
     // Validate HTTP status
     Expect(resp.StatusCode).To(Equal(201))
-    
+
     // Verify CRD created
     Eventually(func() error {
         // ...
@@ -144,16 +144,16 @@ var (
 BeforeEach(func() {
     // Setup logger
     logger = logr.Discard() // Or use test logger
-    
+
     // Setup metrics (required by CRDCreator)
     metrics = metrics.New("gateway-test")
-    
+
     // Initialize adapters
     adapter = adapters.NewPrometheusAdapter()
-    
+
     // Initialize deduplication checker
     dedupChecker = processing.NewPhaseBasedDeduplicationChecker(k8sClient.Client)
-    
+
     // Initialize CRD creator
     retryConfig := &config.RetrySettings{
         MaxRetries: 3,
@@ -171,16 +171,16 @@ BeforeEach(func() {
 It("should process Prometheus alert", func() {
     // Generate raw payload
     payload := GeneratePrometheusAlert(...)
-    
+
     // Step 1: Parse payload (adapter)
     signal, err := adapter.Parse(ctx, payload)
     Expect(err).ToNot(HaveOccurred())
     Expect(signal).ToNot(BeNil())
-    
+
     // Step 2: Validate signal (adapter)
     err = adapter.Validate(signal)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Step 3: Check deduplication
     shouldDedup, existingRR, err := dedupChecker.ShouldDeduplicate(
         ctx,
@@ -190,13 +190,13 @@ It("should process Prometheus alert", func() {
     Expect(err).ToNot(HaveOccurred())
     Expect(shouldDedup).To(BeFalse(), "First signal should NOT be duplicate")
     Expect(existingRR).To(BeNil())
-    
+
     // Step 4: Create CRD
     rr, err := crdCreator.CreateRemediationRequest(ctx, signal)
     Expect(err).ToNot(HaveOccurred())
     Expect(rr).ToNot(BeNil())
     Expect(rr.Name).ToNot(BeEmpty())
-    
+
     // Step 5: Verify CRD in Kubernetes
     Eventually(func() bool {
         var created remediationv1alpha1.RemediationRequest
@@ -206,7 +206,7 @@ It("should process Prometheus alert", func() {
         }, &created)
         return err == nil
     }, "30s", "500ms").Should(BeTrue())
-    
+
     // Business validation
     var finalRR remediationv1alpha1.RemediationRequest
     err = k8sClient.Client.Get(ctx, client.ObjectKey{
@@ -229,18 +229,18 @@ It("should process Prometheus alert", func() {
 ```go
 It("should process first alert (no duplication)", func() {
     payload := GeneratePrometheusAlert(...)
-    
+
     // Parse → Validate → Check Dedup (false) → Create CRD → Verify
     signal, _ := adapter.Parse(ctx, payload)
     _ = adapter.Validate(signal)
-    
+
     shouldDedup, existingRR, _ := dedupChecker.ShouldDeduplicate(ctx, ns, signal.Fingerprint)
     Expect(shouldDedup).To(BeFalse())
     Expect(existingRR).To(BeNil())
-    
+
     rr, _ := crdCreator.CreateRemediationRequest(ctx, signal)
     Expect(rr).ToNot(BeNil())
-    
+
     // Verify CRD exists
     Eventually(func() bool {
         var created remediationv1alpha1.RemediationRequest
@@ -255,28 +255,28 @@ It("should process first alert (no duplication)", func() {
 ```go
 It("should detect duplicate alert", func() {
     payload := GeneratePrometheusAlert(...)
-    
+
     // Process first alert
     signal, _ := adapter.Parse(ctx, payload)
     _ = adapter.Validate(signal)
-    
+
     shouldDedup1, _, _ := dedupChecker.ShouldDeduplicate(ctx, ns, signal.Fingerprint)
     Expect(shouldDedup1).To(BeFalse(), "First alert should NOT be duplicate")
-    
+
     rr1, _ := crdCreator.CreateRemediationRequest(ctx, signal)
     Eventually(func() bool {
         var created remediationv1alpha1.RemediationRequest
         err := k8sClient.Client.Get(ctx, client.ObjectKey{Name: rr1.Name, Namespace: rr1.Namespace}, &created)
         return err == nil
     }).Should(BeTrue())
-    
+
     // Wait for K8s to index the new RR (deduplication queries by fingerprint)
     time.Sleep(1 * time.Second)
-    
+
     // Process duplicate alert
     signal2, _ := adapter.Parse(ctx, payload) // Same payload → same fingerprint
     _ = adapter.Validate(signal2)
-    
+
     // Should detect duplicate
     Eventually(func() bool {
         shouldDedup2, existingRR, err := dedupChecker.ShouldDeduplicate(ctx, ns, signal2.Fingerprint)
@@ -285,10 +285,10 @@ It("should detect duplicate alert", func() {
         }
         return shouldDedup2 && existingRR != nil && existingRR.Name == rr1.Name
     }, "20s", "1s").Should(BeTrue(), "Duplicate alert should be detected")
-    
+
     // IMPORTANT: Do NOT call crdCreator.CreateRemediationRequest for duplicates
     // The deduplication checker returned true, so we skip CRD creation
-    
+
     // Verify still only 1 CRD
     Eventually(func() int {
         crdList := &remediationv1alpha1.RemediationRequestList{}
@@ -303,12 +303,12 @@ It("should detect duplicate alert", func() {
 ```go
 It("should reject invalid payload", func() {
     invalidPayload := []byte(`{"invalid": "json"}`)
-    
+
     // Parse should fail
     signal, err := adapter.Parse(ctx, invalidPayload)
     Expect(err).To(HaveOccurred(), "Invalid payload should fail parsing")
     Expect(signal).To(BeNil())
-    
+
     // No CRD should be created
     Eventually(func() int {
         crdList := &remediationv1alpha1.RemediationRequestList{}
@@ -328,15 +328,15 @@ It("should reject signal with missing required fields", func() {
         Namespace: testNamespace,
         Severity:  "critical",
     })
-    
+
     // Parse succeeds (valid JSON)
     signal, err := adapter.Parse(ctx, payload)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Validate should fail
     err = adapter.Validate(signal)
     Expect(err).To(HaveOccurred(), "Signal missing required fields should fail validation")
-    
+
     // No CRD creation should be attempted
 })
 ```

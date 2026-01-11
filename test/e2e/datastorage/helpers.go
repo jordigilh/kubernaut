@@ -182,23 +182,11 @@ func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
 // These create minimal valid payloads to test DataStorage API functionality
 
 func newMinimalGatewayPayload(signalType, alertName string) ogenclient.AuditEventRequestEventData {
-	// Map common string values to proper enum constants
-	var signalTypeEnum ogenclient.GatewayAuditPayloadSignalType
-	switch signalType {
-	case "prometheus", "prometheus-alert":
-		signalTypeEnum = ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert
-	case "kubernetes", "kubernetes-event":
-		signalTypeEnum = ogenclient.GatewayAuditPayloadSignalTypeKubernetesEvent
-	default:
-		// Default to prometheus-alert for backward compatibility with tests
-		signalTypeEnum = ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert
-	}
-
 	return ogenclient.AuditEventRequestEventData{
 		Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: ogenclient.GatewayAuditPayload{
-			EventType: ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  signalTypeEnum,
+			EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+			SignalType:  ogenclient.GatewayAuditPayloadSignalType(signalType),
 			AlertName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
@@ -210,7 +198,7 @@ func newMinimalAIAnalysisPayload(analysisName string) ogenclient.AuditEventReque
 	return ogenclient.AuditEventRequestEventData{
 		Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
 		AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
-			EventType: ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+			EventType:        ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
 			AnalysisName:     analysisName,
 			Namespace:        "default",
 			Phase:            "Completed",
@@ -223,7 +211,7 @@ func newMinimalWorkflowPayload(workflowID string) ogenclient.AuditEventRequestEv
 	return ogenclient.AuditEventRequestEventData{
 		Type: ogenclient.AuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData,
 		WorkflowExecutionAuditPayload: ogenclient.WorkflowExecutionAuditPayload{
-			EventType: ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
+			EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
 			WorkflowID:      workflowID,
 			WorkflowVersion: "1.0.0",
 			TargetResource:  "test-resource",

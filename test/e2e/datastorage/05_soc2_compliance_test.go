@@ -121,7 +121,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		EventType:      "certificate_warmup",
 		EventTimestamp: warmupTimestamp,
 		Version:        "1.0",
-		EventData:      newMinimalGatewayPayload("test", "warmup"),
+		EventData:      newMinimalGatewayPayload("prometheus-alert", "warmup"),
 	}
 
 	_, err = dsClient.CreateAuditEvent(testCtx, &warmupEvent)
@@ -787,7 +787,7 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 		EventType:      "soc2_compliance_test",
 		EventTimestamp: eventTimestamp,
 		Version:        "1.0",
-		EventData:      newMinimalGatewayPayload("test", "soc2-compliance"),
+		EventData:      newMinimalGatewayPayload("prometheus-alert", "soc2-compliance"),
 	}
 
 		resp, err := dsClient.CreateAuditEvent(ctx, &req)

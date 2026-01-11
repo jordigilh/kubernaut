@@ -66,6 +66,10 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 	)
 
 	BeforeEach(func() {
+		// DD-TEST-010: Validate reconciler is initialized (multi-controller pattern)
+		Expect(reconciler).ToNot(BeNil(), "Reconciler must be initialized by SynchronizedBeforeSuite Phase 2")
+		Expect(reconciler.Metrics).ToNot(BeNil(), "Reconciler metrics must be initialized")
+
 		ctx = context.Background()
 		namespace = "default" // Use default namespace for integration tests
 	})
@@ -166,7 +170,10 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// NOTE: Flaky in parallel execution - metrics registry state interference
 	It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-HAPI-197", func() {
 			// 1. Capture baseline failure metrics before test
-			baselineFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected")
+			// DD-METRICS-001: FailuresTotal has 2 labels (reason, sub_reason)
+			baselineFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") +
+				getCounterValue(reconciler.Metrics.FailuresTotal, "APIError", "HolmesGPTAPICallFailed") +
+				getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected", "InvestigationFailed")
 
 			// 2. Create AIAnalysis that will complete successfully
 			// Note: Mock HolmesGPT client returns success, so this tests the happy path
@@ -213,7 +220,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 4. Verify failure metrics were NOT incremented
 			// Success path should not emit failure metrics
 			Consistently(func() float64 {
-				currentFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected")
+				currentFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError", "HolmesGPTAPICallFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected", "InvestigationFailed")
 				return currentFailures - baselineFailures
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(float64(0)),
 				"Failure metrics should NOT be emitted when AIAnalysis completes successfully")
@@ -276,12 +283,12 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// 3. Verify approval decision metrics were emitted
 		Eventually(func() float64 {
 			// Look for any approval decision metric
-			total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "production")
+			total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval", "production")
 			if total > 0 {
 				return total
 			}
 			// Also check for auto-approved or requires_approval
-			return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval")
+			return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval", "production")
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Approval decision metric should be emitted during policy evaluation")
 		})
