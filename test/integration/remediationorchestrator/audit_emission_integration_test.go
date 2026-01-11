@@ -319,6 +319,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			payload := event.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.Outcome.IsSet()).To(BeTrue(), "outcome should be present")
 			Expect(payload.Outcome.Value).To(Equal(ogenclient.RemediationOrchestratorAuditPayloadOutcomeSuccess))
+
+			// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field (performance tracking)
+			topLevelDuration, hasDuration := event.DurationMs.Get()
+			Expect(hasDuration).To(BeTrue(), "DD-TESTING-001: Top-level duration_ms MUST be set for lifecycle events")
+			Expect(topLevelDuration).To(BeNumerically(">", 0), "Workflow execution duration should be positive")
 		})
 	})
 
@@ -397,6 +402,11 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			Expect(errorDetails.Code).To(ContainSubstring("ERR_"))
 			Expect(errorDetails.Message).ToNot(BeEmpty())
 			Expect(errorDetails.RetryPossible).ToNot(BeNil())
+
+			// DD-TESTING-001 Pattern 6: Validate top-level DurationMs field (performance tracking)
+			topLevelDuration, hasDuration := event.DurationMs.Get()
+			Expect(hasDuration).To(BeTrue(), "DD-TESTING-001: Top-level duration_ms MUST be set even for failures")
+			Expect(topLevelDuration).To(BeNumerically(">", 0), "Duration should be positive even for failed workflows")
 		})
 	})
 
