@@ -55,8 +55,7 @@ import (
 
 var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 	var (
-		uniqueSuffix  string
-		testNamespace = "kubernaut-notifications"
+		uniqueSuffix string
 	)
 
 	BeforeEach(func() {
@@ -72,7 +71,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -95,7 +94,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 
 			By("Verifying business outcome: Failure is recorded, not crash")
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				return notif.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Or(
 				Equal(notificationv1alpha1.NotificationPhaseFailed),
@@ -139,7 +138,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -160,7 +159,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 
 			By("Verifying business outcome: Timeout handled gracefully")
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				return notif.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Or(
 				Equal(notificationv1alpha1.NotificationPhaseSent),
@@ -197,7 +196,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -218,7 +217,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 
 			By("Verifying business outcome: TLS handshake failure doesn't crash service")
 			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				// Should reach a terminal state (not stuck)
 				return notif.Status.Phase != notificationv1alpha1.NotificationPhasePending &&
 					notif.Status.Phase != notificationv1alpha1.NotificationPhase("")
@@ -240,7 +239,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -262,7 +261,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 
 			By("Verifying business outcome: Partial delivery on mixed TLS scenario")
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				return notif.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Or(
 				Equal(notificationv1alpha1.NotificationPhaseSent),          // Both succeeded
@@ -293,7 +292,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -320,7 +319,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 
 			By("Verifying business outcome: Retry policy applied to TLS errors")
 			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				// Should reach terminal state after retries
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent ||
 					notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed
@@ -346,7 +345,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      notificationName,
-					Namespace: testNamespace,
+					Namespace: controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -374,7 +373,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			By("Verifying business outcome: No infinite retry on permanent TLS failure")
 			startTime := time.Now()
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				return notif.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Or(
 				Equal(notificationv1alpha1.NotificationPhaseSent),
