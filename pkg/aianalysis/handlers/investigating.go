@@ -88,9 +88,9 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	// Skip if we've ALREADY transitioned out of Investigating phase for this generation
 	// This prevents duplicate HolmesGPT API calls when controller reconciles due to annotation changes
 	// Check: ObservedGeneration matches AND we're in a different phase (terminal or next phase)
-	if analysis.Status.ObservedGeneration == analysis.Generation && 
-		(analysis.Status.Phase == aianalysis.PhaseAnalyzing || 
-		 analysis.Status.Phase == aianalysis.PhaseCompleted || 
+	if analysis.Status.ObservedGeneration == analysis.Generation &&
+		(analysis.Status.Phase == aianalysis.PhaseAnalyzing ||
+		 analysis.Status.Phase == aianalysis.PhaseCompleted ||
 		 analysis.Status.Phase == aianalysis.PhaseFailed) {
 		h.log.Info("Already transitioned out of Investigating phase for this generation",
 			"generation", analysis.Generation,

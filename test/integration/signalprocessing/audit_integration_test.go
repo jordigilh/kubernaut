@@ -242,14 +242,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		By("8. Validate audit event fields")
-		Expect(string(event.EventCategory)).To(Equal("signalprocessing"), "Event category must match")
-		Expect(event.EventAction).To(Equal("processed"), "Event action must match")
-		Expect(string(event.EventOutcome)).To(Equal("success"), "Event outcome must be success")
-		actorType, _ := event.ActorType.Get()
-		Expect(actorType).To(Equal("service"), "Actor type must be service")
-		actorID, _ := event.ActorID.Get()
-		Expect(actorID).To(Equal("signalprocessing-controller"), "Actor ID must match controller")
+			By("8. Validate audit event fields")
+			Expect(string(event.EventCategory)).To(Equal("signalprocessing"), "Event category must match")
+			Expect(event.EventAction).To(Equal("processed"), "Event action must match")
+			Expect(string(event.EventOutcome)).To(Equal("success"), "Event outcome must be success")
+			actorType, _ := event.ActorType.Get()
+			Expect(actorType).To(Equal("service"), "Actor type must be service")
+			actorID, _ := event.ActorID.Get()
+			Expect(actorID).To(Equal("signalprocessing-controller"), "Actor ID must match controller")
 
 			By("9. Validate event_data fields")
 			eventDataMap, err := eventDataToMap(event.EventData)
@@ -406,18 +406,18 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"AUDIT-06: SignalProcessing MUST emit exactly 1 business.classified event per business classification")
 
-		By("7. Fetch and validate business classification audit event from DataStorage HTTP API")
-		event, err := getLatestAuditEvent(eventType, correlationID)
-		Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
-		Expect(event).ToNot(BeNil(), "Event must exist")
+			By("7. Fetch and validate business classification audit event from DataStorage HTTP API")
+			event, err := getLatestAuditEvent(eventType, correlationID)
+			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
-		Expect(event.EventAction).To(Equal("classification"))
-		Expect(string(event.EventOutcome)).To(Equal("success"))
+			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(event.EventAction).To(Equal("classification"))
+			Expect(string(event.EventOutcome)).To(Equal("success"))
 
-		eventDataMap, err := eventDataToMap(event.EventData)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(eventDataMap["business_unit"]).To(Equal("payments"))
+			eventDataMap, err := eventDataToMap(event.EventData)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(eventDataMap["business_unit"]).To(Equal("payments"))
 		})
 	})
 
@@ -517,27 +517,27 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
 				"BR-SP-090: SignalProcessing MUST emit exactly 1 enrichment.completed event per enrichment operation")
 
-		By("7. Fetch and validate enrichment audit event from DataStorage HTTP API")
-		event, err := getLatestAuditEvent(eventType, correlationID)
-		Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
-		Expect(event).ToNot(BeNil(), "Event must exist")
+			By("7. Fetch and validate enrichment audit event from DataStorage HTTP API")
+			event, err := getLatestAuditEvent(eventType, correlationID)
+			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		GinkgoWriter.Printf("\n📊 Found 1 enrichment audit event\n")
+			GinkgoWriter.Printf("\n📊 Found 1 enrichment audit event\n")
 
-		Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
-		Expect(event.EventAction).To(Equal("enrichment"))
-		Expect(string(event.EventOutcome)).To(Equal("success"))
+			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(event.EventAction).To(Equal("enrichment"))
+			Expect(string(event.EventOutcome)).To(Equal("success"))
 
-		eventDataMap, err := eventDataToMap(event.EventData)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(eventDataMap["has_namespace"]).To(BeTrue())
-		Expect(eventDataMap["has_pod"]).To(BeTrue())
-		Expect(eventDataMap["degraded_mode"]).To(BeFalse())
+			eventDataMap, err := eventDataToMap(event.EventData)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(eventDataMap["has_namespace"]).To(BeTrue())
+			Expect(eventDataMap["has_pod"]).To(BeTrue())
+			Expect(eventDataMap["degraded_mode"]).To(BeFalse())
 
-		// Additional assertions for enrichment-specific fields
-		durationMs, hasDuration := event.DurationMs.Get()
-		Expect(hasDuration).To(BeTrue(), "Should capture enrichment duration for performance tracking")
-		Expect(durationMs).To(BeNumerically(">", 0))
+			// Additional assertions for enrichment-specific fields
+			durationMs, hasDuration := event.DurationMs.Get()
+			Expect(hasDuration).To(BeTrue(), "Should capture enrichment duration for performance tracking")
+			Expect(durationMs).To(BeNumerically(">", 0))
 		})
 	})
 
@@ -609,20 +609,20 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(phaseTransitionCount).To(Equal(4),
 				"BR-SP-090: MUST emit exactly 4 phase transitions: Pending→Enriching→Classifying→Categorizing→Completed")
 
-		By("9. Fetch first 'phase.transition' event for detailed validation")
-		event, err := getFirstAuditEvent(spaudit.EventTypePhaseTransition, correlationID)
-		Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
-		Expect(event).ToNot(BeNil(), "Event must exist")
+			By("9. Fetch first 'phase.transition' event for detailed validation")
+			event, err := getFirstAuditEvent(spaudit.EventTypePhaseTransition, correlationID)
+			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		By("10. Validate phase transition event structure")
-		Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
-		Expect(event.EventAction).To(Equal("phase_transition"))
-		Expect(string(event.EventOutcome)).To(Equal("success"))
+			By("10. Validate phase transition event structure")
+			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(event.EventAction).To(Equal("phase_transition"))
+			Expect(string(event.EventOutcome)).To(Equal("success"))
 
-		// Verify event_data contains phase information
-		eventDataMap, err := eventDataToMap(event.EventData)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(eventDataMap).ToNot(BeNil(), "EventData should not be nil")
+			// Verify event_data contains phase information
+			eventDataMap, err := eventDataToMap(event.EventData)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(eventDataMap).ToNot(BeNil(), "EventData should not be nil")
 		})
 	})
 
@@ -711,9 +711,9 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 				Expect(event).ToNot(BeNil(), "Event must exist")
 
-			// Validate event_outcome is Failure
-			Expect(string(event.EventOutcome)).To(Equal("failure"),
-				"Error events MUST have EventOutcome=Failure")
+				// Validate event_outcome is Failure
+				Expect(string(event.EventOutcome)).To(Equal("failure"),
+					"Error events MUST have EventOutcome=Failure")
 
 				// DD-TESTING-001 MANDATORY: Validate structured event_data fields
 				eventDataMap, err := eventDataToMap(event.EventData)
@@ -805,9 +805,9 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		// Validate EventOutcome is Failure
-		Expect(string(event.EventOutcome)).To(Equal("failure"),
-			"Fatal errors MUST have EventOutcome=Failure")
+			// Validate EventOutcome is Failure
+			Expect(string(event.EventOutcome)).To(Equal("failure"),
+				"Fatal errors MUST have EventOutcome=Failure")
 
 			// Validate error_data contains namespace error information
 			eventDataMap, err := eventDataToMap(event.EventData)
