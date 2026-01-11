@@ -19,6 +19,7 @@ package delivery
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -59,8 +60,9 @@ import (
 // MANDATORY: Channels MUST be registered via RegisterChannel(), NOT constructor parameters
 // See: docs/architecture/decisions/DD-NOT-007-DELIVERY-ORCHESTRATOR-REGISTRATION-PATTERN.md
 type Orchestrator struct {
-	// DD-NOT-007: Dynamic channel registration (map-based routing)
-	channels map[string]Service
+	// DD-NOT-007: Dynamic channel registration (sync.Map for thread-safe parallel test execution)
+	// sync.Map is optimal for our access pattern: write-once per test, read-many during deliveries
+	channels sync.Map
 
 	// Dependencies
 	sanitizer     *sanitization.Sanitizer
@@ -95,7 +97,7 @@ func NewOrchestrator(
 	logger logr.Logger,
 ) *Orchestrator {
 	return &Orchestrator{
-		channels:      make(map[string]Service),
+		// channels: sync.Map requires no initialization
 		sanitizer:     sanitizer,
 		metrics:       metrics,
 		statusManager: statusManager,
@@ -120,7 +122,7 @@ func (o *Orchestrator) RegisterChannel(channel string, service Service) {
 		o.logger.Info("Skipping registration of nil service", "channel", channel)
 		return
 	}
-	o.channels[channel] = service
+	o.channels.Store(channel, service)
 	o.logger.Info("Registered delivery channel", "channel", channel)
 }
 
@@ -128,7 +130,7 @@ func (o *Orchestrator) RegisterChannel(channel string, service Service) {
 //
 // DD-NOT-007: Test support for dynamic channel management
 func (o *Orchestrator) UnregisterChannel(channel string) {
-	delete(o.channels, channel)
+	o.channels.Delete(channel)
 	o.logger.Info("Unregistered delivery channel", "channel", channel)
 }
 
@@ -136,7 +138,7 @@ func (o *Orchestrator) UnregisterChannel(channel string) {
 //
 // DD-NOT-007: Validation support
 func (o *Orchestrator) HasChannel(channel string) bool {
-	_, exists := o.channels[channel]
+	_, exists := o.channels.Load(channel)
 	return exists
 }
 
@@ -271,10 +273,15 @@ func (o *Orchestrator) DeliverToChannel(
 	notification *notificationv1alpha1.NotificationRequest,
 	channel notificationv1alpha1.Channel,
 ) error {
-	// DD-NOT-007: Map lookup instead of switch statement
-	service, exists := o.channels[string(channel)]
+	// DD-NOT-007: Map lookup instead of switch statement (thread-safe)
+	serviceVal, exists := o.channels.Load(string(channel))
 	if !exists {
 		return fmt.Errorf("channel not registered: %s (DD-NOT-007: use RegisterChannel() to register)", channel)
+	}
+
+	service, ok := serviceVal.(Service)
+	if !ok {
+		return fmt.Errorf("invalid service type for channel %s", channel)
 	}
 
 	// Sanitize before delivery
@@ -406,11 +413,13 @@ func (o *Orchestrator) RecordDeliveryAttempt(
 		o.metrics.RecordDeliveryDuration(notification.Namespace, string(channel), time.Since(notification.CreationTimestamp.Time).Seconds())
 
 		// E2E FILE DELIVERY (DD-NOT-002 V3.0) - Non-blocking
-		// DD-NOT-007: Use registered file service if available
-		if fileService, exists := o.channels[string(notificationv1alpha1.ChannelFile)]; exists {
-			sanitizedNotification := o.sanitizeNotification(notification)
-			if fileErr := fileService.Deliver(ctx, sanitizedNotification); fileErr != nil {
-				log.Error(fileErr, "FileService delivery failed (E2E only, non-blocking)")
+		// DD-NOT-007: Use registered file service if available (sync.Map for thread-safety)
+		if fileServiceVal, exists := o.channels.Load(string(notificationv1alpha1.ChannelFile)); exists {
+			if fileService, ok := fileServiceVal.(Service); ok {
+				sanitizedNotification := o.sanitizeNotification(notification)
+				if fileErr := fileService.Deliver(ctx, sanitizedNotification); fileErr != nil {
+					log.Error(fileErr, "FileService delivery failed (E2E only, non-blocking)")
+				}
 			}
 		}
 	}

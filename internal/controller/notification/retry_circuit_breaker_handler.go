@@ -162,4 +162,3 @@ func (r *NotificationRequestReconciler) isSlackCircuitBreakerOpen() bool { //nol
 	}
 	return !r.CircuitBreaker.AllowRequest("slack")
 }
-
