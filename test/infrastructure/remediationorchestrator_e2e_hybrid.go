@@ -60,7 +60,8 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (WITH DYNAMIC TAG)")
+	_, _ = fmt.Fprintln(writer, "  └── Notification controller (WITH COVERAGE)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
 	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind()")
 
@@ -70,7 +71,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		err   error
 	}
 
-	buildResults := make(chan imageBuildResult, 2)
+	buildResults := make(chan imageBuildResult, 3)
 
 	// Build RemediationOrchestrator with coverage in parallel using consolidated API
 	go func() {
@@ -98,11 +99,24 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
 	}()
 
-	// Wait for both builds to complete and collect image names
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	// Build Notification controller in parallel using consolidated API
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "notification",
+			ImageName:        "kubernaut/notification",
+			DockerfilePath:   "docker/notification-controller.Dockerfile",
+			BuildContextPath: "", // Will use project root
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
+		}
+		ntImage, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{name: "Notification", image: ntImage, err: err}
+	}()
+
+	// Wait for all three builds to complete and collect image names
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
 	builtImages := make(map[string]string) // name -> full image name
 	var buildErrors []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-buildResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
@@ -175,7 +189,8 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator coverage image")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (with dynamic tag)")
+	_, _ = fmt.Fprintln(writer, "  └── Notification controller image")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind()")
 
@@ -183,7 +198,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		name string
 		err  error
 	}
-	loadResults := make(chan loadResult, 2)
+	loadResults := make(chan loadResult, 3)
 
 	// Load RemediationOrchestrator coverage image using consolidated API
 	go func() {
@@ -199,10 +214,17 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
-	// Wait for both loads to complete
+	// Load Notification controller image using consolidated API
+	go func() {
+		ntImage := builtImages["Notification"]
+		err := LoadImageToKind(ntImage, "notification", clusterName, writer)
+		loadResults <- loadResult{name: "Notification controller", err: err}
+	}()
+
+	// Wait for all three loads to complete
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-loadResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
@@ -230,7 +252,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		name string
 		err  error
 	}
-	deployResults := make(chan deployResult, 5)
+	deployResults := make(chan deployResult, 6)
 
 	// Launch ALL kubectl apply commands concurrently
 	go func() {
@@ -257,10 +279,15 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer)
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
+	go func() {
+		ntImage := builtImages["Notification"]
+		err := DeployNotificationController(ctx, namespace, kubeconfigPath, ntImage, writer)
+		deployResults <- deployResult{"Notification", err}
+	}()
 
 	// Collect ALL results before proceeding (MANDATORY)
 	var deployErrors []error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)

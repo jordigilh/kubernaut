@@ -52,11 +52,11 @@ import (
 // Pattern: CREATE CRD → WAIT FOR RECONCILIATION → VERIFY METRICS
 // ========================================
 
-// SERIAL EXECUTION REQUIRED: Metrics tests must run serially (SignalProcessing pattern).
-// Per DD-METRICS-001: testMetrics initialized once in SynchronizedBeforeSuite (process 1 only).
-// High parallelism (12 procs) causes nil pointer panics in other processes.
-// WorkflowExecution avoids this issue due to lower test count and parallelism.
-var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
+// PARALLEL EXECUTION: Per DD-METRICS-001, uses WorkflowExecution pattern.
+// testRegistry and testMetrics created in SynchronizedBeforeSuite Phase 2 (ALL processes).
+// Each parallel process gets its own isolated Prometheus registry to prevent conflicts.
+// Direct metric access via testMetrics (not registry query) for thread-safe parallel execution.
+var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
 	var (
 		ctx       context.Context
 		namespace string
