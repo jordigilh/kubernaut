@@ -182,11 +182,23 @@ func deletePostgresNetworkPartition(namespace, kubeconfigPath string) error {
 // These create minimal valid payloads to test DataStorage API functionality
 
 func newMinimalGatewayPayload(signalType, alertName string) ogenclient.AuditEventRequestEventData {
+	// Map common string values to proper enum constants
+	var signalTypeEnum ogenclient.GatewayAuditPayloadSignalType
+	switch signalType {
+	case "prometheus", "prometheus-alert":
+		signalTypeEnum = ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert
+	case "kubernetes", "kubernetes-event":
+		signalTypeEnum = ogenclient.GatewayAuditPayloadSignalTypeKubernetesEvent
+	default:
+		// Default to prometheus-alert for backward compatibility with tests
+		signalTypeEnum = ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert
+	}
+
 	return ogenclient.AuditEventRequestEventData{
 		Type: ogenclient.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 			EventType: ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  ogenclient.GatewayAuditPayloadSignalType(signalType),
+			SignalType:  signalTypeEnum,
 			AlertName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
