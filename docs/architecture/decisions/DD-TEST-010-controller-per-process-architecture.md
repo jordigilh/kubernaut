@@ -1,10 +1,10 @@
 # DD-TEST-010: Controller-Per-Process Architecture for Parallel Test Execution
 
-**Status**: ✅ **APPROVED**  
-**Date**: 2026-01-10  
-**Related**: DD-TEST-002 (Parallel Test Execution), DD-METRICS-001 (Metrics Wiring), DD-PERF-001 (Atomic Status Updates)  
-**Applies To**: ALL CRD controller services (AIAnalysis, RemediationOrchestrator, SignalProcessing, Notification, WorkflowExecution, Gateway)  
-**Confidence**: 95%  
+**Status**: ✅ **APPROVED**
+**Date**: 2026-01-10
+**Related**: DD-TEST-002 (Parallel Test Execution), DD-METRICS-001 (Metrics Wiring), DD-PERF-001 (Atomic Status Updates)
+**Applies To**: ALL CRD controller services (AIAnalysis, RemediationOrchestrator, SignalProcessing, Notification, WorkflowExecution, Gateway)
+**Confidence**: 95%
 
 ---
 
@@ -63,61 +63,61 @@ var _ = SynchronizedBeforeSuite(func() []byte {
         ConfigDir:       "test/integration/[service]/config",
     }, GinkgoWriter)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Clean up on exit
     DeferCleanup(func() {
         infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
     })
-    
+
     // DO NOT create: envtest, k8sManager, controller, handlers, metrics
     // These MUST be created in Phase 2 (per-process)
-    
+
     return []byte{} // Share NO data (each process creates own environment)
-    
+
 }, func(data []byte) {
     // ═══════════════════════════════════════════════════════════════════════════════
     // Phase 2: Per-Process Controller Environment (ALL Processes)
     // ═══════════════════════════════════════════════════════════════════════════════
-    
+
     By("Creating per-process test context")
     ctx, cancel = context.WithCancel(context.Background())
-    
+
     By("Registering CRD schemes")
     err := [service]v1.AddToScheme(scheme.Scheme)
     Expect(err).NotTo(HaveOccurred())
-    
+
     By("Bootstrapping per-process envtest environment")
     // Each process gets its OWN Kubernetes API server (envtest)
     testEnv = &envtest.Environment{
         CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
         ErrorIfCRDPathMissing: true,
     }
-    
+
     if getFirstFoundEnvTestBinaryDir() != "" {
         testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
     }
-    
+
     cfg, err = testEnv.Start()
     Expect(err).NotTo(HaveOccurred())
     Expect(cfg).NotTo(BeNil())
-    
+
     By("Creating per-process K8s client")
     k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
     Expect(err).NotTo(HaveOccurred())
     Expect(k8sClient).NotTo(BeNil())
-    
+
     By("Creating per-process namespaces")
     systemNs := &corev1.Namespace{
         ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-system"},
     }
     err = k8sClient.Create(ctx, systemNs)
     Expect(err).NotTo(HaveOccurred())
-    
+
     defaultNs := &corev1.Namespace{
         ObjectMeta: metav1.ObjectMeta{Name: "default"},
     }
     _ = k8sClient.Create(ctx, defaultNs) // May already exist
-    
+
     By("Setting up per-process controller manager")
     k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
         Scheme: scheme.Scheme,
@@ -126,12 +126,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
         },
     })
     Expect(err).ToNot(HaveOccurred())
-    
+
     By("Creating per-process isolated metrics registry")
     // Per DD-METRICS-001: Each process needs isolated Prometheus registry
     testRegistry := prometheus.NewRegistry()
     testMetrics := [service]metrics.NewMetricsWithRegistry(testRegistry)
-    
+
     By("Creating per-process audit store")
     // Each process connects to shared DataStorage (from Phase 1)
     // but maintains its own buffer and client
@@ -144,7 +144,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
         mockTransport,
     )
     Expect(err).ToNot(HaveOccurred())
-    
+
     auditStore, err = audit.NewBufferedStore(
         dsClient,
         audit.DefaultConfig(),
@@ -152,7 +152,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
         ctrl.Log.WithName("audit"),
     )
     Expect(err).ToNot(HaveOccurred())
-    
+
     By("Setting up per-process controller with handlers")
     // Create service-specific handlers/dependencies per process
     // Example for AIAnalysis:
@@ -160,7 +160,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
     regoEvaluator := rego.NewEvaluator(...)
     investigatingHandler := handlers.NewInvestigatingHandler(...)
     analyzingHandler := handlers.NewAnalyzingHandler(...)
-    
+
     // Create per-process controller instance
     reconciler = &[service].Reconciler{
         Client:        k8sManager.GetClient(),
@@ -173,19 +173,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
     }
     err = reconciler.SetupWithManager(k8sManager)
     Expect(err).ToNot(HaveOccurred())
-    
+
     By("Starting per-process controller manager")
     go func() {
         defer GinkgoRecover()
         err = k8sManager.Start(ctx)
         Expect(err).ToNot(HaveOccurred())
     }()
-    
+
     By("Waiting for per-process controller manager to be ready")
     Eventually(func() bool {
         return k8sManager.GetCache().WaitForCacheSync(ctx)
     }, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
-    
+
     GinkgoWriter.Printf("✅ [Process %d] Controller ready\n", ginkgo.GinkgoParallelProcess())
 })
 ```
@@ -294,16 +294,16 @@ For each service migrating from single-controller → multi-controller:
 // ❌ WRONG: Controller created in Phase 1 (process 1 only)
 var _ = SynchronizedBeforeSuite(func() []byte {
     StartDSBootstrap()
-    
+
     // ❌ FORBIDDEN: envtest in Phase 1
     testEnv = envtest.Start()
-    
+
     // ❌ FORBIDDEN: controller in Phase 1
     k8sManager = ctrl.NewManager()
     testMetrics = metrics.NewMetrics()  // ❌ Global metrics
     reconciler = &Reconciler{...}       // ❌ Single controller
     k8sManager.Start()
-    
+
     // Share REST config with other processes
     return serializeConfig(cfg)
 }, func(data []byte) {
@@ -517,14 +517,14 @@ go test -race ./test/integration/[service]/...
 | **Gateway** | N/A (no controller) | N/A | - | 0h |
 | **DataStorage** | N/A (no controller) | N/A | - | 0h |
 
-**Total Services Needing Migration**: 4  
+**Total Services Needing Migration**: 4
 **Total Estimated Effort**: 16-24 hours
 
 ---
 
-**Document Owner**: Platform Architecture Team  
-**Created**: 2026-01-10  
-**Last Updated**: 2026-01-10  
-**Next Review**: After Phase 1 pilot complete (AIAnalysis migration)  
+**Document Owner**: Platform Architecture Team
+**Created**: 2026-01-10
+**Last Updated**: 2026-01-10
+**Next Review**: After Phase 1 pilot complete (AIAnalysis migration)
 **Status**: ✅ **APPROVED** - Authoritative standard for all CRD controller services
 

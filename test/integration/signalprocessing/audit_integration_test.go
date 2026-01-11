@@ -127,7 +127,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 		By("6. Query PostgreSQL for 'signal.processed' audit event (HTTP Anti-Pattern Phase 2)")
 		// HTTP Anti-Pattern Phase 2: Replaced HTTP client with direct PostgreSQL query
 		// Now querying audit_events table directly via testDB (from suite_test.go)
-		
+
 		// Wait for 'signal.processed' event to appear in PostgreSQL
 		var eventCount int
 		Eventually(func() int {
@@ -158,7 +158,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			eventData      []byte // JSONB stored as bytes
 		)
 		err := testDB.QueryRow(`
-			SELECT event_id, event_timestamp, event_category, event_action, 
+			SELECT event_id, event_timestamp, event_category, event_action,
 			       COALESCE(event_outcome, ''), COALESCE(actor_type, ''), COALESCE(actor_id, ''),
 			       event_data
 			FROM audit_events
@@ -245,7 +245,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 		By("6. Query PostgreSQL for 'classification.decision' audit event (HTTP Anti-Pattern Phase 2)")
 		eventType := "signalprocessing.classification.decision"
-		
+
 		var eventCount int
 		Eventually(func() int {
 			err := testDB.QueryRow(`
@@ -351,7 +351,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 		By("6. Query PostgreSQL for 'business.classified' audit event (HTTP Anti-Pattern Phase 2)")
 		eventType := "signalprocessing.business.classified"
-		
+
 		var eventCount int
 		Eventually(func() int {
 			err := testDB.QueryRow(`
@@ -485,7 +485,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 		By("6. Query PostgreSQL for 'enrichment.completed' audit event (HTTP Anti-Pattern Phase 2)")
 		eventType := "signalprocessing.enrichment.completed"
-		
+
 		var eventCount int
 		Eventually(func() int {
 			err := testDB.QueryRow(`
@@ -511,7 +511,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			durationMs     *int64 // Optional field
 		)
 		err := testDB.QueryRow(`
-			SELECT event_category, event_action, COALESCE(event_outcome, ''), 
+			SELECT event_category, event_action, COALESCE(event_outcome, ''),
 			       event_data, duration_ms
 			FROM audit_events
 			WHERE event_type = $1
@@ -595,7 +595,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 		By("6. Query PostgreSQL for ALL signalprocessing audit events (HTTP Anti-Pattern Phase 2)")
 		// HTTP Anti-Pattern Phase 2: Replaced HTTP client with direct PostgreSQL query
 		// Querying all events for this correlation_id to count phase transitions
-		
+
 		var totalCount int
 		Eventually(func() int {
 			err := testDB.QueryRow(`
@@ -712,7 +712,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 		By("5. Query PostgreSQL for error audit events (HTTP Anti-Pattern Phase 2)")
 		// HTTP Anti-Pattern Phase 2: Replaced HTTP client with direct PostgreSQL query
-		
+
 		var totalCount int
 		Eventually(func() int {
 			err := testDB.QueryRow(`
@@ -732,7 +732,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 		By("6. Count events by event_type (DD-TESTING-001 deterministic validation)")
 		var errorCount, completionCount int
 		err := testDB.QueryRow(`
-			SELECT 
+			SELECT
 				COUNT(CASE WHEN event_type = $1 THEN 1 END) as error_count,
 				COUNT(CASE WHEN event_type = $2 THEN 1 END) as completion_count
 			FROM audit_events

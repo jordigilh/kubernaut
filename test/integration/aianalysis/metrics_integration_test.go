@@ -391,11 +391,11 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			Eventually(func() float64 {
 				// Look for any Rego evaluation outcome (approved or rejected)
 				// Metric uses labels: "outcome" and "degraded"
-				total := getCounterValue(testMetrics.RegoEvaluationsTotal, "approved", "false")
+				total := getCounterValue(reconciler.Metrics.RegoEvaluationsTotal, "approved", "false")
 				if total > 0 {
 					return total
 				}
-				return getCounterValue(testMetrics.RegoEvaluationsTotal, "rejected", "false")
+				return getCounterValue(reconciler.Metrics.RegoEvaluationsTotal, "rejected", "false")
 			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"Rego evaluation metric should be emitted during analysis phase")
 		})
