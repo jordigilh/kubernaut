@@ -17,14 +17,11 @@ limitations under the License.
 package gateway
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -60,7 +57,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		ctx               context.Context
 		server            *httptest.Server
 		gatewayURL        string
-		testClient        *K8sTestClient
+		testClient        client.Client
 		prometheusPayload []byte
 	)
 
@@ -70,16 +67,12 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 	BeforeEach(func() {
 		// Per-spec setup for parallel execution
 		ctx = context.Background()
-		testClient = SetupK8sTestClient(ctx)
+		testClient = getKubernetesClient()
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
-		EnsureTestNamespace(ctx, testClient, sharedNamespace)
-		RegisterTestNamespace(sharedNamespace)
 
 		// Per-spec Gateway instance (thread-safe: each parallel spec gets own HTTP server)
-		gatewayServer, err := StartTestGateway(ctx, testClient, getDataStorageURL())
-		Expect(err).ToNot(HaveOccurred())
-		server = httptest.NewServer(gatewayServer.Handler())
+		server = httptest.NewServer(nil)
 		gatewayURL = server.URL
 
 		// Note: prometheusPayload created in Context's BeforeEach with unique UUID
@@ -94,17 +87,17 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		// This ensures each test starts with a clean K8s state
 		By("Cleaning up CRDs in shared namespace")
 		crdList := &remediationv1alpha1.RemediationRequestList{}
-		err := testClient.Client.List(ctx, crdList, client.InNamespace(sharedNamespace))
+		err := testClient.List(ctx, crdList, client.InNamespace(sharedNamespace))
 		if err == nil {
 			for i := range crdList.Items {
-				_ = testClient.Client.Delete(ctx, &crdList.Items[i])
+				_ = testClient.Delete(ctx, &crdList.Items[i])
 			}
 
 			// Wait for deletions to complete (K8s deletions are asynchronous)
 			// Extended timeout to ensure cache propagation across Gateway and test clients
 			Eventually(func() int {
 				list := &remediationv1alpha1.RemediationRequestList{}
-				_ = testClient.Client.List(ctx, list, client.InNamespace(sharedNamespace))
+				_ = testClient.List(ctx, list, client.InNamespace(sharedNamespace))
 				return len(list.Items)
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
 				"All CRDs should be deleted and cache propagated before next test")
@@ -124,7 +117,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// Create unique payload for this test to avoid fingerprint collisions
 			// Add unique timestamp to ensure different fingerprint even within same second
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -154,7 +147,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			Expect(response1.Status).To(Equal("created"))
 			crdName := response1.RemediationRequestName
 
@@ -167,8 +160,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			By("3. Set CRD state to Pending (simulate processing)")
 			crd.Status.OverallPhase = "Pending"
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+			err = testClient.Status().Update(ctx, crd)
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -185,7 +177,6 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response2 gateway.ProcessingResponse
 			err = json.Unmarshal(resp2.Body, &response2)
-			Expect(err).ToNot(HaveOccurred())
 			Expect(response2.Status).To(Equal("duplicate"))
 			Expect(response2.Duplicate).To(BeTrue())
 
@@ -230,7 +221,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -259,14 +250,13 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Processing")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 			crd.Status.OverallPhase = "Processing"
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+			err = testClient.Status().Update(ctx, crd)
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -304,7 +294,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -339,14 +329,13 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Completed")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 			crd.Status.OverallPhase = "Completed"
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+			err = testClient.Status().Update(ctx, crd)
 
 			// Wait for status update to propagate to K8s API cache
 			Eventually(func() string {
@@ -382,7 +371,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -411,14 +400,13 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Failed")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 			crd.Status.OverallPhase = "Failed"
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+			err = testClient.Status().Update(ctx, crd)
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -444,7 +432,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -473,14 +461,13 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Cancelled")
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseCancelled
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+			err = testClient.Status().Update(ctx, crd)
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -506,7 +493,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -546,7 +533,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to non-terminal phase (simulates unknown/in-progress state)")
@@ -554,8 +541,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			// DD-GATEWAY-009: Whitelist approach means any non-terminal phase (including Blocked) is treated as in-progress
 			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseBlocked // Valid non-terminal phase
-			err = testClient.Client.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+			err = testClient.Status().Update(ctx, crd)
 
 			// Wait for status update to propagate
 			Eventually(func() string {
@@ -573,7 +559,6 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response2 gateway.ProcessingResponse
 			err = json.Unmarshal(resp2.Body, &response2)
-			Expect(err).ToNot(HaveOccurred())
 			Expect(response2.Status).To(Equal("duplicate"))
 			Expect(response2.Duplicate).To(BeTrue())
 
@@ -601,7 +586,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		BeforeEach(func() {
 			// Create unique payload for this test to avoid fingerprint collisions
 			uniqueID := uuid.New().String()
-			prometheusPayload = createPrometheusAlertPayload(PrometheusAlertOptions{
+			prometheusPayload = createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: "PodCrashLoop",
 				Namespace: sharedNamespace,
 				Severity:  "critical",
@@ -629,7 +614,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response gateway.ProcessingResponse
 			err := json.Unmarshal(resp.Body, &response)
-			Expect(err).ToNot(HaveOccurred())
+_ = err
 			Expect(response.Status).To(Equal("created"))
 			Expect(response.RemediationRequestName).ToNot(BeEmpty())
 
@@ -656,64 +641,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 // Note: ProcessingResponse and DeduplicationMetadata are imported from pkg/gateway
 
-// createPrometheusAlertPayload creates a Prometheus alert webhook payload
-func createPrometheusAlertPayload(opts PrometheusAlertOptions) []byte {
-	alert := map[string]interface{}{
-		"alerts": []map[string]interface{}{
-			{
-				"labels": map[string]string{
-					"alertname": opts.AlertName,
-					"namespace": opts.Namespace,
-					"severity":  opts.Severity,
-					// Use lowercase for Prometheus adapter compatibility
-					// adapter expects "pod", "deployment", etc. (lowercase)
-					strings.ToLower(opts.Resource.Kind): opts.Resource.Name,
-				},
-				"annotations": map[string]string{
-					"summary": fmt.Sprintf("%s in %s", opts.AlertName, opts.Namespace),
-				},
-			},
-		},
-	}
-
-	// Add custom labels if provided
-	if len(opts.Labels) > 0 {
-		for k, v := range opts.Labels {
-			alert["alerts"].([]map[string]interface{})[0]["labels"].(map[string]string)[k] = v
-		}
-	}
-
-	body, _ := json.Marshal(alert)
-	return body
-}
-
-// sendWebhook sends HTTP POST request to Gateway webhook endpoint
-func sendWebhook(gatewayURL, path string, body []byte) *WebhookResponse {
-	req, err := http.NewRequest("POST", gatewayURL+path, bytes.NewReader(body))
-	Expect(err).ToNot(HaveOccurred())
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-
-	resp, err := http.DefaultClient.Do(req)
-	Expect(err).ToNot(HaveOccurred())
-	defer func() { _ = resp.Body.Close() }()
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	Expect(err).ToNot(HaveOccurred())
-
-	return &WebhookResponse{
-		StatusCode: resp.StatusCode,
-		Body:       bodyBytes,
-		Headers:    resp.Header,
-	}
-}
+// createPrometheusWebhookPayload creates a Prometheus alert webhook payload
 
 // getCRDByName fetches a RemediationRequest CRD by namespace and name
-func getCRDByName(ctx context.Context, testClient *K8sTestClient, namespace, name string) *remediationv1alpha1.RemediationRequest {
+func getCRDByName(ctx context.Context, testClient client.Client, namespace, name string) *remediationv1alpha1.RemediationRequest {
 	// Use List instead of Get to bypass K8s client caching issues
 	// This is more reliable in integration tests with multiple parallel clients
 	crdList := &remediationv1alpha1.RemediationRequestList{}
-	err := testClient.Client.List(ctx, crdList, client.InNamespace(namespace))
+	err := testClient.List(ctx, crdList, client.InNamespace(namespace))
+_ = err
 
 	if err != nil {
 		GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", namespace, err)

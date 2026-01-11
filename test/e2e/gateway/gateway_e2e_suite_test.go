@@ -120,7 +120,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Wait for Gateway HTTP endpoint to be ready
 		tempLogger.Info("Waiting for Gateway HTTP endpoint to be ready...")
-		tempURL := "http://localhost:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080)
+		tempURL := "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		httpClient := &http.Client{Timeout: 5 * time.Second}
 
 		// Use Eventually() instead of manual loop (per TESTING_GUIDELINES.md)
@@ -178,7 +178,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Set cluster configuration (shared across all processes)
 		clusterName = "gateway-e2e"
-		gatewayURL = "http://localhost:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080)
+		gatewayURL = "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		gatewayNamespace = "kubernaut-system"
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

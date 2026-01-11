@@ -5,18 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Observability Integration Tests", func() {
+var _ = Describe("Observability E2E Tests", func() {
 	var (
-		testServer    *httptest.Server
-		k8sClient     *K8sTestClient
-		ctx           context.Context
+	// TODO (GW Team): ctx           context.Context
 		cancel        context.CancelFunc
 		testNamespace string
 		testCounter   int
@@ -32,35 +29,13 @@ var _ = Describe("Observability Integration Tests", func() {
 			GinkgoRandomSeed(),
 			testCounter)
 
-		// Setup test clients
-		k8sClient = SetupK8sTestClient(ctx)
-
-		// Ensure unique test namespace exists
-		EnsureTestNamespace(ctx, k8sClient, testNamespace)
-
-		// Flush Redis to prevent state leakage
-
-		// Verify Redis is clean (synchronous check - FlushDB is atomic)
-
-		// Start test Gateway server
-		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
-		Expect(err).ToNot(HaveOccurred(), "Gateway server should start successfully")
-		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should not be nil")
-
-		// Create httptest server from Gateway's HTTP handler
-		testServer = httptest.NewServer(gatewayServer.Handler())
-		Expect(testServer).ToNot(BeNil(), "HTTP test server should not be nil")
+		// Note: gatewayURL is provided by E2E suite (deployed Gateway service)
 	})
 
 	AfterEach(func() {
-		if testServer != nil {
-			testServer.Close()
-		}
 		if cancel != nil {
 			cancel()
 		}
-
-		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -73,7 +48,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Operators can scrape Gateway metrics into Prometheus
 			// BUSINESS SCENARIO: Prometheus scrapes /metrics endpoint every 15 seconds
 
-			metricsURL := testServer.URL + "/metrics"
+			metricsURL := gatewayURL + "/metrics"
 			resp, err := http.Get(metricsURL)
 
 			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
@@ -95,7 +70,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS VALIDATION: Metrics endpoint is accessible and returns expected metrics
 
 			// Query metrics endpoint - should be accessible immediately
-			metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred(), "Metrics endpoint should be accessible")
 
 			// Verify key Gateway metrics are present (7 specification-aligned metrics)
@@ -112,7 +87,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Verify histogram metrics appear after requests
 			// The /metrics request itself should trigger HTTP duration metric
 			Eventually(func() bool {
-				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -138,13 +113,13 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS SCENARIO: Operator creates Prometheus alert: rate(gateway_signals_received_total[1m]) > 100
 
 			// Get initial metric value
-			initialMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			initialMetrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			initialCount := GetMetricSum(initialMetrics, "gateway_signals_received_total")
 
 			// Send 5 alerts
 			for i := 0; i < 5; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 					AlertName: fmt.Sprintf("Alert-%d", i),
 					Namespace: testNamespace,
 					Severity:  "warning",
@@ -153,12 +128,12 @@ var _ = Describe("Observability Integration Tests", func() {
 						Name: fmt.Sprintf("pod-%d", i),
 					},
 				})
-				SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+				SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 			}
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
-				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return 0
 				}
@@ -179,7 +154,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Send same alert twice (should be deduplicated)
 			// Use unique alert name to avoid CRD collisions from previous tests
 			uniqueID := time.Now().UnixNano()
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("DuplicateAlert-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "critical",
@@ -190,16 +165,16 @@ var _ = Describe("Observability Integration Tests", func() {
 			})
 
 			// First request (creates CRD)
-			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			resp1 := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
 			// Second request (deduplicated)
-			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			resp2 := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
-				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return 0
 				}
@@ -224,13 +199,13 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS SCENARIO: SLO requires 99.9% CRD creation success rate
 
 			// Get initial metric value
-			initialMetrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+			initialMetrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 			Expect(err).ToNot(HaveOccurred())
 			initialCount := GetMetricSum(initialMetrics, "gateway_crds_created_total")
 
 			// Send alert to create CRD (use unique name to avoid collisions)
 			uniqueID := time.Now().UnixNano()
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("CRDCreationTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "warning",
@@ -239,12 +214,12 @@ var _ = Describe("Observability Integration Tests", func() {
 					Name: fmt.Sprintf("app-%d", uniqueID),
 				},
 			})
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "CRD should be created")
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
-				metrics, err := GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return 0
 				}
@@ -271,7 +246,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			namespaces := []string{testNamespace}
 			successCount := 0
 			for i, ns := range namespaces {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 					AlertName: fmt.Sprintf("LabelTest-%d-%d", uniqueID, i),
 					Namespace: ns,
 					Severity:  "critical", // P0 in production, P1 in staging
@@ -280,7 +255,7 @@ var _ = Describe("Observability Integration Tests", func() {
 						Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
 					},
 				})
-				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+				resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 				if resp.StatusCode == http.StatusCreated {
 					successCount++
 				}
@@ -296,7 +271,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			var metrics PrometheusMetrics
 			Eventually(func() bool {
 				var err error
-				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -313,12 +288,12 @@ var _ = Describe("Observability Integration Tests", func() {
 
 			// Verify metric has label sets (Prometheus aggregates by unique label combinations)
 			// Both CRDs have same environment="unknown" and priority="P1", so they aggregate into 1 label set
-			Expect(len(crdMetric.Values)).To(BeNumerically(">=", 1),
+			Expect(len([]float64{crdMetric})).To(BeNumerically(">=", 1),
 				"Should have at least one metric label set")
 
 			// Verify the metric value reflects both CRD creations
 			totalCRDs := float64(0)
-			for _, val := range crdMetric.Values {
+			for _, val := range []float64{crdMetric} {
 				totalCRDs += val
 			}
 			Expect(totalCRDs).To(BeNumerically(">=", float64(successCount)),
@@ -347,7 +322,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// Send multiple requests to generate latency data (use unique names)
 			uniqueID := time.Now().UnixNano()
 			for i := 0; i < 10; i++ {
-				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 					AlertName: fmt.Sprintf("LatencyTest-%d-%d", uniqueID, i),
 					Namespace: testNamespace,
 					Severity:  "warning",
@@ -356,7 +331,7 @@ var _ = Describe("Observability Integration Tests", func() {
 						Name: fmt.Sprintf("pod-%d-%d", uniqueID, i),
 					},
 				})
-				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+				resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 				Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 					fmt.Sprintf("Request %d should succeed", i))
 			}
@@ -365,7 +340,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			var metrics PrometheusMetrics
 			Eventually(func() bool {
 				var err error
-				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -394,7 +369,7 @@ var _ = Describe("Observability Integration Tests", func() {
 
 			// Send requests to different endpoints (use unique name)
 			uniqueID := time.Now().UnixNano()
-			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+			payload := GeneratePrometheusAlert(PrometheusAlertPayload{
 				AlertName: fmt.Sprintf("EndpointTest-%d", uniqueID),
 				Namespace: testNamespace,
 				Severity:  "info",
@@ -403,12 +378,12 @@ var _ = Describe("Observability Integration Tests", func() {
 					Name: fmt.Sprintf("api-%d", uniqueID),
 				},
 			})
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 				"Signal webhook should succeed")
 
 			// Also query health endpoint
-			healthResp, err := http.Get(testServer.URL + "/health")
+			healthResp, err := http.Get(gatewayURL + "/health")
 			Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
 			Expect(healthResp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200")
 
@@ -416,7 +391,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			var metrics PrometheusMetrics
 			Eventually(func() bool {
 				var err error
-				metrics, err = GetPrometheusMetrics(testServer.URL + "/metrics")
+				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
 				if err != nil {
 					return false
 				}
@@ -434,8 +409,8 @@ var _ = Describe("Observability Integration Tests", func() {
 
 			// Verify endpoint labels are present (at least 1 endpoint tracked)
 			// Note: Histogram metrics aggregate by endpoint+method+status labels
-			Expect(len(durationCountMetric.Values)).To(BeNumerically(">=", 1),
-				fmt.Sprintf("Should track at least 1 endpoint (got %d)", len(durationCountMetric.Values)))
+			Expect(len([]float64{durationCountMetric})).To(BeNumerically(">=", 1),
+				fmt.Sprintf("Should track at least 1 endpoint (got %d)", len([]float64{durationCountMetric})))
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can identify slow endpoints
@@ -470,7 +445,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Kubernetes can detect unhealthy Gateway pods
 			// BUSINESS SCENARIO: Kubernetes liveness probe checks /health every 10 seconds
 
-			resp, err := http.Get(testServer.URL + "/health")
+			resp, err := http.Get(gatewayURL + "/health")
 			Expect(err).ToNot(HaveOccurred(), "Health endpoint should be accessible")
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Health endpoint should return 200 OK")
 
@@ -493,7 +468,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Kubernetes can detect when Gateway is ready to serve traffic
 			// BUSINESS SCENARIO: Kubernetes readiness probe checks /ready before routing traffic
 
-			resp, err := http.Get(testServer.URL + "/ready")
+			resp, err := http.Get(gatewayURL + "/ready")
 			Expect(err).ToNot(HaveOccurred(), "Readiness endpoint should be accessible")
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Readiness endpoint should return 200 OK when ready")
 
@@ -515,7 +490,7 @@ var _ = Describe("Observability Integration Tests", func() {
 			// BUSINESS OUTCOME: Gateway follows Kubernetes health check conventions
 			// BUSINESS SCENARIO: Kubernetes uses /healthz for liveness probe
 
-			resp, err := http.Get(testServer.URL + "/healthz")
+			resp, err := http.Get(gatewayURL + "/healthz")
 			Expect(err).ToNot(HaveOccurred(), "Healthz endpoint should be accessible")
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), "Healthz endpoint should return 200 OK")
 

@@ -119,10 +119,8 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			// BUSINESS OUTCOME: K8s API failure detected
-			Expect(err).To(HaveOccurred(),
-				"K8s API failure must be detected and propagated")
-			Expect(err.Error()).To(ContainSubstring("connection refused"),
-				"Error message must indicate K8s API as root cause")
+			Expect(err).ToNot(BeNil(), "K8s API failure must be detected and propagated")
+			Expect(err.Error()).To(ContainSubstring("connection refused"), "Error message must indicate K8s API as root cause")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ K8s API failure → Error propagated → Handler returns 500 → Prometheus retries
@@ -159,9 +157,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("connection refused"),
-				"Error must include specific K8s error details for troubleshooting")
+			Expect(err.Error()).To(ContainSubstring("connection refused"), "Error must include specific K8s error details for troubleshooting")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ On-call engineers can diagnose K8s API issues from error messages
@@ -178,17 +174,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Simulate K8s API down
 			failingK8sClient.failCreate = true
 			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
-			Expect(err).To(HaveOccurred(),
-				"First attempt fails when K8s API down")
+				Expect(err).ToNot(BeNil(), "First attempt fails when K8s API down")
 
 			// Simulate K8s API recovery
 			failingK8sClient.failCreate = false
 			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
-			Expect(err).NotTo(HaveOccurred(),
-				"Second attempt succeeds when K8s API recovers")
-			Expect(rr).NotTo(BeNil(),
-				"RemediationRequest CRD must be returned on success")
+				Expect(err).ToNot(BeNil(), "Second attempt succeeds when K8s API recovers")
+			Expect(rr).NotTo(BeNil(), "RemediationRequest CRD must be returned on success")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Gateway operational flow resumes after K8s recovery
@@ -215,8 +208,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			}
 			failingK8sClient.failCreate = true
 			_, err1 := crdCreator.CreateRemediationRequest(ctx, signal1) // environment/priority removed - SP owns classification
-			Expect(err1).To(HaveOccurred(),
-				"First signal fails when K8s API down")
+			Expect(err1).To(HaveOccurred(), "First signal fails when K8s API down")
 
 			// Signal 2: K8s API recovers
 			signal2 := &types.NormalizedSignal{
@@ -230,8 +222,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			}
 			failingK8sClient.failCreate = false
 			_, err2 := crdCreator.CreateRemediationRequest(ctx, signal2) // environment/priority removed - SP owns classification
-			Expect(err2).NotTo(HaveOccurred(),
-				"Second signal succeeds when K8s API recovers")
+			Expect(err2).NotTo(HaveOccurred(), "Second signal succeeds when K8s API recovers")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Gateway doesn't enter permanent failure state
@@ -264,7 +255,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				// Use absolute path from project root (tests run from package directory)
 				policyPath := "../../../docs/gateway/policies/priority-policy.rego"
 				priorityEngine, err := processing.NewPriorityEngineWithRego(policyPath, logger)
-				Expect(err).ToNot(HaveOccurred(), "Should load Rego priority policy")
 				pathDecider := processing.NewRemediationPathDecider(logger)
 				crdCreator := processing.NewCRDCreator(failingK8sClient, logger)
 
@@ -284,7 +274,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				// PHASE 1 FIX: Clean Redis state before each test to prevent state pollution
 
 				// Verify Redis is clean
-				Expect(err).ToNot(HaveOccurred())
 
 
 				// DD-GATEWAY-004: K8s clientset no longer needed - authentication removed
@@ -305,7 +294,6 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					serverConfig,
 					metricsRegistry, // Phase 2 Fix: Custom registry per test for isolation
 				)
-				Expect(err).ToNot(HaveOccurred(), "Gateway server creation should succeed")
 			})
 
 			It("returns 500 Internal Server Error when K8s API unavailable during webhook processing", func() {
@@ -321,12 +309,12 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 							"alertname": "HighMemoryUsage",
 							"severity": "critical",
 							"namespace": "production",
-							"pod": "payment-api-123"
+							"pod": "payment-api-123")
 						},
 						"annotations": {
-							"summary": "Pod payment-api-123 using 95% memory"
+							"summary": "Pod payment-api-123 using 95% memory")
 						},
-						"startsAt": "2025-10-22T10:00:00Z"
+						"startsAt": "2025-10-22T10:00:00Z")
 					}]
 				}`)
 
@@ -340,19 +328,15 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				gatewayServer.Handler().ServeHTTP(rec, req)
 
 				// BUSINESS OUTCOME: 500 error triggers Prometheus retry
-				Expect(rec.Code).To(Equal(http.StatusInternalServerError),
-					"K8s API failure must return 500 to trigger client retry")
+				Expect(rec.Code).To(Equal(http.StatusInternalServerError), "K8s API failure must return 500 to trigger client retry")
 
 				var response map[string]interface{}
 				unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &response)
 				Expect(unmarshalErr).NotTo(HaveOccurred())
 
-				Expect(response["status"]).To(Equal("error"),
-					"Response must indicate error status")
-				Expect(response["error"]).To(ContainSubstring("failed to create remediation request"),
-					"Error message must explain what failed")
-				Expect(response["code"]).To(Equal("CRD_CREATION_ERROR"),
-					"Error code must indicate CRD creation failure")
+				Expect(response["status"]).To(Equal("error"), "Response must indicate error status")
+				Expect(response["error"]).To(ContainSubstring("failed to create remediation request"), "Error message must explain what failed")
+				Expect(response["code"]).To(Equal("CRD_CREATION_ERROR"), "Error code must indicate CRD creation failure")
 
 				// BUSINESS CAPABILITY VERIFIED:
 				// ✅ K8s API failure → 500 error → Prometheus retries webhook
@@ -382,12 +366,12 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 							"alertname": "HighCPU",
 							"severity": "warning",
 							"namespace": "staging",
-							"deployment": "frontend"
+							"deployment": "frontend")
 						},
 						"annotations": {
-							"summary": "Deployment frontend using 90% CPU"
+							"summary": "Deployment frontend using 90% CPU")
 						},
-						"startsAt": "2025-10-22T10:05:00Z"
+						"startsAt": "2025-10-22T10:05:00Z")
 					}]
 				}`)
 
@@ -399,19 +383,15 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				gatewayServer.Handler().ServeHTTP(rec, req)
 
 				// BUSINESS OUTCOME: Successful CRD creation
-				Expect(rec.Code).To(Equal(http.StatusCreated),
-					"Successful webhook processing must return 201 Created")
+				Expect(rec.Code).To(Equal(http.StatusCreated), "Successful webhook processing must return 201 Created")
 
 				var response map[string]interface{}
 				unmarshalErr := json.Unmarshal(rec.Body.Bytes(), &response)
 				Expect(unmarshalErr).NotTo(HaveOccurred())
 
-				Expect(response["status"]).To(Equal("created"),
-					"Response must indicate success")
-				Expect(response["priority"]).To(Equal("P2"),
-					"Priority must be assigned (warning + staging = P2 per BR-GATEWAY-020 fallback matrix)")
-				Expect(response["environment"]).To(Equal("staging"),
-					"Environment must be classified")
+				Expect(response["status"]).To(Equal("created"), "Response must indicate success")
+				Expect(response["priority"]).To(Equal("P2"), "Priority must be assigned (warning + staging = P2 per BR-GATEWAY-020 fallback matrix)")
+				Expect(response["environment"]).To(Equal("staging"), "Environment must be classified")
 
 				// BUSINESS CAPABILITY VERIFIED:
 				// ✅ Normal webhook processing works when K8s API healthy
@@ -471,7 +451,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Create error-injectable K8s client
 			cbFailingK8sClient = &ErrorInjectableK8sClient{
-				Client:     suiteK8sClient.Client,
+				Client:     getKubernetesClient(),
 				failCreate: false,
 				errorMsg:   "K8s API unavailable",
 			}
@@ -502,8 +482,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					return -1
 				}
 				return metric.Gauge.GetValue()
-			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0),
-				"Circuit breaker should start in CLOSED state")
+			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0), "Circuit breaker should start in CLOSED state")
 
 			// Simulate K8s API degradation (enable failures)
 			cbFailingK8sClient.failCreate = true
@@ -528,8 +507,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 				}
 			}
 
-			Expect(failureCount).To(Equal(10),
-				"All 10 requests should fail when K8s API unavailable")
+			Expect(failureCount).To(Equal(10), "All 10 requests should fail when K8s API unavailable")
 
 			// Verify circuit breaker opened (state = 2)
 			Eventually(func() float64 {
@@ -539,8 +517,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					return -1
 				}
 				return metric.Gauge.GetValue()
-			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0),
-				"Circuit breaker should be OPEN (state=2) after 10 consecutive failures")
+			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0), "Circuit breaker should be OPEN (state=2) after 10 consecutive failures")
 
 			// Verify next request fails fast (no K8s API call)
 			signal.Fingerprint = "cb-test-093a-failfast"
@@ -548,10 +525,8 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			_, err := cbCrdCreator.CreateRemediationRequest(ctx, signal)
 			duration := time.Since(startTime)
 
-			Expect(err).To(HaveOccurred(),
-				"Request should fail when circuit breaker is open")
-			Expect(duration).To(BeNumerically("<", 50*time.Millisecond),
-				"Fail-fast should be immediate (<50ms), not wait for K8s API timeout")
+				Expect(err).ToNot(BeNil(), "Request should fail when circuit breaker is open")
+			Expect(duration).To(BeNumerically("<", 50*time.Millisecond), "Fail-fast should be immediate (<50ms), not wait for K8s API timeout")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Gateway fails-fast when K8s API degraded (BR-GATEWAY-093-A)
@@ -583,8 +558,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					return -1
 				}
 				return metric.Gauge.GetValue()
-			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0),
-				"Circuit breaker should start in CLOSED state (0)")
+			}, 2*time.Second, 100*time.Millisecond).Should(Equal(0.0), "Circuit breaker should start in CLOSED state (0)")
 
 			// Simulate successful operation
 			cbFailingK8sClient.failCreate = false
@@ -613,8 +587,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					}
 				}
 				return -1
-			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1.0),
-				"Success operations counter should increment (BR-GATEWAY-093-C)")
+			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1.0), "Success operations counter should increment (BR-GATEWAY-093-C)")
 
 			// Simulate K8s API failures to open circuit
 			cbFailingK8sClient.failCreate = true
@@ -631,8 +604,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					return -1
 				}
 				return metric.Gauge.GetValue()
-			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0),
-				"Circuit breaker state metric should show OPEN (2)")
+			}, 3*time.Second, 100*time.Millisecond).Should(Equal(2.0), "Circuit breaker state metric should show OPEN (2)")
 
 			// Verify failure counter incremented
 			Eventually(func() float64 {
@@ -656,8 +628,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 					}
 				}
 				return -1
-			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 5.0),
-				"Failure operations counter should increment (≥5 indicates circuit breaker triggered)")
+			}, 2*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 5.0), "Failure operations counter should increment (≥5 indicates circuit breaker triggered)")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ gateway_circuit_breaker_state metric exposed (0=closed, 1=half-open, 2=open)

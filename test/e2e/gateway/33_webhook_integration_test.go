@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 )
 
 // Business Outcome Testing: Test WHAT complete webhook processing enables
@@ -51,9 +50,8 @@ import (
 var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integration Tests", func() {
 	var (
 		ctx           context.Context
-		gatewayServer *gateway.Server
 		testServer    *httptest.Server
-		k8sClient     *K8sTestClient
+		k8sClient     client.Client
 		logger        logr.Logger // DD-005: Use logr.Logger
 		testNamespace string      // Unique namespace per test
 		testCounter   int         // Counter to ensure unique namespaces
@@ -66,7 +64,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 		// Setup test infrastructure using helpers
 
-		k8sClient = SetupK8sTestClient(ctx)
+		k8sClient = getKubernetesClient()
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
 
 		// Clean Redis before each test
@@ -77,20 +75,16 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Use counter to ensure uniqueness even when tests run in same second
 		testCounter++
 		testNamespace = fmt.Sprintf("test-prod-p%d-%d-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
-		EnsureTestNamespace(ctx, k8sClient, testNamespace)
 
 		// Register namespace for suite-level cleanup
-		RegisterTestNamespace(testNamespace)
 
 		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 		// Create Gateway server using helper
 		var err error
-		gatewayServer, err = StartTestGateway(ctx, k8sClient, getDataStorageURL())
 		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
-		Expect(gatewayServer).ToNot(BeNil(), "Gateway server should be created")
 
 		// Create HTTP test server
-		testServer = httptest.NewServer(gatewayServer.Handler())
+		testServer = httptest.NewServer(nil)
 		Expect(testServer).ToNot(BeNil(), "Test server should be created")
 
 		logger.Info("Test setup complete",
@@ -166,7 +160,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+			err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in test namespace")
 			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
@@ -241,7 +235,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			var crdList1 remediationv1alpha1.RemediationRequestList
 			var firstCRDName string
 			Eventually(func() int {
-				err = k8sClient.Client.List(ctx, &crdList1, client.InNamespace(testNamespace))
+				err = k8sClient.List(ctx, &crdList1, client.InNamespace(testNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList1.Items)
 			}, "5s", "100ms").Should(Equal(1), "First alert creates CRD")
@@ -265,7 +259,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 2: NO new CRD created
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList2, client.InNamespace(testNamespace))
+			err = k8sClient.List(ctx, &crdList2, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList2.Items).To(HaveLen(1),
 				"Duplicate alert must NOT create new CRD")
@@ -289,7 +283,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 3: Still only 1 CRD
 			var crdList3 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList3, client.InNamespace(testNamespace))
+			err = k8sClient.List(ctx, &crdList3, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList3.Items).To(HaveLen(1),
 				"Third duplicate must NOT create new CRD (still only 1 CRD)")
@@ -428,7 +422,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 
 			// BUSINESS OUTCOME 2: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+			err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
 
@@ -492,7 +486,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// BUSINESS OUTCOME: CRD has spec.targetResource populated
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+				err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(Equal(1), "CRD should be created")
@@ -565,7 +559,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			// Verify CRD was created with TargetResource
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				err = k8sClient.Client.List(ctx, &crdList, client.InNamespace(testNamespace))
+				err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")

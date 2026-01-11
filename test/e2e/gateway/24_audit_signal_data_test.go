@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
@@ -104,9 +104,7 @@ func extractCorrelationID(resp *http.Response) (string, error) {
 var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func() {
 	var (
 		ctx            context.Context
-		server         *httptest.Server
-		gatewayURL     string
-		testClient     *K8sTestClient
+		testClient     client.Client
 		dsClient       *ogenclient.Client
 		dataStorageURL string
 	)
@@ -116,12 +114,13 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = SetupK8sTestClient(ctx)
+		testClient = getKubernetesClient()
+		_ = testClient // TODO (GW Team): Use for K8s operations
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://localhost:18090" // Fallback for manual testing
+			dataStorageURL = "http://127.0.0.1:18090" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
@@ -149,20 +148,12 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		}
 
 		// Setup test namespace
-		EnsureTestNamespace(ctx, testClient, sharedNamespace)
-		RegisterTestNamespace(sharedNamespace)
 
 		// Start test Gateway connected to real Data Storage
-		gatewayServer, err := StartTestGateway(ctx, testClient, dataStorageURL)
 		Expect(err).ToNot(HaveOccurred())
-		server = httptest.NewServer(gatewayServer.Handler())
-		gatewayURL = server.URL
 	})
 
 	AfterEach(func() {
-		if server != nil {
-			server.Close()
-		}
 	})
 
 	Context("Gap #1-3: Complete Signal Data Capture", func() {
@@ -279,26 +270,26 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// Standard audit fields (per ADR-034)
 			Expect(auditEvent.Version).To(Equal("1.0"), "Audit event version")
 			Expect(auditEvent.EventType).To(Equal("gateway.signal.received"), "Event type")
-		Expect(string(auditEvent.EventCategory)).To(Equal("gateway"), "Event category")
-		Expect(auditEvent.EventAction).To(Equal("received"), "Event action")
-		Expect(string(auditEvent.EventOutcome)).To(Equal("success"), "Event outcome")
-		Expect(auditEvent.ActorType.Value).To(Equal("external"), "Actor type")
-		Expect(auditEvent.ActorID.Value).To(Equal("prometheus-alert"), "Actor ID - ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypePrometheusAlert")
-		Expect(auditEvent.ResourceType.Value).To(Equal("Signal"), "Resource type")
-		Expect(auditEvent.CorrelationID).To(Equal(correlationID), "Correlation ID consistency")
-		Expect(auditEvent.EventTimestamp).ToNot(BeZero(), "Event timestamp must be present")
+			Expect(string(auditEvent.EventCategory)).To(Equal("gateway"), "Event category")
+			Expect(auditEvent.EventAction).To(Equal("received"), "Event action")
+			Expect(string(auditEvent.EventOutcome)).To(Equal("success"), "Event outcome")
+			Expect(auditEvent.ActorType.Value).To(Equal("external"), "Actor type")
+			Expect(auditEvent.ActorID.Value).To(Equal("prometheus-alert"), "Actor ID - ✅ ADAPTER-CONSTANT: PrometheusAdapter uses SourceTypePrometheusAlert")
+			Expect(auditEvent.ResourceType.Value).To(Equal("Signal"), "Resource type")
+			Expect(auditEvent.CorrelationID).To(Equal(correlationID), "Correlation ID consistency")
+			Expect(auditEvent.EventTimestamp).ToNot(BeZero(), "Event timestamp must be present")
 
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// PHASE 4: Validate Gap #1-3 - RR Reconstruction Fields
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			// PHASE 4: Validate Gap #1-3 - RR Reconstruction Fields
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		// Extract event_data (discriminated union from ogen)
-		// Convert to map[string]interface{} for existing validation logic
-		eventDataBytes, err := json.Marshal(auditEvent.EventData)
-		Expect(err).ToNot(HaveOccurred(), "Should marshal EventData")
-		var eventData map[string]interface{}
-		err = json.Unmarshal(eventDataBytes, &eventData)
-		Expect(err).ToNot(HaveOccurred(), "Should unmarshal EventData to map")
+			// Extract event_data (discriminated union from ogen)
+			// Convert to map[string]interface{} for existing validation logic
+			eventDataBytes, err := json.Marshal(auditEvent.EventData)
+			Expect(err).ToNot(HaveOccurred(), "Should marshal EventData")
+			var eventData map[string]interface{}
+			err = json.Unmarshal(eventDataBytes, &eventData)
+			Expect(err).ToNot(HaveOccurred(), "Should unmarshal EventData to map")
 
 			// ┌─────────────────────────────────────────────────────────────┐
 			// │ Gap #1: original_payload (Full Prometheus Alert Payload)    │
@@ -453,39 +444,39 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := "gateway.signal.received"
 			eventCategory := "gateway"
 
-		// ✅ Use Eventually() for async validation
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			// ✅ Use Eventually() for async validation
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
+				return 0
+			}, 30*time.Second, 1*time.Second).Should(Equal(1),
+				"Should find exactly 1 audit event for empty labels test")
+
+			// Query final audit events
+			resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			if err != nil {
-				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 30*time.Second, 1*time.Second).Should(Equal(1),
-			"Should find exactly 1 audit event for empty labels test")
+			Expect(err).ToNot(HaveOccurred())
 
-		// Query final audit events
-		resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			events := resp2.Data
+			Expect(len(events)).To(Equal(1))
 
-		events := resp2.Data
-		Expect(len(events)).To(Equal(1))
-
-		// Convert EventData discriminated union to map for existing validation logic
-		eventDataBytes, _ := json.Marshal(events[0].EventData)
-		var eventData map[string]interface{}
-		err = json.Unmarshal(eventDataBytes, &eventData)
-		Expect(err).ToNot(HaveOccurred())
+			// Convert EventData discriminated union to map for existing validation logic
+			eventDataBytes, _ := json.Marshal(events[0].EventData)
+			var eventData map[string]interface{}
+			err = json.Unmarshal(eventDataBytes, &eventData)
+			Expect(err).ToNot(HaveOccurred())
 
 			// ┌─────────────────────────────────────────────────────────────┐
 			// │ CRITICAL: Validate Defensive Nil Checks                     │
@@ -595,21 +586,21 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}, 30*time.Second, 1*time.Second).Should(Equal(1),
 				"Should find exactly 1 audit event for nil payload test")
 
-		// Query final audit events
-		resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
+			// Query final audit events
+			resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationID),
+			})
 			Expect(err).ToNot(HaveOccurred())
-		events := resp2.Data
-		Expect(len(events)).To(Equal(1))
+			events := resp2.Data
+			Expect(len(events)).To(Equal(1))
 
-		// Convert EventData discriminated union to map for existing validation logic
-		eventDataBytes, _ := json.Marshal(events[0].EventData)
-		var eventData map[string]interface{}
-		err = json.Unmarshal(eventDataBytes, &eventData)
-		Expect(err).ToNot(HaveOccurred())
+			// Convert EventData discriminated union to map for existing validation logic
+			eventDataBytes, _ := json.Marshal(events[0].EventData)
+			var eventData map[string]interface{}
+			err = json.Unmarshal(eventDataBytes, &eventData)
+			Expect(err).ToNot(HaveOccurred())
 
 			// ┌─────────────────────────────────────────────────────────────┐
 			// │ CRITICAL: Validate Graceful Nil Handling                    │
@@ -712,12 +703,12 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// ✅ MANDATORY: Use Eventually() to wait for first audit event (NO time.Sleep())
 			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
 			By("Waiting for initial signal audit event to be written")
-		eventTypeReceived := "gateway.signal.received"
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventTypeReceived),
-				CorrelationID: ogenclient.NewOptString(correlationID1),
-			})
+			eventTypeReceived := "gateway.signal.received"
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventTypeReceived),
+					CorrelationID: ogenclient.NewOptString(correlationID1),
+				})
 				if err != nil {
 					return 0
 				}
@@ -746,10 +737,10 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
 				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationID2),
-			})
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID2),
+				})
 				if err != nil {
 					return 0
 				}
@@ -760,29 +751,29 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			}, 30*time.Second, 1*time.Second).Should(Equal(1),
 				"Should find exactly 1 gateway.signal.deduplicated event")
 
-		// Query final audit events
-		resp3, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID2),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			// Query final audit events
+			resp3, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationID2),
+			})
+			Expect(err).ToNot(HaveOccurred())
 
-		events := resp3.Data
-		Expect(len(events)).To(Equal(1))
+			events := resp3.Data
+			Expect(len(events)).To(Equal(1))
 
-		// ✅ DD-TESTING-001: Validate event metadata
-		Expect(events[0].EventType).To(Equal(eventType))
-		Expect(string(events[0].EventCategory)).To(Equal(eventCategory))
-		Expect(events[0].EventAction).To(Equal("deduplicated"))
-		Expect(string(events[0].EventOutcome)).To(Equal("success"))
-		Expect(events[0].CorrelationID).To(Equal(correlationID2))
+			// ✅ DD-TESTING-001: Validate event metadata
+			Expect(events[0].EventType).To(Equal(eventType))
+			Expect(string(events[0].EventCategory)).To(Equal(eventCategory))
+			Expect(events[0].EventAction).To(Equal("deduplicated"))
+			Expect(string(events[0].EventOutcome)).To(Equal("success"))
+			Expect(events[0].CorrelationID).To(Equal(correlationID2))
 
-		// ✅ DD-TESTING-001: Validate structured event_data for RR reconstruction fields
-		// Convert EventData discriminated union to map for existing validation logic
-		eventDataBytes, _ := json.Marshal(events[0].EventData)
-		var eventData map[string]interface{}
-		_ = json.Unmarshal(eventDataBytes, &eventData)
+			// ✅ DD-TESTING-001: Validate structured event_data for RR reconstruction fields
+			// Convert EventData discriminated union to map for existing validation logic
+			eventDataBytes, _ := json.Marshal(events[0].EventData)
+			var eventData map[string]interface{}
+			_ = json.Unmarshal(eventDataBytes, &eventData)
 
 			By("Verifying Gap #1: original_payload is captured in deduplicated event")
 			Expect(eventData).To(HaveKey("original_payload"))
@@ -926,19 +917,19 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				return 0
 			}, 30*time.Second, 1*time.Second).Should(Equal(1))
 
-		respPromAudit, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationIDProm),
-		})
-		Expect(err).ToNot(HaveOccurred())
-		promEvents := respPromAudit.Data
-		Expect(len(promEvents)).To(Equal(1))
+			respPromAudit, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationIDProm),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			promEvents := respPromAudit.Data
+			Expect(len(promEvents)).To(Equal(1))
 
-		// Convert EventData discriminated union to map for existing validation logic
-		promEventDataBytes, _ := json.Marshal(promEvents[0].EventData)
-		var promEventData map[string]interface{}
-		_ = json.Unmarshal(promEventDataBytes, &promEventData)
+			// Convert EventData discriminated union to map for existing validation logic
+			promEventDataBytes, _ := json.Marshal(promEvents[0].EventData)
+			var promEventData map[string]interface{}
+			_ = json.Unmarshal(promEventDataBytes, &promEventData)
 			Expect(promEventData).To(HaveKey("original_payload"))
 			Expect(promEventData).To(HaveKey("signal_labels"))
 			Expect(promEventData).To(HaveKey("signal_annotations"))
@@ -946,11 +937,11 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			By("Verifying K8s Event audit event has all 3 RR reconstruction fields")
 
 			Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationIDK8s),
-			})
+				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationIDK8s),
+				})
 				if err != nil {
 					return 0
 				}
@@ -960,19 +951,19 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				return 0
 			}, 30*time.Second, 1*time.Second).Should(Equal(1))
 
-		respK8sAudit, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationIDK8s),
-		})
-		Expect(err).ToNot(HaveOccurred())
-		k8sEvents := respK8sAudit.Data
-		Expect(len(k8sEvents)).To(Equal(1))
+			respK8sAudit, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(eventType),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(correlationIDK8s),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			k8sEvents := respK8sAudit.Data
+			Expect(len(k8sEvents)).To(Equal(1))
 
-		// Convert EventData discriminated union to map for existing validation logic
-		k8sEventDataBytes, _ := json.Marshal(k8sEvents[0].EventData)
-		var k8sEventData map[string]interface{}
-		_ = json.Unmarshal(k8sEventDataBytes, &k8sEventData)
+			// Convert EventData discriminated union to map for existing validation logic
+			k8sEventDataBytes, _ := json.Marshal(k8sEvents[0].EventData)
+			var k8sEventData map[string]interface{}
+			_ = json.Unmarshal(k8sEventDataBytes, &k8sEventData)
 			Expect(k8sEventData).To(HaveKey("original_payload"))
 			Expect(k8sEventData).To(HaveKey("signal_labels"))
 			Expect(k8sEventData).To(HaveKey("signal_annotations"))
