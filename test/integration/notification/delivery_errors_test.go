@@ -359,26 +359,44 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			"Should succeed after retrying 502 Bad Gateway error")
 
 		// BEHAVIOR VALIDATION: Verify 502 was treated as retryable and succeeded
-		// Controller may reconcile multiple times, but only retries once per delivery
-		// FIX: Refetch object to avoid stale status in parallel execution
+		// DD-STATUS-001: Use API reader to bypass cache in parallel execution
 		Eventually(func() int {
 			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			err := k8sAPIReader.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 			if err != nil {
 				return -1 // Indicate error to retry
 			}
 			return refetchedNotif.Status.SuccessfulDeliveries
-		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1), "Should have exactly 1 successful delivery after retry")
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1), "Should have exactly 1 successful delivery after retry")
 
+		// Counter semantics (post BR-NOT-052 clarification): FailedDeliveries = unique channels that ultimately failed
+		// Since slack channel succeeded after retry, FailedDeliveries should be 0
 		Eventually(func() int {
 			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			err := k8sAPIReader.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 			if err != nil {
 				return -1
 			}
 			return refetchedNotif.Status.FailedDeliveries
-		}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1),
-			"Should have at least 1 failed attempt with HTTP 502")
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(0),
+			"FailedDeliveries should be 0 since slack channel ultimately succeeded after retry")
+
+		// Verify there was at least 1 failed attempt in DeliveryAttempts (proving 502 was retried)
+		Eventually(func() int {
+			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
+			err := k8sAPIReader.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			if err != nil {
+				return -1
+			}
+			failedCount := 0
+			for _, attempt := range refetchedNotif.Status.DeliveryAttempts {
+				if attempt.Status == "failed" {
+					failedCount++
+				}
+			}
+			return failedCount
+		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
+			"Should have at least 1 failed attempt in DeliveryAttempts (HTTP 502 was retried)")
 
 		// CORRECTNESS VALIDATION: Verify error classification
 		// Refetch once more to get latest delivery attempts

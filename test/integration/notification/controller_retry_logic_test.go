@@ -56,6 +56,14 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 	Context("When file delivery fails repeatedly", func() {
 		It("should retry with exponential backoff up to max attempts", func() {
 			// ========================================
+			// PARALLEL EXECUTION FIX: Lock orchestrator mock sequence
+			// ========================================
+			orchestratorMockLock.Lock()
+			DeferCleanup(func() {
+				orchestratorMockLock.Unlock()
+			})
+
+			// ========================================
 			// TEST SETUP: Mock file service that always fails with RETRYABLE error
 			// ========================================
 			// BR-NOT-052: "maximum of 5 attempts per channel"
@@ -183,6 +191,24 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			elapsedTime := time.Since(startTime)
 
+			// DD-STATUS-001: Wait for all delivery attempts to propagate
+			Eventually(func() int {
+				err := k8sAPIReader.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return -1
+				}
+				return len(notification.Status.DeliveryAttempts)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(6),
+				"DD-STATUS-001: Wait for all 6 attempts (1 console + 5 file)")
+			err = k8sAPIReader.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			Expect(err).ToNot(HaveOccurred(), "DD-STATUS-001: API reader refetch should succeed")
+
 		By("Validating retry statistics (BR-NOT-054)")
 		Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
 			"Console delivery should succeed (1 successful)")
@@ -229,6 +255,14 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 
 	Context("When delivery succeeds on retry", func() {
 		It("should stop retrying after first success", func() {
+			// ========================================
+			// PARALLEL EXECUTION FIX: Lock orchestrator mock sequence
+			// ========================================
+			orchestratorMockLock.Lock()
+			DeferCleanup(func() {
+				orchestratorMockLock.Unlock()
+			})
+
 			attemptCount := 0
 
 			// ========================================
@@ -305,6 +339,27 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			By("🔍 DEBUG: Validating retry logic stopped after success (BR-NOT-054)")
 			mockFileCallCount := mockFileService.GetCallCount()
+
+			// DD-STATUS-001: Wait for API server to propagate all delivery attempts
+			// Use Eventually to handle API server propagation latency in parallel test execution
+			Eventually(func() int {
+				err := k8sAPIReader.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return -1
+				}
+				return len(notification.Status.DeliveryAttempts)
+			}, 5*time.Second, 200*time.Millisecond).Should(Equal(3),
+				"DD-STATUS-001: Wait for all 3 attempts to propagate to API server")
+
+			// Refetch one more time to get all status fields
+			err = k8sAPIReader.Get(ctx, client.ObjectKey{
+				Name:      notification.Name,
+				Namespace: notification.Namespace,
+			}, notification)
+			Expect(err).ToNot(HaveOccurred())
 
 			GinkgoWriter.Printf("\n🔍 DEBUG: Retry-Until-Success Test:\n")
 			GinkgoWriter.Printf("  File service calls: %d (expected: 3)\n", mockFileCallCount)
