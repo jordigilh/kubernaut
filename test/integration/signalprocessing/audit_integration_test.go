@@ -17,6 +17,7 @@ limitations under the License.
 package signalprocessing
 
 import (
+	"context"
 	"encoding/json"
 	"time"
 
@@ -28,11 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
-	// HTTP Anti-Pattern Phase 2: Removed ogenclient import (HTTP client)
-	// HTTP Anti-Pattern Phase 2: Removed fmt, net/http imports (HTTP health check)
-	// HTTP Anti-Pattern Phase 2: Removed infrastructure import (dataStorageURL)
-	// Now using testDB for direct PostgreSQL queries (from suite_test.go)
 )
 
 // =============================================================================
@@ -46,8 +44,8 @@ import (
 //
 // Test Strategy:
 // - Per TESTING_GUIDELINES.md: Integration tests use REAL infrastructure
-// - SignalProcessing connects to REAL Data Storage (via podman-compose)
-// - Tests verify audit events appear in Data Storage database
+// - SignalProcessing connects to REAL Data Storage via HTTP API (respects service boundaries)
+// - Tests flush audit store, then query DataStorage HTTP API
 // - Tests validate audit event content matches controller operations
 //
 // Audit Events Tested:
@@ -62,10 +60,116 @@ import (
 //
 // =============================================================================
 
+// Helper functions for audit event queries via DataStorage HTTP API
+// Per service boundary rules: SignalProcessing queries DataStorage via HTTP, not direct DB
+
+// flushAuditStoreAndWait flushes the audit store to ensure events are written to DataStorage
+func flushAuditStoreAndWait() {
+	By("Flushing audit store to ensure events are written to DataStorage")
+	flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	Expect(err).NotTo(HaveOccurred(), "Audit store flush must succeed")
+
+	// Small delay to ensure HTTP API has processed the write
+	time.Sleep(100 * time.Millisecond)
+}
+
+// countAuditEvents counts events by type and correlation ID via HTTP API
+func countAuditEvents(eventType, correlationID string) int {
+	params := ogenclient.QueryAuditEventsParams{
+		EventType:     ogenclient.NewOptString(eventType),
+		CorrelationID: ogenclient.NewOptString(correlationID),
+	}
+
+	resp, err := dsClient.QueryAuditEvents(ctx, params)
+	if err != nil {
+		GinkgoWriter.Printf("Query error: %v\n", err)
+		return 0
+	}
+	events := resp.Data
+	return len(events)
+}
+
+// countAuditEventsByCategory counts events by category and correlation ID via HTTP API
+func countAuditEventsByCategory(category, correlationID string) int {
+	params := ogenclient.QueryAuditEventsParams{
+		EventCategory: ogenclient.NewOptString(category),
+		CorrelationID: ogenclient.NewOptString(correlationID),
+	}
+
+	resp, err := dsClient.QueryAuditEvents(ctx, params)
+	if err != nil {
+		GinkgoWriter.Printf("Query error: %v\n", err)
+		return 0
+	}
+	events := resp.Data
+	return len(events)
+}
+
+// getLatestAuditEvent retrieves the most recent event by type and correlation ID
+func getLatestAuditEvent(eventType, correlationID string) (*ogenclient.AuditEvent, error) {
+	params := ogenclient.QueryAuditEventsParams{
+		EventType:     ogenclient.NewOptString(eventType),
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		Limit:         ogenclient.NewOptInt(1),
+	}
+
+	resp, err := dsClient.QueryAuditEvents(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	events := resp.Data
+	if len(events) == 0 {
+		return nil, nil
+	}
+	return &events[0], nil
+}
+
+// getFirstAuditEvent retrieves the earliest event by type and correlation ID
+// Note: For now, we query all events and return the last one (earliest by timestamp)
+// TODO: Add sort_order parameter to DataStorage API for more efficient queries
+func getFirstAuditEvent(eventType, correlationID string) (*ogenclient.AuditEvent, error) {
+	params := ogenclient.QueryAuditEventsParams{
+		EventType:     ogenclient.NewOptString(eventType),
+		CorrelationID: ogenclient.NewOptString(correlationID),
+		// Query more events to ensure we get the earliest one
+		Limit: ogenclient.NewOptInt(100),
+	}
+
+	resp, err := dsClient.QueryAuditEvents(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	events := resp.Data
+	if len(events) == 0 {
+		return nil, nil
+	}
+
+	// Return the last event (earliest timestamp, since API returns DESC by default)
+	return &events[len(events)-1], nil
+}
+
+// eventDataToMap converts AuditEventEventData to map[string]interface{}
+// This helper is needed because event_data is now a structured type, not raw JSON
+func eventDataToMap(eventData ogenclient.AuditEventEventData) (map[string]interface{}, error) {
+	// Marshal the structured type back to JSON
+	bytes, err := json.Marshal(eventData)
+	if err != nil {
+		return nil, err
+	}
+	// Unmarshal into map
+	var result map[string]interface{}
+	err = json.Unmarshal(bytes, &result)
+	return result, err
+}
+
 var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration", func() {
-	// HTTP Anti-Pattern Phase 2: Removed dataStorageURL and HTTP health check
-	// Now using testDB (direct PostgreSQL connection from suite_test.go)
-	// PostgreSQL connection is verified in SynchronizedBeforeSuite (testDB.Ping)
+	// Service Boundary Pattern: SignalProcessing queries DataStorage via HTTP API
+	// dsClient (ogen HTTP client) is initialized in suite_test.go SynchronizedBeforeSuite
+	// auditStore is used for writes (buffered), dsClient for queries (HTTP API)
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// SIGNAL PROCESSING COMPLETION AUDITING (BR-SP-090)
@@ -124,68 +228,34 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		By("6. Query PostgreSQL for 'signal.processed' audit event (HTTP Anti-Pattern Phase 2)")
-		// HTTP Anti-Pattern Phase 2: Replaced HTTP client with direct PostgreSQL query
-		// Now querying audit_events table directly via testDB (from suite_test.go)
+			By("6. Flush audit store and query DataStorage HTTP API for 'signal.processed' event")
+			flushAuditStoreAndWait()
 
-		// Wait for 'signal.processed' event to appear in PostgreSQL
-		var eventCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_type = $1
-				  AND correlation_id = $2
-				  AND service_name = 'SignalProcessing'
-			`, spaudit.EventTypeSignalProcessed, correlationID).Scan(&eventCount)
-			if err != nil {
-				GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
-				return 0
-			}
-			return eventCount
-		}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"BR-SP-090: SignalProcessing MUST emit exactly 1 'signal.processed' audit event")
+			// Wait for 'signal.processed' event to appear in DataStorage
+			Eventually(func() int {
+				return countAuditEvents(spaudit.EventTypeSignalProcessed, correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 'signal.processed' audit event")
 
-		By("7. Fetch and validate 'signal.processed' audit event from PostgreSQL")
-		var (
-			eventID        string
-			eventTimestamp time.Time
-			eventCategory  string
-			eventAction    string
-			eventOutcome   string
-			actorType      string
-			actorID        string
-			eventData      []byte // JSONB stored as bytes
-		)
-		err := testDB.QueryRow(`
-			SELECT event_id, event_timestamp, event_category, event_action,
-			       COALESCE(event_outcome, ''), COALESCE(actor_type, ''), COALESCE(actor_id, ''),
-			       event_data
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-			ORDER BY event_timestamp DESC
-			LIMIT 1
-		`, spaudit.EventTypeSignalProcessed, correlationID).Scan(
-			&eventID, &eventTimestamp, &eventCategory, &eventAction,
-			&eventOutcome, &actorType, &actorID, &eventData,
-		)
-		Expect(err).ToNot(HaveOccurred(), "Should find 'signal.processed' audit event in PostgreSQL")
+			By("7. Fetch and validate 'signal.processed' audit event from DataStorage HTTP API")
+			event, err := getLatestAuditEvent(spaudit.EventTypeSignalProcessed, correlationID)
+			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		By("8. Validate audit event fields from PostgreSQL row")
-		Expect(eventCategory).To(Equal("signalprocessing"), "Event category must match")
-		Expect(eventAction).To(Equal("processed"), "Event action must match")
-		Expect(eventOutcome).To(Equal("success"), "Event outcome must be success")
+		By("8. Validate audit event fields")
+		Expect(string(event.EventCategory)).To(Equal("signalprocessing"), "Event category must match")
+		Expect(event.EventAction).To(Equal("processed"), "Event action must match")
+		Expect(string(event.EventOutcome)).To(Equal("success"), "Event outcome must be success")
+		actorType, _ := event.ActorType.Get()
 		Expect(actorType).To(Equal("service"), "Actor type must be service")
+		actorID, _ := event.ActorID.Get()
 		Expect(actorID).To(Equal("signalprocessing-controller"), "Actor ID must match controller")
 
-		By("9. Validate event_data JSONB fields")
-		var eventDataMap map[string]interface{}
-		err = json.Unmarshal(eventData, &eventDataMap)
-		Expect(err).ToNot(HaveOccurred(), "event_data should be valid JSON")
-		Expect(eventDataMap["environment"]).To(Equal("production"), "Environment must match")
-		Expect(eventDataMap["priority"]).To(Equal("P0"), "Priority must match")
+			By("9. Validate event_data fields")
+			eventDataMap, err := eventDataToMap(event.EventData)
+			Expect(err).ToNot(HaveOccurred(), "event_data should be convertible to map")
+			Expect(eventDataMap["environment"]).To(Equal("production"), "Environment must match")
+			Expect(eventDataMap["priority"]).To(Equal("P0"), "Priority must match")
 		})
 	})
 
@@ -243,52 +313,29 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		By("6. Query PostgreSQL for 'classification.decision' audit event (HTTP Anti-Pattern Phase 2)")
-		eventType := "signalprocessing.classification.decision"
+			By("6. Flush audit store and query DataStorage HTTP API for 'classification.decision' event")
+			flushAuditStoreAndWait()
 
-		var eventCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_type = $1
-				  AND correlation_id = $2
-				  AND service_name = 'SignalProcessing'
-			`, eventType, correlationID).Scan(&eventCount)
-			if err != nil {
-				return 0
-			}
-			return eventCount
-		}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"BR-SP-090: SignalProcessing MUST emit exactly 1 classification.decision event per classification")
+			eventType := "signalprocessing.classification.decision"
 
-		By("7. Validate classification audit event from PostgreSQL")
-		var (
-			eventCategory string
-			eventAction   string
-			eventOutcome  string
-			eventData     []byte
-		)
-		err := testDB.QueryRow(`
-			SELECT event_category, event_action, COALESCE(event_outcome, ''), event_data
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-			ORDER BY event_timestamp DESC
-			LIMIT 1
-		`, eventType, correlationID).Scan(&eventCategory, &eventAction, &eventOutcome, &eventData)
-		Expect(err).ToNot(HaveOccurred())
+			Eventually(func() int {
+				return countAuditEvents(eventType, correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 classification.decision event per classification")
 
-		Expect(eventCategory).To(Equal("signalprocessing"))
-		Expect(eventAction).To(Equal("classification"))
-		Expect(eventOutcome).To(Equal("success"))
+			By("7. Fetch and validate classification audit event from DataStorage HTTP API")
+			event, err := getLatestAuditEvent(eventType, correlationID)
+			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		var eventDataMap map[string]interface{}
-		err = json.Unmarshal(eventData, &eventDataMap)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(eventDataMap["environment"]).To(Equal("staging"))
-		Expect(eventDataMap["priority"]).To(Equal("P2"))
+			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(event.EventAction).To(Equal("classification"))
+			Expect(string(event.EventOutcome)).To(Equal("success"))
+
+			eventDataMap, err := eventDataToMap(event.EventData)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(eventDataMap["environment"]).To(Equal("staging"))
+			Expect(eventDataMap["priority"]).To(Equal("P2"))
 		})
 	})
 
@@ -349,49 +396,26 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		By("6. Query PostgreSQL for 'business.classified' audit event (HTTP Anti-Pattern Phase 2)")
-		eventType := "signalprocessing.business.classified"
+			By("6. Flush audit store and query DataStorage HTTP API for 'business.classified' event")
+			flushAuditStoreAndWait()
 
-		var eventCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_type = $1
-				  AND correlation_id = $2
-				  AND service_name = 'SignalProcessing'
-			`, eventType, correlationID).Scan(&eventCount)
-			if err != nil {
-				return 0
-			}
-			return eventCount
-		}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"AUDIT-06: SignalProcessing MUST emit exactly 1 business.classified event per business classification")
+			eventType := "signalprocessing.business.classified"
 
-		By("7. Validate business classification audit event from PostgreSQL")
-		var (
-			eventCategory string
-			eventAction   string
-			eventOutcome  string
-			eventData     []byte
-		)
-		err := testDB.QueryRow(`
-			SELECT event_category, event_action, COALESCE(event_outcome, ''), event_data
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-			ORDER BY event_timestamp DESC
-			LIMIT 1
-		`, eventType, correlationID).Scan(&eventCategory, &eventAction, &eventOutcome, &eventData)
-		Expect(err).ToNot(HaveOccurred())
+			Eventually(func() int {
+				return countAuditEvents(eventType, correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"AUDIT-06: SignalProcessing MUST emit exactly 1 business.classified event per business classification")
 
-		Expect(eventCategory).To(Equal("signalprocessing"))
-		Expect(eventAction).To(Equal("classification"))
-		Expect(eventOutcome).To(Equal("success"))
+		By("7. Fetch and validate business classification audit event from DataStorage HTTP API")
+		event, err := getLatestAuditEvent(eventType, correlationID)
+		Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+		Expect(event).ToNot(BeNil(), "Event must exist")
 
-		var eventDataMap map[string]interface{}
-		err = json.Unmarshal(eventData, &eventDataMap)
+		Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+		Expect(event.EventAction).To(Equal("classification"))
+		Expect(string(event.EventOutcome)).To(Equal("success"))
+
+		eventDataMap, err := eventDataToMap(event.EventData)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(eventDataMap["business_unit"]).To(Equal("payments"))
 		})
@@ -483,61 +507,37 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		By("6. Query PostgreSQL for 'enrichment.completed' audit event (HTTP Anti-Pattern Phase 2)")
-		eventType := "signalprocessing.enrichment.completed"
+			By("6. Flush audit store and query DataStorage HTTP API for 'enrichment.completed' event")
+			flushAuditStoreAndWait()
 
-		var eventCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_type = $1
-				  AND correlation_id = $2
-				  AND service_name = 'SignalProcessing'
-			`, eventType, correlationID).Scan(&eventCount)
-			if err != nil {
-				return 0
-			}
-			return eventCount
-		}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"BR-SP-090: SignalProcessing MUST emit exactly 1 enrichment.completed event per enrichment operation")
+			eventType := "signalprocessing.enrichment.completed"
 
-		By("7. Validate enrichment audit event from PostgreSQL")
-		var (
-			eventCategory  string
-			eventAction    string
-			eventOutcome   string
-			eventData      []byte
-			durationMs     *int64 // Optional field
-		)
-		err := testDB.QueryRow(`
-			SELECT event_category, event_action, COALESCE(event_outcome, ''),
-			       event_data, duration_ms
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-			ORDER BY event_timestamp DESC
-			LIMIT 1
-		`, eventType, correlationID).Scan(&eventCategory, &eventAction, &eventOutcome, &eventData, &durationMs)
-		Expect(err).ToNot(HaveOccurred())
+			Eventually(func() int {
+				return countAuditEvents(eventType, correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"BR-SP-090: SignalProcessing MUST emit exactly 1 enrichment.completed event per enrichment operation")
+
+		By("7. Fetch and validate enrichment audit event from DataStorage HTTP API")
+		event, err := getLatestAuditEvent(eventType, correlationID)
+		Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+		Expect(event).ToNot(BeNil(), "Event must exist")
 
 		GinkgoWriter.Printf("\n📊 Found 1 enrichment audit event\n")
 
-		Expect(eventCategory).To(Equal("signalprocessing"))
-		Expect(eventAction).To(Equal("enrichment"))
-		Expect(eventOutcome).To(Equal("success"))
+		Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+		Expect(event.EventAction).To(Equal("enrichment"))
+		Expect(string(event.EventOutcome)).To(Equal("success"))
 
-		var eventDataMap map[string]interface{}
-		err = json.Unmarshal(eventData, &eventDataMap)
+		eventDataMap, err := eventDataToMap(event.EventData)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(eventDataMap["has_namespace"]).To(BeTrue())
 		Expect(eventDataMap["has_pod"]).To(BeTrue())
 		Expect(eventDataMap["degraded_mode"]).To(BeFalse())
 
 		// Additional assertions for enrichment-specific fields
-		Expect(durationMs).ToNot(BeNil(),
-			"Should capture enrichment duration for performance tracking")
+		durationMs, hasDuration := event.DurationMs.Get()
+		Expect(hasDuration).To(BeTrue(), "Should capture enrichment duration for performance tracking")
+		Expect(durationMs).To(BeNumerically(">", 0))
 		})
 	})
 
@@ -592,68 +592,37 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		By("6. Query PostgreSQL for ALL signalprocessing audit events (HTTP Anti-Pattern Phase 2)")
-		// HTTP Anti-Pattern Phase 2: Replaced HTTP client with direct PostgreSQL query
-		// Querying all events for this correlation_id to count phase transitions
+			By("6. Flush audit store and query DataStorage HTTP API for signalprocessing audit events")
+			flushAuditStoreAndWait()
 
-		var totalCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_category = 'signalprocessing'
-				  AND correlation_id = $1
-				  AND service_name = 'SignalProcessing'
-			`, correlationID).Scan(&totalCount)
-			if err != nil {
-				return 0
-			}
-			return totalCount
-		}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"BR-SP-090: SignalProcessing MUST emit audit events")
+			Eventually(func() int {
+				return countAuditEventsByCategory("signalprocessing", correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"BR-SP-090: SignalProcessing MUST emit audit events")
 
-		By("7. Count phase.transition events (DD-TESTING-001 deterministic validation)")
-		var phaseTransitionCount int
-		err := testDB.QueryRow(`
-			SELECT COUNT(*)
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-		`, spaudit.EventTypePhaseTransition, correlationID).Scan(&phaseTransitionCount)
-		Expect(err).ToNot(HaveOccurred())
+			By("7. Count phase.transition events (DD-TESTING-001 deterministic validation)")
+			phaseTransitionCount := countAuditEvents(spaudit.EventTypePhaseTransition, correlationID)
 
-		By("8. Validate exact event count for 'phase.transition' (DD-TESTING-001 compliance)")
-		// Business requirement: SP has 5 phases (Pending→Enriching→Classifying→Categorizing→Completed)
-		// Therefore: Exactly 4 phase transitions per successful processing
-		Expect(phaseTransitionCount).To(Equal(4),
-			"BR-SP-090: MUST emit exactly 4 phase transitions: Pending→Enriching→Classifying→Categorizing→Completed")
+			By("8. Validate exact event count for 'phase.transition' (DD-TESTING-001 compliance)")
+			// Business requirement: SP has 5 phases (Pending→Enriching→Classifying→Categorizing→Completed)
+			// Therefore: Exactly 4 phase transitions per successful processing
+			Expect(phaseTransitionCount).To(Equal(4),
+				"BR-SP-090: MUST emit exactly 4 phase transitions: Pending→Enriching→Classifying→Categorizing→Completed")
 
 		By("9. Fetch first 'phase.transition' event for detailed validation")
-		var (
-			eventCategory string
-			eventAction   string
-			eventOutcome  string
-			eventData     []byte
-		)
-		err = testDB.QueryRow(`
-			SELECT event_category, event_action, COALESCE(event_outcome, ''), event_data
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-			ORDER BY event_timestamp ASC
-			LIMIT 1
-		`, spaudit.EventTypePhaseTransition, correlationID).Scan(&eventCategory, &eventAction, &eventOutcome, &eventData)
-		Expect(err).ToNot(HaveOccurred(), "Should find at least one phase.transition audit event")
+		event, err := getFirstAuditEvent(spaudit.EventTypePhaseTransition, correlationID)
+		Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+		Expect(event).ToNot(BeNil(), "Event must exist")
 
-		By("10. Validate phase transition event structure from PostgreSQL")
-		Expect(eventCategory).To(Equal("signalprocessing"))
-		Expect(eventAction).To(Equal("phase_transition"))
-		Expect(eventOutcome).To(Equal("success"))
+		By("10. Validate phase transition event structure")
+		Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+		Expect(event.EventAction).To(Equal("phase_transition"))
+		Expect(string(event.EventOutcome)).To(Equal("success"))
 
 		// Verify event_data contains phase information
-		Expect(eventData).ToNot(BeNil(), "EventData should not be nil")
+		eventDataMap, err := eventDataToMap(event.EventData)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(eventDataMap).ToNot(BeNil(), "EventData should not be nil")
 		})
 	})
 
@@ -710,94 +679,63 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			}, 15*time.Second, 500*time.Millisecond).ShouldNot(Equal(signalprocessingv1alpha1.PhasePending),
 				"SignalProcessing should leave Pending phase even with errors (degraded mode)")
 
-		By("5. Query PostgreSQL for error audit events (HTTP Anti-Pattern Phase 2)")
-		// HTTP Anti-Pattern Phase 2: Replaced HTTP client with direct PostgreSQL query
+			By("5. Flush audit store and query DataStorage HTTP API for error audit events")
+			flushAuditStoreAndWait()
 
-		var totalCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_category = 'signalprocessing'
-				  AND correlation_id = $1
-				  AND service_name = 'SignalProcessing'
-			`, correlationID).Scan(&totalCount)
-			if err != nil {
-				return 0
-			}
-			return totalCount
-		}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Should have audit events even with errors (degraded mode processing)")
+			Eventually(func() int {
+				return countAuditEventsByCategory("signalprocessing", correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Should have audit events even with errors (degraded mode processing)")
 
-		By("6. Count events by event_type (DD-TESTING-001 deterministic validation)")
-		var errorCount, completionCount int
-		err := testDB.QueryRow(`
-			SELECT
-				COUNT(CASE WHEN event_type = $1 THEN 1 END) as error_count,
-				COUNT(CASE WHEN event_type = $2 THEN 1 END) as completion_count
-			FROM audit_events
-			WHERE correlation_id = $3
-			  AND service_name = 'SignalProcessing'
-		`, spaudit.EventTypeError, spaudit.EventTypeSignalProcessed, correlationID).Scan(&errorCount, &completionCount)
-		Expect(err).ToNot(HaveOccurred())
+			By("6. Count events by event_type (DD-TESTING-001 deterministic validation)")
+			errorCount := countAuditEvents(spaudit.EventTypeError, correlationID)
+			completionCount := countAuditEvents(spaudit.EventTypeSignalProcessed, correlationID)
 
-		By("7. Validate error handling produced expected audit event (DD-TESTING-001 compliance)")
-		// Business logic: In error scenarios, SP emits either:
-		// - Option A: Explicit error event (signalprocessing.error.occurred) with EventOutcome=Failure
-		// - Option B: Completion in degraded mode (signalprocessing.signal.processed) with degraded=true
-		hasErrorEvent := errorCount > 0
-		hasCompletionEvent := completionCount > 0
+			By("7. Validate error handling produced expected audit event (DD-TESTING-001 compliance)")
+			// Business logic: In error scenarios, SP emits either:
+			// - Option A: Explicit error event (signalprocessing.error.occurred) with EventOutcome=Failure
+			// - Option B: Completion in degraded mode (signalprocessing.signal.processed) with degraded=true
+			hasErrorEvent := errorCount > 0
+			hasCompletionEvent := completionCount > 0
 
-		Expect(hasErrorEvent || hasCompletionEvent).To(BeTrue(),
-			"BR-SP-090: MUST emit either error event OR degraded mode completion event")
+			Expect(hasErrorEvent || hasCompletionEvent).To(BeTrue(),
+				"BR-SP-090: MUST emit either error event OR degraded mode completion event")
 
-		// Validate exactly 1 of the expected event types (deterministic)
-		if hasErrorEvent {
-			Expect(errorCount).To(Equal(1),
-				"BR-SP-090: Should emit exactly 1 error event per error occurrence")
+			// Validate exactly 1 of the expected event types (deterministic)
+			if hasErrorEvent {
+				Expect(errorCount).To(Equal(1),
+					"BR-SP-090: Should emit exactly 1 error event per error occurrence")
 
-			By("8. Validate error event structure from PostgreSQL (DD-TESTING-001)")
-			var (
-				eventOutcome string
-				eventData    []byte
-			)
-			err = testDB.QueryRow(`
-				SELECT COALESCE(event_outcome, ''), event_data
-				FROM audit_events
-				WHERE event_type = $1
-				  AND correlation_id = $2
-				  AND service_name = 'SignalProcessing'
-				ORDER BY event_timestamp DESC
-				LIMIT 1
-			`, spaudit.EventTypeError, correlationID).Scan(&eventOutcome, &eventData)
-			Expect(err).ToNot(HaveOccurred())
+				By("8. Validate error event structure from DataStorage HTTP API (DD-TESTING-001)")
+				event, err := getLatestAuditEvent(spaudit.EventTypeError, correlationID)
+				Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+				Expect(event).ToNot(BeNil(), "Event must exist")
 
 			// Validate event_outcome is Failure
-			Expect(eventOutcome).To(Equal("failure"),
+			Expect(string(event.EventOutcome)).To(Equal("failure"),
 				"Error events MUST have EventOutcome=Failure")
 
-			// DD-TESTING-001 MANDATORY: Validate structured event_data fields
-			var eventDataMap map[string]interface{}
-			err = json.Unmarshal(eventData, &eventDataMap)
-			Expect(err).ToNot(HaveOccurred(), "event_data should be marshallable")
+				// DD-TESTING-001 MANDATORY: Validate structured event_data fields
+				eventDataMap, err := eventDataToMap(event.EventData)
+				Expect(err).ToNot(HaveOccurred(), "event_data should be convertible to map")
 
-			// Per DD-AUDIT-004: Error events should contain structured error information
-			Expect(eventDataMap).To(HaveKey("error_message"),
-				"Error event should contain error_message field")
+				// Per DD-AUDIT-004: Error events should contain structured error information
+				Expect(eventDataMap).To(HaveKey("error_message"),
+					"Error event should contain error_message field")
 
-			errorMessage := eventDataMap["error_message"].(string)
-			Expect(errorMessage).ToNot(BeEmpty(),
-				"Error message should not be empty")
-		} else {
-			Expect(completionCount).To(Equal(1),
-				"BR-SP-090: Should emit exactly 1 completion event (degraded mode)")
-			GinkgoWriter.Printf("✅ Processed in degraded mode (no explicit error event)\n")
-		}
+				errorMessage := eventDataMap["error_message"].(string)
+				Expect(errorMessage).ToNot(BeEmpty(),
+					"Error message should not be empty")
+			} else {
+				Expect(completionCount).To(Equal(1),
+					"BR-SP-090: Should emit exactly 1 completion event (degraded mode)")
+				GinkgoWriter.Printf("✅ Processed in degraded mode (no explicit error event)\n")
+			}
 
 			By("9. Verify ADR-038: Reconciliation was not blocked by audit")
 			// SignalProcessing should still have updated status (not stuck in Pending)
 			var finalSP signalprocessingv1alpha1.SignalProcessing
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      sp.Name,
 				Namespace: sp.Namespace,
 			}, &finalSP)
@@ -847,73 +785,44 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			// Controller should attempt reconciliation and fail during enrichment
 			time.Sleep(5 * time.Second)
 
-		By("4. Query PostgreSQL for audit events (HTTP Anti-Pattern Phase 2)")
-		var totalCount int
-		Eventually(func() int {
-			err := testDB.QueryRow(`
-				SELECT COUNT(*)
-				FROM audit_events
-				WHERE event_category = 'signalprocessing'
-				  AND correlation_id = $1
-				  AND service_name = 'SignalProcessing'
-			`, correlationID).Scan(&totalCount)
-			if err != nil {
-				return 0
-			}
-			return totalCount
-		}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Should have error.occurred audit event for fatal enrichment error")
+			By("4. Flush audit store and query DataStorage HTTP API for audit events")
+			flushAuditStoreAndWait()
 
-		By("5. Validate error.occurred event was emitted (DD-TESTING-001)")
-		var errorCount int
-		err := testDB.QueryRow(`
-			SELECT COUNT(*)
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-		`, spaudit.EventTypeError, correlationID).Scan(&errorCount)
-		Expect(err).ToNot(HaveOccurred())
+			Eventually(func() int {
+				return countAuditEventsByCategory("signalprocessing", correlationID)
+			}, 120*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Should have error.occurred audit event for fatal enrichment error")
 
-		// For fatal errors, we MUST have error.occurred (not signal.processed)
-		Expect(errorCount).To(BeNumerically(">=", 1),
-			"BR-SP-090: MUST emit error.occurred for fatal enrichment errors")
+			By("5. Validate error.occurred event was emitted (DD-TESTING-001)")
+			errorCount := countAuditEvents(spaudit.EventTypeError, correlationID)
 
-	By("6. Fetch error event structure from PostgreSQL")
-		var (
-			eventOutcome string
-			eventData    []byte
-		)
-		err = testDB.QueryRow(`
-			SELECT COALESCE(event_outcome, ''), event_data
-			FROM audit_events
-			WHERE event_type = $1
-			  AND correlation_id = $2
-			  AND service_name = 'SignalProcessing'
-			ORDER BY event_timestamp DESC
-			LIMIT 1
-		`, spaudit.EventTypeError, correlationID).Scan(&eventOutcome, &eventData)
-		Expect(err).ToNot(HaveOccurred())
+			// For fatal errors, we MUST have error.occurred (not signal.processed)
+			Expect(errorCount).To(BeNumerically(">=", 1),
+				"BR-SP-090: MUST emit error.occurred for fatal enrichment errors")
+
+			By("6. Fetch error event structure from DataStorage HTTP API")
+			event, err := getLatestAuditEvent(spaudit.EventTypeError, correlationID)
+			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
+			Expect(event).ToNot(BeNil(), "Event must exist")
 
 		// Validate EventOutcome is Failure
-		Expect(eventOutcome).To(Equal("failure"),
+		Expect(string(event.EventOutcome)).To(Equal("failure"),
 			"Fatal errors MUST have EventOutcome=Failure")
 
-		// Validate error_data contains namespace error information
-		var eventDataMap map[string]interface{}
-		err = json.Unmarshal(eventData, &eventDataMap)
-		Expect(err).ToNot(HaveOccurred(), "event_data should be marshallable")
+			// Validate error_data contains namespace error information
+			eventDataMap, err := eventDataToMap(event.EventData)
+			Expect(err).ToNot(HaveOccurred(), "event_data should be convertible to map")
 
-		Expect(eventDataMap).To(HaveKey("phase"), "Error event should contain phase")
-		Expect(eventDataMap["phase"]).To(Equal("Enriching"), "Error should occur during Enriching phase")
+			Expect(eventDataMap).To(HaveKey("phase"), "Error event should contain phase")
+			Expect(eventDataMap["phase"]).To(Equal("Enriching"), "Error should occur during Enriching phase")
 
-		Expect(eventDataMap).To(HaveKey("error"), "Error event should contain error message")
-		errorMsg := eventDataMap["error"].(string)
-		Expect(errorMsg).To(ContainSubstring("non-existent-namespace-fatal"),
-			"Error message should reference the missing namespace")
+			Expect(eventDataMap).To(HaveKey("error"), "Error event should contain error message")
+			errorMsg := eventDataMap["error"].(string)
+			Expect(errorMsg).To(ContainSubstring("non-existent-namespace-fatal"),
+				"Error message should reference the missing namespace")
 
-		GinkgoWriter.Printf("✅ Fatal enrichment error correctly emitted error.occurred audit event\n")
-		GinkgoWriter.Printf("   Error: %s\n", errorMsg)
+			GinkgoWriter.Printf("✅ Fatal enrichment error correctly emitted error.occurred audit event\n")
+			GinkgoWriter.Printf("   Error: %s\n", errorMsg)
 		})
 	})
 })

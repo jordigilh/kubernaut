@@ -31,7 +31,6 @@ package signalprocessing
 
 import (
 	"context"
-	"database/sql" // HTTP Anti-Pattern Phase 2: PostgreSQL direct query
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,7 +41,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/jackc/pgx/v5/stdlib" // HTTP Anti-Pattern Phase 2: PostgreSQL driver
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -68,6 +66,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
@@ -94,8 +93,8 @@ var (
 	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
-	auditStore audit.AuditStore // Audit store for BR-SP-090
-	testDB     *sql.DB           // HTTP Anti-Pattern Phase 2: PostgreSQL direct query connection
+	auditStore audit.AuditStore   // Audit store for BR-SP-090 (write operations)
+	dsClient   *ogenclient.Client // DataStorage HTTP API client (query operations - correct service boundary)
 	// metricsAddr removed - not needed since metrics server uses dynamic port (BindAddress: "0")
 
 	// BR-SP-072: Policy file paths for hot-reload testing
@@ -674,26 +673,16 @@ labels := result if {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	// HTTP Anti-Pattern Phase 2: PostgreSQL direct query connection
-	// Per HTTP_ANTIPATTERN_REFACTORING_ANSWERS_JAN10_2026.md (Q8)
-	// Integration tests should query audit_events table directly (no HTTP)
-	postgresConnStr := fmt.Sprintf(
-		"host=127.0.0.1 port=%d user=postgres password=postgres dbname=audit_db sslmode=disable",
-		infrastructure.SignalProcessingIntegrationPostgresPort, // 15436
+	// Create DataStorage ogen client for audit event queries
+	// Per service boundary rules: SignalProcessing queries DataStorage via HTTP API (not direct DB)
+	// This mirrors production behavior where services use HTTP API, not database access
+	By("Creating DataStorage ogen client for audit event queries")
+	dsClient, err = ogenclient.NewClient(
+		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
 	)
-	testDB, err = sql.Open("pgx", postgresConnStr)
-	Expect(err).NotTo(HaveOccurred(), "PostgreSQL connection must succeed")
+	Expect(err).NotTo(HaveOccurred(), "DataStorage ogen client creation must succeed")
 
-	// Configure connection pool for parallel execution (DataStorage pattern)
-	testDB.SetMaxOpenConns(50)  // Allow up to 50 concurrent connections (4 procs * 10 tests)
-	testDB.SetMaxIdleConns(10)  // Keep 10 idle connections per process
-	testDB.SetConnMaxLifetime(5 * time.Minute)
-
-	// Verify PostgreSQL connection is working
-	err = testDB.Ping()
-	Expect(err).NotTo(HaveOccurred(), "PostgreSQL ping must succeed")
-
-	GinkgoWriter.Printf("✅ PostgreSQL connection established (testDB ready for audit queries)\n")
+	GinkgoWriter.Printf("✅ DataStorage ogen client ready (http://127.0.0.1:%d)\n", infrastructure.SignalProcessingIntegrationDataStoragePort)
 
 	// Note: Metrics use global prometheus.DefaultRegisterer (AIAnalysis pattern)
 	// No per-process registry needed - all processes query the same global registry
@@ -711,15 +700,8 @@ var _ = SynchronizedAfterSuite(
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		By("Tearing down per-process test environment")
 
-		// Close PostgreSQL connection (HTTP Anti-Pattern Phase 2)
-		if testDB != nil {
-			err := testDB.Close()
-			if err != nil {
-				GinkgoWriter.Printf("⚠️ Warning: Failed to close testDB: %v\n", err)
-			} else {
-				GinkgoWriter.Println("✅ PostgreSQL connection closed")
-			}
-		}
+		// Note: ogen client (dsClient) uses http.DefaultClient which doesn't require explicit cleanup
+		GinkgoWriter.Println("✅ DataStorage ogen client cleanup (no-op for HTTP client)")
 
 		// Cancel context if it was created
 		if cancel != nil {
