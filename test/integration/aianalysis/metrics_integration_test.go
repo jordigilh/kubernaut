@@ -52,10 +52,13 @@ import (
 // Pattern: CREATE CRD → WAIT FOR RECONCILIATION → VERIFY METRICS
 // ========================================
 
-// PARALLEL EXECUTION: Per DD-METRICS-001, uses WorkflowExecution pattern.
-// testRegistry and testMetrics created in SynchronizedBeforeSuite Phase 2 (ALL processes).
-// Each parallel process gets its own isolated Prometheus registry to prevent conflicts.
-// Direct metric access via testMetrics (not registry query) for thread-safe parallel execution.
+// PARALLEL EXECUTION: Per DD-TEST-010 Multi-Controller Pattern (WorkflowExecution Solution)
+// ========================================
+// Each process has its own controller + envtest. Resources created in a process's envtest
+// are ONLY reconciled by that process's controller (separate K8s API servers).
+// Tests access metrics via `reconciler.Metrics` (the controller instance in THEIR process).
+// This ensures tests always read from the controller that actually reconciled their resources.
+// ========================================
 var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
 	var (
 		ctx       context.Context
@@ -67,9 +70,9 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		namespace = "default" // Use default namespace for integration tests
 	})
 
-	// Helper to get counter value directly from metrics (WorkflowExecution pattern)
-	// DD-METRICS-001: Access isolated testMetrics directly, not via registry query
-	// This enables parallel execution without race conditions
+	// Helper to get counter value from reconciler's metrics (WorkflowExecution pattern)
+	// DD-TEST-010: Access metrics via reconciler.Metrics (process's own controller instance)
+	// Each process's controller only reconciles resources in its own envtest
 	getCounterValue := func(counter *prometheus.CounterVec, labelValues ...string) float64 {
 		return prometheusTestutil.ToFloat64(counter.WithLabelValues(labelValues...))
 	}
@@ -90,6 +93,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// NOTE: Running serially due to metrics registry state interference
 		// Parallel execution causes timeout failures due to shared Prometheus registry
 		It("should emit reconciliation metrics during successful AIAnalysis flow - BR-AI-OBSERVABILITY-001", func() {
+			// DD-TEST-010: Access metrics via reconciler instance (WorkflowExecution pattern)
+			// Each process's reconciler only reconciles resources in its own envtest
 			// 1. Create AIAnalysis CRD (triggers business logic)
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
@@ -142,18 +147,18 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// - Investigating→Analyzing: metric "Investigating/success" ✅
 		// - Analyzing→Completed: metric "Analyzing/success" ✅
 		Eventually(func() float64 {
-			return getCounterValue(testMetrics.ReconcilerReconciliationsTotal, "Investigating", "success")
+			return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Investigating", "success")
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Reconciliation metric should be emitted during Investigating phase")
 
 		Eventually(func() float64 {
-			return getCounterValue(testMetrics.ReconcilerReconciliationsTotal, "Analyzing", "success")
+			return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Analyzing", "success")
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Reconciliation metric should be emitted during Analyzing phase")
 
 		// Verify duration histogram was populated
 		Eventually(func() int {
-			return getHistogramCount(testMetrics.ReconcilerDurationSeconds, "Investigating")
+			return getHistogramCount(reconciler.Metrics.ReconcilerDurationSeconds, "Investigating")
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Duration histogram should record Investigating phase duration")
 		})
@@ -161,7 +166,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// NOTE: Flaky in parallel execution - metrics registry state interference
 	It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-HAPI-197", func() {
 			// 1. Capture baseline failure metrics before test
-			baselineFailures := getCounterValue(testMetrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(testMetrics.FailuresTotal, "APIError") + getCounterValue(testMetrics.FailuresTotal, "NoWorkflowSelected")
+			baselineFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected")
 
 			// 2. Create AIAnalysis that will complete successfully
 			// Note: Mock HolmesGPT client returns success, so this tests the happy path
@@ -208,7 +213,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// 4. Verify failure metrics were NOT incremented
 			// Success path should not emit failure metrics
 			Consistently(func() float64 {
-				currentFailures := getCounterValue(testMetrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(testMetrics.FailuresTotal, "APIError") + getCounterValue(testMetrics.FailuresTotal, "NoWorkflowSelected")
+				currentFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(reconciler.Metrics.FailuresTotal, "APIError") + getCounterValue(reconciler.Metrics.FailuresTotal, "NoWorkflowSelected")
 				return currentFailures - baselineFailures
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(float64(0)),
 				"Failure metrics should NOT be emitted when AIAnalysis completes successfully")
@@ -271,12 +276,12 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// 3. Verify approval decision metrics were emitted
 		Eventually(func() float64 {
 			// Look for any approval decision metric
-			total := getCounterValue(testMetrics.ApprovalDecisionsTotal, "production")
+			total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "production")
 			if total > 0 {
 				return total
 			}
 			// Also check for auto-approved or requires_approval
-			return getCounterValue(testMetrics.ApprovalDecisionsTotal, "requires_approval")
+			return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval")
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Approval decision metric should be emitted during policy evaluation")
 		})
@@ -330,7 +335,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 		// 3. Verify confidence score histogram was populated
 		Eventually(func() int {
-			return getHistogramCount(testMetrics.ConfidenceScoreDistribution, "ImagePullBackOff")
+			return getHistogramCount(reconciler.Metrics.ConfidenceScoreDistribution, "ImagePullBackOff")
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Confidence score histogram should be populated during workflow selection")
 		})

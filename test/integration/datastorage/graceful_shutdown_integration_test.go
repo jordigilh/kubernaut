@@ -33,6 +33,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
@@ -855,17 +856,44 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 			testServer, srv := createTestServerWithAccess()
 			defer testServer.Close()
 
-			// Verify DLQ is empty
+			// Ensure DLQ is empty (clean up from previous tests)
 			ctx := context.Background()
 			dlqClient := srv.GetDLQClient()
 			if dlqClient == nil {
 				Skip("DLQ client not available on server - test cannot run")
 			}
 
+			// Check DLQ depth and drain if necessary
 			dlqDepth, err := dlqClient.GetDLQDepth(ctx, "notifications")
 			Expect(err).ToNot(HaveOccurred())
 			if dlqDepth > 0 {
-				Skip("DLQ not empty, test requires clean DLQ")
+				GinkgoWriter.Printf("⚠️  DLQ not empty (depth: %d), draining before test...\n", dlqDepth)
+
+				// Drain the DLQ to clean up from previous tests
+				// Use a short timeout (5s) since we just need to clean up
+				drainCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+
+				// Create a temporary DB connection for draining
+				pgHost := os.Getenv("POSTGRES_HOST")
+				if pgHost == "" {
+					pgHost = "localhost"
+				}
+				pgPort := os.Getenv("POSTGRES_PORT")
+				if pgPort == "" {
+					pgPort = "5433"
+				}
+				dbConnStr := fmt.Sprintf("host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable", pgHost, pgPort)
+
+				tempDB, err := sql.Open("pgx", dbConnStr)
+				Expect(err).ToNot(HaveOccurred())
+				defer tempDB.Close()
+
+				notificationRepo := repository.NewNotificationAuditRepository(tempDB, logger)
+				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, nil)
+				Expect(err).ToNot(HaveOccurred(), "DLQ drain should succeed")
+
+				GinkgoWriter.Printf("✅ DLQ drained successfully\n")
 			}
 
 			// ACT: Trigger graceful shutdown with empty DLQ

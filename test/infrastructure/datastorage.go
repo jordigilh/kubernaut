@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
@@ -270,6 +271,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 1: Load pre-built DataStorage image to Kind
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := LoadImageToKind(dsImageName, "datastorage", clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image load failed: %w", err)
@@ -279,6 +281,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 2: Deploy PostgreSQL
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
 		if err != nil {
 			err = fmt.Errorf("PostgreSQL deploy failed: %w", err)
@@ -288,6 +291,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 3: Deploy Redis
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
 		if err != nil {
 			err = fmt.Errorf("Redis deploy failed: %w", err)
@@ -325,10 +329,12 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Launch migrations and DataStorage deployment concurrently
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
+		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()

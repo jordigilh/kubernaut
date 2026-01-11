@@ -979,6 +979,12 @@ func (r *NotificationRequestReconciler) handleDeliveryLoop(
 	}
 
 	// Convert orchestrator result to controller result format
+	// 🔍 DEBUG: Track attempt count before status update
+	log.Info("🔍 POST-DELIVERY DEBUG (handleDeliveryLoop)",
+		"deliveryAttemptsFromOrchestrator", len(orchestratorResult.DeliveryAttempts),
+		"statusDeliveryAttemptsBeforeUpdate", len(notification.Status.DeliveryAttempts),
+		"channels", len(channels))
+
 	return &deliveryLoopResult{
 		deliveryResults:  orchestratorResult.DeliveryResults,
 		failureCount:     orchestratorResult.FailureCount,
@@ -1283,6 +1289,12 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 
 	// ATOMIC UPDATE: Record delivery attempts AND update phase to Retrying in a single API call
 	// DD-PERF-001: Atomic Status Updates
+	// 🔍 DEBUG: Track attempts before atomic update
+	log.Info("🔍 BEFORE ATOMIC UPDATE (transitionToRetrying)",
+		"newAttempts", len(attempts),
+		"existingAttempts", len(notification.Status.DeliveryAttempts),
+		"totalAttemptsShouldBe", len(attempts)+len(notification.Status.DeliveryAttempts))
+
 	if err := r.StatusManager.AtomicStatusUpdate(
 		ctx,
 		notification,
@@ -1329,6 +1341,12 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 
 	// ATOMIC UPDATE: Record delivery attempts AND update phase to PartiallySent in a single API call
 	// DD-PERF-001: Atomic Status Updates
+	// 🔍 DEBUG: Track attempts before atomic update
+	log.Info("🔍 BEFORE ATOMIC UPDATE (transitionToPartiallySent)",
+		"newAttempts", len(attempts),
+		"existingAttempts", len(notification.Status.DeliveryAttempts),
+		"totalAttemptsShouldBe", len(attempts)+len(notification.Status.DeliveryAttempts))
+
 	if err := r.StatusManager.AtomicStatusUpdate(
 		ctx,
 		notification,

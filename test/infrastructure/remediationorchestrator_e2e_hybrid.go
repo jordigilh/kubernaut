@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -104,7 +105,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		cfg := E2EImageConfig{
 			ServiceName:      "notification",
 			ImageName:        "kubernaut/notification",
-			DockerfilePath:   "docker/notification-controller.Dockerfile",
+			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
 		}
@@ -139,18 +140,52 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
-	// Use Kind config with extraPortMappings for metrics access (DD-TEST-001)
-	kindConfigPath := filepath.Join(projectRoot, "test", "infrastructure", "kind-remediationorchestrator-config.yaml")
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", kindConfigPath,
-		"--kubeconfig", kubeconfigPath,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	cmd.Dir = projectRoot // Set working dir so ./coverdata in config resolves correctly
+	// Determine notification output directory based on OS (same pattern as NT E2E)
+	// macOS: Use $HOME/.kubernaut/ro-e2e-notifications (Podman VM limitation)
+	// Linux/CI: Use /tmp/kubernaut-ro-e2e-notifications (direct access works)
+	var notificationOutputDir string
+	if runtime.GOOS == "darwin" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("failed to get home directory: %w", err)
+		}
+		notificationOutputDir = filepath.Join(homeDir, ".kubernaut", "ro-e2e-notifications")
+	} else {
+		notificationOutputDir = "/tmp/kubernaut-ro-e2e-notifications"
+	}
 
-	if err := cmd.Run(); err != nil {
+	// Create notification output directory
+	_, _ = fmt.Fprintf(writer, "📁 Creating Notification output directory: %s\n", notificationOutputDir)
+	if err := os.MkdirAll(notificationOutputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create notification output directory: %w", err)
+	}
+
+	// Create Kind cluster with both extraMounts (coverage + notification) added programmatically
+	// This prevents duplicate extraMounts keys in the Kind config YAML
+	// Use absolute paths to ensure correct mount resolution regardless of working directory
+	extraMounts := []ExtraMount{
+		// Coverage data collection (DD-TEST-007) - use absolute path from earlier calculation
+		{
+			HostPath:      coverdataPath, // Already absolute: /workspace/coverdata
+			ContainerPath: "/coverdata",
+			ReadOnly:      false,
+		},
+		// Notification output directory (OS-specific) - already absolute
+		{
+			HostPath:      notificationOutputDir,
+			ContainerPath: "/tmp/e2e-notifications",
+			ReadOnly:      false,
+		},
+	}
+
+	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
+	if err := CreateKindClusterWithExtraMounts(
+		clusterName,
+		kubeconfigPath,
+		kindConfigPath,
+		extraMounts,
+		writer,
+	); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
