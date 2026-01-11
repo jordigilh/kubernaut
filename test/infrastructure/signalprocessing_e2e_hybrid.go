@@ -19,8 +19,6 @@ import (
 
 // SignalProcessing Integration test ports (restored from git history)
 const (
-	SignalProcessingIntegrationDataStoragePort = 18094 // DataStorage API for audit events
-	SignalProcessingIntegrationMetricsPort     = 19094 // DataStorage metrics port
 )
 
 // SetupSignalProcessingInfrastructureHybridWithCoverage implements hybrid parallel strategy
