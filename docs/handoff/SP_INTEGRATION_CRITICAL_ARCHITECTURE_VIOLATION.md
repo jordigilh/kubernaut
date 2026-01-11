@@ -1,6 +1,6 @@
 # SignalProcessing Integration Tests - CRITICAL ARCHITECTURE VIOLATION
-**Date**: January 10, 2026  
-**Status**: 🚨 BLOCKING - Must revert incorrect changes  
+**Date**: January 10, 2026
+**Status**: 🚨 BLOCKING - Must revert incorrect changes
 **Severity**: CRITICAL - Service boundary violated
 
 ---
@@ -14,7 +14,7 @@ The SignalProcessing integration tests were **incorrectly modified** to query th
 // ❌ WRONG: SignalProcessing querying DataStorage's database directly
 testDB, err = sql.Open("pgx", postgresConnStr)
 err := testDB.QueryRow(`
-    SELECT COUNT(*) 
+    SELECT COUNT(*)
     FROM audit_events
     WHERE event_type = $1
       AND correlation_id = $2
@@ -123,7 +123,7 @@ GinkgoWriter.Println("✅ DataStorage ogen client ready for audit queries")
 **Before (WRONG)**:
 ```go
 err := testDB.QueryRow(`
-    SELECT COUNT(*) 
+    SELECT COUNT(*)
     FROM audit_events
     WHERE event_type = $1
       AND correlation_id = $2
@@ -207,6 +207,6 @@ eventCount := len(resp.Events)
 
 ---
 
-**Status**: ⚠️ BLOCKING - Must fix before continuing  
-**Priority**: P0-CRITICAL  
+**Status**: ⚠️ BLOCKING - Must fix before continuing
+**Priority**: P0-CRITICAL
 **Impact**: Architecture violation, incorrect test patterns
