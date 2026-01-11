@@ -169,7 +169,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x supports single analysis type only
+						// Multiple values in AnalysisTypes are ignored by controller
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
@@ -351,9 +353,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					fmt.Sprintf("BR-AI-050: Required phase transition missing: %s", required))
 			}
 
-			// HolmesGPT calls: Exactly 1 during investigation phase
-			Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1),
-				"Expected exactly 1 HolmesGPT API call during investigation")
+		// HolmesGPT calls: 1 call (v1.x single analysis type behavior per DD-AIANALYSIS-005)
+		// Test spec requests AnalysisTypes: ["investigation"]
+		// v1.x controller makes exactly 1 HAPI call regardless of array length
+		Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1),
+			"Expected exactly 1 HolmesGPT API call (v1.x single-type behavior)")
 
 			// Approval decision: Exactly 1
 			Expect(eventTypeCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
@@ -377,7 +381,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		//       are EXCLUDED from this test. HAPI integration tests validate those separately.
 		//       This test focuses ONLY on AIAnalysis controller audit behavior.
 		//
-		// Total: 7 AIAnalysis events (deterministic)
+		// Total: 7 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x behavior)
+		// Breakdown: 3 phase transitions + 1 HolmesGPT metadata + 1 Rego + 1 approval + 1 completion
 		Expect(len(events)).To(Equal(7),
 			"AIAnalysis workflow generates exactly 7 audit events: 3 phase transitions + 1 HolmesGPT metadata + 1 Rego + 1 approval + 1 completion")
 		})
@@ -608,7 +613,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
@@ -711,7 +717,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
@@ -825,7 +832,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}

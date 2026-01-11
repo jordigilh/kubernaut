@@ -75,8 +75,18 @@ func (h *AnalyzingHandler) Name() string {
 func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Analyzing phase", "name", analysis.Name)
 
-	// Track phase for audit logging
+	// Track phase for audit logging (used for idempotency check)
 	oldPhase := analysis.Status.Phase
+
+	// AA-BUG-009: Idempotency check #1 - Per RO pattern (RO_AUDIT_DUPLICATION_RISK_ANALYSIS_JAN_01_2026.md - Option C)
+	// Skip if we're ALREADY in Completed state for this generation
+	// This prevents duplicate processing and audit events when controller reconciles due to annotation/label changes
+	if analysis.Status.ObservedGeneration == analysis.Generation && oldPhase == aianalysis.PhaseCompleted {
+		h.log.Info("Already in Completed phase for this generation, skipping",
+			"generation", analysis.Generation,
+			"phase", oldPhase)
+		return ctrl.Result{}, nil
+	}
 
 	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
 	if analysis.Status.SelectedWorkflow == nil {

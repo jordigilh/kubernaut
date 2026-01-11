@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -67,7 +68,9 @@ var _ = Describe("BR-001, BR-011: Kubernetes API Interaction - Integration Tests
 		logger = logr.Discard()
 		prometheusAdapter = adapters.NewPrometheusAdapter()
 		k8sClientWrapper = &K8sClientWrapper{Client: k8sClient.Client}
-		crdCreator = processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), testNamespace, &config.RetrySettings{
+		// Use isolated registry for test isolation (prevents prometheus.AlreadyRegisteredError)
+		testRegistry := prometheus.NewRegistry()
+		crdCreator = processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetricsWithRegistry(testRegistry), testNamespace, &config.RetrySettings{
 			MaxAttempts:    3,
 			InitialBackoff: 100 * time.Millisecond,
 		})
