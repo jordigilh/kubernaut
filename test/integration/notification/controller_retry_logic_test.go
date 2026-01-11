@@ -142,7 +142,8 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// PHASE 2: Wait for retry logic to execute
 			// ========================================
 			By("Waiting for exponential backoff retries (up to 5 attempts)")
-			// Expected retry intervals: 1s, 2s, 4s, 8s, 10s (capped at max) = ~25s total
+			// Expected retry intervals: 1s, 2s, 4s, 8s = 15s total backoff
+			// + 5s for controller reconciliation and status propagation
 			Eventually(func() int {
 				err := k8sClient.Get(ctx, client.ObjectKey{
 					Name:      notification.Name,
@@ -152,7 +153,8 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					return 0
 				}
 				return len(notification.Status.DeliveryAttempts)
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(5), "Should attempt delivery 5 times (initial + 4 retries)")
+			}, 25*time.Second, 500*time.Millisecond).Should(Equal(5),
+				"BR-NOT-054: 5 attempts with backoff (0+1s+2s+4s+8s=15s) + 5-10s reconcile latency")
 
 			// ========================================
 			// PHASE 3: Verify final state after max attempts
@@ -167,8 +169,8 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					return ""
 				}
 				return notification.Status.Phase
-			}, 20*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-				"DD-E2E-003: After retry exhaustion (1s+2s+4s+8s=~15s) → PartiallySent")
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+				"DD-E2E-003: After retry exhaustion (15s backoff + status propagation) → PartiallySent")
 
 			// ========================================
 			// ASSERTIONS: Retry Logic Validation

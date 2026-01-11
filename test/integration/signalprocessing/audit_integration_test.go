@@ -19,8 +19,6 @@ package signalprocessing
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,10 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
+	// HTTP Anti-Pattern Phase 2: Removed ogenclient import (HTTP client)
+	// HTTP Anti-Pattern Phase 2: Removed fmt, net/http imports (HTTP health check)
+	// HTTP Anti-Pattern Phase 2: Removed infrastructure import (dataStorageURL)
+	// Now using testDB for direct PostgreSQL queries (from suite_test.go)
 )
 
 // =============================================================================
@@ -65,33 +64,9 @@ import (
 // =============================================================================
 
 var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration", func() {
-	var (
-		dataStorageURL string
-	)
-
-	BeforeEach(func() {
-		// DataStorage URL from suite's shared infrastructure (port 18094)
-		// Use 127.0.0.1 instead of localhost to force IPv4 (DD-TEST-001 v1.2, matches suite_test.go:218)
-		dataStorageURL = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort)
-
-		// Verify Data Storage is running
-		healthResp, err := http.Get(dataStorageURL + "/health")
-		if err != nil {
-			Fail(fmt.Sprintf(
-				"REQUIRED: Data Storage not available at %s\n"+
-					"  Per BR-SP-090: SignalProcessing MUST have audit capability\n"+
-					"  Per TESTING_GUIDELINES.md: Integration tests MUST use real services\n\n"+
-					"  Start with: podman-compose -f test/integration/signalprocessing/podman-compose.signalprocessing.test.yml up -d\n\n"+
-					"  Error: %v", dataStorageURL, err))
-		}
-		defer func() { _ = healthResp.Body.Close() }()
-		if healthResp.StatusCode != http.StatusOK {
-			Fail(fmt.Sprintf(
-				"REQUIRED: Data Storage health check failed at %s\n"+
-					"  Status: %d\n"+
-					"  Expected: 200 OK", dataStorageURL, healthResp.StatusCode))
-		}
-	})
+	// HTTP Anti-Pattern Phase 2: Removed dataStorageURL and HTTP health check
+	// Now using testDB (direct PostgreSQL connection from suite_test.go)
+	// PostgreSQL connection is verified in SynchronizedBeforeSuite (testDB.Ping)
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// SIGNAL PROCESSING COMPLETION AUDITING (BR-SP-090)

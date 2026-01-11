@@ -216,23 +216,23 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			correlationID := analysis.Spec.RemediationID
 			GinkgoWriter.Printf("📋 Testing hybrid audit for correlation_id: %s\n", correlationID)
 
-		By("Flushing audit buffers to ensure all events are persisted")
-		flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
-		defer flushCancel()
-		err := auditStore.Flush(flushCtx)
-		Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-		GinkgoWriter.Println("✅ Audit buffers flushed")
+			By("Flushing audit buffers to ensure all events are persisted")
+			flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
+			defer flushCancel()
+			err := auditStore.Flush(flushCtx)
+			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+			GinkgoWriter.Println("✅ Audit buffers flushed")
 
-		// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
-		// Give HAPI time to flush its buffer (Go flush doesn't trigger HAPI flush)
-		time.Sleep(500 * time.Millisecond) // 5x HAPI flush interval for safety
-		GinkgoWriter.Println("✅ Waited for HAPI buffer flush (500ms)")
+			// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
+			// Give HAPI time to flush its buffer (Go flush doesn't trigger HAPI flush)
+			time.Sleep(500 * time.Millisecond) // 5x HAPI flush interval for safety
+			GinkgoWriter.Println("✅ Waited for HAPI buffer flush (500ms)")
 
-		// ========================================
-		// STEP 1: Verify HAPI audit event (provider perspective)
-		// ========================================
-		By("Waiting for HAPI audit event (holmesgpt.response.complete)")
-		hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData), 1)
+			// ========================================
+			// STEP 1: Verify HAPI audit event (provider perspective)
+			// ========================================
+			By("Waiting for HAPI audit event (holmesgpt.response.complete)")
+			hapiEvents := waitForAuditEvents(correlationID, string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData), 1)
 			hapiEvent := hapiEvents[0]
 
 			By("Validating HAPI event metadata with testutil")
@@ -519,29 +519,29 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			correlationID := analysis.Spec.RemediationID
 
-		By("Flushing audit buffers")
-		flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		Expect(auditStore.Flush(flushCtx)).To(Succeed())
+			By("Flushing audit buffers")
+			flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+			Expect(auditStore.Flush(flushCtx)).To(Succeed())
 
-		// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
-		time.Sleep(500 * time.Millisecond)
-		GinkgoWriter.Println("✅ Waited for HAPI buffer flush (500ms)")
+			// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
+			time.Sleep(500 * time.Millisecond)
+			GinkgoWriter.Println("✅ Waited for HAPI buffer flush (500ms)")
 
-		By("Querying ALL events by correlation_id")
-		allResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(allResp.Data).ToNot(BeNil())
-		allEvents := allResp.Data
+			By("Querying ALL events by correlation_id")
+			allResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(allResp.Data).ToNot(BeNil())
+			allEvents := allResp.Data
 
-		By("Counting events by type")
-		eventCounts := countEventsByType(allEvents)
+			By("Counting events by type")
+			eventCounts := countEventsByType(allEvents)
 
-		// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
-		hapiCount := eventCounts[string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)]
-		aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
+			// DD-TESTING-001 §256-300: MANDATORY deterministic count validation
+			hapiCount := eventCounts[string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData)]
+			aaCompletedCount := eventCounts["aianalysis.analysis.completed"]
 
 			Expect(hapiCount).To(Equal(1),
 				"DD-TESTING-001 violation: Should have EXACTLY 1 HAPI event (controller idempotency)")

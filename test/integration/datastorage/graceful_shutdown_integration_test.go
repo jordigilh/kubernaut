@@ -48,7 +48,7 @@ import (
 // 3. Drain in-flight HTTP connections
 // 4. Close resources (database, Redis)
 
-var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", func() {
+var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", Label("integration", "graceful-shutdown", "p0"), func() {
 
 	Context("Business Requirement: Readiness Probe Coordination", func() {
 		It("MUST return 503 on readiness probe immediately when shutdown starts", func() {

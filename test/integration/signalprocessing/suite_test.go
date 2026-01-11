@@ -31,6 +31,7 @@ package signalprocessing
 
 import (
 	"context"
+	"database/sql" // HTTP Anti-Pattern Phase 2: PostgreSQL direct query
 	"encoding/json"
 	"fmt"
 	"os"
@@ -41,6 +42,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	_ "github.com/jackc/pgx/v5/stdlib" // HTTP Anti-Pattern Phase 2: PostgreSQL driver
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -93,6 +95,7 @@ var (
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore // Audit store for BR-SP-090
+	testDB     *sql.DB           // HTTP Anti-Pattern Phase 2: PostgreSQL direct query connection
 	// metricsAddr removed - not needed since metrics server uses dynamic port (BindAddress: "0")
 
 	// BR-SP-072: Policy file paths for hot-reload testing
@@ -671,10 +674,31 @@ labels := result if {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
+	// HTTP Anti-Pattern Phase 2: PostgreSQL direct query connection
+	// Per HTTP_ANTIPATTERN_REFACTORING_ANSWERS_JAN10_2026.md (Q8)
+	// Integration tests should query audit_events table directly (no HTTP)
+	postgresConnStr := fmt.Sprintf(
+		"host=127.0.0.1 port=%d user=postgres password=postgres dbname=audit_db sslmode=disable",
+		infrastructure.SignalProcessingIntegrationPostgresPort, // 15436
+	)
+	testDB, err = sql.Open("pgx", postgresConnStr)
+	Expect(err).NotTo(HaveOccurred(), "PostgreSQL connection must succeed")
+
+	// Configure connection pool for parallel execution (DataStorage pattern)
+	testDB.SetMaxOpenConns(50)  // Allow up to 50 concurrent connections (4 procs * 10 tests)
+	testDB.SetMaxIdleConns(10)  // Keep 10 idle connections per process
+	testDB.SetConnMaxLifetime(5 * time.Minute)
+
+	// Verify PostgreSQL connection is working
+	err = testDB.Ping()
+	Expect(err).NotTo(HaveOccurred(), "PostgreSQL ping must succeed")
+
+	GinkgoWriter.Printf("✅ PostgreSQL connection established (testDB ready for audit queries)\n")
+
 	// Note: Metrics use global prometheus.DefaultRegisterer (AIAnalysis pattern)
 	// No per-process registry needed - all processes query the same global registry
 
-	GinkgoWriter.Printf("✅ Process setup complete (k8sClient initialized for this process)\n")
+	GinkgoWriter.Printf("✅ Process setup complete (k8sClient + testDB initialized for this process)\n")
 })
 
 // SP-BUG-005: Use SynchronizedAfterSuite to make Process 1-only cleanup explicit
@@ -686,6 +710,16 @@ var _ = SynchronizedAfterSuite(
 		// ALL PROCESSES: Per-process cleanup
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		By("Tearing down per-process test environment")
+
+		// Close PostgreSQL connection (HTTP Anti-Pattern Phase 2)
+		if testDB != nil {
+			err := testDB.Close()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️ Warning: Failed to close testDB: %v\n", err)
+			} else {
+				GinkgoWriter.Println("✅ PostgreSQL connection closed")
+			}
+		}
 
 		// Cancel context if it was created
 		if cancel != nil {

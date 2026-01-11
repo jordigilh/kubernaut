@@ -314,8 +314,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	Expect(err).ToNot(HaveOccurred())
 
 	By("Setting up the AIAnalysis controller with handlers")
-	// DD-METRICS-001: Create isolated metrics registry for parallel test execution
-	// Per WorkflowExecution pattern: Isolated registry prevents conflicts in parallel tests
+	// DD-METRICS-001: Create isolated metrics registry for test execution
+	// Controller runs ONLY in process 1, so metrics created here (Phase 1)
+	// This is different from WorkflowExecution where each process gets its own controller
 	testRegistry = prometheus.NewRegistry()
 	testMetrics = metrics.NewMetricsWithRegistry(testRegistry)
 	GinkgoWriter.Println("✅ Test metrics created with isolated registry")
