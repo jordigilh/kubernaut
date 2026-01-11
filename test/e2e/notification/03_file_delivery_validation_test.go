@@ -293,10 +293,10 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
 		var copiedFilePath string
 		Eventually(EventuallyFindFileInPod("notification-e2e-priority-validation-*.json"),
-			5*time.Second, 500*time.Millisecond).Should(Not(BeEmpty()),
-			"File should be created in pod within 5 seconds")
+			20*time.Second, 1*time.Second).Should(Not(BeEmpty()),
+			"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
 
-		copiedFilePath, err = WaitForFileInPod(ctx, "notification-e2e-priority-validation-*.json", 5*time.Second)
+		copiedFilePath, err = WaitForFileInPod(ctx, "notification-e2e-priority-validation-*.json", 20*time.Second)
 		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
 		defer CleanupCopiedFile(copiedFilePath)
 

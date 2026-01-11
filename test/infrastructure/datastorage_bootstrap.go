@@ -650,6 +650,16 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		_, _ = fmt.Fprintf(writer, "   ✅ Health check passed\n")
 	}
 
+	// Step 5: Start streaming container logs in background (for runtime debugging)
+	// This is critical for debugging HAPI audit events, Python exceptions, etc.
+	go func() {
+		logsCmd := exec.Command("podman", "logs", "-f", cfg.Name)
+		logsCmd.Stdout = writer
+		logsCmd.Stderr = writer
+		_ = logsCmd.Run() // Will run until container stops
+	}()
+	_, _ = fmt.Fprintf(writer, "   📋 Container logs streaming to test output\n")
+
 	_, _ = fmt.Fprintf(writer, "✅ Container ready: %s (ID: %s)\n\n", cfg.Name, containerID[:12])
 	return instance, nil
 }

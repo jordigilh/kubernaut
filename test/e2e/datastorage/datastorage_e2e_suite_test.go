@@ -84,6 +84,11 @@ var (
 	// Replaces raw HTTP client for type-safe API interaction
 	dsClient *dsgen.Client
 
+	// Shared PostgreSQL connection for E2E test verification
+	// NOTE: E2E tests should prefer API verification over direct DB access
+	// This is provided for tests migrated from integration that require DB verification
+	testDB *sql.DB
+
 	// Shared namespace for all tests (services deployed ONCE)
 	sharedNamespace string = "datastorage-e2e"
 
@@ -224,16 +229,22 @@ var _ = SynchronizedBeforeSuite(
 		dataStorageURL = "http://localhost:28090"
 		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
 
-		// Test if NodePort is accessible (check PostgreSQL connection)
-		testDB, err := sql.Open("pgx", postgresURL)
-		nodePortWorks := false
-		if err == nil {
-			if err := testDB.Ping(); err == nil {
-				nodePortWorks = true
-				logger.Info("✅ NodePort accessible (Docker provider)", "process", processID)
-			}
+	// Test if NodePort is accessible (check PostgreSQL connection)
+	var err error
+	testDB, err = sql.Open("pgx", postgresURL)
+	nodePortWorks := false
+	if err == nil {
+		if err := testDB.Ping(); err == nil {
+			nodePortWorks = true
+			logger.Info("✅ NodePort accessible (Docker provider) - testDB ready", "process", processID)
+			// Keep testDB open for use by E2E tests (closed in AfterSuite)
+		} else {
 			_ = testDB.Close()
+			testDB = nil
 		}
+	} else {
+		testDB = nil
+	}
 
 		// If NodePort doesn't work, use kubectl port-forward (Podman)
 		if !nodePortWorks {
@@ -280,14 +291,25 @@ var _ = SynchronizedBeforeSuite(
 				return true
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 
-			// Update URLs to use process-specific ports
-			dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
-			postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
+		// Update URLs to use process-specific ports
+		dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
+		postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
 
-			logger.Info("✅ Port-forward established", "process", processID,
-				"dataStorageURL", dataStorageURL,
-				"postgresURL", postgresURL)
+		// Connect to PostgreSQL via port-forward
+		testDB, err = sql.Open("pgx", postgresURL)
+		if err != nil {
+			logger.Error(err, "Failed to open PostgreSQL connection via port-forward")
+		} else if err := testDB.Ping(); err != nil {
+			logger.Error(err, "Failed to ping PostgreSQL via port-forward")
+			_ = testDB.Close()
+			testDB = nil
 		}
+
+		logger.Info("✅ Port-forward established", "process", processID,
+			"dataStorageURL", dataStorageURL,
+			"postgresURL", postgresURL,
+			"testDB", testDB != nil)
+	}
 
 		logger.Info("🔌 URLs configured",
 			"process", processID,
@@ -330,6 +352,11 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("Process cleanup complete",
 			"process", processID,
 			"hadFailures", anyTestFailed)
+
+		// Close PostgreSQL connection for this process
+		if testDB != nil {
+			_ = testDB.Close()
+		}
 
 		// Cancel context for this process
 		if cancel != nil {

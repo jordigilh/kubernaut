@@ -81,6 +81,14 @@ var (
 
 	// Audit store for testing controller audit emission (Defense-in-Depth Layer 4)
 	realAuditStore audit.AuditStore // REAL audit store (DD-AUDIT-003 mandate compliance)
+
+	// DeliveryOrchestrator exposed for mock service injection in tests
+	// Tests can RegisterChannel() and UnregisterChannel() to inject mocks
+	deliveryOrchestrator *delivery.Orchestrator
+
+	// Original console and slack services for restoration after mock tests
+	originalConsoleService *delivery.ConsoleDeliveryService
+	originalSlackService   *delivery.SlackDeliveryService
 )
 
 // SlackWebhookRequest captures mock Slack webhook calls
@@ -251,9 +259,11 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Setting up the Notification controller with delivery services")
 	// Create console delivery service (no logger needed per DD-013 logging standard)
 	consoleService := delivery.NewConsoleDeliveryService()
+	originalConsoleService = consoleService // Save for restoration after mock tests
 
 	// Create Slack delivery service with mock webhook URL
 	slackService := delivery.NewSlackDeliveryService(slackWebhookURL)
+	originalSlackService = slackService // Save for restoration after mock tests
 
 	// Create sanitizer
 	sanitizer := sanitization.NewSanitizer()
@@ -314,7 +324,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// DD-NOT-007: Registration Pattern (MANDATORY)
 	// Pattern 3: Create Delivery Orchestrator with NO channel parameters
-	deliveryOrchestrator := delivery.NewOrchestrator(
+	// Assign to global variable for test mock injection
+	deliveryOrchestrator = delivery.NewOrchestrator(
 		sanitizer,
 		metricsRecorder,
 		statusManager,
@@ -327,6 +338,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Note: fileService and logService NOT registered (E2E only)
 
 	GinkgoWriter.Println("  ✅ Delivery Orchestrator initialized (DD-NOT-007 Registration Pattern)")
+	GinkgoWriter.Println("  ✅ DeliveryOrchestrator exposed for test mock injection")
 
 	// Create circuit breaker for integration tests
 	// Per BR-NOT-055: Circuit breaker provides per-channel isolation

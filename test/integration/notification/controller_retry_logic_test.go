@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/notification/delivery"
 	"github.com/jordigilh/kubernaut/pkg/testutil"
 )
 
@@ -55,11 +56,12 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 	Context("When file delivery fails repeatedly", func() {
 		It("should retry with exponential backoff up to max attempts", func() {
 			// ========================================
-			// TEST SETUP: Mock file service that always fails
+			// TEST SETUP: Mock file service that always fails with RETRYABLE error
 			// ========================================
 			mockFileService := &testutil.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-					return fmt.Errorf("simulated file write failure")
+					// Return retryable error so controller will retry
+					return delivery.NewRetryableError(fmt.Errorf("simulated file write failure"))
 				},
 			}
 
@@ -71,6 +73,15 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					return nil // Success
 				},
 			}
+
+			// Register mock services
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockConsoleService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
+			DeferCleanup(func() {
+				// Restore original services
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+			})
 
 			// ========================================
 			// CREATE TEST NOTIFICATION WITH RETRY POLICY
@@ -100,7 +111,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 1,  // 1s instead of 30s for fast tests
 						BackoffMultiplier:     2,  // Same as production (exponential 2x)
-						MaxBackoffSeconds:     10, // 10s instead of 480s
+						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 				},
 			}
@@ -122,7 +133,10 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					return ""
 				}
 				return notification.Status.Phase
-			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSending))
+			}, 5*time.Second, 200*time.Millisecond).Should(Or(
+				Equal(notificationv1alpha1.NotificationPhaseSending),
+				Equal(notificationv1alpha1.NotificationPhaseRetrying)),
+				"DD-E2E-003: With instant mocks, may skip Sending and jump to Retrying")
 
 			// ========================================
 			// PHASE 2: Wait for retry logic to execute
@@ -137,7 +151,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 				if err != nil {
 					return 0
 				}
-				return notification.Status.DeliveryAttempts
+				return len(notification.Status.DeliveryAttempts)
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(5), "Should attempt delivery 5 times (initial + 4 retries)")
 
 			// ========================================
@@ -153,8 +167,8 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 					return ""
 				}
 				return notification.Status.Phase
-			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-				"Should transition to PartiallySent when file fails but console succeeds")
+			}, 20*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+				"DD-E2E-003: After retry exhaustion (1s+2s+4s+8s=~15s) → PartiallySent")
 
 			// ========================================
 			// ASSERTIONS: Retry Logic Validation
@@ -166,7 +180,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 				"Console delivery should succeed (1 successful)")
 			Expect(notification.Status.FailedDeliveries).To(Equal(1),
 				"File delivery should fail after max retries (1 failed)")
-			Expect(notification.Status.DeliveryAttempts).To(Equal(5),
+			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(5),
 				"Should record all 5 delivery attempts (initial + 4 retries)")
 
 			By("Validating exponential backoff timing")
@@ -202,11 +216,19 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					attemptCount++
 					if attemptCount <= 2 {
-						return fmt.Errorf("simulated transient failure (attempt %d)", attemptCount)
+						// Return retryable error so controller will retry
+						return delivery.NewRetryableError(fmt.Errorf("simulated transient failure (attempt %d)", attemptCount))
 					}
 					return nil // Success on 3rd attempt
 				},
 			}
+
+			// Register mock service
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
+			DeferCleanup(func() {
+				// Restore original state (file service not registered in suite)
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+			})
 
 			// ========================================
 			// CREATE TEST NOTIFICATION WITH RETRY POLICY
@@ -232,7 +254,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 						MaxAttempts:           5,
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     2,
-						MaxBackoffSeconds:     10,
+						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 				},
 			}
@@ -260,7 +282,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ASSERTIONS: Verify retry stopped after success
 			// ========================================
 			By("Validating retry logic stopped after success (BR-NOT-054)")
-			Expect(notification.Status.DeliveryAttempts).To(Equal(3),
+			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
 				"Should stop retrying after first success (3 attempts: 2 failures + 1 success)")
 			Expect(mockFileService.GetCallCount()).To(Equal(3),
 				"File service should be called exactly 3 times")

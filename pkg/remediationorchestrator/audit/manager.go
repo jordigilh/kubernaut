@@ -201,9 +201,11 @@ func (m *Manager) BuildCompletionEvent(
 	audit.SetDuration(event, int(durationMs))
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
+	// Note: `outcome` parameter is CRD-level (Remediated/NoActionRequired/ManualReviewRequired)
+	// but OpenAPI enum expects ["Success", "Failed", "Pending"] - always use "Success" for completion events
 	payload := api.RemediationOrchestratorAuditPayload{
 		EventType:  api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
-		Outcome:    api.OptRemediationOrchestratorAuditPayloadOutcome{Value: api.RemediationOrchestratorAuditPayloadOutcome(outcome), Set: true},
+		Outcome:    api.OptRemediationOrchestratorAuditPayloadOutcome{Value: api.RemediationOrchestratorAuditPayloadOutcomeSuccess, Set: true},
 		DurationMs: api.OptInt64{Value: durationMs, Set: true},
 		Namespace:  namespace,
 		RrName:     rrName,

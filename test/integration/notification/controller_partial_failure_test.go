@@ -75,6 +75,17 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				},
 			}
 
+			// Register mock services (will be cleaned up by DeferCleanup)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockConsoleService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), mockLogService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
+			DeferCleanup(func() {
+				// Restore original services (console/slack exist, file/log don't in suite)
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))    // Not in suite
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile)) // Not in suite
+			})
+
 			// ========================================
 			// CREATE TEST NOTIFICATION WITH MULTIPLE CHANNELS
 			// ========================================
@@ -102,7 +113,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						MaxAttempts:           1, // No retries
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     1,
-						MaxBackoffSeconds:     1,
+						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 				},
 			}
@@ -124,7 +135,20 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				}
 				return notification.Status.Phase
 			}, 5*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-				"Should transition to PartiallySent when some channels fail")
+				"DD-E2E-003: Permanent error (not retryable) → immediate PartiallySent")
+
+			// Ensure phase is stable (no more reconciles) before checking call counts
+			Consistently(func() notificationv1alpha1.NotificationPhase {
+				err := k8sClient.Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return ""
+				}
+				return notification.Status.Phase
+			}, 1*time.Second, 200*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+				"Phase should remain stable (no more reconciles)")
 
 			// ========================================
 			// ASSERTIONS: Partial Failure State Validation
@@ -136,7 +160,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				"Console and log should succeed (2 successful)")
 			Expect(notification.Status.FailedDeliveries).To(Equal(1),
 				"File delivery should fail (1 failed)")
-			Expect(notification.Status.DeliveryAttempts).To(Equal(3),
+			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
 				"Should attempt delivery to all 3 channels")
 
 			By("Validating mock service call counts")
@@ -178,6 +202,17 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				},
 			}
 
+			// Register mock services
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockConsoleService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), mockLogService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
+			DeferCleanup(func() {
+				// Restore original services
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+			})
+
 			// ========================================
 			// CREATE TEST NOTIFICATION
 			// ========================================
@@ -204,7 +239,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						MaxAttempts:           1, // No retries
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     1,
-						MaxBackoffSeconds:     1,
+						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 				},
 			}
@@ -244,7 +279,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 	Context("When all channels fail", func() {
 		It("should mark notification as Failed (not PartiallySent)", func() {
 			// ========================================
-			// TEST SETUP: All services fail
+			// TEST SETUP: All channels fail scenario
 			// ========================================
 			mockConsoleService := &testutil.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
@@ -263,6 +298,17 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 					return fmt.Errorf("file failure")
 				},
 			}
+
+			// Register mock services
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockConsoleService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelLog), mockLogService)
+			deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), mockFileService)
+			DeferCleanup(func() {
+				// Restore original services
+				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile))
+			})
 
 			// ========================================
 			// CREATE TEST NOTIFICATION
@@ -290,7 +336,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 						MaxAttempts:           1, // No retries
 						InitialBackoffSeconds: 1,
 						BackoffMultiplier:     1,
-						MaxBackoffSeconds:     1,
+						MaxBackoffSeconds:     60, // Minimum allowed by CRD validation
 					},
 				},
 			}
@@ -319,7 +365,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				"No channels should succeed")
 			Expect(notification.Status.FailedDeliveries).To(Equal(3),
 				"All 3 channels should fail")
-			Expect(notification.Status.DeliveryAttempts).To(Equal(3),
+			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
 				"Should attempt delivery to all 3 channels")
 
 			// ========================================

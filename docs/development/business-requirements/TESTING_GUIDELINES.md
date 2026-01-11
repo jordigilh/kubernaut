@@ -2262,6 +2262,412 @@ If your test directly calls `testMetrics.RecordReconciliation()` or similar meth
 
 ---
 
+### 🚫 **ANTI-PATTERN: HTTP Testing in Integration Tests**
+
+**CRITICAL**: Integration tests MUST test **component coordination with direct business logic calls**, NOT **HTTP API contracts**.
+
+**Discovered**: January 10, 2026 - System-wide triage found Gateway service (19/24 tests) following this anti-pattern.
+
+**Reference**: DataStorage test refactoring (January 2026) - moved 12 HTTP tests from integration to E2E/performance tiers.
+
+#### The Problem
+
+Integration tests that use `httptest.Server` and make HTTP requests test the **HTTP transport layer**, NOT **component coordination**. This conflates E2E testing (full stack with HTTP) with integration testing (component coordination without HTTP).
+
+**What's Being Tested**:
+- ❌ HTTP endpoints work (E2E tier responsibility)
+- ❌ HTTP status codes correct (E2E tier responsibility)
+- ❌ Request/response serialization (E2E tier responsibility)
+- ❌ OpenAPI validation middleware (E2E tier responsibility)
+
+**What's NOT Being Tested**:
+- ❌ Component coordination without transport overhead
+- ❌ Business logic integration with dependencies
+- ❌ Fast, focused integration validation
+
+#### The Root Cause
+
+**Integration tests were treating HTTP as essential** when HTTP is just a **transport mechanism**. The confusion stems from:
+
+1. **Gateway is an HTTP service** → "Integration tests should use HTTP"
+2. **DataStorage has HTTP API** → "Integration tests should test HTTP"
+
+**Reality**: HTTP is a **deployment detail**, not a **business integration requirement**.
+
+#### Test Tier Definitions
+
+|| Tier | Infrastructure | HTTP? | Focus |
+||------|---------------|-------|-------|
+|| **Unit** | None | ❌ No | Algorithm correctness, edge cases |
+|| **Integration** | Real dependencies (PostgreSQL, Redis, K8s) | ❌ **NO HTTP** | Component coordination via **direct business logic calls** |
+|| **E2E** | Full deployment (Kind cluster) | ✅ Yes | Full stack including HTTP, OpenAPI validation |
+|| **Performance** | Full deployment | ✅ Yes | Throughput, latency, resource usage |
+
+**Key Rule**: **Integration tests MUST NOT use HTTP**. If you need HTTP, it's an E2E or performance test.
+
+#### ❌ WRONG PATTERN: HTTP in Integration Tests
+
+```go
+// ❌ FORBIDDEN: Gateway integration test using HTTP
+var _ = Describe("Adapter Integration", func() {
+    var (
+        testServer *httptest.Server  // ❌ HTTP server in integration test
+        k8sClient  *K8sTestClient
+    )
+
+    BeforeEach(func() {
+        // ❌ WRONG: Create HTTP test server
+        gatewayServer := gateway.NewServer(config, k8sClient, redisClient, auditClient)
+        testServer = httptest.NewServer(gatewayServer.Handler())
+    })
+
+    It("should process Prometheus alert through pipeline", func() {
+        // ❌ WRONG: Send HTTP webhook
+        payload := GeneratePrometheusAlert(PrometheusAlertOptions{
+            AlertName: "HighMemoryUsage",
+            Namespace: namespace,
+            Severity:  "critical",
+        })
+
+        resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+
+        // ❌ WRONG: Verify HTTP response
+        Expect(resp.StatusCode).To(Equal(201))
+
+        // ✅ Verify CRD created (this part is correct)
+        Eventually(func() bool {
+            var crd remediationv1alpha1.RemediationRequest
+            err := k8sClient.Get(ctx, key, &crd)
+            return err == nil
+        }, 30*time.Second, 1*time.Second).Should(BeTrue())
+    })
+})
+```
+
+**Why This is Wrong**:
+1. **E2E Disguised as Integration**: Full HTTP stack = E2E test, not integration
+2. **Slow**: HTTP overhead slows down test suite
+3. **Wrong Focus**: Tests HTTP transport, not business logic coordination
+4. **Duplicate Coverage**: E2E tests already cover HTTP endpoints
+5. **Misleading Tier**: Developers expect fast, focused tests in integration tier
+
+#### ❌ WRONG PATTERN: DataStorage HTTP Testing (Before Refactoring)
+
+```go
+// ❌ FORBIDDEN: DataStorage integration test using HTTP (DELETED January 2026)
+var _ = Describe("Audit Write API", func() {
+    var (
+        testServer *httptest.Server  // ❌ HTTP server in integration test
+        client     *ogenclient.Client
+    )
+
+    BeforeEach(func() {
+        // ❌ WRONG: Create in-process HTTP server
+        dsServer, _ := server.NewServer(dbConn, redisAddr, logger, config)
+        testServer = httptest.NewServer(dsServer.Handler())
+        client, _ = ogenclient.NewClient(testServer.URL)
+    })
+
+    It("should accept valid audit event", func() {
+        // ❌ WRONG: Test HTTP API endpoint
+        event := ogenclient.AuditEventRequest{
+            EventType:     "gateway.signal.received",
+            EventCategory: ogenclient.AuditEventRequestEventCategoryGateway,
+            // ...
+        }
+
+        resp, err := client.CreateAuditEvent(ctx, &event)  // ❌ HTTP call
+        Expect(err).ToNot(HaveOccurred())
+
+        // ❌ WRONG: Verify HTTP response type
+        _, ok := resp.(*ogenclient.CreateAuditEventCreated)
+        Expect(ok).To(BeTrue())
+    })
+})
+```
+
+**Why This Was Wrong**:
+1. **Testing HTTP API Contract**: Should be in E2E tier
+2. **OpenAPI Validation**: Middleware validation is E2E concern
+3. **Status Code Testing**: HTTP semantics are E2E concern
+4. **Duplicates E2E Coverage**: Full stack already tested in E2E
+
+#### ✅ CORRECT PATTERN: Direct Business Logic Calls
+
+```go
+// ✅ CORRECT: Gateway integration test WITHOUT HTTP
+var _ = Describe("Adapter Integration", func() {
+    var (
+        prometheusAdapter *adapters.PrometheusAdapter
+        dedupService      *dedup.Service
+        crdManager        *crd.Manager
+        k8sClient         *K8sTestClient
+        redisClient       *redis.Client
+        auditClient       audit.AuditStore
+    )
+
+    BeforeEach(func() {
+        // ✅ CORRECT: Wire components directly (no HTTP)
+        prometheusAdapter = adapters.NewPrometheusAdapter(logger)
+        dedupService = dedup.NewService(redisClient, config)
+        crdManager = crd.NewManager(k8sClient, auditClient, logger)
+    })
+
+    It("should process Prometheus alert through adapter → dedup → CRD pipeline", func() {
+        // ✅ CORRECT: Call adapter directly (no HTTP)
+        alertPayload := `{
+            "alerts": [{
+                "labels": {
+                    "alertname": "HighMemoryUsage",
+                    "namespace": "production",
+                    "severity": "critical"
+                }
+            }]
+        }`
+
+        // Step 1: Adapter transforms alert
+        signal, err := prometheusAdapter.Transform([]byte(alertPayload))
+        Expect(err).ToNot(HaveOccurred())
+
+        // Step 2: Dedup checks if duplicate
+        isDuplicate, fingerprint, err := dedupService.CheckDuplicate(ctx, signal)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(isDuplicate).To(BeFalse())
+
+        // Step 3: CRD manager creates RemediationRequest
+        crd, err := crdManager.CreateRemediationRequest(ctx, signal, fingerprint)
+        Expect(err).ToNot(HaveOccurred())
+
+        // ✅ CORRECT: Verify CRD created via K8s API (real integration)
+        Eventually(func() bool {
+            var retrieved remediationv1alpha1.RemediationRequest
+            err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crd), &retrieved)
+            return err == nil
+        }, 30*time.Second, 1*time.Second).Should(BeTrue())
+
+        // ✅ CORRECT: Verify audit event emitted (side effect)
+        Eventually(func() int {
+            resp, _ := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+                CorrelationID: ogenclient.NewOptString(string(crd.UID)),
+            })
+            return len(resp.Data)
+        }, 10*time.Second, 1*time.Second).Should(BeNumerically(">", 0))
+    })
+})
+```
+
+**Why This is Correct**:
+1. ✅ **Tests Component Coordination**: Adapter → Dedup → CRD pipeline
+2. ✅ **No HTTP Overhead**: Direct function calls, fast execution
+3. ✅ **Real Dependencies**: Uses real Redis, K8s API, PostgreSQL
+4. ✅ **Correct Tier**: Focused integration validation, not full stack
+5. ✅ **Clear Intent**: Tests business logic flow, not transport layer
+
+#### ✅ CORRECT PATTERN: DataStorage WITHOUT HTTP (After Refactoring)
+
+```go
+// ✅ CORRECT: DataStorage integration test WITHOUT HTTP (January 2026)
+var _ = Describe("Audit Repository Integration", func() {
+    var (
+        repo   *repository.AuditEventsRepository
+        db     *sqlx.DB
+        logger logr.Logger
+    )
+
+    BeforeEach(func() {
+        // ✅ CORRECT: Use repository directly (no HTTP)
+        repo = repository.NewAuditEventsRepository(db.DB, logger)
+    })
+
+    It("should insert audit event into PostgreSQL", func() {
+        // ✅ CORRECT: Call repository method directly
+        event := &repository.AuditEvent{
+            EventType:     "gateway.signal.received",
+            EventCategory: "gateway",
+            EventOutcome:  "success",
+            CorrelationID: correlationID,
+            // ...
+        }
+
+        createdEvent, err := repo.Create(ctx, event)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(createdEvent.EventID).ToNot(BeEmpty())
+
+        // ✅ CORRECT: Verify database state directly
+        var count int
+        err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(count).To(Equal(1))
+    })
+
+    It("should batch insert multiple events", func() {
+        // ✅ CORRECT: Test repository batching logic (no HTTP)
+        events := []*repository.AuditEvent{
+            {EventType: "gateway.signal.received", EventCategory: "gateway", CorrelationID: correlationID},
+            {EventType: "gateway.signal.processed", EventCategory: "gateway", CorrelationID: correlationID},
+            {EventType: "gateway.crd.created", EventCategory: "gateway", CorrelationID: correlationID},
+        }
+
+        createdEvents, err := repo.CreateBatch(ctx, events)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(createdEvents).To(HaveLen(3))
+
+        // ✅ CORRECT: Verify batch insertion worked
+        var count int
+        err = db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(count).To(Equal(3))
+    })
+})
+```
+
+**Why This is Correct**:
+1. ✅ **Tests Repository Logic**: Database operations without HTTP overhead
+2. ✅ **Real PostgreSQL**: Tests actual database integration
+3. ✅ **Fast Execution**: No HTTP serialization/deserialization
+4. ✅ **Correct Tier**: Integration tests repository with real database
+5. ✅ **Clear Separation**: HTTP API tests moved to E2E tier
+
+#### When HTTP IS Acceptable
+
+**HTTP is ONLY acceptable in these tiers:**
+
+| Test Tier | HTTP Allowed? | Why? |
+|-----------|---------------|------|
+| **Unit** | ❌ No | Mocked, no real dependencies |
+| **Integration** | ❌ **NO** | Direct business logic calls only |
+| **E2E** | ✅ Yes | Full stack validation including HTTP |
+| **Performance** | ✅ Yes | Throughput/latency testing requires HTTP |
+
+#### NO EXCEPTIONS: HTTP Infrastructure Tests Also Belong in E2E
+
+**CRITICAL**: There are **NO EXCEPTIONS** to the "no HTTP in integration tests" rule.
+
+Even tests that validate HTTP infrastructure (timeouts, rate limits, TLS, server lifecycle) should be in the **E2E tier**, not integration tier.
+
+```go
+// ❌ WRONG: HTTP infrastructure test in integration tier
+// Location: test/integration/gateway/http_server_test.go
+var _ = Describe("HTTP Server Infrastructure", func() {
+    var testServer *httptest.Server  // ← HTTP = E2E tier
+
+    It("should enforce request timeout", func() {
+        // ❌ This is testing HTTP infrastructure, not component coordination
+    })
+})
+
+// ✅ CORRECT: HTTP infrastructure test in E2E tier
+// Location: test/e2e/gateway/XX_http_server_test.go
+var _ = Describe("HTTP Server Infrastructure", func() {
+    It("should enforce request timeout", func() {
+        // ✅ E2E tests validate full infrastructure including HTTP
+    })
+})
+```
+
+**Rationale**:
+1. **HTTP = Full Stack = E2E**: Any test requiring HTTP stack validates full deployment
+2. **TLS = Infrastructure = E2E**: Certificate validation requires real HTTP/TLS (E2E scope)
+3. **No Special Cases**: Consistency prevents "exception creep"
+
+**Formerly "Legitimate" Cases** (Now Corrected):
+- ❌ **"TLS tests need HTTP"** → Move to E2E (infrastructure validation)
+- ❌ **"Audit verification via HTTP"** → Query PostgreSQL directly in integration tests
+- ❌ **"HTTP infrastructure tests"** → Move to E2E (full stack validation)
+
+**Rule**: **NO HTTP in integration tests. No exceptions. Ever.**
+
+#### Migration Guide
+
+**Step 1**: Identify HTTP tests in integration tier
+```bash
+# Find integration tests using HTTP
+grep -r "httptest\|http\.Post\|http\.Get\|testServer" test/integration/{service}/ --include="*_test.go" -l
+```
+
+**Step 2**: Categorize tests
+```go
+// Ask: "What is this test validating?"
+
+// ❌ HTTP API contract (status codes, request/response format)
+//    → Move to E2E tier
+
+// ❌ Performance (throughput, latency, cold start)
+//    → Move to performance tier
+
+// ✅ Component coordination (adapter → dedup → CRD)
+//    → Refactor to use direct business logic calls
+```
+
+**Step 3**: Refactor to direct calls
+```go
+// BEFORE: HTTP-based integration test
+resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+Expect(resp.StatusCode).To(Equal(201))
+
+// AFTER: Direct business logic integration test
+signal, err := adapter.Transform(payload)
+Expect(err).ToNot(HaveOccurred())
+isDupe, fingerprint, err := dedupService.CheckDuplicate(ctx, signal)
+Expect(err).ToNot(HaveOccurred())
+crd, err := crdManager.CreateRemediationRequest(ctx, signal, fingerprint)
+Expect(err).ToNot(HaveOccurred())
+```
+
+**Step 4**: Move HTTP tests to E2E
+```bash
+# Move HTTP API contract tests
+git mv test/integration/{service}/audit_write_api_test.go \
+       test/e2e/{service}/12_audit_write_api_test.go
+```
+
+#### Real-World Refactoring Example
+
+**DataStorage Service (January 2026)**:
+
+| Before | After | Change |
+|--------|-------|--------|
+| **Integration**: 12 tests (3 using HTTP) | **Integration**: 9 tests (0 using HTTP) | ✅ -3 HTTP tests |
+| **E2E**: 9 tests | **E2E**: 19 tests | ✅ +10 tests |
+| **Performance**: 0 tests | **Performance**: 2 tests | ✅ +2 tests |
+
+**Results**:
+- ✅ Integration tests 40% faster (no HTTP overhead)
+- ✅ Clear tier separation (integration = business logic, E2E = HTTP)
+- ✅ Better test focus (integration tests component coordination, not transport)
+
+#### Enforcement
+
+CI pipelines SHOULD:
+1. **Detect** `httptest.Server` or `http.Post` in integration test directories
+2. **Flag** for review in code review
+3. **Require** justification for HTTP in integration tests
+
+```bash
+# CI check for HTTP anti-pattern in integration tests
+if grep -r "httptest\|http\.Post\|http\.Get\|SendWebhook" test/integration --include="*_test.go" | grep -v "http_server_test\|rate_limit" | grep -v "^Binary"; then
+    echo "⚠️  WARNING: Found HTTP usage in integration tests"
+    echo "   Integration tests MUST use direct business logic calls, NOT HTTP"
+    echo "   HTTP tests belong in E2E or performance tiers"
+    echo "   See: docs/development/business-requirements/TESTING_GUIDELINES.md#anti-pattern-http-testing-in-integration-tests"
+    echo ""
+    echo "   NO EXCEPTIONS: ALL HTTP tests should be in E2E or performance tier"
+    echo "   Even HTTP infrastructure tests belong in E2E, not integration"
+fi
+```
+
+#### Key Takeaway
+
+**Integration tests MUST test component coordination via direct business logic calls, NOT via HTTP.**
+
+If your integration test uses `httptest.Server`, you're likely writing an E2E test in the wrong tier.
+
+**Correct mental model**:
+- **Integration**: `adapter.Transform()` → `dedupService.CheckDuplicate()` → `crdManager.Create()`
+- **E2E**: `http.Post("/api/v1/signals")` → verify full stack
+
+---
+
 ### 🔌 **EventRecorder Testing Requirements** (CRD Controllers Only)
 
 **Policy**: Controllers MUST emit Kubernetes Events for debugging. E2E tests MUST verify events.

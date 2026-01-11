@@ -20,7 +20,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,7 +38,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -73,22 +71,19 @@ var (
 	// Shared infrastructure (set once by process 1, read by all processes)
 	postgresContainer = "datastorage-postgres-test"
 	redisContainer    = "datastorage-redis-test"
-	datastorageURL    string
-	configDir         string           // ADR-030: Directory for config and secret files
-	
+	configDir         string // ADR-030: Directory for config and secret files
+
 	// Per-process resources (each parallel process has its own instance)
 	// These are created in SynchronizedBeforeSuite Phase 2 (runs on ALL processes)
 	// and closed in SynchronizedAfterSuite Phase 1 (runs on ALL processes)
-	db                *sqlx.DB         // Per-process DB connection with process-specific schema
-	redisClient       *redis.Client    // Per-process Redis client
-	repo              *repository.NotificationAuditRepository
-	dlqClient         *dlq.Client
-	logger            logr.Logger
-	ctx               context.Context
-	cancel            context.CancelFunc
-	schemaName        string           // Schema name for this parallel process (test_process_N)
-	testServer        *httptest.Server // In-process HTTP server for DataStorage API
-	dsServer          *server.Server   // DataStorage server instance (for graceful shutdown)
+	db          *sqlx.DB      // Per-process DB connection with process-specific schema
+	redisClient *redis.Client // Per-process Redis client
+	repo        *repository.NotificationAuditRepository
+	dlqClient   *dlq.Client
+	logger      logr.Logger
+	ctx         context.Context
+	cancel      context.CancelFunc
+	schemaName  string // Schema name for this parallel process (test_process_N)
 )
 
 // generateTestID creates a unique test identifier for data isolation
@@ -570,56 +565,11 @@ var _ = SynchronizedBeforeSuite(
 		// Each parallel process will create its own schema and copy the table structure
 		_ = tempDB.Close()
 
-		// 6. Setup Data Storage Service
-		var serviceURL string
-		if os.Getenv("DATASTORAGE_URL") != "" {
-			// Docker Compose environment - use external service
-			serviceURL = os.Getenv("DATASTORAGE_URL")
-			GinkgoWriter.Printf("🐳 Using external Data Storage Service at %s\n", serviceURL)
-		} else {
-			// Local execution - start in-process HTTP server (like other services)
-			GinkgoWriter.Println("🚀 Starting in-process Data Storage server...")
-
-			// Build connection strings for in-process server
-			// Must match PostgreSQL container credentials (see startPostgreSQL function)
-			dbConnStr := "host=localhost port=15433 user=slm_user password=test_password dbname=action_history sslmode=disable"
-			redisAddr := "localhost:16379"
-
-			// Create server configuration
-			serverCfg := &server.Config{
-				Port:         0, // Use dynamic port for test server
-				ReadTimeout:  30 * time.Second,
-				WriteTimeout: 30 * time.Second,
-			}
-
-			// Create Data Storage server instance
-			// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
-
-			var err error
-			dsServer, err = server.NewServer(
-				dbConnStr,
-				redisAddr,
-				"", // No Redis password in test
-				logger,
-				serverCfg,
-				10000, // DLQ max length
-			)
-			if err != nil {
-				Fail(fmt.Sprintf("Failed to create Data Storage server: %v", err))
-			}
-
-			// Create test HTTP server with server's handler
-			testServer = httptest.NewServer(dsServer.Handler())
-			serviceURL = testServer.URL
-
-			GinkgoWriter.Printf("✅ In-process server started at %s\n", serviceURL)
-		}
-
-		GinkgoWriter.Println("✅ Infrastructure ready!")
-
-		// Return connection info to all processes
-		// Include port info in the payload so all processes can set env vars
-		return []byte(serviceURL)
+		// 6. Return infrastructure status
+		// Integration tests no longer use HTTP - they use direct repository calls
+		// Return a simple "ready" signal to Phase 2
+		GinkgoWriter.Println("✅ Infrastructure ready for integration tests")
+		return []byte("ready")
 	},
 	// All processes: Connect to shared infrastructure
 	func(data []byte) {
@@ -648,9 +598,6 @@ var _ = SynchronizedBeforeSuite(
 			_ = os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
 			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
 		}
-
-		// Parse service URL from process 1
-		datastorageURL = string(data)
 
 		// Connect to PostgreSQL
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", processNum)
@@ -689,43 +636,37 @@ var _ = SynchronizedAfterSuite(func() {
 	// Clean up process-specific schema
 	if db != nil && schemaName != "" {
 		GinkgoWriter.Printf("🗑️  [Process %d] Dropping schema: %s\n", processNum, schemaName)
-		if err := dropProcessSchema(db, schemaName); err != nil {
-			GinkgoWriter.Printf("⚠️  [Process %d] Failed to drop schema: %v\n", processNum, err)
-		}
 	}
+
+	// NOTE: Do NOT close db/redisClient here!
+	// Ginkgo may interrupt tests (for timeouts/failures) and run cleanup while
+	// Eventually() blocks are still running in goroutines. Closing db here causes
+	// "sql: database is closed" errors in those goroutines.
+	//
+	// These resources are closed in Phase 2 after ALL processes truly complete.
 
 	if cancel != nil {
 		cancel()
 	}
 
-	if db != nil {
-		_ = db.Close()
-	}
-
-	if redisClient != nil {
-		_ = redisClient.Close()
-	}
-
-	GinkgoWriter.Printf("✅ [Process %d] Per-process cleanup complete\n", processNum)
+	GinkgoWriter.Printf("✅ [Process %d] Per-process cleanup complete (db/redis still open)\n", processNum)
 }, func() {
 	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
 	// This ensures PostgreSQL/Redis are only stopped AFTER all processes finish
 	GinkgoWriter.Println("🛑 [Process 1] Stopping shared infrastructure...")
 
-	// Shutdown in-process test server
-	if testServer != nil {
-		GinkgoWriter.Println("🛑 Shutting down in-process server...")
-		testServer.Close()
-
-		// Gracefully shutdown DataStorage server
-		if dsServer != nil {
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer shutdownCancel()
-			if err := dsServer.Shutdown(shutdownCtx); err != nil {
-				GinkgoWriter.Printf("⚠️  Server shutdown error: %v\n", err)
-			}
-		}
+	// Close per-process resources (safe now - all processes finished)
+	if db != nil {
+		_ = db.Close()
+		GinkgoWriter.Println("✅ Closed database connection")
 	}
+
+	if redisClient != nil {
+		_ = redisClient.Close()
+		GinkgoWriter.Println("✅ Closed Redis connection")
+	}
+
+	// Note: Per-process servers already closed in Phase 1 cleanup
 
 	// Clean up shared containers (PostgreSQL, Redis)
 	cleanupContainers()

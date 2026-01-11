@@ -169,13 +169,17 @@ class BufferedAuditStore:
         )
         self._worker.start()
 
-        logger.info(
+        # AGGRESSIVE LOGGING: Print to stderr as backup (logger might not be captured)
+        import sys as _sys
+        log_msg = (
             f"📊 DD-AUDIT-002: BufferedAuditStore initialized with OpenAPI client - "
             f"url={data_storage_url}, "
             f"buffer_size={self._config.buffer_size}, "
             f"batch_size={self._config.batch_size}, "
             f"flush_interval={self._config.flush_interval_seconds}s"
         )
+        print(log_msg, file=_sys.stderr, flush=True)
+        logger.info(log_msg)
 
     def store_audit(self, event: AuditEventRequest) -> bool:
         """
@@ -366,6 +370,9 @@ class BufferedAuditStore:
 
                 # Check if flush interval reached
                 elif batch and (time.time() - last_flush) >= self._config.flush_interval_seconds:
+                    # AGGRESSIVE LOGGING: Print flush decision
+                    import sys as _sys
+                    print(f"🔥 HAPI FLUSH: Interval reached, flushing {len(batch)} events", file=_sys.stderr, flush=True)
                     self._write_batch_with_retry(batch)
                     batch = []
                     last_flush = time.time()
@@ -405,16 +412,17 @@ class BufferedAuditStore:
                 self._failed_batch_count += 1
 
         if written > 0:
-            logger.debug(
-                f"✅ DD-AUDIT-002: Wrote audit events - "
-                f"written={written}, failed={failed}"
-            )
+            # AGGRESSIVE LOGGING: Print to stderr
+            import sys as _sys
+            log_msg = f"✅ DD-AUDIT-002: Wrote audit events - written={written}, failed={failed}"
+            print(log_msg, file=_sys.stderr, flush=True)
+            logger.debug(log_msg)
 
         if failed > 0:
-            logger.warning(
-                f"⚠️ DD-AUDIT-002: Some events failed - "
-                f"written={written}, failed={failed}"
-            )
+            import sys as _sys
+            log_msg = f"⚠️ DD-AUDIT-002: Some events failed - written={written}, failed={failed}"
+            print(log_msg, file=_sys.stderr, flush=True)
+            logger.warning(log_msg)
 
     def _write_single_event_with_retry(self, event: AuditEventRequest) -> bool:
         """
