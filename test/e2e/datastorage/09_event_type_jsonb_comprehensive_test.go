@@ -630,7 +630,7 @@ var _ = Describe("GAP 1.1: Comprehensive Event Type + JSONB Validation", Label("
 					for k, v := range tc.SampleEventData {
 						eventDataWithDiscriminator[k] = v // Merge service-specific fields
 					}
-					
+
 					auditEvent := map[string]interface{}{
 						"version":         "1.0",
 						"event_type":      tc.EventType,

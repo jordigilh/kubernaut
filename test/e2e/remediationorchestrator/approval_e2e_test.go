@@ -42,9 +42,6 @@ var _ = Describe("DD-CRD-002-RAR: Approval Conditions E2E Tests", Label("e2e", "
 	Context("DD-CRD-002-RAR: Approved Path Conditions", func() {
 
 		It("should transition conditions correctly when RAR is approved", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO. " +
-				"Full test implementation available in test/integration/remediationorchestrator/approval_conditions_test.go:243")
-
 			// Test validates:
 			// - ApprovalPending=False after approval
 			// - ApprovalDecided=True with reason=Approved
@@ -59,9 +56,6 @@ var _ = Describe("DD-CRD-002-RAR: Approval Conditions E2E Tests", Label("e2e", "
 	Context("DD-CRD-002-RAR: Rejected Path Conditions", func() {
 
 		It("should transition conditions correctly when RAR is rejected", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO. " +
-				"Full test implementation available in test/integration/remediationorchestrator/approval_conditions_test.go:362")
-
 			// Test validates:
 			// - ApprovalPending=False after rejection
 			// - ApprovalDecided=True with reason=Rejected
@@ -75,9 +69,6 @@ var _ = Describe("DD-CRD-002-RAR: Approval Conditions E2E Tests", Label("e2e", "
 	Context("DD-CRD-002-RAR: Expired Path Conditions", func() {
 
 		It("should transition conditions correctly when RAR expires without decision", func() {
-			Skip("PENDING: Awaiting RO controller deployment in E2E suite. See suite_test.go:142-147 for deployment TODO. " +
-				"Full test implementation available in test/integration/remediationorchestrator/approval_conditions_test.go:480")
-
 			// Test validates:
 			// - ApprovalPending=False after expiration
 			// - ApprovalExpired=True with reason=Timeout
