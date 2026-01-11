@@ -267,3 +267,62 @@ func createAuditEventOpenAPI(ctx context.Context, client *ogenclient.Client, eve
 // DD-API-001: Backward compatibility helpers removed
 // Tests now use typed dsgen.AuditEventRequest directly for full type safety
 // This eliminates the need for map[string]interface{} conversion
+
+// ========================================
+// Additional Helpers for Moved HTTP API Tests
+// ========================================
+
+// generateTestID creates a unique ID for test data isolation
+// Format: test-{process}-{timestamp}
+// This enables parallel test execution by ensuring each test has unique data
+func generateTestID() string {
+	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+}
+
+// createOpenAPIClient creates an ogen client for the DataStorage API
+func createOpenAPIClient(baseURL string) (*ogenclient.Client, error) {
+	return ogenclient.NewClient(baseURL)
+}
+
+// postAuditEvent posts an audit event using the ogen client and returns the event ID
+func postAuditEvent(
+	ctx context.Context,
+	client *ogenclient.Client,
+	event ogenclient.AuditEventRequest,
+) (string, error) {
+	resp, err := client.CreateAuditEvent(ctx, &event)
+	if err != nil {
+		return "", fmt.Errorf("failed to create audit event: %w", err)
+	}
+
+	// Extract event ID from response (ogen unions require type checking)
+	switch r := resp.(type) {
+	case *ogenclient.CreateAuditEventCreated:
+		return r.EventID.String(), nil
+	case *ogenclient.CreateAuditEventAccepted:
+		return r.EventID.String(), nil
+	case *ogenclient.CreateAuditEventBadRequest:
+		return "", fmt.Errorf("bad request: %s", r.Detail.Value)
+	default:
+		return "", fmt.Errorf("unexpected response type: %T", resp)
+	}
+}
+
+// postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
+func postAuditEventBatch( //nolint:unused
+	ctx context.Context,
+	client *ogenclient.Client,
+	events []ogenclient.AuditEventRequest,
+) ([]string, error) {
+	resp, err := client.CreateAuditEventsBatch(ctx, events)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create audit events batch: %w", err)
+	}
+
+	// Extract event IDs from response
+	eventIDs := make([]string, len(resp.EventIds))
+	for i, id := range resp.EventIds {
+		eventIDs[i] = id.String()
+	}
+	return eventIDs, nil
+}

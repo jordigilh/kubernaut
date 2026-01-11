@@ -51,6 +51,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -97,6 +98,11 @@ var (
 
 	// DD-TEST-002: Unique namespace per test for parallel execution
 	testNamespace string
+
+	// DD-METRICS-001: Isolated Prometheus registry for parallel test execution
+	// Per WorkflowExecution pattern: Prevents global registry conflicts in parallel tests
+	testRegistry *prometheus.Registry
+	testMetrics  *metrics.Metrics
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -308,8 +314,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	Expect(err).ToNot(HaveOccurred())
 
 	By("Setting up the AIAnalysis controller with handlers")
-	// DD-METRICS-001: Create metrics instance for integration testing
-	testMetrics := metrics.NewMetrics()
+	// DD-METRICS-001: Create isolated metrics registry for parallel test execution
+	// Per WorkflowExecution pattern: Isolated registry prevents conflicts in parallel tests
+	testRegistry = prometheus.NewRegistry()
+	testMetrics = metrics.NewMetricsWithRegistry(testRegistry)
+	GinkgoWriter.Println("✅ Test metrics created with isolated registry")
 
 	// Create handlers with REAL HAPI client, metrics, and REAL audit client
 	// Per DD-AUDIT-003: AIAnalysis MUST generate audit traces (P0)
@@ -420,6 +429,26 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	if ctx == nil {
 		ctx, cancel = context.WithCancel(context.Background())
 	}
+
+	// DD-PARALLEL-FIX: Create per-process audit store (MUST run on ALL processes)
+	// This was moved from first function (only runs on process 1) to second function (runs on ALL processes)
+	// Without this, auditStore is nil in processes 2-N, causing nil pointer panics
+	GinkgoWriter.Println("📋 Setting up per-process audit store...")
+	auditMockTransport := testutil.NewMockUserTransport("test-aianalysis@integration.test")
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		"http://127.0.0.1:18095", // AIAnalysis integration test DS port (IPv4 explicit for CI)
+		5*time.Second,
+		auditMockTransport, // ← Mock user header injection (simulates oauth-proxy)
+	)
+	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
+
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
+	auditLogger := zap.New(zap.WriteTo(GinkgoWriter))
+
+	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
+	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for DD-AUDIT-003")
+	GinkgoWriter.Println("✅ Per-process audit store configured")
 
 	// Create per-process REAL HAPI client (each process gets its own client)
 	// Integration tests use REAL HAPI service with MOCK_LLM_MODE=true (only mock allowed)

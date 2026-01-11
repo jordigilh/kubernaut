@@ -81,6 +81,12 @@ def get_audit_store(
     global _audit_store
     if _audit_store is None:
         data_storage_url = data_storage_url or os.getenv("DATA_STORAGE_URL", "http://data-storage:8080")
+        
+        # AGGRESSIVE LOGGING: Print to stderr as backup (logger might not be configured yet)
+        import sys as _sys
+        print(f"🔍 HAPI AUDIT INIT START: url={data_storage_url}", file=_sys.stderr, flush=True)
+        logger.info(f"🔍 BR-AUDIT-005: Starting audit store initialization - url={data_storage_url}")
+        
         try:
             _audit_store = BufferedAuditStore(
                 data_storage_url=data_storage_url,
@@ -90,7 +96,9 @@ def get_audit_store(
                     flush_interval_seconds=flush_interval_seconds or AUDIT_FLUSH_INTERVAL_SECONDS
                 )
             )
-            logger.info(f"BR-AUDIT-005: Initialized audit store - url={data_storage_url}")
+            # AGGRESSIVE LOGGING: Print to stderr + logger
+            print(f"✅ HAPI AUDIT INIT SUCCESS: url={data_storage_url}", file=_sys.stderr, flush=True)
+            logger.info(f"✅ BR-AUDIT-005: Initialized audit store - url={data_storage_url}")
         except Exception as e:
             # ✅ COMPLIANT: Crash immediately per ADR-032 §2
             # Per ADR-032 §2: "Services MUST fail fast and exit(1) if audit cannot be initialized"

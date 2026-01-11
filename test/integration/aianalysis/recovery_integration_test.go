@@ -56,7 +56,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("Recovery Endpoint Integration", Serial, Label("integration", "recovery", "hapi"), func() {
+var _ = Describe("Recovery Endpoint Integration", Label("integration", "recovery", "hapi"), func() {
 	var (
 		hapiClient *client.HolmesGPTClient
 		hapiURL    string

@@ -61,7 +61,7 @@ import (
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
 // See audit_flow_integration_test.go for detailed rationale.
-var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", Serial, func() {
+var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 	var (
 		uniqueSuffix   string
 		// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach

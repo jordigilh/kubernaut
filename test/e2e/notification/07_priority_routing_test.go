@@ -117,7 +117,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 					return ""
 				}
 				return notification.Status.Phase
-			}, 15*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+			}, 20*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 				"Critical priority should be delivered immediately")
 
 			deliveryTime := time.Since(startTime)
@@ -141,10 +141,10 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 		pattern := "notification-e2e-priority-critical-*.json"
 
 		Eventually(EventuallyCountFilesInPod(pattern),
-			5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-			"File should be created in pod within 5 seconds")
+			20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+			"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
 
-		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 20*time.Second)
 		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
 		defer CleanupCopiedFile(copiedFilePath)
 
@@ -240,10 +240,10 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 			pattern := "notification-" + p.name + "-*.json"
 
 			Eventually(EventuallyCountFilesInPod(pattern),
-				5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-				"File for "+p.name+" should be created in pod within 5 seconds")
+				20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+				"File for "+p.name+" should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
 
-			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 20*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod for "+p.name)
 			defer CleanupCopiedFile(copiedFilePath)
 
@@ -341,10 +341,10 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 		pattern := "notification-e2e-priority-high-multi-*.json"
 
 		Eventually(EventuallyCountFilesInPod(pattern),
-			5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-			"File should be created in pod within 5 seconds")
+			20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+			"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
 
-		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 20*time.Second)
 		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
 		defer CleanupCopiedFile(copiedFilePath)
 

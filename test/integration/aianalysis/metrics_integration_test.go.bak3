@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -52,11 +53,10 @@ import (
 // Pattern: CREATE CRD → WAIT FOR RECONCILIATION → VERIFY METRICS
 // ========================================
 
-// SERIAL EXECUTION REQUIRED: Metrics tests must run serially (SignalProcessing pattern).
-// Per DD-METRICS-001: testMetrics initialized once in SynchronizedBeforeSuite (process 1 only).
-// High parallelism (12 procs) causes nil pointer panics in other processes.
-// WorkflowExecution avoids this issue due to lower test count and parallelism.
-var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
+// PARALLEL EXECUTION: Uses WorkflowExecution pattern for metrics access.
+// Per DD-METRICS-001: Access isolated testMetrics directly (not via registry query).
+// testMetrics created with isolated registry in suite_test.go prevents race conditions.
+var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
 	var (
 		ctx       context.Context
 		namespace string
@@ -74,13 +74,9 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 		return prometheusTestutil.ToFloat64(counter.WithLabelValues(labelValues...))
 	}
 
-	// Helper to check if histogram has observations (WorkflowExecution pattern)
-	// Returns 1 if histogram exists and can be accessed (validates metrics recording)
-	getHistogramCount := func(histVec *prometheus.HistogramVec, labelValues ...string) int {
-		// Just accessing WithLabelValues validates the metric exists and is usable
-		// Integration tests verify metrics don't panic; E2E tests verify actual values
-		_ = histVec.WithLabelValues(labelValues...)
-		return 1 // Histogram exists and is accessible
+	// Helper to get histogram sample count directly from metrics (WorkflowExecution pattern)
+	getHistogramCount := func(histogram prometheus.Observer) int {
+		return prometheusTestutil.CollectAndCount(histogram)
 	}
 
 	// ========================================
@@ -152,8 +148,10 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 			"Reconciliation metric should be emitted during Analyzing phase")
 
 		// Verify duration histogram was populated
-		Eventually(func() int {
-			return getHistogramCount(testMetrics.ReconcilerDurationSeconds, "Investigating")
+		Eventually(func() uint64 {
+			return getHistogramCount(metrics.MetricNameReconcilerDurationSeconds, map[string]string{
+				"phase": "Investigating",
+			})
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Duration histogram should record Investigating phase duration")
 		})
@@ -161,7 +159,13 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 		// NOTE: Flaky in parallel execution - metrics registry state interference
 	It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-HAPI-197", func() {
 			// 1. Capture baseline failure metrics before test
-			baselineFailures := getCounterValue(testMetrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(testMetrics.FailuresTotal, "APIError") + getCounterValue(testMetrics.FailuresTotal, "NoWorkflowSelected")
+			baselineFailures := getCounterValue(metrics.MetricNameFailuresTotal, map[string]string{
+				"reason": "WorkflowResolutionFailed",
+			}) + getCounterValue(metrics.MetricNameFailuresTotal, map[string]string{
+				"reason": "APIError",
+			}) + getCounterValue(metrics.MetricNameFailuresTotal, map[string]string{
+				"reason": "NoWorkflowSelected",
+			})
 
 			// 2. Create AIAnalysis that will complete successfully
 			// Note: Mock HolmesGPT client returns success, so this tests the happy path
@@ -208,7 +212,13 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 			// 4. Verify failure metrics were NOT incremented
 			// Success path should not emit failure metrics
 			Consistently(func() float64 {
-				currentFailures := getCounterValue(testMetrics.FailuresTotal, "WorkflowResolutionFailed") + getCounterValue(testMetrics.FailuresTotal, "APIError") + getCounterValue(testMetrics.FailuresTotal, "NoWorkflowSelected")
+				currentFailures := getCounterValue(metrics.MetricNameFailuresTotal, map[string]string{
+					"reason": "WorkflowResolutionFailed",
+				}) + getCounterValue(metrics.MetricNameFailuresTotal, map[string]string{
+					"reason": "APIError",
+				}) + getCounterValue(metrics.MetricNameFailuresTotal, map[string]string{
+					"reason": "NoWorkflowSelected",
+				})
 				return currentFailures - baselineFailures
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(float64(0)),
 				"Failure metrics should NOT be emitted when AIAnalysis completes successfully")
@@ -271,12 +281,16 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 		// 3. Verify approval decision metrics were emitted
 		Eventually(func() float64 {
 			// Look for any approval decision metric
-			total := getCounterValue(testMetrics.ApprovalDecisionsTotal, "production")
+			total := getCounterValue(metrics.MetricNameApprovalDecisionsTotal, map[string]string{
+				"environment": "production",
+			})
 			if total > 0 {
 				return total
 			}
 			// Also check for auto-approved or requires_approval
-			return getCounterValue(testMetrics.ApprovalDecisionsTotal, "requires_approval")
+			return getCounterValue(metrics.MetricNameApprovalDecisionsTotal, map[string]string{
+				"decision": "requires_approval",
+			})
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Approval decision metric should be emitted during policy evaluation")
 		})
@@ -329,8 +343,10 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 		}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 		// 3. Verify confidence score histogram was populated
-		Eventually(func() int {
-			return getHistogramCount(testMetrics.ConfidenceScoreDistribution, "ImagePullBackOff")
+		Eventually(func() uint64 {
+			return getHistogramCount(metrics.MetricNameConfidenceScoreDistribution, map[string]string{
+				"signal_type": "ImagePullBackOff",
+			})
 		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 			"Confidence score histogram should be populated during workflow selection")
 		})
@@ -386,11 +402,17 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 			Eventually(func() float64 {
 				// Look for any Rego evaluation outcome (approved or rejected)
 				// Metric uses labels: "outcome" and "degraded"
-				total := getCounterValue(testMetrics.RegoEvaluationsTotal, "approved", "false")
+				total := getCounterValue(metrics.MetricNameRegoEvaluationsTotal, map[string]string{
+					"outcome":  "approved",
+					"degraded": "false",
+				})
 				if total > 0 {
 					return total
 				}
-				return getCounterValue(testMetrics.RegoEvaluationsTotal, "rejected", "false")
+				return getCounterValue(metrics.MetricNameRegoEvaluationsTotal, map[string]string{
+					"outcome":  "rejected",
+					"degraded": "false",
+				})
 			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
 				"Rego evaluation metric should be emitted during analysis phase")
 		})

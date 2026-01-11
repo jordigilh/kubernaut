@@ -212,6 +212,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			rr := newValidRemediationRequest("rr-completion", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
+			// Refresh RR to get server-populated fields (including UID for correlation_id)
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
 			correlationID := string(rr.UID)
 
 			// Fast-forward through phases: update RO-created child CRDs to completed status
@@ -273,21 +275,38 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-			// Explicitly flush audit store to ensure lifecycle_completed event is written to DataStorage
-			flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).ToNot(HaveOccurred(), "Failed to flush audit store")
+			// RACE CONDITION FIX: Controller emits lifecycle_completed AFTER status update completes (async)
+			// Wait for audit event to be buffered and queryable (Flush + query in Eventually loop)
+			// Expected: 5 events total (lifecycle_started + 3 transitions + lifecycle_completed)
+			Eventually(func() bool {
+				// Flush audit store to write buffered events to DataStorage
+				flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer flushCancel()
+				err := auditStore.Flush(flushCtx)
+				if err != nil {
+					GinkgoWriter.Printf("⚠️  Flush failed: %v\n", err)
+					return false
+				}
 
-			// Query for lifecycle completed audit event using Eventually (accounts for buffer flush)
-			// Per DataStorage batch flushing: Default 60s flush interval in integration tests
-			// Use 90s timeout to account for: 60s flush + 30s safety margin for processing
+				// Query for lifecycle_completed event
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventCategory: ogenclient.NewOptString("orchestration"),
+					EventType:     ogenclient.NewOptString(string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted)),
+				}
+				resp, queryErr := dsClient.QueryAuditEvents(ctx, params)
+				if queryErr != nil || resp.Data == nil {
+					GinkgoWriter.Printf("⚠️  Query failed or no data: err=%v\n", queryErr)
+					return false
+				}
+				GinkgoWriter.Printf("✅ Found %d lifecycle_completed events\n", len(resp.Data))
+				return len(resp.Data) > 0
+			}, "10s", "500ms").Should(BeTrue(), "lifecycle_completed event should be emitted, buffered, and queryable")
+
+			// Query one more time to get the event for validation
 			eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted)
-			var events []ogenclient.AuditEvent
-			Eventually(func() int {
-				events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-				return len(events)
-			}, "90s", "1s").Should(Equal(1), "Expected exactly 1 lifecycle_completed audit event after buffer flush")
+			events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+			Expect(events).To(HaveLen(1), "Expected exactly 1 lifecycle_completed audit event")
 
 			// Validate event
 			event := events[0]
@@ -299,7 +318,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			// Validate event_data (strongly-typed per DD-AUDIT-004)
 			payload := event.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.Outcome.IsSet()).To(BeTrue(), "outcome should be present")
-			Expect(string(payload.Outcome.Value)).To(Equal("Remediated")) // Actual value from controller
+			Expect(payload.Outcome.Value).To(Equal(ogenclient.RemediationOrchestratorAuditPayloadOutcomeSuccess))
 		})
 	})
 
@@ -518,14 +537,15 @@ func queryAuditEventsOpenAPI(client *ogenclient.Client, correlationID, eventType
 
 	resp, err := client.QueryAuditEvents(queryCtx, params)
 	if err != nil {
-		GinkgoWriter.Printf("Failed to query Data Storage: %v\n", err)
+		GinkgoWriter.Printf("❌ Failed to query Data Storage: %v\n", err)
 		return nil
 	}
 
 	if resp.Data == nil {
-		GinkgoWriter.Printf("No data in response from Data Storage\n")
+		GinkgoWriter.Printf("⚠️  No data in response from Data Storage (correlation=%s, type=%s, category=%s)\n", correlationID, eventType, eventCategory)
 		return nil
 	}
 
+	GinkgoWriter.Printf("✅ Query successful: found %d events (correlation=%s, type=%s)\n", len(resp.Data), correlationID, eventType)
 	return resp.Data
 }

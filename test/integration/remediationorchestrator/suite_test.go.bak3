@@ -102,6 +102,7 @@ var (
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
 
+
 	// dataStorageBaseURL is the base URL for DataStorage API calls
 	// Uses ROIntegrationDataStoragePort to avoid brittle hardcoded ports (DD-TEST-001 v2.2)
 	dataStorageBaseURL = fmt.Sprintf("http://127.0.0.1:%d", ROIntegrationDataStoragePort)
@@ -140,8 +141,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per DD-TEST-001 v2.2: PostgreSQL=15435, Redis=16381, Immudb=13325, DS=18140
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "remediationorchestrator",
-		PostgresPort:    15435,                        // DD-TEST-001 v2.2
-		RedisPort:       16381,                        // DD-TEST-001 v2.2
+		PostgresPort:    15435,                      // DD-TEST-001 v2.2
+		RedisPort:       16381,                      // DD-TEST-001 v2.2
 		DataStoragePort: ROIntegrationDataStoragePort, // DD-TEST-001 v2.2
 		MetricsPort:     19140,
 		ConfigDir:       "test/integration/remediationorchestrator/config",
@@ -233,25 +234,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Integration tests use real DataStorage API at dataStorageBaseURL (DD-TEST-001 v2.2)
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	// Note: Using 127.0.0.1 instead of "localhost" to force IPv4
-	// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
-	mockTransport := testutil.NewMockUserTransport("test-remediationorchestrator@integration.test")
-	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		dataStorageBaseURL,
-		5*time.Second,
-		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
-	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
-
-	auditLogger := ctrl.Log.WithName("audit")
-	auditConfig := audit.Config{
-		FlushInterval: 1 * time.Second, // Fast flush for tests
-		BufferSize:    10,
-		BatchSize:     5,
-		MaxRetries:    3,
-	}
-	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed to create audit store - ensure DataStorage is running at %s", dataStorageBaseURL))
+	// Audit store is created per-process in second SynchronizedBeforeSuite function
+	// This ensures ALL parallel processes can call auditStore.Flush() in tests
+	// Process 1: Uses audit store for controller audit emission
+	// Other processes: Use empty audit stores (no events emitted, but Flush() works)
 
 	By("Initializing RemediationOrchestrator metrics (DD-METRICS-001)")
 	// Per DD-METRICS-001: Metrics must be initialized and injected for integration tests
@@ -443,9 +429,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 
 	// Create per-process audit store (DD-AUDIT-003)
+	// All parallel processes need this to call Flush() in tests, but only process 1 emits events
 	// Pattern: AIAnalysis suite_test.go lines 434-442
-	// ALL parallel processes need audit store to call Flush() in tests
-	// Only process 1 emits events; other processes have empty stores
 	mockTransport := testutil.NewMockUserTransport("test-remediationorchestrator@integration.test")
 	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageBaseURL,
@@ -463,6 +448,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), "Per-process audit store creation must succeed")
+	GinkgoWriter.Println("✅ Per-process audit store configured")
+})
+
+// AfterEach validates that no audit validation errors occurred during the test
+// This catches OpenAPI schema violations that would otherwise be silent failures
+// Example: Wrong enum values like "Remediated" instead of "Success"
+// Note: Only runs on process 1 (where controller manager and audit store run)
+var _ = AfterEach(func() {
+	if testAuditWrapper != nil {
+		testAuditWrapper.ExpectNoValidationErrors()
+		// Reset errors after each test to avoid cross-test pollution
+		testAuditWrapper.ResetValidationErrors()
+	}
 })
 
 // SynchronizedAfterSuite ensures proper cleanup in parallel execution

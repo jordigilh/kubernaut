@@ -136,10 +136,10 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 		pattern := "notification-e2e-multi-channel-fanout-*.json"
 
 		Eventually(EventuallyCountFilesInPod(pattern),
-			5*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 1),
-			"File should be created in pod within 5 seconds")
+			20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+			"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
 
-		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 5*time.Second)
+		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 20*time.Second)
 		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
 		defer CleanupCopiedFile(copiedFilePath)
 

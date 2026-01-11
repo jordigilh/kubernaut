@@ -84,7 +84,7 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     # with provider_response_summary (consumer perspective + business context)
     try:
         audit_store = get_audit_store()
-        logger.info(f"Audit store available: {audit_store is not None}")
+        logger.info(f"DD-AUDIT-005: Creating holmesgpt.response.complete event (incident_id={incident_req.incident_id}, remediation_id={incident_req.remediation_id})")
         if audit_store:
             # Convert IncidentResponse to dict for audit storage
             # BR-HAPI-212: In mock mode, result is already a dict
@@ -100,7 +100,18 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
                 remediation_id=incident_req.remediation_id,
                 response_data=response_dict
             )
-            audit_store.store_audit(audit_event)
+            logger.info(f"DD-AUDIT-005: Storing holmesgpt.response.complete event (correlation_id={incident_req.remediation_id})")
+            
+            # AGGRESSIVE LOGGING: Check store_audit() return value
+            store_result = audit_store.store_audit(audit_event)
+            if store_result:
+                logger.info(f"✅ DD-AUDIT-005: Event stored successfully (buffered=True, correlation_id={incident_req.remediation_id})")
+            else:
+                logger.warning(f"⚠️ DD-AUDIT-005: Event NOT stored (buffered=False, buffer full or shutting down, correlation_id={incident_req.remediation_id})")
+            
+            # Print to stderr as backup
+            import sys as _sys
+            print(f"🔍 HAPI AUDIT STORE: result={store_result}, correlation_id={incident_req.remediation_id}", file=_sys.stderr, flush=True)
     except Exception as e:
         # BR-AUDIT-005: Audit writes are MANDATORY, but should not block business operation
         # Log the error but allow the business operation to complete
