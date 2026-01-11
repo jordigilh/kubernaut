@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -100,7 +101,9 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 		logger = logr.Discard()
 		prometheusAdapter = adapters.NewPrometheusAdapter()
 		k8sClientWrapper = &K8sClientWrapper{Client: k8sClient.Client}
-		crdCreator = processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), testNamespaceProd, &config.RetrySettings{
+		// Use isolated registry for test isolation (prevents prometheus.AlreadyRegisteredError)
+		testRegistry := prometheus.NewRegistry()
+		crdCreator = processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetricsWithRegistry(testRegistry), testNamespaceProd, &config.RetrySettings{
 			MaxAttempts:    3,
 			InitialBackoff: 100 * time.Millisecond,
 		})
@@ -208,7 +211,9 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// ✅ Step 4: Create second CRD (staging)
-			crdCreatorStaging := processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), testNamespaceStage, &config.RetrySettings{
+			// Use isolated registry for test isolation (prevents prometheus.AlreadyRegisteredError)
+			testRegistryStaging := prometheus.NewRegistry()
+			crdCreatorStaging := processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetricsWithRegistry(testRegistryStaging), testNamespaceStage, &config.RetrySettings{
 				MaxAttempts:    3,
 				InitialBackoff: 100 * time.Millisecond,
 			})
@@ -244,11 +249,15 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 				}]
 			}`)
 
-			// BUSINESS OUTCOME: Invalid payload rejected by adapter
-			_, err := prometheusAdapter.Parse(ctx, invalidPayload)
-			Expect(err).To(HaveOccurred(), "Adapter should reject invalid payload")
+			// BUSINESS OUTCOME: Invalid payload rejected by adapter validation
+			// Parse succeeds (JSON is valid), but Validate should fail (missing alertname)
+			signal, err := prometheusAdapter.Parse(ctx, invalidPayload)
+			Expect(err).ToNot(HaveOccurred(), "Parse should succeed for valid JSON")
 
-			// Verify: No CRD created (since parsing failed, CRD creation never attempted)
+			err = prometheusAdapter.Validate(signal)
+			Expect(err).To(HaveOccurred(), "Validate should reject signal missing alertname")
+
+			// Verify: No CRD created (since validation failed, CRD creation never attempted)
 			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(0))
 		})

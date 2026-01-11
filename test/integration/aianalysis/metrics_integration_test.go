@@ -130,7 +130,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 								},
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}
@@ -201,7 +202,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}
@@ -265,7 +267,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 								},
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}
@@ -325,7 +328,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 								Namespace: namespace,
 							},
 						},
-						AnalysisTypes: []string{"incident-analysis", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"incident-analysis"},
 					},
 				},
 			}

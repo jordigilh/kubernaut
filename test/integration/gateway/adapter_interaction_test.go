@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -93,7 +94,10 @@ var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tes
 		logger = logr.Discard()
 
 		// Initialize metrics (required by CRDCreator)
-		metricsInstance = metrics.NewMetrics()
+		// Use isolated registry for test isolation (prevents prometheus.AlreadyRegisteredError)
+		// Each BeforeEach creates a new registry to avoid metric collisions in parallel tests
+		testRegistry := prometheus.NewRegistry()
+		metricsInstance = metrics.NewMetricsWithRegistry(testRegistry)
 
 		// Initialize adapters
 		prometheusAdapter = adapters.NewPrometheusAdapter()

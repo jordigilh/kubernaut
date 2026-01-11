@@ -192,7 +192,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 								},
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// Single analysis type for hybrid audit test (focused on HAPI+AA event validation)
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
@@ -371,7 +372,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 								},
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// Single analysis type for RR reconstruction test (focused on data structure validation)
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
@@ -504,7 +506,8 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 								},
 							},
 						},
-						AnalysisTypes: []string{"investigation", "workflow-selection"},
+						// DD-AIANALYSIS-005: v1.x single analysis type only
+						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
