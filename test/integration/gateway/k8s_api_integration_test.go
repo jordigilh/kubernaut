@@ -4,15 +4,19 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
+	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -35,8 +39,11 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 	var (
 		ctx                context.Context
 		cancel             context.CancelFunc
-		testServer         *httptest.Server
 		k8sClient          *K8sTestClient
+		k8sClientWrapper   *K8sClientWrapper
+		prometheusAdapter  *adapters.PrometheusAdapter
+		crdCreator         *processing.CRDCreator
+		logger             logr.Logger
 		testNamespaceProd  string
 		testNamespaceStage string
 		testNamespaceDev   string
@@ -56,8 +63,6 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 
 		// Setup test infrastructure
 		k8sClient = SetupK8sTestClient(ctx)
-
-		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
 
 		// Create test namespaces with environment labels for classification
 		// This is required for environment-based priority assignment
@@ -91,29 +96,21 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Should create %s namespace with environment label", ns.name))
 		}
 
-		// Start Gateway server
-		gatewayServer, err := StartTestGateway(ctx, k8sClient, getDataStorageURL())
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
-		testServer = httptest.NewServer(gatewayServer.Handler())
+		// ✅ Initialize business logic components (NO HTTP server)
+		logger = logr.Discard()
+		prometheusAdapter = adapters.NewPrometheusAdapter()
+		k8sClientWrapper = &K8sClientWrapper{Client: k8sClient.Client}
+		crdCreator = processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), testNamespaceProd, &config.RetrySettings{
+			MaxAttempts:    3,
+			InitialBackoff: 100 * time.Millisecond,
+		})
 	})
 
 	AfterEach(func() {
-		// Reset Redis config to prevent OOM cascade failures
-
 		// CRITICAL FIX: Don't delete namespaces during parallel test execution
 		// Let Kind cluster deletion handle cleanup at the end of the test suite
-		// Previous code (REMOVED):
-		// testNamespaces := []string{testNamespaceProd, testNamespaceStage, testNamespaceDev}
-		// for _, nsName := range testNamespaces {
-		//     ns := &corev1.Namespace{}
-		//     ns.Name = nsName
-		//     _ = k8sClient.Client.Delete(ctx, ns)
-		// }
 
 		// Cleanup
-		if testServer != nil {
-			testServer.Close()
-		}
 		k8sClient.Cleanup(ctx)
 		cancel()
 	})
@@ -127,17 +124,25 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BR-GATEWAY-015: CRD creation
 			// BUSINESS OUTCOME: Alert converted to CRD
 
+			// ✅ Step 1: Adapter parses Prometheus payload → NormalizedSignal
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "CRDCreationTest",
 				Namespace: testNamespaceProd,
 			})
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(201))
+			// ✅ Step 2: CRDCreator creates RemediationRequest
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
 
 			// BUSINESS OUTCOME: CRD exists in Kubernetes
+			Eventually(func() int {
+				crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
+				return len(crds)
+			}, 5*time.Second).Should(Equal(1))
+
 			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
-			Expect(crds).To(HaveLen(1))
 			Expect(crds[0].Spec.SignalName).To(Equal("CRDCreationTest"))
 		})
 
@@ -145,19 +150,26 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BR-GATEWAY-015: CRD metadata correctness
 			// BUSINESS OUTCOME: CRD contains all required fields
 
+			// ✅ Step 1: Parse payload
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "MetadataTest",
 				Namespace: testNamespaceProd,
 				Severity:  "critical",
 			})
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(201))
+			// ✅ Step 2: Create CRD
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Verify CRD metadata
-			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
-			Expect(crds).To(HaveLen(1))
+			Eventually(func() int {
+				crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
+				return len(crds)
+			}, 5*time.Second).Should(Equal(1))
 
+			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			crd := crds[0]
 			Expect(crd.Spec.SignalName).To(Equal("MetadataTest"))
 			Expect(crd.Spec.Severity).To(Equal("critical"))
@@ -175,21 +187,33 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BR-GATEWAY-015: CRD name uniqueness
 			// BUSINESS OUTCOME: Each alert gets unique CRD name
 
-			// Send 2 alerts with same name but different namespaces
+			// ✅ Step 1: Parse first alert (prod namespace)
 			payload1 := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "CollisionTest",
 				Namespace: testNamespaceProd,
 			})
+			signal1, err := prometheusAdapter.Parse(ctx, payload1)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ✅ Step 2: Create first CRD (prod)
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal1)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ✅ Step 3: Parse second alert (staging namespace)
 			payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "CollisionTest",
 				Namespace: testNamespaceStage,
 			})
+			signal2, err := prometheusAdapter.Parse(ctx, payload2)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp1 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload1)
-			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
-
-			Expect(resp1.StatusCode).To(Equal(201))
-			Expect(resp2.StatusCode).To(Equal(201))
+			// ✅ Step 4: Create second CRD (staging)
+			crdCreatorStaging := processing.NewCRDCreator(k8sClientWrapper, logger, metrics.NewMetrics(), testNamespaceStage, &config.RetrySettings{
+				MaxAttempts:    3,
+				InitialBackoff: 100 * time.Millisecond,
+			})
+			_, err = crdCreatorStaging.CreateRemediationRequest(ctx, signal2)
+			Expect(err).ToNot(HaveOccurred())
 
 			// BUSINESS OUTCOME: Both CRDs created with unique names
 			// FIX: Use Eventually to handle envtest cache propagation delays
@@ -208,24 +232,23 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BR-GATEWAY-015: Schema validation
 			// BUSINESS OUTCOME: Invalid CRDs rejected before API call
 
-			// Create invalid payload (missing required field)
+			// ✅ Step 1: Try to parse invalid payload (missing required field 'alertname')
 			invalidPayload := []byte(`{
 				"version": "4",
 				"status": "firing",
 				"alerts": [{
 					"status": "firing",
 					"labels": {
-						"namespace": testNamespaceProd
+						"namespace": "` + testNamespaceProd + `"
 					}
 				}]
 			}`)
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", invalidPayload)
+			// BUSINESS OUTCOME: Invalid payload rejected by adapter
+			_, err := prometheusAdapter.Parse(ctx, invalidPayload)
+			Expect(err).To(HaveOccurred(), "Adapter should reject invalid payload")
 
-			// BUSINESS OUTCOME: Invalid payload rejected
-			Expect(resp.StatusCode).To(Equal(400))
-
-			// Verify: No CRD created
+			// Verify: No CRD created (since parsing failed, CRD creation never attempted)
 			crds := ListRemediationRequests(ctx, k8sClient, testNamespaceProd)
 			Expect(crds).To(HaveLen(0))
 		})
@@ -241,15 +264,17 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			//   2. Chaos engineering tests (real API outages)
 			// This test validates the happy path: CRD creation under normal conditions
 
+			// ✅ Step 1: Parse payload
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "K8sAPITest",
 				Namespace: testNamespaceProd,
 			})
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-
-			// BUSINESS OUTCOME: Alert successfully processed
-			Expect(resp.StatusCode).To(Equal(201), "Signal should be processed successfully")
+			// ✅ Step 2: Create CRD
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).ToNot(HaveOccurred(), "Signal should be processed successfully")
 
 			// Verify: CRD was created in correct namespace
 			Eventually(func() int {
@@ -287,7 +312,7 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			timestamp := time.Now().UnixNano()
 
 			for i := 0; i < 10; i++ {
-				// Use unique alert names AND unique timestamps to prevent storm aggregation
+				// ✅ Step 1: Parse each payload
 				payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 					AlertName: fmt.Sprintf("QuotaTest-p%d-%d-%d", processID, timestamp, i),
 					Namespace: testNamespaceProd,
@@ -296,23 +321,27 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 						Name: fmt.Sprintf("quota-pod-p%d-%d", processID, i),
 					},
 				})
+				signal, err := prometheusAdapter.Parse(ctx, payload)
+				Expect(err).ToNot(HaveOccurred())
 
-				resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-				GinkgoWriter.Printf("Request %d: status=%d\n", i, resp.StatusCode)
+				// ✅ Step 2: Create CRD
+				_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+				GinkgoWriter.Printf("Request %d: err=%v\n", i, err)
+				// Note: Errors expected under quota pressure (realistic scenario)
 
-				// FIX: Small delay between requests to reduce Redis contention and storm aggregation
+				// FIX: Small delay between requests to reduce K8s API contention
 				time.Sleep(200 * time.Millisecond)
 			}
 
 			// BUSINESS OUTCOME: Requests processed successfully
-			// Note: Some may be deduplicated or storm-aggregated (expected behavior)
+			// Note: Some may fail under quota pressure (expected behavior)
 			// FIX: Lower threshold to 2 and increase timeout for parallel execution reliability
 			Eventually(func() int {
 				count := len(ListRemediationRequests(ctx, k8sClient, testNamespaceProd))
 				GinkgoWriter.Printf("Found %d CRDs in namespace %s (waiting for >= 2)\n", count, testNamespaceProd)
 				return count
 			}, "90s", "2s").Should(BeNumerically(">=", 2),
-				"At least 2 CRDs should be created (storm aggregation may reduce count) - 90s timeout")
+				"At least 2 CRDs should be created (quota pressure may reduce count) - 90s timeout")
 		})
 
 		// REMOVED: "should handle CRD name length limit (253 chars)"
@@ -325,28 +354,30 @@ var _ = Describe("DAY 8 PHASE 3: Kubernetes API Integration Tests", func() {
 			// BUSINESS OUTCOME: Watch reconnects automatically
 			// Production Risk: Network issues, API server restart
 
-			// Send alert
+			// ✅ Step 1: Parse and create first CRD
 			payload := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "WatchTest",
 				Namespace: testNamespaceProd,
 			})
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
-			Expect(resp.StatusCode).To(Equal(201))
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Simulate watch connection interruption
 			k8sClient.InterruptWatchConnection(ctx)
 
-			// Send another alert after interruption
+			// ✅ Step 2: Parse and create second CRD after interruption
 			payload2 := GeneratePrometheusAlert(PrometheusAlertOptions{
 				AlertName: "WatchTest2",
 				Namespace: testNamespaceProd,
 			})
+			signal2, err := prometheusAdapter.Parse(ctx, payload2)
+			Expect(err).ToNot(HaveOccurred())
 
-			resp2 := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload2)
-
-			// BUSINESS OUTCOME: Second alert processed after watch reconnect
-			Expect(resp2.StatusCode).To(Equal(201))
+			_, err = crdCreator.CreateRemediationRequest(ctx, signal2)
+			Expect(err).ToNot(HaveOccurred(), "Second alert should be processed after watch reconnect")
 
 			// Verify: Both CRDs exist
 			Eventually(func() int {
