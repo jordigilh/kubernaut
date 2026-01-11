@@ -61,7 +61,7 @@ var _ = Describe("Audit Events Write API E2E Tests", Label("e2e", "audit-write-a
 
 	BeforeEach(func() {
 		// Use shared DataStorage deployment
-		serviceURL = serviceURL
+		serviceURL = dataStorageURL
 
 		// Ensure service is ready before each test
 		Eventually(func() int {

@@ -227,9 +227,9 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			hasLifecycleStarted := eventTypes[roaudit.EventTypeLifecycleStarted]
 
 			// Check for phase transition or lifecycle completion/failure
-			hasPhaseTransitionOrCompletion := eventTypes["orchestrator.phase.transitioned"] ||
-				eventTypes["orchestrator.lifecycle.completed"] ||
-				eventTypes["orchestrator.lifecycle.failed"]
+			hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
+				eventTypes[roaudit.EventTypeLifecycleCompleted] ||
+				eventTypes[roaudit.EventTypeLifecycleFailed]
 
 			if !hasLifecycleStarted {
 				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no lifecycle.started yet, %d total events)\n", total)
@@ -254,9 +254,9 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			"Expected lifecycle.started event")
 
 		// Should have at least one phase transition or lifecycle completion/failure
-		hasPhaseTransitionOrCompletion := eventTypes["orchestrator.phase.transitioned"] ||
-			eventTypes["orchestrator.lifecycle.completed"] ||
-			eventTypes["orchestrator.lifecycle.failed"]
+		hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
+			eventTypes[roaudit.EventTypeLifecycleCompleted] ||
+			eventTypes[roaudit.EventTypeLifecycleFailed]
 
 		Expect(hasPhaseTransitionOrCompletion).To(BeTrue(),
 			"Expected phase transition or lifecycle completion/failure event")

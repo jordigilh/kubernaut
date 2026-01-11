@@ -37,6 +37,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -257,6 +259,21 @@ var _ = SynchronizedAfterSuite(
 		// Prune any dangling images left from failed builds
 		pruneCmd := exec.Command("podman", "image", "prune", "-f")
 		_, _ = pruneCmd.CombinedOutput()
+
+		By("Cleaning up Notification output directory")
+		// Remove the notification output directory (OS-specific path)
+		var notificationOutputDir string
+		if runtime.GOOS == "darwin" {
+			homeDir, _ := os.UserHomeDir()
+			notificationOutputDir = filepath.Join(homeDir, ".kubernaut", "ro-e2e-notifications")
+		} else {
+			notificationOutputDir = "/tmp/kubernaut-ro-e2e-notifications"
+		}
+		if err := os.RemoveAll(notificationOutputDir); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to remove notification output directory: %v\n", err)
+		} else {
+			GinkgoWriter.Printf("✅ Notification output directory removed: %s\n", notificationOutputDir)
+		}
 
 		GinkgoWriter.Println("✅ E2E cleanup complete")
 	},

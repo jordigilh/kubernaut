@@ -43,11 +43,25 @@ func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notif
 		// 3. Update counters
 		notification.Status.TotalAttempts++
 
-		if attempt.Status == "success" {
-			notification.Status.SuccessfulDeliveries++
-		} else if attempt.Status == "failed" {
-			notification.Status.FailedDeliveries++
+		// BR-NOT-051: Calculate counters based on UNIQUE CHANNELS, not total attempts
+		// DD-E2E-003: SuccessfulDeliveries/FailedDeliveries track channel state, not attempt count
+		successfulChannels := make(map[string]bool)
+		failedChannels := make(map[string]bool)
+
+		for _, a := range notification.Status.DeliveryAttempts {
+			if a.Status == "success" {
+				successfulChannels[a.Channel] = true
+				delete(failedChannels, a.Channel) // Remove from failed if it later succeeds
+			} else if a.Status == "failed" {
+				// Only count as failed if the channel never succeeded
+				if !successfulChannels[a.Channel] {
+					failedChannels[a.Channel] = true
+				}
+			}
 		}
+
+		notification.Status.SuccessfulDeliveries = len(successfulChannels)
+		notification.Status.FailedDeliveries = len(failedChannels)
 
 		// 4. Update status using status subresource
 		if err := m.client.Status().Update(ctx, notification); err != nil {
@@ -118,13 +132,28 @@ func (m *Manager) AtomicStatusUpdate(
 
 			notification.Status.DeliveryAttempts = append(notification.Status.DeliveryAttempts, attempt)
 			notification.Status.TotalAttempts++
+		}
 
+		// BR-NOT-051: Calculate counters based on UNIQUE CHANNELS, not total attempts
+		// DD-E2E-003: SuccessfulDeliveries/FailedDeliveries track channel state, not attempt count
+		// Example: 1 console success + 5 file failures = SuccessfulDeliveries=1, FailedDeliveries=1
+		successfulChannels := make(map[string]bool)
+		failedChannels := make(map[string]bool)
+
+		for _, attempt := range notification.Status.DeliveryAttempts {
 			if attempt.Status == "success" {
-				notification.Status.SuccessfulDeliveries++
+				successfulChannels[attempt.Channel] = true
+				delete(failedChannels, attempt.Channel) // Remove from failed if it later succeeds
 			} else if attempt.Status == "failed" {
-				notification.Status.FailedDeliveries++
+				// Only count as failed if the channel never succeeded
+				if !successfulChannels[attempt.Channel] {
+					failedChannels[attempt.Channel] = true
+				}
 			}
 		}
+
+		notification.Status.SuccessfulDeliveries = len(successfulChannels)
+		notification.Status.FailedDeliveries = len(failedChannels)
 
 		// DD-CONTROLLER-001: Track processed generation to prevent duplicate reconciles
 		notification.Status.ObservedGeneration = notification.Generation

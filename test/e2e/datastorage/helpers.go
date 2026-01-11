@@ -252,14 +252,20 @@ func createAuditEventOpenAPI(ctx context.Context, client *ogenclient.Client, eve
 	resp, err := client.CreateAuditEvent(ctx, &event)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create audit event via OpenAPI client")
 
-	// Ogen returns concrete types - extract event ID
+	// Ogen returns concrete types - extract event ID or handle errors
 	switch r := resp.(type) {
 	case *ogenclient.CreateAuditEventCreated:
 		return r.EventID.String()
 	case *ogenclient.CreateAuditEventAccepted:
 		return r.EventID.String()
+	case *ogenclient.CreateAuditEventBadRequest:
+		Fail(fmt.Sprintf("API returned 400 Bad Request: %+v", r))
+		return ""
+	case *ogenclient.CreateAuditEventInternalServerError:
+		Fail(fmt.Sprintf("API returned 500 Internal Server Error: %+v", r))
+		return ""
 	default:
-		Fail(fmt.Sprintf("Unexpected response type: %T", resp))
+		Fail(fmt.Sprintf("Unexpected response type: %T (full response: %+v)", resp, resp))
 		return ""
 	}
 }

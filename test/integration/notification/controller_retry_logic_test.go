@@ -193,10 +193,19 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			Expect(elapsedTime.Seconds()).To(BeNumerically("<", 40),
 				"Retry logic should not exceed 40s (reasonable upper bound)")
 
-			By("Validating mock service call counts")
-			Expect(mockFileService.GetCallCount()).To(Equal(5),
-				"File service should be called 5 times (initial + 4 retries)")
-			Expect(mockConsoleService.GetCallCount()).To(Equal(1),
+			By("🔍 DEBUG: Validating mock service call counts (proves attempts were made)")
+			mockFileCallCount := mockFileService.GetCallCount()
+			mockConsoleCallCount := mockConsoleService.GetCallCount()
+
+			GinkgoWriter.Printf("\n🔍 DEBUG: Mock Call Counts:\n")
+			GinkgoWriter.Printf("  File service calls: %d (expected: 5)\n", mockFileCallCount)
+			GinkgoWriter.Printf("  Console service calls: %d (expected: 1)\n", mockConsoleCallCount)
+			GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 5)\n", len(notification.Status.DeliveryAttempts))
+			GinkgoWriter.Printf("\n🔍 CRITICAL: If file calls=5 but status<5, it's a STATUS RECORDING BUG\n\n")
+
+			Expect(mockFileCallCount).To(Equal(5),
+				"🔍 CRITICAL: File service should be called 5 times - if this fails, controller isn't making 5 attempts")
+			Expect(mockConsoleCallCount).To(Equal(1),
 				"Console service should be called once (no retries needed)")
 
 			// ========================================
@@ -283,11 +292,18 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			// ASSERTIONS: Verify retry stopped after success
 			// ========================================
-			By("Validating retry logic stopped after success (BR-NOT-054)")
+			By("🔍 DEBUG: Validating retry logic stopped after success (BR-NOT-054)")
+			mockFileCallCount := mockFileService.GetCallCount()
+
+			GinkgoWriter.Printf("\n🔍 DEBUG: Retry-Until-Success Test:\n")
+			GinkgoWriter.Printf("  File service calls: %d (expected: 3)\n", mockFileCallCount)
+			GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 3)\n", len(notification.Status.DeliveryAttempts))
+			GinkgoWriter.Printf("\n🔍 CRITICAL: If file calls=3 but status<3, it's a STATUS RECORDING BUG\n\n")
+
 			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
 				"Should stop retrying after first success (3 attempts: 2 failures + 1 success)")
-			Expect(mockFileService.GetCallCount()).To(Equal(3),
-				"File service should be called exactly 3 times")
+			Expect(mockFileCallCount).To(Equal(3),
+				"🔍 CRITICAL: File service should be called exactly 3 times")
 			Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),
 				"Should record 1 successful delivery")
 			Expect(notification.Status.FailedDeliveries).To(Equal(0),
