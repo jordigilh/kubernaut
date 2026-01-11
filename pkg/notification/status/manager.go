@@ -7,6 +7,7 @@ import (
 
 	k8sretry "k8s.io/client-go/util/retry"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -15,13 +16,22 @@ import (
 
 // Manager handles NotificationRequest status updates
 type Manager struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // Bypasses cache for fresh reads (DD-STATUS-001)
 }
 
 // NewManager creates a new status manager
-func NewManager(client client.Client) *Manager {
+//
+// DD-STATUS-001: API Reader for Cache-Bypassed Refetches
+// The apiReader parameter is critical for resolving cache consistency issues
+// during rapid status updates (e.g., retries). It reads directly from the API
+// server instead of the controller-runtime cache, preventing lost updates.
+//
+// See: docs/services/crd-controllers/06-notification/design/DD-STATUS-001-api-reader-cache-bypass.md
+func NewManager(client client.Client, apiReader client.Reader) *Manager {
 	return &Manager{
-		client: client,
+		client:    client,
+		apiReader: apiReader,
 	}
 }
 
@@ -32,8 +42,8 @@ func NewManager(client client.Client) *Manager {
 // See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, attempt notificationv1alpha1.DeliveryAttempt) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
 
@@ -89,10 +99,15 @@ func (m *Manager) AtomicStatusUpdate(
 	attempts []notificationv1alpha1.DeliveryAttempt,
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
+
+		// DD-STATUS-001: Debug logging to diagnose cache issues
+		ctrl.Log.WithName("status-manager").Info("🔍 DD-STATUS-001: API reader refetch complete",
+			"deliveryAttemptsBeforeUpdate", len(notification.Status.DeliveryAttempts),
+			"newAttemptsToAdd", len(attempts))
 
 		// 2. Validate phase transition (if phase is changing)
 		if notification.Status.Phase != newPhase {
@@ -179,8 +194,8 @@ func (m *Manager) AtomicStatusUpdate(
 // See: docs/development/business-requirements/DEVELOPMENT_GUIDELINES.md
 func (m *Manager) UpdatePhase(ctx context.Context, notification *notificationv1alpha1.NotificationRequest, newPhase notificationv1alpha1.NotificationPhase, reason, message string) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
+		// 1. Refetch to get latest resourceVersion (bypasses cache - DD-STATUS-001)
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(notification), notification); err != nil {
 			return fmt.Errorf("failed to refetch notification: %w", err)
 		}
 
