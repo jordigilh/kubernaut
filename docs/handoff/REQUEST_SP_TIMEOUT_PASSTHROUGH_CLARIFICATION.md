@@ -46,7 +46,7 @@ sp := &signalprocessingv1.SignalProcessing{
     Spec: signalprocessingv1.SignalProcessingSpec{
         // ... other fields ...
         TimeoutConfig: &signalprocessingv1.SPTimeoutConfig{
-            EnrichmentTimeout: rr.Spec.TimeoutConfig.RemediationProcessingTimeout,
+            EnrichmentTimeout: rr.Status.TimeoutConfig.RemediationProcessingTimeout,
         },
     },
 }
@@ -66,7 +66,7 @@ sp := &signalprocessingv1.SignalProcessing{
 ### Option B: SignalProcessing Uses Own Defaults (No Passthrough)
 
 ```go
-// SignalProcessing uses its own defaults, ignores RR.Spec.TimeoutConfig.RemediationProcessingTimeout
+// SignalProcessing uses its own defaults, ignores RR.Status.TimeoutConfig.RemediationProcessingTimeout
 // RO only uses RemediationProcessingTimeout for its own phase timeout detection
 ```
 
@@ -77,7 +77,7 @@ sp := &signalprocessingv1.SignalProcessing{
 
 **Cons**:
 - ⚠️ Inconsistent with WE pattern
-- ⚠️ RR.Spec.TimeoutConfig.RemediationProcessingTimeout only affects RO's phase detection
+- ⚠️ RR.Status.TimeoutConfig.RemediationProcessingTimeout only affects RO's phase detection
 
 ---
 

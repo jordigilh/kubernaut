@@ -115,38 +115,38 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
     # Try to extract structured JSON from response
     # Pattern 1: JSON code block (standard format)
     json_match = re.search(r'```json\s*(.*?)\s*```', analysis_text, re.DOTALL)
-    
+
     logger.info({
         "event": "parser_pattern1_result",
         "incident_id": incident_id,
         "pattern": "json_codeblock",
         "matched": json_match is not None,
     })
-    
+
     # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
     # Format: "# selected_workflow\n{'workflow_id': '...', ...}"
     if not json_match and ('# selected_workflow' in analysis_text or '# root_cause_analysis' in analysis_text):
         # Extract the dict portions and combine them
         parts = {}
-        
-        # Extract root_cause_analysis  
+
+        # Extract root_cause_analysis
         # Match from { to the last } before the next section or end
         rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, re.DOTALL)
         if rca_match:
             parts['root_cause_analysis'] = rca_match.group(1)
-        
+
         # Extract selected_workflow
         wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis_text, re.DOTALL)
         if wf_match:
             parts['selected_workflow'] = wf_match.group(1)
-        
+
         if parts:
             # Combine into a single dict string
             combined_dict = '{'
             for key, value in parts.items():
                 combined_dict += f'"{key}": {value}, '
             combined_dict = combined_dict.rstrip(', ') + '}'
-            
+
             # Create a fake match object
             class FakeMatch:
                 def __init__(self, text):
@@ -154,9 +154,9 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
                     self.lastindex = None  # Add lastindex attribute
                 def group(self, n):
                     return self._text  # Always return the full text
-            
+
             json_match = FakeMatch(combined_dict)
-            
+
             logger.info({
                 "event": "parser_pattern2_result",
                 "incident_id": incident_id,
@@ -165,7 +165,7 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
                 "parts_found": list(parts.keys()),
                 "combined_dict_preview": combined_dict[:200] if combined_dict else "",
             })
-    
+
     if not json_match:
         logger.info({
             "event": "parser_pattern2_result",
@@ -174,18 +174,18 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             "matched": False,
             "reason": "no_parts_extracted",
         })
-    
+
     # Pattern 3: Direct JSON object (fallback)
     if not json_match:
         json_match = re.search(r'\{.*"recovery_analysis".*\}', analysis_text, re.DOTALL)
-        
+
         logger.info({
             "event": "parser_pattern3_result",
             "incident_id": incident_id,
             "pattern": "direct_json",
             "matched": json_match is not None,
         })
-        
+
         if not json_match:
             logger.warning({
                 "event": "parser_no_match",
@@ -196,7 +196,7 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
 
     try:
         json_text = json_match.group(1) if hasattr(json_match, 'group') and json_match.lastindex else json_match.group(0)
-        
+
         # Try parsing as JSON first
         try:
             structured = json.loads(json_text)
@@ -367,7 +367,7 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
                     logger.debug("Parsed warnings using ast.literal_eval() fallback")
                 except (ValueError, SyntaxError):
                     parsed = {}
-            
+
             extracted_warnings = parsed.get("warnings", [])
             if extracted_warnings:
                 logger.info(f"Successfully parsed {len(extracted_warnings)} warnings from structured JSON")

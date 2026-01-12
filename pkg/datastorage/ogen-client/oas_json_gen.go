@@ -1700,7 +1700,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData:
 			e.FieldStart("event_type")
@@ -1714,6 +1714,9 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.completed")
+		case AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.lifecycle.created")
 		case AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.failed")
@@ -1852,6 +1855,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.NotificationName.Set {
 					e.FieldStart("notification_name")
 					s.NotificationName.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutConfig.Set {
+					e.FieldStart("timeout_config")
+					s.TimeoutConfig.Encode(e)
 				}
 			}
 		}
@@ -2854,6 +2863,40 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("webhook.remediationrequest.timeout_modified")
+		{
+			s := s.RemediationRequestWebhookAuditPayload
+			{
+				e.FieldStart("rr_name")
+				e.Str(s.RrName)
+			}
+			{
+				e.FieldStart("namespace")
+				e.Str(s.Namespace)
+			}
+			{
+				e.FieldStart("modified_by")
+				e.Str(s.ModifiedBy)
+			}
+			{
+				e.FieldStart("modified_at")
+				json.EncodeDateTime(e, s.ModifiedAt)
+			}
+			{
+				if s.OldTimeoutConfig.Set {
+					e.FieldStart("old_timeout_config")
+					s.OldTimeoutConfig.Encode(e)
+				}
+			}
+			{
+				if s.NewTimeoutConfig.Set {
+					e.FieldStart("new_timeout_config")
+					s.NewTimeoutConfig.Encode(e)
+				}
+			}
+		}
 	}
 }
 
@@ -2903,6 +2946,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 					found = true
 				case "orchestrator.lifecycle.completed":
 					s.Type = AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData
+					found = true
+				case "orchestrator.lifecycle.created":
+					s.Type = AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData
 					found = true
 				case "orchestrator.lifecycle.failed":
 					s.Type = AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData
@@ -3015,6 +3061,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "workflow_validation_attempt":
 					s.Type = WorkflowValidationPayloadAuditEventEventData
 					found = true
+				case "webhook.remediationrequest.timeout_modified":
+					s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
+					found = true
 				default:
 					return errors.Errorf("unknown type %s", typ)
 				}
@@ -3033,7 +3082,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -3127,6 +3176,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case WorkflowValidationPayloadAuditEventEventData:
 		if err := s.WorkflowValidationPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationRequestWebhookAuditPayloadAuditEventEventData:
+		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	default:
@@ -3709,7 +3762,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -3723,6 +3776,9 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.completed")
+		case AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData:
+			e.FieldStart("event_type")
+			e.Str("orchestrator.lifecycle.created")
 		case AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("orchestrator.lifecycle.failed")
@@ -3861,6 +3917,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.NotificationName.Set {
 					e.FieldStart("notification_name")
 					s.NotificationName.Encode(e)
+				}
+			}
+			{
+				if s.TimeoutConfig.Set {
+					e.FieldStart("timeout_config")
+					s.TimeoutConfig.Encode(e)
 				}
 			}
 		}
@@ -4863,6 +4925,40 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("webhook.remediationrequest.timeout_modified")
+		{
+			s := s.RemediationRequestWebhookAuditPayload
+			{
+				e.FieldStart("rr_name")
+				e.Str(s.RrName)
+			}
+			{
+				e.FieldStart("namespace")
+				e.Str(s.Namespace)
+			}
+			{
+				e.FieldStart("modified_by")
+				e.Str(s.ModifiedBy)
+			}
+			{
+				e.FieldStart("modified_at")
+				json.EncodeDateTime(e, s.ModifiedAt)
+			}
+			{
+				if s.OldTimeoutConfig.Set {
+					e.FieldStart("old_timeout_config")
+					s.OldTimeoutConfig.Encode(e)
+				}
+			}
+			{
+				if s.NewTimeoutConfig.Set {
+					e.FieldStart("new_timeout_config")
+					s.NewTimeoutConfig.Encode(e)
+				}
+			}
+		}
 	}
 }
 
@@ -4912,6 +5008,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 					found = true
 				case "orchestrator.lifecycle.completed":
 					s.Type = AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData
+					found = true
+				case "orchestrator.lifecycle.created":
+					s.Type = AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData
 					found = true
 				case "orchestrator.lifecycle.failed":
 					s.Type = AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData
@@ -5024,6 +5123,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "workflow_validation_attempt":
 					s.Type = WorkflowValidationPayloadAuditEventRequestEventData
 					found = true
+				case "webhook.remediationrequest.timeout_modified":
+					s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
+					found = true
 				default:
 					return errors.Errorf("unknown type %s", typ)
 				}
@@ -5042,7 +5144,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.GatewayAuditPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
 		if err := s.RemediationOrchestratorAuditPayload.Decode(d); err != nil {
 			return err
 		}
@@ -5136,6 +5238,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case WorkflowValidationPayloadAuditEventRequestEventData:
 		if err := s.WorkflowValidationPayload.Decode(d); err != nil {
+			return err
+		}
+	case RemediationRequestWebhookAuditPayloadAuditEventRequestEventData:
+		if err := s.RemediationRequestWebhookAuditPayload.Decode(d); err != nil {
 			return err
 		}
 	default:
@@ -15323,6 +15429,39 @@ func (s *OptString) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes TimeoutConfig as json.
+func (o OptTimeoutConfig) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes TimeoutConfig from json.
+func (o *OptTimeoutConfig) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptTimeoutConfig to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptTimeoutConfig) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptTimeoutConfig) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes url.URL as json.
 func (o OptURI) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -17202,9 +17341,15 @@ func (s *RemediationOrchestratorAuditPayload) encodeFields(e *jx.Encoder) {
 			s.NotificationName.Encode(e)
 		}
 	}
+	{
+		if s.TimeoutConfig.Set {
+			e.FieldStart("timeout_config")
+			s.TimeoutConfig.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [23]string{
+var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [24]string{
 	0:  "event_type",
 	1:  "rr_name",
 	2:  "namespace",
@@ -17228,6 +17373,7 @@ var jsonFieldsNameOfRemediationOrchestratorAuditPayload = [23]string{
 	20: "reason",
 	21: "sub_reason",
 	22: "notification_name",
+	23: "timeout_config",
 }
 
 // Decode decodes RemediationOrchestratorAuditPayload from json.
@@ -17473,6 +17619,16 @@ func (s *RemediationOrchestratorAuditPayload) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"notification_name\"")
 			}
+		case "timeout_config":
+			if err := func() error {
+				s.TimeoutConfig.Reset()
+				if err := s.TimeoutConfig.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"timeout_config\"")
+			}
 		default:
 			return d.Skip()
 		}
@@ -17591,6 +17747,8 @@ func (s *RemediationOrchestratorAuditPayloadEventType) Decode(d *jx.Decoder) err
 	switch RemediationOrchestratorAuditPayloadEventType(v) {
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed:
@@ -17751,6 +17909,240 @@ func (s RemediationOrchestratorAuditPayloadOutcome) MarshalJSON() ([]byte, error
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *RemediationRequestWebhookAuditPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *RemediationRequestWebhookAuditPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("rr_name")
+		e.Str(s.RrName)
+	}
+	{
+		e.FieldStart("namespace")
+		e.Str(s.Namespace)
+	}
+	{
+		e.FieldStart("modified_by")
+		e.Str(s.ModifiedBy)
+	}
+	{
+		e.FieldStart("modified_at")
+		json.EncodeDateTime(e, s.ModifiedAt)
+	}
+	{
+		if s.OldTimeoutConfig.Set {
+			e.FieldStart("old_timeout_config")
+			s.OldTimeoutConfig.Encode(e)
+		}
+	}
+	{
+		if s.NewTimeoutConfig.Set {
+			e.FieldStart("new_timeout_config")
+			s.NewTimeoutConfig.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfRemediationRequestWebhookAuditPayload = [7]string{
+	0: "event_type",
+	1: "rr_name",
+	2: "namespace",
+	3: "modified_by",
+	4: "modified_at",
+	5: "old_timeout_config",
+	6: "new_timeout_config",
+}
+
+// Decode decodes RemediationRequestWebhookAuditPayload from json.
+func (s *RemediationRequestWebhookAuditPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationRequestWebhookAuditPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "rr_name":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.RrName = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_name\"")
+			}
+		case "namespace":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Str()
+				s.Namespace = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"namespace\"")
+			}
+		case "modified_by":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Str()
+				s.ModifiedBy = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"modified_by\"")
+			}
+		case "modified_at":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := json.DecodeDateTime(d)
+				s.ModifiedAt = v
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"modified_at\"")
+			}
+		case "old_timeout_config":
+			if err := func() error {
+				s.OldTimeoutConfig.Reset()
+				if err := s.OldTimeoutConfig.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"old_timeout_config\"")
+			}
+		case "new_timeout_config":
+			if err := func() error {
+				s.NewTimeoutConfig.Reset()
+				if err := s.NewTimeoutConfig.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"new_timeout_config\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode RemediationRequestWebhookAuditPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00011111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfRemediationRequestWebhookAuditPayload) {
+					name = jsonFieldsNameOfRemediationRequestWebhookAuditPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *RemediationRequestWebhookAuditPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationRequestWebhookAuditPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes RemediationRequestWebhookAuditPayloadEventType as json.
+func (s RemediationRequestWebhookAuditPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes RemediationRequestWebhookAuditPayloadEventType from json.
+func (s *RemediationRequestWebhookAuditPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode RemediationRequestWebhookAuditPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch RemediationRequestWebhookAuditPayloadEventType(v) {
+	case RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified:
+		*s = RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified
+	default:
+		*s = RemediationRequestWebhookAuditPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s RemediationRequestWebhookAuditPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *RemediationRequestWebhookAuditPayloadEventType) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -19796,6 +20188,120 @@ func (s SignalProcessingAuditPayloadSeverity) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SignalProcessingAuditPayloadSeverity) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *TimeoutConfig) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *TimeoutConfig) encodeFields(e *jx.Encoder) {
+	{
+		if s.Global.Set {
+			e.FieldStart("global")
+			s.Global.Encode(e)
+		}
+	}
+	{
+		if s.Processing.Set {
+			e.FieldStart("processing")
+			s.Processing.Encode(e)
+		}
+	}
+	{
+		if s.Analyzing.Set {
+			e.FieldStart("analyzing")
+			s.Analyzing.Encode(e)
+		}
+	}
+	{
+		if s.Executing.Set {
+			e.FieldStart("executing")
+			s.Executing.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfTimeoutConfig = [4]string{
+	0: "global",
+	1: "processing",
+	2: "analyzing",
+	3: "executing",
+}
+
+// Decode decodes TimeoutConfig from json.
+func (s *TimeoutConfig) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode TimeoutConfig to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "global":
+			if err := func() error {
+				s.Global.Reset()
+				if err := s.Global.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"global\"")
+			}
+		case "processing":
+			if err := func() error {
+				s.Processing.Reset()
+				if err := s.Processing.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"processing\"")
+			}
+		case "analyzing":
+			if err := func() error {
+				s.Analyzing.Reset()
+				if err := s.Analyzing.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"analyzing\"")
+			}
+		case "executing":
+			if err := func() error {
+				s.Executing.Reset()
+				if err := s.Executing.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"executing\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode TimeoutConfig")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *TimeoutConfig) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *TimeoutConfig) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

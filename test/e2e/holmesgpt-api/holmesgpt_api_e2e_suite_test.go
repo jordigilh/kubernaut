@@ -218,14 +218,14 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		env := os.Environ()
 		env = append(env, fmt.Sprintf("HAPI_BASE_URL=%s", hapiURL))
 		env = append(env, fmt.Sprintf("DATA_STORAGE_URL=%s", dataStorageURL))
-		env = append(env, "MOCK_LLM_MODE=true")
+		// Note: Mock LLM is now standalone service, MOCK_LLM_MODE no longer needed
 
 		// Run pytest
 		cmd := exec.CommandContext(ctx, "python3", "-m", "pytest",
 			pytestDir,
 			"-v",
 			"--tb=short",
-			"-x", // Stop on first failure for faster feedback
+			// Note: -x flag removed to see all test results for Mock LLM validation
 		)
 		cmd.Dir = filepath.Join(projectRoot, "holmesgpt-api")
 		cmd.Env = env

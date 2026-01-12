@@ -128,7 +128,7 @@ var _ = Describe("Observability E2E Tests", func() {
 						Name: fmt.Sprintf("pod-%d", i),
 					},
 				})
-				SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+				SendWebhook(gatewayURL, payload)
 			}
 
 			// Wait for metrics to update using Eventually
@@ -165,11 +165,11 @@ var _ = Describe("Observability E2E Tests", func() {
 			})
 
 			// First request (creates CRD)
-			resp1 := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+			resp1 := SendWebhook(gatewayURL, payload)
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
 			// Second request (deduplicated)
-			resp2 := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+			resp2 := SendWebhook(gatewayURL, payload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
 
 			// Wait for metrics to update using Eventually
@@ -214,7 +214,7 @@ var _ = Describe("Observability E2E Tests", func() {
 					Name: fmt.Sprintf("app-%d", uniqueID),
 				},
 			})
-			resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+			resp := SendWebhook(gatewayURL, payload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "CRD should be created")
 
 			// Wait for metrics to update using Eventually
@@ -255,7 +255,7 @@ var _ = Describe("Observability E2E Tests", func() {
 						Name: fmt.Sprintf("app-pod-%d-%d", uniqueID, i),
 					},
 				})
-				resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+				resp := SendWebhook(gatewayURL, payload)
 				if resp.StatusCode == http.StatusCreated {
 					successCount++
 				}
@@ -331,7 +331,7 @@ var _ = Describe("Observability E2E Tests", func() {
 						Name: fmt.Sprintf("pod-%d-%d", uniqueID, i),
 					},
 				})
-				resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+				resp := SendWebhook(gatewayURL, payload)
 				Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 					fmt.Sprintf("Request %d should succeed", i))
 			}
@@ -378,7 +378,7 @@ var _ = Describe("Observability E2E Tests", func() {
 					Name: fmt.Sprintf("api-%d", uniqueID),
 				},
 			})
-			resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+			resp := SendWebhook(gatewayURL, payload)
 			Expect(resp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
 				"Signal webhook should succeed")
 

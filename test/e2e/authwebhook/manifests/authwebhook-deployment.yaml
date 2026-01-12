@@ -18,11 +18,11 @@ metadata:
 rules:
   # Read CRDs for webhook validation/mutation
   - apiGroups: ["kubernaut.ai"]
-    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests"]
+    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
     verbs: ["get", "list", "watch"]
   # Update CRD status for webhook mutation
   - apiGroups: ["kubernaut.ai"]
-    resources: ["workflowexecutions/status", "remediationapprovalrequests/status"]
+    resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
     verbs: ["update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -188,6 +188,25 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["UPDATE"]
         resources: ["remediationapprovalrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: ${WEBHOOK_NAMESPACE}
+        path: /mutate-remediationrequest
+      caBundle: ""  # Populated by infrastructure
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
         scope: "Namespaced"
     sideEffects: None
     timeoutSeconds: 10

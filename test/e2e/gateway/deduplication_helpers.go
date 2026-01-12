@@ -80,6 +80,23 @@ func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
 	if payload.PodName != "" {
 		labels["pod"] = payload.PodName
 	}
+	// Support Resource field for resource-aware payloads (audit tests, etc.)
+	if payload.Resource.Name != "" {
+		switch payload.Resource.Kind {
+		case "Pod":
+			labels["pod"] = payload.Resource.Name
+		case "Deployment":
+			labels["deployment"] = payload.Resource.Name
+		case "StatefulSet":
+			labels["statefulset"] = payload.Resource.Name
+		case "DaemonSet":
+			labels["daemonset"] = payload.Resource.Name
+		case "Node":
+			labels["node"] = payload.Resource.Name
+		case "Service":
+			labels["service"] = payload.Resource.Name
+		}
+	}
 	// Add custom labels
 	for k, v := range payload.Labels {
 		labels[k] = v
@@ -118,6 +135,23 @@ func createPrometheusWebhookPayloadWithTimestamp(payload PrometheusAlertPayload,
 	labels["severity"] = payload.Severity
 	if payload.PodName != "" {
 		labels["pod"] = payload.PodName
+	}
+	// Support Resource field for resource-aware payloads (audit tests, etc.)
+	if payload.Resource.Name != "" {
+		switch payload.Resource.Kind {
+		case "Pod":
+			labels["pod"] = payload.Resource.Name
+		case "Deployment":
+			labels["deployment"] = payload.Resource.Name
+		case "StatefulSet":
+			labels["statefulset"] = payload.Resource.Name
+		case "DaemonSet":
+			labels["daemonset"] = payload.Resource.Name
+		case "Node":
+			labels["node"] = payload.Resource.Name
+		case "Service":
+			labels["service"] = payload.Resource.Name
+		}
 	}
 	// Add custom labels
 	for k, v := range payload.Labels {
@@ -253,24 +287,53 @@ func GenerateUniqueNamespace(prefix string) string {
 // CreateNamespaceAndWait creates a namespace and waits for it to be ready
 // This prevents race conditions where Gateway tries to create CRDs in non-existent namespaces
 func CreateNamespaceAndWait(ctx context.Context, k8sClient client.Client, namespaceName string) error {
-	// Create namespace
+	// Create namespace with retries (for parallel test execution with high API load)
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: namespaceName},
 	}
 
-	if err := k8sClient.Create(ctx, ns); err != nil {
-		return fmt.Errorf("failed to create namespace: %w", err)
+	// Retry namespace creation up to 3 times with exponential backoff
+	var createErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		// Check context before attempting create (fail fast if cancelled)
+		if ctx.Err() != nil {
+			return fmt.Errorf("context cancelled before namespace creation attempt %d: %w", attempt, ctx.Err())
+		}
+
+		createErr = k8sClient.Create(ctx, ns)
+		if createErr == nil {
+			break // Success
+		}
+
+		// If namespace already exists, treat as success (idempotent operation)
+		if errors.IsAlreadyExists(createErr) {
+			break // Already exists - proceed to wait for active state
+		}
+
+		// If context cancelled during Create(), don't retry
+		if ctx.Err() != nil {
+			return fmt.Errorf("context cancelled during namespace creation attempt %d: %w", attempt, ctx.Err())
+		}
+
+		// Exponential backoff: 1s, 2s, 4s
+		if attempt < 3 {
+			time.Sleep(time.Duration(1<<uint(attempt-1)) * time.Second)
+		}
+	}
+	if createErr != nil && !errors.IsAlreadyExists(createErr) {
+		return fmt.Errorf("failed to create namespace after 3 attempts: %w", createErr)
 	}
 
 	// Wait for namespace to be active (with timeout)
 	// This is critical for parallel tests to avoid namespace conflicts
+	// Increased timeout to 30s for parallel test execution with 120+ tests
 	Eventually(func() bool {
 		var createdNs corev1.Namespace
 		if err := k8sClient.Get(ctx, client.ObjectKey{Name: namespaceName}, &createdNs); err != nil {
 			return false
 		}
 		return createdNs.Status.Phase == corev1.NamespaceActive
-	}, "10s", "100ms").Should(BeTrue(), fmt.Sprintf("Namespace %s should become active", namespaceName))
+	}, "30s", "200ms").Should(BeTrue(), fmt.Sprintf("Namespace %s should become active", namespaceName))
 
 	return nil
 }

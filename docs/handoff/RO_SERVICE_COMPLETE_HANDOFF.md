@@ -416,7 +416,7 @@ Progress: 75% complete (3/4 active tests implemented) ✅ NOTIFICATION FEATURE D
 ⏸️  Test 3: Per-RR timeout override
    Status:   PENDING (blocked by CRD schema)
    File:     timeout_integration_test.go:256 (PIt)
-   Blocker:  Needs spec.timeoutConfig field added to CRD
+   Blocker:  Needs status.timeoutConfig field added to CRD
 
 ⏸️  Test 4: Per-phase timeout detection
    Status:   PENDING (blocked by configuration design)
@@ -436,7 +436,7 @@ Progress: 75% complete (3/4 active tests implemented) ✅ NOTIFICATION FEATURE D
 **Pending Test Details**:
 
 **Test 3 Requirements**:
-- Add `spec.timeoutConfig` to RemediationRequest CRD:
+- Add `status.timeoutConfig` to RemediationRequest CRD:
   ```go
   type RemediationRequestSpec struct {
       // ... existing fields ...
@@ -1031,7 +1031,7 @@ Tests: 2 tests
 
 **1. Per-RR Timeout Override** (Test 3)
 ```
-Blocker:  Requires spec.timeoutConfig CRD field
+Blocker:  Requires status.timeoutConfig CRD field
 Decision: Should timeout be configurable per-RR or globally?
 Options:  A) CRD spec field
           B) ConfigMap (operator-managed)
@@ -1554,7 +1554,7 @@ BR Coverage:           54% → 58% (+4%)
 
 ### **What's Blocked**
 
-1. ⏸️  **Test 3**: Needs `spec.timeoutConfig` CRD field
+1. ⏸️  **Test 3**: Needs `status.timeoutConfig` CRD field
 2. ⏸️  **Test 4**: Needs phase timeout configuration design
 3. ⏸️  **Test 5**: Ready to implement (no blockers, depends on Tests 1-2 now complete)
 

@@ -100,7 +100,9 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 					},
 					FiringTime:   now,
 					ReceivedTime: now,
-					// Invalid timeout configuration (negative duration)
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					// Invalid timeout configuration (negative duration) - moved from Spec to Status per Gap #8
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						Global: &metav1.Duration{Duration: -100 * time.Second}, // Invalid: negative
 					},

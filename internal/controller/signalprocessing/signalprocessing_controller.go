@@ -385,9 +385,13 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		if team, ok := k8sCtx.Namespace.Labels["kubernaut.ai/team"]; ok && team != "" {
 			customLabels["team"] = []string{team}
 		}
-		// Extract cost center label
+		// Extract tier label (BR-SP-102: multi-key extraction support)
+		if tier, ok := k8sCtx.Namespace.Labels["kubernaut.ai/tier"]; ok && tier != "" {
+			customLabels["tier"] = []string{tier}
+		}
+		// Extract cost-center label (BR-SP-102: use correct key name)
 		if cost, ok := k8sCtx.Namespace.Labels["kubernaut.ai/cost-center"]; ok && cost != "" {
-			customLabels["cost"] = []string{cost}
+			customLabels["cost-center"] = []string{cost}
 		}
 		// Extract region label
 		if region, ok := k8sCtx.Namespace.Labels["kubernaut.ai/region"]; ok && region != "" {

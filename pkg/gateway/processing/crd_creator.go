@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -136,6 +137,39 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 					"name", rr.Name,
 					"namespace", rr.Namespace)
 			}
+			return nil
+		}
+
+		// BR-GATEWAY-CIRCUIT-BREAKER-FIX: Handle "already exists" as idempotent success
+		// This prevents circuit breaker from opening due to parallel test execution
+		// where multiple requests with the same fingerprint arrive simultaneously.
+		if k8serrors.IsAlreadyExists(err) {
+			// CRD already exists - this is idempotent success, NOT a failure
+			c.logger.Info("CRD already exists (idempotent success)",
+				"name", rr.Name,
+				"namespace", rr.Namespace,
+				"fingerprint", rr.Spec.SignalFingerprint)
+
+			// Optionally fetch the existing CRD to verify fingerprint matches
+			existing, getErr := c.k8sClient.GetRemediationRequest(ctx, rr.Namespace, rr.Name)
+			if getErr != nil {
+				c.logger.Error(getErr, "Failed to fetch existing CRD after AlreadyExists error",
+					"name", rr.Name,
+					"namespace", rr.Namespace)
+				// Still return success - the CRD exists, which is our goal
+				return nil
+			}
+
+			// Log for debugging: verify fingerprints match
+			if existing.Spec.SignalFingerprint != rr.Spec.SignalFingerprint {
+				c.logger.Info("Warning: Existing CRD has different fingerprint (hash collision?)",
+					"name", rr.Name,
+					"namespace", rr.Namespace,
+					"expected_fingerprint", rr.Spec.SignalFingerprint,
+					"actual_fingerprint", existing.Spec.SignalFingerprint)
+			}
+
+			// Return success - CRD exists (idempotent operation)
 			return nil
 		}
 

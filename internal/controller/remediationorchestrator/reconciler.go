@@ -201,6 +201,67 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	}
 }
 
+// ========================================
+// TIMEOUT CONFIGURATION INITIALIZATION
+// BR-ORCH-027/028, BR-AUDIT-005 Gap #8
+// ========================================
+
+// initializeTimeoutDefaults initializes status.timeoutConfig with controller defaults.
+// Only runs on first reconcile when status.timeoutConfig is nil.
+//
+// Per Gap #8 (BR-AUDIT-005): RO owns timeout initialization, operators can override later.
+// This ensures:
+// - Fresh RRs get controller defaults immediately
+// - Operator modifications are preserved across reconciles
+// - Audit trail can track initial configuration (Gap #8: orchestrator.lifecycle.created)
+//
+// Reference:
+// - BR-ORCH-027 (Global timeout)
+// - BR-ORCH-028 (Per-phase timeouts)
+// - Gap #8: TimeoutConfig moved to status for operator mutability
+//
+// Parameters:
+// - ctx: Context for K8s API calls
+// - rr: RemediationRequest to initialize (modified in-place)
+//
+// Returns:
+// - error: Non-nil if status update fails
+func (r *Reconciler) initializeTimeoutDefaults(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "namespace", rr.Namespace)
+
+	// Only initialize if status.timeoutConfig is nil (first reconcile)
+	if rr.Status.TimeoutConfig != nil {
+		logger.V(2).Info("TimeoutConfig already initialized, skipping",
+			"global", rr.Status.TimeoutConfig.Global,
+			"processing", rr.Status.TimeoutConfig.Processing,
+			"analyzing", rr.Status.TimeoutConfig.Analyzing,
+			"executing", rr.Status.TimeoutConfig.Executing)
+		return nil // Already initialized, preserve existing values
+	}
+
+	// Set defaults from controller config
+	rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
+		Global:     &metav1.Duration{Duration: r.timeouts.Global},
+		Processing: &metav1.Duration{Duration: r.timeouts.Processing},
+		Analyzing:  &metav1.Duration{Duration: r.timeouts.Analyzing},
+		Executing:  &metav1.Duration{Duration: r.timeouts.Executing},
+	}
+
+	// Update status (single API call)
+	if err := r.client.Status().Update(ctx, rr); err != nil {
+		logger.Error(err, "Failed to initialize timeout defaults in status")
+		return fmt.Errorf("failed to initialize timeout defaults: %w", err)
+	}
+
+	logger.Info("Initialized timeout defaults in status.timeoutConfig",
+		"global", r.timeouts.Global,
+		"processing", r.timeouts.Processing,
+		"analyzing", r.timeouts.Analyzing,
+		"executing", r.timeouts.Executing)
+
+	return nil
+}
+
 // Reconcile implements the reconciliation loop for RemediationRequest.
 // It handles phase transitions and delegates to appropriate handlers.
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -289,17 +350,40 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 		// ========================================
 		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Initialize phase + StartTime in single API call
+		// Initialize phase + StartTime + TimeoutConfig in single API call
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
+		// Gap #8: Initialize TimeoutConfig defaults on first reconcile
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
+
+			// Gap #8: Initialize TimeoutConfig with controller defaults
+			if rr.Status.TimeoutConfig == nil {
+				rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
+					Global:     &metav1.Duration{Duration: r.timeouts.Global},
+					Processing: &metav1.Duration{Duration: r.timeouts.Processing},
+					Analyzing:  &metav1.Duration{Duration: r.timeouts.Analyzing},
+					Executing:  &metav1.Duration{Duration: r.timeouts.Executing},
+				}
+				logger.Info("Initialized timeout defaults in status.timeoutConfig",
+					"global", r.timeouts.Global,
+					"processing", r.timeouts.Processing,
+					"analyzing", r.timeouts.Analyzing,
+					"executing", r.timeouts.Executing)
+			}
+
 			return nil
 		}); err != nil {
 			logger.Error(err, "Failed to initialize RemediationRequest status")
 			return ctrl.Result{}, err
 		}
+
+		// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
+		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
+		// This happens AFTER status initialization to capture actual defaults
+		r.emitRemediationCreatedAudit(ctx, rr)
+
 		// Requeue immediately to process the Pending phase
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -325,7 +409,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			logger.Info("RemediationRequest exceeded global timeout",
 				"timeSinceStart", timeSinceStart,
 				"globalTimeout", globalTimeout,
-				"overridden", rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil,
+				"overridden", rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil,
 				"startTime", rr.Status.StartTime.Time)
 			return r.handleGlobalTimeout(ctx, rr)
 		}
@@ -1479,6 +1563,58 @@ The remediation was in %s phase when it timed out. Please investigate why the re
 // AUDIT EVENT EMISSION (DD-AUDIT-003)
 // ========================================
 
+// emitRemediationCreatedAudit emits an audit event for RemediationRequest creation with TimeoutConfig.
+// Per BR-AUDIT-005 Gap #8: Captures initial TimeoutConfig for RR reconstruction.
+// Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
+// This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
+// Per ADR-034: orchestrator.lifecycle.created event
+// Non-blocking - failures are logged but don't affect business logic.
+func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remediationv1.RemediationRequest) {
+	logger := log.FromContext(ctx)
+
+	// Per ADR-032 §2: Audit is MANDATORY - controller crashes at startup if nil.
+	// This check should never trigger in production (defensive programming only).
+	if r.auditStore == nil {
+		logger.Error(fmt.Errorf("auditStore is nil"),
+			"CRITICAL: Cannot record audit event - violates ADR-032 §1 mandatory requirement",
+			"remediationRequest", rr.Name,
+			"namespace", rr.Namespace,
+			"event", "orchestrator.lifecycle.created")
+		// Note: In production, this never happens due to main.go:128 crash check.
+		// If we reach here, it's a programming error (e.g., test misconfiguration).
+		return
+	}
+
+	correlationID := string(rr.UID)
+
+	// Convert TimeoutConfig for audit event (Gap #8)
+	// Direct pointer assignment - roaudit.TimeoutConfig uses same *metav1.Duration type
+	var auditTimeoutConfig *roaudit.TimeoutConfig
+	if rr.Status.TimeoutConfig != nil {
+		auditTimeoutConfig = &roaudit.TimeoutConfig{
+			Global:     rr.Status.TimeoutConfig.Global,
+			Processing: rr.Status.TimeoutConfig.Processing,
+			Analyzing:  rr.Status.TimeoutConfig.Analyzing,
+			Executing:  rr.Status.TimeoutConfig.Executing,
+		}
+	}
+
+	event, err := r.auditManager.BuildRemediationCreatedEvent(
+		correlationID,
+		rr.Namespace,
+		rr.Name,
+		auditTimeoutConfig,
+	)
+	if err != nil {
+		logger.Error(err, "Failed to build remediation created audit event")
+		return
+	}
+
+	if err := r.auditStore.StoreAudit(ctx, event); err != nil {
+		logger.Error(err, "Failed to store remediation created audit event")
+	}
+}
+
 // emitLifecycleStartedAudit emits an audit event for remediation lifecycle started.
 // Per ADR-032 §1: Audit is MANDATORY for RemediationOrchestrator (P0 service).
 // This function assumes auditStore is non-nil, enforced by cmd/remediationorchestrator/main.go:128.
@@ -1953,8 +2089,8 @@ func safeFormatTime(t *metav1.Time) string {
 // Checks for per-RR override in spec.timeoutConfig.global (AC-027-4).
 // Falls back to controller-level default if not overridden.
 func (r *Reconciler) getEffectiveGlobalTimeout(rr *remediationv1.RemediationRequest) time.Duration {
-	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil {
-		return rr.Spec.TimeoutConfig.Global.Duration
+	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil {
+		return rr.Status.TimeoutConfig.Global.Duration
 	}
 	return r.timeouts.Global
 }
@@ -1963,19 +2099,19 @@ func (r *Reconciler) getEffectiveGlobalTimeout(rr *remediationv1.RemediationRequ
 // Checks for per-RR override in spec.timeoutConfig (AC-028-5).
 // Falls back to controller-level default if not overridden.
 func (r *Reconciler) getEffectivePhaseTimeout(rr *remediationv1.RemediationRequest, phase remediationv1.RemediationPhase) time.Duration {
-	if rr.Spec.TimeoutConfig != nil {
+	if rr.Status.TimeoutConfig != nil {
 		switch phase {
 		case remediationv1.PhaseProcessing:
-			if rr.Spec.TimeoutConfig.Processing != nil {
-				return rr.Spec.TimeoutConfig.Processing.Duration
+			if rr.Status.TimeoutConfig.Processing != nil {
+				return rr.Status.TimeoutConfig.Processing.Duration
 			}
 		case remediationv1.PhaseAnalyzing:
-			if rr.Spec.TimeoutConfig.Analyzing != nil {
-				return rr.Spec.TimeoutConfig.Analyzing.Duration
+			if rr.Status.TimeoutConfig.Analyzing != nil {
+				return rr.Status.TimeoutConfig.Analyzing.Duration
 			}
 		case remediationv1.PhaseExecuting:
-			if rr.Spec.TimeoutConfig.Executing != nil {
-				return rr.Spec.TimeoutConfig.Executing.Duration
+			if rr.Status.TimeoutConfig.Executing != nil {
+				return rr.Status.TimeoutConfig.Executing.Duration
 			}
 		}
 	}
@@ -2036,7 +2172,7 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 			"timeSincePhaseStart", timeSincePhaseStart,
 			"phaseTimeout", phaseTimeout,
 			"phaseStartTime", phaseStartTime.Time,
-			"overridden", rr.Spec.TimeoutConfig != nil)
+			"overridden", rr.Status.TimeoutConfig != nil)
 		return r.handlePhaseTimeout(ctx, rr, currentPhase, phaseTimeout)
 	}
 
@@ -2264,32 +2400,33 @@ func (r *Reconciler) getConsecutiveFailureThreshold() int {
 	return 3 // default
 }
 
-// validateTimeoutConfig validates the timeout configuration in RemediationRequest.Spec.TimeoutConfig.
+// validateTimeoutConfig validates the timeout configuration in RemediationRequest.Status.TimeoutConfig.
 // BR-AUDIT-005 Gap #7: Validates that all timeouts are non-negative.
+// Gap #8: TimeoutConfig moved from Spec to Status for operator mutability.
 // Returns error with ERR_INVALID_TIMEOUT_CONFIG code if validation fails.
 func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv1.RemediationRequest) error {
-	if rr.Spec.TimeoutConfig == nil {
+	if rr.Status.TimeoutConfig == nil {
 		return nil // No custom timeout config, use defaults
 	}
 
 	// Validate Global timeout
-	if rr.Spec.TimeoutConfig.Global != nil && rr.Spec.TimeoutConfig.Global.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Global timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Global.Duration)
+	if rr.Status.TimeoutConfig.Global != nil && rr.Status.TimeoutConfig.Global.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Global timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Global.Duration)
 	}
 
 	// Validate Processing timeout
-	if rr.Spec.TimeoutConfig.Processing != nil && rr.Spec.TimeoutConfig.Processing.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Processing timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Processing.Duration)
+	if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Processing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Processing.Duration)
 	}
 
 	// Validate Analyzing timeout
-	if rr.Spec.TimeoutConfig.Analyzing != nil && rr.Spec.TimeoutConfig.Analyzing.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Analyzing timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Analyzing.Duration)
+	if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Analyzing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Analyzing.Duration)
 	}
 
 	// Validate Executing timeout
-	if rr.Spec.TimeoutConfig.Executing != nil && rr.Spec.TimeoutConfig.Executing.Duration < 0 {
-		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Executing timeout cannot be negative (got: %v)", rr.Spec.TimeoutConfig.Executing.Duration)
+	if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration < 0 {
+		return fmt.Errorf("ERR_INVALID_TIMEOUT_CONFIG: Executing timeout cannot be negative (got: %v)", rr.Status.TimeoutConfig.Executing.Duration)
 	}
 
 	return nil

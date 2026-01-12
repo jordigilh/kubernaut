@@ -21,7 +21,7 @@ Tests 3 and 4 are blocked by architectural decisions. This document proposes sol
 
 ### **Current Blocker**
 
-❌ **Schema Decision Required**: CRD needs `spec.timeoutConfig` field
+❌ **Schema Decision Required**: CRD needs `status.timeoutConfig` field
 
 ### **Business Requirement**
 
@@ -212,15 +212,15 @@ Uses Option B from Test 3 (CRD `timeoutConfig` with per-phase fields):
 ```go
 // Controller checks per-RR overrides first, falls back to controller-level defaults
 func (r *Reconciler) getPhaseTimeout(rr *RemediationRequest, phase string) time.Duration {
-    if rr.Spec.TimeoutConfig != nil {
+    if rr.Status.TimeoutConfig != nil {
         switch phase {
         case "Processing":
-            if rr.Spec.TimeoutConfig.Processing != nil {
-                return rr.Spec.TimeoutConfig.Processing.Duration
+            if rr.Status.TimeoutConfig.Processing != nil {
+                return rr.Status.TimeoutConfig.Processing.Duration
             }
         case "Analyzing":
-            if rr.Spec.TimeoutConfig.Analyzing != nil {
-                return rr.Spec.TimeoutConfig.Analyzing.Duration
+            if rr.Status.TimeoutConfig.Analyzing != nil {
+                return rr.Status.TimeoutConfig.Analyzing.Duration
             }
         // ... etc
         }
@@ -301,7 +301,7 @@ Phase timeouts defined in ConfigMap, watched by controller:
 **Question**: Which CRD schema option for per-RR timeout override?
 
 - [ ] **Option A**: Simple `spec.globalTimeout` field (RECOMMENDED, 1 hour effort)
-- [ ] **Option B**: Comprehensive `spec.timeoutConfig` struct (3 hours effort, future-proof)
+- [ ] **Option B**: Comprehensive `status.timeoutConfig` struct (3 hours effort, future-proof)
 - [ ] **Option C**: No per-RR override (FAILS AC-027-4, not recommended)
 
 ### **Test 4 Configuration Decision**
@@ -325,7 +325,7 @@ Phase timeouts defined in ConfigMap, watched by controller:
 
 ### **Future-Proof Implementation (8 hours total)**
 
-✅ **Test 3**: Option B (comprehensive `spec.timeoutConfig`)
+✅ **Test 3**: Option B (comprehensive `status.timeoutConfig`)
 ✅ **Test 4**: Option B (per-RR phase timeout overrides)
 
 **Result**: Complete BR-ORCH-028 + extensibility for future requirements

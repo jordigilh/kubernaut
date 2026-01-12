@@ -183,9 +183,9 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
 func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
 	// Use custom timeout if specified in RemediationRequest (BR-ORCH-028)
-	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Executing != nil && rr.Spec.TimeoutConfig.Executing.Duration > 0 {
+	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
 		return &workflowexecutionv1.ExecutionConfig{
-			Timeout: rr.Spec.TimeoutConfig.Executing,
+			Timeout: rr.Status.TimeoutConfig.Executing,
 		}
 	}
 	// Return nil to use WorkflowExecution controller defaults

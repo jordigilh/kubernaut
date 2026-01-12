@@ -91,7 +91,7 @@ package remediationorchestrator
 //
 // Tests Covered in Unit Tier:
 // - Global timeout detection (exceeded/not exceeded)
-// - Per-RR timeout override (spec.timeoutConfig.global)
+// - Per-RR timeout override (status.timeoutConfig.global)
 // - Per-phase timeout detection (Processing/Analyzing/Executing)
 // - Terminal phase skip logic (Completed/Failed/Blocked/Skipped)
 // - Phase start time nil handling

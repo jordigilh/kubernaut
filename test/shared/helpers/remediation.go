@@ -118,7 +118,7 @@ func NewRemediationRequest(name, namespace string, opts ...RemediationRequestOpt
 
 	// Apply TimeoutConfig if provided (BR-ORCH-028)
 	if len(opts) > 0 && opts[0].TimeoutConfig != nil {
-		rr.Spec.TimeoutConfig = opts[0].TimeoutConfig
+		rr.Status.TimeoutConfig = opts[0].TimeoutConfig
 	}
 
 	return rr

@@ -167,7 +167,7 @@
    ```go
    // pkg/remediationorchestrator/???::emitRemediationCreatedAudit()
    // Add timeout_config to audit payload
-   payload.TimeoutConfig.SetTo(rrSpec.TimeoutConfig)
+   payload.TimeoutConfig.SetTo(rrStatus.TimeoutConfig)
    ```
    - Test: Integration test verifies timeout config captured
 
@@ -187,7 +187,7 @@
 2. Group events by service:
    - gateway.signal.received → Spec fields (signal data)
    - holmesgpt.response.complete → Spec.ProviderData
-   - orchestration.remediation.created → Spec.TimeoutConfig
+   - orchestration.remediation.created → Status.TimeoutConfig
    - workflowexecution.workflow.selected → Status.SelectedWorkflowRef
    - workflowexecution.execution.started → Status.ExecutionRef
    - *.failure → Status.Error
@@ -692,7 +692,7 @@ auditClient.RecordWorkflowSelection(ctx, rrName, workflowRef)
 **Expected Code**:
 ```go
 // pkg/remediationorchestrator/???::emitRemediationCreatedAudit()
-payload.TimeoutConfig.SetTo(rrSpec.TimeoutConfig)
+payload.TimeoutConfig.SetTo(rrStatus.TimeoutConfig)
 ```
 
 ---

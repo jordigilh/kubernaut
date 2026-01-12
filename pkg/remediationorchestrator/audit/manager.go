@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -48,6 +50,7 @@ const (
 // Event type constants for RemediationOrchestrator audit events (from OpenAPI spec)
 const (
 	EventTypeLifecycleStarted      = "orchestrator.lifecycle.started"
+	EventTypeLifecycleCreated      = "orchestrator.lifecycle.created" // Gap #8: BR-AUDIT-005 (TimeoutConfig capture)
 	EventTypeLifecycleCompleted    = "orchestrator.lifecycle.completed"
 	EventTypeLifecycleFailed       = "orchestrator.lifecycle.failed"
 	EventTypeLifecycleTransitioned = "orchestrator.lifecycle.transitioned" // Replaces "orchestrator.phase.transitioned"
@@ -71,6 +74,16 @@ const (
 	ActionUnblocked         = "unblocked" // Routing unblocked (future)
 )
 
+// TimeoutConfig mirrors remediationv1alpha1.TimeoutConfig for audit purposes.
+// This avoids importing the entire remediation API package into the audit manager.
+// Per BR-AUDIT-005 Gap #8: Captures timeout configuration for RR reconstruction.
+type TimeoutConfig struct {
+	Global     *metav1.Duration
+	Processing *metav1.Duration
+	Analyzing  *metav1.Duration
+	Executing  *metav1.Duration
+}
+
 // Manager provides audit event building for RO.
 // Per CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §7 (Audit Manager Pattern P3)
 type Manager struct {
@@ -89,6 +102,68 @@ func NewManager(serviceName string) *Manager {
 type LifecycleStartedData struct {
 	RRName    string `json:"rr_name"`
 	Namespace string `json:"namespace"`
+}
+
+// BuildRemediationCreatedEvent builds an audit event for RR creation with timeout config (Gap #8).
+// Per BR-AUDIT-005 v2.0 Gap #8: Captures TimeoutConfig for RR reconstruction.
+// Per ADR-034 v1.2: Uses orchestrator.lifecycle.created naming convention.
+// This event is emitted when RemediationRequest is FIRST reconciled by Orchestrator.
+//
+// Event Data includes:
+// - timeout_config: {global, processing, analyzing, executing} (from status, populated by RO)
+// - rr_name: RemediationRequest name
+// - namespace: Kubernetes namespace
+//
+// DD-AUDIT-002 V2.0: Uses OpenAPI types directly
+func (m *Manager) BuildRemediationCreatedEvent(
+	correlationID string,
+	namespace string,
+	rrName string,
+	timeoutConfig *TimeoutConfig,
+) (*ogenclient.AuditEventRequest, error) {
+	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, "orchestrator.lifecycle.created") // Gap #8: Per ADR-034 v1.2 naming convention
+	audit.SetEventCategory(event, CategoryOrchestration)
+	audit.SetEventAction(event, "created")
+	audit.SetEventOutcome(event, audit.OutcomeSuccess)
+	audit.SetActor(event, "service", m.serviceName)
+	audit.SetResource(event, "RemediationRequest", rrName)
+	audit.SetCorrelationID(event, correlationID)
+	audit.SetNamespace(event, namespace)
+
+	// Gap #8: Build timeout_config structure for audit
+	// Convert TimeoutConfig to OptTimeoutConfig (ogen union type)
+	var timeoutConfigOpt api.OptTimeoutConfig
+	if timeoutConfig != nil {
+		// Build TimeoutConfig structure with all fields as OptString
+		tc := api.TimeoutConfig{}
+		if timeoutConfig.Global != nil && timeoutConfig.Global.Duration > 0 {
+			tc.Global.SetTo(timeoutConfig.Global.Duration.String())
+		}
+		if timeoutConfig.Processing != nil && timeoutConfig.Processing.Duration > 0 {
+			tc.Processing.SetTo(timeoutConfig.Processing.Duration.String())
+		}
+		if timeoutConfig.Analyzing != nil && timeoutConfig.Analyzing.Duration > 0 {
+			tc.Analyzing.SetTo(timeoutConfig.Analyzing.Duration.String())
+		}
+		if timeoutConfig.Executing != nil && timeoutConfig.Executing.Duration > 0 {
+			tc.Executing.SetTo(timeoutConfig.Executing.Duration.String())
+		}
+		timeoutConfigOpt.SetTo(tc)
+	}
+
+	// Use ogen union constructor (OGEN-MIGRATION)
+	payload := api.RemediationOrchestratorAuditPayload{
+		EventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated, // Gap #8: Corrected per ADR-034
+		RrName:        rrName,
+		Namespace:     namespace,
+		TimeoutConfig: timeoutConfigOpt, // Gap #8: Capture TimeoutConfig for RR reconstruction
+	}
+	event.EventData = api.NewAuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData(payload)
+
+	return event, nil
 }
 
 // BuildLifecycleStartedEvent builds an audit event for remediation lifecycle started.

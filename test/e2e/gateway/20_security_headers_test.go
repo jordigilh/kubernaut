@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
@@ -37,6 +38,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
+		k8sClient     client.Client
 	)
 
 	BeforeAll(func() {
@@ -51,7 +53,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testNamespace = GenerateUniqueNamespace("security-headers")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		k8sClient := getKubernetesClient()
+		k8sClient = getKubernetesClient()
 		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)

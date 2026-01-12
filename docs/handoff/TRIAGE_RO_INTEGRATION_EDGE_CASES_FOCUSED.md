@@ -74,7 +74,7 @@ a) "should transition to TimedOut when global timeout (1 hour) exceeded"
    - Business Outcome: Stuck remediations terminate automatically
    - Confidence: 95% - Critical for production stability
 
-b) "should respect per-remediation timeout override (spec.timeoutConfig)"
+b) "should respect per-remediation timeout override (status.timeoutConfig)"
    - Create RR with custom timeout (e.g., 2 hours)
    - Verify timeout respects override, not default
    - Business Outcome: Flexible timeout for different remediation types

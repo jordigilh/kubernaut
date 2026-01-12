@@ -53,7 +53,7 @@ Without global timeout:
    - Set `status.timeoutTime = now()`
    - Set `status.timeoutPhase = currentPhase`
    - Create NotificationRequest for escalation
-4. Per-remediation override via `spec.timeoutConfig.overallWorkflowTimeout`
+4. Per-remediation override via `status.timeoutConfig.overallWorkflowTimeout`
 
 ### Acceptance Criteria
 
@@ -77,7 +77,7 @@ Scenario: Global timeout triggers
   And NotificationRequest should be created for escalation
 
 Scenario: Per-remediation timeout override
-  Given RemediationRequest "rr-1" has spec.timeoutConfig.overallWorkflowTimeout = 2h
+  Given RemediationRequest "rr-1" has status.timeoutConfig.overallWorkflowTimeout = 2h
   And RemediationRequest was created 90 minutes ago
   When RemediationOrchestrator reconciles "rr-1"
   Then RemediationRequest phase should NOT be "Timeout"

@@ -118,8 +118,8 @@ Normal phase handling
 
 ```go
 // Example: Effective Analyzing timeout
-if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Analyzing != nil {
-    return rr.Spec.TimeoutConfig.Analyzing.Duration  // Per-RR override
+if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Analyzing != nil {
+    return rr.Status.TimeoutConfig.Analyzing.Duration  // Per-RR override
 }
 return r.timeouts.Analyzing  // Controller default (from --analyzing-timeout flag)
 ```
@@ -131,7 +131,7 @@ return r.timeouts.Analyzing  // Controller default (from --analyzing-timeout fla
 ### **Core Implementation (4 files)**
 1. `api/remediation/v1alpha1/remediationrequest_types.go`
    - Added `TimeoutConfig` type (40 lines)
-   - Added `spec.timeoutConfig` field
+   - Added `status.timeoutConfig` field
 
 2. `pkg/remediationorchestrator/controller/reconciler.go`
    - Added `TimeoutConfig` struct (8 lines)
@@ -188,7 +188,7 @@ return r.timeouts.Analyzing  // Controller default (from --analyzing-timeout fla
 | **AC-027-1** | Timeout detection | Global timeout check in Reconcile() | ✅ 100% |
 | **AC-027-2** | Notification creation | handleGlobalTimeout() + Test 5 | ✅ 100% |
 | **AC-027-3** | Configurable default | --global-timeout flag | ✅ 100% |
-| **AC-027-4** | Per-RR override | spec.timeoutConfig.global + Test 3 | ✅ 100% |
+| **AC-027-4** | Per-RR override | status.timeoutConfig.global + Test 3 | ✅ 100% |
 | **AC-027-5** | Timeout tracking | status.timeoutPhase + timeoutTime | ✅ 100% |
 
 **Coverage**: ✅ **100% (5/5 acceptance criteria)**

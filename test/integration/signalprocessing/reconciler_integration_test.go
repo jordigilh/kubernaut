@@ -818,10 +818,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		})
 
 		// Multi-key Rego policy evaluation
-		// TODO: Fix Rego policy to extract all 3 keys (currently only extracts 2/3)
-		// Issue: Policy extracts 'team' and 'tier' but misses 'cost-center' from namespace labels
-		// Not related to multi-controller migration - appears to be pre-existing Rego policy bug
-		PIt("BR-SP-102: should handle Rego policy returning multiple keys", func() {
+		It("BR-SP-102: should handle Rego policy returning multiple keys", func() {
 			By("Creating namespace with multiple labels")
 			ns := createTestNamespaceWithLabels("multi-key-rego", map[string]string{
 				"kubernaut.ai/team":        "platform",
@@ -852,20 +849,18 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Verifying all 3 keys present")
-		// Use Eventually to wait for all 3 CustomLabels to be populated
-		// NOTE: Increased timeout from 5s to 10s for parallel execution (12 processes)
-		// Similar to RO approval flow test fix - parallel execution needs more time
-		Eventually(func() int {
-			var final signalprocessingv1alpha1.SignalProcessing
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final); err != nil {
-				return 0
-			}
-			if final.Status.KubernetesContext == nil {
-				return 0
-			}
-			return len(final.Status.KubernetesContext.CustomLabels)
-		}, 10*time.Second, 100*time.Millisecond).Should(Equal(3), "CustomLabels should have 3 keys from namespace labels")
+			By("Verifying all 3 keys present")
+			// Use Eventually to wait for all 3 CustomLabels to be populated
+			Eventually(func() int {
+				var final signalprocessingv1alpha1.SignalProcessing
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final); err != nil {
+					return 0
+				}
+				if final.Status.KubernetesContext == nil {
+					return 0
+				}
+				return len(final.Status.KubernetesContext.CustomLabels)
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(3), "CustomLabels should have 3 keys from namespace labels")
 
 			// Fetch final CR to verify individual keys
 			var final signalprocessingv1alpha1.SignalProcessing

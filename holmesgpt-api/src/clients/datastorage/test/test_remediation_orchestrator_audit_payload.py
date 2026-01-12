@@ -63,7 +63,12 @@ class TestRemediationOrchestratorAuditPayload(unittest.TestCase):
                 message = '',
                 reason = '',
                 sub_reason = '',
-                notification_name = ''
+                notification_name = '',
+                timeout_config = datastorage.models.timeout_config.TimeoutConfig(
+                    global = '30m', 
+                    processing = '10m', 
+                    analyzing = '5m', 
+                    executing = '15m', )
             )
         else:
             return RemediationOrchestratorAuditPayload(

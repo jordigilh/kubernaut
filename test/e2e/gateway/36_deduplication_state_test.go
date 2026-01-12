@@ -67,6 +67,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		testClient = getKubernetesClient()
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
+		CreateNamespaceAndWait(ctx, testClient, sharedNamespace)
 
 		// Note: prometheusPayload created in Context's BeforeEach with unique UUID
 		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080

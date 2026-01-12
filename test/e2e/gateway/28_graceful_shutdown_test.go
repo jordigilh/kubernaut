@@ -142,7 +142,7 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 					})
 
 					// Send webhook
-					resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+					resp := SendWebhook(gatewayURL, payload)
 
 					if resp.StatusCode == 201 || resp.StatusCode == 202 {
 						atomic.AddInt32(&completedRequests, 1)
@@ -202,7 +202,7 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 			})
 
 			start := time.Now()
-			resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
+			resp := SendWebhook(gatewayURL, payload)
 			duration := time.Since(start)
 
 			// BUSINESS OUTCOME VALIDATION:
