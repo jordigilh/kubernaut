@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package reconstruction_test
+package reconstruction
 
 import (
 	"time"
@@ -24,10 +24,11 @@ import (
 
 	"github.com/google/uuid"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
+	reconstructionpkg "github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 )
 
 // BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
+// Test Plan: docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md
 // This test validates the parser component that extracts structured data from audit event payloads.
 var _ = Describe("Audit Event Parser", func() {
 	var (
@@ -40,12 +41,12 @@ var _ = Describe("Audit Event Parser", func() {
 		testUUID = uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	})
 
-	Context("ParseAuditEvent - gateway.signal.received", func() {
+	Context("PARSER-GW-01: Parse gateway.signal.received events (Gaps #1-3)", func() {
 		It("should extract signal type, labels, and annotations", func() {
-			// TDD RED: This test MUST fail because ParseAuditEvent doesn't exist yet
+			// Validates extraction of Signal, SignalLabels, SignalAnnotations from gateway audit events
 			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
 
-			parsedData, err := reconstruction.ParseAuditEvent(event)
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedData).ToNot(BeNil())
@@ -56,22 +57,22 @@ var _ = Describe("Audit Event Parser", func() {
 		})
 
 		It("should return error for missing alert name", func() {
-			// TDD RED: Test validation error handling
+			// Validates error handling for invalid gateway events
 			event := createInvalidGatewayEvent(testTimestamp, testUUID)
 
-			_, err := reconstruction.ParseAuditEvent(event)
+			_, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("missing alert_name"))
 		})
 	})
 
-	Context("ParseAuditEvent - orchestrator.lifecycle.created", func() {
+	Context("PARSER-RO-01: Parse orchestrator.lifecycle.created events (Gap #8)", func() {
 		It("should extract TimeoutConfig with all phases", func() {
-			// TDD RED: Test TimeoutConfig parsing
+			// Validates extraction of TimeoutConfig from orchestrator audit events
 			event := createOrchestratorLifecycleCreatedEvent(testTimestamp, testUUID)
 
-			parsedData, err := reconstruction.ParseAuditEvent(event)
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedData).ToNot(BeNil())
@@ -85,7 +86,7 @@ var _ = Describe("Audit Event Parser", func() {
 			// TDD RED: Test partial TimeoutConfig
 			event := createOrchestratorEventWithPartialTimeout(testTimestamp, testUUID)
 
-			parsedData, err := reconstruction.ParseAuditEvent(event)
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(parsedData.TimeoutConfig).ToNot(BeNil())
