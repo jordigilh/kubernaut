@@ -151,8 +151,9 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             class FakeMatch:
                 def __init__(self, text):
                     self._text = text
+                    self.lastindex = None  # Add lastindex attribute
                 def group(self, n):
-                    return self._text if n == 0 else self._text
+                    return self._text  # Always return the full text
             
             json_match = FakeMatch(combined_dict)
             
