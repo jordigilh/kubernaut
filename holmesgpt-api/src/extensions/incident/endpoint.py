@@ -76,7 +76,9 @@ async def incident_analyze_endpoint(incident_req: IncidentRequest, request: Requ
     })
 
     request_data = incident_req.model_dump() if hasattr(incident_req, 'model_dump') else incident_req.dict()
-    result = await analyze_incident(request_data)
+    # Pass app config for LLM configuration
+    from src.main import config as app_config
+    result = await analyze_incident(request_data, app_config)
 
     # DD-AUDIT-005: Capture complete HAPI response for audit trail (provider perspective)
     # This is the AUTHORITATIVE audit event for HAPI API responses

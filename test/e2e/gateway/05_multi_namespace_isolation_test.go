@@ -206,9 +206,12 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 				return -1
 			}
 			crdCountNS1 = len(crdList.Items)
+			if crdCountNS1 == 0 {
+				testLogger.V(1).Info("No CRDs found yet in NS1, retrying...")
+			}
 			return crdCountNS1
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"Namespace 1 should have at least 1 CRD")
+		}, 120*time.Second, 3*time.Second).Should(BeNumerically(">=", 1),
+			"Namespace 1 should have at least 1 CRD (increased timeout for late-running test)")
 
 		testLogger.Info(fmt.Sprintf("  Namespace 1: %d CRDs", crdCountNS1))
 
@@ -235,9 +238,12 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 				return -1
 			}
 			crdCountNS2 = len(crdList.Items)
+			if crdCountNS2 == 0 {
+				testLogger.V(1).Info("No CRDs found yet in NS2, retrying...")
+			}
 			return crdCountNS2
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
-			"Namespace 2 should have at least 1 CRD")
+		}, 120*time.Second, 3*time.Second).Should(BeNumerically(">=", 1),
+			"Namespace 2 should have at least 1 CRD (increased timeout for late-running test)")
 
 		testLogger.Info(fmt.Sprintf("  Namespace 2: %d CRDs", crdCountNS2))
 

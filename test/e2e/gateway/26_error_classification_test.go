@@ -51,6 +51,10 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
 		testNamespace = fmt.Sprintf("gw-error-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
+		// Create namespace in Kubernetes
+		Expect(CreateNamespaceAndWait(ctx, testClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
+
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
@@ -215,7 +219,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-			_ = err
+			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed (error is in response body, not HTTP transport)")
 			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
@@ -223,7 +227,6 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			// Duration should be < 1 second (no exponential backoff)
 			Expect(duration).To(BeNumerically("<", 1*time.Second),
 				"Permanent errors should fail fast without retry delays")
-			Expect(err).ToNot(BeNil(), "Error should be returned")
 
 			// And: Response should indicate validation error
 			// (HTTP 400 Bad Request or HTTP 422 Unprocessable Entity)

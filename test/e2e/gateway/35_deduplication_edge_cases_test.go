@@ -52,6 +52,10 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		// This eliminates flakiness caused by tests interfering with each other's data
 		testNamespace = fmt.Sprintf("gw-dedup-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
+		// Create namespace in Kubernetes
+		Expect(CreateNamespaceAndWait(ctx, testClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
+
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {

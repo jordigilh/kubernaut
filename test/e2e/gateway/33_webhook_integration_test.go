@@ -72,6 +72,10 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 		testCounter++
 		testNamespace = fmt.Sprintf("test-prod-p%d-%d-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
 
+		// Create namespace in Kubernetes
+		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
+
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed
 

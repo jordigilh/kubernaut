@@ -54,7 +54,8 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		k8sClient = getKubernetesClient()
-		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
+		// Use suite ctx (no timeout) for namespace creation
+		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

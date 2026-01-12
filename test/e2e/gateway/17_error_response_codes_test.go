@@ -32,7 +32,6 @@ import (
 
 var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)", Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
@@ -40,7 +39,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "error-responses")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -52,7 +51,8 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		k8sClient := getKubernetesClient()
-		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
+		// Use suite ctx (no timeout) for namespace creation
+		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

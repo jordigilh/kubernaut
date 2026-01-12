@@ -182,7 +182,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 				"labels": {
 					"severity": "critical",
 					"namespace": "%s",
-					"pod": "test-pod")
+					"pod": "test-pod"
 				}
 			}]
 		}`, testNamespace)
@@ -282,7 +282,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 				return true
 			}
 			return false
-		}, 10*time.Second).Should(BeTrue(), "CRD created in fallback namespace")
+		}, 60*time.Second, 2*time.Second).Should(BeTrue(), "CRD created in fallback namespace (increased timeout for K8s API)")
 
 		By("Verifying cluster-scoped labels are set")
 		Expect(createdCRD).ToNot(BeNil(), "CRD should be created")

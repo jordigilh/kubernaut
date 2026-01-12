@@ -71,7 +71,9 @@ async def recovery_analyze_endpoint(recovery_req: RecoveryRequest, request: Requ
                 f"recovery_attempt_number={request_data.get('recovery_attempt_number')}")
 
     # Get result from analyze_recovery (returns dict)
-    result_dict = await analyze_recovery(request_data)
+    # Pass app config for LLM configuration
+    from src.main import config as app_config
+    result_dict = await analyze_recovery(request_data, app_config)
 
     # Convert dict to Pydantic model for type safety and validation
     # This ensures all fields are validated per BR-HAPI-002 schema

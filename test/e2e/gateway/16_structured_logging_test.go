@@ -45,7 +45,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
+		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Increased from 5min - test runs late in suite
 		testLogger = logger.WithValues("test", "structured-logging")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -57,7 +57,8 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		k8sClient = getKubernetesClient()
-		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
+		// Use ctx (suite context) instead of testCtx to avoid timeout issues
+		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

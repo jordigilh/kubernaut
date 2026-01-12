@@ -702,8 +702,8 @@ func (s *Server) sendSuccessResponse(
 ) {
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
-	if response.Status == StatusAccepted || response.Duplicate {
-		statusCode = http.StatusAccepted
+	if response.Status == StatusAccepted || response.Status == StatusDuplicate || response.Duplicate {
+		statusCode = http.StatusAccepted  // HTTP 202 for storm aggregation and deduplication
 	}
 
 	// Record metrics
