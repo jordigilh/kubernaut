@@ -179,16 +179,28 @@ def hapi_service_url():
     return url
 
 
+@pytest.fixture
+def mock_llm_server_e2e(mock_llm_service_e2e):
+    """
+    Backward compatibility alias for tests using old fixture name.
+    
+    V2.0: Redirects to mock_llm_service_e2e (standalone Mock LLM service).
+    """
+    return mock_llm_service_e2e
+
+
 @pytest.fixture(scope="session", autouse=True)
-def setup_e2e_environment(data_storage_stack):
+def setup_e2e_environment(data_storage_stack, mock_llm_service_e2e):
     """
     Set up environment variables for E2E testing.
 
-    Uses real Data Storage URL from Go-managed Kind cluster.
+    V2.0 (Mock LLM Migration - January 2026):
+    - Uses real Data Storage URL from Go-managed Kind cluster
+    - Uses standalone Mock LLM service deployed in Kind (ClusterIP)
+    - LLM environment variables set by mock_llm_service_e2e fixture
     """
-    # LLM is mocked (per TESTING_GUIDELINES.md - cost constraint)
-    os.environ.setdefault("LLM_PROVIDER", "openai")
-    os.environ.setdefault("LLM_MODEL", "mock-model")
+    # LLM configuration now handled by mock_llm_service_e2e fixture
+    # This ensures tests use the standalone Mock LLM service in Kind
     os.environ.setdefault("OPENAI_API_KEY", "mock-key-for-e2e")
 
     # Data Storage is REAL (from Go-managed Kind cluster)
@@ -196,31 +208,67 @@ def setup_e2e_environment(data_storage_stack):
     os.environ.setdefault("DATA_STORAGE_TIMEOUT", "30")
 
     print(f"\n{'='*60}")
-    print(f"E2E Environment Ready (V1.0 - Go Infrastructure)")
+    print(f"E2E Environment Ready (V2.0 - Mock LLM Migration)")
     print(f"{'='*60}")
     print(f"Data Storage URL: {data_storage_stack}")
-    print(f"LLM: Mock (per TESTING_GUIDELINES.md)")
+    print(f"Mock LLM URL: {mock_llm_service_e2e.url}")
+    print(f"LLM: Standalone Mock LLM (ClusterIP in kubernaut-system)")
     print(f"{'='*60}\n")
 
     yield
 
 
 @pytest.fixture(scope="session")
-def mock_llm_server_e2e():
+def mock_llm_service_e2e():
     """
-    Session-scoped mock LLM server with tool call support for E2E tests.
+    Session-scoped Mock LLM service for E2E tests.
 
-    This server:
-    - Returns tool calls (not just text)
-    - Tracks all tool calls for validation
-    - Supports multi-turn conversations
+    V2.0 (Mock LLM Migration - January 2026):
+    - Uses standalone Mock LLM service deployed in Kind cluster
+    - Service accessible at http://mock-llm:8080 (ClusterIP in kubernaut-system)
+    - Deployed via: kubectl apply -k deploy/mock-llm/
+    - No embedded server - uses external service
+
+    This service:
+    - Returns tool calls (not just text responses)
+    - Supports OpenAI-compatible API
+    - Handles multi-turn conversations
+    - Deployed in kubernaut-system namespace (same as HAPI/DataStorage)
     """
-    from tests.mock_llm_server import MockLLMServer
-
-    with MockLLMServer(force_text_response=False) as server:
-        # Set environment to use this server
-        os.environ["LLM_ENDPOINT"] = server.url
-        yield server
+    # Mock LLM service URL from Kind cluster (ClusterIP internal URL)
+    # Note: Tests run inside Kind cluster, so use short DNS name
+    mock_llm_url = os.environ.get("LLM_ENDPOINT", "http://mock-llm:8080")
+    
+    print(f"\n⏳ Verifying Mock LLM service at {mock_llm_url}...")
+    
+    # Verify Mock LLM is available
+    max_retries = 30
+    for i in range(max_retries):
+        try:
+            response = requests.get(f"{mock_llm_url}/health", timeout=5)
+            if response.status_code == 200:
+                print(f"✅ Mock LLM service is ready")
+                # Set environment for tests
+                os.environ["LLM_ENDPOINT"] = mock_llm_url
+                os.environ["LLM_MODEL"] = "mock-model"
+                os.environ["LLM_PROVIDER"] = "openai"
+                
+                # Return simple object with URL for compatibility
+                class MockLLMService:
+                    def __init__(self, url):
+                        self.url = url
+                
+                yield MockLLMService(mock_llm_url)
+                return
+        except requests.exceptions.RequestException:
+            pass
+        
+        if i == max_retries - 1:
+            pytest.fail(
+                f"Mock LLM service not ready at {mock_llm_url} after {max_retries} attempts.\n"
+                "Ensure Mock LLM is deployed: kubectl apply -k deploy/mock-llm/"
+            )
+        time.sleep(2)
 
 
 @pytest.fixture

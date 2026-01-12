@@ -225,7 +225,6 @@ class TestIncidentAnalysisE2E:
     """E2E tests for incident analysis flow."""
 
     @pytest.mark.e2e
-    @pytest.mark.skip(reason="Incompatible with MOCK_LLM_MODE: Test expects real LLM tool calls, but E2E tests use mock responses that bypass LLM entirely. Move to integration tests with real LLM client or redesign for mock mode.")
     def test_incident_analysis_calls_workflow_search_tool(
         self,
         e2e_client,
@@ -240,9 +239,9 @@ class TestIncidentAnalysisE2E:
         2. Verify LLM was called
         3. Verify tool call was made with correct parameters
 
-        NOTE: This test is currently skipped because it requires real LLM
-        tool calling behavior, but E2E tests run with MOCK_LLM_MODE=true
-        which returns deterministic responses without calling the LLM.
+        V2.0 (Mock LLM Migration - January 2026):
+        Now uses standalone Mock LLM service with tool call support.
+        The Mock LLM returns deterministic tool calls that can be validated.
         """
         # Clear previous tool calls
         mock_llm_e2e_server.clear_tool_calls()
@@ -308,7 +307,6 @@ class TestIncidentAnalysisE2E:
         assert data["confidence"] >= 0.0 and data["confidence"] <= 1.0
 
     @pytest.mark.e2e
-    @pytest.mark.skip(reason="Incompatible with MOCK_LLM_MODE: Test expects real LLM tool calls, but E2E tests use mock responses that bypass LLM entirely.")
     def test_incident_with_detected_labels_passes_to_tool(
         self,
         e2e_client,
@@ -318,7 +316,8 @@ class TestIncidentAnalysisE2E:
         """
         DD-RECOVERY-003: Verify DetectedLabels flow to tool call.
 
-        NOTE: Skipped - requires real LLM tool calling behavior.
+        V2.0 (Mock LLM Migration - January 2026):
+        Now uses standalone Mock LLM service with tool call support.
         """
         mock_llm_e2e_server.clear_tool_calls()
 
@@ -381,7 +380,6 @@ class TestRecoveryAnalysisE2E:
     """E2E tests for recovery analysis flow."""
 
     @pytest.mark.e2e
-    @pytest.mark.skip(reason="Incompatible with MOCK_LLM_MODE: Test expects real LLM tool calls, but E2E tests use mock responses that bypass LLM entirely.")
     def test_recovery_analysis_calls_workflow_search_tool(
         self,
         e2e_client,
@@ -391,7 +389,8 @@ class TestRecoveryAnalysisE2E:
         """
         BR-HAPI-250: Verify recovery flow calls search_workflow_catalog.
 
-        NOTE: Skipped - requires real LLM tool calling behavior.
+        V2.0 (Mock LLM Migration - January 2026):
+        Now uses standalone Mock LLM service with tool call support.
         """
         mock_llm_e2e_server.clear_tool_calls()
         mock_llm_e2e_server.set_scenario("recovery")
