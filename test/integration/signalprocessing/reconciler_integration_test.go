@@ -849,18 +849,20 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying all 3 keys present")
-			// Use Eventually to wait for all 3 CustomLabels to be populated
-			Eventually(func() int {
-				var final signalprocessingv1alpha1.SignalProcessing
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final); err != nil {
-					return 0
-				}
-				if final.Status.KubernetesContext == nil {
-					return 0
-				}
-				return len(final.Status.KubernetesContext.CustomLabels)
-			}, 5*time.Second, 100*time.Millisecond).Should(Equal(3), "CustomLabels should have 3 keys from namespace labels")
+		By("Verifying all 3 keys present")
+		// Use Eventually to wait for all 3 CustomLabels to be populated
+		// NOTE: Increased timeout from 5s to 10s for parallel execution (12 processes)
+		// Similar to RO approval flow test fix - parallel execution needs more time
+		Eventually(func() int {
+			var final signalprocessingv1alpha1.SignalProcessing
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final); err != nil {
+				return 0
+			}
+			if final.Status.KubernetesContext == nil {
+				return 0
+			}
+			return len(final.Status.KubernetesContext.CustomLabels)
+		}, 10*time.Second, 100*time.Millisecond).Should(Equal(3), "CustomLabels should have 3 keys from namespace labels")
 
 			// Fetch final CR to verify individual keys
 			var final signalprocessingv1alpha1.SignalProcessing

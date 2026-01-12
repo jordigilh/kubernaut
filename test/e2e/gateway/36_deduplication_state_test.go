@@ -148,7 +148,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			// DD-GATEWAY-011: Check status.deduplication (not spec)
 			Expect(crd.Status.Deduplication).ToNot(BeNil(), "status.deduplication should be initialized")
 			Expect(crd.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)), "Initial occurrence count should be 1")
@@ -254,7 +254,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			crd.Status.OverallPhase = "Processing"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -338,7 +338,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			crd.Status.OverallPhase = "Completed"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -414,7 +414,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			crd.Status.OverallPhase = "Failed"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -480,7 +480,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseCancelled
 			err = testClient.Status().Update(ctx, crd)
 
@@ -559,7 +559,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseBlocked // Valid non-terminal phase
 			err = testClient.Status().Update(ctx, crd)
 
