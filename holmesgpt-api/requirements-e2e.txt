@@ -42,7 +42,7 @@ src/clients/datastorage/
 
 # Web framework dependencies (should come from HolmesGPT SDK but explicitly added for E2E)
 fastapi>=0.116
-uvicorn[standard]>=0.30
+uvicorn[standard]==0.30.6  # Pinned to avoid slow dependency resolution (pip resolver issue)
 
 # HTTP client for K8s TokenReviewer API (not used by HolmesGPT SDK)
 aiohttp>=3.9.1
