@@ -1,13 +1,40 @@
 # Mock LLM Service - Plans Overview
 
-**Version**: 1.3.0
-**Last Updated**: 2026-01-10
+**Version**: 1.6.0
+**Last Updated**: 2026-01-11
 
 This directory contains comprehensive plans for extracting and testing the Mock LLM Service.
 
 ---
 
 ## Changelog
+
+### Version 1.6.0 (2026-01-11)
+- **PHASE CONSOLIDATION**: Combined Phase 5.2 (HAPI E2E infrastructure) with Phase 6.1-6.2 (Enable tests, Update fixtures)
+- **Rationale**: More efficient to enable tests and update fixtures alongside infrastructure changes
+- **Actual Sequence**: Phase 5.2 now includes test enablement (3 tests) and fixture updates
+- **Test Count Correction**: Changed from "12 skipped tests" to "3 skipped tests" (actual count verified)
+- **Phase 6 Clarification**: Now focused purely on validation execution (setup tasks completed in Phase 5.2)
+- **Updated**: Migration plan v1.6.0 with consolidated phase descriptions
+- **Impact**: Cleaner changeset, tests enabled immediately after infrastructure ready
+
+### Version 1.5.0 (2026-01-11)
+- **NAMESPACE CONSOLIDATION**: Mock LLM E2E moved to `kubernaut-system` (from dedicated `mock-llm` namespace)
+- **Rationale**: Matches established E2E pattern - all services use `kubernaut-system` (AuthWebhook, DataStorage, etc.)
+- **Simplified DNS**: `http://mock-llm:8080` (from `http://mock-llm.mock-llm.svc.cluster.local:8080`)
+- **Benefit**: Kubernetes auto-resolves short DNS names within same namespace
+- **Pattern**: Test dependency co-location (Mock LLM with HAPI/AIAnalysis in same namespace)
+- **Updated**: DD-TEST-001 v2.5, migration plan v1.5.0, all deployment documentation
+- **Impact**: Integration tests unchanged (still use podman ports 18140/18141)
+
+### Version 1.4.0 (2026-01-11)
+- **ARCHITECTURE FIX**: Mock LLM E2E service changed from NodePort to ClusterIP (internal only)
+- **Rationale**: Mock LLM accessed only by services inside Kind cluster (HAPI/AIAnalysis), no external access needed
+- **Access Pattern**: Test runner → HAPI (NodePort 30088) → Mock LLM (ClusterIP internal)
+- **Updated**: DD-TEST-001 v2.4 (removed NodePort 30091 allocation)
+- **Updated**: Migration plan phases 1.2, 3.4, 5.1, 5.2 with ClusterIP configuration
+- **Impact**: Integration tests unchanged (still use podman ports 18140/18141)
+- **Matches**: DataStorage pattern (ClusterIP in E2E)
 
 ### Version 1.3.0 (2026-01-10)
 - **BREAKING**: Swapped Phase 6 (Cleanup) and Phase 7 (Validate) - Validate BEFORE cleanup
@@ -28,7 +55,7 @@ This directory contains comprehensive plans for extracting and testing the Mock 
 ### Version 1.1.0 (2026-01-10)
 - **Updated**: Service location to `test/services/mock-llm/` (shared across test tiers)
 - **Updated**: Deployment strategy to use programmatic podman (not compose) for integration tests
-- **Added**: Port allocation reference (NodePort 30089 per DD-TEST-001)
+- **Added**: Port allocation reference (integration: 18140/18141 per DD-TEST-001)
 - **Updated**: Migration and test plans with detailed changelog tracking
 
 ### Version 1.0.0 (2026-01-10)

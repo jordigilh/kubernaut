@@ -2,8 +2,8 @@
 
 **Status**: ✅ Approved
 **Date**: 2025-11-26
-**Last Updated**: 2025-12-25
-**Version**: 1.8
+**Last Updated**: 2026-01-11
+**Version**: 2.5
 **Author**: AI Assistant
 **Reviewers**: TBD
 **Related**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
@@ -39,6 +39,7 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Workflow Engine** | 8083 | 18110-18119 | 28110-28119 | 18110-28119 |
 | **HolmesGPT API** | 8084 | 18120-18129 | 28120-28129 | 18120-28129 |
 | **Dynamic Toolset** | 8085 | 18130-18139 | 28130-28139 | 18130-28139 |
+| **Mock LLM Service** | N/A | 18140-18149 | ClusterIP only | 18140-18149 |
 | **PostgreSQL** | 5432 | 15433-15442 | 25433-25442 | 15433-25442 |
 | **Redis** | 6379 | 16379-16388 | 26379-26388 | 16379-26388 |
 | **Immudb** | 3322 | 13322-13331 | 23322-23331 | 13322-23331 |
@@ -69,7 +70,9 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 | **Toolset** | 8087 | 30087 | 9187 | 30187 | — | — | `test/infrastructure/kind-toolset-config.yaml` |
 | **HolmesGPT API** | 8088 | 30088 | 9188 | 30188 | — | — | `holmesgpt-api/tests/infrastructure/kind-holmesgpt-config.yaml` |
 
-**Note**: Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
+**Note**:
+- Health ports (8184/30284) are only needed for services with separate health probe endpoints. Most services expose health on their API port.
+- Mock LLM Service uses ClusterIP only in E2E (no NodePort needed - accessed only by services inside cluster)
 
 **Allocation Rules**:
 - **Integration Tests**: 15433-18139 range (Podman containers)
@@ -93,25 +96,25 @@ Integration and E2E tests require running multiple services (PostgreSQL, Redis, 
 PostgreSQL:
   Host Port: 15439
   Container Port: 5432
-  Connection: localhost:15439
+  Connection: 127.0.0.1:15439
   Purpose: Shared with Notification (separate test infrastructure)
 
 Redis:
   Host Port: 16387
   Container Port: 6379
-  Connection: localhost:16387
+  Connection: 127.0.0.1:16387
   Purpose: Shared with Notification/WE (separate test infrastructure)
 
 HAPI Service:
   Host Port: 18120
   Container Port: 8080
-  Connection: http://localhost:18120
+  Connection: http://127.0.0.1:18120
   Purpose: HolmesGPT API service (incident/recovery endpoints)
 
 Data Storage (Dependency):
   Host Port: 18098  # CHANGED from 18094 (SignalProcessing conflict)
   Container Port: 8080
-  Connection: http://localhost:18098
+  Connection: http://127.0.0.1:18098
   Purpose: Workflow catalog, audit trail
 ```
 
@@ -137,13 +140,72 @@ Data Storage (Dependency):
 HAPI (in Kind):
   Host Port: 8088
   NodePort: 30088
-  Connection: http://localhost:8088
+  Connection: http://127.0.0.1:8088
 
 Data Storage (Dependency):
   Host Port: 8089
   NodePort: 30089
-  Connection: http://localhost:8089
+  Connection: http://127.0.0.1:8089
 ```
+
+---
+
+### **Mock LLM Service** (Test Infrastructure)
+
+#### **Integration Tests** (Service-Specific Ports)
+
+**Created**: 2026-01-11 (Mock LLM Migration - MOCK_LLM_MIGRATION_PLAN.md v1.3.0)
+
+```yaml
+HAPI Integration Tests:
+  Host Port: 18140
+  Container Port: 8080
+  Connection: http://127.0.0.1:18140
+  Purpose: Mock OpenAI-compatible LLM for HAPI integration tests
+
+AIAnalysis Integration Tests:
+  Host Port: 18141
+  Container Port: 8080
+  Connection: http://127.0.0.1:18141
+  Purpose: Mock OpenAI-compatible LLM for AIAnalysis integration tests
+```
+
+**Configuration Files**:
+- `test/infrastructure/mock_llm.go` - Programmatic container lifecycle management
+- `test/integration/holmesgptapi/suite_test.go` - HAPI integration suite (port 18140)
+- `test/integration/aianalysis/suite_test.go` - AIAnalysis integration suite (port 18141)
+- `test/services/mock-llm/` - Standalone Mock LLM service source
+
+**Infrastructure**: Programmatic podman commands (no external dependencies)
+**Pattern**: Ginkgo `SynchronizedBeforeSuite` with service-specific ports
+
+**Port Allocation Rationale**:
+- **18140 (HAPI)**: First port in Mock LLM range (18140-18149)
+- **18141 (AIAnalysis)**: Second port in range - prevents collision during parallel execution
+- **Per-Service Isolation**: Each integration test suite gets unique Mock LLM instance
+
+**Service Purpose**: Provides deterministic OpenAI-compatible mock LLM responses for testing without real LLM calls. Replaces embedded mock logic in HolmesGPT-API business code (900 lines removed).
+
+#### **E2E Tests** (`test/e2e/*/`)
+
+**Status**: Infrastructure ready (Kind deployment)
+
+```yaml
+Mock LLM (in Kind):
+  Namespace: kubernaut-system (shared with HAPI, DataStorage, etc.)
+  Service Type: ClusterIP (internal only)
+  Internal URL: http://mock-llm:8080 (simplified DNS - same namespace)
+  Purpose: Shared Mock LLM for all E2E tests (HAPI, AIAnalysis, etc.)
+  Access Pattern: HAPI/AIAnalysis pods → Mock LLM (ClusterIP, same namespace)
+
+Note: No NodePort needed - Mock LLM accessed only by services inside Kind cluster
+```
+
+**Kind Config**: `deploy/mock-llm/` (deployment manifests)
+**Infrastructure**: Kind cluster with ClusterIP service in `kubernaut-system` (no external access)
+**Pattern**: Shared Mock LLM instance accessed via simplified Kubernetes DNS (same namespace)
+**Access**: Test runner → HAPI (NodePort 30088) → Mock LLM (`http://mock-llm:8080`)
+**DNS Benefit**: Kubernetes automatically resolves `mock-llm` to `mock-llm.kubernaut-system.svc.cluster.local` within namespace
 
 ---
 
@@ -163,19 +225,19 @@ Webhook Service:
 PostgreSQL:
   Host Port: 15442
   Container Port: 5432
-  Connection: localhost:15442
+  Connection: 127.0.0.1:15442
   Purpose: Audit event storage for authenticated operator actions
 
 Redis:
   Host Port: 16386
   Container Port: 6379
-  Connection: localhost:16386
+  Connection: 127.0.0.1:16386
   Purpose: Data Storage DLQ
 
 Data Storage (Dependency):
   Host Port: 18099
   Container Port: 8080
-  Connection: http://localhost:18099
+  Connection: http://127.0.0.1:18099
   Purpose: Audit API for webhook authentication events
 ```
 
@@ -204,13 +266,13 @@ Data Storage (Dependency):
 PostgreSQL:
   Host Port: 25442
   Container Port: 5432
-  Connection: localhost:25442
+  Connection: 127.0.0.1:25442
   Purpose: Audit event storage
 
 Redis:
   Host Port: 26386
   Container Port: 6379
-  Connection: localhost:26386
+  Connection: 127.0.0.1:26386
   Purpose: Data Storage DLQ
 
 Webhook (in Kind):
@@ -220,7 +282,7 @@ Webhook (in Kind):
 Data Storage (Dependency):
   Host Port: 28099
   Container Port: 8080
-  Connection: http://localhost:28099
+  Connection: http://127.0.0.1:28099
   Purpose: Audit API
 ```
 
@@ -237,30 +299,30 @@ Data Storage (Dependency):
 PostgreSQL:
   Host Port: 15433
   Container Port: 5432
-  Connection: localhost:15433
+  Connection: 127.0.0.1:15433
   Purpose: Workflow catalog storage (operational data)
 
 Redis:
   Host Port: 16379
   Container Port: 6379
-  Connection: localhost:16379
+  Connection: 127.0.0.1:16379
   Purpose: DLQ for audit events
 
 Immudb:
   Host Port: 13322
   Container Port: 3322
-  Connection: immudb://localhost:13322
+  Connection: immudb://127.0.0.1:13322
   Purpose: Immutable audit event storage (SOC2 compliance)
 
 Data Storage API:
   Host Port: 18090
   Container Port: 8080
-  Connection: http://localhost:18090
+  Connection: http://127.0.0.1:18090
 
 Embedding Service (Mock):
   Host Port: 18000
   Container Port: 8000
-  Connection: http://localhost:18000
+  Connection: http://127.0.0.1:18000
 ```
 
 #### **E2E Tests** (`test/e2e/datastorage/`)
@@ -268,13 +330,13 @@ Embedding Service (Mock):
 PostgreSQL:
   Host Port: 25433
   Container Port: 5432
-  Connection: localhost:25433
+  Connection: 127.0.0.1:25433
   Purpose: Workflow catalog storage
 
 Redis:
   Host Port: 26379
   Container Port: 6379
-  Connection: localhost:26379
+  Connection: 127.0.0.1:26379
   Purpose: DLQ for audit events
 
 Immudb:
@@ -286,12 +348,12 @@ Immudb:
 Data Storage API:
   Host Port: 28090
   Container Port: 8080
-  Connection: http://localhost:28090
+  Connection: http://127.0.0.1:28090
 
 Embedding Service:
   Host Port: 28000
   Container Port: 8000
-  Connection: http://localhost:28000
+  Connection: http://127.0.0.1:28000
 ```
 
 ---
@@ -303,30 +365,30 @@ Embedding Service:
 PostgreSQL (Data Storage dependency):
   Host Port: 15437
   Container Port: 5432
-  Connection: localhost:15437
+  Connection: 127.0.0.1:15437
   Purpose: Workflow catalog for Data Storage
 
 Redis:
   Host Port: 16380
   Container Port: 6379
-  Connection: localhost:16380
+  Connection: 127.0.0.1:16380
   Purpose: Gateway rate limiting + Data Storage DLQ
 
 Immudb (Data Storage dependency):
   Host Port: 13323
   Container Port: 3322
-  Connection: immudb://localhost:13323
+  Connection: immudb://127.0.0.1:13323
   Purpose: Audit event storage via Data Storage
 
 Gateway API:
   Host Port: 18080
   Container Port: 8080
-  Connection: http://localhost:18080
+  Connection: http://127.0.0.1:18080
 
 Data Storage (Dependency):
   Host Port: 18091
   Container Port: 8080
-  Connection: http://localhost:18091
+  Connection: http://127.0.0.1:18091
 ```
 
 #### **E2E Tests** (`test/e2e/gateway/`)
@@ -334,17 +396,17 @@ Data Storage (Dependency):
 Redis:
   Host Port: 26380
   Container Port: 6379
-  Connection: localhost:26380
+  Connection: 127.0.0.1:26380
 
 Gateway API:
   Host Port: 28080
   Container Port: 8080
-  Connection: http://localhost:28080
+  Connection: http://127.0.0.1:28080
 
 Data Storage (Dependency):
   Host Port: 28091
   Container Port: 8080
-  Connection: http://localhost:28091
+  Connection: http://127.0.0.1:28091
 ```
 
 ---
@@ -356,17 +418,17 @@ Data Storage (Dependency):
 PostgreSQL:
   Host Port: 15434
   Container Port: 5432
-  Connection: localhost:15434
+  Connection: 127.0.0.1:15434
 
 Effectiveness Monitor API:
   Host Port: 18100
   Container Port: 8080
-  Connection: http://localhost:18100
+  Connection: http://127.0.0.1:18100
 
 Data Storage (Dependency):
   Host Port: 18092
   Container Port: 8080
-  Connection: http://localhost:18092
+  Connection: http://127.0.0.1:18092
 ```
 
 #### **E2E Tests** (`test/e2e/effectiveness-monitor/`)
@@ -374,17 +436,17 @@ Data Storage (Dependency):
 PostgreSQL:
   Host Port: 25434
   Container Port: 5432
-  Connection: localhost:25434
+  Connection: 127.0.0.1:25434
 
 Effectiveness Monitor API:
   Host Port: 28100
   Container Port: 8080
-  Connection: http://localhost:28100
+  Connection: http://127.0.0.1:28100
 
 Data Storage (Dependency):
   Host Port: 28092
   Container Port: 8080
-  Connection: http://localhost:28092
+  Connection: http://127.0.0.1:28092
 ```
 
 ---
@@ -396,12 +458,12 @@ Data Storage (Dependency):
 Workflow Engine API:
   Host Port: 18110
   Container Port: 8080
-  Connection: http://localhost:18110
+  Connection: http://127.0.0.1:18110
 
 Data Storage (Dependency):
   Host Port: 18093
   Container Port: 8080
-  Connection: http://localhost:18093
+  Connection: http://127.0.0.1:18093
 ```
 
 #### **E2E Tests** (`test/e2e/workflow-engine/`)
@@ -409,12 +471,12 @@ Data Storage (Dependency):
 Workflow Engine API:
   Host Port: 28110
   Container Port: 8080
-  Connection: http://localhost:28110
+  Connection: http://127.0.0.1:28110
 
 Data Storage (Dependency):
   Host Port: 28093
   Container Port: 8080
-  Connection: http://localhost:28093
+  Connection: http://127.0.0.1:28093
 ```
 
 ---
@@ -426,25 +488,25 @@ Data Storage (Dependency):
 PostgreSQL (Data Storage dependency):
   Host Port: 15436
   Container Port: 5432
-  Connection: localhost:15436
+  Connection: 127.0.0.1:15436
   Purpose: Workflow catalog for Data Storage
 
 Redis (Data Storage dependency):
   Host Port: 16382
   Container Port: 6379
-  Connection: localhost:16382
+  Connection: 127.0.0.1:16382
   Purpose: DataStorage DLQ
 
 Immudb (Data Storage dependency):
   Host Port: 13324
   Container Port: 3322
-  Connection: immudb://localhost:13324
+  Connection: immudb://127.0.0.1:13324
   Purpose: Audit event storage (BR-SP-090)
 
 Data Storage (Dependency):
   Host Port: 18094  # OFFICIAL ALLOCATION - SignalProcessing owns this port
   Container Port: 8080
-  Connection: http://localhost:18094
+  Connection: http://127.0.0.1:18094
   Purpose: Audit API (BR-SP-090)
 ```
 
@@ -487,7 +549,7 @@ nodes:
   # This eliminates kubectl port-forward instability
   extraPortMappings:
   - containerPort: {{NODEPORT}}     # Service NodePort in cluster
-    hostPort: {{HOST_PORT}}         # Port on host machine (localhost:{{HOST_PORT}})
+    hostPort: {{HOST_PORT}}         # Port on host machine (127.0.0.1:{{HOST_PORT}})
     protocol: TCP
   - containerPort: {{METRICS_NODEPORT}}  # Metrics NodePort
     hostPort: {{METRICS_HOST_PORT}}
@@ -515,10 +577,10 @@ nodes:
 ```yaml
 extraPortMappings:
 - containerPort: 30082    # Signal Processing NodePort
-  hostPort: 8082          # localhost:8082
+  hostPort: 8082          # 127.0.0.1:8082
   protocol: TCP
 - containerPort: 30182    # Metrics NodePort
-  hostPort: 9182          # localhost:9182 for metrics
+  hostPort: 9182          # 127.0.0.1:9182 for metrics
   protocol: TCP
 ```
 
@@ -539,7 +601,7 @@ spec:
     nodePort: 30182
 ```
 
-**Test URL**: `http://localhost:8082` (for any HTTP endpoints), `http://localhost:9182/metrics`
+**Test URL**: `http://127.0.0.1:8082` (for any HTTP endpoints), `http://127.0.0.1:9182/metrics`
 
 ---
 
@@ -550,14 +612,14 @@ spec:
 extraPortMappings:
 # Gateway service ports
 - containerPort: 30080    # Gateway NodePort
-  hostPort: 8080          # localhost:8080
+  hostPort: 8080          # 127.0.0.1:8080
   protocol: TCP
 - containerPort: 30090    # Metrics NodePort
-  hostPort: 9090          # localhost:9090 for metrics
+  hostPort: 9090          # 127.0.0.1:9090 for metrics
   protocol: TCP
 # Data Storage dependency (for audit events - BR-GATEWAY-190)
 - containerPort: 30081    # Data Storage NodePort
-  hostPort: 18091         # localhost:18091 (avoids conflict with Gateway metrics)
+  hostPort: 18091         # 127.0.0.1:18091 (avoids conflict with Gateway metrics)
   protocol: TCP
 ```
 
@@ -582,7 +644,7 @@ spec:
     nodePort: 30090
 ```
 
-**Test URL**: `http://localhost:8080`, `http://localhost:9090/metrics`, `http://localhost:18091` (Data Storage)
+**Test URL**: `http://127.0.0.1:8080`, `http://127.0.0.1:9090/metrics`, `http://127.0.0.1:18091` (Data Storage)
 
 ---
 
@@ -599,7 +661,7 @@ extraPortMappings:
   protocol: TCP
 ```
 
-**Test URL**: `http://localhost:9186/metrics` (metrics only - no HTTP API)
+**Test URL**: `http://127.0.0.1:9186/metrics` (metrics only - no HTTP API)
 
 ---
 
@@ -653,8 +715,8 @@ var _ = SynchronizedBeforeSuite(
 
         // All processes use the same NodePort URL
         // NO kubectl port-forward needed
-        serviceURL = "http://localhost:8082"  // Signal Processing example
-        metricsURL = "http://localhost:9182/metrics"
+        serviceURL = "http://127.0.0.1:8082"  // Signal Processing example
+        metricsURL = "http://127.0.0.1:9182/metrics"
 
         // Wait for service to be ready via NodePort
         Eventually(func() error {
@@ -802,7 +864,7 @@ ginkgo -p -procs=4 test/integration/datastorage/
 # Access services:
 psql -h localhost -p 15433 -U postgres -d kubernaut
 redis-cli -h localhost -p 16379
-curl http://localhost:18090/health
+curl http://127.0.0.1:18090/health
 ```
 
 ### **Running Multiple Test Suites in Parallel**
@@ -834,6 +896,9 @@ ginkgo -p -procs=4 test/e2e/datastorage/
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 2.5 | 2026-01-11 | AI Assistant | **NAMESPACE CONSOLIDATION**: Mock LLM E2E moved to `kubernaut-system` namespace (from dedicated `mock-llm` namespace); **Simplified DNS**: `http://mock-llm:8080` (from `http://mock-llm.mock-llm.svc.cluster.local:8080`); **Rationale**: Matches established E2E pattern (AuthWebhook, DataStorage all use `kubernaut-system`); Kubernetes auto-resolves short DNS names within same namespace; Consistent with test dependency co-location pattern; Integration tests unchanged (still use podman ports 18140/18141) |
+| 2.4 | 2026-01-11 | AI Assistant | **ARCHITECTURE FIX**: Mock LLM E2E service changed from NodePort to ClusterIP (internal only); E2E access pattern: Test runner → HAPI (NodePort 30088) → Mock LLM (ClusterIP); Removed NodePort 30091 allocation (not needed - Mock LLM never accessed directly from host); Matches DataStorage pattern (ClusterIP in E2E); Integration tests unchanged (still use podman ports 18140/18141); **Rationale**: Mock LLM accessed only by services inside Kind cluster, no external access required |
+| 2.3 | 2026-01-11 | AI Assistant | **NEW SERVICE**: Added Mock LLM Service port allocations (MOCK_LLM_MIGRATION_PLAN.md v1.3.0); Integration tests: Per-service ports (HAPI: 18140, AIAnalysis: 18141) to prevent parallel test collisions; E2E tests: Shared Kind NodePort 30091 (host port 8091); Replaces embedded mock logic in HAPI business code (900 lines removed); Zero external dependencies (Python stdlib only); Range allocation: 18140-18149 (integration), 30091 (E2E); **CRITICAL IPv6 FIX**: All localhost references changed to 127.0.0.1 (GitHub Actions CI/CD IPv6 mapping issue) |
 | 2.2 | 2026-01-06 | AI Assistant | **IMMUDB INTEGRATION**: Added Immudb port allocations for SOC2 Gap #9 (tamper-evidence); Integration tests: Immudb ports 13322-13331 (per-service allocation); E2E tests: Default port 3322 via Kubernetes Service; Updated all 11 services (DataStorage: 13322, Gateway: 13323, SP: 13324, RO: 13325, AIAnalysis: 13326, WE: 13327, NT: 13328, HAPI: 13329, AuthWebhook: 13330, EffMon: 13331); Enables parallel integration testing with immutable audit trails |
 | 2.1 | 2026-01-06 | AI Assistant | **NEW SERVICE**: Added Auth Webhook (Kubernetes admission webhook) port allocations for SOC2 CC8.1 compliance; Integration tests (PostgreSQL: 15442, Redis: 16386, Data Storage: 18099); E2E tests (PostgreSQL: 25442, Redis: 26386, Data Storage: 28099); No port conflicts - parallel testing enabled |
 | 2.0 | 2026-01-01 | AI Assistant | **CRITICAL FIX**: Resolved Notification/HAPI PostgreSQL port conflict - migrated Notification PostgreSQL from 15439 (shared with HAPI) to 15440 (unique); **TRUE PARALLEL TESTING NOW ENABLED** - all 8 services can run integration tests simultaneously without port conflicts; removed shared port design flaw |
