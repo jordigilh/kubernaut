@@ -99,9 +99,45 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
     recovery_attempt_number = request_data.get("recovery_attempt_number", 1)
 
     # Try to extract structured JSON from response
+    # Pattern 1: JSON code block (standard format)
     json_match = re.search(r'```json\s*(.*?)\s*```', analysis_text, re.DOTALL)
+    
+    # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
+    # Format: "# selected_workflow\n{'workflow_id': '...', ...}"
+    if not json_match and ('# selected_workflow' in analysis_text or '# root_cause_analysis' in analysis_text):
+        # Extract the dict portions and combine them
+        import re
+        parts = {}
+        
+        # Extract root_cause_analysis  
+        # Match from { to the last } before the next section or end
+        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis_text, re.DOTALL)
+        if rca_match:
+            parts['root_cause_analysis'] = rca_match.group(1)
+        
+        # Extract selected_workflow
+        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis_text, re.DOTALL)
+        if wf_match:
+            parts['selected_workflow'] = wf_match.group(1)
+        
+        if parts:
+            # Combine into a single dict string
+            combined_dict = '{'
+            for key, value in parts.items():
+                combined_dict += f'"{key}": {value}, '
+            combined_dict = combined_dict.rstrip(', ') + '}'
+            
+            # Create a fake match object
+            class FakeMatch:
+                def __init__(self, text):
+                    self._text = text
+                def group(self, n):
+                    return self._text if n == 0 else self._text
+            
+            json_match = FakeMatch(combined_dict)
+    
+    # Pattern 3: Direct JSON object (fallback)
     if not json_match:
-        # Try to find JSON object directly
         json_match = re.search(r'\{.*"recovery_analysis".*\}', analysis_text, re.DOTALL)
         if not json_match:
             return None
