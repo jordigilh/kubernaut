@@ -183,7 +183,7 @@ def hapi_service_url():
 def mock_llm_server_e2e(mock_llm_service_e2e):
     """
     Backward compatibility alias for tests using old fixture name.
-    
+
     V2.0: Redirects to mock_llm_service_e2e (standalone Mock LLM service).
     """
     return mock_llm_service_e2e
@@ -236,11 +236,32 @@ def mock_llm_service_e2e():
     - Deployed in kubernaut-system namespace (same as HAPI/DataStorage)
     """
     # Mock LLM service URL from Kind cluster (ClusterIP internal URL)
-    # Note: Tests run inside Kind cluster, so use short DNS name
+    # Used by HAPI (in-cluster), not by pytest directly
     mock_llm_url = os.environ.get("LLM_ENDPOINT", "http://mock-llm:8080")
-    
+
+    # Detect if running in Go-managed E2E environment
+    # Go infrastructure already waits for Mock LLM pod readiness via kubectl wait
+    # Check for DATA_STORAGE_URL which is set by Go infrastructure
+    go_managed = os.environ.get("DATA_STORAGE_URL") is not None
+
+    if go_managed:
+        print(f"\n✅ Go infrastructure detected: Mock LLM at {mock_llm_url} (already verified)")
+        print(f"   (Go infrastructure used kubectl wait --for=condition=ready)")
+        # Set environment for tests
+        os.environ["LLM_ENDPOINT"] = mock_llm_url
+        os.environ["LLM_MODEL"] = "mock-model"
+        os.environ["LLM_PROVIDER"] = "openai"
+
+        class MockLLMService:
+            def __init__(self, url):
+                self.url = url
+
+        yield MockLLMService(mock_llm_url)
+        return
+
+    # Manual verification for standalone pytest runs (not Go-managed)
     print(f"\n⏳ Verifying Mock LLM service at {mock_llm_url}...")
-    
+
     # Verify Mock LLM is available
     max_retries = 30
     for i in range(max_retries):
@@ -252,17 +273,17 @@ def mock_llm_service_e2e():
                 os.environ["LLM_ENDPOINT"] = mock_llm_url
                 os.environ["LLM_MODEL"] = "mock-model"
                 os.environ["LLM_PROVIDER"] = "openai"
-                
+
                 # Return simple object with URL for compatibility
                 class MockLLMService:
                     def __init__(self, url):
                         self.url = url
-                
+
                 yield MockLLMService(mock_llm_url)
                 return
         except requests.exceptions.RequestException:
             pass
-        
+
         if i == max_retries - 1:
             pytest.fail(
                 f"Mock LLM service not ready at {mock_llm_url} after {max_retries} attempts.\n"

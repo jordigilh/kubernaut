@@ -76,7 +76,7 @@ var _ = Describe("TimeoutDetector", func() {
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-30 * time.Minute))
 			// Set per-RR override to 15 minutes (should trigger timeout)
 			globalTimeout := metav1.Duration{Duration: 15 * time.Minute}
-			rr.Spec.TimeoutConfig = &remediationv1.TimeoutConfig{
+			rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
 				Global: &globalTimeout,
 			}
 

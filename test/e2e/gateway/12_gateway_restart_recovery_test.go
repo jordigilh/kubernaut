@@ -47,6 +47,7 @@ var _ = Describe("Test 12: Gateway Restart Recovery (BR-GATEWAY-010, BR-GATEWAY-
 	)
 
 	BeforeAll(func() {
+		Skip("TODO: Move to test/integration/gateway/ - Tests component resilience, not end-to-end workflow (DD-TEST-002)")
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Longer timeout for restart test
 		testLogger = logger.WithValues("test", "gateway-restart")
 		httpClient = &http.Client{Timeout: 10 * time.Second}

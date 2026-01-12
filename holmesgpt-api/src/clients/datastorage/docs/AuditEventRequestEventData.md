@@ -12,7 +12,7 @@ Name | Type | Description | Notes
 **signal_annotations** | **Dict[str, str]** | Signal annotations for RR.Spec.SignalAnnotations reconstruction | [optional] 
 **signal_type** | **str** | Signal type identifier for classification and metrics (prometheus-alert&#x3D;Prometheus AlertManager, kubernetes-event&#x3D;Kubernetes events) | 
 **alert_name** | **str** | Name of the alert | 
-**namespace** | **str** | Kubernetes namespace of the AIAnalysis | 
+**namespace** | **str** | Kubernetes namespace | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
 **severity** | **str** | Severity level of the signal | [optional] 
 **resource_kind** | **str** | Kubernetes resource kind | [optional] 
@@ -21,7 +21,7 @@ Name | Type | Description | Notes
 **deduplication_status** | **str** | Whether this is a new or duplicate signal | [optional] 
 **occurrence_count** | **int** | Number of times this signal has been seen | [optional] 
 **error_details** | [**ErrorDetails**](ErrorDetails.md) |  | [optional] 
-**rr_name** | **str** | Name of the RemediationRequest being orchestrated | 
+**rr_name** | **str** | Name of the RemediationRequest | 
 **outcome** | **str** | Evaluation outcome | 
 **duration_ms** | **int** | Evaluation duration in milliseconds | 
 **failure_phase** | **str** | Phase where the failure occurred | [optional] 
@@ -41,6 +41,7 @@ Name | Type | Description | Notes
 **reason** | **str** |  | 
 **sub_reason** | **str** | Detailed failure sub-reason | [optional] 
 **notification_name** | **str** | Alias for notification_id | [optional] 
+**timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **environment** | **str** | Environment context | 
@@ -143,6 +144,10 @@ Name | Type | Description | Notes
 **validation_errors** | **str** | Combined validation error messages (for backward compatibility) | [optional] 
 **human_review_reason** | **str** | Reason code if needs_human_review (final attempt) | [optional] 
 **is_final_attempt** | **bool** | Whether this is the final validation attempt | [optional] [default to False]
+**modified_by** | **str** | User who modified the timeout configuration | 
+**modified_at** | **datetime** | When the modification occurred | 
+**old_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
+**new_timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 
 ## Example
 

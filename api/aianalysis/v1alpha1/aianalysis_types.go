@@ -75,7 +75,7 @@ type AIAnalysisSpec struct {
 	// ========================================
 	// TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
 	// Replaces deprecated annotation-based timeout (security + validation)
-	// Passed through from RR.Spec.TimeoutConfig.AIAnalysisTimeout by RO
+	// Passed through from RR.Status.TimeoutConfig.AIAnalysisTimeout by RO (Gap #8: moved to Status)
 	// ========================================
 	// Optional timeout configuration for this analysis
 	// If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)

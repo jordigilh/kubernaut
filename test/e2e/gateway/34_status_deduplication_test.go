@@ -69,6 +69,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 		testClient = getKubernetesClient()
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
+		CreateNamespaceAndWait(ctx, testClient, sharedNamespace)
 
 		// DD-GATEWAY-012: Redis removed, Gateway now K8s status-based
 		// DD-AUDIT-003: Gateway connects to Data Storage for audit
@@ -238,7 +239,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
 				return crd
 			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
-			
+
 			crd.Status.OverallPhase = "Pending"
 			err = testClient.Status().Update(ctx, crd)
 

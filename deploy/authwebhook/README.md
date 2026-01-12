@@ -13,6 +13,7 @@ The Auth Webhook intercepts CRD status updates to inject authenticated user iden
 ### **SOC2 CC8.1 Requirement**
 - ✅ Track who initiated remediation actions
 - ✅ Track who approved/rejected remediation requests
+- ✅ Track who modified remediation timeout configurations (Gap #8)
 - ✅ Track who deleted notification requests
 - ✅ Capture authenticated user identity in audit trails
 
@@ -77,7 +78,7 @@ NAME               READY   SECRET             AGE
 authwebhook-tls    True    authwebhook-tls    30s
 
 NAME                      WEBHOOKS   AGE
-authwebhook-mutating      2          30s
+authwebhook-mutating      3          30s
 
 NAME                       WEBHOOKS   AGE
 authwebhook-validating     1          30s
@@ -131,7 +132,15 @@ kubectl label namespace my-namespace kubernaut.ai/audit-enabled=true
 - **Purpose**: Track approval/rejection decisions
 - **Injected Fields**: `status.approvedBy`, `status.rejectedBy`
 
-### **3. NotificationRequest (Validating)**
+### **3. RemediationRequest (Mutating)** 🆕 **Gap #8**
+- **Path**: `/mutate-remediationrequest`
+- **Operation**: UPDATE status
+- **Purpose**: Track operator timeout configuration changes
+- **Injected Fields**: `status.lastModifiedBy`, `status.lastModifiedAt`
+- **Audit Event**: `webhook.remediationrequest.timeout_modified`
+- **Reference**: BR-AUDIT-005 v2.0 Gap #8, BR-AUTH-001 (SOC2 CC8.1)
+
+### **4. NotificationRequest (Validating)**
 - **Path**: `/validate-notificationrequest-delete`
 - **Operation**: DELETE
 - **Purpose**: Audit notification request deletions
@@ -150,8 +159,8 @@ kubectl label namespace my-namespace kubernaut.ai/audit-enabled=true
 ```yaml
 ClusterRole: authwebhook
 Permissions:
-  - Read CRDs (workflowexecutions, remediationapprovalrequests, notificationrequests)
-  - Update CRD status (for mutation)
+  - Read CRDs (workflowexecutions, remediationapprovalrequests, notificationrequests, remediationrequests)
+  - Update CRD status (for mutation - includes remediationrequests/status for Gap #8)
   - Create TokenReviews (for authentication)
   - Create SubjectAccessReviews (for authorization)
 ```
@@ -343,8 +352,8 @@ kubectl rollout history deployment/authwebhook -n kubernaut-system
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: January 7, 2025
-**Component Status**: ✅ Production Ready
+**Document Version**: 1.1
+**Last Updated**: January 12, 2026
+**Component Status**: ✅ Production Ready (Gap #8 Added)
 
 

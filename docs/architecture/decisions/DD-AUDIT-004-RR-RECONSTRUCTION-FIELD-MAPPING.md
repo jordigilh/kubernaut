@@ -49,7 +49,7 @@ This document provides the authoritative mapping between RemediationRequest CRD 
 | 5 | `.status.selectedWorkflowRef` | `event_data.selected_workflow_ref` | Workflow Engine | `workflow.selection.completed` | JSON Object | ✅ YES | 200B |
 | 6 | `.status.executionRef` | `event_data.execution_ref` | Execution | `execution.started` | JSON Object | ✅ YES | 200B |
 | 7 | `.status.error` | `event_data.error_details` | All Services | `*.failure` | JSON Object | ⚠️ OPTIONAL | 0.5-1KB |
-| 8 | `.spec.timeoutConfig` | `event_data.timeout_config` | Orchestrator | `orchestration.remediation.created` | JSON Object | ⚠️ OPTIONAL | 100-200B |
+| 8 | `.status.timeoutConfig` | `event_data.timeout_config` | Orchestrator | `orchestration.remediation.created` | JSON Object | ⚠️ OPTIONAL | 100-200B |
 
 **Total Storage Impact**: ~5-12KB per remediation (compressed)
 
@@ -300,7 +300,7 @@ if failureEvent != nil {
 
 ### **Field #8: `timeoutConfig`** (OPTIONAL)
 
-**RR CRD Path**: `.spec.timeoutConfig`
+**RR CRD Path**: `.status.timeoutConfig`
 
 **Audit Event Capture**:
 ```yaml
@@ -325,7 +325,7 @@ event_data:
 ```go
 orchestratorEvent := getAuditEvent(ctx, "orchestration.remediation.created", correlationID)
 if timeoutConfig, ok := orchestratorEvent.EventData["timeout_config"]; ok {
-    rr.Spec.TimeoutConfig = timeoutConfig
+    rr.Status.TimeoutConfig = timeoutConfig
 }
 ```
 
@@ -383,7 +383,7 @@ func ReconstructRR(ctx context.Context, correlationID string) (*RemediationReque
     orchestratorEvent := getAuditEvent(ctx, "orchestration.remediation.created", correlationID)
     if orchestratorEvent != nil {
         if timeoutConfig, ok := orchestratorEvent.EventData["timeout_config"]; ok {
-            rr.Spec.TimeoutConfig = timeoutConfig
+            rr.Status.TimeoutConfig = timeoutConfig
         }
     }
 
@@ -432,7 +432,7 @@ func calculateAccuracy(rr *RemediationRequest) int {
 
     // Optional fields (2 fields = 25% of accuracy)
     if rr.Status.Error != nil { capturedFields++ }
-    if rr.Spec.TimeoutConfig != nil { capturedFields++ }
+    if rr.Status.TimeoutConfig != nil { capturedFields++ }
 
     return (capturedFields * 100) / totalFields
 }

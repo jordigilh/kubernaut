@@ -1,6 +1,6 @@
 # RemediationOrchestratorAuditPayload
 
-Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
+Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
 
 ## Properties
 
@@ -29,6 +29,7 @@ Name | Type | Description | Notes
 **reason** | **str** | Reason for manual review or other actions | [optional] 
 **sub_reason** | **str** | Sub-categorization of the reason | [optional] 
 **notification_name** | **str** | Associated notification name | [optional] 
+**timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 
 ## Example
 

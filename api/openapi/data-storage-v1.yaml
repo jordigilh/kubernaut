@@ -1398,6 +1398,7 @@ components:
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
+            - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -1406,6 +1407,7 @@ components:
               'gateway.crd.created': '#/components/schemas/GatewayAuditPayload'
               'gateway.crd.failed': '#/components/schemas/GatewayAuditPayload'
               'orchestrator.lifecycle.started': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.failed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.transitioned': '#/components/schemas/RemediationOrchestratorAuditPayload'
@@ -1429,6 +1431,7 @@ components:
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'webhook.workflow.unblocked': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
               'webhook.approval.decided': '#/components/schemas/RemediationApprovalAuditPayload'
+              'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
               'workflow.catalog.search_completed': '#/components/schemas/WorkflowSearchAuditPayload'
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
               'datastorage.workflow.updated': '#/components/schemas/WorkflowCatalogUpdatedPayload'
@@ -2115,6 +2118,27 @@ components:
           description: Top N stack frames for debugging (optional, 5-10 frames max)
           example: ["/path/to/file.go:123 function.Name"]
 
+    TimeoutConfig:
+      type: object
+      description: Timeout configuration for RemediationRequest (BR-ORCH-027/028, Gap #8)
+      properties:
+        global:
+          type: string
+          description: Global timeout (Go duration string, e.g., "30m", "1h")
+          example: "30m"
+        processing:
+          type: string
+          description: Processing phase timeout (Go duration string)
+          example: "10m"
+        analyzing:
+          type: string
+          description: Analyzing phase timeout (Go duration string)
+          example: "5m"
+        executing:
+          type: string
+          description: Executing phase timeout (Go duration string)
+          example: "15m"
+
     # ========================================
     # Gateway Audit Payload
     # From: pkg/gateway/audit_types.go
@@ -2203,11 +2227,11 @@ components:
     RemediationOrchestratorAuditPayload:
       type: object
       required: [rr_name, namespace, event_type]
-      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
+      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -2290,6 +2314,11 @@ components:
         notification_name:
           type: string
           description: Associated notification name
+
+        # Gap #8: TimeoutConfig (BR-AUDIT-005, orchestrator.lifecycle.created)
+        timeout_config:
+          $ref: '#/components/schemas/TimeoutConfig'
+          description: Timeout configuration for RR reconstruction (Gap #8)
 
     # ========================================
     # SignalProcessing Audit Payload
@@ -2664,6 +2693,38 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+
+    RemediationRequestWebhookAuditPayload:
+      type: object
+      required: [rr_name, namespace, event_type, modified_by, modified_at]
+      description: Type-safe audit event payload for RemediationRequest webhooks (timeout_modified)
+      properties:
+        event_type:
+          type: string
+          enum: ['webhook.remediationrequest.timeout_modified']
+          description: Event type for discriminator (matches parent event_type)
+        rr_name:
+          type: string
+          description: Name of the RemediationRequest
+          example: "rr-payment-restart-123"
+        namespace:
+          type: string
+          description: Kubernetes namespace
+          example: "production"
+        modified_by:
+          type: string
+          description: User who modified the timeout configuration
+          example: "ops-user@example.com"
+        modified_at:
+          type: string
+          format: date-time
+          description: When the modification occurred
+        old_timeout_config:
+          $ref: '#/components/schemas/TimeoutConfig'
+          description: Previous timeout configuration
+        new_timeout_config:
+          $ref: '#/components/schemas/TimeoutConfig'
+          description: New timeout configuration after operator modification
 
     # ========================================
     # DataStorage Audit Payloads

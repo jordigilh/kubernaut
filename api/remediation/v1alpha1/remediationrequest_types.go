@@ -331,11 +331,10 @@ type RemediationRequestSpec struct {
 	// WORKFLOW CONFIGURATION
 	// ========================================
 
-	// TimeoutConfig provides fine-grained timeout configuration for this remediation.
-	// Overrides controller-level defaults when specified.
-	// Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
-	// +optional
-	TimeoutConfig *TimeoutConfig `json:"timeoutConfig,omitempty"`
+	// NOTE: TimeoutConfig moved to RemediationRequestStatus per Gap #8
+	// Rationale: Operators need to adjust timeouts mid-remediation (mutable)
+	// Reference: BR-AUDIT-005 Gap #8, BR-AUTH-001 (SOC2 CC8.1)
+	// See: RemediationRequestStatus.TimeoutConfig
 }
 
 // ResourceIdentifier uniquely identifies a Kubernetes resource.
@@ -639,6 +638,33 @@ type RemediationRequestStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// ========================================
+	// TIMEOUT CONFIGURATION (BR-ORCH-027/028, Gap #8)
+	// ========================================
+
+	// TimeoutConfig provides operational timeout overrides for this remediation.
+	// OWNER: Remediation Orchestrator (sets defaults on first reconcile)
+	// MUTABLE BY: Operators (can adjust mid-remediation via kubectl edit)
+	// Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
+	// Gap #8: Moved from spec to status to enable operator mutability + audit trail
+	// +optional
+	TimeoutConfig *TimeoutConfig `json:"timeoutConfig,omitempty"`
+
+	// ========================================
+	// OPERATOR MUTATION TRACKING (SOC2 CC8.1)
+	// ========================================
+
+	// LastModifiedBy tracks the last operator who modified this RR's status.
+	// Populated by RemediationRequest mutating webhook.
+	// Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), Gap #8 Extension
+	// +optional
+	LastModifiedBy string `json:"lastModifiedBy,omitempty"`
+
+	// LastModifiedAt tracks when the last status modification occurred.
+	// Populated by RemediationRequest mutating webhook.
+	// +optional
+	LastModifiedAt *metav1.Time `json:"lastModifiedAt,omitempty"`
 
 	// ========================================
 	// RECOVERY TRACKING

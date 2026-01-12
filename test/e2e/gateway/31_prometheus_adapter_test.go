@@ -162,13 +162,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 						"alertname": "HighMemoryUsage",
 						"severity": "critical",
 						"namespace": "%s",
-						"pod": "payment-api-123")
+						"pod": "payment-api-123"
 					},
 					"annotations": {
 						"summary": "Pod payment-api-123 using 95%% memory",
-						"description": "Memory threshold exceeded, may cause OOM")
+						"description": "Memory threshold exceeded, may cause OOM"
 					},
-					"startsAt": "2025-10-22T10:00:00Z")
+					"startsAt": "2025-10-22T10:00:00Z"
 				}]
 			}`, prodNamespace))
 
@@ -243,7 +243,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 						"summary": "Disk usage at 85%%",
 						"runbook_url": "https://runbooks.example.com/disk-space")
 					},
-					"startsAt": "2025-10-22T11:30:00Z")
+					"startsAt": "2025-10-22T11:30:00Z"
 				}]
 			}`, stagingNamespace))
 
@@ -293,12 +293,12 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 						"alertname": "CPUThrottling",
 						"severity": "warning",
 						"namespace": "%s",
-						"pod": "api-gateway-7")
+						"pod": "api-gateway-7"
 					},
 					"annotations": {
 						"summary": "CPU throttling detected")
 					},
-					"startsAt": "2025-10-22T12:00:00Z")
+					"startsAt": "2025-10-22T12:00:00Z"
 				}]
 			}`, prodNamespace))
 
@@ -425,9 +425,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 							"alertname": "TestAlert",
 							"severity": "%s",
 							"namespace": "%s",
-							"pod": "test-pod")
+							"pod": "test-pod"
 						},
-						"startsAt": "2025-10-22T14:00:00Z")
+						"startsAt": "2025-10-22T14:00:00Z"
 					}]
 				}`, tc.severity, tc.namespace))
 

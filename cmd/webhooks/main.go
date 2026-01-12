@@ -142,6 +142,15 @@ func main() {
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 	setupLog.Info("Registered RemediationApprovalRequest webhook handler with audit store")
 
+	// Register RemediationRequest status handler (Gap #8: TimeoutConfig mutation audit)
+	rrHandler := webhooks.NewRemediationRequestStatusHandler(auditStore)
+	if err := rrHandler.InjectDecoder(decoder); err != nil {
+		setupLog.Error(err, "failed to inject decoder into RemediationRequest handler")
+		os.Exit(1)
+	}
+	webhookServer.Register("/mutate-remediationrequest", &webhook.Admission{Handler: rrHandler})
+	setupLog.Info("Registered RemediationRequest webhook handler with audit store (Gap #8)")
+
 	// Register NotificationRequest DELETE handler (DD-WEBHOOK-003: Complete audit events)
 	// Note: This handler writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
 	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)

@@ -213,41 +213,6 @@ spec:
                 - gcp
                 - datadog
                 type: string
-              timeoutConfig:
-                description: |-
-                  TimeoutConfig provides fine-grained timeout configuration for this remediation.
-                  Overrides controller-level defaults when specified.
-                  Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
-                properties:
-                  analyzing:
-                    description: |-
-                      Analyzing phase timeout (AIAnalysis investigation).
-                      Overrides controller-level default (10 minutes).
-                      Reference: BR-ORCH-028, AC-028-5
-                    format: duration
-                    type: string
-                  executing:
-                    description: |-
-                      Executing phase timeout (WorkflowExecution remediation).
-                      Overrides controller-level default (30 minutes).
-                      Reference: BR-ORCH-028, AC-028-5
-                    format: duration
-                    type: string
-                  global:
-                    description: |-
-                      Global timeout for entire remediation workflow.
-                      Overrides controller-level default (1 hour).
-                      Reference: BR-ORCH-027, AC-027-4
-                    format: duration
-                    type: string
-                  processing:
-                    description: |-
-                      Processing phase timeout (SignalProcessing enrichment).
-                      Overrides controller-level default (5 minutes).
-                      Reference: BR-ORCH-028, AC-028-5
-                    format: duration
-                    type: string
-                type: object
             required:
             - firingTime
             - receivedTime
@@ -543,6 +508,18 @@ spec:
                   FailureReason provides a human-readable reason for the failure
                   Only set when OverallPhase = "failed"
                 type: string
+              lastModifiedAt:
+                description: |-
+                  LastModifiedAt tracks when the last status modification occurred.
+                  Populated by RemediationRequest mutating webhook.
+                format: date-time
+                type: string
+              lastModifiedBy:
+                description: |-
+                  LastModifiedBy tracks the last operator who modified this RR's status.
+                  Populated by RemediationRequest mutating webhook.
+                  Reference: BR-AUTH-001 (SOC2 CC8.1 Operator Attribution), Gap #8 Extension
+                type: string
               message:
                 description: Human-readable message describing current status
                 type: string
@@ -804,6 +781,43 @@ spec:
                 description: Timestamps
                 format: date-time
                 type: string
+              timeoutConfig:
+                description: |-
+                  TimeoutConfig provides operational timeout overrides for this remediation.
+                  OWNER: Remediation Orchestrator (sets defaults on first reconcile)
+                  MUTABLE BY: Operators (can adjust mid-remediation via kubectl edit)
+                  Reference: BR-ORCH-027 (Global timeout), BR-ORCH-028 (Per-phase timeouts)
+                  Gap #8: Moved from spec to status to enable operator mutability + audit trail
+                properties:
+                  analyzing:
+                    description: |-
+                      Analyzing phase timeout (AIAnalysis investigation).
+                      Overrides controller-level default (10 minutes).
+                      Reference: BR-ORCH-028, AC-028-5
+                    format: duration
+                    type: string
+                  executing:
+                    description: |-
+                      Executing phase timeout (WorkflowExecution remediation).
+                      Overrides controller-level default (30 minutes).
+                      Reference: BR-ORCH-028, AC-028-5
+                    format: duration
+                    type: string
+                  global:
+                    description: |-
+                      Global timeout for entire remediation workflow.
+                      Overrides controller-level default (1 hour).
+                      Reference: BR-ORCH-027, AC-027-4
+                    format: duration
+                    type: string
+                  processing:
+                    description: |-
+                      Processing phase timeout (SignalProcessing enrichment).
+                      Overrides controller-level default (5 minutes).
+                      Reference: BR-ORCH-028, AC-028-5
+                    format: duration
+                    type: string
+                type: object
               timeoutPhase:
                 description: |-
                   TimeoutPhase indicates which phase timed out

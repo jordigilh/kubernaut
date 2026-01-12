@@ -80,8 +80,8 @@ func (d *Detector) CheckGlobalTimeout(rr *remediationv1.RemediationRequest) Time
 
 	// Get global timeout from config or per-remediation override (AC-027-4)
 	globalTimeout := d.config.Timeouts.Global
-	if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil && rr.Spec.TimeoutConfig.Global.Duration > 0 {
-		globalTimeout = rr.Spec.TimeoutConfig.Global.Duration
+	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil && rr.Status.TimeoutConfig.Global.Duration > 0 {
+		globalTimeout = rr.Status.TimeoutConfig.Global.Duration
 	}
 
 	if elapsed > globalTimeout {
@@ -143,19 +143,19 @@ func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) Timeo
 // Reference: BR-ORCH-028
 func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase string) time.Duration {
 	// Check per-remediation override first
-	if rr.Spec.TimeoutConfig != nil {
+	if rr.Status.TimeoutConfig != nil {
 		switch phase {
 		case "Processing":
-			if rr.Spec.TimeoutConfig.Processing != nil && rr.Spec.TimeoutConfig.Processing.Duration > 0 {
-				return rr.Spec.TimeoutConfig.Processing.Duration
+			if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration > 0 {
+				return rr.Status.TimeoutConfig.Processing.Duration
 			}
 		case "Analyzing", "AwaitingApproval":
-			if rr.Spec.TimeoutConfig.Analyzing != nil && rr.Spec.TimeoutConfig.Analyzing.Duration > 0 {
-				return rr.Spec.TimeoutConfig.Analyzing.Duration
+			if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration > 0 {
+				return rr.Status.TimeoutConfig.Analyzing.Duration
 			}
 		case "Executing":
-			if rr.Spec.TimeoutConfig.Executing != nil && rr.Spec.TimeoutConfig.Executing.Duration > 0 {
-				return rr.Spec.TimeoutConfig.Executing.Duration
+			if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
+				return rr.Status.TimeoutConfig.Executing.Duration
 			}
 		}
 	}

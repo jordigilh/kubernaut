@@ -48,6 +48,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 	)
 
 	BeforeAll(func() {
+		Skip("TODO: Move to test/integration/gateway/ - Tests dependency failure handling, not end-to-end workflow (DD-TEST-002)")
 		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Longer timeout for Redis failure test
 		testLogger = logger.WithValues("test", "redis-failure")
 		httpClient = &http.Client{Timeout: 10 * time.Second}

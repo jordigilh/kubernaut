@@ -1,4 +1,4 @@
-# MutatingWebhookConfiguration for WorkflowExecution and RemediationApprovalRequest
+# MutatingWebhookConfiguration for WorkflowExecution, RemediationApprovalRequest, and RemediationRequest
 #
 # Purpose: Intercept CRD status updates to inject user attribution for SOC2 compliance
 #
@@ -72,6 +72,30 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["UPDATE"]
         resources: ["remediationapprovalrequests/status"]
+        scope: "Namespaced"
+    sideEffects: None
+    timeoutSeconds: 10
+    reinvocationPolicy: Never
+
+  - name: remediationrequest.mutate.kubernaut.ai
+    admissionReviewVersions: ["v1"]
+    clientConfig:
+      service:
+        name: authwebhook
+        namespace: kubernaut-system
+        path: /mutate-remediationrequest
+        port: 443
+      caBundle: ""
+    failurePolicy: Fail  # Block operations if webhook is unavailable (SOC2 requirement)
+    matchPolicy: Equivalent
+    namespaceSelector:
+      matchLabels:
+        kubernaut.ai/audit-enabled: "true"  # Only audit in labeled namespaces
+    rules:
+      - apiGroups: ["kubernaut.ai"]
+        apiVersions: ["v1alpha1"]
+        operations: ["UPDATE"]
+        resources: ["remediationrequests/status"]
         scope: "Namespaced"
     sideEffects: None
     timeoutSeconds: 10

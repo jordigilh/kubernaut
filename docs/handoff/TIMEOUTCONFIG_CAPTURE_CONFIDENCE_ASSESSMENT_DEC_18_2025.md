@@ -22,7 +22,7 @@
 **Why 100% Confidence?**
 
 1. ✅ **Field is fully defined** in RR CRD spec
-2. ✅ **Easily accessible** as `rr.Spec.TimeoutConfig`
+2. ✅ **Easily accessible** as `rr.Status.TimeoutConfig`
 3. ✅ **Already used** throughout RO reconciliation logic
 4. ✅ **Well-documented** with BR-ORCH-027 and BR-ORCH-028
 5. ✅ **Small data size** (~200-400 bytes JSON)
@@ -69,25 +69,25 @@ type TimeoutConfig struct {
 
 ```go
 // Line 1441: getEffectiveGlobalTimeout()
-if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil {
-    return rr.Spec.TimeoutConfig.Global.Duration
+if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil {
+    return rr.Status.TimeoutConfig.Global.Duration
 }
 return r.timeouts.Global
 
 // Line 1451: getEffectivePhaseTimeout()
-if rr.Spec.TimeoutConfig != nil {
+if rr.Status.TimeoutConfig != nil {
     switch phase {
     case remediationv1.PhaseProcessing:
-        if rr.Spec.TimeoutConfig.Processing != nil {
-            return rr.Spec.TimeoutConfig.Processing.Duration
+        if rr.Status.TimeoutConfig.Processing != nil {
+            return rr.Status.TimeoutConfig.Processing.Duration
         }
     case remediationv1.PhaseAnalyzing:
-        if rr.Spec.TimeoutConfig.Analyzing != nil {
-            return rr.Spec.TimeoutConfig.Analyzing.Duration
+        if rr.Status.TimeoutConfig.Analyzing != nil {
+            return rr.Status.TimeoutConfig.Analyzing.Duration
         }
     case remediationv1.PhaseExecuting:
-        if rr.Spec.TimeoutConfig.Executing != nil {
-            return rr.Spec.TimeoutConfig.Executing.Duration
+        if rr.Status.TimeoutConfig.Executing != nil {
+            return rr.Status.TimeoutConfig.Executing.Duration
         }
     }
 }
@@ -109,7 +109,7 @@ event_data:
   correlation_id: "rr-2025-001"
   signal_fingerprint: "oomkilled-pod-xyz"
   # NEW: Add timeout config if present
-  timeout_config:  # ← ADD THIS (only if rr.Spec.TimeoutConfig != nil)
+  timeout_config:  # ← ADD THIS (only if rr.Status.TimeoutConfig != nil)
     global: "45m"              # Only if overridden (else null)
     processing: "7m"            # Only if overridden (else null)
     analyzing: "12m"            # Only if overridden (else null)
@@ -128,7 +128,7 @@ func (h *Helpers) CreateRemediationAuditEvent(ctx context.Context, rr *remediati
         // ... other fields ...
 
         // NEW: Capture TimeoutConfig if present (Gap #8)
-        "timeout_config": h.serializeTimeoutConfig(rr.Spec.TimeoutConfig),
+        "timeout_config": h.serializeTimeoutConfig(rr.Status.TimeoutConfig),
     }
 
     return h.auditStore.Write(ctx, audit.AuditEvent{
@@ -226,10 +226,10 @@ func reconstructRR(auditEvents []AuditEvent) *RemediationRequest {
 
     // TimeoutConfig: Use from audit if present, else defaults
     if timeoutConfig := getFromAudit(auditEvents, "timeout_config"); timeoutConfig != nil {
-        rr.Spec.TimeoutConfig = timeoutConfig
+        rr.Status.TimeoutConfig = timeoutConfig
     } else {
         // 95% of RRs use defaults - this is expected
-        rr.Spec.TimeoutConfig = nil  // nil = use defaults
+        rr.Status.TimeoutConfig = nil  // nil = use defaults
         log.Debug("TimeoutConfig not specified, will use controller defaults (expected)")
     }
 
@@ -343,11 +343,11 @@ It("should reconstruct RR with custom TimeoutConfig", func() {
     reconstructed := reconstructRRFromAudit(ctx, rr.Name)
 
     // Validate TimeoutConfig (100% accuracy)
-    Expect(reconstructed.Spec.TimeoutConfig).ToNot(BeNil())
-    Expect(reconstructed.Spec.TimeoutConfig.Global.Duration).To(Equal(45 * time.Minute))
-    Expect(reconstructed.Spec.TimeoutConfig.Processing.Duration).To(Equal(7 * time.Minute))
-    Expect(reconstructed.Spec.TimeoutConfig.Analyzing.Duration).To(Equal(12 * time.Minute))
-    Expect(reconstructed.Spec.TimeoutConfig.Executing.Duration).To(Equal(25 * time.Minute))
+    Expect(reconstructed.Status.TimeoutConfig).ToNot(BeNil())
+    Expect(reconstructed.Status.TimeoutConfig.Global.Duration).To(Equal(45 * time.Minute))
+    Expect(reconstructed.Status.TimeoutConfig.Processing.Duration).To(Equal(7 * time.Minute))
+    Expect(reconstructed.Status.TimeoutConfig.Analyzing.Duration).To(Equal(12 * time.Minute))
+    Expect(reconstructed.Status.TimeoutConfig.Executing.Duration).To(Equal(25 * time.Minute))
 })
 ```
 

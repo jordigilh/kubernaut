@@ -106,7 +106,7 @@ Fixed references to old TimeoutConfig field names across codebase:
 | AC-027-1: Timeout detection | `getEffectiveGlobalTimeout()` + global timeout check | ✅ COMPLETE |
 | AC-027-2: Notification creation | `handleGlobalTimeout()` creates NotificationRequest | ✅ COMPLETE |
 | AC-027-3: Configurable default | `--global-timeout` flag in main.go | ✅ COMPLETE |
-| AC-027-4: Per-RR override | `spec.timeoutConfig.global` support + Test 3 | ✅ COMPLETE |
+| AC-027-4: Per-RR override | `status.timeoutConfig.global` support + Test 3 | ✅ COMPLETE |
 | AC-027-5: Timeout tracking | `status.timeoutPhase` + `status.timeoutTime` | ✅ COMPLETE |
 
 **Coverage**: **100% (5/5 acceptance criteria)**
@@ -152,8 +152,8 @@ Fixed references to old TimeoutConfig field names across codebase:
 ```go
 // Example: getEffectiveGlobalTimeout with nil checks
 func (r *Reconciler) getEffectiveGlobalTimeout(rr *RemediationRequest) time.Duration {
-    if rr.Spec.TimeoutConfig != nil && rr.Spec.TimeoutConfig.Global != nil {
-        return rr.Spec.TimeoutConfig.Global.Duration
+    if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil {
+        return rr.Status.TimeoutConfig.Global.Duration
     }
     return r.timeouts.Global
 }

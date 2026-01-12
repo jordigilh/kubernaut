@@ -10,13 +10,14 @@ metadata:
 rules:
   # Read CRDs for webhook validation/mutation
   - apiGroups: ["kubernaut.ai"]
-    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests"]
+    resources: ["workflowexecutions", "remediationapprovalrequests", "notificationrequests", "remediationrequests"]
     verbs: ["get", "list", "watch"]
 
   # Update CRD status for webhook mutation (user attribution)
   # SOC2 CC8.1 Requirement: Track user who initiated CRD status changes
+  # Gap #8: RemediationRequest status mutations (TimeoutConfig) require audit attribution
   - apiGroups: ["kubernaut.ai"]
-    resources: ["workflowexecutions/status", "remediationapprovalrequests/status"]
+    resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status"]
     verbs: ["update", "patch"]
 
   # Read ServiceAccounts for user attribution in audit trails

@@ -22,6 +22,7 @@ from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictInt, StrictStr, field_validator
 from pydantic import Field
 from datastorage.models.error_details import ErrorDetails
+from datastorage.models.timeout_config import TimeoutConfig
 try:
     from typing import Self
 except ImportError:
@@ -29,7 +30,7 @@ except ImportError:
 
 class RemediationOrchestratorAuditPayload(BaseModel):
     """
-    Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
+    Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
     """ # noqa: E501
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     rr_name: StrictStr = Field(description="Name of the RemediationRequest being orchestrated")
@@ -54,13 +55,14 @@ class RemediationOrchestratorAuditPayload(BaseModel):
     reason: Optional[StrictStr] = Field(default=None, description="Reason for manual review or other actions")
     sub_reason: Optional[StrictStr] = Field(default=None, description="Sub-categorization of the reason")
     notification_name: Optional[StrictStr] = Field(default=None, description="Associated notification name")
-    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name"]
+    timeout_config: Optional[TimeoutConfig] = None
+    __properties: ClassVar[List[str]] = ["event_type", "rr_name", "namespace", "outcome", "duration_ms", "failure_phase", "failure_reason", "error_details", "from_phase", "to_phase", "transition_reason", "rar_name", "required_by", "workflow_id", "confidence_str", "decision", "approved_by", "rejected_by", "rejection_reason", "message", "reason", "sub_reason", "notification_name", "timeout_config"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected'):
-            raise ValueError("must be one of enum values ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected')")
+        if value not in ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected'):
+            raise ValueError("must be one of enum values ('orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected')")
         return value
 
     @field_validator('outcome')
@@ -143,6 +145,9 @@ class RemediationOrchestratorAuditPayload(BaseModel):
         # override the default output from pydantic by calling `to_dict()` of error_details
         if self.error_details:
             _dict['error_details'] = self.error_details.to_dict()
+        # override the default output from pydantic by calling `to_dict()` of timeout_config
+        if self.timeout_config:
+            _dict['timeout_config'] = self.timeout_config.to_dict()
         return _dict
 
     @classmethod
@@ -177,7 +182,8 @@ class RemediationOrchestratorAuditPayload(BaseModel):
             "message": obj.get("message"),
             "reason": obj.get("reason"),
             "sub_reason": obj.get("sub_reason"),
-            "notification_name": obj.get("notification_name")
+            "notification_name": obj.get("notification_name"),
+            "timeout_config": TimeoutConfig.from_dict(obj.get("timeout_config")) if obj.get("timeout_config") is not None else None
         })
         return _obj
 

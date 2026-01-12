@@ -178,7 +178,7 @@ kubectl describe pod -n kubernaut-system -l app=mock-llm
 
 ```bash
 # Verify image is loaded in Kind
-docker exec -it kubernaut-test-control-plane crictl images | grep mock-llm
+podman exec -it kubernaut-test-control-plane crictl images | grep mock-llm
 
 # Reload image if missing
 kind load docker-image localhost/mock-llm:latest --name kubernaut-test

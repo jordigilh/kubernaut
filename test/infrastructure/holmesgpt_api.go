@@ -55,9 +55,11 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	// Generate unique image tags per DD-TEST-001: {infrastructure}:{consumer}-{uuid}
 	dataStorageImage := GenerateInfraImageName("datastorage", "holmesgpt-api")
 	hapiImage := GenerateInfraImageName("holmesgpt-api", "holmesgpt-api")
+	mockLLMImage := GenerateInfraImageName("mock-llm", "holmesgpt-api-e2e")
 
 	_, _ = fmt.Fprintf(writer, "  📦 Data Storage image: %s\n", dataStorageImage)
 	_, _ = fmt.Fprintf(writer, "  📦 HAPI image: %s\n", hapiImage)
+	_, _ = fmt.Fprintf(writer, "  📦 Mock LLM image: %s\n", mockLLMImage)
 
 	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 1: Build images SEQUENTIALLY (Data Storage, then HAPI)
@@ -85,6 +87,16 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	}
 	_, _ = fmt.Fprintf(writer, "✅ [%s] HolmesGPT-API image built: %s\n", time.Now().Format("15:04:05"), hapiImage)
 
+	// Build Mock LLM (standalone test service)
+	// Zero external dependencies, minimal build time
+	// Expected: <1 minute
+	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building Mock LLM...\n", time.Now().Format("15:04:05"))
+	if err := buildImageOnly("Mock LLM", mockLLMImage,
+		"test/services/mock-llm/Dockerfile", projectRoot, writer); err != nil {
+		return fmt.Errorf("failed to build mock-llm image: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "✅ [%s] Mock LLM image built: %s\n", time.Now().Format("15:04:05"), mockLLMImage)
+
 	_, _ = fmt.Fprintln(writer, "\n✅ All images built sequentially!")
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -103,7 +115,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		name string
 		err  error
 	}
-	loadResults := make(chan imageLoadResult, 2)
+	loadResults := make(chan imageLoadResult, 3)
 
 	go func() {
 		err := loadImageToKind(clusterName, dataStorageImage, writer)
@@ -113,8 +125,12 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		err := loadImageToKind(clusterName, hapiImage, writer)
 		loadResults <- imageLoadResult{"HolmesGPT-API", err}
 	}()
+	go func() {
+		err := loadImageToKind(clusterName, mockLLMImage, writer)
+		loadResults <- imageLoadResult{"Mock LLM", err}
+	}()
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-loadResults
 		if result.err != nil {
 			return fmt.Errorf("failed to load %s: %w", result.name, result.err)
@@ -139,7 +155,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		name string
 		err  error
 	}
-	deployResults := make(chan deployResult, 5)
+	deployResults := make(chan deployResult, 6)
 
 	// Launch ALL kubectl apply commands concurrently
 	go func() {
@@ -163,10 +179,14 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer)
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
+	go func() {
+		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, writer)
+		deployResults <- deployResult{"Mock LLM", err}
+	}()
 
 	// Collect ALL results before proceeding (MANDATORY)
 	var deployErrors []error
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 6; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
@@ -260,9 +280,9 @@ data:
     logging:
       level: "INFO"
     llm:
-      provider: "mock"
-      model: "mock/test-model"
-      endpoint: "http://localhost:11434"
+      provider: "openai"
+      model: "mock-model"
+      endpoint: "http://mock-llm:8080"
     data_storage:
       url: "http://datastorage:8080"
     audit:
@@ -295,8 +315,14 @@ spec:
         - "-config"
         - "/etc/holmesgpt/config.yaml"
         env:
-        - name: MOCK_LLM_MODE
-          value: "true"
+        - name: LLM_ENDPOINT
+          value: "http://mock-llm:8080"
+        - name: LLM_MODEL
+          value: "mock-model"
+        - name: LLM_PROVIDER
+          value: "openai"
+        - name: OPENAI_API_KEY
+          value: "mock-api-key-for-e2e"
         - name: DATA_STORAGE_URL
           value: "http://datastorage:8080"
         volumeMounts:
@@ -389,6 +415,143 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 		return false
 	}, 3*time.Minute, 5*time.Second).Should(BeTrue(), "HolmesGPT-API pod should become ready")
 	_, _ = fmt.Fprintf(writer, "   ✅ HolmesGPT-API ready\n")
+
+	return nil
+}
+
+// deployMockLLMInNamespace deploys the standalone Mock LLM service to a namespace
+// This is the V2.0 Mock LLM service extracted from HAPI business code
+// Uses ClusterIP for internal access only (no NodePort needed for E2E)
+func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "   📦 Deploying Mock LLM service (image: %s)...\n", imageTag)
+
+	// Use the manifests from deploy/mock-llm/ with the provided image tag
+	deployment := fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-llm
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mock-llm
+  template:
+    metadata:
+      labels:
+        app: mock-llm
+        component: test-infrastructure
+    spec:
+      containers:
+      - name: mock-llm
+        image: %s
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: MOCK_LLM_HOST
+          value: "0.0.0.0"
+        - name: MOCK_LLM_PORT
+          value: "8080"
+        - name: MOCK_LLM_FORCE_TEXT
+          value: "false"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+          capabilities:
+            drop:
+            - ALL
+      securityContext:
+        fsGroup: 1001
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-llm
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: mock-llm
+`, namespace, imageTag, namespace)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(deployment)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to deploy Mock LLM: %w", err)
+	}
+
+	// Get Kubernetes client
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return err
+	}
+
+	// Wait for Mock LLM pod to be ready
+	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for Mock LLM pod to be ready...\n")
+	Eventually(func() bool {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "app=mock-llm",
+		})
+		if err != nil || len(pods.Items) == 0 {
+			return false
+		}
+		for _, pod := range pods.Items {
+			if pod.Status.Phase == corev1.PodRunning {
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}, 2*time.Minute, 5*time.Second).Should(BeTrue(), "Mock LLM pod should become ready")
+	_, _ = fmt.Fprintf(writer, "   ✅ Mock LLM ready\n")
 
 	return nil
 }

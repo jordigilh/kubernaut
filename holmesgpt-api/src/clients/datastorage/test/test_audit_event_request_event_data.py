@@ -36,7 +36,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
         model = AuditEventRequestEventData()
         if include_optional:
             return AuditEventRequestEventData(
-                event_type = 'workflow_validation_attempt',
+                event_type = 'webhook.remediationrequest.timeout_modified',
                 original_payload = { },
                 signal_labels = {
                     'key' : ''
@@ -46,7 +46,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     },
                 signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
-                namespace = 'payment',
+                namespace = 'production',
                 fingerprint = 'abc123',
                 severity = 'critical',
                 resource_kind = 'Deployment',
@@ -60,7 +60,7 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     component = 'gateway', 
                     retry_possible = True, 
                     stack_trace = ["/path/to/file.go:123 function.Name"], ),
-                rr_name = 'restart-payment-api-2025-12-17-abc123',
+                rr_name = 'rr-payment-restart-123',
                 outcome = 'allow',
                 duration_ms = 50,
                 failure_phase = 'SignalProcessing',
@@ -80,6 +80,11 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 reason = '',
                 sub_reason = '',
                 notification_name = '',
+                timeout_config = datastorage.models.timeout_config.TimeoutConfig(
+                    global = '30m', 
+                    processing = '10m', 
+                    analyzing = '5m', 
+                    executing = '15m', ),
                 phase = 'Investigating',
                 signal = 'high-memory-payment-api-abc123',
                 environment = 'production',
@@ -273,16 +278,28 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                     ],
                 validation_errors = '',
                 human_review_reason = '',
-                is_final_attempt = True
+                is_final_attempt = True,
+                modified_by = 'ops-user@example.com',
+                modified_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
+                old_timeout_config = datastorage.models.timeout_config.TimeoutConfig(
+                    global = '30m', 
+                    processing = '10m', 
+                    analyzing = '5m', 
+                    executing = '15m', ),
+                new_timeout_config = datastorage.models.timeout_config.TimeoutConfig(
+                    global = '30m', 
+                    processing = '10m', 
+                    analyzing = '5m', 
+                    executing = '15m', )
             )
         else:
             return AuditEventRequestEventData(
-                event_type = 'workflow_validation_attempt',
+                event_type = 'webhook.remediationrequest.timeout_modified',
                 signal_type = 'prometheus-alert',
                 alert_name = 'HighMemoryUsage',
-                namespace = 'payment',
+                namespace = 'production',
                 fingerprint = 'abc123',
-                rr_name = 'restart-payment-api-2025-12-17-abc123',
+                rr_name = 'rr-payment-restart-123',
                 outcome = 'allow',
                 duration_ms = 50,
                 workflow_id = '',
@@ -417,6 +434,8 @@ class TestAuditEventRequestEventData(unittest.TestCase):
                 attempt = 1,
                 max_attempts = 1,
                 is_valid = True,
+                modified_by = 'ops-user@example.com',
+                modified_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
         )
         """
 

@@ -909,6 +909,7 @@ type AuditEventEventData struct {
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
+	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 }
 
 // AuditEventEventDataType is oneOf type of AuditEventEventData.
@@ -924,6 +925,7 @@ const (
 	AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData           AuditEventEventDataType = "orchestrator.approval.rejected"
 	AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData          AuditEventEventDataType = "orchestrator.approval.requested"
 	AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData         AuditEventEventDataType = "orchestrator.lifecycle.completed"
+	AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData           AuditEventEventDataType = "orchestrator.lifecycle.created"
 	AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData            AuditEventEventDataType = "orchestrator.lifecycle.failed"
 	AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData           AuditEventEventDataType = "orchestrator.lifecycle.started"
 	AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData      AuditEventEventDataType = "orchestrator.lifecycle.transitioned"
@@ -961,6 +963,7 @@ const (
 	LLMResponsePayloadAuditEventEventData                                        AuditEventEventDataType = "llm_response"
 	LLMToolCallPayloadAuditEventEventData                                        AuditEventEventDataType = "llm_tool_call"
 	WorkflowValidationPayloadAuditEventEventData                                 AuditEventEventDataType = "workflow_validation_attempt"
+	RemediationRequestWebhookAuditPayloadAuditEventEventData                     AuditEventEventDataType = "webhook.remediationrequest.timeout_modified"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventEventData is GatewayAuditPayload.
@@ -976,7 +979,7 @@ func (s AuditEventEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
+	case AuditEventEventDataOrchestratorApprovalApprovedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRejectedAuditEventEventData, AuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleFailedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleStartedAuditEventEventData, AuditEventEventDataOrchestratorLifecycleTransitionedAuditEventEventData:
 		return true
 	default:
 		return false
@@ -1118,6 +1121,11 @@ func (s AuditEventEventData) IsWorkflowValidationPayload() bool {
 	return s.Type == WorkflowValidationPayloadAuditEventEventData
 }
 
+// IsRemediationRequestWebhookAuditPayload reports whether AuditEventEventData is RemediationRequestWebhookAuditPayload.
+func (s AuditEventEventData) IsRemediationRequestWebhookAuditPayload() bool {
+	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventEventData
+}
+
 // SetGatewayAuditPayload sets AuditEventEventData to GatewayAuditPayload.
 // panics if `t` is not associated with GatewayAuditPayload
 func (s *AuditEventEventData) SetGatewayAuditPayload(t AuditEventEventDataType, v GatewayAuditPayload) {
@@ -1207,6 +1215,13 @@ func NewAuditEventEventDataOrchestratorApprovalRequestedAuditEventEventData(v Re
 func NewAuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
 	var s AuditEventEventData
 	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorLifecycleCompletedAuditEventEventData, v)
+	return s
+}
+
+// NewAuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData returns new AuditEventEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData(v RemediationOrchestratorAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData, v)
 	return s
 }
 
@@ -1807,6 +1822,27 @@ func NewWorkflowValidationPayloadAuditEventEventData(v WorkflowValidationPayload
 	return s
 }
 
+// SetRemediationRequestWebhookAuditPayload sets AuditEventEventData to RemediationRequestWebhookAuditPayload.
+func (s *AuditEventEventData) SetRemediationRequestWebhookAuditPayload(v RemediationRequestWebhookAuditPayload) {
+	s.Type = RemediationRequestWebhookAuditPayloadAuditEventEventData
+	s.RemediationRequestWebhookAuditPayload = v
+}
+
+// GetRemediationRequestWebhookAuditPayload returns RemediationRequestWebhookAuditPayload and true boolean if AuditEventEventData is RemediationRequestWebhookAuditPayload.
+func (s AuditEventEventData) GetRemediationRequestWebhookAuditPayload() (v RemediationRequestWebhookAuditPayload, ok bool) {
+	if !s.IsRemediationRequestWebhookAuditPayload() {
+		return v, false
+	}
+	return s.RemediationRequestWebhookAuditPayload, true
+}
+
+// NewRemediationRequestWebhookAuditPayloadAuditEventEventData returns new AuditEventEventData from RemediationRequestWebhookAuditPayload.
+func NewRemediationRequestWebhookAuditPayloadAuditEventEventData(v RemediationRequestWebhookAuditPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetRemediationRequestWebhookAuditPayload(v)
+	return s
+}
+
 // Result of the event.
 type AuditEventEventOutcome string
 
@@ -2194,6 +2230,7 @@ type AuditEventRequestEventData struct {
 	LLMResponsePayload                     LLMResponsePayload
 	LLMToolCallPayload                     LLMToolCallPayload
 	WorkflowValidationPayload              WorkflowValidationPayload
+	RemediationRequestWebhookAuditPayload  RemediationRequestWebhookAuditPayload
 }
 
 // AuditEventRequestEventDataType is oneOf type of AuditEventRequestEventData.
@@ -2209,6 +2246,7 @@ const (
 	AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.approval.rejected"
 	AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData          AuditEventRequestEventDataType = "orchestrator.approval.requested"
 	AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData         AuditEventRequestEventDataType = "orchestrator.lifecycle.completed"
+	AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.lifecycle.created"
 	AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData            AuditEventRequestEventDataType = "orchestrator.lifecycle.failed"
 	AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData           AuditEventRequestEventDataType = "orchestrator.lifecycle.started"
 	AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData      AuditEventRequestEventDataType = "orchestrator.lifecycle.transitioned"
@@ -2246,6 +2284,7 @@ const (
 	LLMResponsePayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_response"
 	LLMToolCallPayloadAuditEventRequestEventData                                               AuditEventRequestEventDataType = "llm_tool_call"
 	WorkflowValidationPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "workflow_validation_attempt"
+	RemediationRequestWebhookAuditPayloadAuditEventRequestEventData                            AuditEventRequestEventDataType = "webhook.remediationrequest.timeout_modified"
 )
 
 // IsGatewayAuditPayload reports whether AuditEventRequestEventData is GatewayAuditPayload.
@@ -2261,7 +2300,7 @@ func (s AuditEventRequestEventData) IsGatewayAuditPayload() bool {
 // IsRemediationOrchestratorAuditPayload reports whether AuditEventRequestEventData is RemediationOrchestratorAuditPayload.
 func (s AuditEventRequestEventData) IsRemediationOrchestratorAuditPayload() bool {
 	switch s.Type {
-	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
+	case AuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleFailedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleStartedAuditEventRequestEventData, AuditEventRequestEventDataOrchestratorLifecycleTransitionedAuditEventRequestEventData:
 		return true
 	default:
 		return false
@@ -2403,6 +2442,11 @@ func (s AuditEventRequestEventData) IsWorkflowValidationPayload() bool {
 	return s.Type == WorkflowValidationPayloadAuditEventRequestEventData
 }
 
+// IsRemediationRequestWebhookAuditPayload reports whether AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
+func (s AuditEventRequestEventData) IsRemediationRequestWebhookAuditPayload() bool {
+	return s.Type == RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
+}
+
 // SetGatewayAuditPayload sets AuditEventRequestEventData to GatewayAuditPayload.
 // panics if `t` is not associated with GatewayAuditPayload
 func (s *AuditEventRequestEventData) SetGatewayAuditPayload(t AuditEventRequestEventDataType, v GatewayAuditPayload) {
@@ -2492,6 +2536,13 @@ func NewAuditEventRequestEventDataOrchestratorApprovalRequestedAuditEventRequest
 func NewAuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorLifecycleCompletedAuditEventRequestEventData, v)
+	return s
+}
+
+// NewAuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationOrchestratorAuditPayload.
+func NewAuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData(v RemediationOrchestratorAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationOrchestratorAuditPayload(AuditEventRequestEventDataOrchestratorLifecycleCreatedAuditEventRequestEventData, v)
 	return s
 }
 
@@ -3089,6 +3140,27 @@ func (s AuditEventRequestEventData) GetWorkflowValidationPayload() (v WorkflowVa
 func NewWorkflowValidationPayloadAuditEventRequestEventData(v WorkflowValidationPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetWorkflowValidationPayload(v)
+	return s
+}
+
+// SetRemediationRequestWebhookAuditPayload sets AuditEventRequestEventData to RemediationRequestWebhookAuditPayload.
+func (s *AuditEventRequestEventData) SetRemediationRequestWebhookAuditPayload(v RemediationRequestWebhookAuditPayload) {
+	s.Type = RemediationRequestWebhookAuditPayloadAuditEventRequestEventData
+	s.RemediationRequestWebhookAuditPayload = v
+}
+
+// GetRemediationRequestWebhookAuditPayload returns RemediationRequestWebhookAuditPayload and true boolean if AuditEventRequestEventData is RemediationRequestWebhookAuditPayload.
+func (s AuditEventRequestEventData) GetRemediationRequestWebhookAuditPayload() (v RemediationRequestWebhookAuditPayload, ok bool) {
+	if !s.IsRemediationRequestWebhookAuditPayload() {
+		return v, false
+	}
+	return s.RemediationRequestWebhookAuditPayload, true
+}
+
+// NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from RemediationRequestWebhookAuditPayload.
+func NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(v RemediationRequestWebhookAuditPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetRemediationRequestWebhookAuditPayload(v)
 	return s
 }
 
@@ -10086,6 +10158,52 @@ func (o OptString) Or(d string) string {
 	return d
 }
 
+// NewOptTimeoutConfig returns new OptTimeoutConfig with value set to v.
+func NewOptTimeoutConfig(v TimeoutConfig) OptTimeoutConfig {
+	return OptTimeoutConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptTimeoutConfig is optional TimeoutConfig.
+type OptTimeoutConfig struct {
+	Value TimeoutConfig
+	Set   bool
+}
+
+// IsSet returns true if OptTimeoutConfig was set.
+func (o OptTimeoutConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptTimeoutConfig) Reset() {
+	var v TimeoutConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptTimeoutConfig) SetTo(v TimeoutConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptTimeoutConfig) Get() (v TimeoutConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptTimeoutConfig) Or(d TimeoutConfig) TimeoutConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptURI returns new OptURI with value set to v.
 func NewOptURI(v url.URL) OptURI {
 	return OptURI{
@@ -11044,8 +11162,9 @@ func (s *RemediationApprovalAuditPayloadEventType) UnmarshalText(data []byte) er
 	}
 }
 
-// Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed,
-// lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected).
+// Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created,
+// lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.
+// approved, approval.rejected).
 // Ref: #/components/schemas/RemediationOrchestratorAuditPayload
 type RemediationOrchestratorAuditPayload struct {
 	// Event type for discriminator (matches parent event_type).
@@ -11093,6 +11212,8 @@ type RemediationOrchestratorAuditPayload struct {
 	SubReason OptString `json:"sub_reason"`
 	// Associated notification name.
 	NotificationName OptString `json:"notification_name"`
+	// Timeout configuration for RR reconstruction (Gap.
+	TimeoutConfig OptTimeoutConfig `json:"timeout_config"`
 }
 
 // GetEventType returns the value of EventType.
@@ -11210,6 +11331,11 @@ func (s *RemediationOrchestratorAuditPayload) GetNotificationName() OptString {
 	return s.NotificationName
 }
 
+// GetTimeoutConfig returns the value of TimeoutConfig.
+func (s *RemediationOrchestratorAuditPayload) GetTimeoutConfig() OptTimeoutConfig {
+	return s.TimeoutConfig
+}
+
 // SetEventType sets the value of EventType.
 func (s *RemediationOrchestratorAuditPayload) SetEventType(val RemediationOrchestratorAuditPayloadEventType) {
 	s.EventType = val
@@ -11325,6 +11451,11 @@ func (s *RemediationOrchestratorAuditPayload) SetNotificationName(val OptString)
 	s.NotificationName = val
 }
 
+// SetTimeoutConfig sets the value of TimeoutConfig.
+func (s *RemediationOrchestratorAuditPayload) SetTimeoutConfig(val OptTimeoutConfig) {
+	s.TimeoutConfig = val
+}
+
 // Approval decision.
 type RemediationOrchestratorAuditPayloadDecision string
 
@@ -11379,6 +11510,7 @@ type RemediationOrchestratorAuditPayloadEventType string
 
 const (
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted      RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.started"
+	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated      RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.created"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted    RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.completed"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed       RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.failed"
 	RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned RemediationOrchestratorAuditPayloadEventType = "orchestrator.lifecycle.transitioned"
@@ -11391,6 +11523,7 @@ const (
 func (RemediationOrchestratorAuditPayloadEventType) AllValues() []RemediationOrchestratorAuditPayloadEventType {
 	return []RemediationOrchestratorAuditPayloadEventType{
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted,
+		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleFailed,
 		RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned,
@@ -11404,6 +11537,8 @@ func (RemediationOrchestratorAuditPayloadEventType) AllValues() []RemediationOrc
 func (s RemediationOrchestratorAuditPayloadEventType) MarshalText() ([]byte, error) {
 	switch s {
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted:
+		return []byte(s), nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated:
 		return []byte(s), nil
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted:
 		return []byte(s), nil
@@ -11427,6 +11562,9 @@ func (s *RemediationOrchestratorAuditPayloadEventType) UnmarshalText(data []byte
 	switch RemediationOrchestratorAuditPayloadEventType(data) {
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleStarted
+		return nil
+	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated:
+		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated
 		return nil
 	case RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted:
 		*s = RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted
@@ -11613,6 +11751,130 @@ func (s *RemediationOrchestratorAuditPayloadOutcome) UnmarshalText(data []byte) 
 		return nil
 	case RemediationOrchestratorAuditPayloadOutcomePending:
 		*s = RemediationOrchestratorAuditPayloadOutcomePending
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Type-safe audit event payload for RemediationRequest webhooks (timeout_modified).
+// Ref: #/components/schemas/RemediationRequestWebhookAuditPayload
+type RemediationRequestWebhookAuditPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType RemediationRequestWebhookAuditPayloadEventType `json:"event_type"`
+	// Name of the RemediationRequest.
+	RrName string `json:"rr_name"`
+	// Kubernetes namespace.
+	Namespace string `json:"namespace"`
+	// User who modified the timeout configuration.
+	ModifiedBy string `json:"modified_by"`
+	// When the modification occurred.
+	ModifiedAt time.Time `json:"modified_at"`
+	// Previous timeout configuration.
+	OldTimeoutConfig OptTimeoutConfig `json:"old_timeout_config"`
+	// New timeout configuration after operator modification.
+	NewTimeoutConfig OptTimeoutConfig `json:"new_timeout_config"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *RemediationRequestWebhookAuditPayload) GetEventType() RemediationRequestWebhookAuditPayloadEventType {
+	return s.EventType
+}
+
+// GetRrName returns the value of RrName.
+func (s *RemediationRequestWebhookAuditPayload) GetRrName() string {
+	return s.RrName
+}
+
+// GetNamespace returns the value of Namespace.
+func (s *RemediationRequestWebhookAuditPayload) GetNamespace() string {
+	return s.Namespace
+}
+
+// GetModifiedBy returns the value of ModifiedBy.
+func (s *RemediationRequestWebhookAuditPayload) GetModifiedBy() string {
+	return s.ModifiedBy
+}
+
+// GetModifiedAt returns the value of ModifiedAt.
+func (s *RemediationRequestWebhookAuditPayload) GetModifiedAt() time.Time {
+	return s.ModifiedAt
+}
+
+// GetOldTimeoutConfig returns the value of OldTimeoutConfig.
+func (s *RemediationRequestWebhookAuditPayload) GetOldTimeoutConfig() OptTimeoutConfig {
+	return s.OldTimeoutConfig
+}
+
+// GetNewTimeoutConfig returns the value of NewTimeoutConfig.
+func (s *RemediationRequestWebhookAuditPayload) GetNewTimeoutConfig() OptTimeoutConfig {
+	return s.NewTimeoutConfig
+}
+
+// SetEventType sets the value of EventType.
+func (s *RemediationRequestWebhookAuditPayload) SetEventType(val RemediationRequestWebhookAuditPayloadEventType) {
+	s.EventType = val
+}
+
+// SetRrName sets the value of RrName.
+func (s *RemediationRequestWebhookAuditPayload) SetRrName(val string) {
+	s.RrName = val
+}
+
+// SetNamespace sets the value of Namespace.
+func (s *RemediationRequestWebhookAuditPayload) SetNamespace(val string) {
+	s.Namespace = val
+}
+
+// SetModifiedBy sets the value of ModifiedBy.
+func (s *RemediationRequestWebhookAuditPayload) SetModifiedBy(val string) {
+	s.ModifiedBy = val
+}
+
+// SetModifiedAt sets the value of ModifiedAt.
+func (s *RemediationRequestWebhookAuditPayload) SetModifiedAt(val time.Time) {
+	s.ModifiedAt = val
+}
+
+// SetOldTimeoutConfig sets the value of OldTimeoutConfig.
+func (s *RemediationRequestWebhookAuditPayload) SetOldTimeoutConfig(val OptTimeoutConfig) {
+	s.OldTimeoutConfig = val
+}
+
+// SetNewTimeoutConfig sets the value of NewTimeoutConfig.
+func (s *RemediationRequestWebhookAuditPayload) SetNewTimeoutConfig(val OptTimeoutConfig) {
+	s.NewTimeoutConfig = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type RemediationRequestWebhookAuditPayloadEventType string
+
+const (
+	RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified RemediationRequestWebhookAuditPayloadEventType = "webhook.remediationrequest.timeout_modified"
+)
+
+// AllValues returns all RemediationRequestWebhookAuditPayloadEventType values.
+func (RemediationRequestWebhookAuditPayloadEventType) AllValues() []RemediationRequestWebhookAuditPayloadEventType {
+	return []RemediationRequestWebhookAuditPayloadEventType{
+		RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s RemediationRequestWebhookAuditPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *RemediationRequestWebhookAuditPayloadEventType) UnmarshalText(data []byte) error {
+	switch RemediationRequestWebhookAuditPayloadEventType(data) {
+	case RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified:
+		*s = RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -12953,6 +13215,59 @@ func (s *SignalProcessingAuditPayloadSeverity) UnmarshalText(data []byte) error 
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Timeout configuration for RemediationRequest (BR-ORCH-027/028, Gap.
+// Ref: #/components/schemas/TimeoutConfig
+type TimeoutConfig struct {
+	// Global timeout (Go duration string, e.g., "30m", "1h").
+	Global OptString `json:"global"`
+	// Processing phase timeout (Go duration string).
+	Processing OptString `json:"processing"`
+	// Analyzing phase timeout (Go duration string).
+	Analyzing OptString `json:"analyzing"`
+	// Executing phase timeout (Go duration string).
+	Executing OptString `json:"executing"`
+}
+
+// GetGlobal returns the value of Global.
+func (s *TimeoutConfig) GetGlobal() OptString {
+	return s.Global
+}
+
+// GetProcessing returns the value of Processing.
+func (s *TimeoutConfig) GetProcessing() OptString {
+	return s.Processing
+}
+
+// GetAnalyzing returns the value of Analyzing.
+func (s *TimeoutConfig) GetAnalyzing() OptString {
+	return s.Analyzing
+}
+
+// GetExecuting returns the value of Executing.
+func (s *TimeoutConfig) GetExecuting() OptString {
+	return s.Executing
+}
+
+// SetGlobal sets the value of Global.
+func (s *TimeoutConfig) SetGlobal(val OptString) {
+	s.Global = val
+}
+
+// SetProcessing sets the value of Processing.
+func (s *TimeoutConfig) SetProcessing(val OptString) {
+	s.Processing = val
+}
+
+// SetAnalyzing sets the value of Analyzing.
+func (s *TimeoutConfig) SetAnalyzing(val OptString) {
+	s.Analyzing = val
+}
+
+// SetExecuting sets the value of Executing.
+func (s *TimeoutConfig) SetExecuting(val OptString) {
+	s.Executing = val
 }
 
 type UpdateWorkflowBadRequest RFC7807Problem

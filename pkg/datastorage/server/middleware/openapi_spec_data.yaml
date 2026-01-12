@@ -1406,6 +1406,7 @@ components:
               'gateway.crd.created': '#/components/schemas/GatewayAuditPayload'
               'gateway.crd.failed': '#/components/schemas/GatewayAuditPayload'
               'orchestrator.lifecycle.started': '#/components/schemas/RemediationOrchestratorAuditPayload'
+              'orchestrator.lifecycle.created': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.completed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.failed': '#/components/schemas/RemediationOrchestratorAuditPayload'
               'orchestrator.lifecycle.transitioned': '#/components/schemas/RemediationOrchestratorAuditPayload'
@@ -2115,6 +2116,27 @@ components:
           description: Top N stack frames for debugging (optional, 5-10 frames max)
           example: ["/path/to/file.go:123 function.Name"]
 
+    TimeoutConfig:
+      type: object
+      description: Timeout configuration for RemediationRequest (BR-ORCH-027/028, Gap #8)
+      properties:
+        global:
+          type: string
+          description: Global timeout (Go duration string, e.g., "30m", "1h")
+          example: "30m"
+        processing:
+          type: string
+          description: Processing phase timeout (Go duration string)
+          example: "10m"
+        analyzing:
+          type: string
+          description: Analyzing phase timeout (Go duration string)
+          example: "5m"
+        executing:
+          type: string
+          description: Executing phase timeout (Go duration string)
+          example: "15m"
+
     # ========================================
     # Gateway Audit Payload
     # From: pkg/gateway/audit_types.go
@@ -2203,11 +2225,11 @@ components:
     RemediationOrchestratorAuditPayload:
       type: object
       required: [rr_name, namespace, event_type]
-      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
+      description: Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created, lifecycle.completed, lifecycle.failed, lifecycle.transitioned, approval.requested, approval.approved, approval.rejected)
       properties:
         event_type:
           type: string
-          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
+          enum: ['orchestrator.lifecycle.started', 'orchestrator.lifecycle.created', 'orchestrator.lifecycle.completed', 'orchestrator.lifecycle.failed', 'orchestrator.lifecycle.transitioned', 'orchestrator.approval.requested', 'orchestrator.approval.approved', 'orchestrator.approval.rejected']
           description: Event type for discriminator (matches parent event_type)
         # Core Orchestration Fields
         rr_name:
@@ -2290,6 +2312,11 @@ components:
         notification_name:
           type: string
           description: Associated notification name
+        
+        # Gap #8: TimeoutConfig (BR-AUDIT-005, orchestrator.lifecycle.created)
+        timeout_config:
+          $ref: '#/components/schemas/TimeoutConfig'
+          description: Timeout configuration for RR reconstruction (Gap #8)
 
     # ========================================
     # SignalProcessing Audit Payload
@@ -3117,9 +3144,13 @@ components:
 
     HolmesGPTResponsePayload:
       type: object
-      required: [event_id, incident_id, response_data]
+      required: [event_type, event_id, incident_id, response_data]
       description: HolmesGPT API response completion event payload (holmesgpt.response.complete) - Provider perspective (DD-AUDIT-005)
       properties:
+        event_type:
+          type: string
+          enum: ['holmesgpt.response.complete']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3221,9 +3252,13 @@ components:
 
     LLMRequestPayload:
       type: object
-      required: [event_id, incident_id, model, prompt_length, prompt_preview]
+      required: [event_type, event_id, incident_id, model, prompt_length, prompt_preview]
       description: LLM API request event payload (llm_request)
       properties:
+        event_type:
+          type: string
+          enum: ['llm_request']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3258,9 +3293,13 @@ components:
 
     LLMResponsePayload:
       type: object
-      required: [event_id, incident_id, has_analysis, analysis_length, analysis_preview]
+      required: [event_type, event_id, incident_id, has_analysis, analysis_length, analysis_preview]
       description: LLM API response event payload (llm_response)
       properties:
+        event_type:
+          type: string
+          enum: ['llm_response']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3289,9 +3328,13 @@ components:
 
     LLMToolCallPayload:
       type: object
-      required: [event_id, incident_id, tool_call_index, tool_name, tool_result]
+      required: [event_type, event_id, incident_id, tool_call_index, tool_name, tool_result]
       description: LLM tool call event payload (llm_tool_call)
       properties:
+        event_type:
+          type: string
+          enum: ['llm_tool_call']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
@@ -3318,9 +3361,13 @@ components:
 
     WorkflowValidationPayload:
       type: object
-      required: [event_id, incident_id, attempt, max_attempts, is_valid]
+      required: [event_type, event_id, incident_id, attempt, max_attempts, is_valid]
       description: Workflow validation attempt event payload (workflow_validation_attempt)
       properties:
+        event_type:
+          type: string
+          enum: ['workflow_validation_attempt']
+          description: Event type for discriminator (matches parent event_type)
         event_id:
           type: string
           description: Unique event identifier
