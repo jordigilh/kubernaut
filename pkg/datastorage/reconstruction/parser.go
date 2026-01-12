@@ -25,11 +25,16 @@ import (
 // ParsedAuditData contains structured data extracted from audit events for RR reconstruction.
 // BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
 type ParsedAuditData struct {
+	// Metadata
+	EventType     string
+	CorrelationID string
+
 	// Gateway fields (from gateway.signal.received)
 	SignalType        string
 	AlertName         string
 	SignalLabels      map[string]string
 	SignalAnnotations map[string]string
+	OriginalPayload   string
 
 	// Orchestrator fields (from orchestrator.lifecycle.created)
 	TimeoutConfig *TimeoutConfigData
