@@ -63,17 +63,13 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		// Generate unique namespace for this test
 		testNamespace = fmt.Sprintf("rate-limit-%s", uuid.New().String()[:8])
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		// Deploy Redis and Gateway in test namespace
-
-		// ✅ Create ONLY namespace (use shared Gateway)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
+		// Get K8s client and create namespace
 		k8sClient = getKubernetesClient()
-		// gatewayURL is set per-process in SynchronizedBeforeSuite (8081-8084)
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
+		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
+
+		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

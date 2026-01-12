@@ -287,53 +287,56 @@ func GenerateUniqueNamespace(prefix string) string {
 // CreateNamespaceAndWait creates a namespace and waits for it to be ready
 // This prevents race conditions where Gateway tries to create CRDs in non-existent namespaces
 func CreateNamespaceAndWait(ctx context.Context, k8sClient client.Client, namespaceName string) error {
-	// Create namespace with retries (for parallel test execution with high API load)
+	// Create namespace with aggressive retry logic for K8s API rate limiting
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: namespaceName},
 	}
 
-	// Retry namespace creation up to 3 times with exponential backoff
+	// Retry creation with exponential backoff (handles API rate limiting)
+	maxRetries := 5
 	var createErr error
-	for attempt := 1; attempt <= 3; attempt++ {
-		// Check context before attempting create (fail fast if cancelled)
-		if ctx.Err() != nil {
-			return fmt.Errorf("context cancelled before namespace creation attempt %d: %w", attempt, ctx.Err())
-		}
-
+	for attempt := 0; attempt < maxRetries; attempt++ {
 		createErr = k8sClient.Create(ctx, ns)
+
+		// Success or already exists - continue to waiting phase
 		if createErr == nil {
-			break // Success
+			break
 		}
 
-		// If namespace already exists, treat as success (idempotent operation)
-		if errors.IsAlreadyExists(createErr) {
-			break // Already exists - proceed to wait for active state
+		// Check if namespace already exists (race condition in parallel tests)
+		var existingNs corev1.Namespace
+		if getErr := k8sClient.Get(ctx, client.ObjectKey{Name: namespaceName}, &existingNs); getErr == nil {
+			// Namespace exists, treat as success
+			createErr = nil
+			break
 		}
 
-		// If context cancelled during Create(), don't retry
-		if ctx.Err() != nil {
-			return fmt.Errorf("context cancelled during namespace creation attempt %d: %w", attempt, ctx.Err())
-		}
-
-		// Exponential backoff: 1s, 2s, 4s
-		if attempt < 3 {
-			time.Sleep(time.Duration(1<<uint(attempt-1)) * time.Second)
+		// Retry with exponential backoff (1s, 2s, 4s, 8s, 16s)
+		if attempt < maxRetries-1 {
+			backoff := time.Duration(1<<uint(attempt)) * time.Second
+			GinkgoWriter.Printf("⚠️  Namespace creation attempt %d/%d failed (will retry in %v): %v\n",
+				attempt+1, maxRetries, backoff, createErr)
+			time.Sleep(backoff)
 		}
 	}
-	if createErr != nil && !errors.IsAlreadyExists(createErr) {
-		return fmt.Errorf("failed to create namespace after 3 attempts: %w", createErr)
+
+	if createErr != nil {
+		return fmt.Errorf("failed to create namespace after %d attempts: %w", maxRetries, createErr)
 	}
 
-	// Wait for namespace to be active (with timeout)
+	// Wait for namespace to be active (with longer timeout for overloaded clusters)
 	// This is critical for parallel tests to avoid namespace conflicts
-	// Increased timeout to 30s for parallel test execution with 120+ tests
 	Eventually(func() bool {
 		var createdNs corev1.Namespace
 		if err := k8sClient.Get(ctx, client.ObjectKey{Name: namespaceName}, &createdNs); err != nil {
+			GinkgoWriter.Printf("⚠️  Namespace %s not ready yet (Get failed): %v\n", namespaceName, err)
 			return false
 		}
+		if createdNs.Status.Phase != corev1.NamespaceActive {
+			GinkgoWriter.Printf("⚠️  Namespace %s phase: %v (waiting for Active)\n", namespaceName, createdNs.Status.Phase)
+		}
 		return createdNs.Status.Phase == corev1.NamespaceActive
-	}, "30s", "200ms").Should(BeTrue(), fmt.Sprintf("Namespace %s should become active", namespaceName))
+	}, "60s", "500ms").Should(BeTrue(), fmt.Sprintf("Namespace %s should become active", namespaceName))
 
 	return nil
 }

@@ -8,7 +8,48 @@ Per TESTING_GUIDELINES.md: Unit tests use mocks for all external services.
 import pytest
 import os
 import time
+import tempfile
 from unittest.mock import patch
+
+
+def pytest_configure(config):
+    """
+    Pytest hook that runs before test collection.
+    Create config file BEFORE any test modules are imported.
+    """
+    _config_content = """
+llm:
+  provider: "openai"
+  model: "gpt-4"
+  endpoint: "http://127.0.0.1:8080"
+
+data_storage:
+  url: "http://127.0.0.1:18098"
+
+logging:
+  level: "INFO"
+  format: "json"
+"""
+    
+    _temp_config = tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False)
+    _temp_config.write(_config_content)
+    _temp_config.close()
+    
+    # Set CONFIG_FILE and OPENAI_API_KEY env vars BEFORE any test modules import src.main
+    os.environ["CONFIG_FILE"] = _temp_config.name
+    os.environ["OPENAI_API_KEY"] = "test-api-key-for-unit-tests"
+    
+    # Store for cleanup
+    config._temp_config_file = _temp_config.name
+
+
+def pytest_unconfigure(config):
+    """Cleanup temporary config file after all tests."""
+    if hasattr(config, '_temp_config_file'):
+        try:
+            os.unlink(config._temp_config_file)
+        except:
+            pass
 
 
 def wait_for_condition(check_fn, timeout=1.0, interval=0.01, error_msg="Condition not met"):
@@ -69,11 +110,10 @@ def mock_llm_mode():
 def client():
     """Create FastAPI test client for unit tests"""
     from fastapi.testclient import TestClient
-
-    # Set mock mode before importing app
-    with patch.dict(os.environ, {"MOCK_LLM_MODE": "true"}):
-        from src.main import app
-        return TestClient(app)
+    
+    # Config file already set at module level
+    from src.main import app
+    return TestClient(app)
 
 
 

@@ -68,14 +68,12 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 		// Generate unique namespace
 		processID := GinkgoParallelProcess()
 		testNamespace = fmt.Sprintf("concurrent-%d-%s", processID, uuid.New().String()[:8])
-		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
-		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
+		// Get K8s client and create namespace
 		k8sClient = getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
+		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
+		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})

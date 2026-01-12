@@ -66,6 +66,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 	var (
 		ctx            context.Context
 		testClient     client.Client
+		httpClient     *http.Client
 		dataStorageURL string
 		testNamespace  string
 		dsClient       *ogenclient.Client
@@ -74,9 +75,12 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 	BeforeEach(func() {
 		ctx = context.Background()
 		testClient = getKubernetesClient()
+		httpClient = &http.Client{Timeout: 10 * time.Second}
 		testNamespace = fmt.Sprintf("test-error-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-		_ = testClient    // TODO (GW Team): Use testClient for K8s operations
-		_ = testNamespace // TODO (GW Team): Use testNamespace for isolation
+
+		// Create namespace in Kubernetes
+		Expect(CreateNamespaceAndWait(ctx, testClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
@@ -97,12 +101,6 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 		// Create OpenAPI client for Data Storage queries
 		dsClient, err = ogenclient.NewClient(dataStorageURL)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
-
-		// Setup isolated test namespace
-		testNamespace = fmt.Sprintf("test-error-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-
-		// Create Gateway server (business logic only, no HTTP server)
-		Expect(err).ToNot(HaveOccurred())
 	})
 
 	AfterEach(func() {
@@ -133,7 +131,6 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
-			httpClient := &http.Client{Timeout: 10 * time.Second}
 			resp, err := httpClient.Do(req)
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer func() { _ = resp.Body.Close() }()
@@ -170,8 +167,8 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 					}
 				}
 				return false
-			}, 20*time.Second, 1*time.Second).Should(BeTrue(),
-				"Should find at least 1 'gateway.crd.failed' audit event with error_details")
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+				"Should find at least 1 'gateway.crd.failed' audit event with error_details (increased timeout for DataStorage query)")
 
 			By("4. Validate error_details structure (Gap #7)")
 			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least 1 audit event")

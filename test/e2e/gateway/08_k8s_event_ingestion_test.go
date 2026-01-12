@@ -60,13 +60,17 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		processID := GinkgoParallelProcess()
 		testNamespace = fmt.Sprintf("k8s-event-%d-%s", processID, uuid.New().String()[:8])
 
+
+		// Get K8s client and create namespace
+		k8sClient = getKubernetesClient()
+		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(),
+			"Failed to create test namespace")
+
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 08: Kubernetes Event Ingestion - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		k8sClient = getKubernetesClient()
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})

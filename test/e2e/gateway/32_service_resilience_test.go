@@ -230,7 +230,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 					GinkgoWriter.Printf("📋 List query succeeded but found 0 items (waiting...)\n")
 				}
 				return len(rrList.Items)
-			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability")
+			}, 45*time.Second, 1*time.Second).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability (increased timeout for cache sync)")
 		})
 
 		It("should log DataStorage failures without blocking alert processing", FlakeAttempts(3), func() {
@@ -264,8 +264,15 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
-				return err == nil && len(rrList.Items) > 0
-			}, 10*time.Second, 1*time.Second).Should(BeTrue())
+				if err != nil {
+					GinkgoWriter.Printf("⚠️  List query failed: %v\n", err)
+					return false
+				}
+				if len(rrList.Items) == 0 {
+					GinkgoWriter.Printf("📋 Waiting for CRD (cache sync)...\n")
+				}
+				return len(rrList.Items) > 0
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "CRD should be created (increased timeout for cache sync)")
 
 			// Note: In production, this would validate logs contain DataStorage error
 			// but alert processing continued (non-blocking error logging)
@@ -303,7 +310,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
 				return err == nil && len(rrList.Items) > 0
-			}, 10*time.Second, 1*time.Second).Should(BeTrue())
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "CRD should be created after DataStorage recovery (increased timeout for cache sync)")
 
 			// Note: When DataStorage is available, audit events should succeed
 			// This validates the service doesn't permanently disable audit after failures

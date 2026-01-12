@@ -63,7 +63,8 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	k8sClient = getKubernetesClient()
-	Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
+	// Use suite ctx (no timeout) instead of testCtx for namespace creation to avoid context cancellation
+	Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
