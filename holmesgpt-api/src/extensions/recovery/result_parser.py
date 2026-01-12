@@ -98,9 +98,30 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
     incident_id = request_data.get("incident_id")
     recovery_attempt_number = request_data.get("recovery_attempt_number", 1)
 
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # DEBUG: Parser Input Inspection (Option A: Understand SDK format)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    logger.info({
+        "event": "parser_input_debug",
+        "incident_id": incident_id,
+        "analysis_text_length": len(analysis_text) if analysis_text else 0,
+        "analysis_text_preview": analysis_text[:300] if analysis_text else "",
+        "has_json_codeblock": "```json" in analysis_text if analysis_text else False,
+        "has_section_headers": "# selected_workflow" in analysis_text if analysis_text else False,
+        "has_root_cause_header": "# root_cause_analysis" in analysis_text if analysis_text else False,
+        "text_type": type(analysis_text).__name__,
+    })
+
     # Try to extract structured JSON from response
     # Pattern 1: JSON code block (standard format)
     json_match = re.search(r'```json\s*(.*?)\s*```', analysis_text, re.DOTALL)
+    
+    logger.info({
+        "event": "parser_pattern1_result",
+        "incident_id": incident_id,
+        "pattern": "json_codeblock",
+        "matched": json_match is not None,
+    })
     
     # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
     # Format: "# selected_workflow\n{'workflow_id': '...', ...}"
@@ -135,11 +156,42 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
                     return self._text if n == 0 else self._text
             
             json_match = FakeMatch(combined_dict)
+            
+            logger.info({
+                "event": "parser_pattern2_result",
+                "incident_id": incident_id,
+                "pattern": "section_headers",
+                "matched": True,
+                "parts_found": list(parts.keys()),
+                "combined_dict_preview": combined_dict[:200] if combined_dict else "",
+            })
+    
+    if not json_match:
+        logger.info({
+            "event": "parser_pattern2_result",
+            "incident_id": incident_id,
+            "pattern": "section_headers",
+            "matched": False,
+            "reason": "no_parts_extracted",
+        })
     
     # Pattern 3: Direct JSON object (fallback)
     if not json_match:
         json_match = re.search(r'\{.*"recovery_analysis".*\}', analysis_text, re.DOTALL)
+        
+        logger.info({
+            "event": "parser_pattern3_result",
+            "incident_id": incident_id,
+            "pattern": "direct_json",
+            "matched": json_match is not None,
+        })
+        
         if not json_match:
+            logger.warning({
+                "event": "parser_no_match",
+                "incident_id": incident_id,
+                "message": "No pattern matched - returning None",
+            })
             return None
 
     try:
