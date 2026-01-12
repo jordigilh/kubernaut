@@ -26,6 +26,7 @@ including extraction of strategies, warnings, and recovery-specific fields.
 
 import re
 import json
+import ast
 import logging
 from typing import Dict, Any, List, Optional
 from holmes.core.models import InvestigationResult
@@ -107,7 +108,19 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
 
     try:
         json_text = json_match.group(1) if hasattr(json_match, 'group') and json_match.lastindex else json_match.group(0)
-        structured = json.loads(json_text)
+        
+        # Try parsing as JSON first
+        try:
+            structured = json.loads(json_text)
+        except json.JSONDecodeError:
+            # Fallback: Try parsing as Python dict literal (handles single quotes from SDK)
+            # BR-HAPI-001: Handle HolmesGPT SDK Python repr() format
+            try:
+                structured = ast.literal_eval(json_text)
+                logger.info("Successfully parsed recovery response using ast.literal_eval() fallback")
+            except (ValueError, SyntaxError) as ast_err:
+                logger.warning(f"Failed to parse as both JSON and Python literal: {ast_err}")
+                raise
 
         # Extract recovery-specific fields if present
         recovery_analysis = structured.get("recovery_analysis", {})
@@ -179,7 +192,15 @@ def _extract_strategies_from_analysis(analysis_text: str) -> List[RecoveryStrate
             json_text = json_match.group(0) if json_match else None
 
         if json_text:
-            parsed = json.loads(json_text)
+            # Try parsing as JSON first, fallback to Python dict literal
+            try:
+                parsed = json.loads(json_text)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(json_text)
+                    logger.debug("Parsed strategies using ast.literal_eval() fallback")
+                except (ValueError, SyntaxError):
+                    parsed = {}
 
             # Extract strategies from structured output
             for strategy_data in parsed.get("strategies", []):
@@ -249,7 +270,16 @@ def _extract_warnings_from_analysis(analysis_text: str) -> List[str]:
             json_text = json_match.group(0) if json_match else None
 
         if json_text:
-            parsed = json.loads(json_text)
+            # Try parsing as JSON first, fallback to Python dict literal
+            try:
+                parsed = json.loads(json_text)
+            except json.JSONDecodeError:
+                try:
+                    parsed = ast.literal_eval(json_text)
+                    logger.debug("Parsed warnings using ast.literal_eval() fallback")
+                except (ValueError, SyntaxError):
+                    parsed = {}
+            
             extracted_warnings = parsed.get("warnings", [])
             if extracted_warnings:
                 logger.info(f"Successfully parsed {len(extracted_warnings)} warnings from structured JSON")
