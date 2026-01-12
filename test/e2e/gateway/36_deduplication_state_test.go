@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,8 +54,6 @@ import (
 var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests", func() {
 	var (
 		ctx               context.Context
-		server            *httptest.Server
-		gatewayURL        string
 		testClient        client.Client
 		prometheusPayload []byte
 	)
@@ -71,17 +68,11 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
 
-		// Per-spec Gateway instance (thread-safe: each parallel spec gets own HTTP server)
-		server = httptest.NewServer(nil)
-		gatewayURL = server.URL
-
 		// Note: prometheusPayload created in Context's BeforeEach with unique UUID
+		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
 	})
 
 	AfterEach(func() {
-		if server != nil {
-			server.Close()
-		}
 
 		// DD-GATEWAY-009: Clean up CRDs after each test to prevent interference
 		// This ensures each test starts with a clean K8s state
@@ -147,13 +138,17 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			Expect(response1.Status).To(Equal("created"))
 			crdName := response1.RemediationRequestName
 
 			By("2. Verify CRD was created")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-			Expect(crd).ToNot(BeNil(), "CRD should exist")
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			// DD-GATEWAY-011: Check status.deduplication (not spec)
 			Expect(crd.Status.Deduplication).ToNot(BeNil(), "status.deduplication should be initialized")
 			Expect(crd.Status.Deduplication.OccurrenceCount).To(Equal(int32(1)), "Initial occurrence count should be 1")
@@ -250,11 +245,16 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Processing")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			crd.Status.OverallPhase = "Processing"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -329,11 +329,16 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Completed")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			crd.Status.OverallPhase = "Completed"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -400,11 +405,16 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Failed")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			crd.Status.OverallPhase = "Failed"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -461,11 +471,16 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to Cancelled")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseCancelled
 			err = testClient.Status().Update(ctx, crd)
 
@@ -533,13 +548,18 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			crdName := response1.RemediationRequestName
 
 			By("2. Set CRD state to non-terminal phase (simulates unknown/in-progress state)")
 			// Note: Using "Blocked" as a valid non-terminal phase to test conservative fail-safe
 			// DD-GATEWAY-009: Whitelist approach means any non-terminal phase (including Blocked) is treated as in-progress
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			crd.Status.OverallPhase = remediationv1alpha1.PhaseBlocked // Valid non-terminal phase
 			err = testClient.Status().Update(ctx, crd)
 
@@ -614,7 +634,7 @@ _ = err
 
 			var response gateway.ProcessingResponse
 			err := json.Unmarshal(resp.Body, &response)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp.Body))
 			Expect(response.Status).To(Equal("created"))
 			Expect(response.RemediationRequestName).ToNot(BeEmpty())
 
@@ -649,7 +669,6 @@ func getCRDByName(ctx context.Context, testClient client.Client, namespace, name
 	// This is more reliable in integration tests with multiple parallel clients
 	crdList := &remediationv1alpha1.RemediationRequestList{}
 	err := testClient.List(ctx, crdList, client.InNamespace(namespace))
-_ = err
 
 	if err != nil {
 		GinkgoWriter.Printf("Error listing CRDs in namespace %s: %v\n", namespace, err)

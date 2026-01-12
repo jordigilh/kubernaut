@@ -19,8 +19,8 @@ import (
 
 // SignalProcessing Integration test ports (restored from git history)
 const (
-	// SignalProcessingIntegrationDataStoragePort and SignalProcessingIntegrationMetricsPort
-	// are defined in signalprocessing_integration.go to avoid duplicate declarations
+// SignalProcessingIntegrationDataStoragePort and SignalProcessingIntegrationMetricsPort
+// are defined in signalprocessing_integration.go to avoid duplicate declarations
 )
 
 // SetupSignalProcessingInfrastructureHybridWithCoverage implements hybrid parallel strategy

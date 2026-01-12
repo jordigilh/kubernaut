@@ -69,11 +69,12 @@ import (
 // Format: localhost/{infrastructure}:{consumer}-{8-char-hex-uuid}
 //
 // Examples:
-//   GenerateInfraImageName("datastorage", "aianalysis")
-//   → "localhost/datastorage:aianalysis-a3b5c7d9"
 //
-//   GenerateInfraImageName("datastorage", "workflowexecution")
-//   → "localhost/datastorage:workflowexecution-1884d074"
+//	GenerateInfraImageName("datastorage", "aianalysis")
+//	→ "localhost/datastorage:aianalysis-a3b5c7d9"
+//
+//	GenerateInfraImageName("datastorage", "workflowexecution")
+//	→ "localhost/datastorage:workflowexecution-1884d074"
 //
 // Benefits:
 // - Prevents image tag collisions during parallel test runs
@@ -81,8 +82,9 @@ import (
 // - Consistent with DD-INTEGRATION-001 v2.0 standard
 //
 // Parameters:
-//   infrastructure: The infrastructure service name (e.g., "datastorage", "redis")
-//   consumer: The consuming service name (e.g., "aianalysis", "gateway", "workflowexecution")
+//
+//	infrastructure: The infrastructure service name (e.g., "datastorage", "redis")
+//	consumer: The consuming service name (e.g., "aianalysis", "gateway", "workflowexecution")
 //
 // Returns: Composite image tag in the format required by DD-INTEGRATION-001
 func GenerateInfraImageName(infrastructure, consumer string) string {
@@ -121,16 +123,17 @@ type PostgreSQLConfig struct {
 // - Return immediately (caller handles health check)
 //
 // Usage:
-//   cfg := PostgreSQLConfig{
-//       ContainerName: "myservice_postgres_1",
-//       Port: 15437,
-//       DBName: "action_history",
-//       DBUser: "slm_user",
-//       DBPassword: "test_password",
-//   }
-//   if err := StartPostgreSQL(cfg, writer); err != nil {
-//       return err
-//   }
+//
+//	cfg := PostgreSQLConfig{
+//	    ContainerName: "myservice_postgres_1",
+//	    Port: 15437,
+//	    DBName: "action_history",
+//	    DBUser: "slm_user",
+//	    DBPassword: "test_password",
+//	}
+//	if err := StartPostgreSQL(cfg, writer); err != nil {
+//	    return err
+//	}
 func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 	// Build podman run command
 	args := []string{"run", "-d",
@@ -176,9 +179,10 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 // - Root cause fix for "FATAL: the database system is starting up"
 //
 // Usage:
-//   if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
-//       return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
-//   }
+//
+//	if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
+//	    return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
+//	}
 func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writer) error {
 	// ============================================================================
 	// PHASE 1: Wait for PostgreSQL to accept connections (pg_isready)
@@ -249,13 +253,14 @@ type RedisConfig struct {
 // - Return immediately (caller handles health check)
 //
 // Usage:
-//   cfg := RedisConfig{
-//       ContainerName: "myservice_redis_1",
-//       Port: 16383,
-//   }
-//   if err := StartRedis(cfg, writer); err != nil {
-//       return err
-//   }
+//
+//	cfg := RedisConfig{
+//	    ContainerName: "myservice_redis_1",
+//	    Port: 16383,
+//	}
+//	if err := StartRedis(cfg, writer); err != nil {
+//	    return err
+//	}
 func StartRedis(cfg RedisConfig, writer io.Writer) error {
 	args := []string{"run", "-d",
 		"--name", cfg.ContainerName,
@@ -284,9 +289,10 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 // - Logs progress for debugging
 //
 // Usage:
-//   if err := WaitForRedisReady("myservice_redis_1", writer); err != nil {
-//       return fmt.Errorf("Redis failed to become ready: %w", err)
-//   }
+//
+//	if err := WaitForRedisReady("myservice_redis_1", writer); err != nil {
+//	    return fmt.Errorf("Redis failed to become ready: %w", err)
+//	}
 func WaitForRedisReady(containerName string, writer io.Writer) error {
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
@@ -313,9 +319,10 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 // - Returns detailed error with attempt count
 //
 // Usage:
-//   if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
-//       return fmt.Errorf("DataStorage failed to become healthy: %w", err)
-//   }
+//
+//	if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
+//	    return fmt.Errorf("DataStorage failed to become healthy: %w", err)
+//	}
 func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -354,11 +361,12 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 // - Ignore all errors (idempotent)
 //
 // Usage:
-//   CleanupContainers([]string{
-//       "myservice_postgres_1",
-//       "myservice_redis_1",
-//       "myservice_datastorage_1",
-//   }, writer)
+//
+//	CleanupContainers([]string{
+//	    "myservice_postgres_1",
+//	    "myservice_redis_1",
+//	    "myservice_datastorage_1",
+//	}, writer)
 func CleanupContainers(containerNames []string, writer io.Writer) {
 	for _, container := range containerNames {
 		// Stop container (immediate stop for faster cleanup)
@@ -414,18 +422,19 @@ type MigrationsConfig struct {
 // - Container is ephemeral (removed after completion)
 //
 // Usage:
-//   cfg := MigrationsConfig{
-//       ContainerName: "gateway_migrations",
-//       PostgresHost: "localhost",
-//       PostgresPort: 15437,
-//       DBName: "kubernaut",
-//       DBUser: "kubernaut",
-//       DBPassword: "kubernaut-test-password",
-//       MigrationsImage: "quay.io/jordigilh/datastorage-migrations:latest",
-//   }
-//   if err := RunMigrations(cfg, writer); err != nil {
-//       return fmt.Errorf("failed to run migrations: %w", err)
-//   }
+//
+//	cfg := MigrationsConfig{
+//	    ContainerName: "gateway_migrations",
+//	    PostgresHost: "localhost",
+//	    PostgresPort: 15437,
+//	    DBName: "kubernaut",
+//	    DBUser: "kubernaut",
+//	    DBPassword: "kubernaut-test-password",
+//	    MigrationsImage: "quay.io/jordigilh/datastorage-migrations:latest",
+//	}
+//	if err := RunMigrations(cfg, writer); err != nil {
+//	    return fmt.Errorf("failed to run migrations: %w", err)
+//	}
 func RunMigrations(cfg MigrationsConfig, writer io.Writer) error {
 	// Build DATABASE_URL
 	databaseURL := fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
@@ -459,20 +468,20 @@ func RunMigrations(cfg MigrationsConfig, writer io.Writer) error {
 // IntegrationDataStorageConfig holds configuration for starting a DataStorage container in integration tests
 // Note: This is separate from E2E DataStorageConfig (different use case and structure)
 type IntegrationDataStorageConfig struct {
-	ContainerName  string            // e.g., "aianalysis_datastorage_1"
-	Port           int               // e.g., 18091 (HTTP API port)
-	MetricsPort    int               // Optional: e.g., 18092 (Prometheus metrics)
-	Network        string            // Optional: custom network name
-	PostgresHost   string            // e.g., "localhost" or "aianalysis_postgres_1" (if using network)
-	PostgresPort   int               // e.g., 15434
-	DBName         string            // e.g., "action_history"
-	DBUser         string            // e.g., "slm_user"
-	DBPassword     string            // e.g., "test_password"
-	RedisHost      string            // e.g., "localhost" or "aianalysis_redis_1" (if using network)
-	RedisPort      int               // e.g., 16380
-	LogLevel       string            // Optional: "info", "debug", "error" (default: "info")
-	ImageTag       string            // REQUIRED: Composite tag per DD-INTEGRATION-001 v2.0 (use GenerateInfraImageName("datastorage", "yourservice"))
-	ExtraEnvVars   map[string]string // Optional: additional environment variables
+	ContainerName string            // e.g., "aianalysis_datastorage_1"
+	Port          int               // e.g., 18091 (HTTP API port)
+	MetricsPort   int               // Optional: e.g., 18092 (Prometheus metrics)
+	Network       string            // Optional: custom network name
+	PostgresHost  string            // e.g., "localhost" or "aianalysis_postgres_1" (if using network)
+	PostgresPort  int               // e.g., 15434
+	DBName        string            // e.g., "action_history"
+	DBUser        string            // e.g., "slm_user"
+	DBPassword    string            // e.g., "test_password"
+	RedisHost     string            // e.g., "localhost" or "aianalysis_redis_1" (if using network)
+	RedisPort     int               // e.g., 16380
+	LogLevel      string            // Optional: "info", "debug", "error" (default: "info")
+	ImageTag      string            // REQUIRED: Composite tag per DD-INTEGRATION-001 v2.0 (use GenerateInfraImageName("datastorage", "yourservice"))
+	ExtraEnvVars  map[string]string // Optional: additional environment variables
 }
 
 // StartDataStorage starts a DataStorage container for integration tests
@@ -484,26 +493,27 @@ type IntegrationDataStorageConfig struct {
 // - Return immediately (caller handles health check using WaitForHTTPHealth)
 //
 // Usage:
-//   cfg := IntegrationDataStorageConfig{
-//       ContainerName: "aianalysis_datastorage_1",
-//       Port: 18091,
-//       Network: "aianalysis_test-network",
-//       PostgresHost: "aianalysis_postgres_1",
-//       PostgresPort: 5432,
-//       DBName: "action_history",
-//       DBUser: "slm_user",
-//       DBPassword: "test_password",
-//       RedisHost: "aianalysis_redis_1",
-//       RedisPort: 6379,
-//   }
-//   if err := StartDataStorage(cfg, writer); err != nil {
-//       return err
-//   }
 //
-//   // Wait for health check
-//   if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
-//       return err
-//   }
+//	cfg := IntegrationDataStorageConfig{
+//	    ContainerName: "aianalysis_datastorage_1",
+//	    Port: 18091,
+//	    Network: "aianalysis_test-network",
+//	    PostgresHost: "aianalysis_postgres_1",
+//	    PostgresPort: 5432,
+//	    DBName: "action_history",
+//	    DBUser: "slm_user",
+//	    DBPassword: "test_password",
+//	    RedisHost: "aianalysis_redis_1",
+//	    RedisPort: 6379,
+//	}
+//	if err := StartDataStorage(cfg, writer); err != nil {
+//	    return err
+//	}
+//
+//	// Wait for health check
+//	if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
+//	    return err
+//	}
 func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error {
 	projectRoot, err := findWorkspaceRoot()
 	if err != nil {
@@ -757,7 +767,6 @@ func findProjectRoot() (string, error) {
 //   }
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Project Root Discovery
@@ -1021,4 +1030,3 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  ✅ Image loaded into Kind cluster\n")
 	return nil
 }
-

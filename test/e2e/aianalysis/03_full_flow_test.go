@@ -42,17 +42,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("full-flow-prod")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-prod-incident-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-remediation",
+			namespace := createTestNamespace("full-flow-prod")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-prod-incident-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-remediation",
+						Namespace: namespace,
+					},
 					RemediationID: "e2e-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -88,16 +88,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should complete full 4-phase reconciliation cycle", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should complete full 4-phase reconciliation cycle", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating AIAnalysis for production incident")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating AIAnalysis for production incident")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for 4-phase reconciliation to complete")
 			// NOTE: In E2E tests with mock LLM, reconciliation completes in <1 second
@@ -127,14 +127,14 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			Expect(analysis.Status.TargetInOwnerChain).NotTo(BeNil())
 		})
 
-	It("should require approval for production environment - BR-AI-013", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should require approval for production environment - BR-AI-013", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating production AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating production AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -153,17 +153,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("full-flow-staging")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-staging-incident-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-remediation-staging",
+			namespace := createTestNamespace("full-flow-staging")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-staging-incident-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-remediation-staging",
+						Namespace: namespace,
+					},
 					RemediationID: "e2e-rem-002",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -190,16 +190,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should auto-approve for staging environment", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should auto-approve for staging environment", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating staging AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating staging AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -216,17 +216,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("full-flow-recovery")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-recovery-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-remediation-recovery",
+			namespace := createTestNamespace("full-flow-recovery")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-recovery-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-remediation-recovery",
+						Namespace: namespace,
+					},
 					RemediationID: "e2e-rem-003",
 					// Recovery attempt fields
 					IsRecoveryAttempt:     true,
@@ -249,16 +249,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should require approval for multiple recovery attempts", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should require approval for multiple recovery attempts", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating recovery attempt AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating recovery attempt AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -276,17 +276,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		namespace := createTestNamespace("full-flow-data-quality")
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "e2e-data-quality-" + randomSuffix(),
-				Namespace: namespace,
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "e2e-remediation-dq",
+			namespace := createTestNamespace("full-flow-data-quality")
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "e2e-data-quality-" + randomSuffix(),
 					Namespace: namespace,
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-remediation-dq",
+						Namespace: namespace,
+					},
 					RemediationID: "e2e-rem-004",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -311,16 +311,16 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					},
 				},
 			}
-	})
+		})
 
-	It("should require approval for data quality issues in production", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should require approval for data quality issues in production", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating AIAnalysis with detection failures")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating AIAnalysis with detection failures")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {

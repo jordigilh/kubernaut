@@ -13,7 +13,7 @@ import (
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // ADR-032 §1: Audit writes are MANDATORY, not best-effort
@@ -164,41 +164,41 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("Waiting for reconciliation to complete")
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+			By("Waiting for reconciliation to complete")
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return string(analysis.Status.Phase)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-		remediationID := analysis.Spec.RemediationID
+			remediationID := analysis.Spec.RemediationID
 
-		By("Querying Data Storage for audit events via OpenAPI client (DD-API-001)")
-		// Per DD-API-001: MUST use OpenAPI generated client, NOT raw HTTP
-		// Per DD-TESTING-001: Wait for COMPLETE set of expected events, not just "not empty"
-		// Root cause of flakiness: Waiting for "not empty" then immediately checking exact counts
-		// can fail if audit buffer (1s flush interval) hasn't finished flushing all events yet.
-		// Solution: Eventually checks for the MINIMUM expected event count (3 phase transitions).
-		var events []dsgen.AuditEvent
-		Eventually(func() int {
-			var err error
-			events, err = queryAuditEvents(remediationID, nil) // Query all event types
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
-				return 0
-			}
-			// Count phase transition events specifically (most reliable indicator of completion)
+			By("Querying Data Storage for audit events via OpenAPI client (DD-API-001)")
+			// Per DD-API-001: MUST use OpenAPI generated client, NOT raw HTTP
+			// Per DD-TESTING-001: Wait for COMPLETE set of expected events, not just "not empty"
+			// Root cause of flakiness: Waiting for "not empty" then immediately checking exact counts
+			// can fail if audit buffer (1s flush interval) hasn't finished flushing all events yet.
+			// Solution: Eventually checks for the MINIMUM expected event count (3 phase transitions).
+			var events []dsgen.AuditEvent
+			Eventually(func() int {
+				var err error
+				events, err = queryAuditEvents(remediationID, nil) // Query all event types
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return 0
+				}
+				// Count phase transition events specifically (most reliable indicator of completion)
+				eventCounts := countEventsByType(events)
+				phaseTransitionCount := eventCounts["aianalysis.phase.transition"]
+				if phaseTransitionCount < 3 {
+					GinkgoWriter.Printf("⏳ Waiting for complete audit trail (got %d/3 phase transitions, %d total events)\n",
+						phaseTransitionCount, len(events))
+				}
+				return phaseTransitionCount
+			}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 3),
+				"Should have at least 3 phase transition events (Pending→Investigating→Analyzing→Completed)")
+
+			By("Verifying audit event types and counts are EXACTLY correct")
 			eventCounts := countEventsByType(events)
-			phaseTransitionCount := eventCounts["aianalysis.phase.transition"]
-			if phaseTransitionCount < 3 {
-				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (got %d/3 phase transitions, %d total events)\n",
-					phaseTransitionCount, len(events))
-			}
-			return phaseTransitionCount
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 3),
-			"Should have at least 3 phase transition events (Pending→Investigating→Analyzing→Completed)")
-
-		By("Verifying audit event types and counts are EXACTLY correct")
-		eventCounts := countEventsByType(events)
 
 			// Per DD-AUDIT-003: AIAnalysis records 6 event types
 			// CRITICAL: Use EXACT counts to detect duplicates and reconciliation issues
@@ -237,11 +237,11 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			By("Validating correlation_id matches remediation_id")
 			for _, event := range events {
-			// P0: Use testutil validator for baseline field validation
-			testutil.ValidateAuditEventHasRequiredFields(event) // ✅ OpenAPI type validation
+				// P0: Use testutil validator for baseline field validation
+				validators.ValidateAuditEventHasRequiredFields(event) // ✅ OpenAPI type validation
 
-			Expect(event.CorrelationID).To(Equal(remediationID),
-				"All audit events must have correlation_id = remediation_id for traceability")
+				Expect(event.CorrelationID).To(Equal(remediationID),
+					"All audit events must have correlation_id = remediation_id for traceability")
 			}
 
 			By("Validating event_data payloads are valid JSON")
@@ -254,16 +254,16 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 				Expect(event.EventData).NotTo(BeEmpty(), "event_data should not be an empty object")
 			}
 
-		By("Validating event timestamps are set")
-		for _, event := range events {
-			// ✅ OpenAPI type: EventTimestamp is time.Time (not pointer)
-			Expect(event.EventTimestamp).NotTo(BeZero(), "event_timestamp should be set")
+			By("Validating event timestamps are set")
+			for _, event := range events {
+				// ✅ OpenAPI type: EventTimestamp is time.Time (not pointer)
+				Expect(event.EventTimestamp).NotTo(BeZero(), "event_timestamp should be set")
 
-			// Verify timestamp is parseable as RFC3339
-			timestampStr := event.EventTimestamp.Format(time.RFC3339)
-			_, err := time.Parse(time.RFC3339, timestampStr)
-			Expect(err).NotTo(HaveOccurred(), "event_timestamp should be valid RFC3339 format")
-		}
+				// Verify timestamp is parseable as RFC3339
+				timestampStr := event.EventTimestamp.Format(time.RFC3339)
+				_, err := time.Parse(time.RFC3339, timestampStr)
+				Expect(err).NotTo(HaveOccurred(), "event_timestamp should be valid RFC3339 format")
+			}
 		})
 
 		It("should audit phase transitions with correct old/new phase values", func() {
@@ -303,29 +303,29 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 				return string(analysis.Status.Phase)
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-		remediationID := analysis.Spec.RemediationID
+			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for phase transition events to appear in Data Storage")
-		phaseEvents := waitForAuditEvents(remediationID, "aianalysis.phase.transition", 1)
+			By("Waiting for phase transition events to appear in Data Storage")
+			phaseEvents := waitForAuditEvents(remediationID, "aianalysis.phase.transition", 1)
 
-		By("Validating phase transition event_data structure")
-		for _, event := range phaseEvents {
-			// Access strongly-typed payload via discriminated union
-			payload := event.EventData.AIAnalysisPhaseTransitionPayload
-			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisPhaseTransitionPayload")
+			By("Validating phase transition event_data structure")
+			for _, event := range phaseEvents {
+				// Access strongly-typed payload via discriminated union
+				payload := event.EventData.AIAnalysisPhaseTransitionPayload
+				Expect(payload).ToNot(BeNil(), "Should have AIAnalysisPhaseTransitionPayload")
 
-			// Per DD-AUDIT-004: PhaseTransitionPayload structure
-			Expect(payload.OldPhase).ToNot(BeEmpty(), "Should record old phase")
-			Expect(payload.NewPhase).ToNot(BeEmpty(), "Should record new phase")
+				// Per DD-AUDIT-004: PhaseTransitionPayload structure
+				Expect(payload.OldPhase).ToNot(BeEmpty(), "Should record old phase")
+				Expect(payload.NewPhase).ToNot(BeEmpty(), "Should record new phase")
 
-			oldPhase := payload.OldPhase
-			newPhase := payload.NewPhase
+				oldPhase := payload.OldPhase
+				newPhase := payload.NewPhase
 
-			// Verify phase transition is valid
-			validPhases := []string{"Pending", "Investigating", "Analyzing", "Completed", "Failed"}
-			Expect(validPhases).To(ContainElement(oldPhase), "old_phase should be a valid phase")
-			Expect(validPhases).To(ContainElement(newPhase), "new_phase should be a valid phase")
-		}
+				// Verify phase transition is valid
+				validPhases := []string{"Pending", "Investigating", "Analyzing", "Completed", "Failed"}
+				Expect(validPhases).To(ContainElement(oldPhase), "old_phase should be a valid phase")
+				Expect(validPhases).To(ContainElement(newPhase), "new_phase should be a valid phase")
+			}
 		})
 
 		It("should audit HolmesGPT-API calls with correct endpoint and status", func() {
@@ -365,32 +365,32 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 				return string(analysis.Status.Phase)
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-		remediationID := analysis.Spec.RemediationID
+			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for HolmesGPT-API call events to appear in Data Storage")
-		hapiEvents := waitForAuditEvents(remediationID, "aianalysis.holmesgpt.call", 1)
+			By("Waiting for HolmesGPT-API call events to appear in Data Storage")
+			hapiEvents := waitForAuditEvents(remediationID, "aianalysis.holmesgpt.call", 1)
 
-		By("Validating HolmesGPT-API call event_data structure")
-		for _, event := range hapiEvents {
-			// Access strongly-typed payload via discriminated union
-			payload := event.EventData.AIAnalysisHolmesGPTCallPayload
-			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisHolmesGPTCallPayload")
+			By("Validating HolmesGPT-API call event_data structure")
+			for _, event := range hapiEvents {
+				// Access strongly-typed payload via discriminated union
+				payload := event.EventData.AIAnalysisHolmesGPTCallPayload
+				Expect(payload).ToNot(BeNil(), "Should have AIAnalysisHolmesGPTCallPayload")
 
-			// Per DD-AUDIT-004: HolmesGPTCallPayload structure
-			Expect(payload.Endpoint).ToNot(BeEmpty(), "Should record API endpoint called")
-			Expect(payload.HTTPStatusCode).ToNot(BeZero(), "Should record HTTP status code")
-			Expect(payload.DurationMs).ToNot(BeZero(), "Should record call duration")
+				// Per DD-AUDIT-004: HolmesGPTCallPayload structure
+				Expect(payload.Endpoint).ToNot(BeEmpty(), "Should record API endpoint called")
+				Expect(payload.HTTPStatusCode).ToNot(BeZero(), "Should record HTTP status code")
+				Expect(payload.DurationMs).ToNot(BeZero(), "Should record call duration")
 
-			// Verify endpoint is valid
-			endpoint := payload.Endpoint
-			Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
-				"Endpoint should be incident/analyze or recovery/investigate")
+				// Verify endpoint is valid
+				endpoint := payload.Endpoint
+				Expect(endpoint).To(Or(Equal("/api/v1/incident/analyze"), Equal("/api/v1/recovery/investigate")),
+					"Endpoint should be incident/analyze or recovery/investigate")
 
-			// Verify HTTP status is 2xx for successful calls
-			statusCode := payload.HTTPStatusCode
-			Expect(statusCode).To(BeNumerically(">=", 200), "Status code should be 2xx for success")
-			Expect(statusCode).To(BeNumerically("<", 300), "Status code should be 2xx for success")
-		}
+				// Verify HTTP status is 2xx for successful calls
+				statusCode := payload.HTTPStatusCode
+				Expect(statusCode).To(BeNumerically(">=", 200), "Status code should be 2xx for success")
+				Expect(statusCode).To(BeNumerically("<", 300), "Status code should be 2xx for success")
+			}
 		})
 
 		It("should audit Rego policy evaluations with correct outcome", func() {
@@ -435,30 +435,30 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 				return string(analysis.Status.Phase)
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-		remediationID := analysis.Spec.RemediationID
+			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for Rego evaluation events to appear in Data Storage")
-		regoEvents := waitForAuditEvents(remediationID, "aianalysis.rego.evaluation", 1)
+			By("Waiting for Rego evaluation events to appear in Data Storage")
+			regoEvents := waitForAuditEvents(remediationID, "aianalysis.rego.evaluation", 1)
 
-		By("Validating Rego evaluation event_data structure")
-		event := regoEvents[0] // Should be only one Rego evaluation per analysis
-		// Access strongly-typed payload via discriminated union
-		payload := event.EventData.AIAnalysisRegoEvaluationPayload
-		Expect(payload).ToNot(BeNil(), "Should have AIAnalysisRegoEvaluationPayload")
+			By("Validating Rego evaluation event_data structure")
+			event := regoEvents[0] // Should be only one Rego evaluation per analysis
+			// Access strongly-typed payload via discriminated union
+			payload := event.EventData.AIAnalysisRegoEvaluationPayload
+			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisRegoEvaluationPayload")
 
-		// Per DD-AUDIT-004: RegoEvaluationPayload structure
-		Expect(payload.Outcome).ToNot(BeEmpty(), "Should record policy outcome (approved/requires_approval)")
-		Expect(payload.DurationMs).ToNot(BeZero(), "Should record evaluation duration")
-		Expect(payload.Reason).ToNot(BeEmpty(), "Should record evaluation reason")
+			// Per DD-AUDIT-004: RegoEvaluationPayload structure
+			Expect(payload.Outcome).ToNot(BeEmpty(), "Should record policy outcome (approved/requires_approval)")
+			Expect(payload.DurationMs).ToNot(BeZero(), "Should record evaluation duration")
+			Expect(payload.Reason).ToNot(BeEmpty(), "Should record evaluation reason")
 
-		// Verify outcome is valid
-		outcome := payload.Outcome
-		Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
-			"Outcome should be 'approved' or 'requires_approval'")
+			// Verify outcome is valid
+			outcome := payload.Outcome
+			Expect([]string{"approved", "requires_approval"}).To(ContainElement(outcome),
+				"Outcome should be 'approved' or 'requires_approval'")
 
-		// Verify degraded flag is boolean
-		degraded := payload.Degraded
-		_ = degraded // Use the variable
+			// Verify degraded flag is boolean
+			degraded := payload.Degraded
+			_ = degraded // Use the variable
 		})
 
 		It("should audit approval decisions with correct approval_required flag", func() {
@@ -508,29 +508,29 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			Expect(analysis.Status.ApprovalRequired).To(BeTrue(),
 				"Production environment should require approval per Rego policy")
 
-		remediationID := analysis.Spec.RemediationID
+			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for approval decision events to appear in Data Storage")
-		approvalEvents := waitForAuditEvents(remediationID, "aianalysis.approval.decision", 1)
+			By("Waiting for approval decision events to appear in Data Storage")
+			approvalEvents := waitForAuditEvents(remediationID, "aianalysis.approval.decision", 1)
 
-		By("Validating approval decision event_data structure")
-		event := approvalEvents[0]
-		// Access strongly-typed payload via discriminated union
-		payload := event.EventData.AIAnalysisApprovalDecisionPayload
-		Expect(payload).ToNot(BeNil(), "Should have AIAnalysisApprovalDecisionPayload")
+			By("Validating approval decision event_data structure")
+			event := approvalEvents[0]
+			// Access strongly-typed payload via discriminated union
+			payload := event.EventData.AIAnalysisApprovalDecisionPayload
+			Expect(payload).ToNot(BeNil(), "Should have AIAnalysisApprovalDecisionPayload")
 
-		// Per DD-AUDIT-004: ApprovalDecisionPayload structure
-		Expect(payload.ApprovalReason).ToNot(BeEmpty(), "Should record reason for approval decision")
+			// Per DD-AUDIT-004: ApprovalDecisionPayload structure
+			Expect(payload.ApprovalReason).ToNot(BeEmpty(), "Should record reason for approval decision")
 
-		// Verify approval_required matches CR status
-		approvalRequired := payload.ApprovalRequired
-		Expect(approvalRequired).To(BeTrue(),
-			"audit event approval_required should match CR status.ApprovalRequired")
+			// Verify approval_required matches CR status
+			approvalRequired := payload.ApprovalRequired
+			Expect(approvalRequired).To(BeTrue(),
+				"audit event approval_required should match CR status.ApprovalRequired")
 
-		// Verify auto_approved is false for production
-		autoApproved := payload.AutoApproved
-		Expect(autoApproved).To(BeFalse(),
-			"Production should not be auto-approved")
+			// Verify auto_approved is false for production
+			autoApproved := payload.AutoApproved
+			Expect(autoApproved).To(BeFalse(),
+				"Production should not be auto-approved")
 		})
 	})
 })

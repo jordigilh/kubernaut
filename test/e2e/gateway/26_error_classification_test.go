@@ -54,7 +54,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18090" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "http://127.0.0.1:18091" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
 		// Create Gateway server
@@ -89,7 +89,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
@@ -102,7 +102,7 @@ _ = err
 				Eventually(func() bool {
 					rrList := &remediationv1alpha1.RemediationRequestList{}
 					err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
-	_ = err
+					_ = err
 					return err == nil && len(rrList.Items) > 0
 				}, 10*time.Second, 1*time.Second).Should(BeTrue())
 			} else {
@@ -146,7 +146,7 @@ _ = err
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
@@ -181,7 +181,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Note: Actual timing validation requires instrumentation
@@ -215,7 +215,7 @@ _ = err
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
@@ -247,7 +247,7 @@ _ = err
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 			duration := time.Since(startTime)
 
@@ -275,7 +275,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
@@ -317,7 +317,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// If retries exhausted, should return error
@@ -358,7 +358,7 @@ _ = err
 
 			startTime := time.Now()
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 			totalDuration := time.Since(startTime)
 
@@ -396,7 +396,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Note: Retry count observability helps debug infrastructure issues

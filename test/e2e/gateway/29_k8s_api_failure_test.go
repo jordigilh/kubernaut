@@ -174,13 +174,13 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Simulate K8s API down
 			failingK8sClient.failCreate = true
 			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
-				Expect(err).ToNot(BeNil(), "First attempt fails when K8s API down")
+			Expect(err).ToNot(BeNil(), "First attempt fails when K8s API down")
 
 			// Simulate K8s API recovery
 			failingK8sClient.failCreate = false
 			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
-				Expect(err).ToNot(BeNil(), "Second attempt succeeds when K8s API recovers")
+			Expect(err).ToNot(BeNil(), "Second attempt succeeds when K8s API recovers")
 			Expect(rr).NotTo(BeNil(), "RemediationRequest CRD must be returned on success")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -525,7 +525,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			_, err := cbCrdCreator.CreateRemediationRequest(ctx, signal)
 			duration := time.Since(startTime)
 
-				Expect(err).ToNot(BeNil(), "Request should fail when circuit breaker is open")
+			Expect(err).ToNot(BeNil(), "Request should fail when circuit breaker is open")
 			Expect(duration).To(BeNumerically("<", 50*time.Millisecond), "Fail-fast should be immediate (<50ms), not wait for K8s API timeout")
 
 			// BUSINESS CAPABILITY VERIFIED:

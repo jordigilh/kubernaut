@@ -106,7 +106,3 @@ var _ = Describe("Field Index Smoke Test", func() {
 		GinkgoWriter.Println("✅ SMOKE TEST PASSED: Field index working correctly")
 	})
 })
-
-
-
-

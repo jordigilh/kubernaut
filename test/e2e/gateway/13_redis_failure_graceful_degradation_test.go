@@ -25,11 +25,11 @@ import (
 	"os/exec"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -44,6 +44,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
+		k8sClient     client.Client
 	)
 
 	BeforeAll(func() {
@@ -59,11 +60,8 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testNamespace = GenerateUniqueNamespace("redis-fail")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
+		k8sClient = getKubernetesClient()
+		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
@@ -77,7 +75,6 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 
 		// Ensure Redis is restored before cleanup
 		testLogger.Info("Ensuring Redis is restored...")
-		k8sClient := getKubernetesClient()
 		// Scale Redis back up if it was scaled down
 		// This is a safety measure in case the test didn't complete cleanup
 		testLogger.Info("Redis restoration check complete")
@@ -97,10 +94,6 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		}
 
 		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
 
 		if testCancel != nil {
 			testCancel()
@@ -188,7 +181,6 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 			"Most alerts should succeed before Redis failure")
 
 		testLogger.Info("Step 3: Simulate Redis failure by deleting Redis pod")
-		k8sClient := getKubernetesClient()
 
 		// Find and delete Redis pod
 		redisPodList := &corev1.PodList{}

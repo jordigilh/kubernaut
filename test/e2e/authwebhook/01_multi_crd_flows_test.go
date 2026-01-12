@@ -293,7 +293,7 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 			// Both are valid - we just need to verify attribution is captured
 			Expect(wfe.Status.BlockClearance.ClearedBy).To(Or(
 				ContainSubstring("@"),                    // Production: email format
-				Equal("kubernetes-admin"),                 // E2E/Kind: default K8s user
+				Equal("kubernetes-admin"),                // E2E/Kind: default K8s user
 				MatchRegexp("^[a-z][a-z0-9-]+[a-z0-9]$"), // K8s valid username
 			), fmt.Sprintf("WFE #%d ClearedBy should be valid user format (email or K8s username)", i))
 		}

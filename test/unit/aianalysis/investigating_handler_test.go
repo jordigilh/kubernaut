@@ -31,7 +31,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	hgptclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ========================================
@@ -128,13 +128,13 @@ func (s *auditClientSpy) getFailedEvents() []failedAnalysisEvent {
 var _ = Describe("InvestigatingHandler", func() {
 	var (
 		handler    *handlers.InvestigatingHandler
-		mockClient *testutil.MockHolmesGPTClient
+		mockClient *mocks.MockHolmesGPTClient
 		ctx        context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		mockClient = testutil.NewMockHolmesGPTClient()
+		mockClient = mocks.NewMockHolmesGPTClient()
 		// Create mock audit client (noop for unit tests) and metrics
 		mockAuditClient := &noopAuditClient{}
 		testMetrics := metrics.NewMetrics()
@@ -313,45 +313,45 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-	// BR-AI-010: Permanent API error handling moved to integration tier
-	// NOTE: Permanent error tests moved to test/integration/aianalysis/
-	// These require real infrastructure to validate the complete error handling flow
+		// BR-AI-010: Permanent API error handling moved to integration tier
+		// NOTE: Permanent error tests moved to test/integration/aianalysis/
+		// These require real infrastructure to validate the complete error handling flow
 
-	// BR-AI-009: Business outcome - prevent infinite retry loops
-	Context("when transient errors persist beyond retry limit", func() {
-		var auditSpy *auditClientSpy
+		// BR-AI-009: Business outcome - prevent infinite retry loops
+		Context("when transient errors persist beyond retry limit", func() {
+			var auditSpy *auditClientSpy
 
-		BeforeEach(func() {
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
-			// Use audit spy to capture failure events for Gap #7 validation
-			auditSpy = &auditClientSpy{}
-			testMetrics := metrics.NewMetrics()
-			handler = handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test"), testMetrics, auditSpy)
-		})
+			BeforeEach(func() {
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				// Use audit spy to capture failure events for Gap #7 validation
+				auditSpy = &auditClientSpy{}
+				testMetrics := metrics.NewMetrics()
+				handler = handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test"), testMetrics, auditSpy)
+			})
 
-		It("should fail gracefully after exhausting retry budget", func() {
-			analysis := createTestAnalysis()
-			// Simulate max retries already reached (ConsecutiveFailures = 5)
-			// Next error will increment to 6, which exceeds MaxRetries (5)
-			analysis.Status.ConsecutiveFailures = 5
+			It("should fail gracefully after exhausting retry budget", func() {
+				analysis := createTestAnalysis()
+				// Simulate max retries already reached (ConsecutiveFailures = 5)
+				// Next error will increment to 6, which exceeds MaxRetries (5)
+				analysis.Status.ConsecutiveFailures = 5
 
-			result, err := handler.Handle(ctx, analysis)
+				result, err := handler.Handle(ctx, analysis)
 
-			Expect(err).NotTo(HaveOccurred())
-			// Business outcome: Analysis fails gracefully after max retries (doesn't hang indefinitely)
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail after exhausting retries")
-			Expect(analysis.Status.Message).To(ContainSubstring("exceeded max retries"), "Should explain max retries exceeded")
-			Expect(analysis.Status.SubReason).To(Equal("MaxRetriesExceeded"), "Should set SubReason to MaxRetriesExceeded")
-			Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(6)), "Should increment failure count before failing")
-			Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should not requeue after max retries")
+				Expect(err).NotTo(HaveOccurred())
+				// Business outcome: Analysis fails gracefully after max retries (doesn't hang indefinitely)
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should fail after exhausting retries")
+				Expect(analysis.Status.Message).To(ContainSubstring("exceeded max retries"), "Should explain max retries exceeded")
+				Expect(analysis.Status.SubReason).To(Equal("MaxRetriesExceeded"), "Should set SubReason to MaxRetriesExceeded")
+				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(6)), "Should increment failure count before failing")
+				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should not requeue after max retries")
 
-			// BR-AUDIT-005 Gap #7: Validate error audit with standardized ErrorDetails
-			failedEvents := auditSpy.getFailedEvents()
-			Expect(failedEvents).To(HaveLen(1), "Should record exactly 1 failure audit event")
-			Expect(failedEvents[0].analysis.Name).To(Equal(analysis.Name))
-			Expect(failedEvents[0].err).ToNot(BeNil(), "Should capture the error that caused failure")
-			Expect(failedEvents[0].err.Error()).To(ContainSubstring("Service Unavailable"), "Should capture upstream error message")
-		})
+				// BR-AUDIT-005 Gap #7: Validate error audit with standardized ErrorDetails
+				failedEvents := auditSpy.getFailedEvents()
+				Expect(failedEvents).To(HaveLen(1), "Should record exactly 1 failure audit event")
+				Expect(failedEvents[0].analysis.Name).To(Equal(analysis.Name))
+				Expect(failedEvents[0].err).ToNot(BeNil(), "Should capture the error that caused failure")
+				Expect(failedEvents[0].err.Error()).To(ContainSubstring("Service Unavailable"), "Should capture upstream error message")
+			})
 		})
 
 		// Test mock call tracking
@@ -536,7 +536,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				mockClient.WithHumanReviewAndHistory(
 					"llm_parsing_error",
 					[]string{"LLM parsing failed"},
-					testutil.NewMockValidationAttempts([]string{
+					mocks.NewMockValidationAttempts([]string{
 						"Invalid JSON response",
 						"Missing workflow_id field",
 						"Schema validation failed",
@@ -812,43 +812,43 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should retry with backoff")
 			})
 
-		It("should classify 500 Internal Server Error as transient and retry", func() {
-			analysis := createTestAnalysis()
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
+			It("should classify 500 Internal Server Error as transient and retry", func() {
+				analysis := createTestAnalysis()
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 500, Message: "Internal Server Error"})
 
-			result, err := handler.Handle(ctx, analysis)
+				result, err := handler.Handle(ctx, analysis)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "500 errors are transient")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should retry with backoff")
-		})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "500 errors are transient")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should retry with backoff")
+			})
 
-	// NOTE: Permanent error classification tests (401, 403, unknown) moved to integration tier
-	// These require real infrastructure to validate the complete error handling and phase transition flow
-	// See test/integration/aianalysis/ for comprehensive permanent error coverage
+			// NOTE: Permanent error classification tests (401, 403, unknown) moved to integration tier
+			// These require real infrastructure to validate the complete error handling and phase transition flow
+			// See test/integration/aianalysis/ for comprehensive permanent error coverage
 		})
 
 		Context("Exponential Backoff Behavior - BR-AI-009", func() {
-		It("should increase backoff duration with each retry attempt", func() {
-			By("First attempt")
-			analysis := createTestAnalysis()
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
-			result1, _ := handler.Handle(ctx, analysis)
-			backoff1 := result1.RequeueAfter
+			It("should increase backoff duration with each retry attempt", func() {
+				By("First attempt")
+				analysis := createTestAnalysis()
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				result1, _ := handler.Handle(ctx, analysis)
+				backoff1 := result1.RequeueAfter
 
-			By("Second attempt")
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
-			result2, _ := handler.Handle(ctx, analysis)
-			backoff2 := result2.RequeueAfter
+				By("Second attempt")
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				result2, _ := handler.Handle(ctx, analysis)
+				backoff2 := result2.RequeueAfter
 
-			By("Third attempt")
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
-			result3, _ := handler.Handle(ctx, analysis)
-			backoff3 := result3.RequeueAfter
+				By("Third attempt")
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				result3, _ := handler.Handle(ctx, analysis)
+				backoff3 := result3.RequeueAfter
 
-			Expect(backoff2).To(BeNumerically(">", backoff1), "Backoff increases on second attempt")
-			Expect(backoff3).To(BeNumerically(">", backoff2), "Backoff increases on third attempt")
-		})
+				Expect(backoff2).To(BeNumerically(">", backoff1), "Backoff increases on second attempt")
+				Expect(backoff3).To(BeNumerically(">", backoff2), "Backoff increases on third attempt")
+			})
 
 			It("should reset ConsecutiveFailures to 0 on successful API call", func() {
 				analysis := createTestAnalysis()
@@ -877,46 +877,46 @@ var _ = Describe("InvestigatingHandler", func() {
 		})
 
 		Context("transient error retry behavior", func() {
-		// Business Value: Handler retries transient errors with exponential backoff
-		It("should retry transient errors starting from ConsecutiveFailures=0", func() {
-			analysis := createTestAnalysis()
-			analysis.Status.ConsecutiveFailures = 0
+			// Business Value: Handler retries transient errors with exponential backoff
+			It("should retry transient errors starting from ConsecutiveFailures=0", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.ConsecutiveFailures = 0
 
-			// Using transient error (503) to trigger retry path
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				// Using transient error (503) to trigger retry path
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
-			result, err := handler.Handle(ctx, analysis)
+				result, err := handler.Handle(ctx, analysis)
 
-			// Business outcome: Transient errors trigger retry with backoff
-			Expect(err).NotTo(HaveOccurred(), "No error returned, status updated")
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating during retry")
-			Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Failure counter incremented")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff duration set for retry")
-			Expect(analysis.Status.Message).To(ContainSubstring("Transient error"), "Status indicates transient error")
-		})
+				// Business outcome: Transient errors trigger retry with backoff
+				Expect(err).NotTo(HaveOccurred(), "No error returned, status updated")
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating during retry")
+				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Failure counter incremented")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff duration set for retry")
+				Expect(analysis.Status.Message).To(ContainSubstring("Transient error"), "Status indicates transient error")
+			})
 
-		// Business Value: Handle initial state gracefully (ConsecutiveFailures not set)
-		It("should handle ConsecutiveFailures=0 gracefully for first transient error", func() {
-			analysis := createTestAnalysis()
-			// ConsecutiveFailures defaults to 0
+			// Business Value: Handle initial state gracefully (ConsecutiveFailures not set)
+			It("should handle ConsecutiveFailures=0 gracefully for first transient error", func() {
+				analysis := createTestAnalysis()
+				// ConsecutiveFailures defaults to 0
 
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
-			result, err := handler.Handle(ctx, analysis)
+				result, err := handler.Handle(ctx, analysis)
 
-			// Should retry (transient error classification)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating")
-			Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Counter incremented from 0 to 1")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff set")
-		})
+				// Should retry (transient error classification)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating), "Phase stays Investigating")
+				Expect(analysis.Status.ConsecutiveFailures).To(Equal(int32(1)), "Counter incremented from 0 to 1")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Backoff set")
+			})
 
-		// Business Value: Correctly increments retry count on transient failures
-		It("should increment retry count on subsequent transient errors", func() {
-			analysis := createTestAnalysis()
-			analysis.Status.ConsecutiveFailures = 2
+			// Business Value: Correctly increments retry count on transient failures
+			It("should increment retry count on subsequent transient errors", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.ConsecutiveFailures = 2
 
-			mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(&hgptclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
 
 				result, err := handler.Handle(ctx, analysis)
 

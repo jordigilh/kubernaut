@@ -62,11 +62,11 @@ var _ = Describe("Redis Cache", func() {
 
 	AfterEach(func() {
 		if client != nil {
-		_ = client.Close()
-	}
-	if miniRedis != nil {
-		miniRedis.Close()
-	}
+			_ = client.Close()
+		}
+		if miniRedis != nil {
+			miniRedis.Close()
+		}
 	})
 
 	Describe("NewCache", func() {

@@ -69,21 +69,21 @@ var _ = Describe("ADR-032 §1 Compliance Tests", Label("unit", "audit", "adr-032
 				Name:      "test-notification",
 				Namespace: "default",
 			},
-		Spec: notificationv1alpha1.NotificationRequestSpec{
-			// BR-NOT-064: Correlation ID from RemediationRequestRef (proper design)
-			RemediationRequestRef: &corev1.ObjectReference{
-				APIVersion: "remediation.kubernaut.ai/v1alpha1",
-				Kind:       "RemediationRequest",
-				Name:       "test-remediation-123",
-				Namespace:  "default",
+			Spec: notificationv1alpha1.NotificationRequestSpec{
+				// BR-NOT-064: Correlation ID from RemediationRequestRef (proper design)
+				RemediationRequestRef: &corev1.ObjectReference{
+					APIVersion: "remediation.kubernaut.ai/v1alpha1",
+					Kind:       "RemediationRequest",
+					Name:       "test-remediation-123",
+					Namespace:  "default",
+				},
+				Subject:  "Test Notification",
+				Body:     "Test body",
+				Priority: "critical",
+				Channels: []notificationv1alpha1.Channel{
+					notificationv1alpha1.ChannelSlack,
+				},
 			},
-			Subject:  "Test Notification",
-			Body:     "Test body",
-			Priority: "critical",
-			Channels: []notificationv1alpha1.Channel{
-				notificationv1alpha1.ChannelSlack,
-			},
-		},
 		}
 	})
 

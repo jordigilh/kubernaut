@@ -77,8 +77,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -155,8 +155,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -243,8 +243,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -309,8 +309,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -386,8 +386,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -415,6 +415,9 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// NT-BUG-002 Fix: Wait for all retries to exhaust (not just first failure)
 			// Uses retryable 500 error, so default policy (MaxAttempts=5) will retry
+			// Timeout calculation: 5 attempts with exponential backoff (1s, 2s, 4s, 8s, 16s) = ~28s
+			// + jitter (~20% variance) + processing overhead (~2-3s per attempt in parallel)
+			// = ~35-40s total. 45s timeout provides 15s safety margin for parallel execution (12 procs).
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{
 					Name:      notifName,
@@ -426,7 +429,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 				// Wait for Failed phase AND all 5 attempts exhausted
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed &&
 					notif.Status.FailedDeliveries == 5
-			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			}, 45*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Should reach Failed phase after exhausting all 5 retry attempts")
 
 			// BEHAVIOR VALIDATION: All delivery attempts recorded (Per TESTING_GUIDELINES.md)
@@ -467,8 +470,8 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{

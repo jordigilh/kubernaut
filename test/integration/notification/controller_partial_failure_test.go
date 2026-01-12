@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ========================================
@@ -67,19 +67,19 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			// ========================================
 			// TEST SETUP: Mock services with controlled failure
 			// ========================================
-			mockConsoleService := &testutil.MockDeliveryService{
+			mockConsoleService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return nil // Success
 				},
 			}
 
-			mockLogService := &testutil.MockDeliveryService{
+			mockLogService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return nil // Success
 				},
 			}
 
-			mockFileService := &testutil.MockDeliveryService{
+			mockFileService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return fmt.Errorf("disk full (simulated)") // Permanent failure
 				},
@@ -92,7 +92,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			DeferCleanup(func() {
 				// Restore original services (console/slack exist, file/log don't in suite)
 				deliveryOrchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), originalConsoleService)
-				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))    // Not in suite
+				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelLog))  // Not in suite
 				deliveryOrchestrator.UnregisterChannel(string(notificationv1alpha1.ChannelFile)) // Not in suite
 			})
 
@@ -209,19 +209,19 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			// ========================================
 			// TEST SETUP: Different failure pattern (console fails instead of file)
 			// ========================================
-			mockConsoleService := &testutil.MockDeliveryService{
+			mockConsoleService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return fmt.Errorf("stdout write error (simulated)") // Failure
 				},
 			}
 
-			mockLogService := &testutil.MockDeliveryService{
+			mockLogService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return nil // Success
 				},
 			}
 
-			mockFileService := &testutil.MockDeliveryService{
+			mockFileService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return nil // Success
 				},
@@ -319,19 +319,19 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			// ========================================
 			// TEST SETUP: All channels fail scenario
 			// ========================================
-			mockConsoleService := &testutil.MockDeliveryService{
+			mockConsoleService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return fmt.Errorf("console failure")
 				},
 			}
 
-			mockLogService := &testutil.MockDeliveryService{
+			mockLogService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return fmt.Errorf("log failure")
 				},
 			}
 
-			mockFileService := &testutil.MockDeliveryService{
+			mockFileService := &mocks.MockDeliveryService{
 				DeliverFunc: func(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
 					return fmt.Errorf("file failure")
 				},

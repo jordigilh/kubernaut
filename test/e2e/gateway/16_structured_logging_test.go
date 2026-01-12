@@ -29,8 +29,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/google/uuid"
 )
@@ -56,11 +54,8 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testNamespace = GenerateUniqueNamespace("logging")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
 		k8sClient := getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed(), "Failed to create test namespace")
+		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
@@ -87,11 +82,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		}
 
 		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		k8sClient := getKubernetesClient()
-		_ = k8sClient.Delete(testCtx, ns)
+		// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
 
 		if testCancel != nil {
 			testCancel()

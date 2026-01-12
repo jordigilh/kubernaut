@@ -220,9 +220,10 @@ func waitForAuditEvents(
 // Pattern: DD-TESTING-001 Pattern 4 (Deterministic Event Count Validation)
 //
 // Usage:
-//   eventCounts := countEventsByType(allEvents)
-//   Expect(eventCounts["webhook.block_clearance"]).To(Equal(1))  // ✅ CORRECT
-//   // NOT: Expect(len(events)).To(BeNumerically(">=", 1))        // ❌ FORBIDDEN
+//
+//	eventCounts := countEventsByType(allEvents)
+//	Expect(eventCounts["webhook.block_clearance"]).To(Equal(1))  // ✅ CORRECT
+//	// NOT: Expect(len(events)).To(BeNumerically(">=", 1))        // ❌ FORBIDDEN
 func countEventsByType(events []ogenclient.AuditEvent) map[string]int {
 	counts := make(map[string]int)
 	for _, event := range events {
@@ -262,12 +263,13 @@ func validateEventMetadata(event ogenclient.AuditEvent, expectedCategory string)
 // Pattern: DD-TESTING-001 Pattern 5 (Structured event_data Validation)
 //
 // Usage:
-//   validateEventData(event, map[string]interface{}{
-//       "operator":    "system:serviceaccount:test",
-//       "crd_name":    "test-we-12345",
-//       "namespace":   "default",
-//       "action":      "block_clearance",
-//   })
+//
+//	validateEventData(event, map[string]interface{}{
+//	    "operator":    "system:serviceaccount:test",
+//	    "crd_name":    "test-we-12345",
+//	    "namespace":   "default",
+//	    "action":      "block_clearance",
+//	})
 func validateEventData(event ogenclient.AuditEvent, expectedFields map[string]interface{}) {
 	// Marshal EventData to JSON, then unmarshal to map for validation
 	// Ogen discriminated unions implement json.Marshaler (Q6 answer)
@@ -296,4 +298,3 @@ func validateEventData(event ogenclient.AuditEvent, expectedFields map[string]in
 		}
 	}
 }
-

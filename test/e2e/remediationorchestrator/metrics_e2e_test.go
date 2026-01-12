@@ -328,4 +328,3 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 		})
 	})
 })
-

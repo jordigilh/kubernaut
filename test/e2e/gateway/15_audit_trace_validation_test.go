@@ -34,7 +34,7 @@ import (
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 
 	"github.com/google/uuid"
 )
@@ -218,7 +218,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		testLogger.Info("✅ Audit events found in Data Storage", "eventCount", len(auditEvents))
 
-		By("3. Validate 'signal.received' audit event using testutil.ValidateAuditEvent (P0 requirement)")
+		By("3. Validate 'signal.received' audit event using validators.ValidateAuditEvent (P0 requirement)")
 		// Gateway emits BOTH 'signal.received' AND 'crd.created' events per DD-AUDIT-003
 		// We need to find the 'signal.received' event specifically
 		Expect(auditEvents).To(HaveLen(2), "Should have 2 audit events: signal.received + crd.created")
@@ -235,21 +235,21 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		// STRUCTURED AUDIT VALIDATION (SERVICE_MATURITY_REQUIREMENTS.md v1.2.0)
-		// Per v1.2.0 update (2025-12-20): MUST use testutil.ValidateAuditEvent
+		// Per v1.2.0 update (2025-12-20): MUST use validators.ValidateAuditEvent
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		testutil.ValidateAuditEvent(*signalEvent, testutil.ExpectedAuditEvent{
+		validators.ValidateAuditEvent(*signalEvent, validators.ExpectedAuditEvent{
 			EventType:     gateway.EventTypeSignalReceived,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "received",
-			EventOutcome:  testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
+			EventOutcome:  validators.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
-			ResourceType:  testutil.StringPtr("Signal"),
-			ResourceID:    testutil.StringPtr(fingerprint),
-			Namespace:     testutil.StringPtr(testNamespace),
+			ResourceType:  validators.StringPtr("Signal"),
+			ResourceID:    validators.StringPtr(fingerprint),
+			Namespace:     validators.StringPtr(testNamespace),
 		})
 
-		testLogger.Info("✅ All critical ADR-034 fields validated via testutil.ValidateAuditEvent",
+		testLogger.Info("✅ All critical ADR-034 fields validated via validators.ValidateAuditEvent",
 			"event_type", signalEvent.EventType,
 			"correlation_id", correlationID,
 			"fingerprint", fingerprint)
@@ -273,7 +273,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		testLogger.Info("✅ All Gateway-specific event_data fields validated")
 
-		By("5. Verify 'crd.created' audit event using testutil.ValidateAuditEvent (DD-AUDIT-003)")
+		By("5. Verify 'crd.created' audit event using validators.ValidateAuditEvent (DD-AUDIT-003)")
 		// Find the 'gateway.crd.created' event
 		var crdEvent *dsgen.AuditEvent
 		for i := range auditEvents {
@@ -284,18 +284,18 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		}
 		Expect(crdEvent).ToNot(BeNil(), "Should find 'gateway.crd.created' event")
 
-		// Validate using testutil.ValidateAuditEvent (P0 requirement per v1.2.0)
-		testutil.ValidateAuditEvent(*crdEvent, testutil.ExpectedAuditEvent{
+		// Validate using validators.ValidateAuditEvent (P0 requirement per v1.2.0)
+		validators.ValidateAuditEvent(*crdEvent, validators.ExpectedAuditEvent{
 			EventType:     gateway.EventTypeCRDCreated,
 			EventCategory: dsgen.AuditEventEventCategoryGateway,
 			EventAction:   "created",
-			EventOutcome:  testutil.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
+			EventOutcome:  validators.EventOutcomePtr(dsgen.AuditEventEventOutcomeSuccess),
 			CorrelationID: correlationID,
-			ResourceType:  testutil.StringPtr("RemediationRequest"),
-			Namespace:     testutil.StringPtr(testNamespace),
+			ResourceType:  validators.StringPtr("RemediationRequest"),
+			Namespace:     validators.StringPtr(testNamespace),
 		})
 
-		testLogger.Info("✅ CRD creation audit event validated via testutil.ValidateAuditEvent")
+		testLogger.Info("✅ CRD creation audit event validated via validators.ValidateAuditEvent")
 
 		By("6. BUSINESS OUTCOME: Complete audit trail for compliance")
 		// This test proves that Gateway successfully integrates with Data Storage
@@ -305,7 +305,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		// ✅ BR-GATEWAY-190: All signal ingestion creates audit trail
 		// ✅ ADR-034: Audit events follow standardized schema
 		// ✅ SOC2/HIPAA: Audit trails are queryable for compliance reporting
-		// ✅ SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Uses testutil.ValidateAuditEvent (P0)
+		// ✅ SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Uses validators.ValidateAuditEvent (P0)
 
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("✅ AUDIT TRACE VALIDATION COMPLETE")

@@ -668,12 +668,12 @@ var _ = Describe("BufferedAuditStore", func() {
 			}
 
 			// Create a DLQ that fails after first 3 events
-		failingDLQ := NewMockDLQClient()
+			failingDLQ := NewMockDLQClient()
 
-		// Create store (DLQ functionality is internal)
-		var err error
-		store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
-		Expect(err).ToNot(HaveOccurred())
+			// Create store (DLQ functionality is internal)
+			var err error
+			store, err = audit.NewBufferedStore(mockClient, config, "test-service", logger)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Make primary write fail
 			mockClient.SetShouldFail(true)

@@ -77,16 +77,10 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 		k8sClient = getKubernetesClient()
 
 		// Create namespace 1
-		ns1 := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace1},
-		}
-		Expect(k8sClient.Create(testCtx, ns1)).To(Succeed())
+		CreateNamespaceAndWait(testCtx, k8sClient, testNamespace1)
 
 		// Create namespace 2
-		ns2 := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace2},
-		}
-		Expect(k8sClient.Create(testCtx, ns2)).To(Succeed())
+		CreateNamespaceAndWait(testCtx, k8sClient, testNamespace2)
 
 		testLogger.Info("✅ Test namespaces ready")
 	})

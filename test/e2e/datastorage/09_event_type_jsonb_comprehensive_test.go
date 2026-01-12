@@ -90,14 +90,14 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: "gateway", // ADR-034 v1.2 (was "signal" - invalid)
 		EventAction:   "received",
 		SampleEventData: map[string]interface{}{
-			"event_type":   "gateway.signal.received",      // Required by OpenAPI schema
-			"signal_type":  "prometheus-alert",             // Required enum field
-			"alert_name":   "HighCPU",                      // Required
-			"namespace":    "production",                   // Required
-			"fingerprint":  "fp-abc123",                    // Required (was signal_fingerprint)
-			"cluster":      "prod-us-east-1",               // Optional
-			"is_duplicate": false,                          // Optional
-			"action":       "created_crd",                  // Optional
+			"event_type":   "gateway.signal.received", // Required by OpenAPI schema
+			"signal_type":  "prometheus-alert",        // Required enum field
+			"alert_name":   "HighCPU",                 // Required
+			"namespace":    "production",              // Required
+			"fingerprint":  "fp-abc123",               // Required (was signal_fingerprint)
+			"cluster":      "prod-us-east-1",          // Optional
+			"is_duplicate": false,                     // Optional
+			"action":       "created_crd",             // Optional
 		},
 		JSONBQueries: []jsonbQueryTest{
 			{Field: "alert_name", Operator: "->>", Value: "HighCPU", ExpectedRows: 1},

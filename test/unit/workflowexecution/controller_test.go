@@ -2855,26 +2855,26 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				event := auditStore.events[0]
 
-		// Event Classification
-		Expect(event.EventType).To(Equal(audit.EventTypeStarted))
-		Expect(string(event.EventCategory)).To(Equal("execution")) // Remediation Execution Service per OpenAPI spec
-		Expect(event.EventAction).To(Equal(audit.ActionStarted))
+				// Event Classification
+				Expect(event.EventType).To(Equal(audit.EventTypeStarted))
+				Expect(string(event.EventCategory)).To(Equal("execution")) // Remediation Execution Service per OpenAPI spec
+				Expect(event.EventAction).To(Equal(audit.ActionStarted))
 				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeSuccess)))
 
-			// Actor Information
-			Expect(event.ActorType.Value).To(Equal("service"))
-			Expect(event.ActorID.Value).To(Equal("workflowexecution-controller"))
+				// Actor Information
+				Expect(event.ActorType.Value).To(Equal("service"))
+				Expect(event.ActorID.Value).To(Equal("workflowexecution-controller"))
 
-			// Resource Information
-			Expect(event.ResourceType.Value).To(Equal("WorkflowExecution"))
-			Expect(event.ResourceID.Value).To(Equal("wfe-audit-validation-start"))
+				// Resource Information
+				Expect(event.ResourceType.Value).To(Equal("WorkflowExecution"))
+				Expect(event.ResourceID.Value).To(Equal("wfe-audit-validation-start"))
 
-			// Correlation
-			Expect(event.CorrelationID).To(Equal("corr-abc123"))
+				// Correlation
+				Expect(event.CorrelationID).To(Equal("corr-abc123"))
 
-			// Namespace context
-			Expect(event.Namespace.IsSet()).To(BeTrue())
-			Expect(event.Namespace.Value).To(Equal("production"))
+				// Namespace context
+				Expect(event.Namespace.IsSet()).To(BeTrue())
+				Expect(event.Namespace.Value).To(Equal("production"))
 
 				// Event Identity (auto-generated)
 				// NOTE: EventID removed in OpenAPI spec (DD-AUDIT-002 V2.0.1)
@@ -4654,9 +4654,9 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				}).Should(BeTrue())
 
 				auditEvent := auditStore.events[0]
-			Expect(auditEvent.EventType).To(Equal(audit.EventTypeFailed))
-			// DD-AUDIT-CORRELATION-001: Correlation ID comes from RemediationRequestRef.Name
-			Expect(auditEvent.CorrelationID).To(Equal("test-correlation-123"))
+				Expect(auditEvent.EventType).To(Equal(audit.EventTypeFailed))
+				// DD-AUDIT-CORRELATION-001: Correlation ID comes from RemediationRequestRef.Name
+				Expect(auditEvent.CorrelationID).To(Equal("test-correlation-123"))
 
 				// Verify event data contains failure reason (structured payload per DD-AUDIT-004)
 				eventData := parseEventData(auditEvent.EventData)

@@ -32,7 +32,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -182,15 +182,15 @@ var _ = SynchronizedBeforeSuite(
 		// E2E tests run externally against Kind cluster, so we use mock user transport
 		// (no oauth-proxy in E2E environment)
 		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for E2E tests...")
-	mockTransport := testutil.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
-	httpClient = &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: mockTransport,
-	}
-	dsClient, err = dsgen.NewClient(
-		"http://localhost:28090",
-		dsgen.WithClient(httpClient),
-	)
+		mockTransport := testauth.NewMockUserTransport("datastorage-e2e@test.kubernaut.io")
+		httpClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: mockTransport,
+		}
+		dsClient, err = dsgen.NewClient(
+			"http://localhost:28090",
+			dsgen.WithClient(httpClient),
+		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 		logger.Info("✅ DataStorage OpenAPI client created", "baseURL", "http://localhost:28090")
 
@@ -229,22 +229,22 @@ var _ = SynchronizedBeforeSuite(
 		dataStorageURL = "http://localhost:28090"
 		postgresURL = "postgresql://slm_user:test_password@localhost:25433/action_history?sslmode=disable"
 
-	// Test if NodePort is accessible (check PostgreSQL connection)
-	var err error
-	testDB, err = sql.Open("pgx", postgresURL)
-	nodePortWorks := false
-	if err == nil {
-		if err := testDB.Ping(); err == nil {
-			nodePortWorks = true
-			logger.Info("✅ NodePort accessible (Docker provider) - testDB ready", "process", processID)
-			// Keep testDB open for use by E2E tests (closed in AfterSuite)
+		// Test if NodePort is accessible (check PostgreSQL connection)
+		var err error
+		testDB, err = sql.Open("pgx", postgresURL)
+		nodePortWorks := false
+		if err == nil {
+			if err := testDB.Ping(); err == nil {
+				nodePortWorks = true
+				logger.Info("✅ NodePort accessible (Docker provider) - testDB ready", "process", processID)
+				// Keep testDB open for use by E2E tests (closed in AfterSuite)
+			} else {
+				_ = testDB.Close()
+				testDB = nil
+			}
 		} else {
-			_ = testDB.Close()
 			testDB = nil
 		}
-	} else {
-		testDB = nil
-	}
 
 		// If NodePort doesn't work, use kubectl port-forward (Podman)
 		if !nodePortWorks {
@@ -291,25 +291,25 @@ var _ = SynchronizedBeforeSuite(
 				return true
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(), "Port-forward should be established")
 
-		// Update URLs to use process-specific ports
-		dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
-		postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
+			// Update URLs to use process-specific ports
+			dataStorageURL = fmt.Sprintf("http://localhost:%d", dsLocalPort)
+			postgresURL = fmt.Sprintf("postgresql://slm_user:test_password@localhost:%d/action_history?sslmode=disable", pgLocalPort)
 
-		// Connect to PostgreSQL via port-forward
-		testDB, err = sql.Open("pgx", postgresURL)
-		if err != nil {
-			logger.Error(err, "Failed to open PostgreSQL connection via port-forward")
-		} else if err := testDB.Ping(); err != nil {
-			logger.Error(err, "Failed to ping PostgreSQL via port-forward")
-			_ = testDB.Close()
-			testDB = nil
+			// Connect to PostgreSQL via port-forward
+			testDB, err = sql.Open("pgx", postgresURL)
+			if err != nil {
+				logger.Error(err, "Failed to open PostgreSQL connection via port-forward")
+			} else if err := testDB.Ping(); err != nil {
+				logger.Error(err, "Failed to ping PostgreSQL via port-forward")
+				_ = testDB.Close()
+				testDB = nil
+			}
+
+			logger.Info("✅ Port-forward established", "process", processID,
+				"dataStorageURL", dataStorageURL,
+				"postgresURL", postgresURL,
+				"testDB", testDB != nil)
 		}
-
-		logger.Info("✅ Port-forward established", "process", processID,
-			"dataStorageURL", dataStorageURL,
-			"postgresURL", postgresURL,
-			"testDB", testDB != nil)
-	}
 
 		logger.Info("🔌 URLs configured",
 			"process", processID,
@@ -319,16 +319,16 @@ var _ = SynchronizedBeforeSuite(
 
 		// DD-API-001: Initialize OpenAPI client for this process
 		// E2E tests run externally against Kind cluster, so we use mock user transport
-	logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
-	mockTransport := testutil.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
-	httpClient := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: mockTransport,
-	}
-	dsClient, err = dsgen.NewClient(
-		dataStorageURL,
-		dsgen.WithClient(httpClient),
-	)
+		logger.Info("📋 DD-API-001: Creating DataStorage OpenAPI client for process", "process", processID)
+		mockTransport := testauth.NewMockUserTransport(fmt.Sprintf("datastorage-e2e-p%d@test.kubernaut.io", processID))
+		httpClient := &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: mockTransport,
+		}
+		dsClient, err = dsgen.NewClient(
+			dataStorageURL,
+			dsgen.WithClient(httpClient),
+		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 		logger.Info("✅ DataStorage OpenAPI client created", "process", processID, "baseURL", dataStorageURL)
 

@@ -56,17 +56,17 @@ func (w *K8sClientWrapper) GetRemediationRequest(ctx context.Context, namespace,
 
 var _ = Describe("BR-001, BR-002: Adapter Interaction Patterns - Integration Tests", func() {
 	var (
-		ctx                context.Context
-		cancel             context.CancelFunc
-		k8sClient          *K8sTestClient
-		testNamespace      string
-		testCounter        int
-		prometheusAdapter  adapters.SignalAdapter
-		k8sEventAdapter    adapters.SignalAdapter
-		crdCreator         *processing.CRDCreator
-		dedupChecker       *processing.PhaseBasedDeduplicationChecker
-		logger             logr.Logger
-		metricsInstance    *metrics.Metrics
+		ctx               context.Context
+		cancel            context.CancelFunc
+		k8sClient         *K8sTestClient
+		testNamespace     string
+		testCounter       int
+		prometheusAdapter adapters.SignalAdapter
+		k8sEventAdapter   adapters.SignalAdapter
+		crdCreator        *processing.CRDCreator
+		dedupChecker      *processing.PhaseBasedDeduplicationChecker
+		logger            logr.Logger
+		metricsInstance   *metrics.Metrics
 	)
 
 	BeforeEach(func() {

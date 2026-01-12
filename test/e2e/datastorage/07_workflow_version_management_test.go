@@ -162,11 +162,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ExecutionEngine: "tekton",
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                            // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,  // mandatory
-					Component:   "deployment",                           // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,        // mandatory
-					Environment: "production",                           // mandatory
+					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Component:   "deployment",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Environment: "production",                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -175,9 +175,8 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.0.0 response", "status", 201)
 
-
 			// DD-WORKFLOW-002 v3.0: workflow_id is UUID
-		// TODO: Fix workflow ID access after type assertion
+			// TODO: Fix workflow ID access after type assertion
 			Expect(workflowV1UUID).ToNot(BeEmpty())
 			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
 
@@ -212,11 +211,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				PreviousVersion: dsgen.NewOptString(previousVersion),
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                            // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,  // mandatory
-					Component:   "deployment",                           // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,        // mandatory
-					Environment: "production",                           // mandatory
+					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Component:   "deployment",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Environment: "production",                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -225,8 +224,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.1.0 response", "status", 201)
 
-
-		// TODO: Fix workflow ID access after type assertion
+			// TODO: Fix workflow ID access after type assertion
 			Expect(workflowV2UUID).ToNot(BeEmpty())
 			Expect(workflowV2UUID).ToNot(Equal(workflowV1UUID), "v1.1.0 should have different UUID than v1.0.0")
 			testLogger.Info("✅ Workflow v1.1.0 created", "uuid", workflowV2UUID)
@@ -269,11 +267,11 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				Status:          dsgen.RemediationWorkflowStatusActive,
 				PreviousVersion: dsgen.NewOptString(previousVersion),
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  "OOMKilled",                            // mandatory (DD-WORKFLOW-001 v1.4)
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,  // mandatory
-					Component:   "deployment",                           // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,        // mandatory
-					Environment: "production",                           // mandatory
+					SignalType:  "OOMKilled",                           // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Component:   "deployment",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Environment: "production",                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -281,7 +279,7 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			_, err := dsClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 
-		// TODO: Fix workflow ID access after type assertion
+			// TODO: Fix workflow ID access after type assertion
 			testLogger.Info("✅ Workflow v2.0.0 created", "uuid", workflowV3UUID)
 
 			// Verify only v2.0.0 is latest
@@ -307,19 +305,19 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			topK := 10
 			searchReq := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
-					SignalType:  "OOMKilled",                                   // mandatory
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
-					Component:   "deployment",                                  // mandatory
-					Environment: "production",                                  // mandatory
-					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
+					SignalType:  "OOMKilled",                                 // mandatory
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+					Component:   "deployment",                                // mandatory
+					Environment: "production",                                // mandatory
+					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
 				},
 				TopK: dsgen.NewOptInt(topK),
 			}
 
 			resp, err := dsClient.SearchWorkflows(ctx, &searchReq)
-		Expect(err).ToNot(HaveOccurred())
-		searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
-		Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
+			Expect(err).ToNot(HaveOccurred())
+			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
 			testLogger.Info("Search response", "status", 201)
 
 			Expect(searchResults).ToNot(BeNil())
@@ -363,7 +361,6 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 
 			body, _ := io.ReadAll(resp.Body)
 
-
 			var workflow map[string]interface{}
 			err = json.Unmarshal(body, &workflow)
 			Expect(err).ToNot(HaveOccurred())
@@ -387,7 +384,6 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 			defer func() { _ = resp.Body.Close() }()
 
 			body, _ := io.ReadAll(resp.Body)
-
 
 			var versionsResp map[string]interface{}
 			err = json.Unmarshal(body, &versionsResp)

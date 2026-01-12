@@ -276,4 +276,3 @@ func (b *EnrichmentBuilder) ensureKubernetesContext() {
 func (b *EnrichmentBuilder) Build() sharedtypes.EnrichmentResults {
 	return *b.enrichment
 }
-

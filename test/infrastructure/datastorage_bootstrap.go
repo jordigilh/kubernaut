@@ -774,24 +774,27 @@ type E2EImageConfig struct {
 //	imageName, err := infrastructure.BuildAndLoadImageToKind(imageConfig, GinkgoWriter)
 //	// Image built, tagged, and loaded to Kind
 //	// Later: infrastructure.CleanupE2EImage(imageName, GinkgoWriter)
+//
 // BuildImageForKind builds a container image for E2E testing.
 // Returns the image name (with localhost/ prefix) for later loading to Kind.
 //
 // This is Phase 1 of the hybrid E2E pattern:
-//   Phase 1: Build images (BEFORE cluster creation)
-//   Phase 2: Create Kind cluster
-//   Phase 3: Load images to cluster (using LoadImageToKind)
+//
+//	Phase 1: Build images (BEFORE cluster creation)
+//	Phase 2: Create Kind cluster
+//	Phase 3: Load images to cluster (using LoadImageToKind)
 //
 // Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
 // Performance: Eliminates cluster idle time during image builds
 //
 // Example:
-//   // Phase 1: Build images in parallel (no cluster yet)
-//   imageName, err := BuildImageForKind(cfg, writer)
-//   // Phase 2: Create Kind cluster
-//   createKindCluster(...)
-//   // Phase 3: Load image to cluster
-//   err = LoadImageToKind(imageName, cfg.ServiceName, clusterName, writer)
+//
+//	// Phase 1: Build images in parallel (no cluster yet)
+//	imageName, err := BuildImageForKind(cfg, writer)
+//	// Phase 2: Create Kind cluster
+//	createKindCluster(...)
+//	// Phase 3: Load image to cluster
+//	err = LoadImageToKind(imageName, cfg.ServiceName, clusterName, writer)
 func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	projectRoot := getProjectRoot()
 
@@ -838,9 +841,10 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 // Steps: Export to tar → Load to Kind → Remove tar → Remove Podman image
 //
 // This is Phase 3 of the hybrid E2E pattern:
-//   Phase 1: Build images (using BuildImageForKind)
-//   Phase 2: Create Kind cluster
-//   Phase 3: Load images to cluster (THIS FUNCTION)
+//
+//	Phase 1: Build images (using BuildImageForKind)
+//	Phase 2: Create Kind cluster
+//	Phase 3: Load images to cluster (THIS FUNCTION)
 //
 // Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md
 // Performance: Explicit load step after cluster creation eliminates idle time
@@ -852,8 +856,9 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 //   - writer: Output writer for logging
 //
 // Example:
-//   imageName, _ := BuildImageForKind(cfg, writer)
-//   err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
+//
+//	imageName, _ := BuildImageForKind(cfg, writer)
+//	err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
 func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "📦 Loading image to Kind cluster: %s\n", clusterName)
 
@@ -922,12 +927,14 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 // Performance: 18% slower than hybrid pattern, but simpler for small services
 //
 // Example (Standard Pattern):
-//   imageName, err := BuildAndLoadImageToKind(cfg, writer)
+//
+//	imageName, err := BuildAndLoadImageToKind(cfg, writer)
 //
 // Example (Hybrid Pattern - RECOMMENDED):
-//   imageName, err := BuildImageForKind(cfg, writer)
-//   createKindCluster(...)
-//   err = LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer)
+//
+//	imageName, err := BuildImageForKind(cfg, writer)
+//	createKindCluster(...)
+//	err = LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer)
 func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	imageName, err := BuildImageForKind(cfg, writer)
 	if err != nil {

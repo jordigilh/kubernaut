@@ -33,7 +33,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -75,7 +74,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	// Child CRD controllers NOT imported - Phase 1 integration tests use manual control
 	// Real controller testing happens in:
 	//   - Service integration tests (test/integration/{service}/)
@@ -113,51 +112,82 @@ func TestRemediationOrchestratorIntegration(t *testing.T) {
 }
 
 // SynchronizedBeforeSuite runs ONCE globally before all parallel processes start
-// Pattern: AIAnalysis (Programmatic podman-compose + parallel-safe)
-// Authority: docs/handoff/TRIAGE_RO_INFRASTRUCTURE_BOOTSTRAP_COMPARISON.md
+// DD-TEST-010 Pattern: Multi-Controller (per-process controller isolation)
+// Phase 1: Infrastructure ONLY (shared across all processes)
+// Phase 2: Per-process controller setup (isolated envtest + controller instances)
 var _ = SynchronizedBeforeSuite(func() []byte {
-	// This runs ONCE on process 1 only - creates shared infrastructure
+	// ======================================================================
+	// PHASE 1: INFRASTRUCTURE SETUP (ONCE - GLOBAL)
+	// ======================================================================
+	// Runs ONCE on process 1 only
+	// Starts shared infrastructure (PostgreSQL, Redis, DataStorage)
+	// Does NOT start controllers (moved to Phase 2 for per-process isolation)
+	//
+	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// Authority: docs/architecture/decisions/DD-TEST-010-multi-controller-pattern.md
+	// ======================================================================
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("RemediationOrchestrator Integration Test Suite - Automated Setup")
+	GinkgoWriter.Println("PHASE 1: Infrastructure Setup (DD-TEST-010)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	GinkgoWriter.Println("Creating test infrastructure...")
-	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
+	GinkgoWriter.Println("Starting shared infrastructure...")
 	GinkgoWriter.Println("  • PostgreSQL (port 15435)")
 	GinkgoWriter.Println("  • Redis (port 16381)")
 	GinkgoWriter.Println("  • Data Storage API (port 18140)")
-	GinkgoWriter.Println("  • Pattern: AIAnalysis (Programmatic podman-compose)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	ctx, cancel = context.WithCancel(context.TODO())
 
 	var err error
 
-	// Cleanup handled by StartDSBootstrap (cleanupDSBootstrapContainers)
 	By("Starting RO integration infrastructure (DD-TEST-002)")
-	// This starts: PostgreSQL, Redis, Immudb, DataStorage
-	// Per DD-TEST-001 v2.2: PostgreSQL=15435, Redis=16381, Immudb=13325, DS=18140
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "remediationorchestrator",
-		PostgresPort:    15435,                        // DD-TEST-001 v2.2
-		RedisPort:       16381,                        // DD-TEST-001 v2.2
-		DataStoragePort: ROIntegrationDataStoragePort, // DD-TEST-001 v2.2
+		PostgresPort:    15435,
+		RedisPort:       16381,
+		DataStoragePort: ROIntegrationDataStoragePort,
 		MetricsPort:     19140,
 		ConfigDir:       "test/integration/remediationorchestrator/config",
 	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All external services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+	GinkgoWriter.Println("✅ All external services started and healthy")
 
-	// Clean up infrastructure on exit
 	DeferCleanup(func() {
 		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// DD-TEST-010: Phase 1 returns empty - no controller state to share
+	return []byte{}
+}, func(data []byte) {
+	// ======================================================================
+	// PHASE 2: PER-PROCESS CONTROLLER SETUP (ISOLATED)
+	// ======================================================================
+	// Runs on ALL parallel processes (including process 1)
+	// Each process gets its own:
+	// - envtest (isolated K8s API server)
+	// - k8sManager (isolated controller instance)
+	// - Controller reconciler (isolated event handlers)
+	//
+	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
+	// Authority: docs/architecture/decisions/DD-TEST-010-multi-controller-pattern.md
+	// ======================================================================
+
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("PHASE 2: Per-Process Controller Setup (DD-TEST-010)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// Create per-process context for controller lifecycle
+	ctx, cancel = context.WithCancel(context.Background())
+
 	By("Registering ALL CRD schemes for RO orchestration")
 
 	// RemediationRequest and RemediationApprovalRequest (RO owns these)
-	err = remediationv1.AddToScheme(scheme.Scheme)
+	err := remediationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// SignalProcessing (RO creates these)
@@ -176,7 +206,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = notificationv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Bootstrapping envtest with ALL CRDs")
+	By("Bootstrapping per-process envtest with ALL CRDs")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -235,7 +265,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
 	// Note: Using 127.0.0.1 instead of "localhost" to force IPv4
 	// (macOS sometimes resolves localhost to ::1 IPv6, which may not be accessible)
-	mockTransport := testutil.NewMockUserTransport("test-remediationorchestrator@integration.test")
+	mockTransport := testauth.NewMockUserTransport("test-remediationorchestrator@integration.test")
 	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageBaseURL,
 		5*time.Second,
@@ -260,8 +290,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ RO metrics initialized and registered")
 
 	// Create routing engine for blocking logic (BR-ORCH-042)
+	// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
 	routingEngine := routing.NewRoutingEngine(
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(), // Cache-bypassed reader for fresh routing decisions
 		"", // No namespace filter - all namespaces
 		routing.Config{
 			ConsecutiveFailureThreshold: 3,
@@ -274,6 +306,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	reconciler := controller.NewReconciler(
 		k8sManager.GetClient(),
+		k8sManager.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		k8sManager.GetScheme(),
 		auditStore,                 // Real audit store for ADR-032 compliance
 		nil,                        // No EventRecorder for integration tests
@@ -376,137 +409,58 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("    - Redis: localhost:16381")
 	GinkgoWriter.Printf("    - Data Storage: %s\n", dataStorageBaseURL)
 	GinkgoWriter.Println("")
-
-	// Serialize REST config to pass to all processes
-	// Each process needs to create its own k8s client
-	configBytes, err := json.Marshal(struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}{
-		Host:     cfg.Host,
-		CAData:   cfg.CAData,
-		CertData: cfg.CertData,
-		KeyData:  cfg.KeyData,
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	return configBytes
-}, func(data []byte) {
-	// This runs on ALL parallel processes (including process 1)
-	// Each process creates its own k8s client and context
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	// Deserialize REST config from process 1
-	var configData struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}
-	err := json.Unmarshal(data, &configData)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register ALL CRD schemes (MUST be done before creating client)
-	err = remediationv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = signalprocessingv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = aianalysisv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = workflowexecutionv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = notificationv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create per-process REST config
-	cfg = &rest.Config{
-		Host: configData.Host,
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   configData.CAData,
-			CertData: configData.CertData,
-			KeyData:  configData.KeyData,
-		},
-	}
-
-	// Create per-process k8s client
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
-
-	// Create per-process context ONLY if not already set (process 1 has it from first function)
-	// Process 1: ctx already set and used by controller manager - don't overwrite!
-	// Other processes: Need ctx for test operations
-	if ctx == nil {
-		ctx, cancel = context.WithCancel(context.Background())
-	}
-
-	// Create per-process audit store (DD-AUDIT-003)
-	// Pattern: AIAnalysis suite_test.go lines 434-442
-	// ALL parallel processes need audit store to call Flush() in tests
-	// Only process 1 emits events; other processes have empty stores
-	mockTransport := testutil.NewMockUserTransport("test-remediationorchestrator@integration.test")
-	dataStorageClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		dataStorageBaseURL,
-		5*time.Second,
-		mockTransport,
-	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client for process audit store")
-
-	auditLogger := ctrl.Log.WithName("audit")
-	auditConfig := audit.Config{
-		FlushInterval: 1 * time.Second,
-		BufferSize:    10,
-		BatchSize:     5,
-		MaxRetries:    3,
-	}
-	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
-	Expect(err).ToNot(HaveOccurred(), "Per-process audit store creation must succeed")
+	GinkgoWriter.Println("✅ Phase 2 complete - per-process controller ready")
 })
 
 // SynchronizedAfterSuite ensures proper cleanup in parallel execution
+// DD-TEST-010: Per-process cleanup (Phase 1) + shared infrastructure cleanup (Phase 2)
 var _ = SynchronizedAfterSuite(func() {
-	// This runs on ALL parallel processes - no cleanup needed per process
-}, func() {
-	// This runs ONCE on the last parallel process - cleanup shared infrastructure
-	By("Tearing down the test environment")
+	// ======================================================================
+	// PHASE 1: PER-PROCESS CLEANUP (RUNS ON ALL PROCESSES)
+	// ======================================================================
+	// Each parallel process cleans up its own controller and envtest instance
+	//
+	// DD-TEST-010: Multi-Controller Pattern Cleanup
+	// ======================================================================
+	By("Tearing down per-process test environment")
 
-	// RO-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage
-	// This prevents "connection refused" errors during cleanup when the
-	// background writer tries to flush buffered events after DataStorage is stopped.
-	// Integration tests MUST always use real DataStorage (DD-TESTING-001)
-	By("Flushing audit store before infrastructure shutdown")
-
-	flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer flushCancel()
-
-	err := auditStore.Flush(flushCtx)
-	if err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to flush audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store flushed (all buffered events written)")
+	// Stop controller manager (graceful shutdown)
+	if cancel != nil {
+		cancel()
 	}
 
-	err = auditStore.Close()
-	if err != nil {
-		GinkgoWriter.Printf("⚠️ Warning: Failed to close audit store: %v\n", err)
-	} else {
-		GinkgoWriter.Println("✅ Audit store closed")
-	}
-
-	cancel()
-
+	// Stop per-process envtest
 	if testEnv != nil {
 		err := testEnv.Stop()
-		Expect(err).NotTo(HaveOccurred())
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Warning: Failed to stop envtest: %v\n", err)
+		} else {
+			GinkgoWriter.Println("✅ Per-process envtest stopped")
+		}
 	}
 
-	// RO-SHUTDOWN-001: Safe to stop now - audit events already flushed
-	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
+	// Close per-process audit store
+	if auditStore != nil {
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer flushCancel()
 
-	By("Cleaning up infrastructure images to prevent disk space issues (DD-TEST-001 v1.1)")
-	// Prune ONLY infrastructure images for RemediationOrchestrator
+		_ = auditStore.Flush(flushCtx) // Best effort
+		_ = auditStore.Close()         // Best effort
+	}
+}, func() {
+	// ======================================================================
+	// PHASE 2: SHARED INFRASTRUCTURE CLEANUP (RUNS ONCE)
+	// ======================================================================
+	// Runs ONCE on the last parallel process to cleanup shared infrastructure
+	//
+	// DD-TEST-010: Infrastructure cleanup after all controllers stopped
+	// ======================================================================
+	By("Cleaning up shared infrastructure")
+
+	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
+	// No action needed here - DeferCleanup will stop PostgreSQL, Redis, DataStorage
+
+	By("Cleaning up infrastructure images (DD-TEST-001 v1.1)")
 	pruneCmd := exec.Command("podman", "image", "prune", "-f",
 		"--filter", "label=io.podman.compose.project=remediationorchestrator-integration")
 	pruneOutput, pruneErr := pruneCmd.CombinedOutput()
@@ -516,7 +470,7 @@ var _ = SynchronizedAfterSuite(func() {
 		GinkgoWriter.Println("✅ Infrastructure images pruned")
 	}
 
-	GinkgoWriter.Println("✅ Cleanup complete - all services stopped")
+	GinkgoWriter.Println("✅ Cleanup complete - all per-process controllers stopped, shared infrastructure cleaned")
 })
 
 // getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.

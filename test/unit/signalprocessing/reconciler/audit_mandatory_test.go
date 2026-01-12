@@ -146,14 +146,14 @@ var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func()
 				},
 			}
 
-		reconciler := &signalprocessing.SignalProcessingReconciler{
-			Client:        fakeClient,
-			Scheme:        scheme,
-			StatusManager: status.NewManager(fakeClient),
-			Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
-			K8sEnricher:   mockEnricher, // Need this to reach audit check
-			AuditClient:   nil,          // DELIBERATELY nil to test mandatory enforcement
-		}
+			reconciler := &signalprocessing.SignalProcessingReconciler{
+				Client:        fakeClient,
+				Scheme:        scheme,
+				StatusManager: status.NewManager(fakeClient, fakeClient),
+				Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
+				K8sEnricher:   mockEnricher, // Need this to reach audit check
+				AuditClient:   nil,          // DELIBERATELY nil to test mandatory enforcement
+			}
 
 			By("Attempting reconciliation")
 			req := reconcile.Request{

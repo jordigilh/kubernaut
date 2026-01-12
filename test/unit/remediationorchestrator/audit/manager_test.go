@@ -27,7 +27,7 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	prodaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 func TestAuditManager(t *testing.T) {
@@ -102,7 +102,7 @@ var _ = Describe("Audit Manager", func() {
 	// ========================================
 	// BuildLifecycleStartedEvent Tests
 	// Per DD-AUDIT-003: orchestrator.lifecycle.started (P1)
-	// Per V1.0 Maturity: Using testutil.ValidateAuditEvent for consistent validation
+	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildLifecycleStartedEvent", func() {
 		It("should build complete orchestrator.lifecycle.started event with all required fields", func() {
@@ -113,8 +113,8 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			// V1.0 Maturity: Use testutil.ValidateAuditEvent for structured validation
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			// V1.0 Maturity: Use validators.ValidateAuditEvent for structured validation
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				// Required fields
 				EventType:     "orchestrator.lifecycle.started",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
@@ -145,7 +145,7 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				EventType:     "orchestrator.lifecycle.started",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "started",
@@ -164,7 +164,7 @@ var _ = Describe("Audit Manager", func() {
 	// ========================================
 	// BuildPhaseTransitionEvent Tests
 	// Per DD-AUDIT-003: orchestrator.phase.transitioned (P1)
-	// Per V1.0 Maturity: Using testutil.ValidateAuditEvent for consistent validation
+	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildPhaseTransitionEvent", func() {
 		It("should build complete orchestrator.lifecycle.transitioned event with all required fields", func() {
@@ -177,7 +177,7 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				EventType:     "orchestrator.lifecycle.transitioned",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "transitioned",
@@ -215,7 +215,7 @@ var _ = Describe("Audit Manager", func() {
 				)
 				Expect(err).ToNot(HaveOccurred())
 
-				testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+				validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 					EventType:     "orchestrator.lifecycle.transitioned",
 					EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 					EventAction:   "transitioned",
@@ -233,7 +233,7 @@ var _ = Describe("Audit Manager", func() {
 	// ========================================
 	// BuildCompletionEvent Tests
 	// Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1)
-	// Per V1.0 Maturity: Using testutil.ValidateAuditEvent for consistent validation
+	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildCompletionEvent", func() {
 		It("should build complete orchestrator.lifecycle.completed event with all required fields", func() {
@@ -246,7 +246,7 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				EventType:     "orchestrator.lifecycle.completed",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
@@ -259,7 +259,7 @@ var _ = Describe("Audit Manager", func() {
 				},
 			})
 
-			// DurationMs is not part of testutil.ExpectedAuditEvent, validate separately
+			// DurationMs is not part of validators.ExpectedAuditEvent, validate separately
 			Expect(event.DurationMs.IsSet()).To(BeTrue())
 			Expect(event.DurationMs.Value).To(Equal(5000))
 		})
@@ -274,7 +274,7 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				EventType:     "orchestrator.lifecycle.completed",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
@@ -295,79 +295,79 @@ var _ = Describe("Audit Manager", func() {
 	// ========================================
 	// BuildFailureEvent Tests
 	// Per DD-AUDIT-003: orchestrator.lifecycle.completed (P1) with failure outcome
-	// Per V1.0 Maturity: Using testutil.ValidateAuditEvent for consistent validation
+	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildFailureEvent", func() {
-	It("should build complete orchestrator.lifecycle.completed event with failure outcome", func() {
-		event, err := manager.BuildFailureEvent(
-			"correlation-123",
-			"default",
-			"rr-test-001",
-			"workflow_execution",
-			"RBAC permission denied",
-			5000,
-		)
-		Expect(err).ToNot(HaveOccurred())
+		It("should build complete orchestrator.lifecycle.completed event with failure outcome", func() {
+			event, err := manager.BuildFailureEvent(
+				"correlation-123",
+				"default",
+				"rr-test-001",
+				"workflow_execution",
+				"RBAC permission denied",
+				5000,
+			)
+			Expect(err).ToNot(HaveOccurred())
 
-		testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
-			EventType:     "orchestrator.lifecycle.completed",
-			EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
-			EventAction:   "completed",
-			EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeFailure),
-			CorrelationID: "correlation-123",
-			Namespace:     ptr.To("default"),
-			ResourceID:    ptr.To("rr-test-001"),
-			EventDataFields: map[string]interface{}{
-				"outcome":        "Failed",
-				"failure_phase":  "workflow_execution",
-				"failure_reason": "RBAC permission denied",
-			},
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
+				EventType:     "orchestrator.lifecycle.completed",
+				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
+				EventAction:   "completed",
+				EventOutcome:  ptr.To(ogenclient.AuditEventEventOutcomeFailure),
+				CorrelationID: "correlation-123",
+				Namespace:     ptr.To("default"),
+				ResourceID:    ptr.To("rr-test-001"),
+				EventDataFields: map[string]interface{}{
+					"outcome":        "Failed",
+					"failure_phase":  "workflow_execution",
+					"failure_reason": "RBAC permission denied",
+				},
+			})
+
+			Expect(event.DurationMs.IsSet()).To(BeTrue())
+			Expect(event.DurationMs.Value).To(Equal(5000))
 		})
 
-		Expect(event.DurationMs.IsSet()).To(BeTrue())
-		Expect(event.DurationMs.Value).To(Equal(5000))
-	})
+		// BR-AUDIT-005 Gap #7: Validate ErrorDetails structure in failure events
+		It("should emit audit event with standardized ErrorDetails structure (Gap #7)", func() {
+			event, err := manager.BuildFailureEvent(
+				"correlation-789",
+				"production",
+				"rr-prod-002",
+				"signal_processing",
+				"timeout while enriching alert",
+				15000,
+			)
+			Expect(err).ToNot(HaveOccurred())
 
-	// BR-AUDIT-005 Gap #7: Validate ErrorDetails structure in failure events
-	It("should emit audit event with standardized ErrorDetails structure (Gap #7)", func() {
-		event, err := manager.BuildFailureEvent(
-			"correlation-789",
-			"production",
-			"rr-prod-002",
-			"signal_processing",
-			"timeout while enriching alert",
-			15000,
-		)
-		Expect(err).ToNot(HaveOccurred())
+			// Convert to map for EventData validation
+			eventDataBytes, _ := json.Marshal(event.EventData)
+			var eventData map[string]interface{}
+			_ = json.Unmarshal(eventDataBytes, &eventData)
 
-		// Convert to map for EventData validation
-		eventDataBytes, _ := json.Marshal(event.EventData)
-		var eventData map[string]interface{}
-		_ = json.Unmarshal(eventDataBytes, &eventData)
+			// Validate error_details field exists (DD-ERROR-001)
+			Expect(eventData).To(HaveKey("error_details"), "Should contain error_details field (Gap #7)")
 
-		// Validate error_details field exists (DD-ERROR-001)
-		Expect(eventData).To(HaveKey("error_details"), "Should contain error_details field (Gap #7)")
+			errorDetails, ok := eventData["error_details"].(map[string]interface{})
+			Expect(ok).To(BeTrue(), "error_details should be a map")
 
-		errorDetails, ok := eventData["error_details"].(map[string]interface{})
-		Expect(ok).To(BeTrue(), "error_details should be a map")
+			// Validate ErrorDetails structure per DD-ERROR-001
+			Expect(errorDetails).To(HaveKey("code"), "Should have error code")
+			Expect(errorDetails).To(HaveKey("message"), "Should have error message")
+			Expect(errorDetails).To(HaveKey("component"), "Should have component name")
+			Expect(errorDetails).To(HaveKey("retry_possible"), "Should have retry_possible indicator")
 
-		// Validate ErrorDetails structure per DD-ERROR-001
-		Expect(errorDetails).To(HaveKey("code"), "Should have error code")
-		Expect(errorDetails).To(HaveKey("message"), "Should have error message")
-		Expect(errorDetails).To(HaveKey("component"), "Should have component name")
-		Expect(errorDetails).To(HaveKey("retry_possible"), "Should have retry_possible indicator")
+			// Validate values
+			Expect(errorDetails["component"]).To(Equal("remediationorchestrator"), "Should identify remediationorchestrator component")
+			Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
+			Expect(errorDetails["message"]).To(ContainSubstring("signal_processing"), "Message should include failure phase")
+			Expect(errorDetails["message"]).To(ContainSubstring("timeout"), "Message should include failure reason")
+			Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
 
-		// Validate values
-		Expect(errorDetails["component"]).To(Equal("remediationorchestrator"), "Should identify remediationorchestrator component")
-		Expect(errorDetails["code"]).To(MatchRegexp("^ERR_"), "Error code should start with ERR_")
-		Expect(errorDetails["message"]).To(ContainSubstring("signal_processing"), "Message should include failure phase")
-		Expect(errorDetails["message"]).To(ContainSubstring("timeout"), "Message should include failure reason")
-		Expect(errorDetails["retry_possible"]).To(BeAssignableToTypeOf(false), "retry_possible should be boolean")
-
-		// Validate timeout errors are marked as retryable (business logic)
-		Expect(errorDetails["code"]).To(Equal("ERR_TIMEOUT_REMEDIATION"), "Timeout errors should use ERR_TIMEOUT_REMEDIATION code")
-		Expect(errorDetails["retry_possible"]).To(BeTrue(), "Timeout errors should be retryable")
-	})
+			// Validate timeout errors are marked as retryable (business logic)
+			Expect(errorDetails["code"]).To(Equal("ERR_TIMEOUT_REMEDIATION"), "Timeout errors should use ERR_TIMEOUT_REMEDIATION code")
+			Expect(errorDetails["retry_possible"]).To(BeTrue(), "Timeout errors should be retryable")
+		})
 
 		It("should handle different failure phases and reasons with correct duration", func() {
 			event, err := manager.BuildFailureEvent(
@@ -380,7 +380,7 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				EventType:     "orchestrator.lifecycle.completed",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "completed",
@@ -395,99 +395,99 @@ var _ = Describe("Audit Manager", func() {
 				},
 			})
 
-		Expect(event.DurationMs.IsSet()).To(BeTrue())
-		Expect(event.DurationMs.Value).To(Equal(10000))
-	})
-
-	// BR-AUDIT-005 Gap #7: Error Code Mapping Unit Tests
-	// Per DD-TEST-008: Error code mapping belongs in unit tests, not integration tests
-	Context("Gap #7: Error Code Mapping Logic", func() {
-		It("should map invalid config errors to ERR_INVALID_CONFIG", func() {
-			event, err := manager.BuildFailureEvent(
-				"correlation-001",
-				"default",
-				"rr-test",
-				"configuration",
-				"invalid workflow selector",
-				1000,
-			)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Validate error_details
-			eventDataBytes, _ := json.Marshal(event.EventData)
-			var eventData map[string]interface{}
-			_ = json.Unmarshal(eventDataBytes, &eventData)
-
-			errorDetails := eventData["error_details"].(map[string]interface{})
-			Expect(errorDetails["code"]).To(Equal("ERR_INVALID_CONFIG"), "Invalid config should map to ERR_INVALID_CONFIG")
-			Expect(errorDetails["retry_possible"]).To(BeFalse(), "Invalid config is permanent error")
-			Expect(errorDetails["component"]).To(Equal("remediationorchestrator"))
-			Expect(errorDetails["message"]).To(ContainSubstring("invalid workflow selector"))
+			Expect(event.DurationMs.IsSet()).To(BeTrue())
+			Expect(event.DurationMs.Value).To(Equal(10000))
 		})
 
-		It("should map K8s creation errors to ERR_K8S_CREATE_FAILED", func() {
-			event, err := manager.BuildFailureEvent(
-				"correlation-002",
-				"default",
-				"rr-test",
-				"signal_processing",
-				"failed to create SignalProcessing: forbidden",
-				1000,
-			)
-			Expect(err).ToNot(HaveOccurred())
+		// BR-AUDIT-005 Gap #7: Error Code Mapping Unit Tests
+		// Per DD-TEST-008: Error code mapping belongs in unit tests, not integration tests
+		Context("Gap #7: Error Code Mapping Logic", func() {
+			It("should map invalid config errors to ERR_INVALID_CONFIG", func() {
+				event, err := manager.BuildFailureEvent(
+					"correlation-001",
+					"default",
+					"rr-test",
+					"configuration",
+					"invalid workflow selector",
+					1000,
+				)
+				Expect(err).ToNot(HaveOccurred())
 
-			eventDataBytes, _ := json.Marshal(event.EventData)
-			var eventData map[string]interface{}
-			_ = json.Unmarshal(eventDataBytes, &eventData)
+				// Validate error_details
+				eventDataBytes, _ := json.Marshal(event.EventData)
+				var eventData map[string]interface{}
+				_ = json.Unmarshal(eventDataBytes, &eventData)
 
-			errorDetails := eventData["error_details"].(map[string]interface{})
-			Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"), "K8s creation errors should map to ERR_K8S_CREATE_FAILED")
-			Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s errors are transient")
-			Expect(errorDetails["message"]).To(ContainSubstring("forbidden"))
+				errorDetails := eventData["error_details"].(map[string]interface{})
+				Expect(errorDetails["code"]).To(Equal("ERR_INVALID_CONFIG"), "Invalid config should map to ERR_INVALID_CONFIG")
+				Expect(errorDetails["retry_possible"]).To(BeFalse(), "Invalid config is permanent error")
+				Expect(errorDetails["component"]).To(Equal("remediationorchestrator"))
+				Expect(errorDetails["message"]).To(ContainSubstring("invalid workflow selector"))
+			})
+
+			It("should map K8s creation errors to ERR_K8S_CREATE_FAILED", func() {
+				event, err := manager.BuildFailureEvent(
+					"correlation-002",
+					"default",
+					"rr-test",
+					"signal_processing",
+					"failed to create SignalProcessing: forbidden",
+					1000,
+				)
+				Expect(err).ToNot(HaveOccurred())
+
+				eventDataBytes, _ := json.Marshal(event.EventData)
+				var eventData map[string]interface{}
+				_ = json.Unmarshal(eventDataBytes, &eventData)
+
+				errorDetails := eventData["error_details"].(map[string]interface{})
+				Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"), "K8s creation errors should map to ERR_K8S_CREATE_FAILED")
+				Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s errors are transient")
+				Expect(errorDetails["message"]).To(ContainSubstring("forbidden"))
+			})
+
+			It("should map unknown errors to ERR_INTERNAL_ORCHESTRATION", func() {
+				event, err := manager.BuildFailureEvent(
+					"correlation-003",
+					"default",
+					"rr-test",
+					"unknown",
+					"unexpected panic in reconciler",
+					1000,
+				)
+				Expect(err).ToNot(HaveOccurred())
+
+				eventDataBytes, _ := json.Marshal(event.EventData)
+				var eventData map[string]interface{}
+				_ = json.Unmarshal(eventDataBytes, &eventData)
+
+				errorDetails := eventData["error_details"].(map[string]interface{})
+				Expect(errorDetails["code"]).To(Equal("ERR_INTERNAL_ORCHESTRATION"), "Unknown errors should map to ERR_INTERNAL_ORCHESTRATION")
+				Expect(errorDetails["retry_possible"]).To(BeTrue(), "Default to retryable")
+				Expect(errorDetails["message"]).To(ContainSubstring("unexpected panic"))
+			})
+
+			It("should map 'not found' errors to ERR_K8S_CREATE_FAILED", func() {
+				event, err := manager.BuildFailureEvent(
+					"correlation-004",
+					"default",
+					"rr-test",
+					"workflow_execution",
+					"WorkflowExecution not found after creation",
+					1000,
+				)
+				Expect(err).ToNot(HaveOccurred())
+
+				eventDataBytes, _ := json.Marshal(event.EventData)
+				var eventData map[string]interface{}
+				_ = json.Unmarshal(eventDataBytes, &eventData)
+
+				errorDetails := eventData["error_details"].(map[string]interface{})
+				Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"), "'not found' should map to ERR_K8S_CREATE_FAILED")
+				Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s not found errors are transient")
+				Expect(errorDetails["message"]).To(ContainSubstring("not found"))
+			})
 		})
-
-		It("should map unknown errors to ERR_INTERNAL_ORCHESTRATION", func() {
-			event, err := manager.BuildFailureEvent(
-				"correlation-003",
-				"default",
-				"rr-test",
-				"unknown",
-				"unexpected panic in reconciler",
-				1000,
-			)
-			Expect(err).ToNot(HaveOccurred())
-
-			eventDataBytes, _ := json.Marshal(event.EventData)
-			var eventData map[string]interface{}
-			_ = json.Unmarshal(eventDataBytes, &eventData)
-
-			errorDetails := eventData["error_details"].(map[string]interface{})
-			Expect(errorDetails["code"]).To(Equal("ERR_INTERNAL_ORCHESTRATION"), "Unknown errors should map to ERR_INTERNAL_ORCHESTRATION")
-			Expect(errorDetails["retry_possible"]).To(BeTrue(), "Default to retryable")
-			Expect(errorDetails["message"]).To(ContainSubstring("unexpected panic"))
-		})
-
-		It("should map 'not found' errors to ERR_K8S_CREATE_FAILED", func() {
-			event, err := manager.BuildFailureEvent(
-				"correlation-004",
-				"default",
-				"rr-test",
-				"workflow_execution",
-				"WorkflowExecution not found after creation",
-				1000,
-			)
-			Expect(err).ToNot(HaveOccurred())
-
-			eventDataBytes, _ := json.Marshal(event.EventData)
-			var eventData map[string]interface{}
-			_ = json.Unmarshal(eventDataBytes, &eventData)
-
-			errorDetails := eventData["error_details"].(map[string]interface{})
-			Expect(errorDetails["code"]).To(Equal("ERR_K8S_CREATE_FAILED"), "'not found' should map to ERR_K8S_CREATE_FAILED")
-			Expect(errorDetails["retry_possible"]).To(BeTrue(), "K8s not found errors are transient")
-			Expect(errorDetails["message"]).To(ContainSubstring("not found"))
-		})
-	})
 	})
 
 	// ========================================
@@ -497,7 +497,7 @@ var _ = Describe("Audit Manager", func() {
 	// ========================================
 	// BuildApprovalRequestedEvent Tests
 	// Related to ADR-040 (RemediationApprovalRequest)
-	// Per V1.0 Maturity: Using testutil.ValidateAuditEvent for consistent validation
+	// Per V1.0 Maturity: Using validators.ValidateAuditEvent for consistent validation
 	// ========================================
 	Describe("BuildApprovalRequestedEvent", func() {
 		It("should build complete orchestrator.approval.requested event with all required fields", func() {
@@ -513,7 +513,7 @@ var _ = Describe("Audit Manager", func() {
 			)
 			Expect(err).ToNot(HaveOccurred())
 
-			testutil.ValidateAuditEvent(toAuditEvent(event), testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(toAuditEvent(event), validators.ExpectedAuditEvent{
 				EventType:     "orchestrator.approval.requested",
 				EventCategory: ogenclient.AuditEventEventCategoryOrchestration,
 				EventAction:   "approval_requested",

@@ -22,14 +22,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
+
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -46,8 +44,8 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 	var (
 		testNamespace string
 		k8sClient     client.Client
-		testServer    *httptest.Server
-		ctx           context.Context
+		// testServer removed - using deployed Gateway
+		ctx context.Context
 	)
 
 	BeforeEach(func() {
@@ -57,20 +55,12 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		k8sClient = getKubernetesClient()
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for error handling tests")
 
-		// Create Gateway server for testing
-
-		// Create HTTP test server
-		testServer = httptest.NewServer(nil)
-		Expect(testServer).ToNot(BeNil(), "Test server should be created")
+		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
+		// No local test server needed
 
 		// Create unique namespace for test isolation
 		testNamespace = fmt.Sprintf("test-err-%d", time.Now().UnixNano())
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNamespace,
-			},
-		}
-		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+		CreateNamespaceAndWait(ctx, k8sClient, testNamespace)
 
 		// Clear Redis
 	})
@@ -78,10 +68,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 	AfterEach(func() {
 		// Reset Redis config to prevent OOM cascade failures
 
-		// Cleanup test server
-		if testServer != nil {
-			testServer.Close()
-		}
+		// E2E tests use deployed Gateway - no cleanup needed
 
 		// CRITICAL FIX: Don't delete namespaces during parallel test execution
 		// Let Kind cluster deletion handle cleanup at the end of the test suite
@@ -106,13 +93,13 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 
 		By("Sending malformed JSON to Gateway")
 		req, err := http.NewRequest("POST",
-			testServer.URL+"/api/v1/signals/prometheus",
+			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(malformedJSON))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
-_ = err
+		_ = err
 		defer func() { _ = resp.Body.Close() }()
 
 		By("Gateway returns 400 Bad Request (not crash)")
@@ -161,13 +148,13 @@ _ = err
 
 		By("Sending large payload to Gateway")
 		req, err := http.NewRequest("POST",
-			testServer.URL+"/api/v1/signals/prometheus",
+			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(largePayload))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
-_ = err
+		_ = err
 		defer func() { _ = resp.Body.Close() }()
 
 		By("Gateway rejects large payload")
@@ -203,13 +190,13 @@ _ = err
 
 		By("Sending alert with missing required field")
 		req, err := http.NewRequest("POST",
-			testServer.URL+"/api/v1/signals/prometheus",
+			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(invalidAlert))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
-_ = err
+		_ = err
 		defer func() { _ = resp.Body.Close() }()
 
 		By("Gateway returns validation error")
@@ -261,13 +248,13 @@ _ = err
 
 		By("Sending alert for non-existent namespace")
 		req, err := http.NewRequest("POST",
-			testServer.URL+"/api/v1/signals/prometheus",
+			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(alertPayload))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 		resp, err := http.DefaultClient.Do(req)
-_ = err
+		_ = err
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway should process alert despite invalid namespace (201 Created)")
 		_ = resp.Body.Close()
 

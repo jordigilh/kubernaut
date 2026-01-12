@@ -23,18 +23,18 @@ import (
 	. "github.com/onsi/gomega"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // ========================================
 // TESTUTIL VALIDATOR INTEGRATION TEST
 // ========================================
-// This test demonstrates usage of testutil.ValidateAuditEvent
+// This test demonstrates usage of validators.ValidateAuditEvent
 // for structured audit event validation (V1.0 maturity requirement).
 // Per scripts/validate-service-maturity.sh check for testutil usage.
 // ========================================
 
-var _ = Describe("Audit Event Validation Helper",  func() {
+var _ = Describe("Audit Event Validation Helper", func() {
 	var (
 		baseURL string
 		client  *ogenclient.Client
@@ -53,7 +53,7 @@ var _ = Describe("Audit Event Validation Helper",  func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	Context("testutil.ValidateAuditEvent usage", func() {
+	Context("validators.ValidateAuditEvent usage", func() {
 		It("should validate audit event response using testutil helper", func() {
 			// BR-STORAGE-019: Write API with structured validation
 			// BR-STORAGE-020: Audit event ingestion
@@ -84,7 +84,7 @@ var _ = Describe("Audit Event Validation Helper",  func() {
 				EventData:      eventData,
 			}
 
-		// ACT: Post audit event via HTTP API
+			// ACT: Post audit event via HTTP API
 			eventID, err := postAuditEvent(ctx, client, auditEvent)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(eventID).ToNot(BeEmpty())
@@ -101,15 +101,15 @@ var _ = Describe("Audit Event Validation Helper",  func() {
 			Expect(resp.Data).ToNot(BeNil())
 			Expect(resp.Data).To(HaveLen(1), "should return exactly one event")
 
-		// ASSERT: Validate using testutil helper (V1.0 maturity requirement)
-		expectedOutcome := ogenclient.AuditEventEventOutcomeSuccess
-		testutil.ValidateAuditEvent(resp.Data[0], testutil.ExpectedAuditEvent{
-			EventType:     "gateway.signal.received",
-			EventCategory: ogenclient.AuditEventEventCategoryGateway,
-			EventAction:   "test_action",
-			EventOutcome:  &expectedOutcome,
-			CorrelationID: correlationID,
-		})
+			// ASSERT: Validate using testutil helper (V1.0 maturity requirement)
+			expectedOutcome := ogenclient.AuditEventEventOutcomeSuccess
+			validators.ValidateAuditEvent(resp.Data[0], validators.ExpectedAuditEvent{
+				EventType:     "gateway.signal.received",
+				EventCategory: ogenclient.AuditEventEventCategoryGateway,
+				EventAction:   "test_action",
+				EventOutcome:  &expectedOutcome,
+				CorrelationID: correlationID,
+			})
 		})
 	})
 })

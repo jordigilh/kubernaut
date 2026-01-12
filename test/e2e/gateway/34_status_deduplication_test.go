@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"time"
 
@@ -57,8 +56,6 @@ import (
 var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", func() {
 	var (
 		ctx               context.Context
-		server            *httptest.Server
-		gatewayURL        string
 		testClient        client.Client
 		prometheusPayload []byte
 	)
@@ -78,18 +75,13 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18090" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
-		// Per-spec Gateway instance (thread-safe: each parallel spec gets own HTTP server)
-		server = httptest.NewServer(nil)
-		gatewayURL = server.URL
+		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
 	})
 
 	AfterEach(func() {
-		if server != nil {
-			server.Close()
-		}
 
 		// DD-GATEWAY-011: Clean up CRDs after each test
 		By("Cleaning up CRDs in shared namespace")
@@ -149,7 +141,7 @@ var _ = Describe("DD-GATEWAY-011: Status-Based Tracking - Integration Tests", fu
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			_ = err
 			Expect(response1.Status).To(Equal("created"))
 			crdName := response1.RemediationRequestName
 
@@ -237,11 +229,16 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal response: %v, body: %s", err, string(resp1.Body))
 			crdName := response1.RemediationRequestName
 
 			By("2. Incident is being processed (Pending state)")
-			crd := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			var crd *remediationv1alpha1.RemediationRequest
+			Eventually(func() *remediationv1alpha1.RemediationRequest {
+				crd = getCRDByName(ctx, testClient, sharedNamespace, crdName)
+				return crd
+			}, 60*time.Second, 2*time.Second).ShouldNot(BeNil(), "CRD should exist after Gateway processes signal")
+			
 			crd.Status.OverallPhase = "Pending"
 			err = testClient.Status().Update(ctx, crd)
 
@@ -327,7 +324,7 @@ _ = err
 
 			var response1 gateway.ProcessingResponse
 			err := json.Unmarshal(resp1.Body, &response1)
-_ = err
+			_ = err
 			crdName := response1.RemediationRequestName
 
 			By("2. Set incident to Pending (remediation in progress)")

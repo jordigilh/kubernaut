@@ -220,37 +220,37 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		}
 		notificationEvents := make(map[string]*notificationEventCount)
 
-	for _, event := range events {
-		// Extract notification_id from EventData discriminated union
-		// ogen: Different event types use different payload fields
-		// - notification.message.sent → NotificationMessageSentPayload.NotificationID (string)
-		// - notification.message.acknowledged → NotificationMessageAcknowledgedPayload.NotificationID (string)
-		notificationID := ""
-		switch event.EventType {
-		case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
-			notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
-		case "notification.message.acknowledged":
-			notificationID = event.EventData.NotificationMessageAcknowledgedPayload.NotificationID
-		default:
-			Fail(fmt.Sprintf("Unexpected event type: %s (should be 'notification.message.sent' or 'notification.message.acknowledged')", event.EventType))
-		}
+		for _, event := range events {
+			// Extract notification_id from EventData discriminated union
+			// ogen: Different event types use different payload fields
+			// - notification.message.sent → NotificationMessageSentPayload.NotificationID (string)
+			// - notification.message.acknowledged → NotificationMessageAcknowledgedPayload.NotificationID (string)
+			notificationID := ""
+			switch event.EventType {
+			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
+				notificationID = event.EventData.NotificationMessageSentPayload.NotificationID
+			case "notification.message.acknowledged":
+				notificationID = event.EventData.NotificationMessageAcknowledgedPayload.NotificationID
+			default:
+				Fail(fmt.Sprintf("Unexpected event type: %s (should be 'notification.message.sent' or 'notification.message.acknowledged')", event.EventType))
+			}
 
-		Expect(notificationID).ToNot(BeEmpty(),
-			"Event should have notification_id in EventData (got EventType: %s)", event.EventType)
+			Expect(notificationID).ToNot(BeEmpty(),
+				"Event should have notification_id in EventData (got EventType: %s)", event.EventType)
 
-		// Initialize struct for this notification if needed
-		if notificationEvents[notificationID] == nil {
-			notificationEvents[notificationID] = &notificationEventCount{}
-		}
+			// Initialize struct for this notification if needed
+			if notificationEvents[notificationID] == nil {
+				notificationEvents[notificationID] = &notificationEventCount{}
+			}
 
-		// Increment count for this event type
-		switch event.EventType {
-		case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
-			notificationEvents[notificationID].sentCount++
-		case "notification.message.acknowledged":
-			notificationEvents[notificationID].acknowledgedCount++
+			// Increment count for this event type
+			switch event.EventType {
+			case string(ogenclient.NotificationMessageSentPayloadAuditEventEventData):
+				notificationEvents[notificationID].sentCount++
+			case "notification.message.acknowledged":
+				notificationEvents[notificationID].acknowledgedCount++
+			}
 		}
-	}
 
 		// Verify we have exactly 3 notifications
 		Expect(notificationEvents).To(HaveLen(3),
@@ -295,15 +295,15 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			Expect(string(event.EventOutcome)).To(BeElementOf("success", "failure", "error"),
 				"EventOutcome should be valid: %s", event.EventOutcome)
 
-		// Verify event data is valid JSON (marshal from discriminated union)
-		if event.EventData.Type != "" {
-			eventDataBytes, err := json.Marshal(event.EventData)
-			Expect(err).ToNot(HaveOccurred(), "EventData should be marshallable")
-			var jsonData interface{}
-			err = json.Unmarshal(eventDataBytes, &jsonData)
-			Expect(err).ToNot(HaveOccurred(),
-				"EventData should be valid JSON: %s", string(eventDataBytes))
-		}
+			// Verify event data is valid JSON (marshal from discriminated union)
+			if event.EventData.Type != "" {
+				eventDataBytes, err := json.Marshal(event.EventData)
+				Expect(err).ToNot(HaveOccurred(), "EventData should be marshallable")
+				var jsonData interface{}
+				err = json.Unmarshal(eventDataBytes, &jsonData)
+				Expect(err).ToNot(HaveOccurred(),
+					"EventData should be valid JSON: %s", string(eventDataBytes))
+			}
 		}
 
 		// ===== STEP 7: Verify controller audit integration =====

@@ -24,15 +24,15 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 	. "github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // HolmesGPT-API Integration Tests
 //
 // Per HAPI team response (Dec 9, 2025) in REQUEST_HAPI_INTEGRATION_TEST_MOCK_ASSISTANCE.md:
-// - Use testutil.MockHolmesGPTClient for integration tests (Option B)
+// - Use mocks.MockHolmesGPTClient for integration tests (Option B)
 // - Mock helpers provide canonical fixtures for all ADR-045 scenarios
 // - No real HAPI server dependency for integration tier
 //
@@ -44,13 +44,13 @@ import (
 // See audit_flow_integration_test.go for detailed rationale.
 var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"), func() {
 	var (
-		mockClient *testutil.MockHolmesGPTClient
+		mockClient *mocks.MockHolmesGPTClient
 		testCtx    context.Context
 		cancelFunc context.CancelFunc
 	)
 
 	BeforeEach(func() {
-		mockClient = testutil.NewMockHolmesGPTClient()
+		mockClient = mocks.NewMockHolmesGPTClient()
 		testCtx, cancelFunc = context.WithTimeout(context.Background(), 60*time.Second)
 	})
 
@@ -117,12 +117,12 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
-			SignalType:        "MemoryPressure",
-			Severity:          "warning",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "web-app-abc123",
+				SignalType:        "MemoryPressure",
+				Severity:          "warning",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "web-app-abc123",
 				ErrorMessage:      "Memory pressure detected",
 				Environment:       "production",
 				Priority:          "P2",
@@ -154,12 +154,12 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-oom-001",
 				RemediationID:     "req-test-003",
-			SignalType:        "OOMKilled",
-			Severity:          "critical",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "memory-hog",
+				SignalType:        "OOMKilled",
+				Severity:          "critical",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "memory-hog",
 				ErrorMessage:      "Container exceeded memory limit",
 				Environment:       "production",
 				Priority:          "P1",
@@ -270,12 +270,12 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				resp, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 					IncidentID:        "test-hr-loop-" + reason,
 					RemediationID:     "req-hr-loop",
-				SignalType:        "Test",
-				Severity:          "warning",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
+					SignalType:        "Test",
+					Severity:          "warning",
+					SignalSource:      "kubernaut",
+					ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+					ResourceKind:      "Pod",
+					ResourceName:      "test-pod",
 					ErrorMessage:      "Test for " + reason,
 					Environment:       "staging",
 					Priority:          "P2",
@@ -303,12 +303,12 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-resolved-001",
 				RemediationID:     "req-resolved-001",
-			SignalType:        "CrashLoopBackOff",
-			Severity:          "warning",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "recovered-pod",
+				SignalType:        "CrashLoopBackOff",
+				Severity:          "warning",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "recovered-pod",
 				ErrorMessage:      "Pod was in CrashLoopBackOff but has now recovered",
 				Environment:       "staging",
 				Priority:          "P2",
@@ -336,12 +336,12 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			resp, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-inconclusive-001",
 				RemediationID:     "req-inconclusive-001",
-			SignalType:        "NetworkFailure",
-			Severity:          "warning",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "network-app",
+				SignalType:        "NetworkFailure",
+				Severity:          "warning",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "network-app",
 				ErrorMessage:      "Intermittent network failures with unclear pattern",
 				Environment:       "staging",
 				Priority:          "P2",
@@ -404,13 +404,13 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			_, err := mockClient.Investigate(shortCtx, &client.IncidentRequest{
 				IncidentID:        "test-timeout-001",
 				RemediationID:     "req-timeout-001",
-			SignalType:        "Test",
-			Severity:          "info",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "test-pod",
-			ErrorMessage:      "Test timeout handling",
+				SignalType:        "Test",
+				Severity:          "info",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "Test timeout handling",
 				Environment:       "staging",
 				Priority:          "P3",
 				RiskTolerance:     "high",
@@ -428,13 +428,13 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			_, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-error-001",
 				RemediationID:     "req-error-001",
-			SignalType:        "Test",
-			Severity:          "info",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "test-pod",
-			ErrorMessage:      "Test error handling",
+				SignalType:        "Test",
+				Severity:          "info",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "Test error handling",
 				Environment:       "staging",
 				Priority:          "P3",
 				RiskTolerance:     "high",
@@ -453,13 +453,13 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 			_, err := mockClient.Investigate(testCtx, &client.IncidentRequest{
 				IncidentID:        "test-validation-error",
 				RemediationID:     "req-validation-error",
-			SignalType:        "Test",
-			Severity:          "info",
-			SignalSource:      "kubernaut",
-			ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			ResourceKind:      "Pod",
-			ResourceName:      "test-pod",
-			ErrorMessage:      "Test validation error",
+				SignalType:        "Test",
+				Severity:          "info",
+				SignalSource:      "kubernaut",
+				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:      "Pod",
+				ResourceName:      "test-pod",
+				ErrorMessage:      "Test validation error",
 				Environment:       "staging",
 				Priority:          "P3",
 				RiskTolerance:     "high",

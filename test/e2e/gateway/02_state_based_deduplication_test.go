@@ -69,11 +69,8 @@ var _ = Describe("Test 02: State-Based Deduplication (DD-GATEWAY-009)", Ordered,
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		// Create namespace
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
 		k8sClient = getKubernetesClient()
-		Expect(k8sClient.Create(testCtx, ns)).To(Succeed())
+		CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})

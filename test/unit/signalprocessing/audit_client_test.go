@@ -114,14 +114,14 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 				auditClient.RecordSignalProcessed(ctx, sp)
 
-			Expect(mockStore.StoredEvents).To(HaveLen(1))
-			event := mockStore.StoredEvents[0]
-			Expect(event.EventType).To(Equal("signalprocessing.signal.processed"))
-			Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategory("signalprocessing")))
-			Expect(event.EventAction).To(Equal("processed"))
-			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("success")))
-			Expect(event.ResourceType.Value).To(Equal("SignalProcessing"))
-			Expect(event.ResourceID.Value).To(Equal("completed"))
+				Expect(mockStore.StoredEvents).To(HaveLen(1))
+				event := mockStore.StoredEvents[0]
+				Expect(event.EventType).To(Equal("signalprocessing.signal.processed"))
+				Expect(event.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategory("signalprocessing")))
+				Expect(event.EventAction).To(Equal("processed"))
+				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("success")))
+				Expect(event.ResourceType.Value).To(Equal("SignalProcessing"))
+				Expect(event.ResourceID.Value).To(Equal("completed"))
 			})
 
 			// AC-HP-02: Record failed signal processing
@@ -200,37 +200,37 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 					},
 				}
 
-			auditClient.RecordEnrichmentComplete(ctx, sp, 150)
+				auditClient.RecordEnrichmentComplete(ctx, sp, 150)
 
-			Expect(mockStore.StoredEvents).To(HaveLen(1))
-			event := mockStore.StoredEvents[0]
-			Expect(event.EventType).To(Equal("signalprocessing.enrichment.completed"))
-			Expect(event.DurationMs.IsSet()).To(BeTrue())
-			Expect(event.DurationMs.Value).To(Equal(150))
+				Expect(mockStore.StoredEvents).To(HaveLen(1))
+				event := mockStore.StoredEvents[0]
+				Expect(event.EventType).To(Equal("signalprocessing.enrichment.completed"))
+				Expect(event.DurationMs.IsSet()).To(BeTrue())
+				Expect(event.DurationMs.Value).To(Equal(150))
 			})
 		})
 	})
 
 	Describe("BR-SP-090: RecordError", func() {
 		Context("Happy Path", func() {
-		// AC-HP-06: Record error with phase and error message
-		It("AC-HP-06: should record error with phase and error message", func() {
-			sp := createTestSignalProcessing("error-test")
-			testErr := errors.New("connection timeout")
+			// AC-HP-06: Record error with phase and error message
+			It("AC-HP-06: should record error with phase and error message", func() {
+				sp := createTestSignalProcessing("error-test")
+				testErr := errors.New("connection timeout")
 
-			auditClient.RecordError(ctx, sp, "Enriching", testErr)
+				auditClient.RecordError(ctx, sp, "Enriching", testErr)
 
-			Expect(mockStore.StoredEvents).To(HaveLen(1))
-			event := mockStore.StoredEvents[0]
-			Expect(event.EventType).To(Equal("signalprocessing.error.occurred"))
-			Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
-			// Error message is stored in structured EventData (DD-AUDIT-004 V2.2)
-			// EventData is a discriminated union, access via GetSignalProcessingAuditPayload
-			payload, ok := event.EventData.GetSignalProcessingAuditPayload()
-			Expect(ok).To(BeTrue(), "EventData should be SignalProcessingAuditPayload")
-			Expect(payload.Error.IsSet()).To(BeTrue())
-			Expect(payload.Error.Value).To(Equal("connection timeout"))
-			Expect(payload.Phase).To(Equal(ogenclient.SignalProcessingAuditPayloadPhaseEnriching))
+				Expect(mockStore.StoredEvents).To(HaveLen(1))
+				event := mockStore.StoredEvents[0]
+				Expect(event.EventType).To(Equal("signalprocessing.error.occurred"))
+				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventRequestEventOutcome("failure")))
+				// Error message is stored in structured EventData (DD-AUDIT-004 V2.2)
+				// EventData is a discriminated union, access via GetSignalProcessingAuditPayload
+				payload, ok := event.EventData.GetSignalProcessingAuditPayload()
+				Expect(ok).To(BeTrue(), "EventData should be SignalProcessingAuditPayload")
+				Expect(payload.Error.IsSet()).To(BeTrue())
+				Expect(payload.Error.Value).To(Equal("connection timeout"))
+				Expect(payload.Phase).To(Equal(ogenclient.SignalProcessingAuditPayloadPhaseEnriching))
 			})
 		})
 	})

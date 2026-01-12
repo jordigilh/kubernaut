@@ -60,9 +60,9 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 
-	reg := prometheus.NewRegistry()
-	m = metrics.NewMetricsWithRegistry(reg)
-	logger = zap.New(zap.UseDevMode(true))
+		reg := prometheus.NewRegistry()
+		m = metrics.NewMetricsWithRegistry(reg)
+		logger = zap.New(zap.UseDevMode(true))
 	})
 
 	createFakeClient := func(objs ...client.Object) client.Client {
@@ -498,4 +498,3 @@ var _ = Describe("K8sEnricher Resource Types", func() {
 		})
 	})
 })
-

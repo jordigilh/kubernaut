@@ -57,8 +57,8 @@ import (
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/sony/gobreaker"
 	// +kubebuilder:scaffold:imports
 )
@@ -311,7 +311,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// Create Data Storage client with OpenAPI generated client (DD-API-001)
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testutil.NewMockUserTransport("test-notification@integration.test")
+	mockTransport := testauth.NewMockUserTransport("test-notification@integration.test")
 	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageURL,
 		5*time.Second,

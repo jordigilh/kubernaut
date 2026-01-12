@@ -153,21 +153,21 @@ var _ = SynchronizedBeforeSuite(
 		// E2E file delivery directory is created by infrastructure.CreateNotificationCluster
 		// No need to create it here - it's done before Kind cluster creation
 
-	// Create Kind cluster (ONCE for all tests) - returns notification image name
-	var notificationImageName string
-	notificationImageName, err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
-	Expect(notificationImageName).ToNot(BeEmpty(), "Notification image name must not be empty")
+		// Create Kind cluster (ONCE for all tests) - returns notification image name
+		var notificationImageName string
+		notificationImageName, err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(notificationImageName).ToNot(BeEmpty(), "Notification image name must not be empty")
 
-	// Set KUBECONFIG environment variable
-	err = os.Setenv("KUBECONFIG", kubeconfigPath)
-	Expect(err).ToNot(HaveOccurred())
+		// Set KUBECONFIG environment variable
+		err = os.Setenv("KUBECONFIG", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred())
 
-	// Deploy shared Notification Controller (ONCE for all tests) - pass image name from setup
-	logger.Info("Deploying shared Notification Controller...")
-	logger.Info("  • Using image: " + notificationImageName)
-	err = infrastructure.DeployNotificationController(ctx, controllerNamespace, kubeconfigPath, notificationImageName, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred())
+		// Deploy shared Notification Controller (ONCE for all tests) - pass image name from setup
+		logger.Info("Deploying shared Notification Controller...")
+		logger.Info("  • Using image: " + notificationImageName)
+		err = infrastructure.DeployNotificationController(ctx, controllerNamespace, kubeconfigPath, notificationImageName, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Wait for controller pod to be ready
 		logger.Info("⏳ Waiting for Notification Controller pod to be ready...")

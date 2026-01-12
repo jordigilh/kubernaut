@@ -120,7 +120,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18090" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)

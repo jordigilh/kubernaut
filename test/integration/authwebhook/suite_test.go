@@ -28,14 +28,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
-	"github.com/jordigilh/kubernaut/pkg/webhooks"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/webhooks"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,14 +52,14 @@ import (
 
 // Suite-level variables
 var (
-	cfg              *rest.Config
-	k8sClient        client.Client
-	testEnv          *envtest.Environment
-	ctx              context.Context
-	cancel           context.CancelFunc
-	auditStore       audit.AuditStore // REAL audit store for webhook handlers
-	dsClient         *ogenclient.Client // DD-TESTING-001: Ogen OpenAPI-generated client
-	infra            *testinfra.AuthWebhookInfrastructure
+	cfg        *rest.Config
+	k8sClient  client.Client
+	testEnv    *envtest.Environment
+	ctx        context.Context
+	cancel     context.CancelFunc
+	auditStore audit.AuditStore   // REAL audit store for webhook handlers
+	dsClient   *ogenclient.Client // DD-TESTING-001: Ogen OpenAPI-generated client
+	infra      *testinfra.AuthWebhookInfrastructure
 )
 
 // auditStoreAdapter adapts audit.AuditStore to webhooks.AuditManager interface
@@ -123,7 +123,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Creating REAL audit store for webhook handlers")
 	// Create OpenAPI DataStorage client adapter for audit writes
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testutil.NewMockUserTransport("test-authwebhook@integration.test")
+	mockTransport := testauth.NewMockUserTransport("test-authwebhook@integration.test")
 	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageURL,
 		5*time.Second,
@@ -414,4 +414,3 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("✅ AuthWebhook Integration Test Suite - Teardown Complete")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
-

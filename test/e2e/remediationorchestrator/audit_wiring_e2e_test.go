@@ -132,26 +132,26 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			eventCategory := "orchestration"
 			limit := 100
 
-		// ✅ MANDATORY: Use generated client with type-safe parameters
-		resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(correlationID),
-			EventCategory: dsgen.NewOptString(eventCategory),
-			Limit:         dsgen.NewOptInt(limit),
-		})
+			// ✅ MANDATORY: Use generated client with type-safe parameters
+			resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(eventCategory),
+				Limit:         dsgen.NewOptInt(limit),
+			})
 
-		if err != nil {
-			return nil, 0, fmt.Errorf("failed to query DataStorage: %w", err)
-		}
+			if err != nil {
+				return nil, 0, fmt.Errorf("failed to query DataStorage: %w", err)
+			}
 
-		// Access typed response directly (ogen pattern)
-		total := 0
-		if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
-			total = resp.Pagination.Value.Total.Value
-		}
+			// Access typed response directly (ogen pattern)
+			total := 0
+			if resp.Pagination.Set && resp.Pagination.Value.Total.Set {
+				total = resp.Pagination.Value.Total.Value
+			}
 
-		events := resp.Data
+			events := resp.Data
 
-		return events, total, nil
+			return events, total, nil
 		}
 
 		It("should successfully emit audit events to DataStorage service", func() {
@@ -198,68 +198,68 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 			// This test validates audit events are emitted continuously, not just at startup
 			// Per ADR-032 §1: All orchestration phase transitions must be audited
 
-		By("Querying audit events and waiting for lifecycle progression (DD-TESTING-001)")
-		// DD-TESTING-001: Wait for COMPLETE audit trail, not just ">=2 events"
-		// Root cause of flakiness: Audit buffer flush (1s interval) may not have completed
-		// for phase transition events when we check. Solution: Wait for specific event types.
-		var events []dsgen.AuditEvent
-		var total int
-		var err error
+			By("Querying audit events and waiting for lifecycle progression (DD-TESTING-001)")
+			// DD-TESTING-001: Wait for COMPLETE audit trail, not just ">=2 events"
+			// Root cause of flakiness: Audit buffer flush (1s interval) may not have completed
+			// for phase transition events when we check. Solution: Wait for specific event types.
+			var events []dsgen.AuditEvent
+			var total int
+			var err error
 
-		Eventually(func() bool {
-			events, total, err = queryAuditEvents(correlationID)
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
-				return false
-			}
-			if total == 0 {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (no events yet)\n")
-				return false
-			}
+			Eventually(func() bool {
+				events, total, err = queryAuditEvents(correlationID)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+					return false
+				}
+				if total == 0 {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (no events yet)\n")
+					return false
+				}
 
-			// Build event type map
+				// Build event type map
+				eventTypes := make(map[string]bool)
+				for _, event := range events {
+					eventTypes[event.EventType] = true
+				}
+
+				// Check for lifecycle.started (should always be present first)
+				hasLifecycleStarted := eventTypes[roaudit.EventTypeLifecycleStarted]
+
+				// Check for phase transition or lifecycle completion/failure
+				hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
+					eventTypes[roaudit.EventTypeLifecycleCompleted] ||
+					eventTypes[roaudit.EventTypeLifecycleFailed]
+
+				if !hasLifecycleStarted {
+					GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no lifecycle.started yet, %d total events)\n", total)
+					return false
+				}
+				if !hasPhaseTransitionOrCompletion {
+					GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no phase transition/completion yet, %d total events)\n", total)
+					return false
+				}
+
+				return true
+			}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
+				"Expected complete audit trail with lifecycle.started + phase transition/completion events")
+
+			// Verify we have different event types (proves continuous emission)
 			eventTypes := make(map[string]bool)
 			for _, event := range events {
 				eventTypes[event.EventType] = true
 			}
 
-			// Check for lifecycle.started (should always be present first)
-			hasLifecycleStarted := eventTypes[roaudit.EventTypeLifecycleStarted]
+			Expect(eventTypes).To(HaveKey(roaudit.EventTypeLifecycleStarted),
+				"Expected lifecycle.started event")
 
-			// Check for phase transition or lifecycle completion/failure
+			// Should have at least one phase transition or lifecycle completion/failure
 			hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
 				eventTypes[roaudit.EventTypeLifecycleCompleted] ||
 				eventTypes[roaudit.EventTypeLifecycleFailed]
 
-			if !hasLifecycleStarted {
-				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no lifecycle.started yet, %d total events)\n", total)
-				return false
-			}
-			if !hasPhaseTransitionOrCompletion {
-				GinkgoWriter.Printf("⏳ Waiting for complete audit trail (no phase transition/completion yet, %d total events)\n", total)
-				return false
-			}
-
-			return true
-		}, 2*time.Minute, 2*time.Second).Should(BeTrue(),
-			"Expected complete audit trail with lifecycle.started + phase transition/completion events")
-
-		// Verify we have different event types (proves continuous emission)
-		eventTypes := make(map[string]bool)
-		for _, event := range events {
-			eventTypes[event.EventType] = true
-		}
-
-		Expect(eventTypes).To(HaveKey(roaudit.EventTypeLifecycleStarted),
-			"Expected lifecycle.started event")
-
-		// Should have at least one phase transition or lifecycle completion/failure
-		hasPhaseTransitionOrCompletion := eventTypes[roaudit.EventTypeLifecycleTransitioned] ||
-			eventTypes[roaudit.EventTypeLifecycleCompleted] ||
-			eventTypes[roaudit.EventTypeLifecycleFailed]
-
-		Expect(hasPhaseTransitionOrCompletion).To(BeTrue(),
-			"Expected phase transition or lifecycle completion/failure event")
+			Expect(hasPhaseTransitionOrCompletion).To(BeTrue(),
+				"Expected phase transition or lifecycle completion/failure event")
 
 			GinkgoWriter.Printf("✅ E2E: Audit events emitted throughout lifecycle - %d events, %d types\n",
 				total, len(eventTypes))

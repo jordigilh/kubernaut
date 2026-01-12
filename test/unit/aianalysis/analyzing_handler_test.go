@@ -30,7 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ========================================
@@ -59,13 +59,13 @@ func (n *noopAnalyzingAuditClient) RecordAnalysisComplete(ctx context.Context, a
 var _ = Describe("AnalyzingHandler", func() {
 	var (
 		handler       *handlers.AnalyzingHandler
-		mockEvaluator *testutil.MockRegoEvaluator
+		mockEvaluator *mocks.MockRegoEvaluator
 		ctx           context.Context
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		mockEvaluator = testutil.NewMockRegoEvaluator()
+		mockEvaluator = mocks.NewMockRegoEvaluator()
 		// Create mock audit client (noop for unit tests) and metrics
 		mockAuditClient := &noopAnalyzingAuditClient{}
 		testMetrics := metrics.NewMetrics()

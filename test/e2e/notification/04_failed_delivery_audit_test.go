@@ -95,10 +95,10 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 		// Use real Data Storage URL from Kind cluster
 		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-	// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
-	var err error
-	dsClient, err = ogenclient.NewClient(dataStorageURL)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
+		var err error
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create NotificationRequest that will FAIL delivery
 		// Strategy: Use Email channel which is NOT configured in E2E environment
@@ -218,21 +218,21 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"Event category should be 'notification'")
 		Expect(failedEvent.EventAction).To(Equal("sent"),
 			"Event action should be 'sent' (attempted delivery)")
-	Expect(string(failedEvent.EventOutcome)).To(Equal("failure"),
-		"Event outcome should be 'failure'")
-	Expect(failedEvent.ActorType.IsSet()).To(BeTrue(), "Actor type should be set")
-	Expect(failedEvent.ActorType.Value).To(Equal("service"),
-		"Actor type should be 'service'")
-	// NT-TEST-001 Fix: Expect actual service name from controller
-	Expect(failedEvent.ActorID.IsSet()).To(BeTrue(), "Actor ID should be set")
-	Expect(failedEvent.ActorID.Value).To(Equal("notification-controller"),
-		"Actor ID should be 'notification-controller' (service name)")
-	Expect(failedEvent.ResourceType.IsSet()).To(BeTrue(), "Resource type should be set")
-	Expect(failedEvent.ResourceType.Value).To(Equal("NotificationRequest"),
-		"Resource type should be 'NotificationRequest'")
-	Expect(failedEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
-	Expect(failedEvent.ResourceID.Value).To(Equal(notificationName),
-		"Resource ID should match notification name")
+		Expect(string(failedEvent.EventOutcome)).To(Equal("failure"),
+			"Event outcome should be 'failure'")
+		Expect(failedEvent.ActorType.IsSet()).To(BeTrue(), "Actor type should be set")
+		Expect(failedEvent.ActorType.Value).To(Equal("service"),
+			"Actor type should be 'service'")
+		// NT-TEST-001 Fix: Expect actual service name from controller
+		Expect(failedEvent.ActorID.IsSet()).To(BeTrue(), "Actor ID should be set")
+		Expect(failedEvent.ActorID.Value).To(Equal("notification-controller"),
+			"Actor ID should be 'notification-controller' (service name)")
+		Expect(failedEvent.ResourceType.IsSet()).To(BeTrue(), "Resource type should be set")
+		Expect(failedEvent.ResourceType.Value).To(Equal("NotificationRequest"),
+			"Resource type should be 'NotificationRequest'")
+		Expect(failedEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
+		Expect(failedEvent.ResourceID.Value).To(Equal(notificationName),
+			"Resource ID should match notification name")
 		Expect(failedEvent.CorrelationID).To(Equal(correlationID),
 			"Correlation ID should match for workflow tracing")
 
@@ -424,11 +424,11 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: Success event subject should match notification spec")
 		Expect(sentEventData["priority"]).To(Equal("critical"),
 			"FIELD MATCH: Success event priority should match notification spec")
-	Expect(string(sentEvent.EventOutcome)).To(Equal("success"),
-		"FIELD MATCH: Success event outcome should be success")
-	Expect(sentEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
-	Expect(sentEvent.ResourceID.Value).To(Equal(notificationName),
-		"FIELD MATCH: Success event resource_id should match notification name")
+		Expect(string(sentEvent.EventOutcome)).To(Equal("success"),
+			"FIELD MATCH: Success event outcome should be success")
+		Expect(sentEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
+		Expect(sentEvent.ResourceID.Value).To(Equal(notificationName),
+			"FIELD MATCH: Success event resource_id should match notification name")
 
 		// FIELD MATCHING VALIDATION: Failed event
 		By("Validating failed event fields match audit helper output")
@@ -448,11 +448,11 @@ var _ = Describe("E2E Test: Failed Delivery Audit Event", Label("e2e", "audit", 
 			"FIELD MATCH: Failed event priority should match notification spec")
 		Expect(failedEventData).To(HaveKey("error"),
 			"FIELD MATCH: Failed event should contain error details")
-	Expect(string(failedEvent.EventOutcome)).To(Equal("failure"),
-		"FIELD MATCH: Failed event outcome should be failure")
-	Expect(failedEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
-	Expect(failedEvent.ResourceID.Value).To(Equal(notificationName),
-		"FIELD MATCH: Failed event resource_id should match notification name")
+		Expect(string(failedEvent.EventOutcome)).To(Equal("failure"),
+			"FIELD MATCH: Failed event outcome should be failure")
+		Expect(failedEvent.ResourceID.IsSet()).To(BeTrue(), "Resource ID should be set")
+		Expect(failedEvent.ResourceID.Value).To(Equal(notificationName),
+			"FIELD MATCH: Failed event resource_id should match notification name")
 
 		GinkgoWriter.Printf("✅ Partial failure audit validation complete:\n")
 		GinkgoWriter.Printf("   Console channel: SUCCESS (audit: notification.message.sent)\n")

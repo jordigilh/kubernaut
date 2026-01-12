@@ -251,8 +251,8 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 		ConfigPath:                "test/infrastructure/kind-aianalysis-config.yaml",
 		WaitTimeout:               "60s",
 		DeleteExisting:            false,
-		ReuseExisting:             true,                  // Original behavior: reuse if exists
-		CleanupOrphanedContainers: true,                  // Original behavior: cleanup Podman containers on macOS
+		ReuseExisting:             true, // Original behavior: reuse if exists
+		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
 	}
 	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
 		return err

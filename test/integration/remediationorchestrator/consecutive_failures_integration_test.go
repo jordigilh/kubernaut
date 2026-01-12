@@ -100,17 +100,17 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
 				}, timeout, interval).Should(Succeed())
 
-			sp.Status.Phase = signalprocessingv1.PhaseFailed
-			sp.Status.Error = "Simulated failure for consecutive failure test"
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+				sp.Status.Phase = signalprocessingv1.PhaseFailed
+				sp.Status.Error = "Simulated failure for consecutive failure test"
+				Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
 
-			// Wait for RR to transition to a terminal phase (Failed or Blocked)
-			// Note: RR3 may transition to Blocked if blocking logic triggers on 3rd failure
-			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				phase := rr.Status.OverallPhase
-				return phase == remediationv1.PhaseFailed || phase == remediationv1.PhaseBlocked
-			}, timeout, interval).Should(BeTrue(), "RR should reach terminal phase (Failed or Blocked)")
+				// Wait for RR to transition to a terminal phase (Failed or Blocked)
+				// Note: RR3 may transition to Blocked if blocking logic triggers on 3rd failure
+				Eventually(func() bool {
+					_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+					phase := rr.Status.OverallPhase
+					return phase == remediationv1.PhaseFailed || phase == remediationv1.PhaseBlocked
+				}, timeout, interval).Should(BeTrue(), "RR should reach terminal phase (Failed or Blocked)")
 			}
 
 			// Create 4th RemediationRequest with same fingerprint - should be Blocked
@@ -134,20 +134,20 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					ReceivedTime: metav1.Now(),
 				},
 			}
-		Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
+			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
-		// Wait for controller to initialize RR4 (populate status fields)
-		// Without this, the test may check phase before controller has processed the RR
-		Eventually(func() bool {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
-			return rr4.Status.OverallPhase != ""  // Any phase means initialized
-		}, timeout, interval).Should(BeTrue(), "RR4 should be initialized by controller")
+			// Wait for controller to initialize RR4 (populate status fields)
+			// Without this, the test may check phase before controller has processed the RR
+			Eventually(func() bool {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
+				return rr4.Status.OverallPhase != "" // Any phase means initialized
+			}, timeout, interval).Should(BeTrue(), "RR4 should be initialized by controller")
 
-		// Verify RR4 transitions to Blocked (not Processing)
-		Eventually(func() remediationv1.RemediationPhase {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
-			return rr4.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked), "Expected 4th RR to be Blocked after 3 consecutive failures")
+			// Verify RR4 transitions to Blocked (not Processing)
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
+				return rr4.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked), "Expected 4th RR to be Blocked after 3 consecutive failures")
 
 			// Validate BlockReason
 			Expect(rr4.Status.BlockReason).To(Equal("ConsecutiveFailures"))
@@ -309,19 +309,19 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 					ReceivedTime: metav1.Now(),
 				},
 			}
-		Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
+			Expect(k8sClient.Create(ctx, rr4)).To(Succeed())
 
-		// Wait for controller to initialize RR4
-		Eventually(func() bool {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
-			return rr4.Status.OverallPhase != ""
-		}, timeout, interval).Should(BeTrue(), "RR4 should be initialized by controller")
+			// Wait for controller to initialize RR4
+			Eventually(func() bool {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
+				return rr4.Status.OverallPhase != ""
+			}, timeout, interval).Should(BeTrue(), "RR4 should be initialized by controller")
 
-		// Verify RR4 is Blocked and no SignalProcessing is created
-		Eventually(func() remediationv1.RemediationPhase {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
-			return rr4.Status.OverallPhase
-		}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked))
+			// Verify RR4 is Blocked and no SignalProcessing is created
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr4), rr4)
+				return rr4.Status.OverallPhase
+			}, timeout, interval).Should(Equal(remediationv1.PhaseBlocked))
 
 			// Verify SignalProcessing was NOT created (Blocked prevents child CRD creation)
 			spName := "sp-rr-blocked-prevent-4"
@@ -528,4 +528,3 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 		})
 	})
 })
-

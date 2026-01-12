@@ -27,8 +27,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // DS-BUG-001: Duplicate Workflow Returns 500 Instead of 409
@@ -41,7 +41,7 @@ const (
 	testContainerDigest = "sha256:0000000000000000000000000000000000000000000000000000000000000001"
 )
 
-var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)",  Ordered, func() {
+var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", Ordered, func() {
 	var (
 		httpClient *http.Client
 	)
@@ -66,10 +66,10 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated),
 				"First workflow creation should return 201 Created")
 
-		var createdWorkflow ogenclient.RemediationWorkflow
-		err = json.NewDecoder(resp1.Body).Decode(&createdWorkflow)
-		Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
-		Expect(createdWorkflow.WorkflowID.Set).To(BeTrue(), "Created workflow should have ID")
+			var createdWorkflow ogenclient.RemediationWorkflow
+			err = json.NewDecoder(resp1.Body).Decode(&createdWorkflow)
+			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
+			Expect(createdWorkflow.WorkflowID.Set).To(BeTrue(), "Created workflow should have ID")
 
 			// Step 2: Attempt to create the same workflow again (should return 409 Conflict)
 			GinkgoWriter.Printf("\n🔄 Creating duplicate workflow (expecting 409 Conflict)...\n")
@@ -111,21 +111,21 @@ var _ = Describe("Workflow API Integration - Duplicate Detection (DS-BUG-001)", 
 			GinkgoWriter.Printf("   - Error format: RFC 7807 problem details\n")
 			GinkgoWriter.Printf("   - Error detail: '%s'\n", detail)
 
-		// Step 4: Verify only one workflow exists in database using ListWorkflows API
-		listClient, err := ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred())
+			// Step 4: Verify only one workflow exists in database using ListWorkflows API
+			listClient, err := ogenclient.NewClient(dataStorageURL)
+			Expect(err).ToNot(HaveOccurred())
 
-		listResp, err := listClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
-		Expect(err).ToNot(HaveOccurred())
+			listResp, err := listClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{})
+			Expect(err).ToNot(HaveOccurred())
 
-		// Type assert the response
-		listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
-		Expect(ok).To(BeTrue(), "Expected WorkflowListResponse")
-		Expect(listResult.Workflows).ToNot(BeNil())
+			// Type assert the response
+			listResult, ok := listResp.(*ogenclient.WorkflowListResponse)
+			Expect(ok).To(BeTrue(), "Expected WorkflowListResponse")
+			Expect(listResult.Workflows).ToNot(BeNil())
 
-		// Count workflows with our unique name
-		matchingWorkflows := 0
-		for _, wf := range listResult.Workflows {
+			// Count workflows with our unique name
+			matchingWorkflows := 0
+			for _, wf := range listResult.Workflows {
 				if wf.WorkflowName == uniqueWorkflowName {
 					matchingWorkflows++
 				}

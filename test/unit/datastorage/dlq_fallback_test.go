@@ -158,7 +158,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 				Expect(err2).NotTo(HaveOccurred())
 
 				// Verify DataStorage resumed DB writes (business logic)
-				Expect(mockDB.WriteCallCount()).To(Equal(2))   // ← Tried both times
+				Expect(mockDB.WriteCallCount()).To(Equal(2))          // ← Tried both times
 				Expect(mockDLQClient.EnqueueCallCount()).To(Equal(1)) // ← Only first failed
 			})
 		})
@@ -422,4 +422,3 @@ func (h *AuditHandler) StoreBatchAuditEvents(ctx context.Context, events []*audi
 	h.metrics.RecordDatabaseWrite()
 	return nil
 }
-

@@ -32,10 +32,10 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
-	"github.com/prometheus/client_golang/prometheus"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // MockAuditStore captures audit events for verification
@@ -83,10 +83,10 @@ func (m *MockAuditStore) GetEventsByType(eventType string) []*ogenclient.AuditEv
 
 var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 	var (
-		ctx              context.Context
-		fakeClient       client.Client
-		reconciler       *prodcontroller.Reconciler
-		mockAuditStore   *MockAuditStore
+		ctx               context.Context
+		fakeClient        client.Client
+		reconciler        *prodcontroller.Reconciler
+		mockAuditStore    *MockAuditStore
 		mockRoutingEngine *MockRoutingEngine
 	)
 
@@ -116,6 +116,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		// Create reconciler with mock audit store
 		reconciler = prodcontroller.NewReconciler(
 			fakeClient,
+			fakeClient, // apiReader (same as client for tests)
 			scheme,
 			mockAuditStore, // Use mock audit store
 			nil,            // No EventRecorder needed
@@ -427,4 +428,3 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 func stringPtr(s string) *string {
 	return &s
 }
-

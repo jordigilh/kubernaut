@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +30,7 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	
+
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
@@ -50,12 +49,11 @@ import (
 // This replaces the old unit tests in test/unit/gateway/adapters/prometheus_adapter_test.go
 // which only tested struct field extraction (implementation logic).
 
-var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration Tests", func() {
+var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", func() {
 	var (
-		ctx           context.Context
-		testServer    *httptest.Server
-		k8sClient     client.Client
-		logger        *zap.Logger
+		ctx       context.Context
+		k8sClient client.Client
+		logger    *zap.Logger
 		// Unique namespace names per test run (avoids parallel test interference)
 		prodNamespace    string
 		stagingNamespace string
@@ -76,16 +74,12 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		// Setup test infrastructure using helpers
 
 		k8sClient = getKubernetesClient()
-		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
+		Expect(k8sClient).ToNot(BeNil(), "K8s client required for E2E tests")
 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
-		// Create Gateway server using helper
-		// TODO (GW Team): var err error
-
-		// Create HTTP test server
-		testServer = httptest.NewServer(nil)
-		Expect(testServer).ToNot(BeNil(), "Test server should be created")
+		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
+		// No local test server needed
 
 		// Create UNIQUE test namespaces with environment labels for classification
 		// This is required for environment-based priority assignment
@@ -131,7 +125,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		}
 
 		logger.Info("Test setup complete",
-			zap.String("test_server_url", testServer.URL),
+			zap.String("gateway_url", gatewayURL),
+			zap.String("prod_namespace", prodNamespace),
 		)
 	})
 
@@ -147,10 +142,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 		}
 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
-		// Cleanup test server
-		if testServer != nil {
-			testServer.Close()
-		}
+		// E2E tests use deployed Gateway - no cleanup needed
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -181,13 +173,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - Integration 
 			}`, prodNamespace))
 
 			// Send webhook to Gateway
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-_ = err
+			_ = err
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// BUSINESS OUTCOME 1: HTTP 201 Created
@@ -255,13 +247,13 @@ _ = err
 				}]
 			}`, stagingNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-_ = err
+			_ = err
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
@@ -310,15 +302,15 @@ _ = err
 				}]
 			}`, prodNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// First alert: Creates CRD
 			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-_ = err
+			_ = err
 			req1.Header.Set("Content-Type", "application/json")
 			req1.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp1, err := http.DefaultClient.Do(req1)
-_ = err
+			_ = err
 			defer func() { _ = resp1.Body.Close() }()
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert must create CRD (201 Created)")
 
@@ -341,11 +333,11 @@ _ = err
 
 			// Second alert: Duplicate (within TTL)
 			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-_ = err
+			_ = err
 			req2.Header.Set("Content-Type", "application/json")
 			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 			resp2, err := http.DefaultClient.Do(req2)
-_ = err
+			_ = err
 			defer func() { _ = resp2.Body.Close() }()
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert must return 202 Accepted (not 201 Created)")
 
@@ -439,13 +431,13 @@ _ = err
 					}]
 				}`, tc.severity, tc.namespace))
 
-				url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+				url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 				req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-	_ = err
+				_ = err
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 				resp, err := http.DefaultClient.Do(req)
-	_ = err
+				_ = err
 				defer func() { _ = resp.Body.Close() }()
 
 				// Read response body for debugging

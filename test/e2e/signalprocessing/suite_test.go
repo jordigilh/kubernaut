@@ -238,7 +238,7 @@ var _ = SynchronizedAfterSuite(
 					"-l", "app=signalprocessing-controller", "-o", "name")
 				output, _ := checkCmd.Output()
 				return len(strings.TrimSpace(string(output))) == 0
-			}).WithTimeout(60 * time.Second).WithPolling(2 * time.Second).Should(BeTrue(),
+			}).WithTimeout(60*time.Second).WithPolling(2*time.Second).Should(BeTrue(),
 				"Controller pod should terminate for coverage flush")
 
 			// Step 3: Extract coverage from Kind node
@@ -260,7 +260,7 @@ var _ = SynchronizedAfterSuite(
 		// Delete Kind cluster using infrastructure helper (with failure tracking)
 		Eventually(func() error {
 			return infrastructure.DeleteSignalProcessingCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
-		}).WithTimeout(30 * time.Second).WithPolling(5 * time.Second).Should(Succeed(),
+		}).WithTimeout(30*time.Second).WithPolling(5*time.Second).Should(Succeed(),
 			"Cluster deletion should succeed (transient Podman connectivity handled via retry)")
 
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

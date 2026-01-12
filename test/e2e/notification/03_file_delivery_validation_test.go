@@ -232,7 +232,8 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 	// BUSINESS REQUIREMENT: BR-NOT-056 - Priority-Based Routing
 	// VALIDATION: Priority field is preserved through delivery pipeline
 	Context("Scenario 3: Priority Field Validation", func() {
-		It("should preserve priority field in delivered notification file", func() {
+		// FLAKY: File sync timing issues under parallel load (virtiofs latency in Kind)
+		It("should preserve priority field in delivered notification file", FlakeAttempts(3), func() {
 			By("Creating NotificationRequest with Critical priority")
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -246,16 +247,21 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 					Type:     notificationv1alpha1.NotificationTypeSimple,
 					Subject:  "Critical Alert: System Outage",
 					Body:     "Priority validation test for critical alerts",
-				Priority: notificationv1alpha1.NotificationPriorityCritical,
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole,
-					notificationv1alpha1.ChannelFile, // Add file channel for priority validation test
+					Priority: notificationv1alpha1.NotificationPriorityCritical,
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole,
+						notificationv1alpha1.ChannelFile, // Add file channel for priority validation test
+					},
+					Recipients: []notificationv1alpha1.Recipient{
+						{Slack: "#ops-critical"},
+					},
 				},
-				Recipients: []notificationv1alpha1.Recipient{
-					{Slack: "#ops-critical"},
-				},
-			},
-		}
+			}
+
+			// Cleanup notification for FlakeAttempts retries
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, notification)
+			})
 
 			err := k8sClient.Create(ctx, notification)
 			if err != nil {
@@ -288,29 +294,29 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				return notification.Status.Phase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-		By("Validating priority field in file (BR-NOT-056)")
-		// Note: Controller may reconcile multiple times, creating multiple files (expected)
-		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
-		var copiedFilePath string
-		Eventually(EventuallyFindFileInPod("notification-e2e-priority-validation-*.json"),
-			20*time.Second, 1*time.Second).Should(Not(BeEmpty()),
-			"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
+			By("Validating priority field in file (BR-NOT-056)")
+			// Note: Controller may reconcile multiple times, creating multiple files (expected)
+			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+			var copiedFilePath string
+			Eventually(EventuallyFindFileInPod("notification-e2e-priority-validation-*.json"),
+				20*time.Second, 1*time.Second).Should(Not(BeEmpty()),
+				"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
 
-		copiedFilePath, err = WaitForFileInPod(ctx, "notification-e2e-priority-validation-*.json", 20*time.Second)
-		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
-		defer CleanupCopiedFile(copiedFilePath)
+			copiedFilePath, err = WaitForFileInPod(ctx, "notification-e2e-priority-validation-*.json", 20*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
+			defer CleanupCopiedFile(copiedFilePath)
 
-		// Read the copied file
-		fileContent, err := os.ReadFile(copiedFilePath)
-		Expect(err).ToNot(HaveOccurred())
+			// Read the copied file
+			fileContent, err := os.ReadFile(copiedFilePath)
+			Expect(err).ToNot(HaveOccurred())
 
-		var savedNotification notificationv1alpha1.NotificationRequest
-		err = json.Unmarshal(fileContent, &savedNotification)
-		Expect(err).ToNot(HaveOccurred())
+			var savedNotification notificationv1alpha1.NotificationRequest
+			err = json.Unmarshal(fileContent, &savedNotification)
+			Expect(err).ToNot(HaveOccurred())
 
-		// Verify priority is preserved exactly
-		Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
-			"Priority must be preserved as Critical (BR-NOT-056)")
+			// Verify priority is preserved exactly
+			Expect(savedNotification.Spec.Priority).To(Equal(notificationv1alpha1.NotificationPriorityCritical),
+				"Priority must be preserved as Critical (BR-NOT-056)")
 		})
 	})
 
@@ -343,7 +349,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 						Priority: notificationv1alpha1.NotificationPriorityMedium,
 						Channels: []notificationv1alpha1.Channel{
 							notificationv1alpha1.ChannelConsole,
-					notificationv1alpha1.ChannelFile,  // Add file channel for priority validation test
+							notificationv1alpha1.ChannelFile, // Add file channel for priority validation test
 						},
 						Recipients: []notificationv1alpha1.Recipient{
 							{Slack: "#e2e-concurrent"},

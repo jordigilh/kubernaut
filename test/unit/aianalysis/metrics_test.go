@@ -49,11 +49,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(m.ReconcilerReconciliationsTotal).NotTo(BeNil(),
 				"Operators need reconciliation counts to track system throughput and SLA compliance")
 
-		By("Verifying metric naming follows observability standards")
-		desc := m.ReconcilerReconciliationsTotal.WithLabelValues("Pending", "success").Desc()
-		// DD-005 V3.0: Use constant from production code to prevent typos
-		Expect(desc.String()).To(ContainSubstring(metrics.MetricNameReconcilerReconciliationsTotal),
-			"Standard metric naming enables Prometheus queries across services")
+			By("Verifying metric naming follows observability standards")
+			desc := m.ReconcilerReconciliationsTotal.WithLabelValues("Pending", "success").Desc()
+			// DD-005 V3.0: Use constant from production code to prevent typos
+			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameReconcilerReconciliationsTotal),
+				"Standard metric naming enables Prometheus queries across services")
 		})
 
 		It("should track phase-specific success rates for bottleneck identification", func() {
@@ -115,11 +115,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(m.RegoEvaluationsTotal).NotTo(BeNil(),
 				"Policy decision metrics enable compliance audits and approval rate analysis")
 
-		By("Verifying degraded mode evaluations are tracked separately")
-		desc := m.RegoEvaluationsTotal.WithLabelValues("approved", "true").Desc()
-		// DD-005 V3.0: Use constant from production code to prevent typos
-		Expect(desc.String()).To(ContainSubstring(metrics.MetricNameRegoEvaluationsTotal),
-			"Degraded mode tracking alerts operators to policy evaluation issues")
+			By("Verifying degraded mode evaluations are tracked separately")
+			desc := m.RegoEvaluationsTotal.WithLabelValues("approved", "true").Desc()
+			// DD-005 V3.0: Use constant from production code to prevent typos
+			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameRegoEvaluationsTotal),
+				"Degraded mode tracking alerts operators to policy evaluation issues")
 		})
 
 		It("should help operators identify policy configuration issues through degraded mode tracking", func() {
@@ -160,11 +160,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(m.ApprovalDecisionsTotal).NotTo(BeNil(),
 				"Automation rate (80% auto-approved) demonstrates business value of AI analysis")
 
-		By("Verifying metric enables environment-specific analysis")
-		desc := m.ApprovalDecisionsTotal.WithLabelValues("approved", "production").Desc()
-		// DD-005 V3.0: Use constant from production code to prevent typos
-		Expect(desc.String()).To(ContainSubstring(metrics.MetricNameApprovalDecisionsTotal),
-			"Environment-specific rates show policy effectiveness (prod vs staging)")
+			By("Verifying metric enables environment-specific analysis")
+			desc := m.ApprovalDecisionsTotal.WithLabelValues("approved", "production").Desc()
+			// DD-005 V3.0: Use constant from production code to prevent typos
+			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameApprovalDecisionsTotal),
+				"Environment-specific rates show policy effectiveness (prod vs staging)")
 		})
 
 		It("should help operators understand why manual reviews are required", func() {
@@ -245,11 +245,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(m.FailuresTotal).NotTo(BeNil(),
 				"Failure mode distribution (15 workflow, 8 API, 3 parsing) guides fix priorities")
 
-		By("Verifying sub-reason granularity enables root cause analysis")
-		desc := m.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Desc()
-		// DD-005 V3.0: Use constant from production code to prevent typos
-		Expect(desc.String()).To(ContainSubstring(metrics.MetricNameFailuresTotal),
-			"Sub-reason granularity (WorkflowNotFound vs LowConfidence) guides specific fixes")
+			By("Verifying sub-reason granularity enables root cause analysis")
+			desc := m.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Desc()
+			// DD-005 V3.0: Use constant from production code to prevent typos
+			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameFailuresTotal),
+				"Sub-reason granularity (WorkflowNotFound vs LowConfidence) guides specific fixes")
 		})
 
 		It("should help operators distinguish transient from permanent failures", func() {
@@ -291,11 +291,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(m.ValidationAttemptsTotal).NotTo(BeNil(),
 				"LLM validation rate (85% success) demonstrates self-correction effectiveness")
 
-		By("Verifying per-workflow success rate identifies problematic workflows")
-		desc := m.ValidationAttemptsTotal.WithLabelValues("restart-pod-v1", "false").Desc()
-		// DD-005 V3.0: Use constant from production code to prevent typos
-		Expect(desc.String()).To(ContainSubstring(metrics.MetricNameValidationAttemptsTotal),
-			"Per-workflow validation rate identifies which workflows need LLM tuning")
+			By("Verifying per-workflow success rate identifies problematic workflows")
+			desc := m.ValidationAttemptsTotal.WithLabelValues("restart-pod-v1", "false").Desc()
+			// DD-005 V3.0: Use constant from production code to prevent typos
+			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameValidationAttemptsTotal),
+				"Per-workflow validation rate identifies which workflows need LLM tuning")
 		})
 
 		It("should help operators understand LLM self-correction quality", func() {
@@ -343,11 +343,11 @@ var _ = Describe("AIAnalysis Metrics", func() {
 			Expect(m.DetectedLabelsFailuresTotal).NotTo(BeNil(),
 				"Label detection failure rate (25% for environment) indicates upstream data issues")
 
-		By("Verifying high failure rate (>20%) triggers data quality investigation")
-		desc := m.DetectedLabelsFailuresTotal.WithLabelValues("environment").Desc()
-		// DD-005 V3.0: Use constant from production code to prevent typos
-		Expect(desc.String()).To(ContainSubstring(metrics.MetricNameDetectedLabelsFailuresTotal),
-			"Environment label missing in 25% of cases requires upstream investigation")
+			By("Verifying high failure rate (>20%) triggers data quality investigation")
+			desc := m.DetectedLabelsFailuresTotal.WithLabelValues("environment").Desc()
+			// DD-005 V3.0: Use constant from production code to prevent typos
+			Expect(desc.String()).To(ContainSubstring(metrics.MetricNameDetectedLabelsFailuresTotal),
+				"Environment label missing in 25% of cases requires upstream investigation")
 		})
 
 		It("should help operators prioritize enrichment improvements", func() {

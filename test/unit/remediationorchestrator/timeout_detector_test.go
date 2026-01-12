@@ -26,7 +26,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/timeout"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("TimeoutDetector", func() {
@@ -47,7 +47,7 @@ var _ = Describe("TimeoutDetector", func() {
 		// Test #2: CheckGlobalTimeout returns true when exceeded (BR-ORCH-027)
 		It("should return TimedOut=true when global timeout exceeded", func() {
 			// Create RR with creation timestamp 2 hours ago (exceeds 60min default)
-			rr := testutil.NewRemediationRequest("test-rr", "default")
+			rr := helpers.NewRemediationRequest("test-rr", "default")
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * time.Hour))
 
 			result := detector.CheckGlobalTimeout(rr)
@@ -60,7 +60,7 @@ var _ = Describe("TimeoutDetector", func() {
 		// Test #3: CheckGlobalTimeout returns false when not exceeded (BR-ORCH-027)
 		It("should return TimedOut=false when global timeout not exceeded", func() {
 			// Create RR with creation timestamp 5 minutes ago (within 60min default)
-			rr := testutil.NewRemediationRequest("test-rr", "default")
+			rr := helpers.NewRemediationRequest("test-rr", "default")
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-5 * time.Minute))
 
 			result := detector.CheckGlobalTimeout(rr)
@@ -72,7 +72,7 @@ var _ = Describe("TimeoutDetector", func() {
 		// Test #4: CheckGlobalTimeout uses per-RR override when set (BR-ORCH-027)
 		It("should use per-RR timeout override when set", func() {
 			// Create RR with creation timestamp 30 minutes ago
-			rr := testutil.NewRemediationRequest("test-rr", "default")
+			rr := helpers.NewRemediationRequest("test-rr", "default")
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-30 * time.Minute))
 			// Set per-RR override to 15 minutes (should trigger timeout)
 			globalTimeout := metav1.Duration{Duration: 15 * time.Minute}
@@ -95,7 +95,7 @@ var _ = Describe("TimeoutDetector", func() {
 		Context("Terminal Phases", func() {
 			// Test #5: CheckTimeout skips terminal phases (Completed)
 			It("should skip timeout check for Completed phase", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * time.Hour)) // Would exceed timeout
 				rr.Status.OverallPhase = "Completed"
 
@@ -106,7 +106,7 @@ var _ = Describe("TimeoutDetector", func() {
 
 			// Test #6: CheckTimeout skips terminal phases (Failed)
 			It("should skip timeout check for Failed phase", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * time.Hour)) // Would exceed timeout
 				rr.Status.OverallPhase = "Failed"
 

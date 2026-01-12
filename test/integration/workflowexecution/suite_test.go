@@ -47,11 +47,11 @@ import (
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	workflowexecution "github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure" // Shared infrastructure (PostgreSQL + Redis + DS)
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/prometheus/client_golang/prometheus"
 	// +kubebuilder:scaffold:imports
 )
@@ -212,7 +212,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Creating REAL audit store with DataStorage OpenAPI client (DD-API-001)")
 	// Create OpenAPI DataStorage client (DD-API-001 compliant)
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	mockTransport := testutil.NewMockUserTransport("test-workflowexecution@integration.test")
+	mockTransport := testauth.NewMockUserTransport("test-workflowexecution@integration.test")
 	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
 		dataStorageBaseURL,
 		5*time.Second,

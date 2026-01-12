@@ -484,4 +484,3 @@ func waitForWEDataStorageReady(kubeconfigPath string, output io.Writer) error {
 	time.Sleep(5 * time.Second)
 	return nil
 }
-

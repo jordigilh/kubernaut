@@ -62,7 +62,7 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 			"--kubeconfig", kubeconfigPath,
 			"-n", controllerNamespace,
 			"exec", podName,
-			"-c", "manager",  // Specify container to avoid "Defaulted container" messages
+			"-c", "manager", // Specify container to avoid "Defaulted container" messages
 			"--", "sh", "-c",
 			fmt.Sprintf("cd /tmp/notifications && ls %s 2>/dev/null || true", pattern))
 
@@ -93,7 +93,7 @@ func WaitForFileInPod(ctx context.Context, pattern string, timeout time.Duration
 		"--kubeconfig", kubeconfigPath,
 		"-n", controllerNamespace,
 		"exec", podName,
-		"-c", "manager",  // Specify container to avoid "Defaulted container" messages
+		"-c", "manager", // Specify container to avoid "Defaulted container" messages
 		"--", "cat", filePath)
 
 	fileContent, err := cmd.CombinedOutput()

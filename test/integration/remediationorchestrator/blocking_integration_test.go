@@ -55,7 +55,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 	// ========================================
 	Describe("Consecutive Failure Detection (BR-ORCH-042.1)", func() {
 
-	// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/blocking_e2e_test.go
+		// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/blocking_e2e_test.go
 
 		It("should reset failure count when Completed RR is found (AC-042-1-2)", func() {
 			// Create unique namespace for this test
@@ -146,7 +146,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 	// ========================================
 	Describe("Cooldown Expiry Handling (BR-ORCH-042.3)", func() {
 
-	// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/blocking_e2e_test.go
+		// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/blocking_e2e_test.go
 
 		It("should allow manual blocks without BlockedUntil (nil = no auto-expiry)", func() {
 			// Create unique namespace for this test

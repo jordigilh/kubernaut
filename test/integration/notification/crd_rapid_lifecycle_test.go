@@ -78,8 +78,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				By(fmt.Sprintf("Cycle %d: Creating notification", cycle+1))
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notificationName,
-						Namespace: testNamespace,
+						Name:       notificationName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -158,8 +158,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				By(fmt.Sprintf("Cycle %d: Creating notification '%s'", cycle+1, notificationName))
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notificationName,
-						Namespace: testNamespace,
+						Name:       notificationName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 						Labels: map[string]string{
 							"cycle": fmt.Sprintf("%d", cycle),
@@ -244,8 +244,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 				notificationName := fmt.Sprintf("%s-%d", notificationBaseName, i)
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notificationName,
-						Namespace: testNamespace,
+						Name:       notificationName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -323,8 +323,8 @@ var _ = Describe("CRD Lifecycle: Rapid Create-Delete-Create", func() {
 					notificationName := fmt.Sprintf("concurrent-rapid-%d-%s", id, uniqueSuffix)
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      notificationName,
-							Namespace: testNamespace,
+							Name:       notificationName,
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{

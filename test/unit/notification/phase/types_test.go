@@ -151,5 +151,3 @@ var _ = Describe("Notification Phase State Machine", func() {
 		})
 	})
 })
-
-

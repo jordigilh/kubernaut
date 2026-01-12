@@ -64,8 +64,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -115,8 +115,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"test-label": "integration",
@@ -227,8 +227,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -309,8 +309,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// BR-NOT-065: Empty channels triggers label-based routing rules
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/severity":    "medium",
@@ -358,8 +358,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// Invalid name (uppercase not allowed)
 			invalidNotif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "INVALID-NAME",
-					Namespace: testNamespace,
+					Name:       "INVALID-NAME",
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -403,8 +403,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      longName,
-					Namespace: testNamespace,
+					Name:       longName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -446,8 +446,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -512,8 +512,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -593,8 +593,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -659,8 +659,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -752,8 +752,8 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{

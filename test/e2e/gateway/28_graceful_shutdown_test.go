@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"net/http/httptest"
+
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,11 +36,11 @@ import (
 // TDD Methodology: RED-GREEN-REFACTOR
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tests", func() {
+var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", func() {
 	var (
-		testServer    *httptest.Server
-	// TODO (GW Team): k8sClient     client.Client
-	// TODO (GW Team): ctx           context.Context
+		// testServer removed - using deployed Gateway
+		// TODO (GW Team): k8sClient     client.Client
+		// TODO (GW Team): ctx           context.Context
 		cancel        context.CancelFunc
 		testNamespace string
 		testCounter   int
@@ -66,14 +66,9 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tes
 		// Start test Gateway server
 
 		// Create httptest server from Gateway's HTTP handler
-		testServer = httptest.NewServer(nil)
-		Expect(testServer).ToNot(BeNil(), "HTTP test server should not be nil")
 	})
 
 	AfterEach(func() {
-		if testServer != nil {
-			testServer.Close()
-		}
 		if cancel != nil {
 			cancel()
 		}
@@ -147,7 +142,7 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tes
 					})
 
 					// Send webhook
-					resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+					resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 
 					if resp.StatusCode == 201 || resp.StatusCode == 202 {
 						atomic.AddInt32(&completedRequests, 1)
@@ -207,7 +202,7 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - Integration Tes
 			})
 
 			start := time.Now()
-			resp := SendWebhook(testServer.URL+"/api/v1/signals/prometheus", payload)
+			resp := SendWebhook(gatewayURL+"/api/v1/signals/prometheus", payload)
 			duration := time.Since(start)
 
 			// BUSINESS OUTCOME VALIDATION:

@@ -55,7 +55,11 @@ import (
 //
 // ════════════════════════════════════════════════════════════════════════
 
-var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial, func() {
+// DD-TEST-010: Multi-Controller Pattern - Serial REMOVED
+// Rationale: Per-process controllers (DD-STATUS-001) eliminate resource measurement interference.
+// Each process has isolated envtest, k8sManager, and controller instance.
+// Resource measurements (memory, goroutines) are now per-process and don't contaminate parallel tests.
+var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func() {
 	var (
 		uniqueSuffix  string
 		testNamespace = "kubernaut-notifications" // Standard namespace for integration tests
@@ -91,8 +95,8 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial
 					notificationName := fmt.Sprintf("extreme-load-console-%d-%s", id, uniqueSuffix)
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      notificationName,
-							Namespace: testNamespace,
+							Name:       notificationName,
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -209,8 +213,8 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial
 					notificationName := fmt.Sprintf("extreme-load-slack-%d-%s", id, uniqueSuffix)
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      notificationName,
-							Namespace: testNamespace,
+							Name:       notificationName,
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -325,8 +329,8 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", Serial
 					notificationName := fmt.Sprintf("extreme-load-mixed-%d-%s", id, uniqueSuffix)
 					notif := &notificationv1alpha1.NotificationRequest{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      notificationName,
-							Namespace: testNamespace,
+							Name:       notificationName,
+							Namespace:  testNamespace,
 							Generation: 1, // K8s increments on create/update
 						},
 						Spec: notificationv1alpha1.NotificationRequestSpec{

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -59,10 +59,10 @@ var _ = Describe("AuthTransport", func() {
 		server.Close()
 	})
 
-	Describe("testutil.NewMockUserTransport", func() {
+	Describe("testauth.NewMockUserTransport", func() {
 		It("should inject X-Auth-Request-User header", func() {
 			// Create mock user transport (from testutil, not production code)
-			transport := testutil.NewMockUserTransport("test-user@example.com")
+			transport := testauth.NewMockUserTransport("test-user@example.com")
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -77,7 +77,7 @@ var _ = Describe("AuthTransport", func() {
 
 		It("should not inject header if userID is empty", func() {
 			// Create transport with empty userID
-			transport := testutil.NewMockUserTransport("")
+			transport := testauth.NewMockUserTransport("")
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -90,7 +90,6 @@ var _ = Describe("AuthTransport", func() {
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(BeEmpty())
 		})
 	})
-
 
 	Describe("NewServiceAccountTransport", func() {
 		It("should read token from filesystem and inject Authorization header", func() {
@@ -120,7 +119,7 @@ var _ = Describe("AuthTransport", func() {
 	Describe("RoundTrip thread safety", func() {
 		It("should be safe for concurrent use", func() {
 			// Create transport (using testutil mock)
-			transport := testutil.NewMockUserTransport("concurrent-user@example.com")
+			transport := testauth.NewMockUserTransport("concurrent-user@example.com")
 			client := &http.Client{Transport: transport}
 
 			// Make 100 concurrent requests
@@ -158,7 +157,7 @@ var _ = Describe("AuthTransport", func() {
 	Describe("Request cloning", func() {
 		It("should not mutate original request", func() {
 			// Create transport (using testutil mock)
-			transport := testutil.NewMockUserTransport("test-user@example.com")
+			transport := testauth.NewMockUserTransport("test-user@example.com")
 			client := &http.Client{Transport: transport}
 
 			// Create request
@@ -187,7 +186,7 @@ var _ = Describe("AuthTransport", func() {
 			}
 
 			// Create mock user transport with custom base (using testutil)
-			transport := testutil.NewMockUserTransportWithBase("test-user@example.com", customBase)
+			transport := testauth.NewMockUserTransportWithBase("test-user@example.com", customBase)
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -202,7 +201,7 @@ var _ = Describe("AuthTransport", func() {
 
 		It("should use http.DefaultTransport if base is nil", func() {
 			// Create transport with nil base (using testutil)
-			transport := testutil.NewMockUserTransportWithBase("test-user@example.com", nil)
+			transport := testauth.NewMockUserTransportWithBase("test-user@example.com", nil)
 			client := &http.Client{Transport: transport}
 
 			// Make request (should not panic)
@@ -228,4 +227,3 @@ func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	t.called = true
 	return t.base.RoundTrip(req)
 }
-

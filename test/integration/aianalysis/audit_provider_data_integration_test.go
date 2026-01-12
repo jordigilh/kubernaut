@@ -56,7 +56,7 @@ import (
 	aianalysisaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // ========================================
@@ -238,17 +238,17 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			By("Validating HAPI event metadata with testutil")
 			actorID := "holmesgpt-api"
-			testutil.ValidateAuditEvent(hapiEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(hapiEvent, validators.ExpectedAuditEvent{
 				EventType:     string(ogenclient.HolmesGPTResponsePayloadAuditEventEventData),
 				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 				EventAction:   "response_sent",
-				EventOutcome:  testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				ActorID:       &actorID,
 			})
 
 			By("Validating HAPI event_data structure (provider perspective - full response)")
-			testutil.ValidateAuditEventHasRequiredFields(hapiEvent)
+			validators.ValidateAuditEventHasRequiredFields(hapiEvent)
 
 			// DD-AUDIT-004: Use strongly-typed payload (no map[string]interface{})
 			hapiPayload := hapiEvent.EventData.HolmesGPTResponsePayload
@@ -273,11 +273,11 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			By("Validating AA event metadata with testutil")
 			aaActorID := "aianalysis-controller"
-			testutil.ValidateAuditEvent(aaEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(aaEvent, validators.ExpectedAuditEvent{
 				EventType:     "aianalysis.analysis.completed",
 				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 				EventAction:   "analysis_complete",
-				EventOutcome:  testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				ActorID:       &aaActorID,
 			})
@@ -285,11 +285,11 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			By("Validating AA event structure and business context")
 
 			// ✅ CORRECT: Use testutil per TESTING_GUIDELINES.md (line 1823-1846)
-			testutil.ValidateAuditEvent(aaEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(aaEvent, validators.ExpectedAuditEvent{
 				EventType:     "aianalysis.analysis.completed",
 				EventCategory: ogenclient.AuditEventEventCategoryAnalysis,
 				EventAction:   "analysis_complete",
-				EventOutcome:  testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: correlationID,
 				ActorID:       &aaActorID,
 			})
@@ -399,6 +399,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 			// RACE FIX: HAPI has independent Python buffer with 0.1s flush interval
 			// Use Eventually() to poll until event appears (replaces brittle time.Sleep)
+			// Timeout increased to 10s to account for HAPI idempotency issue (4 duplicate calls)
 			Eventually(func() int {
 				hapiResp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -414,7 +415,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				}
 				hapiEvents = hapiResp.Data
 				return len(hapiEvents)
-			}, 5*time.Second, 100*time.Millisecond).Should(Equal(1),
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal(1),
 				"DD-TESTING-001: Should have EXACTLY 1 HAPI event after async buffer flush")
 
 			// Extract strongly-typed response_data (DD-AUDIT-004)

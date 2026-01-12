@@ -1157,15 +1157,15 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 			// Debug: Log all events for visibility
 			GinkgoWriter.Printf("  🔍 Total audit events returned: %d\n", len(auditEvents))
 			for i, event := range auditEvents {
-			eventType := "unknown"
-			if event.EventType != "" {
-				eventType = event.EventType
-			}
-			resourceId := "unknown"
-			if event.ResourceID.Set {
-				resourceId = event.ResourceID.Value
-			}
-			GinkgoWriter.Printf("    [%d] type=%s resource=%s\n", i, eventType, resourceId)
+				eventType := "unknown"
+				if event.EventType != "" {
+					eventType = event.EventType
+				}
+				resourceId := "unknown"
+				if event.ResourceID.Set {
+					resourceId = event.ResourceID.Value
+				}
+				GinkgoWriter.Printf("    [%d] type=%s resource=%s\n", i, eventType, resourceId)
 			}
 
 			// Verify we got audit events
@@ -1176,23 +1176,23 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 
 			GinkgoWriter.Printf("  ✅ Found %d total audit events\n", len(auditEvents))
 
-		// Filter events for our specific SignalProcessing resource
-		hasSignalProcessed := false
-		hasClassificationDecision := false
-		for _, event := range auditEvents {
-			// Only check events for this specific test resource
-			// OpenAPI types use OptString for optional fields
-			if !event.ResourceID.Set || event.ResourceID.Value != "e2e-audit-test" {
-				continue
+			// Filter events for our specific SignalProcessing resource
+			hasSignalProcessed := false
+			hasClassificationDecision := false
+			for _, event := range auditEvents {
+				// Only check events for this specific test resource
+				// OpenAPI types use OptString for optional fields
+				if !event.ResourceID.Set || event.ResourceID.Value != "e2e-audit-test" {
+					continue
+				}
+				GinkgoWriter.Printf("    • Event: %s (resource: %s)\n", event.EventType, event.ResourceID.Value)
+				if event.EventType == spaudit.EventTypeSignalProcessed {
+					hasSignalProcessed = true
+				}
+				if event.EventType == spaudit.EventTypeClassificationDecision {
+					hasClassificationDecision = true
+				}
 			}
-			GinkgoWriter.Printf("    • Event: %s (resource: %s)\n", event.EventType, event.ResourceID.Value)
-			if event.EventType == spaudit.EventTypeSignalProcessed {
-				hasSignalProcessed = true
-			}
-			if event.EventType == spaudit.EventTypeClassificationDecision {
-				hasClassificationDecision = true
-			}
-		}
 
 			return hasSignalProcessed && hasClassificationDecision
 		}, 60*time.Second, 3*time.Second).Should(BeTrue(),
@@ -1202,14 +1202,14 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 		auditEvents, err := queryAuditEvents("e2e-audit-test-rr")
 		Expect(err).ToNot(HaveOccurred())
 
-	// Filter events for our specific resource
-	var resourceEvents []dsgen.AuditEvent
-	for _, event := range auditEvents {
-		// Handle OpenAPI OptString types
-		if event.ResourceID.Set && event.ResourceID.Value == "e2e-audit-test" {
-			resourceEvents = append(resourceEvents, event)
+		// Filter events for our specific resource
+		var resourceEvents []dsgen.AuditEvent
+		for _, event := range auditEvents {
+			// Handle OpenAPI OptString types
+			if event.ResourceID.Set && event.ResourceID.Value == "e2e-audit-test" {
+				resourceEvents = append(resourceEvents, event)
+			}
 		}
-	}
 		Expect(len(resourceEvents)).To(BeNumerically(">=", 2),
 			"Expected at least 2 audit events for resource e2e-audit-test")
 
@@ -1221,14 +1221,14 @@ var _ = Describe("BR-SP-090: Categorization Audit Trail Provides Compliance Evid
 				break
 			}
 		}
-	Expect(signalEvent).ToNot(BeNil(), "signalprocessing.signal.processed event should exist")
-	// OpenAPI types use OptString for optional fields
-	Expect(signalEvent.ActorID.Set).To(BeTrue())
-	Expect(signalEvent.ActorID.Value).To(Equal("signalprocessing-controller"))
-	Expect(signalEvent.ResourceType.Set).To(BeTrue())
-	Expect(signalEvent.ResourceType.Value).To(Equal("SignalProcessing"))
-	Expect(signalEvent.ResourceID.Set).To(BeTrue())
-	Expect(signalEvent.ResourceID.Value).To(Equal("e2e-audit-test"))
+		Expect(signalEvent).ToNot(BeNil(), "signalprocessing.signal.processed event should exist")
+		// OpenAPI types use OptString for optional fields
+		Expect(signalEvent.ActorID.Set).To(BeTrue())
+		Expect(signalEvent.ActorID.Value).To(Equal("signalprocessing-controller"))
+		Expect(signalEvent.ResourceType.Set).To(BeTrue())
+		Expect(signalEvent.ResourceType.Value).To(Equal("SignalProcessing"))
+		Expect(signalEvent.ResourceID.Set).To(BeTrue())
+		Expect(signalEvent.ResourceID.Value).To(Equal("e2e-audit-test"))
 		// Note: Namespace may be empty in current implementation
 	})
 })
@@ -1300,8 +1300,8 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1393,8 +1393,8 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1488,8 +1488,8 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1630,8 +1630,8 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "api",
-							Image: "busybox:1.36",
+							Name:    "api",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1769,8 +1769,8 @@ var _ = Describe("BR-SP-103-A: StatefulSet Signal Enrichment (Fixed)", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "db",
-							Image: "busybox:1.36",
+							Name:    "db",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -1888,8 +1888,8 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "collector",
-							Image: "busybox:1.36",
+							Name:    "collector",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2008,8 +2008,8 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "worker",
-							Image: "busybox:1.36",
+							Name:    "worker",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2125,8 +2125,8 @@ var _ = Describe("BR-SP-103-E: Service Signal Enrichment", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "api",
-							Image: "busybox:1.36",
+							Name:    "api",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2270,8 +2270,8 @@ var _ = Describe("BR-SP-070-A: P0 Priority Classification", func() {
 					},
 					Spec: corev1.PodSpec{
 						Containers: []corev1.Container{{
-							Name:  "app",
-							Image: "busybox:1.36",
+							Name:    "app",
+							Image:   "busybox:1.36",
 							Command: []string{"sleep", "3600"},
 						}},
 					},
@@ -2364,8 +2364,8 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{
-					Name:  "app",
-					Image: "busybox:1.36",
+					Name:    "app",
+					Image:   "busybox:1.36",
 					Command: []string{"sleep", "3600"},
 				}},
 			},
@@ -2456,8 +2456,8 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{{
-					Name:  "app",
-					Image: "busybox:1.36",
+					Name:    "app",
+					Image:   "busybox:1.36",
 					Command: []string{"sleep", "3600"},
 				}},
 			},

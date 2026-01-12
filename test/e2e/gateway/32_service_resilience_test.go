@@ -22,13 +22,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -42,8 +41,6 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	var (
 		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
 		ctx           context.Context
-		gatewayURL    string
-		server        *httptest.Server
 		testClient    client.Client
 	)
 
@@ -54,19 +51,17 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
 		testNamespace = fmt.Sprintf("gw-resilience-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
-		// Get DataStorage URL from environment
+		// Get DataStorage URL from environment (for reference, though not used in all tests)
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18090" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "http://127.0.0.1:18091" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
-		// Create Gateway server
-		gatewayURL = server.URL
+		// Use suite-level gatewayURL (deployed Gateway service)
+		// Note: gatewayURL is defined at suite level in gateway_e2e_suite_test.go
 	})
 
 	AfterEach(func() {
-		// Cleanup server
-
 		// No manual cleanup needed - each parallel process has its own isolated namespace
 	})
 
@@ -94,7 +89,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Note: This test requires simulating K8s API failure
 			// For now, we validate the error handling path exists
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should handle gracefully
@@ -142,7 +137,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// If K8s API failure occurs, validate backoff is reasonable
@@ -175,7 +170,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Either succeeds (happy path) or returns HTTP 500 with K8s API error details
@@ -215,7 +210,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Gateway should succeed despite DataStorage unavailability
@@ -238,19 +233,19 @@ _ = err
 			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability")
 		})
 
-	It("should log DataStorage failures without blocking alert processing", FlakeAttempts(3), func() {
-		// Given: DataStorage service returning errors (not unavailable, but failing)
-		// When: Gateway attempts to send audit event
-		// Then: Error is logged, but processing continues
-		// NOTE: FlakeAttempts(3) - Same cache synchronization issue as BR-GATEWAY-187
-		// Gateway creates CRD successfully but test List() queries may return 0 items
-		// due to multiple K8s clients with different caches. See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
+		It("should log DataStorage failures without blocking alert processing", FlakeAttempts(3), func() {
+			// Given: DataStorage service returning errors (not unavailable, but failing)
+			// When: Gateway attempts to send audit event
+			// Then: Error is logged, but processing continues
+			// NOTE: FlakeAttempts(3) - Same cache synchronization issue as BR-GATEWAY-187
+			// Gateway creates CRD successfully but test List() queries may return 0 items
+			// due to multiple K8s clients with different caches. See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
 
-		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-			AlertName: "TestDataStorageError",
-			Namespace: testNamespace,
-			Severity:  "info",
-		})
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: "TestDataStorageError",
+				Namespace: testNamespace,
+				Severity:  "info",
+			})
 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
@@ -259,7 +254,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Request should succeed with CRD creation (graceful degradation)
@@ -276,19 +271,19 @@ _ = err
 			// but alert processing continued (non-blocking error logging)
 		})
 
-	It("should maintain normal processing when DataStorage recovers", FlakeAttempts(3), func() {
-		// Given: DataStorage service that was unavailable
-		// When: DataStorage recovers and Gateway sends next audit event
-		// Then: Both alert processing AND audit succeed
-		// NOTE: FlakeAttempts(3) - Same cache synchronization issue as BR-GATEWAY-187
-		// Gateway creates CRD successfully but test List() queries may return 0 items
-		// due to multiple K8s clients with different caches. See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
+		It("should maintain normal processing when DataStorage recovers", FlakeAttempts(3), func() {
+			// Given: DataStorage service that was unavailable
+			// When: DataStorage recovers and Gateway sends next audit event
+			// Then: Both alert processing AND audit succeed
+			// NOTE: FlakeAttempts(3) - Same cache synchronization issue as BR-GATEWAY-187
+			// Gateway creates CRD successfully but test List() queries may return 0 items
+			// due to multiple K8s clients with different caches. See GW_BR_GATEWAY_187_TEST_FAILURE_ANALYSIS_JAN_04_2026.md
 
-		payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
-			AlertName: "TestDataStorageRecovery",
-			Namespace: testNamespace,
-			Severity:  "warning",
-		})
+			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
+				AlertName: "TestDataStorageRecovery",
+				Namespace: testNamespace,
+				Severity:  "warning",
+			})
 
 			req, err := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
@@ -297,7 +292,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Then: Processing succeeds with CRD creation
@@ -339,7 +334,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Validation depends on actual infrastructure state
@@ -347,4 +342,3 @@ _ = err
 		})
 	})
 })
-

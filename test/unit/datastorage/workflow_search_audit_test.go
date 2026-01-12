@@ -25,8 +25,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -256,28 +256,28 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			// BEHAVIOR: Empty results is a valid search outcome (not an error)
 			// CORRECTNESS: Event data accurately reflects zero results
 
-		searchRequest := &models.WorkflowSearchRequest{
-			Filters: &models.WorkflowSearchFilters{
-				SignalType:  "NonExistentSignal",
-				Severity:    "low",
-				Component:   "pod",
-				Environment: "production",
-				Priority:    "P1",
-			},
-			TopK: 3,
-		}
+			searchRequest := &models.WorkflowSearchRequest{
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "NonExistentSignal",
+					Severity:    "low",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
+				TopK: 3,
+			}
 
-		searchResponse := &models.WorkflowSearchResponse{
-			Workflows:    []models.WorkflowSearchResult{},
-			TotalResults: 0,
-			Filters: &models.WorkflowSearchFilters{
-				SignalType:  "NonExistentSignal",
-				Severity:    "low",
-				Component:   "pod",
-				Environment: "production",
-				Priority:    "P1",
-			},
-		}
+			searchResponse := &models.WorkflowSearchResponse{
+				Workflows:    []models.WorkflowSearchResult{},
+				TotalResults: 0,
+				Filters: &models.WorkflowSearchFilters{
+					SignalType:  "NonExistentSignal",
+					Severity:    "low",
+					Component:   "pod",
+					Environment: "production",
+					Priority:    "P1",
+				},
+			}
 
 			auditEvent, err := NewWorkflowSearchAuditEvent(
 				searchRequest,
@@ -288,31 +288,31 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			Expect(err).ToNot(HaveOccurred(),
 				"Empty results should not cause an error")
 
-		// BEHAVIOR: Empty results is still a successful search operation
-		Expect(string(auditEvent.EventOutcome)).To(Equal("success"),
-			"EventOutcome should be 'success' because the search completed without error")
+			// BEHAVIOR: Empty results is still a successful search operation
+			Expect(string(auditEvent.EventOutcome)).To(Equal("success"),
+				"EventOutcome should be 'success' because the search completed without error")
 
-		// Access the WorkflowSearchAuditPayload from the discriminated union
-		payload, ok := auditEvent.EventData.GetWorkflowSearchAuditPayload()
-		Expect(ok).To(BeTrue(), "EventData should contain WorkflowSearchAuditPayload")
-		Expect(payload).NotTo(BeNil(), "Payload should not be nil")
+			// Access the WorkflowSearchAuditPayload from the discriminated union
+			payload, ok := auditEvent.EventData.GetWorkflowSearchAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData should contain WorkflowSearchAuditPayload")
+			Expect(payload).NotTo(BeNil(), "Payload should not be nil")
 
-		// CORRECTNESS: Event data accurately reflects zero results
-		Expect(payload.Results.TotalFound).To(Equal(int32(0)),
-			"TotalFound should be 0 when no workflows match")
-		Expect(payload.Results.Returned).To(Equal(int32(0)),
-			"Returned should be 0 when no workflows match")
-		Expect(payload.Results.Workflows).To(BeEmpty(),
-			"Workflows array should be empty when no workflows match")
+			// CORRECTNESS: Event data accurately reflects zero results
+			Expect(payload.Results.TotalFound).To(Equal(int32(0)),
+				"TotalFound should be 0 when no workflows match")
+			Expect(payload.Results.Returned).To(Equal(int32(0)),
+				"Returned should be 0 when no workflows match")
+			Expect(payload.Results.Workflows).To(BeEmpty(),
+				"Workflows array should be empty when no workflows match")
 
-		// CORRECTNESS: Filters are still captured for debugging
-		Expect(payload.Query.Filters.IsSet()).To(BeTrue(),
-			"Filters should be captured even when no results found for debugging")
-		filters := payload.Query.Filters.Value
-		Expect(filters.SignalType).To(Equal("NonExistentSignal"),
-			"SignalType should be captured for debugging")
-		Expect(string(filters.Severity)).To(Equal("low"),
-			"Severity should be captured for debugging")
+			// CORRECTNESS: Filters are still captured for debugging
+			Expect(payload.Query.Filters.IsSet()).To(BeTrue(),
+				"Filters should be captured even when no results found for debugging")
+			filters := payload.Query.Filters.Value
+			Expect(filters.SignalType).To(Equal("NonExistentSignal"),
+				"SignalType should be captured for debugging")
+			Expect(string(filters.Severity)).To(Equal("low"),
+				"Severity should be captured for debugging")
 		})
 
 		It("should capture complete workflow metadata for each result", func() {
@@ -447,18 +447,18 @@ var _ = Describe("Workflow Search Audit Generation", func() {
 			Expect(auditEvent).ToNot(BeNil(),
 				"Audit event should not be nil")
 
-		// CORRECTNESS: Required fields are populated
-		Expect(auditEvent.EventType).ToNot(BeEmpty(),
-			"EventType should always be set")
-		Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
-			"CorrelationID should be a 16-character hex hash")
+			// CORRECTNESS: Required fields are populated
+			Expect(auditEvent.EventType).ToNot(BeEmpty(),
+				"EventType should always be set")
+			Expect(auditEvent.CorrelationID).To(MatchRegexp(`^[0-9a-f]{16}$`),
+				"CorrelationID should be a 16-character hex hash")
 
-		// EventData is a discriminated union - check it contains WorkflowSearchAuditPayload
-		payload, ok := auditEvent.EventData.GetWorkflowSearchAuditPayload()
-		Expect(ok).To(BeTrue(),
-			"EventData should contain WorkflowSearchAuditPayload")
-		Expect(payload).ToNot(BeNil(),
-			"EventData payload should not be nil")
+			// EventData is a discriminated union - check it contains WorkflowSearchAuditPayload
+			payload, ok := auditEvent.EventData.GetWorkflowSearchAuditPayload()
+			Expect(ok).To(BeTrue(),
+				"EventData should contain WorkflowSearchAuditPayload")
+			Expect(payload).ToNot(BeNil(),
+				"EventData payload should not be nil")
 		})
 	})
 })

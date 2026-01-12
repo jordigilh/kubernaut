@@ -69,10 +69,10 @@ var _ = Describe("K8sEnricher", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(appsv1.AddToScheme(scheme)).To(Succeed())
 
-	// Create metrics with test registry
-	reg := prometheus.NewRegistry()
-	m = metrics.NewMetricsWithRegistry(reg)
-	logger = zap.New(zap.UseDevMode(true))
+		// Create metrics with test registry
+		reg := prometheus.NewRegistry()
+		m = metrics.NewMetricsWithRegistry(reg)
+		logger = zap.New(zap.UseDevMode(true))
 	})
 
 	// Helper to create fake client with objects

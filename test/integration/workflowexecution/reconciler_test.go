@@ -385,59 +385,59 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		// and query the HTTP API to verify audit events were persisted correctly.
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-	It("should persist workflowexecution.execution.started audit event (BR-AUDIT-005 Gap #6, ADR-034 v1.5)", func() {
-		By("Creating a WorkflowExecution")
-		wfe = createUniqueWFE("audit-started", "default/deployment/audit-started-test")
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		It("should persist workflowexecution.execution.started audit event (BR-AUDIT-005 Gap #6, ADR-034 v1.5)", func() {
+			By("Creating a WorkflowExecution")
+			wfe = createUniqueWFE("audit-started", "default/deployment/audit-started-test")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		By("Waiting for Running phase")
-		_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
-		Expect(err).ToNot(HaveOccurred())
+			By("Waiting for Running phase")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 
-	By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
-	// V1.0 MANDATORY: Use ogen OpenAPI client (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
-	// Query real DataStorage service (Defense-in-Depth: validate field values)
-	auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create ogen audit client")
+			By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
+			// V1.0 MANDATORY: Use ogen OpenAPI client (per V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
+			// Query real DataStorage service (Defense-in-Depth: validate field values)
+			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
+			Expect(err).ToNot(HaveOccurred(), "Failed to create ogen audit client")
 
-	// Per ADR-034 v1.5: Gap #6 uses "workflowexecution" category and weaudit.EventTypeExecutionStarted event type
-	eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
-	var startedEvent *ogenclient.AuditEvent
-	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
-	correlationID := wfe.Spec.RemediationRequestRef.Name
-	// Flush before querying to ensure buffered events are written to DataStorage
-	flushAuditBuffer()
-	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
-			if err != nil {
-				return false
-			}
-
-			// Find workflowexecution.execution.started event (Gap #6, per ADR-034 v1.5)
-			for i := range resp.Data {
-				if resp.Data[i].EventType == weaudit.EventTypeExecutionStarted {
-					startedEvent = &resp.Data[i]
-					return true
+			// Per ADR-034 v1.5: Gap #6 uses "workflowexecution" category and weaudit.EventTypeExecutionStarted event type
+			eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
+			var startedEvent *ogenclient.AuditEvent
+			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+			correlationID := wfe.Spec.RemediationRequestRef.Name
+			// Flush before querying to ensure buffered events are written to DataStorage
+			flushAuditBuffer()
+			Eventually(func() bool {
+				resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					return false
 				}
-			}
-			return false
-		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"workflowexecution.execution.started audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
-	By("Verifying audit event field values")
-	Expect(startedEvent).ToNot(BeNil())
-	Expect(startedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflowexecution)) // Per ADR-034 v1.5: workflowexecution category
-	// WE-BUG-002: event_action contains short form ("started" not "execution.workflow.started")
-	Expect(startedEvent.EventAction).To(Equal("started"))
-	Expect(startedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
-		// DD-AUDIT-CORRELATION-001: CorrelationID = RemediationRequestRef.Name
-		Expect(startedEvent.CorrelationID).To(Equal(wfe.Spec.RemediationRequestRef.Name))
+				// Find workflowexecution.execution.started event (Gap #6, per ADR-034 v1.5)
+				for i := range resp.Data {
+					if resp.Data[i].EventType == weaudit.EventTypeExecutionStarted {
+						startedEvent = &resp.Data[i]
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"workflowexecution.execution.started audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
-		GinkgoWriter.Println("✅ execution.workflow.started audit event persisted with correct field values")
-	})
+			By("Verifying audit event field values")
+			Expect(startedEvent).ToNot(BeNil())
+			Expect(startedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWorkflowexecution)) // Per ADR-034 v1.5: workflowexecution category
+			// WE-BUG-002: event_action contains short form ("started" not "execution.workflow.started")
+			Expect(startedEvent.EventAction).To(Equal("started"))
+			Expect(startedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+			// DD-AUDIT-CORRELATION-001: CorrelationID = RemediationRequestRef.Name
+			Expect(startedEvent.CorrelationID).To(Equal(wfe.Spec.RemediationRequestRef.Name))
+
+			GinkgoWriter.Println("✅ execution.workflow.started audit event persisted with correct field values")
+		})
 
 		It("should persist workflowexecution.workflow.completed audit event with correct field values (ADR-034 v1.5)", func() {
 			By("Creating a WorkflowExecution")
@@ -459,43 +459,43 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-	By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
-	// V1.0 MANDATORY: Use ogen OpenAPI client
-	auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-	Expect(err).ToNot(HaveOccurred())
+			By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
+			// V1.0 MANDATORY: Use ogen OpenAPI client
+			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
+			Expect(err).ToNot(HaveOccurred())
 
-	// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeCompleted event type
-	eventCategory := "workflowexecution"
-	var completedEvent *ogenclient.AuditEvent
-	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
-	correlationID := wfe.Spec.RemediationRequestRef.Name
-	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
-		if err != nil {
-			return false
-		}
+			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeCompleted event type
+			eventCategory := "workflowexecution"
+			var completedEvent *ogenclient.AuditEvent
+			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+			correlationID := wfe.Spec.RemediationRequestRef.Name
+			Eventually(func() bool {
+				resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					return false
+				}
 
-		// Find workflowexecution.workflow.completed event (per ADR-034 v1.5)
-		for i := range resp.Data {
-			if resp.Data[i].EventType == weaudit.EventTypeCompleted {
-				completedEvent = &resp.Data[i]
-				return true
-			}
-		}
-		return false
-	}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
-		"workflowexecution.workflow.completed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
+				// Find workflowexecution.workflow.completed event (per ADR-034 v1.5)
+				for i := range resp.Data {
+					if resp.Data[i].EventType == weaudit.EventTypeCompleted {
+						completedEvent = &resp.Data[i]
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"workflowexecution.workflow.completed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
-	By("Verifying audit event field values")
-	Expect(completedEvent).ToNot(BeNil())
-	Expect(completedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
-	// WE-BUG-002: event_action contains short form ("completed" not weaudit.EventTypeCompleted)
-	Expect(completedEvent.EventAction).To(Equal("completed"))
+			By("Verifying audit event field values")
+			Expect(completedEvent).ToNot(BeNil())
+			Expect(completedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+			// WE-BUG-002: event_action contains short form ("completed" not weaudit.EventTypeCompleted)
+			Expect(completedEvent.EventAction).To(Equal("completed"))
 
-	GinkgoWriter.Println("✅ workflowexecution.workflow.completed audit event persisted with correct field values")
+			GinkgoWriter.Println("✅ workflowexecution.workflow.completed audit event persisted with correct field values")
 		})
 
 		It("should persist workflowexecution.workflow.failed audit event with failure details (ADR-034 v1.5)", func() {
@@ -518,97 +518,97 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-	By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
-	// V1.0 MANDATORY: Use ogen OpenAPI client
-	auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-	Expect(err).ToNot(HaveOccurred())
+			By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
+			// V1.0 MANDATORY: Use ogen OpenAPI client
+			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
+			Expect(err).ToNot(HaveOccurred())
 
-	// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeFailed event type
-	eventCategory := "workflowexecution"
-	var failedEvent *ogenclient.AuditEvent
-	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
-	correlationID := wfe.Spec.RemediationRequestRef.Name
-	// Flush before querying to ensure buffered events are written to DataStorage
-	flushAuditBuffer()
-	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationID),
-			})
-			if err != nil {
-				return false
-			}
-
-			// Find workflowexecution.workflow.failed event (per ADR-034 v1.5)
-			for i := range resp.Data {
-				if resp.Data[i].EventType == weaudit.EventTypeFailed {
-					failedEvent = &resp.Data[i]
-					return true
+			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeFailed event type
+			eventCategory := "workflowexecution"
+			var failedEvent *ogenclient.AuditEvent
+			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
+			correlationID := wfe.Spec.RemediationRequestRef.Name
+			// Flush before querying to ensure buffered events are written to DataStorage
+			flushAuditBuffer()
+			Eventually(func() bool {
+				resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					return false
 				}
-			}
-			return false
-		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"workflowexecution.workflow.failed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
-	By("Verifying audit event field values including failure details")
-	Expect(failedEvent).ToNot(BeNil())
-	Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
-	// WE-BUG-002: event_action contains short form ("failed" not weaudit.EventTypeFailed)
-	Expect(failedEvent.EventAction).To(Equal("failed"))
+				// Find workflowexecution.workflow.failed event (per ADR-034 v1.5)
+				for i := range resp.Data {
+					if resp.Data[i].EventType == weaudit.EventTypeFailed {
+						failedEvent = &resp.Data[i]
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"workflowexecution.workflow.failed audit event should be persisted in DataStorage (30s timeout for parallel execution)")
 
-	// Verify event_data contains failure details - OGEN-MIGRATION
-	eventData, ok := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
-	Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
+			By("Verifying audit event field values including failure details")
+			Expect(failedEvent).ToNot(BeNil())
+			Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
+			// WE-BUG-002: event_action contains short form ("failed" not weaudit.EventTypeFailed)
+			Expect(failedEvent.EventAction).To(Equal("failed"))
 
-	// Access flat fields directly
-	Expect(eventData.FailureReason.IsSet()).To(BeTrue(), "failure_reason should be populated")
-	Expect(eventData.FailureMessage.IsSet()).To(BeTrue(), "failure_message should be populated")
-	Expect(eventData.FailureMessage.Value).ToNot(BeEmpty(), "failure_message should be populated")
+			// Verify event_data contains failure details - OGEN-MIGRATION
+			eventData, ok := failedEvent.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
 
-	GinkgoWriter.Println("✅ workflowexecution.workflow.failed audit event persisted with failure details")
+			// Access flat fields directly
+			Expect(eventData.FailureReason.IsSet()).To(BeTrue(), "failure_reason should be populated")
+			Expect(eventData.FailureMessage.IsSet()).To(BeTrue(), "failure_message should be populated")
+			Expect(eventData.FailureMessage.Value).ToNot(BeEmpty(), "failure_message should be populated")
+
+			GinkgoWriter.Println("✅ workflowexecution.workflow.failed audit event persisted with failure details")
 		})
 
-	It("should include correlation ID in audit events from RemediationRequestRef (DD-AUDIT-CORRELATION-001)", func() {
-		By("Creating a WorkflowExecution (correlation ID = RemediationRequestRef.Name)")
-		wfe = createUniqueWFE("audit-corr", "default/deployment/audit-corr-test")
-		// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is the authoritative source
-		expectedCorrID := wfe.Spec.RemediationRequestRef.Name
-		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+		It("should include correlation ID in audit events from RemediationRequestRef (DD-AUDIT-CORRELATION-001)", func() {
+			By("Creating a WorkflowExecution (correlation ID = RemediationRequestRef.Name)")
+			wfe = createUniqueWFE("audit-corr", "default/deployment/audit-corr-test")
+			// DD-AUDIT-CORRELATION-001: RemediationRequestRef.Name is the authoritative source
+			expectedCorrID := wfe.Spec.RemediationRequestRef.Name
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		By("Waiting for Running phase")
-		_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
-		Expect(err).ToNot(HaveOccurred())
+			By("Waiting for Running phase")
+			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
+			Expect(err).ToNot(HaveOccurred())
 
-	By("Querying DataStorage API for audit events with correlation ID via ogen client")
-	// V1.0 MANDATORY: Use ogen OpenAPI client
-	auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
-	Expect(err).ToNot(HaveOccurred())
+			By("Querying DataStorage API for audit events with correlation ID via ogen client")
+			// V1.0 MANDATORY: Use ogen OpenAPI client
+			auditClient, err := ogenclient.NewClient(dataStorageBaseURL)
+			Expect(err).ToNot(HaveOccurred())
 
-	// Per ADR-034 v1.5: Use "workflowexecution" category
-	eventCategory := "workflowexecution"
-	// Flush before querying to ensure buffered events are written to DataStorage
-	flushAuditBuffer()
-	Eventually(func() bool {
-		resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(expectedCorrID),
-			})
-			if err != nil {
-				return false
-			}
-
-			// Verify at least one event has the correlation ID from RemediationRequestRef.Name
-			for _, event := range resp.Data {
-				if event.CorrelationID == expectedCorrID {
-					return true
+			// Per ADR-034 v1.5: Use "workflowexecution" category
+			eventCategory := "workflowexecution"
+			// Flush before querying to ensure buffered events are written to DataStorage
+			flushAuditBuffer()
+			Eventually(func() bool {
+				resp, err := auditClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(expectedCorrID),
+				})
+				if err != nil {
+					return false
 				}
-			}
-			return false
-		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Audit events should include correlation ID from RemediationRequestRef.Name per DD-AUDIT-CORRELATION-001 (30s timeout for parallel execution)")
 
-		GinkgoWriter.Println("✅ Correlation ID from RemediationRequestRef.Name included in audit events (DD-AUDIT-CORRELATION-001)")
-	})
+				// Verify at least one event has the correlation ID from RemediationRequestRef.Name
+				for _, event := range resp.Data {
+					if event.CorrelationID == expectedCorrID {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Audit events should include correlation ID from RemediationRequestRef.Name per DD-AUDIT-CORRELATION-001 (30s timeout for parallel execution)")
+
+			GinkgoWriter.Println("✅ Correlation ID from RemediationRequestRef.Name included in audit events (DD-AUDIT-CORRELATION-001)")
+		})
 
 		// ========================================
 		// BR-WE-009: Resource Locking - Prevent Parallel Execution
@@ -918,18 +918,18 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				GinkgoWriter.Println("✅ BR-WE-008: Duration histogram metric recording successful (no errors)")
 			})
 
-		It("should record workflowexecution_pipelinerun_creation_total counter", func() {
-			By("Getting initial counter value")
-			initialCount := prometheusTestutil.ToFloat64(reconciler.Metrics.PipelineRunCreations)
+			It("should record workflowexecution_pipelinerun_creation_total counter", func() {
+				By("Getting initial counter value")
+				initialCount := prometheusTestutil.ToFloat64(reconciler.Metrics.PipelineRunCreations)
 
-			By("Creating WorkflowExecution")
-			targetResource := "test-namespace/deployment/metrics-pr-creation"
-			wfe := createUniqueWFE("metrics-pr", targetResource)
-			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+				By("Creating WorkflowExecution")
+				targetResource := "test-namespace/deployment/metrics-pr-creation"
+				wfe := createUniqueWFE("metrics-pr", targetResource)
+				Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-			By("Waiting for PipelineRun creation")
-			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 30*time.Second)
-			Expect(err).ToNot(HaveOccurred())
+				By("Waiting for PipelineRun creation")
+				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 30*time.Second)
+				Expect(err).ToNot(HaveOccurred())
 
 				By("Verifying pipelinerun_creation_total incremented")
 				// Use Eventually to handle controller reconciliation timing for metrics

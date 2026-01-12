@@ -98,23 +98,23 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 			It("should allow deletion after legal hold release", func() {
 				// 1. Create test audit event with legal hold
 				event1 := &repository.AuditEvent{
-					EventID:       uuid.New(),
+					EventID:           uuid.New(),
 					Version:           "1.0",
-					EventType:     "test.legal_hold.created",
-					EventCategory: "gateway",
-					EventAction:   "test_action",
-					EventOutcome:  "success",
-					CorrelationID: correlationID,
-					ResourceType:  "test_resource",
-					ResourceID:    "test-123",
+					EventType:         "test.legal_hold.created",
+					EventCategory:     "gateway",
+					EventAction:       "test_action",
+					EventOutcome:      "success",
+					CorrelationID:     correlationID,
+					ResourceType:      "test_resource",
+					ResourceID:        "test-123",
 					ResourceNamespace: "default",
 					ClusterID:         "test-cluster",
-					ActorID:       "test-actor",
-					ActorType:     "user",
-					Severity:      "info",
-					RetentionDays: 2555,
-					EventData:     map[string]interface{}{"test": "data"},
-					LegalHold:     true,
+					ActorID:           "test-actor",
+					ActorType:         "user",
+					Severity:          "info",
+					RetentionDays:     2555,
+					EventData:         map[string]interface{}{"test": "data"},
+					LegalHold:         true,
 				}
 
 				_, err := auditRepo.Create(ctx, event1)
@@ -147,22 +147,22 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// 1. Create 5 audit events with same correlation_id
 				for i := 0; i < 5; i++ {
 					event := &repository.AuditEvent{
-						EventID:       uuid.New(),
+						EventID:           uuid.New(),
 						Version:           "1.0",
-						EventType:     fmt.Sprintf("test.legal_hold.event_%d", i),
-						EventCategory: "gateway",
-						EventAction:   "test_action",
-						EventOutcome:  "success",
-						CorrelationID: correlationID,
-						ResourceType:  "test_resource",
-						ResourceID:    fmt.Sprintf("test-%d", i),
+						EventType:         fmt.Sprintf("test.legal_hold.event_%d", i),
+						EventCategory:     "gateway",
+						EventAction:       "test_action",
+						EventOutcome:      "success",
+						CorrelationID:     correlationID,
+						ResourceType:      "test_resource",
+						ResourceID:        fmt.Sprintf("test-%d", i),
 						ResourceNamespace: "default",
 						ClusterID:         "test-cluster",
-						ActorID:       "test-actor",
-						ActorType:     "user",
-						Severity:      "info",
-						RetentionDays: 2555,
-						EventData:     map[string]interface{}{"test": "data"},
+						ActorID:           "test-actor",
+						ActorType:         "user",
+						Severity:          "info",
+						RetentionDays:     2555,
+						EventData:         map[string]interface{}{"test": "data"},
 					}
 					_, err := auditRepo.Create(ctx, event)
 					Expect(err).ToNot(HaveOccurred())
@@ -246,22 +246,22 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 			It("should capture X-Auth-Request-User in placed_by field", func() {
 				// 1. Create test event
 				event := &repository.AuditEvent{
-					EventID:       uuid.New(),
+					EventID:           uuid.New(),
 					Version:           "1.0",
-					EventType:     "test.legal_hold.user_capture",
-					EventCategory: "gateway",
-					EventAction:   "test_action",
-					EventOutcome:  "success",
-					CorrelationID: correlationID,
-					ResourceType:  "test_resource",
-					ResourceID:    "test-123",
+					EventType:         "test.legal_hold.user_capture",
+					EventCategory:     "gateway",
+					EventAction:       "test_action",
+					EventOutcome:      "success",
+					CorrelationID:     correlationID,
+					ResourceType:      "test_resource",
+					ResourceID:        "test-123",
 					ResourceNamespace: "default",
 					ClusterID:         "test-cluster",
-					ActorID:       "test-actor",
-					ActorType:     "user",
-					Severity:      "info",
-					RetentionDays: 2555,
-					EventData:     map[string]interface{}{"test": "data"},
+					ActorID:           "test-actor",
+					ActorType:         "user",
+					Severity:          "info",
+					RetentionDays:     2555,
+					EventData:         map[string]interface{}{"test": "data"},
 				}
 				_, err := auditRepo.Create(ctx, event)
 				Expect(err).ToNot(HaveOccurred())
@@ -299,23 +299,23 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 				// 1. Create events with legal hold
 				for i := 0; i < 3; i++ {
 					event := &repository.AuditEvent{
-						EventID:       uuid.New(),
+						EventID:           uuid.New(),
 						Version:           "1.0",
-						EventType:     fmt.Sprintf("test.legal_hold.release_%d", i),
-						EventCategory: "gateway",
-						EventAction:   "test_action",
-						EventOutcome:  "success",
-						CorrelationID: correlationID,
-						ResourceType:  "test_resource",
-						ResourceID:    fmt.Sprintf("test-%d", i),
+						EventType:         fmt.Sprintf("test.legal_hold.release_%d", i),
+						EventCategory:     "gateway",
+						EventAction:       "test_action",
+						EventOutcome:      "success",
+						CorrelationID:     correlationID,
+						ResourceType:      "test_resource",
+						ResourceID:        fmt.Sprintf("test-%d", i),
 						ResourceNamespace: "default",
 						ClusterID:         "test-cluster",
-						ActorID:       "test-actor",
-						ActorType:     "user",
-						Severity:      "info",
-						RetentionDays: 2555,
-						EventData:     map[string]interface{}{"test": "data"},
-						LegalHold:     true,
+						ActorID:           "test-actor",
+						ActorType:         "user",
+						Severity:          "info",
+						RetentionDays:     2555,
+						EventData:         map[string]interface{}{"test": "data"},
+						LegalHold:         true,
 					}
 					_, err := auditRepo.Create(ctx, event)
 					Expect(err).ToNot(HaveOccurred())
@@ -367,24 +367,24 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				for _, corrID := range correlationIDs {
 					event := &repository.AuditEvent{
-						EventID:       uuid.New(),
+						EventID:           uuid.New(),
 						Version:           "1.0",
-						EventType:     "test.legal_hold.list",
-						EventCategory: "gateway",
-						EventAction:   "test_action",
-						EventOutcome:  "success",
-						CorrelationID: corrID,
-						ResourceType:  "test_resource",
-						ResourceID:    "test-123",
+						EventType:         "test.legal_hold.list",
+						EventCategory:     "gateway",
+						EventAction:       "test_action",
+						EventOutcome:      "success",
+						CorrelationID:     corrID,
+						ResourceType:      "test_resource",
+						ResourceID:        "test-123",
 						ResourceNamespace: "default",
 						ClusterID:         "test-cluster",
-						ActorID:       "test-actor",
-						ActorType:     "user",
-						Severity:      "info",
-						RetentionDays: 2555,
-						EventData:     map[string]interface{}{"test": "data"},
-						LegalHold:     true,
-						LegalHoldReason: fmt.Sprintf("Litigation: Case #%s", corrID),
+						ActorID:           "test-actor",
+						ActorType:         "user",
+						Severity:          "info",
+						RetentionDays:     2555,
+						EventData:         map[string]interface{}{"test": "data"},
+						LegalHold:         true,
+						LegalHoldReason:   fmt.Sprintf("Litigation: Case #%s", corrID),
 						LegalHoldPlacedBy: "legal-team@company.com",
 					}
 					_, err := auditRepo.Create(ctx, event)
@@ -429,4 +429,3 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 		})
 	})
 })
-

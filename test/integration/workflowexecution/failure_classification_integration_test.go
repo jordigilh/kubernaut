@@ -26,10 +26,10 @@ import (
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
-	"knative.dev/pkg/apis"
-	duckv1 "knative.dev/pkg/apis/duck/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"knative.dev/pkg/apis"
+	duckv1 "knative.dev/pkg/apis/duck/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
@@ -202,8 +202,8 @@ var _ = Describe("BR-WE-004: Tekton Failure Reason Classification", Ordered, fun
 func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1alpha1.WorkflowExecution {
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
+			Name:       name,
+			Namespace:  namespace,
 			Generation: 1, // K8s increments on create/update
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -265,7 +265,7 @@ func testFailureClassification(ctx context.Context, namespace, testSuffix, tekto
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(updated.Status.PipelineRunRef).ToNot(BeNil())
 		g.Expect(updated.Status.PipelineRunRef.Name).ToNot(BeEmpty())
-		
+
 		// Get the created PipelineRun
 		pr = &tektonv1.PipelineRun{}
 		prKey := types.NamespacedName{Name: updated.Status.PipelineRunRef.Name, Namespace: WorkflowExecutionNS}

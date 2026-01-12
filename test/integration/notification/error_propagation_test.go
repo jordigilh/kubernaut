@@ -64,8 +64,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -131,8 +131,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -189,8 +189,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// Create notification
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -241,8 +241,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -302,8 +302,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -363,8 +363,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
@@ -380,8 +380,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -435,8 +435,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -486,8 +486,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -547,8 +547,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -607,8 +607,8 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}

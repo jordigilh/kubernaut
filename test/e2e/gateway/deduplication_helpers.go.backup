@@ -1,0 +1,417 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package gateway
+
+import (
+	"context"
+	"bufio"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+
+	"github.com/google/uuid"
+)
+
+// GatewayResponse represents the Gateway API response
+type GatewayResponse struct {
+	Status                      string `json:"status"`
+	Message                     string `json:"message"`
+	Fingerprint                 string `json:"fingerprint"`
+	Duplicate                   bool   `json:"duplicate"`
+	RemediationRequestName      string `json:"remediationRequestName,omitempty"`
+	RemediationRequestNamespace string `json:"remediationRequestNamespace,omitempty"`
+}
+
+// PrometheusAlertPayload represents a Prometheus AlertManager webhook payload
+type PrometheusAlertPayload struct {
+	AlertName   string            `json:"alertName"`
+	Namespace   string            `json:"namespace"`
+	Severity    string            `json:"severity"`
+	PodName     string            `json:"podName"`
+	Resource    ResourceIdentifier `json:"resource"`
+	Labels      map[string]string `json:"labels"`
+	Annotations map[string]string `json:"annotations"`
+}
+
+// WebhookResponse represents an HTTP response
+type WebhookResponse struct {
+	StatusCode int
+	Body       []byte
+	Headers    http.Header
+}
+
+// createPrometheusWebhookPayload creates a realistic Prometheus webhook payload
+func createPrometheusWebhookPayload(payload PrometheusAlertPayload) []byte {
+	// Merge required labels with custom labels
+	labels := make(map[string]interface{})
+	labels["alertname"] = payload.AlertName
+	labels["namespace"] = payload.Namespace
+	labels["severity"] = payload.Severity
+	if payload.PodName != "" {
+		labels["pod"] = payload.PodName
+	}
+	// Add custom labels
+	for k, v := range payload.Labels {
+		labels[k] = v
+	}
+
+	alert := map[string]interface{}{
+		"receiver": "kubernaut",
+		"status":   "firing",
+		"alerts": []map[string]interface{}{
+			{
+				"status":      "firing",
+				"labels":      labels,
+				"annotations": payload.Annotations,
+				"startsAt":    time.Now().Format(time.RFC3339),
+				"endsAt":      "0001-01-01T00:00:00Z",
+			},
+		},
+		"groupLabels": map[string]string{
+			"alertname": payload.AlertName,
+		},
+		"commonLabels":      labels,
+		"commonAnnotations": payload.Annotations,
+	}
+
+	body, _ := json.Marshal(alert)
+	return body
+}
+
+// createPrometheusWebhookPayloadWithTimestamp creates a realistic Prometheus webhook payload with a fixed timestamp
+// Used for deterministic fingerprinting in Test 11: Fingerprint Stability
+func createPrometheusWebhookPayloadWithTimestamp(payload PrometheusAlertPayload, startsAt string) []byte {
+	// Merge required labels with custom labels
+	labels := make(map[string]interface{})
+	labels["alertname"] = payload.AlertName
+	labels["namespace"] = payload.Namespace
+	labels["severity"] = payload.Severity
+	if payload.PodName != "" {
+		labels["pod"] = payload.PodName
+	}
+	// Add custom labels
+	for k, v := range payload.Labels {
+		labels[k] = v
+	}
+
+	alert := map[string]interface{}{
+		"receiver": "kubernaut",
+		"status":   "firing",
+		"alerts": []map[string]interface{}{
+			{
+				"status":      "firing",
+				"labels":      labels,
+				"annotations": payload.Annotations,
+				"startsAt":    startsAt, // Use provided timestamp instead of time.Now()
+				"endsAt":      "0001-01-01T00:00:00Z",
+			},
+		},
+		"groupLabels": map[string]string{
+			"alertname": payload.AlertName,
+		},
+		"commonLabels":      labels,
+		"commonAnnotations": payload.Annotations,
+	}
+
+	body, _ := json.Marshal(alert)
+	return body
+}
+
+// sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
+// with mandatory X-Timestamp header for replay attack prevention
+func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse { //nolint:unused
+	req, err := http.NewRequest("POST", gatewayURL+path, bytes.NewReader(body))
+	Expect(err).ToNot(HaveOccurred(), "HTTP request creation should succeed")
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+	resp, err := http.DefaultClient.Do(req)
+	Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
+	defer func() { _ = resp.Body.Close() }()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	Expect(err).ToNot(HaveOccurred(), "Should read response body")
+
+	return &WebhookResponse{
+		StatusCode: resp.StatusCode,
+		Body:       bodyBytes,
+		Headers:    resp.Header,
+	}
+}
+
+// getKubernetesClient creates a Kubernetes client for CRD verification
+// This function may panic on error - use getKubernetesClientSafe for Eventually calls
+func getKubernetesClient() client.Client {
+	// Load kubeconfig from standard Kind location
+	homeDir, err := os.UserHomeDir()
+	Expect(err).ToNot(HaveOccurred(), "Failed to get home directory")
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	Expect(err).ToNot(HaveOccurred(), "Failed to load kubeconfig")
+
+	// Create scheme with RemediationRequest CRD
+	scheme := k8sruntime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Create K8s client
+	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	Expect(err).ToNot(HaveOccurred(), "Failed to create K8s client")
+
+	return k8sClient
+}
+
+// lastK8sClientError holds the last error from getKubernetesClientSafe for debugging
+var lastK8sClientError error
+
+// getKubernetesClientSafe creates a Kubernetes client without panicking on error
+// Returns nil if client creation fails - suitable for use inside Eventually
+// Check lastK8sClientError for the actual error if nil is returned
+func getKubernetesClientSafe() client.Client {
+	// Load kubeconfig from standard Kind location
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		lastK8sClientError = fmt.Errorf("failed to get home directory: %w", err)
+		return nil
+	}
+	kubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
+
+	// Check if kubeconfig file exists
+	if _, err := os.Stat(kubeconfigPath); err != nil {
+		lastK8sClientError = fmt.Errorf("kubeconfig file check failed: %w", err)
+		return nil
+	}
+
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		lastK8sClientError = fmt.Errorf("failed to build config from kubeconfig: %w", err)
+		return nil
+	}
+
+	// Create scheme with RemediationRequest CRD
+	scheme := k8sruntime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+
+	// Create K8s client
+	k8sClient, err := client.New(config, client.Options{Scheme: scheme})
+	if err != nil {
+		lastK8sClientError = fmt.Errorf("failed to create K8s client: %w", err)
+		return nil
+	}
+
+	lastK8sClientError = nil
+	return k8sClient
+}
+
+// GetLastK8sClientError returns the last error from getKubernetesClientSafe
+func GetLastK8sClientError() error {
+	return lastK8sClientError
+}
+
+// getKubernetesClient returns a Kubernetes client for E2E tests
+// This is a convenience wrapper that fails the test if client creation fails
+func getKubernetesClient() client.Client {
+	k8sClient := getKubernetesClientSafe()
+	if k8sClient == nil {
+		Fail(fmt.Sprintf("Failed to create Kubernetes client: %v", GetLastK8sClientError()))
+	}
+	return k8sClient
+}
+
+// GenerateUniqueNamespace generates a unique namespace name for E2E tests
+// Format: <prefix>-<process-id>-<timestamp>
+// This ensures test isolation when running in parallel
+func GenerateUniqueNamespace(prefix string) string {
+	processID := GinkgoParallelProcess()
+	timestamp := uuid.New().String()[:8]
+	return fmt.Sprintf("%s-%d-%s", prefix, processID, timestamp)
+}
+
+// =============================================================================
+// TEMPORARY STUBS for E2E test compilation
+// TODO (GW Team): Properly refactor tests to use E2E patterns
+// =============================================================================
+
+// TODO (GW Team): These are temporary stubs to make tests compile.
+// Tests using these need refactoring to E2E patterns (HTTP → gatewayURL)
+
+type PrometheusAlertOptions struct {
+	AlertName   string
+	Namespace   string
+	Severity    string
+	PodName     string
+	Resource    ResourceIdentifier
+	Labels      map[string]string
+	Annotations map[string]string
+}
+
+type ResourceIdentifier struct {
+	Kind string
+	Name string
+}
+
+// createPrometheusAlertPayload is a compatibility shim
+// TODO (GW Team): Replace calls with createPrometheusWebhookPayload
+func createPrometheusAlertPayload(opts PrometheusAlertOptions) []byte {
+	return createPrometheusWebhookPayload(PrometheusAlertPayload{
+		AlertName:   opts.AlertName,
+		Namespace:   opts.Namespace,
+		Severity:    opts.Severity,
+		PodName:     opts.PodName,
+		Labels:      opts.Labels,
+		Annotations: opts.Annotations,
+	})
+}
+
+
+// sendWebhook is a compatibility shim for E2E tests
+// TODO (GW Team): Replace calls with direct HTTP requests to gatewayURL
+func sendWebhook(baseURL, path string, payload []byte) *WebhookResponse {
+	req, err := http.NewRequest("POST", baseURL+path, bytes.NewBuffer(payload))
+	if err != nil {
+		return &WebhookResponse{StatusCode: 500, Body: []byte(err.Error())}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return &WebhookResponse{StatusCode: 500, Body: []byte(err.Error())}
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	return &WebhookResponse{
+		StatusCode: resp.StatusCode,
+		Body:       bodyBytes,
+		Headers:    resp.Header,
+	}
+}
+
+// TODO (GW Team): Additional stubs for compilation
+
+// GeneratePrometheusAlert generates a Prometheus alert payload (accepts either type)
+func GeneratePrometheusAlert(opts PrometheusAlertPayload) []byte {
+	return createPrometheusWebhookPayload(opts)
+}
+
+// SendWebhook sends a webhook request (compatibility shim)
+func SendWebhook(url string, payload []byte) *WebhookResponse {
+	return sendWebhookRequest(url, "/api/v1/signals/prometheus", payload)
+}
+
+// GetPrometheusMetrics fetches and parses metrics from a Prometheus /metrics endpoint
+// Returns a map of metric names (without labels) to their numeric values
+// Supports Prometheus text exposition format
+func GetPrometheusMetrics(url string) (map[string]float64, error) {
+	resp, err := http.Get(url) //nolint:gosec,noctx // E2E test helper, URL is controlled
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch metrics: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	metrics := make(map[string]float64)
+	scanner := bufio.NewScanner(resp.Body)
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip comments and empty lines
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Parse metric line: "metric_name{labels} value timestamp"
+		// or simple format: "metric_name value"
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		// Extract metric name (before '{' if labels exist)
+		metricName := parts[0]
+		if idx := strings.Index(metricName, "{"); idx > 0 {
+			metricName = metricName[:idx]
+		}
+
+		// Parse value (second field)
+		value, err := strconv.ParseFloat(parts[1], 64)
+		if err != nil {
+			// Skip unparseable values (e.g., "NaN", "Inf")
+			continue
+		}
+
+		// Store or sum metrics with same name (for different label combinations)
+		metrics[metricName] += value
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("error reading metrics: %w", err)
+	}
+
+	return metrics, nil
+}
+
+// GetMetricSum sums all metric values that start with the given prefix
+// Used to aggregate counter values across different label combinations
+// Example: GetMetricSum(metrics, "gateway_signals_received_total")
+func GetMetricSum(metrics map[string]float64, prefix string) float64 {
+	sum := 0.0
+	for metricName, value := range metrics {
+		if strings.HasPrefix(metricName, prefix) {
+			sum += value
+		}
+	}
+	return sum
+}
+
+// PrometheusMetrics placeholder type
+type PrometheusMetrics map[string]float64
+
+// ListRemediationRequests lists RRs in a namespace
+// Returns empty slice if listing fails
+func ListRemediationRequests(ctx context.Context, k8sClient client.Client, namespace string) []remediationv1alpha1.RemediationRequest {
+	rrList := &remediationv1alpha1.RemediationRequestList{}
+	err := k8sClient.List(ctx, rrList, client.InNamespace(namespace))
+	if err != nil {
+		// Return empty slice on error - caller can check length
+		return []remediationv1alpha1.RemediationRequest{}
+	}
+	return rrList.Items
+}

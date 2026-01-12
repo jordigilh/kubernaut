@@ -333,4 +333,3 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 		})
 	})
 })
-

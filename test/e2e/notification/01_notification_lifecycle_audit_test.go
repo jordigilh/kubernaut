@@ -88,11 +88,11 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// Data Storage is deployed via DeployNotificationAuditInfrastructure() in suite setup
 		dataStorageURL = fmt.Sprintf("http://localhost:%d", dataStorageNodePort)
 
-	// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
-	// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
-	var err error
-	dsClient, err = ogenclient.NewClient(dataStorageURL)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
+		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
+		// Per DD-API-001: All DataStorage communication MUST use OpenAPI generated client
+		var err error
+		dsClient, err = ogenclient.NewClient(dataStorageURL)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// Create NotificationRequest CRD
 		notification = &notificationv1alpha1.NotificationRequest{

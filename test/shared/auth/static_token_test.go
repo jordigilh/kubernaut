@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package testutil_test
+package auth_test
 
 import (
 	"io"
@@ -22,9 +22,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 func TestAuthStaticToken(t *testing.T) {
@@ -59,7 +60,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			saToken := "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3Qta2V5In0.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJkZWZhdWx0Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZWNyZXQubmFtZSI6ImRhdGFzdG9yYWdlLWUyZS1zYS10b2tlbiIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50Lm5hbWUiOiJkYXRhc3RvcmFnZS1lMmUtc2EiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiIxMjM0NTY3OC05MDEyLTM0NTYtNzg5MC0xMjM0NTY3ODkwMTIiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6ZGVmYXVsdDpkYXRhc3RvcmFnZS1lMmUtc2EifQ.signature"
 
 			// Create static token transport
-			transport := testutil.NewStaticTokenTransport(saToken)
+			transport := auth.NewStaticTokenTransport(saToken)
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -76,7 +77,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			kubeadminToken := "sha256~AbCdEfGhIjKlMnOpQrStUvWxYz0123456789"
 
 			// Create static token transport
-			transport := testutil.NewStaticTokenTransport(kubeadminToken)
+			transport := auth.NewStaticTokenTransport(kubeadminToken)
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -90,7 +91,7 @@ var _ = Describe("StaticTokenTransport", func() {
 
 		It("should not inject header if token is empty", func() {
 			// Create transport with empty token
-			transport := testutil.NewStaticTokenTransport("")
+			transport := auth.NewStaticTokenTransport("")
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -108,7 +109,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Valid ServiceAccount JWT token (header.payload.signature)
 			validSAToken := "eyJhbGciOiJSUzI1NiIsImtpZCI6InRlc3QifQ.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50OmRlZmF1bHQ6ZGF0YXN0b3JhZ2UtZTJlLXNhIn0.signature"
 
-			transport := testutil.NewStaticTokenTransport(validSAToken)
+			transport := auth.NewStaticTokenTransport(validSAToken)
 			client := &http.Client{Transport: transport}
 
 			resp, err := client.Get(server.URL)
@@ -124,7 +125,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Valid kubeconfig token format
 			validKubeconfigToken := "sha256~VeryLongBase64EncodedTokenHere1234567890"
 
-			transport := testutil.NewStaticTokenTransport(validKubeconfigToken)
+			transport := auth.NewStaticTokenTransport(validKubeconfigToken)
 			client := &http.Client{Transport: transport}
 
 			resp, err := client.Get(server.URL)
@@ -141,7 +142,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Invalid token format (for demonstration - transport doesn't validate)
 			invalidToken := "this-is-not-a-valid-token-but-transport-accepts-it"
 
-			transport := testutil.NewStaticTokenTransport(invalidToken)
+			transport := auth.NewStaticTokenTransport(invalidToken)
 			client := &http.Client{Transport: transport}
 
 			resp, err := client.Get(server.URL)
@@ -156,7 +157,7 @@ var _ = Describe("StaticTokenTransport", func() {
 	Describe("Request cloning", func() {
 		It("should not mutate original request", func() {
 			// Create transport
-			transport := testutil.NewStaticTokenTransport("test-token")
+			transport := auth.NewStaticTokenTransport("test-token")
 			client := &http.Client{Transport: transport}
 
 			// Create request
@@ -185,7 +186,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			}
 
 			// Create static token transport with custom base
-			transport := testutil.NewStaticTokenTransportWithBase("test-token", customBase)
+			transport := auth.NewStaticTokenTransportWithBase("test-token", customBase)
 			client := &http.Client{Transport: transport}
 
 			// Make request
@@ -200,7 +201,7 @@ var _ = Describe("StaticTokenTransport", func() {
 
 		It("should use http.DefaultTransport if base is nil", func() {
 			// Create transport with nil base
-			transport := testutil.NewStaticTokenTransportWithBase("test-token", nil)
+			transport := auth.NewStaticTokenTransportWithBase("test-token", nil)
 			client := &http.Client{Transport: transport}
 
 			// Make request (should not panic)
@@ -226,4 +227,3 @@ func (t *testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	t.called = true
 	return t.base.RoundTrip(req)
 }
-
