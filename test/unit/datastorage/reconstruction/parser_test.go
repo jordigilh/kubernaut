@@ -83,7 +83,7 @@ var _ = Describe("Audit Event Parser", func() {
 		})
 
 		It("should handle missing optional timeout fields", func() {
-			// TDD RED: Test partial TimeoutConfig
+			// Validates optional TimeoutConfig fields can be omitted
 			event := createOrchestratorEventWithPartialTimeout(testTimestamp, testUUID)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
