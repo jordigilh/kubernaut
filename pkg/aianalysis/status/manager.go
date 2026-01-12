@@ -16,14 +16,19 @@ import (
 //
 // This manager reduces K8s API calls by consolidating multiple status field updates
 // into a single atomic operation, improving performance and reducing race conditions.
+//
+// AA-HAPI-001 Fix: Uses APIReader for cache-bypassed refetch to prevent stale reads
 type Manager struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // Direct API server access (no cache)
 }
 
 // NewManager creates a new status manager
-func NewManager(client client.Client) *Manager {
+// apiReader should be mgr.GetAPIReader() to bypass cache for fresh refetches
+func NewManager(client client.Client, apiReader client.Reader) *Manager {
 	return &Manager{
-		client: client,
+		client:    client,
+		apiReader: apiReader,
 	}
 }
 
@@ -56,7 +61,9 @@ func (m *Manager) AtomicStatusUpdate(
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion (optimistic locking)
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+		// AA-HAPI-001: Use APIReader to bypass cache and get FRESH data
+		// This prevents duplicate HAPI calls when cache is stale after status write
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 		return fmt.Errorf("failed to refetch AIAnalysis: %w", err)
 	}
 
@@ -89,7 +96,8 @@ func (m *Manager) UpdatePhase(
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+		// AA-HAPI-001: Use APIReader to bypass cache
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
 			return fmt.Errorf("failed to refetch AIAnalysis: %w", err)
 		}
 

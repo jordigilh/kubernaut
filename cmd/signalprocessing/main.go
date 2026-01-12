@@ -307,9 +307,10 @@ func main() {
 	// DD-PERF-001: Atomic Status Updates
 	// Status Manager for reducing K8s API calls by 66-75%
 	// Consolidates multiple status field updates into single atomic operations
+	// SP-CACHE-001: Pass APIReader to bypass cache for fresh refetches
 	// ========================================
-	statusManager := spstatus.NewManager(mgr.GetClient())
-	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001)")
+	statusManager := spstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
+	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001 + SP-CACHE-001)")
 
 	// Setup reconciler with ALL required components
 	if err = (&signalprocessing.SignalProcessingReconciler{

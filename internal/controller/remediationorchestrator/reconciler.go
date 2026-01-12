@@ -130,7 +130,8 @@ type TimeoutConfig struct {
 // Tests must provide a non-nil audit store (use NoOpStore or mock).
 // The timeouts parameter configures all timeout durations (global and per-phase).
 // Zero values use defaults: Global=1h, Processing=5m, Analyzing=10m, Executing=30m.
-func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine) *Reconciler {
+// DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch in atomic updates.
+func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, auditStore audit.AuditStore, recorder record.EventRecorder, m *metrics.Metrics, timeouts TimeoutConfig, routingEngine routing.Engine) *Reconciler {
 	// DD-METRICS-001: Metrics are REQUIRED (dependency injection pattern)
 	// Metrics are initialized in main.go via rometrics.NewMetrics()
 	// If nil is passed here, it's a programming error in main.go
@@ -163,11 +164,12 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 			ExponentialBackoffBase:        int64(1 * time.Minute / time.Second),  // 60 seconds (1 minute)
 			ExponentialBackoffMax:         int64(10 * time.Minute / time.Second), // 600 seconds (10 minutes)
 			ExponentialBackoffMaxExponent: 4,                                     // 2^4 = 16x multiplier
-		}
-		// TODO: Get namespace from controller-runtime manager or environment variable
-		// For now, using empty string which means all namespaces
-		routingNamespace := ""
-		routingEngine = routing.NewRoutingEngine(c, routingNamespace, routingConfig)
+	}
+	// TODO: Get namespace from controller-runtime manager or environment variable
+	// For now, using empty string which means all namespaces
+	routingNamespace := ""
+	// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
+	routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig)
 	}
 
 	// ========================================
@@ -175,7 +177,7 @@ func NewReconciler(c client.Client, s *runtime.Scheme, auditStore audit.AuditSto
 	// Status Manager for reducing K8s API calls by 85-90%
 	// Consolidates multiple status field updates into single atomic operations
 	// ========================================
-	statusManager := status.NewManager(c)
+	statusManager := status.NewManager(c, apiReader)
 
 	return &Reconciler{
 		client:              c,

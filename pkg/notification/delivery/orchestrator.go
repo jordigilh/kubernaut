@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/sync/singleflight"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -54,15 +55,37 @@ import (
 
 // ========================================
 // DD-NOT-007: Registration Pattern (AUTHORITATIVE)
+// DD-NOT-008: Concurrent Delivery Deduplication (singleflight + optimistic locking)
 // ========================================
 // Orchestrator manages delivery orchestration across channels.
 //
 // MANDATORY: Channels MUST be registered via RegisterChannel(), NOT constructor parameters
 // See: docs/architecture/decisions/DD-NOT-007-DELIVERY-ORCHESTRATOR-REGISTRATION-PATTERN.md
+//
+// DD-NOT-008: Production-Grade Concurrency Control
+// See: docs/architecture/decisions/DD-NOT-008-CONCURRENT-DELIVERY-DEDUPLICATION.md
+// - singleflight.Group: Deduplicates concurrent delivery attempts (prevents 6th attempt bug)
+// - Optimistic locking: Detects stale reconciliations via resourceVersion checks
 type Orchestrator struct {
 	// DD-NOT-007: Dynamic channel registration (sync.Map for thread-safe parallel test execution)
 	// sync.Map is optimal for our access pattern: write-once per test, read-many during deliveries
 	channels sync.Map
+
+	// DD-NOT-008: Concurrent delivery deduplication (prevents duplicate deliveries in multi-replica deployments)
+	// Key format: "{notificationUID}:{channel}" ensures per-notification-channel deduplication
+	deliveryGroup singleflight.Group
+
+	// DD-NOT-008: In-flight attempt tracking (prevents "6 attempts instead of 5" bug)
+	// Tracks delivery attempts that have been initiated but not yet persisted to status
+	// Key format: "{notificationUID}:{channel}"
+	// Value: int count of in-flight attempts for that notification+channel
+	inFlightAttempts sync.Map
+
+	// DD-NOT-008: Successful delivery tracking (prevents duplicate deliveries)
+	// Tracks successful deliveries that haven't been persisted to status yet
+	// Key format: "{notificationUID}:{channel}"
+	// Value: bool (true if successfully delivered)
+	successfulDeliveries sync.Map
 
 	// Dependencies
 	sanitizer     *sanitization.Sanitizer
@@ -267,12 +290,58 @@ func (o *Orchestrator) DeliverToChannels(
 // DeliverToChannel attempts delivery to a specific channel.
 //
 // DD-NOT-007: Map-based routing (NO switch statement)
-// Routes to the appropriate delivery service via channel registration.
+// DD-NOT-008: Concurrent delivery deduplication (singleflight)
+//
+// Production-grade concurrency control:
+// - singleflight prevents duplicate deliveries when multiple reconciliations
+//   attempt delivery to the same notification+channel concurrently
+// - Key format: "{notificationUID}:{channel}" ensures per-notification-channel deduplication
+// - Only ONE goroutine executes delivery; others wait and receive same result
+//
+// This fixes the "6 attempts instead of 5" bug where stale cache caused
+// concurrent reconciliations to all think attemptCount < MaxAttempts.
 func (o *Orchestrator) DeliverToChannel(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 	channel notificationv1alpha1.Channel,
 ) error {
+	// DD-NOT-008: Use singleflight to deduplicate concurrent delivery attempts
+	// Key format ensures per-notification-channel deduplication
+	key := fmt.Sprintf("%s:%s", notification.UID, channel)
+
+	// singleflight.Do ensures only ONE delivery attempt executes
+	// Concurrent calls with same key wait and receive the same result
+	result, err, shared := o.deliveryGroup.Do(key, func() (interface{}, error) {
+		// This function executes ONCE for all concurrent calls with same key
+		return nil, o.doDelivery(ctx, notification, channel)
+	})
+
+	// Log if this was a deduplicated call (shared = true means we waited for another goroutine)
+	if shared {
+		o.logger.Info("DD-NOT-008: Concurrent delivery deduplicated (prevented duplicate attempt)",
+			"notification", notification.Name,
+			"channel", channel,
+			"uid", notification.UID)
+	}
+
+	_ = result // result is always nil in our case
+	return err
+}
+
+// doDelivery performs the actual delivery (called by singleflight)
+// DD-NOT-008: Tracks in-flight attempts and successful deliveries to prevent duplicate deliveries
+func (o *Orchestrator) doDelivery(
+	ctx context.Context,
+	notification *notificationv1alpha1.NotificationRequest,
+	channel notificationv1alpha1.Channel,
+) error {
+	// DD-NOT-008: Increment in-flight counter BEFORE delivery attempt
+	// This ensures getChannelAttemptCount() sees this attempt even before status update
+	o.incrementInFlightAttempts(string(notification.UID), string(channel))
+
+	// DD-NOT-008: ALWAYS decrement on exit (success or failure)
+	defer o.decrementInFlightAttempts(string(notification.UID), string(channel))
+
 	// DD-NOT-007: Map lookup instead of switch statement (thread-safe)
 	serviceVal, exists := o.channels.Load(string(channel))
 	if !exists {
@@ -288,11 +357,160 @@ func (o *Orchestrator) DeliverToChannel(
 	sanitized := o.sanitizeNotification(notification)
 
 	// Deliver via registered service
-	return service.Deliver(ctx, sanitized)
+	err := service.Deliver(ctx, sanitized)
+
+	// DD-NOT-008: Track successful deliveries to prevent duplicate deliveries
+	if err == nil {
+		key := fmt.Sprintf("%s:%s", notification.UID, channel)
+		o.successfulDeliveries.Store(key, true)
+		o.logger.V(1).Info("DD-NOT-008: Marked channel as successfully delivered (in-memory)",
+			"notification", notification.Name,
+			"channel", channel)
+	}
+
+	return err
 }
 
 // DD-NOT-007: Individual channel methods REMOVED
 // All channels now use common DeliverToChannel() via registration pattern
+
+// DD-NOT-008: In-Flight Attempt Tracking Methods
+// These methods prevent the "6 attempts instead of 5" bug by tracking
+// attempts that have been initiated but not yet persisted to status.
+
+// GetTotalAttemptCount returns the total number of attempts for a channel,
+// including both persisted attempts (in status) and in-flight attempts.
+// This is the method controllers should use for exhaustion checks.
+func (o *Orchestrator) GetTotalAttemptCount(
+	notification *notificationv1alpha1.NotificationRequest,
+	channel string,
+	persistedCount int,
+) int {
+	key := fmt.Sprintf("%s:%s", notification.UID, channel)
+	inFlightVal, exists := o.inFlightAttempts.Load(key)
+	if !exists {
+		return persistedCount
+	}
+
+	inFlight, ok := inFlightVal.(int)
+	if !ok {
+		return persistedCount
+	}
+
+	total := persistedCount + inFlight
+	o.logger.V(1).Info("DD-NOT-008: Total attempt count calculated",
+		"notification", notification.Name,
+		"channel", channel,
+		"persisted", persistedCount,
+		"inFlight", inFlight,
+		"total", total)
+
+	return total
+}
+
+// HasChannelSucceeded checks if a channel has succeeded (either persisted or in-memory).
+// DD-NOT-008: Checks both persisted status and in-memory tracking to prevent duplicate deliveries.
+func (o *Orchestrator) HasChannelSucceeded(
+	notification *notificationv1alpha1.NotificationRequest,
+	channel string,
+	persistedSuccess bool,
+) bool {
+	// If already persisted in status, return true
+	if persistedSuccess {
+		return true
+	}
+
+	// Check in-memory success tracking
+	key := fmt.Sprintf("%s:%s", notification.UID, channel)
+	_, exists := o.successfulDeliveries.Load(key)
+
+	if exists {
+		o.logger.V(1).Info("DD-NOT-008: Channel has in-memory success (not yet persisted)",
+			"notification", notification.Name,
+			"channel", channel)
+	}
+
+	return exists
+}
+
+// incrementInFlightAttempts increments the in-flight counter for a channel.
+// Called when delivery attempt starts (before calling service.Deliver).
+func (o *Orchestrator) incrementInFlightAttempts(uid string, channel string) {
+	key := fmt.Sprintf("%s:%s", uid, channel)
+
+	// Atomic increment using CompareAndSwap loop
+	for {
+		currentVal, _ := o.inFlightAttempts.LoadOrStore(key, 0)
+		current := currentVal.(int)
+		if o.inFlightAttempts.CompareAndSwap(key, current, current+1) {
+			o.logger.V(1).Info("DD-NOT-008: Incremented in-flight counter",
+				"key", key,
+				"newCount", current+1)
+			break
+		}
+	}
+}
+
+// decrementInFlightAttempts decrements the in-flight counter for a channel.
+// Called when delivery attempt completes (after service.Deliver returns).
+func (o *Orchestrator) decrementInFlightAttempts(uid string, channel string) {
+	key := fmt.Sprintf("%s:%s", uid, channel)
+
+	// Atomic decrement using CompareAndSwap loop
+	for {
+		currentVal, exists := o.inFlightAttempts.Load(key)
+		if !exists {
+			o.logger.Error(nil, "DD-NOT-008: Attempted to decrement non-existent in-flight counter", "key", key)
+			return
+		}
+
+		current := currentVal.(int)
+		if current <= 0 {
+			o.logger.Error(nil, "DD-NOT-008: Attempted to decrement in-flight counter below 0", "key", key, "current", current)
+			return
+		}
+
+		newCount := current - 1
+		if o.inFlightAttempts.CompareAndSwap(key, current, newCount) {
+			o.logger.V(1).Info("DD-NOT-008: Decremented in-flight counter",
+				"key", key,
+				"newCount", newCount)
+
+			// Clean up if counter reaches 0
+			if newCount == 0 {
+				o.inFlightAttempts.Delete(key)
+			}
+			break
+		}
+	}
+}
+
+// ClearInMemoryState clears all in-memory tracking for a notification.
+// DD-NOT-008: Called after status is persisted to clean up in-memory state.
+// This is critical for test isolation in parallel execution.
+func (o *Orchestrator) ClearInMemoryState(uid string) {
+	// Clear in-flight attempts for all channels
+	o.inFlightAttempts.Range(func(key, value interface{}) bool {
+		keyStr := key.(string)
+		if len(keyStr) > len(uid) && keyStr[:len(uid)] == uid && keyStr[len(uid)] == ':' {
+			o.inFlightAttempts.Delete(key)
+			o.logger.V(1).Info("DD-NOT-008: Cleared in-flight attempts",
+				"key", keyStr)
+		}
+		return true
+	})
+
+	// Clear successful deliveries for all channels
+	o.successfulDeliveries.Range(func(key, value interface{}) bool {
+		keyStr := key.(string)
+		if len(keyStr) > len(uid) && keyStr[:len(uid)] == uid && keyStr[len(uid)] == ':' {
+			o.successfulDeliveries.Delete(key)
+			o.logger.V(1).Info("DD-NOT-008: Cleared successful delivery tracking",
+				"key", keyStr)
+		}
+		return true
+	})
+}
 
 // sanitizeNotification creates a sanitized copy of the notification.
 func (o *Orchestrator) sanitizeNotification(

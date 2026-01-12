@@ -49,8 +49,8 @@ import (
 //
 // Integration Tests (Mock user header, no oauth-proxy):
 //
-//	// Use testutil.NewMockUserTransport() to avoid test logic in production code
-//	transport := testutil.NewMockUserTransport("test-user@example.com")
+//	// Use mocks.NewMockUserTransport() to avoid test logic in production code
+//	transport := mocks.NewMockUserTransport("test-user@example.com")
 //	httpClient := &http.Client{Transport: transport}
 //	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
@@ -77,7 +77,7 @@ import (
 // DataStorage without modifying the OpenAPI-generated client code.
 //
 // ZERO TEST LOGIC: This production code contains no test-specific modes.
-// For integration tests (mock user headers), use pkg/testutil.NewMockUserTransport().
+// For integration tests (mock user headers), use internal/mocks.NewMockUserTransport().
 type AuthTransport struct {
 	base      http.RoundTripper
 	tokenPath string

@@ -1258,6 +1258,10 @@ func (r *NotificationRequestReconciler) transitionToSent(
 		return ctrl.Result{}, err
 	}
 
+	// DD-NOT-008: Clear in-memory tracking after successful status persistence
+	// Critical for test isolation and to prevent stale state
+	r.DeliveryOrchestrator.ClearInMemoryState(string(notification.UID))
+
 	// Record metric
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseSent), 1)
@@ -1310,6 +1314,10 @@ func (r *NotificationRequestReconciler) transitionToRetrying(
 		return ctrl.Result{}, err
 	}
 
+	// DD-NOT-008: Clear in-memory tracking after successful status persistence
+	// Critical for test isolation and to prevent stale state
+	r.DeliveryOrchestrator.ClearInMemoryState(string(notification.UID))
+
 	// Record metric
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhaseRetrying), 1)
@@ -1361,6 +1369,9 @@ func (r *NotificationRequestReconciler) transitionToPartiallySent(
 		return ctrl.Result{}, err
 	}
 
+	// DD-NOT-008: Clear in-memory tracking after successful status persistence
+	r.DeliveryOrchestrator.ClearInMemoryState(string(notification.UID))
+
 	// Record metric
 	// DD-METRICS-001: Use injected metrics recorder
 	r.Metrics.UpdatePhaseCount(notification.Namespace, string(notificationv1alpha1.NotificationPhasePartiallySent), 1)
@@ -1398,6 +1409,9 @@ func (r *NotificationRequestReconciler) transitionToFailed(
 			log.Error(err, "Failed to atomically update status to Failed (permanent)")
 			return ctrl.Result{}, err
 		}
+
+		// DD-NOT-008: Clear in-memory tracking after successful status persistence
+		r.DeliveryOrchestrator.ClearInMemoryState(string(notification.UID))
 
 		// Record metric
 		// DD-METRICS-001: Use injected metrics recorder
