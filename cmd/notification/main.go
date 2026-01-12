@@ -48,8 +48,7 @@ import (
 )
 
 var (
-	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	scheme = runtime.NewScheme()
 )
 
 func init() {
@@ -297,7 +296,7 @@ func main() {
 	// ========================================
 	// Create status manager for centralized status updates with retry logic
 	// Replaces controller's custom updateStatusWithRetry() method (~100 lines saved)
-	statusManager := notificationstatus.NewManager(mgr.GetClient())
+	statusManager := notificationstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	logger.Info("Status Manager initialized (Pattern 2 - P1)")
 
 	// ========================================

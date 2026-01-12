@@ -13,17 +13,21 @@ import (
 
 // Manager handles RemediationRequest status updates with atomic operations
 // Implements DD-PERF-001: Atomic Status Updates mandate
+// DD-STATUS-001: Cache-bypassed refetch using APIReader for race-free status updates
 //
 // This manager reduces K8s API calls by consolidating multiple status field updates
 // into a single atomic operation, improving performance and reducing race conditions.
 type Manager struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // DD-STATUS-001: Cache-bypassed reads for fresh status
 }
 
 // NewManager creates a new status manager
-func NewManager(client client.Client) *Manager {
+// apiReader bypasses controller-runtime cache for optimistic locking refetches (DD-STATUS-001)
+func NewManager(client client.Client, apiReader client.Reader) *Manager {
 	return &Manager{
-		client: client,
+		client:    client,
+		apiReader: apiReader,
 	}
 }
 
@@ -61,7 +65,8 @@ func (m *Manager) AtomicStatusUpdate(
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion (optimistic locking)
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		// DD-STATUS-001: Use APIReader to bypass controller-runtime cache for fresh read
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 			return fmt.Errorf("failed to refetch RemediationRequest: %w", err)
 		}
 
@@ -94,7 +99,8 @@ func (m *Manager) UpdatePhase(
 ) error {
 	return k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
 		// 1. Refetch to get latest resourceVersion
-		if err := m.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		// DD-STATUS-001: Use APIReader to bypass controller-runtime cache for fresh read
+		if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 			return fmt.Errorf("failed to refetch RemediationRequest: %w", err)
 		}
 

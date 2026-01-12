@@ -193,6 +193,7 @@ func main() {
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	if err = controller.NewReconciler(
 		mgr.GetClient(),
+		mgr.GetAPIReader(), // DD-STATUS-001: API reader for cache-bypassed status refetches
 		mgr.GetScheme(),
 		auditStore,
 		mgr.GetEventRecorderFor("remediationorchestrator-controller"), // V1.0 P1: EventRecorder for debugging

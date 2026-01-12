@@ -153,8 +153,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API investigation completed successfully")
 
 	// Transition to Analyzing phase
-	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after completing that phase
-	// AA-BUG-009: This allows the Analyzing handler's idempotency check to work correctly
+	// Note: ObservedGeneration set by InvestigatingHandler before returning
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Investigation complete, starting analysis"
 
@@ -239,8 +238,7 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API recovery investigation completed successfully")
 
 	// Transition to Analyzing phase
-	// DD-CONTROLLER-001: ObservedGeneration NOT set here - will be set by Analyzing handler after completing that phase
-	// AA-BUG-009: This allows the Analyzing handler's idempotency check to work correctly
+	// Note: ObservedGeneration set by InvestigatingHandler before returning
 	analysis.Status.Phase = aianalysis.PhaseAnalyzing
 	analysis.Status.Message = "Recovery investigation complete, starting analysis"
 
