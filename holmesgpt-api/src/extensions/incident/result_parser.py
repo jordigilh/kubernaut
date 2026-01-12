@@ -297,11 +297,13 @@ def parse_investigation_result(
         rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
         if rca_match:
             parts['root_cause_analysis'] = rca_match.group(1)
+            logger.debug(f"Pattern 2: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
 
         # Extract selected_workflow
         wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
         if wf_match:
             parts['selected_workflow'] = wf_match.group(1)
+            logger.debug(f"Pattern 2: Extracted workflow: {parts['selected_workflow'][:100]}...")
 
         if parts:
             # Combine into a single dict string
@@ -309,6 +311,7 @@ def parse_investigation_result(
             for key, value in parts.items():
                 combined_dict += f'"{key}": {value}, '
             combined_dict = combined_dict.rstrip(', ') + '}'
+            logger.debug(f"Pattern 2: Combined dict: {combined_dict[:200]}...")
 
             # Create a fake match object
             class FakeMatch:
@@ -319,6 +322,7 @@ def parse_investigation_result(
                     return self._text
 
             json_match = FakeMatch(combined_dict)
+            logger.info("Pattern 2: Successfully created FakeMatch for SDK format")
 
     alternative_workflows = []
     if json_match:

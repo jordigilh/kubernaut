@@ -277,7 +277,9 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         ).lower()
 
         # Check for recovery scenario first (has priority)
-        if "recovery" in content or "previous remediation" in content or "failed" in content:
+        # Be more specific: require "recovery" or "previous remediation" or "workflow execution failed"
+        # Don't just check for "failed" alone as that's too broad
+        if "recovery" in content or "previous remediation" in content or "workflow execution failed" in content or "previous execution" in content:
             return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
 
         # Check for signal types
@@ -667,7 +669,7 @@ def create_mock_llm_fixture(force_text_response: bool = False):
 def start_server(host="0.0.0.0", port=8080):
     """
     Start the Mock LLM server using the existing MockLLMServer class.
-    
+
     This is a simple wrapper that keeps the server running until interrupted.
     """
     print(f"Starting Mock LLM server on {host}:{port}...")
