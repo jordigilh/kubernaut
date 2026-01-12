@@ -29,7 +29,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 from holmes.core.models import InvestigationResult
-from src.models.recovery_models import RecoveryStrategy
+from src.models.recovery_models import RecoveryStrategy, RecoveryResponse
 
 logger = logging.getLogger(__name__)
 
