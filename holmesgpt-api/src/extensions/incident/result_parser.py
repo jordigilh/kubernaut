@@ -284,11 +284,55 @@ def parse_investigation_result(
     analysis = investigation.analysis if investigation and investigation.analysis else "No analysis available"
 
     # Try to parse JSON from analysis
+    # Pattern 1: JSON code block (standard format)
     json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
+    
+    # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
+    # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
+    if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
+        import ast
+        parts = {}
+        
+        # Extract root_cause_analysis
+        rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
+        if rca_match:
+            parts['root_cause_analysis'] = rca_match.group(1)
+        
+        # Extract selected_workflow
+        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if wf_match:
+            parts['selected_workflow'] = wf_match.group(1)
+        
+        if parts:
+            # Combine into a single dict string
+            combined_dict = '{'
+            for key, value in parts.items():
+                combined_dict += f'"{key}": {value}, '
+            combined_dict = combined_dict.rstrip(', ') + '}'
+            
+            # Create a fake match object
+            class FakeMatch:
+                def __init__(self, text):
+                    self._text = text
+                    self.lastindex = None
+                def group(self, n):
+                    return self._text
+            
+            json_match = FakeMatch(combined_dict)
+    
     alternative_workflows = []
     if json_match:
         try:
-            json_data = json.loads(json_match.group(1))
+            # Handle both regular match objects and FakeMatch
+            json_text = json_match.group(1) if hasattr(json_match, 'lastindex') and json_match.lastindex else json_match.group(0)
+            
+            # Try parsing as JSON first
+            try:
+                json_data = json.loads(json_text)
+            except json.JSONDecodeError:
+                # Fallback: Try ast.literal_eval for Python dict strings
+                import ast
+                json_data = ast.literal_eval(json_text)
             rca = json_data.get("root_cause_analysis", {})
             selected_workflow = json_data.get("selected_workflow")
             confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
