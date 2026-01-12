@@ -422,6 +422,32 @@ async def analyze_recovery(request_data: Dict[str, Any], app_config: Optional[Ap
         )
 
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        # DEBUG: SDK RESPONSE INSPECTION (Option A: Understand SDK format)
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        logger.info({
+            "event": "sdk_response_debug",
+            "incident_id": incident_id,
+            "result_type": type(investigation_result).__name__ if investigation_result else "None",
+            "has_result": investigation_result is not None,
+            "has_analysis": hasattr(investigation_result, 'analysis') if investigation_result else False,
+            "analysis_type": type(investigation_result.analysis).__name__ if investigation_result and hasattr(investigation_result, 'analysis') else "None",
+            "attributes": dir(investigation_result) if investigation_result else [],
+        })
+        
+        if investigation_result and hasattr(investigation_result, 'analysis'):
+            analysis_text = investigation_result.analysis
+            logger.info({
+                "event": "sdk_analysis_structure",
+                "incident_id": incident_id,
+                "analysis_length": len(analysis_text) if analysis_text else 0,
+                "has_json_codeblock": "```json" in analysis_text if analysis_text else False,
+                "has_section_headers": "# selected_workflow" in analysis_text if analysis_text else False,
+                "first_200_chars": analysis_text[:200] if analysis_text else "",
+                "contains_selected_workflow": "selected_workflow" in analysis_text if analysis_text else False,
+                "contains_root_cause": "root_cause" in analysis_text if analysis_text else False,
+            })
+
+        # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         # AUDIT: LLM RESPONSE (BR-AUDIT-005)
         # Per ADR-032 §1: Audit is MANDATORY - NO silent skip allowed
         # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
