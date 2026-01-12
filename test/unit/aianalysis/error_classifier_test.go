@@ -501,8 +501,8 @@ var _ = Describe("ErrorClassifier", func() {
 		It("should handle negative attempt counts gracefully", func() {
 			delay := errorClassifier.GetRetryDelay(-1)
 			// Negative attempts should be treated as attempt 0 (1s base) with ±10% jitter
-			expectedMin := time.Duration(float64(1*time.Second) * 0.9)  // 0.9s
-			expectedMax := time.Duration(float64(1*time.Second) * 1.1)  // 1.1s
+			expectedMin := time.Duration(float64(1*time.Second) * 0.9) // 0.9s
+			expectedMax := time.Duration(float64(1*time.Second) * 1.1) // 1.1s
 			Expect(delay).To(BeNumerically(">=", expectedMin),
 				"Delay should be >= 0.9s (1s - 10% jitter)")
 			Expect(delay).To(BeNumerically("<=", expectedMax),
@@ -586,4 +586,3 @@ type timeoutError struct{}
 func (e *timeoutError) Error() string   { return "i/o timeout" }
 func (e *timeoutError) Timeout() bool   { return true }
 func (e *timeoutError) Temporary() bool { return true }
-

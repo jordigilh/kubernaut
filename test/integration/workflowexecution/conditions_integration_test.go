@@ -42,31 +42,31 @@ import (
 var _ = Describe("Conditions Integration", Label("integration", "conditions"), func() {
 	Context("TektonPipelineCreated condition", func() {
 		It("should be set after PipelineRun creation during reconciliation", func() {
-		// Create WorkflowExecution
-		wfe := &workflowexecutionv1alpha1.WorkflowExecution{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "wfe-condition-pipeline-created",
-				Namespace: DefaultNamespace,
-				Generation: 1, // K8s increments on create/update
-			},
-			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					APIVersion: "remediation.kubernaut.ai/v1alpha1",
-					Kind:       "RemediationRequest",
-					Name:       "test-rr-condition-pipeline-created",
+			// Create WorkflowExecution
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "wfe-condition-pipeline-created",
 					Namespace:  DefaultNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
-				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:     "test-workflow",
-					Version:        "v1.0.0",
-					ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediation.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-condition-pipeline-created",
+						Namespace:  DefaultNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:     "test-workflow",
+						Version:        "v1.0.0",
+						ContainerImage: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+					},
+					TargetResource: "default/deployment/condition-test-app",
+					Parameters: map[string]string{
+						"MESSAGE": "Testing TektonPipelineCreated condition",
+					},
 				},
-				TargetResource: "default/deployment/condition-test-app",
-				Parameters: map[string]string{
-					"MESSAGE": "Testing TektonPipelineCreated condition",
-				},
-			},
-		}
+			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			// ✅ REQUIRED: Use Eventually() to wait for condition (NO time.Sleep())
@@ -110,8 +110,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should be set when PipelineRun starts executing", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-running",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-running",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -173,8 +173,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should be set to True when PipelineRun succeeds", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-complete-success",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-complete-success",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -243,21 +243,21 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 			updated := &workflowexecutionv1alpha1.WorkflowExecution{}
 			Expect(k8sClient.Get(ctx, key, updated)).To(Succeed())
 			condition := weconditions.GetCondition(updated, weconditions.ConditionTektonPipelineComplete)
-		Expect(condition.Reason).To(Equal(weconditions.ReasonPipelineSucceeded))
-	})
+			Expect(condition.Reason).To(Equal(weconditions.ReasonPipelineSucceeded))
+		})
 
-	// REMOVED: Moved to E2E suite
-	// See: test/e2e/workflowexecution/01_lifecycle_test.go (BR-WE-004)
-	// Test: "should populate failure details when workflow fails"
-	// Reason: EnvTest doesn't trigger reconciliation on cross-namespace PipelineRun status updates
-})
+		// REMOVED: Moved to E2E suite
+		// See: test/e2e/workflowexecution/01_lifecycle_test.go (BR-WE-004)
+		// Test: "should populate failure details when workflow fails"
+		// Reason: EnvTest doesn't trigger reconciliation on cross-namespace PipelineRun status updates
+	})
 
 	Context("AuditRecorded condition", func() {
 		It("should be set after audit event emission", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-audit",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-audit",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -310,8 +310,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 		It("should set all applicable conditions during successful execution", func() {
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wfe-condition-full-lifecycle",
-					Namespace: DefaultNamespace,
+					Name:       "wfe-condition-full-lifecycle",
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{

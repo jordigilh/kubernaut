@@ -34,19 +34,19 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
-	"github.com/prometheus/client_golang/prometheus"
-	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 	var (
-		ctx              context.Context
-		fakeClient       client.Client
-		reconciler       *prodcontroller.Reconciler
+		ctx               context.Context
+		fakeClient        client.Client
+		reconciler        *prodcontroller.Reconciler
 		mockRoutingEngine *MockRoutingEngine
-		testMetrics      *metrics.Metrics
+		testMetrics       *metrics.Metrics
 	)
 
 	BeforeEach(func() {
@@ -79,6 +79,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 		// Create reconciler
 		reconciler = prodcontroller.NewReconciler(
 			fakeClient,
+			fakeClient, // apiReader (same as client for tests)
 			scheme,
 			mockAuditStore, // Use MockAuditStore for helper tests
 			nil,            // No EventRecorder needed
@@ -236,4 +237,3 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 		})
 	})
 })
-

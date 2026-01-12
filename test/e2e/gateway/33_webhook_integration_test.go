@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -47,10 +46,9 @@ import (
 //
 // This REPLACES the old tests that only verified HTTP response body structure.
 
-var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integration Tests", func() {
+var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests", func() {
 	var (
 		ctx           context.Context
-		testServer    *httptest.Server
 		k8sClient     client.Client
 		logger        logr.Logger // DD-005: Use logr.Logger
 		testNamespace string      // Unique namespace per test
@@ -65,30 +63,20 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// Setup test infrastructure using helpers
 
 		k8sClient = getKubernetesClient()
-		Expect(k8sClient).ToNot(BeNil(), "K8s client required for integration tests")
+		Expect(k8sClient).ToNot(BeNil(), "K8s client required for E2E tests")
 
-		// Clean Redis before each test
-
-		// Verify Redis is actually empty (prevent state leakage between tests)
+		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 
 		// Create unique production namespace for this test (prevents collisions)
 		// Use counter to ensure uniqueness even when tests run in same second
 		testCounter++
 		testNamespace = fmt.Sprintf("test-prod-p%d-%d-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
 
-		// Register namespace for suite-level cleanup
-
-		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
-		// Create Gateway server using helper
-		var err error
-		Expect(err).ToNot(HaveOccurred(), "Failed to create Gateway server")
-
-		// Create HTTP test server
-		testServer = httptest.NewServer(nil)
-		Expect(testServer).ToNot(BeNil(), "Test server should be created")
+		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
+		// No local test server needed
 
 		logger.Info("Test setup complete",
-			"test_server_url", testServer.URL,
+			"gateway_url", gatewayURL,
 			"test_namespace", testNamespace,
 		)
 	})
@@ -99,10 +87,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 		// NOTE: Namespace cleanup handled by suite-level AfterSuite (batch cleanup)
 		// This prevents "namespace is being terminated" errors from parallel test execution
 
-		// Cleanup
-		if testServer != nil {
-			testServer.Close()
-		}
+		// E2E tests use deployed Gateway - no cleanup needed
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -133,7 +118,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 			}`, testNamespace))
 
 			// Send webhook to Gateway
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 			Expect(err).ToNot(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -213,7 +198,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`, testNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// First alert: Creates CRD
 			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -313,7 +298,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`, testNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 
 			// First alert
 			req1, err := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -403,7 +388,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}
 			}`, testNamespace, testNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", gatewayURL)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 
 			Expect(err).ToNot(HaveOccurred())
@@ -467,7 +452,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}]
 			}`, testNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/prometheus", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 
 			Expect(err).ToNot(HaveOccurred())
@@ -539,7 +524,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - Integratio
 				}
 			}`, testNamespace))
 
-			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", testServer.URL)
+			url := fmt.Sprintf("%s/api/v1/signals/kubernetes-event", gatewayURL)
 			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 
 			Expect(err).ToNot(HaveOccurred())

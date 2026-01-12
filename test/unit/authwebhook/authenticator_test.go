@@ -118,10 +118,10 @@ var _ = Describe("BR-AUTH-001: Authenticated User Extraction", func() {
 					"", "k8s-user-123", true,
 					"SOC2 CC8.1 violation: Cannot attribute action without operator username"),
 
-			// AUTH-003: Accept Empty UID (envtest/kubeconfig contexts)
-			Entry("AUTH-003: accepts request with missing UID (username is sufficient for SOC2 attribution)",
-				"operator@kubernaut.ai", "", false,
-				"Username provides sufficient attribution in test/kubeconfig contexts"),
+				// AUTH-003: Accept Empty UID (envtest/kubeconfig contexts)
+				Entry("AUTH-003: accepts request with missing UID (username is sufficient for SOC2 attribution)",
+					"operator@kubernaut.ai", "", false,
+					"Username provides sufficient attribution in test/kubeconfig contexts"),
 
 				// Additional Edge Case: Both missing (not in original plan, discovered during implementation)
 				Entry("AUTH-002+003: rejects request missing both username and UID",

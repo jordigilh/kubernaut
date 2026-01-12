@@ -27,8 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 )
 
 // Note: RunSpecs is called in suite_test.go - do not add another TestXxx function here
@@ -465,13 +465,13 @@ var _ = Describe("Audit Helpers", func() {
 		// ===== CATEGORY 2: Boundary Conditions (3 tests) =====
 
 		Context("when subject is very long", func() {
-		It("should handle subject >10KB", func() {
-			// Edge Case: Large string handling
-			longSubjectBytes := make([]byte, 15000) // 15KB subject
-			for i := range longSubjectBytes {
-				longSubjectBytes[i] = 'A'
-			}
-			notification.Spec.Subject = string(longSubjectBytes)
+			It("should handle subject >10KB", func() {
+				// Edge Case: Large string handling
+				longSubjectBytes := make([]byte, 15000) // 15KB subject
+				for i := range longSubjectBytes {
+					longSubjectBytes[i] = 'A'
+				}
+				notification.Spec.Subject = string(longSubjectBytes)
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
@@ -506,14 +506,14 @@ var _ = Describe("Audit Helpers", func() {
 		})
 
 		Context("when event_data approaches PostgreSQL JSONB limit", func() {
-		It("should handle maximum payload size (~1MB test)", func() {
-			// Edge Case: PostgreSQL JSONB practical limit test (reduced for test performance)
-			// Real limit is ~10MB, but we test with 1MB for faster execution
-			largeBodyBytes := make([]byte, 1*1024*1024) // 1MB body
-			for i := range largeBodyBytes {
-				largeBodyBytes[i] = 'X'
-			}
-			notification.Spec.Body = string(largeBodyBytes)
+			It("should handle maximum payload size (~1MB test)", func() {
+				// Edge Case: PostgreSQL JSONB practical limit test (reduced for test performance)
+				// Real limit is ~10MB, but we test with 1MB for faster execution
+				largeBodyBytes := make([]byte, 1*1024*1024) // 1MB body
+				for i := range largeBodyBytes {
+					largeBodyBytes[i] = 'X'
+				}
+				notification.Spec.Body = string(largeBodyBytes)
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 

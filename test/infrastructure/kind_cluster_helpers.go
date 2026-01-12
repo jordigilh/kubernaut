@@ -370,5 +370,3 @@ func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writ
 	_, _ = fmt.Fprintf(writer, "  ✅ Kubeconfig exported to %s\n", kubeconfigPath)
 	return nil
 }
-
-

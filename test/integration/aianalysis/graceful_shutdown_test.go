@@ -63,7 +63,7 @@ import (
 // See audit_flow_integration_test.go for detailed rationale.
 var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 	var (
-		uniqueSuffix   string
+		uniqueSuffix string
 		// DD-TEST-002: testNamespace is set dynamically in suite_test.go BeforeEach
 		// No need to declare it here - each test gets a unique namespace automatically
 		dataStorageURL = "http://127.0.0.1:18095" // From suite infrastructure (IPv4 explicit)
@@ -300,27 +300,27 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				Equal(aianalysisv1alpha1.PhaseFailed),
 			), "Analysis should complete and generate audit events")
 
-		// BEHAVIOR VALIDATION: Audit events persisted to Data Storage
-		// IMPROVEMENT: Use explicit Flush() instead of time.Sleep() for reliability
-		// This guarantees audit events are written before querying
-		if auditStore != nil {
-			flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer flushCancel()
-			err := auditStore.Flush(flushCtx)
-			Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
-			GinkgoWriter.Printf("✅ Audit store flushed before querying\n")
-		}
+			// BEHAVIOR VALIDATION: Audit events persisted to Data Storage
+			// IMPROVEMENT: Use explicit Flush() instead of time.Sleep() for reliability
+			// This guarantees audit events are written before querying
+			if auditStore != nil {
+				flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer flushCancel()
+				err := auditStore.Flush(flushCtx)
+				Expect(err).NotTo(HaveOccurred(), "Audit flush should succeed")
+				GinkgoWriter.Printf("✅ Audit store flushed before querying\n")
+			}
 
-	// Query audit events via Data Storage API
-	dsClient, err := ogenclient.NewClient(dataStorageURL)
-	Expect(err).NotTo(HaveOccurred())
+			// Query audit events via Data Storage API
+			dsClient, err := ogenclient.NewClient(dataStorageURL)
+			Expect(err).NotTo(HaveOccurred())
 
-		correlationID := analysis.Spec.RemediationID
-		eventCategory := "analysis"
-		resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-		})
+			correlationID := analysis.Spec.RemediationID
+			eventCategory := "analysis"
+			resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+			})
 			Expect(err).NotTo(HaveOccurred(), "Audit query should succeed")
 			Expect(resp.Data).ToNot(BeNil(), "Response should have data array")
 			Expect(len(resp.Data)).To(BeNumerically(">=", 1),

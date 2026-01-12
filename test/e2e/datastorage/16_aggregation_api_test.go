@@ -59,7 +59,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking",  Ordered, func() {
+var _ = Describe("ADR-033 HTTP API Integration Tests - Multi-Dimensional Success Tracking", Ordered, func() {
 	var (
 		client          *http.Client
 		adr033HistoryID int64 // Auto-generated history ID for test data

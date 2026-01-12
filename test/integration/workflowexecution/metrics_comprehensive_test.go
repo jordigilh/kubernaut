@@ -22,10 +22,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	prometheusTestutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"knative.dev/pkg/apis"
-	duckv1 "knative.dev/pkg/apis/duck/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"knative.dev/pkg/apis"
+	duckv1 "knative.dev/pkg/apis/duck/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -357,4 +357,3 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 		})
 	})
 })
-

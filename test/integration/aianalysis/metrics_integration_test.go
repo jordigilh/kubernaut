@@ -137,39 +137,39 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			}
 			Expect(k8sClient.Create(ctx, aianalysis)).To(Succeed())
 
-		// 2. Wait for business outcome (reconciliation completes)
-		Eventually(func() string {
-			var updated aianalysisv1alpha1.AIAnalysis
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
-				return ""
-			}
-			return string(updated.Status.Phase)
-		}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+			// 2. Wait for business outcome (reconciliation completes)
+			Eventually(func() string {
+				var updated aianalysisv1alpha1.AIAnalysis
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
+					return ""
+				}
+				return string(updated.Status.Phase)
+			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
-		// 3. Verify metrics were emitted as side effect of reconciliation
-		// Note: Metrics are recorded with phase BEFORE transition, so after Completed:
-		// - Pending→Investigating: metric "Pending/success"
-		// - Investigating→Analyzing: metric "Investigating/success" ✅
-		// - Analyzing→Completed: metric "Analyzing/success" ✅
-		Eventually(func() float64 {
-			return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Investigating", "success")
-		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Reconciliation metric should be emitted during Investigating phase")
+			// 3. Verify metrics were emitted as side effect of reconciliation
+			// Note: Metrics are recorded with phase BEFORE transition, so after Completed:
+			// - Pending→Investigating: metric "Pending/success"
+			// - Investigating→Analyzing: metric "Investigating/success" ✅
+			// - Analyzing→Completed: metric "Analyzing/success" ✅
+			Eventually(func() float64 {
+				return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Investigating", "success")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Reconciliation metric should be emitted during Investigating phase")
 
-		Eventually(func() float64 {
-			return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Analyzing", "success")
-		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Reconciliation metric should be emitted during Analyzing phase")
+			Eventually(func() float64 {
+				return getCounterValue(reconciler.Metrics.ReconcilerReconciliationsTotal, "Analyzing", "success")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Reconciliation metric should be emitted during Analyzing phase")
 
-		// Verify duration histogram was populated
-		Eventually(func() int {
-			return getHistogramCount(reconciler.Metrics.ReconcilerDurationSeconds, "Investigating")
-		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Duration histogram should record Investigating phase duration")
+			// Verify duration histogram was populated
+			Eventually(func() int {
+				return getHistogramCount(reconciler.Metrics.ReconcilerDurationSeconds, "Investigating")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Duration histogram should record Investigating phase duration")
 		})
 
 		// NOTE: Flaky in parallel execution - metrics registry state interference
-	It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-HAPI-197", func() {
+		It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-HAPI-197", func() {
 			// 1. Capture baseline failure metrics before test
 			// DD-METRICS-001: FailuresTotal has 2 labels (reason, sub_reason)
 			baselineFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") +
@@ -274,26 +274,26 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			}
 			Expect(k8sClient.Create(ctx, aianalysis)).To(Succeed())
 
-		// 2. Wait for analysis phase to complete
-		Eventually(func() bool {
-			var updated aianalysisv1alpha1.AIAnalysis
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
-				return false
-			}
-			return updated.Status.Phase == "AwaitingApproval" || updated.Status.Phase == "Completed"
-		}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
+			// 2. Wait for analysis phase to complete
+			Eventually(func() bool {
+				var updated aianalysisv1alpha1.AIAnalysis
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
+					return false
+				}
+				return updated.Status.Phase == "AwaitingApproval" || updated.Status.Phase == "Completed"
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-		// 3. Verify approval decision metrics were emitted
-		Eventually(func() float64 {
-			// Look for any approval decision metric
-			total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval", "production")
-			if total > 0 {
-				return total
-			}
-			// Also check for auto-approved or requires_approval
-			return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval", "production")
-		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Approval decision metric should be emitted during policy evaluation")
+			// 3. Verify approval decision metrics were emitted
+			Eventually(func() float64 {
+				// Look for any approval decision metric
+				total := getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval", "production")
+				if total > 0 {
+					return total
+				}
+				// Also check for auto-approved or requires_approval
+				return getCounterValue(reconciler.Metrics.ApprovalDecisionsTotal, "requires_approval", "production")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Approval decision metric should be emitted during policy evaluation")
 		})
 	})
 
@@ -335,20 +335,20 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			}
 			Expect(k8sClient.Create(ctx, aianalysis)).To(Succeed())
 
-		// 2. Wait for workflow selection to complete
-		Eventually(func() bool {
-			var updated aianalysisv1alpha1.AIAnalysis
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
-				return false
-			}
-			return updated.Status.SelectedWorkflow != nil
-		}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
+			// 2. Wait for workflow selection to complete
+			Eventually(func() bool {
+				var updated aianalysisv1alpha1.AIAnalysis
+				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
+					return false
+				}
+				return updated.Status.SelectedWorkflow != nil
+			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-		// 3. Verify confidence score histogram was populated
-		Eventually(func() int {
-			return getHistogramCount(reconciler.Metrics.ConfidenceScoreDistribution, "ImagePullBackOff")
-		}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Confidence score histogram should be populated during workflow selection")
+			// 3. Verify confidence score histogram was populated
+			Eventually(func() int {
+				return getHistogramCount(reconciler.Metrics.ConfidenceScoreDistribution, "ImagePullBackOff")
+			}, 60*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Confidence score histogram should be populated during workflow selection")
 		})
 	})
 

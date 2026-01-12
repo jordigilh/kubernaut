@@ -32,7 +32,7 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/aggregator"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("StatusAggregator", func() {
@@ -63,8 +63,8 @@ var _ = Describe("StatusAggregator", func() {
 			// Test #2: Aggregates SignalProcessing status when ref exists
 			It("should aggregate SignalProcessing status when SignalProcessingRef is set", func() {
 				// Arrange
-				sp := testutil.NewCompletedSignalProcessing("sp-test", "default")
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				sp := helpers.NewCompletedSignalProcessing("sp-test", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
@@ -85,8 +85,8 @@ var _ = Describe("StatusAggregator", func() {
 			// Test #3: Aggregates AIAnalysis status when ref exists
 			It("should aggregate AIAnalysis status when AIAnalysisRef is set", func() {
 				// Arrange
-				ai := testutil.NewCompletedAIAnalysis("ai-test", "default")
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("ai-test", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
 					Name:      ai.Name,
 					Namespace: ai.Namespace,
@@ -116,7 +116,7 @@ var _ = Describe("StatusAggregator", func() {
 						Phase: "Completed",
 					},
 				}
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 					Name:      we.Name,
 					Namespace: we.Namespace,
@@ -137,7 +137,7 @@ var _ = Describe("StatusAggregator", func() {
 			// Test #5: Does not error when refs are nil
 			It("should return empty aggregated status when child refs are nil", func() {
 				// Arrange
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				// No refs set
 
 				client := fakeClient.Build()
@@ -157,7 +157,7 @@ var _ = Describe("StatusAggregator", func() {
 			// Test #6: Handles missing child CRDs gracefully (no error, sets AllChildrenHealthy=false)
 			It("should handle missing child CRDs gracefully", func() {
 				// Arrange
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 					Name:      "non-existent-sp",
 					Namespace: "default",
@@ -189,7 +189,7 @@ var _ = Describe("StatusAggregator", func() {
 				// Confidence: 95% - Real operator workflow
 
 				// Given: RemediationRequest referencing non-existent child CRD
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 					Name:      "deleted-sp",
 					Namespace: "default",
@@ -228,7 +228,7 @@ var _ = Describe("StatusAggregator", func() {
 					},
 				}
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
 					Name:      ai.Name,
 					Namespace: ai.Namespace,
@@ -253,7 +253,7 @@ var _ = Describe("StatusAggregator", func() {
 				// Confidence: 85% - Timing-sensitive edge case
 
 				// Given: Both AIAnalysis and WorkflowExecution completed
-				ai := testutil.NewCompletedAIAnalysis("ai-test", "default")
+				ai := helpers.NewCompletedAIAnalysis("ai-test", "default")
 				we := &workflowexecutionv1.WorkflowExecution{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "we-test",
@@ -264,7 +264,7 @@ var _ = Describe("StatusAggregator", func() {
 					},
 				}
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.AIAnalysisRef = &corev1.ObjectReference{
 					Name:      ai.Name,
 					Namespace: ai.Namespace,

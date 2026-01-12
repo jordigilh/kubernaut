@@ -1,7 +1,7 @@
 // Package testutil provides test utilities and factories for Kubernaut testing.
 //
 // Reference: 03-testing-strategy.mdc - Test Data Factory requirement
-package testutil
+package helpers
 
 import (
 	"fmt"

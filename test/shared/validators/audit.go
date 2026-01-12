@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // Package testutil provides test utilities for Kubernaut services.
-package testutil
+package validators
 
 import (
 	"fmt"

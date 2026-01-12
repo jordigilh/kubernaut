@@ -29,7 +29,7 @@ import (
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Mock delivery service for testing
@@ -107,7 +107,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			orchestrator.RegisterChannel("overwrite-channel", secondService)
 
 			// Verify second service is used
-			notification := testutil.NewNotificationRequest("test", "default")
+			notification := helpers.NewNotificationRequest("test", "default")
 			err := orchestrator.DeliverToChannel(ctx, notification, "overwrite-channel")
 			Expect(err).To(MatchError("second service"))
 		})
@@ -149,7 +149,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockService)
 
 			// Attempt delivery
-			notification := testutil.NewNotificationRequest("test", "default")
+			notification := helpers.NewNotificationRequest("test", "default")
 			err := orchestrator.DeliverToChannel(ctx, notification, notificationv1alpha1.ChannelConsole)
 			Expect(err).ToNot(HaveOccurred())
 		})
@@ -158,7 +158,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			// Do NOT register channel
 
 			// Attempt delivery to unregistered channel
-			notification := testutil.NewNotificationRequest("test", "default")
+			notification := helpers.NewNotificationRequest("test", "default")
 			err := orchestrator.DeliverToChannel(ctx, notification, notificationv1alpha1.ChannelConsole)
 
 			// Verify descriptive error
@@ -181,7 +181,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelSlack), trackedService)
 
 			// Deliver
-			notification := testutil.NewNotificationRequest("test", "default")
+			notification := helpers.NewNotificationRequest("test", "default")
 			err := orchestrator.DeliverToChannel(ctx, notification, notificationv1alpha1.ChannelSlack)
 
 			// Verify service was called
@@ -201,7 +201,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelFile), failingService)
 
 			// Deliver
-			notification := testutil.NewNotificationRequest("test", "default")
+			notification := helpers.NewNotificationRequest("test", "default")
 			err := orchestrator.DeliverToChannel(ctx, notification, notificationv1alpha1.ChannelFile)
 
 			// Verify error propagated
@@ -215,7 +215,7 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 			orchestrator.RegisterChannel(string(notificationv1alpha1.ChannelConsole), mockService)
 
 			// Should succeed for registered channel
-			notification := testutil.NewNotificationRequest("test", "default")
+			notification := helpers.NewNotificationRequest("test", "default")
 			err := orchestrator.DeliverToChannel(ctx, notification, notificationv1alpha1.ChannelConsole)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -242,4 +242,3 @@ var _ = Describe("Orchestrator Channel Registration (DD-NOT-007)", func() {
 		})
 	})
 })
-

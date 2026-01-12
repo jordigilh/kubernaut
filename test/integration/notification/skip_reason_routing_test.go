@@ -77,8 +77,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Create NotificationRequest with skip-reason label
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelSkipReason:  routing.SkipReasonPreviousExecutionFailed,
@@ -153,8 +153,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 						Labels: map[string]string{
 							routing.LabelSkipReason: skipReason,
@@ -242,8 +242,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Create NotificationRequest with multiple routing labels
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelSkipReason:         routing.SkipReasonPreviousExecutionFailed,
@@ -304,8 +304,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Create NotificationRequest WITHOUT skip-reason label
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelEnvironment: routing.EnvironmentStaging,
@@ -364,8 +364,8 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Create NotificationRequest with all routing labels
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						routing.LabelSkipReason:         routing.SkipReasonExhaustedRetries,

@@ -123,47 +123,47 @@ var _ = Describe("InternalAuditClient", func() {
 				// BEHAVIOR: Writes directly to PostgreSQL (not HTTP)
 				// DD-AUDIT-002 V2.0: OpenAPI types don't have EventID, RetentionDays, IsSensitive
 				// (those are database-specific and generated server-side)
-			// Extract OptString values for mock expectations (InternalAuditClient unwraps these)
-			actorType := ""
-			if event.ActorType.IsSet() {
-				actorType = event.ActorType.Value
-			}
-			actorID := ""
-			if event.ActorID.IsSet() {
-				actorID = event.ActorID.Value
-			}
-			resourceType := ""
-			if event.ResourceType.IsSet() {
-				resourceType = event.ResourceType.Value
-			}
-			resourceID := ""
-			if event.ResourceID.IsSet() {
-				resourceID = event.ResourceID.Value
-			}
+				// Extract OptString values for mock expectations (InternalAuditClient unwraps these)
+				actorType := ""
+				if event.ActorType.IsSet() {
+					actorType = event.ActorType.Value
+				}
+				actorID := ""
+				if event.ActorID.IsSet() {
+					actorID = event.ActorID.Value
+				}
+				resourceType := ""
+				if event.ResourceType.IsSet() {
+					resourceType = event.ResourceType.Value
+				}
+				resourceID := ""
+				if event.ResourceID.IsSet() {
+					resourceID = event.ResourceID.Value
+				}
 
-			mock.ExpectBegin()
-			mock.ExpectPrepare("INSERT INTO audit_events")
-			mock.ExpectExec("INSERT INTO audit_events").
-				WithArgs(
-					sqlmock.AnyArg(), // event_id (UUID generated server-side)
-					event.Version,
-					sqlmock.AnyArg(),          // event_timestamp
-					sqlmock.AnyArg(),          // event_date (partitioning key)
-					event.EventType,
-					event.EventCategory,
-					event.EventAction,
-					string(event.EventOutcome), // event_outcome (enum converted to string)
-					actorType,                  // actor_type (OptString unwrapped)
-					actorID,                    // actor_id (OptString unwrapped)
-					resourceType,               // resource_type (OptString unwrapped)
-					resourceID,                 // resource_id (OptString unwrapped)
-					event.CorrelationID,        // correlation_id (plain string)
-					sqlmock.AnyArg(),           // event_data (JSONB)
-					sqlmock.AnyArg(),           // retention_days (database default)
-					sqlmock.AnyArg(),           // is_sensitive (database default)
-				).
-				WillReturnResult(sqlmock.NewResult(1, 1))
-			mock.ExpectCommit()
+				mock.ExpectBegin()
+				mock.ExpectPrepare("INSERT INTO audit_events")
+				mock.ExpectExec("INSERT INTO audit_events").
+					WithArgs(
+						sqlmock.AnyArg(), // event_id (UUID generated server-side)
+						event.Version,
+						sqlmock.AnyArg(), // event_timestamp
+						sqlmock.AnyArg(), // event_date (partitioning key)
+						event.EventType,
+						event.EventCategory,
+						event.EventAction,
+						string(event.EventOutcome), // event_outcome (enum converted to string)
+						actorType,                  // actor_type (OptString unwrapped)
+						actorID,                    // actor_id (OptString unwrapped)
+						resourceType,               // resource_type (OptString unwrapped)
+						resourceID,                 // resource_id (OptString unwrapped)
+						event.CorrelationID,        // correlation_id (plain string)
+						sqlmock.AnyArg(),           // event_data (JSONB)
+						sqlmock.AnyArg(),           // retention_days (database default)
+						sqlmock.AnyArg(),           // is_sensitive (database default)
+					).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectCommit()
 
 				err := client.StoreBatch(ctx, []*ogenclient.AuditEventRequest{event})
 

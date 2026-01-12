@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -479,43 +480,96 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			GinkgoWriter.Printf("✅ BR-ORCH-026: RR transitioned to Executing after RAR approval\n")
 		})
 
-		It("should detect RAR missing and handle gracefully", FlakeAttempts(3), func() {
-			// Scenario: Test RAR deletion detection (simplified - direct state simulation)
-			// Business Outcome: RR handles missing RAR gracefully
-			// Confidence: 90% - Validates resilience without full approval flow
-			// FlakeAttempts(3): Timing-sensitive test - retry up to 3 times in CI
+	It("should detect RAR missing and handle gracefully", func() {
+		// Scenario: RAR deleted after creation (simulates accidental deletion or external cleanup)
+		// Business Outcome: Controller detects missing RAR and handles gracefully (requeues, recreates)
+		// Confidence: 95% - Uses real approval flow, validates resilience to RAR deletion
+		// Multi-Controller Pattern: Safe for parallel execution (uses natural controller flow)
 
-			ctx := context.Background()
+		ctx := context.Background()
 
-			By("Creating RR and manually transitioning to AwaitingApproval")
-			rrName := fmt.Sprintf("rr-missing-rar-%d", time.Now().UnixNano())
-			_ = createRemediationRequest(namespace, rrName)
+		By("Creating RR and progressing to AwaitingApproval naturally")
+		rrName := fmt.Sprintf("rr-missing-rar-%d", time.Now().UnixNano())
+		_ = createRemediationRequest(namespace, rrName)
 
-			// Manually set RR to AwaitingApproval (simulates approval flow)
-			Eventually(func() error {
-				updated := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
-					return err
-				}
-				updated.Status.OverallPhase = remediationv1.PhaseAwaitingApproval
-				updated.Status.Message = "Simulated approval wait"
-				return k8sClient.Status().Update(ctx, updated)
-			}, timeout, interval).Should(Succeed())
+		// Progress through SP (natural flow)
+		spName := fmt.Sprintf("sp-%s", rrName)
+		Eventually(func() error {
+			sp := &signalprocessingv1.SignalProcessing{}
+			return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
-			// Note: No RAR created (simulates deletion scenario)
+		// Progress through AI with approval required (natural flow)
+		aiName := fmt.Sprintf("ai-%s", rrName)
+		Eventually(func() error {
+			ai := &aianalysisv1.AIAnalysis{}
+			return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+		}, timeout, interval).Should(Succeed())
 
-			// Then: RR should remain in AwaitingApproval and requeue
-			// (Controller logs "RemediationApprovalRequest not found, will be created by approval handler")
-			Consistently(func() remediationv1.RemediationPhase {
-				updated := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, updated); err != nil {
-					return ""
-				}
-				return updated.Status.OverallPhase
-			}, "5s", "500ms").Should(Equal(remediationv1.PhaseAwaitingApproval),
-				"RR should remain in AwaitingApproval when RAR missing (graceful degradation)")
+		ai := &aianalysisv1.AIAnalysis{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+		ai.Status.Phase = "Completed"
+		ai.Status.ApprovalRequired = true
+		ai.Status.ApprovalReason = "Confidence below threshold"
+		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			WorkflowID:     "wf-restart-pods",
+			Version:        "v1.0.0",
+			Confidence:     0.70,
+			ContainerImage: "kubernaut/workflows:latest",
+			Rationale:      "Restart recommended",
+		}
+		now := metav1.Now()
+		ai.Status.CompletedAt = &now
+		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			GinkgoWriter.Printf("✅ RR handles missing RAR gracefully (requeues, doesn't crash)\n")
-		})
+		By("Waiting for RR to reach AwaitingApproval")
+		Eventually(func() string {
+			rr := &remediationv1.RemediationRequest{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+				return ""
+			}
+			return string(rr.Status.OverallPhase)
+		}, timeout, interval).Should(Equal("AwaitingApproval"))
+
+		By("Waiting for RAR to be created automatically")
+		rarName := fmt.Sprintf("rar-%s", rrName)
+		rar := &remediationv1.RemediationApprovalRequest{}
+		Eventually(func() error {
+			return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+		}, timeout, interval).Should(Succeed())
+
+		By("Deleting the RAR to simulate accidental deletion")
+		Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
+
+		By("Verifying RAR deletion")
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			return errors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue(), "RAR should be deleted")
+
+		By("Verifying RR remains in AwaitingApproval (graceful degradation)")
+		// Controller should detect missing RAR, log it, and requeue without crashing
+		// Logs should show: "RemediationApprovalRequest not found, will be created by approval handler"
+		Consistently(func() remediationv1.RemediationPhase {
+			rr := &remediationv1.RemediationRequest{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+				return ""
+			}
+			return rr.Status.OverallPhase
+		}, "10s", "500ms").Should(Equal(remediationv1.PhaseAwaitingApproval),
+			"RR should remain in AwaitingApproval when RAR deleted (graceful degradation)")
+
+		By("Verifying RR doesn't crash or error out")
+		// Final check: RR should still be healthy after RAR deletion
+		rr := &remediationv1.RemediationRequest{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+		Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval))
+		// Message should indicate waiting for approval (not an error state)
+		Expect(rr.Status.Message).ToNot(ContainSubstring("error"))
+		Expect(rr.Status.Message).ToNot(ContainSubstring("failed"))
+
+		GinkgoWriter.Printf("✅ BR-ORCH-026: RR handles missing RAR gracefully (stays stable, no crash, proper logging)\n")
+	})
 	})
 })

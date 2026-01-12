@@ -1,0 +1,10 @@
+# Mock LLM Service Development Dependencies
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+requests>=2.31.0  # For integration tests
+
+# Code Quality
+ruff>=0.1.0  # Linter/formatter
+mypy>=1.7.0  # Type checking

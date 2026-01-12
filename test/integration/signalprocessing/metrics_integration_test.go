@@ -57,7 +57,9 @@ import (
 // - signalprocessing_enrichment_errors_total{error_type}
 // ========================================
 
-var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integration", "metrics"), func() {
+// DD-TEST-010: Multi-Controller Pattern - Metrics tests now run in parallel
+// Each process has its own controller with isolated Prometheus registry
+var _ = Describe("Metrics Integration via Business Flows", Label("integration", "metrics"), func() {
 	var (
 		ctx context.Context
 	)
@@ -201,12 +203,12 @@ var _ = Describe("Metrics Integration via Business Flows", Serial, Label("integr
 				return updated.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		// 5. Verify processing metrics were emitted as side effects
-		Eventually(func() float64 {
-			return getCounterValue("signalprocessing_processing_total",
-				map[string]string{"phase": "enriching", "result": "success"})
-		}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
-			"Controller should emit enriching phase metrics during reconciliation")
+			// 5. Verify processing metrics were emitted as side effects
+			Eventually(func() float64 {
+				return getCounterValue("signalprocessing_processing_total",
+					map[string]string{"phase": "enriching", "result": "success"})
+			}, 10*time.Second, 500*time.Millisecond).Should(BeNumerically(">", 0),
+				"Controller should emit enriching phase metrics during reconciliation")
 
 			Eventually(func() float64 {
 				return getCounterValue("signalprocessing_processing_total",

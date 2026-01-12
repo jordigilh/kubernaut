@@ -60,7 +60,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
+var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	var (
 		workflowRepo *workflow.Repository
 		testID       string
@@ -310,13 +310,13 @@ var _ = Describe("Workflow Catalog Repository Integration Tests",  func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(retrievedWorkflow).ToNot(BeNil())
 
-			// ASSERT: All fields populated correctly
-			Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
-			Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
-			Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
-			Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
-			Expect(retrievedWorkflow.Status).To(Equal("active"))
-			Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
+				// ASSERT: All fields populated correctly
+				Expect(retrievedWorkflow.WorkflowName).To(Equal(workflowName))
+				Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
+				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
+				Expect(retrievedWorkflow.Description).To(Equal("Test workflow for Get method"))
+				Expect(retrievedWorkflow.Status).To(Equal("active"))
+				Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())

@@ -79,8 +79,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -160,8 +160,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -221,8 +221,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -288,8 +288,8 @@ var _ = Describe("BR-NOT-080/081/082: Graceful Shutdown", func() {
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{

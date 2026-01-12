@@ -392,4 +392,3 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 
 	return nil
 }
-

@@ -238,4 +238,3 @@ var _ = Describe("Notification Phase Manager", func() {
 		})
 	})
 })
-

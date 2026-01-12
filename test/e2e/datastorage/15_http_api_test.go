@@ -40,7 +40,7 @@ import (
 // These tests validate the complete HTTP → Repository → PostgreSQL flow
 // using a real Data Storage Service container (Podman, ADR-016)
 
-var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ordered, func() {
+var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Ordered, func() {
 	var (
 		client     *http.Client
 		validAudit *models.NotificationAudit
@@ -117,7 +117,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ord
 
 			// ✅ CORRECTNESS TEST: Database record matches input
 			// Use repository's GetByNotificationID to properly handle NULL fields
-// TODO(E2E): 			Expect(dbRecord.Recipient).To(Equal(validAudit.Recipient))
+			// TODO(E2E): 			Expect(dbRecord.Recipient).To(Equal(validAudit.Recipient))
 		})
 	})
 
@@ -142,9 +142,9 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ord
 			// BR-STORAGE-034: OpenAPI middleware uses standardized RFC 7807 format
 			Expect(errorResp.Type).To(Equal("https://kubernaut.ai/problems/validation-error"),
 				"RFC 7807 type field should identify error category (OpenAPI middleware format)")
-		// BR-STORAGE-034: OpenAPI middleware uses standardized RFC 7807 format
-		Expect(errorResp.Title).To(Equal("Validation Error"),
-			"RFC 7807 title should be human-readable (OpenAPI middleware format)")
+			// BR-STORAGE-034: OpenAPI middleware uses standardized RFC 7807 format
+			Expect(errorResp.Title).To(Equal("Validation Error"),
+				"RFC 7807 title should be human-readable (OpenAPI middleware format)")
 			Expect(errorResp.Status).To(Equal(400),
 				"RFC 7807 status should match HTTP status")
 			// BR-STORAGE-034: OpenAPI middleware provides error details in "detail" field
@@ -238,7 +238,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications",  Ord
 			Expect(respBody["message"]).To(ContainSubstring("queued"))
 
 			// ✅ CORRECTNESS TEST: Message in Redis DLQ
-// TODO(E2E): 			Expect(depth).To(BeNumerically(">", 0), "DLQ should contain at least one message")
+			// TODO(E2E): 			Expect(depth).To(BeNumerically(">", 0), "DLQ should contain at least one message")
 
 			// Restart PostgreSQL for subsequent tests
 			GinkgoWriter.Printf("✅ Restarting PostgreSQL container '%s'...\n", postgresContainer)

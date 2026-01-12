@@ -13,7 +13,7 @@ import (
 
 var _ = Describe("Observability E2E Tests", func() {
 	var (
-	// TODO (GW Team): ctx           context.Context
+		// TODO (GW Team): ctx           context.Context
 		cancel        context.CancelFunc
 		testNamespace string
 		testCounter   int

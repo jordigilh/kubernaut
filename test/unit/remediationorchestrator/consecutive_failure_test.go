@@ -32,7 +32,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
+	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
@@ -102,6 +102,7 @@ var _ = Describe("ConsecutiveFailureBlocker", func() {
 		metrics := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 		reconciler = controller.NewReconciler(
 			fakeClient,
+			fakeClient, // apiReader (same as client for tests)
 			scheme,
 			nil,     // audit store
 			nil,     // recorder

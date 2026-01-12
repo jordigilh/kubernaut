@@ -35,7 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // MockAuditStore is a tracking mock for testing that implements audit.AuditStore
@@ -126,8 +126,8 @@ var _ = Describe("AIAnalysis Controller", func() {
 				Build()
 
 			// Create test dependencies (P1 refactoring: handlers now required)
-			mockHolmesClient := testutil.NewMockHolmesGPTClient()
-			mockRegoEvaluator := testutil.NewMockRegoEvaluator()
+			mockHolmesClient := mocks.NewMockHolmesGPTClient()
+			mockRegoEvaluator := mocks.NewMockRegoEvaluator()
 			mockAuditStore := NewMockAuditStore()
 			auditClient := aiaudit.NewAuditClient(mockAuditStore, ctrl.Log.WithName("test-audit"))
 			testMetrics := metrics.NewMetrics()

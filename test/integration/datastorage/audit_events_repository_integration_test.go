@@ -58,7 +58,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("AuditEventsRepository Integration Tests",  func() {
+var _ = Describe("AuditEventsRepository Integration Tests", func() {
 	var (
 		auditRepo *repository.AuditEventsRepository
 		testID    string

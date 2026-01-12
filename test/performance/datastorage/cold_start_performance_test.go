@@ -92,12 +92,12 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 				eventData,
 			)
 
-		firstRequestStart := time.Now()
-		eventID, err := postAuditEvent(ctx, client, event)
-		firstRequestDuration := time.Since(firstRequestStart)
+			firstRequestStart := time.Now()
+			eventID, err := postAuditEvent(ctx, client, event)
+			firstRequestDuration := time.Since(firstRequestStart)
 
-		Expect(err).ToNot(HaveOccurred())
-		Expect(eventID).ToNot(BeEmpty(), "First request should succeed")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(eventID).ToNot(BeEmpty(), "First request should succeed")
 
 			GinkgoWriter.Printf("First request completed in %v\n", firstRequestDuration)
 
@@ -123,12 +123,12 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 				eventData2,
 			)
 
-		secondRequestStart := time.Now()
-		eventID2, err := postAuditEvent(ctx, client, event2)
-		secondRequestDuration := time.Since(secondRequestStart)
+			secondRequestStart := time.Now()
+			eventID2, err := postAuditEvent(ctx, client, event2)
+			secondRequestDuration := time.Since(secondRequestStart)
 
-		Expect(err).ToNot(HaveOccurred())
-		Expect(eventID2).ToNot(BeEmpty())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(eventID2).ToNot(BeEmpty())
 
 			GinkgoWriter.Printf("Second request completed in %v\n", secondRequestDuration)
 

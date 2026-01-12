@@ -99,19 +99,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				var eventIDs []uuid.UUID
 				for i := 0; i < 3; i++ {
 					event := &repository.AuditEvent{
-						EventID:         uuid.New(),
-						EventDate:       repository.DateOnly(time.Now()),
-						EventType:       "workflow.created",
-						EventAction:     fmt.Sprintf("create-workflow-%d", i),
-						EventCategory:   "workflow",
-						EventOutcome:    "success",
-						CorrelationID:   correlationID,
-						ResourceType:    "workflow",
-						ResourceID:      fmt.Sprintf("workflow-%d", i),
-						ActorID:         "system",
-						ActorType:       "service_account",
-						EventData:       map[string]interface{}{"index": i, "test": "hash-chain"},
-						Version:         "1",
+						EventID:       uuid.New(),
+						EventDate:     repository.DateOnly(time.Now()),
+						EventType:     "workflow.created",
+						EventAction:   fmt.Sprintf("create-workflow-%d", i),
+						EventCategory: "workflow",
+						EventOutcome:  "success",
+						CorrelationID: correlationID,
+						ResourceType:  "workflow",
+						ResourceID:    fmt.Sprintf("workflow-%d", i),
+						ActorID:       "system",
+						ActorType:     "service_account",
+						EventData:     map[string]interface{}{"index": i, "test": "hash-chain"},
+						Version:       "1",
 					}
 
 					createdEvent, err := auditRepo.Create(ctx, event)
@@ -144,15 +144,15 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				defer rows.Close()
 
 				var chainLinks []struct {
-					EventID          uuid.UUID
-					EventHash        string
+					EventID           uuid.UUID
+					EventHash         string
 					PreviousEventHash string
 				}
 
 				for rows.Next() {
 					var link struct {
-						EventID          uuid.UUID
-						EventHash        string
+						EventID           uuid.UUID
+						EventHash         string
 						PreviousEventHash string
 					}
 					err = rows.Scan(&link.EventID, &link.EventHash, &link.PreviousEventHash)
@@ -179,19 +179,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				// Create 5 events with valid hash chain
 				for i := 0; i < 5; i++ {
 					event := &repository.AuditEvent{
-						EventID:         uuid.New(),
-						EventDate:       repository.DateOnly(time.Now()),
-						EventType:       "workflow.executed",
-						EventAction:     fmt.Sprintf("execute-step-%d", i),
-						EventCategory:   "workflow",
-						EventOutcome:    "success",
-						CorrelationID:   correlationID,
-						ResourceType:    "workflow",
-						ResourceID:      "test-workflow",
-						ActorID:         "user@example.com",
-						ActorType:       "user",
-						EventData:       map[string]interface{}{"step": i, "status": "completed"},
-						Version:         "1",
+						EventID:       uuid.New(),
+						EventDate:     repository.DateOnly(time.Now()),
+						EventType:     "workflow.executed",
+						EventAction:   fmt.Sprintf("execute-step-%d", i),
+						EventCategory: "workflow",
+						EventOutcome:  "success",
+						CorrelationID: correlationID,
+						ResourceType:  "workflow",
+						ResourceID:    "test-workflow",
+						ActorID:       "user@example.com",
+						ActorType:     "user",
+						EventData:     map[string]interface{}{"step": i, "status": "completed"},
+						Version:       "1",
 					}
 
 					_, err := auditRepo.Create(ctx, event)
@@ -231,19 +231,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				var eventIDs []uuid.UUID
 				for i := 0; i < 3; i++ {
 					event := &repository.AuditEvent{
-						EventID:         uuid.New(),
-						EventDate:       repository.DateOnly(time.Now()),
-						EventType:       "data.modified",
-						EventAction:     fmt.Sprintf("modify-%d", i),
-						EventCategory:   "data",
-						EventOutcome:    "success",
-						CorrelationID:   correlationID,
-						ResourceType:    "database",
-						ResourceID:      "test-db",
-						ActorID:         "admin",
-						ActorType:       "user",
-						EventData:       map[string]interface{}{"operation": "update", "index": i},
-						Version:         "1",
+						EventID:       uuid.New(),
+						EventDate:     repository.DateOnly(time.Now()),
+						EventType:     "data.modified",
+						EventAction:   fmt.Sprintf("modify-%d", i),
+						EventCategory: "data",
+						EventOutcome:  "success",
+						CorrelationID: correlationID,
+						ResourceType:  "database",
+						ResourceID:    "test-db",
+						ActorID:       "admin",
+						ActorType:     "user",
+						EventData:     map[string]interface{}{"operation": "update", "index": i},
+						Version:       "1",
 					}
 
 					created, err := auditRepo.Create(ctx, event)
@@ -297,19 +297,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				var eventIDs []uuid.UUID
 				for i := 0; i < 3; i++ {
 					event := &repository.AuditEvent{
-						EventID:         uuid.New(),
-						EventDate:       repository.DateOnly(time.Now()),
-						EventType:       "system.operation",
-						EventAction:     fmt.Sprintf("operation-%d", i),
-						EventCategory:   "system",
-						EventOutcome:    "success",
-						CorrelationID:   correlationID,
-						ResourceType:    "cluster",
-						ResourceID:      "prod-cluster",
-						ActorID:         "system",
-						ActorType:       "service_account",
-						EventData:       map[string]interface{}{"op": i},
-						Version:         "1",
+						EventID:       uuid.New(),
+						EventDate:     repository.DateOnly(time.Now()),
+						EventType:     "system.operation",
+						EventAction:   fmt.Sprintf("operation-%d", i),
+						EventCategory: "system",
+						EventOutcome:  "success",
+						CorrelationID: correlationID,
+						ResourceType:  "cluster",
+						ResourceID:    "prod-cluster",
+						ActorID:       "system",
+						ActorType:     "service_account",
+						EventData:     map[string]interface{}{"op": i},
+						Version:       "1",
 					}
 
 					created, err := auditRepo.Create(ctx, event)
@@ -359,19 +359,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 				// Create test events
 				for i := 0; i < 3; i++ {
 					event := &repository.AuditEvent{
-						EventID:         uuid.New(),
-						EventDate:       repository.DateOnly(time.Now()),
-						EventType:       "test.event",
-						EventAction:     "test",
-						EventCategory:   "test",
-						EventOutcome:    "success",
-						CorrelationID:   correlationID,
-						ResourceType:    "test",
-						ResourceID:      "test-resource",
-						ActorID:         "test-user",
-						ActorType:       "user",
-						EventData:       map[string]interface{}{"index": i},
-						Version:         "1",
+						EventID:       uuid.New(),
+						EventDate:     repository.DateOnly(time.Now()),
+						EventType:     "test.event",
+						EventAction:   "test",
+						EventCategory: "test",
+						EventOutcome:  "success",
+						CorrelationID: correlationID,
+						ResourceType:  "test",
+						ResourceID:    "test-resource",
+						ActorID:       "test-user",
+						ActorType:     "user",
+						EventData:     map[string]interface{}{"index": i},
+						Version:       "1",
 					}
 
 					_, err := auditRepo.Create(ctx, event)
@@ -405,19 +405,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 
 				// Create first event
 				event1 := &repository.AuditEvent{
-					EventID:         uuid.New(),
-					EventDate:       repository.DateOnly(time.Now()),
-					EventType:       "test.hash",
-					EventAction:     "test-hash-consistency",
-					EventCategory:   "test",
-					EventOutcome:    "success",
-					CorrelationID:   correlationID,
-					ResourceType:    "test",
-					ResourceID:      "hash-test",
-					ActorID:         "tester",
-					ActorType:       "user",
-					EventData:       map[string]interface{}{"key": "value", "number": 42},
-					Version:         "1",
+					EventID:       uuid.New(),
+					EventDate:     repository.DateOnly(time.Now()),
+					EventType:     "test.hash",
+					EventAction:   "test-hash-consistency",
+					EventCategory: "test",
+					EventOutcome:  "success",
+					CorrelationID: correlationID,
+					ResourceType:  "test",
+					ResourceID:    "hash-test",
+					ActorID:       "tester",
+					ActorType:     "user",
+					EventData:     map[string]interface{}{"key": "value", "number": 42},
+					Version:       "1",
 				}
 
 				created, err := auditRepo.Create(ctx, event1)
@@ -449,19 +449,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 
 				// Create first event
 				event1 := &repository.AuditEvent{
-					EventID:         uuid.New(),
-					EventDate:       repository.DateOnly(time.Now()),
-					EventType:       "test.chain",
-					EventAction:     "first",
-					EventCategory:   "test",
-					EventOutcome:    "success",
-					CorrelationID:   correlationID,
-					ResourceType:    "test",
-					ResourceID:      "chain-test",
-					ActorID:         "tester",
-					ActorType:       "user",
-					EventData:       map[string]interface{}{"order": 1},
-					Version:         "1",
+					EventID:       uuid.New(),
+					EventDate:     repository.DateOnly(time.Now()),
+					EventType:     "test.chain",
+					EventAction:   "first",
+					EventCategory: "test",
+					EventOutcome:  "success",
+					CorrelationID: correlationID,
+					ResourceType:  "test",
+					ResourceID:    "chain-test",
+					ActorID:       "tester",
+					ActorType:     "user",
+					EventData:     map[string]interface{}{"order": 1},
+					Version:       "1",
 				}
 
 				first, err := auditRepo.Create(ctx, event1)
@@ -469,19 +469,19 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 
 				// Create second event
 				event2 := &repository.AuditEvent{
-					EventID:         uuid.New(),
-					EventDate:       repository.DateOnly(time.Now()),
-					EventType:       "test.chain",
-					EventAction:     "second",
-					EventCategory:   "test",
-					EventOutcome:    "success",
-					CorrelationID:   correlationID,
-					ResourceType:    "test",
-					ResourceID:      "chain-test",
-					ActorID:         "tester",
-					ActorType:       "user",
-					EventData:       map[string]interface{}{"order": 2},
-					Version:         "1",
+					EventID:       uuid.New(),
+					EventDate:     repository.DateOnly(time.Now()),
+					EventType:     "test.chain",
+					EventAction:   "second",
+					EventCategory: "test",
+					EventOutcome:  "success",
+					CorrelationID: correlationID,
+					ResourceType:  "test",
+					ResourceID:    "chain-test",
+					ActorID:       "tester",
+					ActorType:     "user",
+					EventData:     map[string]interface{}{"order": 2},
+					Version:       "1",
 				}
 
 				second, err := auditRepo.Create(ctx, event2)
@@ -508,4 +508,3 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 		})
 	})
 })
-

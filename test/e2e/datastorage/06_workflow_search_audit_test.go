@@ -170,17 +170,17 @@ execution:
 				Description:     "Recover from OOMKilled using kubectl rollout restart",
 				Owner:           dsgen.NewOptString(owner),
 				Content:         workflowSchemaContent,
-				ContentHash:     contentHashHex,                       // Required field
-				ExecutionEngine: "tekton",                             // Required field
+				ContentHash:     contentHashHex,                        // Required field
+				ExecutionEngine: "tekton",                              // Required field
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required field
 				// V1.0: 5 mandatory labels (DD-WORKFLOW-001 v1.4)
 				// DD-E2E-DATA-POLLUTION-001: Use unique signal_type per parallel process
 				Labels: dsgen.MandatoryLabels{
-					SignalType:  uniqueSignalType,                         // mandatory - unique per process
-					Severity:    dsgen.MandatoryLabelsSeverityCritical,    // mandatory
-					Environment: "production",                             // mandatory
-					Priority:    dsgen.MandatoryLabelsPriority_P0,          // mandatory
-					Component:   "deployment",                             // mandatory
+					SignalType:  uniqueSignalType,                      // mandatory - unique per process
+					Severity:    dsgen.MandatoryLabelsSeverityCritical, // mandatory
+					Environment: "production",                          // mandatory
+					Priority:    dsgen.MandatoryLabelsPriority_P0,      // mandatory
+					Component:   "deployment",                          // mandatory
 				},
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
@@ -188,7 +188,6 @@ execution:
 			// Create workflow via API (using shared NodePort URL)
 			_, err := dsClient.CreateWorkflow(context.Background(), &workflow)
 			Expect(err).ToNot(HaveOccurred())
-
 
 			testLogger.Info("✅ Test workflow created", "workflow_id", workflowID)
 
@@ -202,11 +201,11 @@ execution:
 			searchRequest := dsgen.WorkflowSearchRequest{
 				RemediationID: dsgen.NewOptString(remediationID),
 				Filters: dsgen.WorkflowSearchFilters{
-					SignalType:  uniqueSignalType,                              // mandatory - unique per process
-					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
-					Component:   "deployment",                                  // mandatory
-					Environment: "production",                                  // mandatory
-					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
+					SignalType:  uniqueSignalType,                            // mandatory - unique per process
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+					Component:   "deployment",                                // mandatory
+					Environment: "production",                                // mandatory
+					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
 				},
 				TopK: dsgen.NewOptInt(topK),
 			}
@@ -397,11 +396,11 @@ execution:
 				searchRequest := dsgen.WorkflowSearchRequest{
 					RemediationID: dsgen.NewOptString(remediationID),
 					Filters: dsgen.WorkflowSearchFilters{
-						SignalType:  "OOMKilled",                                   // mandatory (DD-WORKFLOW-001 v1.4)
-						Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,   // mandatory
-						Component:   "deployment",                                  // mandatory
-						Environment: "production",                                  // mandatory
-						Priority:    dsgen.WorkflowSearchFiltersPriorityP0,         // mandatory
+						SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
+						Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+						Component:   "deployment",                                // mandatory
+						Environment: "production",                                // mandatory
+						Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
 					},
 					TopK: dsgen.NewOptInt(topK),
 				}

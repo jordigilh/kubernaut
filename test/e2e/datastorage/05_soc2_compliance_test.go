@@ -97,75 +97,75 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 		err = infrastructure.ApplyCertManagerIssuer(kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create ClusterIssuer")
 
-	// Step 4: Validate infrastructure
-	logger.Info("📦 Step 4/4: Validating infrastructure...")
-	logger.Info("   Using existing DataStorage service from main suite")
-	logger.Info("   (DataStorage uses fallback self-signed certs)")
-	logger.Info("   cert-manager infrastructure validated for future production use")
+		// Step 4: Validate infrastructure
+		logger.Info("📦 Step 4/4: Validating infrastructure...")
+		logger.Info("   Using existing DataStorage service from main suite")
+		logger.Info("   (DataStorage uses fallback self-signed certs)")
+		logger.Info("   cert-manager infrastructure validated for future production use")
 
-	// Step 5: Warm-up signing certificate generation
-	// The DataStorage service generates self-signed certificates on-demand during the first export.
-	// We need to trigger this generation and wait for it to complete before running tests.
-	logger.Info("📋 Step 5/5: Warming up certificate generation...")
-	logger.Info("   Triggering initial export to generate self-signed certificate...")
+		// Step 5: Warm-up signing certificate generation
+		// The DataStorage service generates self-signed certificates on-demand during the first export.
+		// We need to trigger this generation and wait for it to complete before running tests.
+		logger.Info("📋 Step 5/5: Warming up certificate generation...")
+		logger.Info("   Triggering initial export to generate self-signed certificate...")
 
-	// Create a test audit event for warm-up
-	// Use timestamp 5 minutes in the past to avoid clock skew issues between host and container
-	warmupTimestamp := time.Now().UTC().Add(-5 * time.Minute)
-	warmupCorrelationID := "warmup-" + warmupTimestamp.Format("20060102-150405")
-	warmupEvent := dsgen.AuditEventRequest{
-		CorrelationID:  warmupCorrelationID,
-		EventAction:    "warmup_action",
-		EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
-		EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-		EventType:      "certificate_warmup",
-		EventTimestamp: warmupTimestamp,
-		Version:        "1.0",
-		EventData:      newMinimalGatewayPayload("prometheus-alert", "warmup"),
-	}
-
-	_, err = dsClient.CreateAuditEvent(testCtx, &warmupEvent)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create warmup audit event")
-	logger.Info("   ✅ Warmup event created")
-
-	// Attempt export with retry to allow certificate generation to complete
-	logger.Info("   ⏳ Waiting for certificate generation (up to 30s)...")
-	var lastError string
-	var lastResponseBody string
-	Eventually(func() int {
-		exportResp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(warmupCorrelationID),
-			Limit:         dsgen.NewOptInt(10),
-		})
-		if err != nil {
-			lastError = err.Error()
-			logger.Info("   Export attempt failed (retrying...)", "error", lastError)
-			return 0
+		// Create a test audit event for warm-up
+		// Use timestamp 5 minutes in the past to avoid clock skew issues between host and container
+		warmupTimestamp := time.Now().UTC().Add(-5 * time.Minute)
+		warmupCorrelationID := "warmup-" + warmupTimestamp.Format("20060102-150405")
+		warmupEvent := dsgen.AuditEventRequest{
+			CorrelationID:  warmupCorrelationID,
+			EventAction:    "warmup_action",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway,
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventType:      "certificate_warmup",
+			EventTimestamp: warmupTimestamp,
+			Version:        "1.0",
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "warmup"),
 		}
-		// Type assert to success response
-		result, ok := exportResp.(*dsgen.AuditExportResponse)
-		if !ok {
-			logger.Info("   Export returned non-success response (retrying...)")
-			return 0
-		}
-		// Success - check we have events
-		if len(result.Events) == 0 {
-			logger.Info("   Export returned no events (retrying...)")
-			return 0
-		}
-		return 200
-	}, 30*time.Second, 2*time.Second).Should(Equal(200),
-		fmt.Sprintf("Certificate generation should complete within 30s. Last error: %s, Last response: %s",
-			lastError, lastResponseBody))
 
-	logger.Info("   ✅ Certificate generation complete and validated")
-	logger.Info("✅ SOC2 E2E infrastructure ready")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	logger.Info("⚠️  NOTE: These tests validate SOC2 compliance features")
-	logger.Info("   Production deployment uses cert-manager (infrastructure validated above)")
-	logger.Info("   E2E tests use fallback certs (faster, sufficient for compliance validation)")
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-})
+		_, err = dsClient.CreateAuditEvent(testCtx, &warmupEvent)
+		Expect(err).ToNot(HaveOccurred(), "Failed to create warmup audit event")
+		logger.Info("   ✅ Warmup event created")
+
+		// Attempt export with retry to allow certificate generation to complete
+		logger.Info("   ⏳ Waiting for certificate generation (up to 30s)...")
+		var lastError string
+		var lastResponseBody string
+		Eventually(func() int {
+			exportResp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(warmupCorrelationID),
+				Limit:         dsgen.NewOptInt(10),
+			})
+			if err != nil {
+				lastError = err.Error()
+				logger.Info("   Export attempt failed (retrying...)", "error", lastError)
+				return 0
+			}
+			// Type assert to success response
+			result, ok := exportResp.(*dsgen.AuditExportResponse)
+			if !ok {
+				logger.Info("   Export returned non-success response (retrying...)")
+				return 0
+			}
+			// Success - check we have events
+			if len(result.Events) == 0 {
+				logger.Info("   Export returned no events (retrying...)")
+				return 0
+			}
+			return 200
+		}, 30*time.Second, 2*time.Second).Should(Equal(200),
+			fmt.Sprintf("Certificate generation should complete within 30s. Last error: %s, Last response: %s",
+				lastError, lastResponseBody))
+
+		logger.Info("   ✅ Certificate generation complete and validated")
+		logger.Info("✅ SOC2 E2E infrastructure ready")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("⚠️  NOTE: These tests validate SOC2 compliance features")
+		logger.Info("   Production deployment uses cert-manager (infrastructure validated above)")
+		logger.Info("   E2E tests use fallback certs (faster, sufficient for compliance validation)")
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	})
 
 	AfterAll(func() {
 		logger.Info("🧹 Cleaning up SOC2 E2E test resources...")
@@ -194,21 +194,21 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(eventIDs).To(HaveLen(5), "Should create 5 audit events")
 			logger.Info("✅ Created 5 audit events", "event_ids", eventIDs)
 
-		// Step 2: Call /api/v1/audit/export endpoint
-		logger.Info("Step 2: Exporting audit events via API")
-		resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(exportCorrelationID),
-		})
-		Expect(err).ToNot(HaveOccurred(), "Export API call should succeed")
-		exportData, ok := resp.(*dsgen.AuditExportResponse)
-		Expect(ok).To(BeTrue(), "Export should return AuditExportResponse")
-		Expect(exportData).ToNot(BeNil(), "Export response should not be nil")
-		logger.Info("✅ Export API returned successfully")
+			// Step 2: Call /api/v1/audit/export endpoint
+			logger.Info("Step 2: Exporting audit events via API")
+			resp, err := dsClient.ExportAuditEvents(testCtx, dsgen.ExportAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(exportCorrelationID),
+			})
+			Expect(err).ToNot(HaveOccurred(), "Export API call should succeed")
+			exportData, ok := resp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue(), "Export should return AuditExportResponse")
+			Expect(exportData).ToNot(BeNil(), "Export response should not be nil")
+			logger.Info("✅ Export API returned successfully")
 
-		// Step 3: Verify response contains signature metadata
-		Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty(), "Export must contain digital signature")
-		Expect(exportData.ExportMetadata.SignatureAlgorithm).ToNot(BeNil(), "Export must specify signature algorithm")
-		Expect(exportData.ExportMetadata.SignatureAlgorithm.Value).To(Equal("SHA256withRSA"), "Signature algorithm must be SHA256withRSA")
+			// Step 3: Verify response contains signature metadata
+			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty(), "Export must contain digital signature")
+			Expect(exportData.ExportMetadata.SignatureAlgorithm).ToNot(BeNil(), "Export must specify signature algorithm")
+			Expect(exportData.ExportMetadata.SignatureAlgorithm.Value).To(Equal("SHA256withRSA"), "Signature algorithm must be SHA256withRSA")
 			logger.Info("✅ Export contains signature metadata",
 				"algorithm", exportData.ExportMetadata.SignatureAlgorithm.Value,
 				"signature_length", len(exportData.ExportMetadata.Signature))
@@ -260,7 +260,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify metadata includes query filters
-			exportData, ok := resp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := resp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 			Expect(exportData.ExportMetadata.QueryFilters).ToNot(BeNil(), "Export must include query filters")
 			Expect(exportData.ExportMetadata.QueryFilters.Value.CorrelationID).ToNot(BeNil())
 			Expect(exportData.ExportMetadata.QueryFilters.Value.CorrelationID.Value).To(Equal(testCorrelationID))
@@ -302,7 +303,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				CorrelationID: dsgen.NewOptString(chainCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			exportData, ok := resp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := resp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 			logger.Info("✅ Export successful")
 
 			// Step 3: Verify hash_chain_verification metadata
@@ -372,7 +374,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				CorrelationID: dsgen.NewOptString(tamperCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			exportData, ok := resp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := resp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 
 			// Step 4: Verify hash_chain_verification detects tampering
 			logger.Info("Step 4: Validating tamper detection")
@@ -429,15 +432,15 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(eventIDs).To(HaveLen(3))
 			logger.Info("✅ Created 3 events for legal hold test")
 
-		// Step 2: Place legal hold via API
-		logger.Info("Step 2: Placing legal hold", "correlation_id", testCorrelationID)
-		reason := "SOC2 E2E Test - Legal Hold Validation"
-		_, err := dsClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
-			CorrelationID: testCorrelationID,
-			Reason:        reason,
-		})
-		Expect(err).ToNot(HaveOccurred())
-		logger.Info("✅ Legal hold placed", "reason", reason)
+			// Step 2: Place legal hold via API
+			logger.Info("Step 2: Placing legal hold", "correlation_id", testCorrelationID)
+			reason := "SOC2 E2E Test - Legal Hold Validation"
+			_, err := dsClient.PlaceLegalHold(testCtx, &dsgen.PlaceLegalHoldReq{
+				CorrelationID: testCorrelationID,
+				Reason:        reason,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			logger.Info("✅ Legal hold placed", "reason", reason)
 
 			// Step 3: Export events and verify legal_hold flag
 			logger.Info("Step 3: Exporting events to verify legal_hold flag")
@@ -448,7 +451,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 4: Verify all events have legal_hold=true
 			logger.Info("Step 4: Validating legal_hold flag on all events")
-			exportData, ok := exportResp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := exportResp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 			Expect(exportData.Events).To(HaveLen(3))
 			for i, event := range exportData.Events {
 				Expect(event.LegalHold).ToNot(BeNil(), "Event %d must have legal_hold field", i)
@@ -456,13 +460,13 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			}
 			logger.Info("✅ All events have legal_hold=true")
 
-		// Step 5: List active legal holds
-		logger.Info("Step 5: Listing active legal holds")
-		listResp, err := dsClient.ListLegalHolds(testCtx)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(listResp).ToNot(BeNil())
-		Expect(listResp.Holds).ToNot(BeNil(), "Holds list should not be nil")
-		Expect(listResp.Holds).ToNot(BeEmpty(), "Should have at least one active legal hold")
+			// Step 5: List active legal holds
+			logger.Info("Step 5: Listing active legal holds")
+			listResp, err := dsClient.ListLegalHolds(testCtx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(listResp).ToNot(BeNil())
+			Expect(listResp.Holds).ToNot(BeNil(), "Holds list should not be nil")
+			Expect(listResp.Holds).ToNot(BeEmpty(), "Should have at least one active legal hold")
 
 			// Find our test hold
 			var foundTestHold bool
@@ -507,16 +511,16 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			logger.Info("✅ Legal hold placed")
 
 			// Step 2: Release legal hold
-		logger.Info("Step 2: Releasing legal hold", "correlation_id", releaseCorrelationID)
-		releaseReason := "E2E test completed - case closed"
-		_, err = dsClient.ReleaseLegalHold(testCtx,
-			&dsgen.ReleaseLegalHoldReq{
-				ReleaseReason: releaseReason,
-			},
-			dsgen.ReleaseLegalHoldParams{
-				CorrelationID: releaseCorrelationID,
-			})
-		Expect(err).ToNot(HaveOccurred())
+			logger.Info("Step 2: Releasing legal hold", "correlation_id", releaseCorrelationID)
+			releaseReason := "E2E test completed - case closed"
+			_, err = dsClient.ReleaseLegalHold(testCtx,
+				&dsgen.ReleaseLegalHoldReq{
+					ReleaseReason: releaseReason,
+				},
+				dsgen.ReleaseLegalHoldParams{
+					CorrelationID: releaseCorrelationID,
+				})
+			Expect(err).ToNot(HaveOccurred())
 			logger.Info("✅ Legal hold released", "release_reason", releaseReason)
 
 			// Step 3: Export and verify legal_hold=false
@@ -528,7 +532,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 
 			// Step 4: Verify all events have legal_hold=false
 			logger.Info("Step 4: Validating legal_hold flag is false after release")
-			exportData, ok := exportResp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := exportResp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 			for i, event := range exportData.Events {
 				Expect(event.LegalHold).ToNot(BeNil())
 				Expect(event.LegalHold.Value).To(BeFalse(), "Event %d should have legal_hold=false after release", i)
@@ -589,7 +594,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				CorrelationID: dsgen.NewOptString(workflowCorrelationID),
 			})
 			Expect(err).ToNot(HaveOccurred())
-			exportData, ok := resp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := resp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 			logger.Info("✅ Export API returned successfully")
 
 			// Step 4: Verify Digital Signature (CC8.1)
@@ -603,20 +609,20 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 				"algorithm", exportData.ExportMetadata.SignatureAlgorithm.Value,
 				"signature_length", len(exportData.ExportMetadata.Signature))
 
-		// Step 5: Verify Hash Chain Integrity (CC8.1)
-		logger.Info("Step 5: Validating Hash Chain Integrity (CC8.1)")
-		verification := exportData.HashChainVerification
+			// Step 5: Verify Hash Chain Integrity (CC8.1)
+			logger.Info("Step 5: Validating Hash Chain Integrity (CC8.1)")
+			verification := exportData.HashChainVerification
 
-		// Debug: Log verification details
-		eventsCount := len(exportData.Events)
-		logger.Info("📊 Export verification details",
-			"events_returned", eventsCount,
-			"total_verified", verification.TotalEventsVerified,
-			"valid_chain", verification.ValidChainEvents,
-			"broken_chain", verification.BrokenChainEvents)
+			// Debug: Log verification details
+			eventsCount := len(exportData.Events)
+			logger.Info("📊 Export verification details",
+				"events_returned", eventsCount,
+				"total_verified", verification.TotalEventsVerified,
+				"valid_chain", verification.ValidChainEvents,
+				"broken_chain", verification.BrokenChainEvents)
 
-		Expect(verification.TotalEventsVerified).To(Equal(10))
-		Expect(verification.ValidChainEvents).To(Equal(10))
+			Expect(verification.TotalEventsVerified).To(Equal(10))
+			Expect(verification.ValidChainEvents).To(Equal(10))
 			Expect(verification.BrokenChainEvents).To(Equal(0))
 			Expect(verification.ChainIntegrityPercentage.Value).To(Equal(float32(100.0)))
 			logger.Info("✅ Hash chain 100% intact",
@@ -725,7 +731,8 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Verify signature and fingerprint
-			exportData, ok := resp.(*dsgen.AuditExportResponse); Expect(ok).To(BeTrue())
+			exportData, ok := resp.(*dsgen.AuditExportResponse)
+			Expect(ok).To(BeTrue())
 			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty())
 			Expect(exportData.ExportMetadata.CertificateFingerprint).ToNot(BeNil())
 			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty())
@@ -780,15 +787,15 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 		// Increment by seconds to ensure chronological order
 		eventTimestamp := baseTimestamp.Add(time.Duration(i) * time.Second)
 		req := dsgen.AuditEventRequest{
-		CorrelationID:  correlationID,
-		EventAction:    "soc2_test_action",
-		EventCategory:  dsgen.AuditEventRequestEventCategoryGateway, // Use gateway category for test events
-		EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
-		EventType:      "soc2_compliance_test",
-		EventTimestamp: eventTimestamp,
-		Version:        "1.0",
-		EventData:      newMinimalGatewayPayload("prometheus-alert", "soc2-compliance"),
-	}
+			CorrelationID:  correlationID,
+			EventAction:    "soc2_test_action",
+			EventCategory:  dsgen.AuditEventRequestEventCategoryGateway, // Use gateway category for test events
+			EventOutcome:   dsgen.AuditEventRequestEventOutcomeSuccess,
+			EventType:      "soc2_compliance_test",
+			EventTimestamp: eventTimestamp,
+			Version:        "1.0",
+			EventData:      newMinimalGatewayPayload("prometheus-alert", "soc2-compliance"),
+		}
 
 		resp, err := dsClient.CreateAuditEvent(ctx, &req)
 		Expect(err).ToNot(HaveOccurred())
@@ -878,4 +885,3 @@ func WaitForPodsReady(kubeconfigPath, namespace, labelSelector string, timeout t
 	}
 	return fmt.Errorf("pods with label %s did not become ready in namespace %s within %v", labelSelector, namespace, timeout)
 }
-

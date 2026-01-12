@@ -644,9 +644,9 @@ receivers:
 					receiverName := config.Route.FindReceiver(labels)
 					Expect(receiverName).To(Equal(expectedReceiver), description)
 				},
-			Entry("resolved → silent-noop",
-				routing.InvestigationOutcomeResolved, "silent-noop",
-				"Self-resolved alerts skip notification to prevent alert fatigue"),
+				Entry("resolved → silent-noop",
+					routing.InvestigationOutcomeResolved, "silent-noop",
+					"Self-resolved alerts skip notification to prevent alert fatigue"),
 				Entry("OPS: inconclusive → slack-ops",
 					routing.InvestigationOutcomeInconclusive, "slack-ops",
 					"Inconclusive investigations route to ops for human review"),

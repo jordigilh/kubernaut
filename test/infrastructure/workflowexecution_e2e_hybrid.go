@@ -938,8 +938,8 @@ func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace,
 					Containers: []corev1.Container{
 						{
 							Name:            "controller",
-							Image:           imageName,            // Per Consolidated API Migration (January 2026)
-							ImagePullPolicy: corev1.PullNever,    // DD-REGISTRY-001: Use local image loaded into Kind
+							Image:           imageName,        // Per Consolidated API Migration (January 2026)
+							ImagePullPolicy: corev1.PullNever, // DD-REGISTRY-001: Use local image loaded into Kind
 							Args: []string{
 								"--metrics-bind-address=:9090",
 								"--health-probe-bind-address=:8081",
@@ -1123,5 +1123,3 @@ func DeleteWorkflowExecutionCluster(clusterName string, testsFailed bool, output
 	// If this becomes an issue again, we may need to add timeout support to shared function
 	return DeleteCluster(clusterName, "workflowexecution", testsFailed, output)
 }
-
-

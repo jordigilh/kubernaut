@@ -37,4 +37,3 @@ func GenerateUniqueNamespace() string {
 		GinkgoParallelProcess(),
 		uuid.New().String()[:8]) // First 8 chars of UUID for brevity
 }
-

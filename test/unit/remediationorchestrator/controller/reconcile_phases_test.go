@@ -35,8 +35,8 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
-	"github.com/prometheus/client_golang/prometheus"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ========================================
@@ -93,6 +93,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			mockRouting := &MockRoutingEngine{}
 			reconciler := prodcontroller.NewReconciler(
 				fakeClient,
+				fakeClient, // apiReader (same as client for tests)
 				scheme,
 				nil, // Audit store is nil for unit tests (DD-AUDIT-003 compliant)
 				nil, // No EventRecorder needed for unit tests
@@ -564,8 +565,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
 				newRemediationApprovalRequestRejected("rar-test-rr", "default", "test-rr", "admin@example.com", "Too risky"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
-			expectedPhase: remediationv1.PhaseFailed,
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.FailureReason).ToNot(BeNil())
@@ -583,8 +584,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
 				newRemediationApprovalRequestExpired("rar-test-rr", "default", "test-rr"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
-			expectedPhase: remediationv1.PhaseFailed,
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.FailureReason).ToNot(BeNil())
@@ -603,7 +604,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				// RAR not created yet
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
-			expectedPhase:  remediationv1.PhaseAwaitingApproval, // Stay in same phase
+			expectedPhase:  remediationv1.PhaseAwaitingApproval,        // Stay in same phase
 			expectedResult: ctrl.Result{RequeueAfter: 5 * time.Second}, // RequeueGenericError
 		}),
 
@@ -634,8 +635,8 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			initialObjects: []client.Object{
 				newRemediationRequestWithTimeout("test-rr", "default", remediationv1.PhasePending, -2*time.Hour), // Started 2 hours ago
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
-			expectedPhase: remediationv1.PhaseTimedOut,
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.TimeoutTime).ToNot(BeNil())
@@ -735,4 +736,3 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 		}),
 	)
 })
-

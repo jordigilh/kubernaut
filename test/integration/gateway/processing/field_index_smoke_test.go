@@ -233,7 +233,7 @@ var _ = Describe("DD-TEST-009: Field Index Smoke Test (DIRECT validation)", func
 			return len(rrList.Items)
 		}, "5s", "100ms").Should(Equal(1),
 			"Field selector should return ONLY matching fingerprint (O(1) query, not O(n) filter)")
-		
+
 		Expect(rrList.Items[0].Spec.SignalFingerprint).To(Equal(fingerprint2),
 			"Returned RR should have fingerprint2")
 

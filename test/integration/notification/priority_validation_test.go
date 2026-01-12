@@ -76,8 +76,8 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -145,32 +145,32 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 		It("should require priority field to be set (BR-NOT-057)", func() {
 			notifName := fmt.Sprintf("priority-required-%s", uniqueSuffix)
 
-		// Note: Priority field has +kubebuilder:default=medium but without omitempty tag,
-		// Go's zero value (empty string) is sent to API and fails CRD validation.
-		// This test validates that explicitly setting a valid priority works.
-		notif := &notificationv1alpha1.NotificationRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      notifName,
-				Namespace: testNamespace,
-				Generation: 1, // K8s increments on create/update
-			},
-			Spec: notificationv1alpha1.NotificationRequestSpec{
-				Type:     notificationv1alpha1.NotificationTypeSimple,
-				Priority: notificationv1alpha1.NotificationPriorityMedium, // Explicitly set to avoid zero value
-				Subject:  "Priority Required Test",
-				Body:     "Testing priority field requirement",
-				Recipients: []notificationv1alpha1.Recipient{
-					{Email: "test@example.com"},
+			// Note: Priority field has +kubebuilder:default=medium but without omitempty tag,
+			// Go's zero value (empty string) is sent to API and fails CRD validation.
+			// This test validates that explicitly setting a valid priority works.
+			notif := &notificationv1alpha1.NotificationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       notifName,
+					Namespace:  testNamespace,
+					Generation: 1, // K8s increments on create/update
 				},
-				Channels: []notificationv1alpha1.Channel{
-					notificationv1alpha1.ChannelConsole,
+				Spec: notificationv1alpha1.NotificationRequestSpec{
+					Type:     notificationv1alpha1.NotificationTypeSimple,
+					Priority: notificationv1alpha1.NotificationPriorityMedium, // Explicitly set to avoid zero value
+					Subject:  "Priority Required Test",
+					Body:     "Testing priority field requirement",
+					Recipients: []notificationv1alpha1.Recipient{
+						{Email: "test@example.com"},
+					},
+					Channels: []notificationv1alpha1.Channel{
+						notificationv1alpha1.ChannelConsole,
+					},
 				},
-			},
-		}
+			}
 
-		err := k8sClient.Create(ctx, notif)
-		// Should succeed with explicit priority value
-		Expect(err).NotTo(HaveOccurred(), "BR-NOT-057: CRD creation should succeed with valid priority")
+			err := k8sClient.Create(ctx, notif)
+			// Should succeed with explicit priority value
+			Expect(err).NotTo(HaveOccurred(), "BR-NOT-057: CRD creation should succeed with valid priority")
 
 			// Verify a priority value was assigned (default enum value)
 			created := &notificationv1alpha1.NotificationRequest{}
@@ -201,8 +201,8 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -260,8 +260,8 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/notification-type": "escalation",
@@ -314,8 +314,8 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"kubernaut.ai/notification-type": "completed",
@@ -379,8 +379,8 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			for i, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -424,8 +424,8 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}

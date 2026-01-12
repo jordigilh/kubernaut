@@ -105,7 +105,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		// Per DD-TEST-001: All parallel processes share same Data Storage instance
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18090" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
 		// ✅ DD-API-001: Create OpenAPI client for audit queries (MANDATORY)
@@ -578,10 +578,10 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			resp := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Signal should be processed")
 
-		var gatewayResp GatewayResponse
-		err := json.Unmarshal(resp.Body, &gatewayResp)
-		Expect(err).ToNot(HaveOccurred())
-		correlationID := gatewayResp.RemediationRequestName
+			var gatewayResp GatewayResponse
+			err := json.Unmarshal(resp.Body, &gatewayResp)
+			Expect(err).ToNot(HaveOccurred())
+			correlationID := gatewayResp.RemediationRequestName
 
 			By("2. Query Data Storage for crd.created audit event")
 			// ✅ DD-API-001: Use OpenAPI client for type-safe audit queries

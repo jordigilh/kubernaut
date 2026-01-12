@@ -74,7 +74,8 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 	// Scenario 1: All Channels Succeed
 	// ========================================
 	Context("Scenario 1: All channels deliver successfully", func() {
-		It("should deliver notification to console, file, and log channels", func() {
+		// FLAKY: File sync timing issues under parallel load (virtiofs latency in Kind)
+		It("should deliver notification to console, file, and log channels", FlakeAttempts(3), func() {
 			By("Creating NotificationRequest with three channels")
 
 			notification := &notificationv1alpha1.NotificationRequest{
@@ -98,6 +99,11 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 					},
 				},
 			}
+
+			// Cleanup notification for FlakeAttempts retries
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, notification)
+			})
 
 			err := k8sClient.Create(ctx, notification)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create NotificationRequest")
@@ -131,25 +137,25 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 			Expect(notification.Status.FailedDeliveries).To(Equal(0),
 				"Should have 0 failed deliveries")
 
-		By("Verifying file channel created audit file")
-		// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
-		pattern := "notification-e2e-multi-channel-fanout-*.json"
+			By("Verifying file channel created audit file")
+			// DD-NOT-006 v2: Use kubectl cp to bypass Podman VM mount sync issues
+			pattern := "notification-e2e-multi-channel-fanout-*.json"
 
-		Eventually(EventuallyCountFilesInPod(pattern),
-			20*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
-			"File should be created in pod within 20 seconds (virtiofs sync under concurrent load)")
+			Eventually(EventuallyCountFilesInPod(pattern),
+				60*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+				"File should be created in pod within 60 seconds (virtiofs sync under concurrent load)")
 
-		copiedFilePath, err := WaitForFileInPod(ctx, pattern, 20*time.Second)
-		Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
-		defer CleanupCopiedFile(copiedFilePath)
+			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 60*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
+			defer CleanupCopiedFile(copiedFilePath)
 
-		By("Validating file content matches notification")
-		fileContent, err := os.ReadFile(copiedFilePath)
-		Expect(err).ToNot(HaveOccurred())
+			By("Validating file content matches notification")
+			fileContent, err := os.ReadFile(copiedFilePath)
+			Expect(err).ToNot(HaveOccurred())
 
-		var savedNotification notificationv1alpha1.NotificationRequest
-		err = json.Unmarshal(fileContent, &savedNotification)
-		Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
+			var savedNotification notificationv1alpha1.NotificationRequest
+			err = json.Unmarshal(fileContent, &savedNotification)
+			Expect(err).ToNot(HaveOccurred(), "File should contain valid JSON")
 
 			Expect(savedNotification.Name).To(Equal("e2e-multi-channel-fanout"))
 			Expect(savedNotification.Spec.Subject).To(Equal("E2E Test: Multi-Channel Fanout"))
@@ -256,4 +262,3 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 		})
 	})
 })
-

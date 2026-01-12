@@ -27,7 +27,7 @@ import (
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // SERIAL EXECUTION: AA integration suite runs serially for 100% reliability.
@@ -46,16 +46,16 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      testutil.UniqueTestName("integration-test"),
-				Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "test-remediation",
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      helpers.UniqueTestName("integration-test"),
 					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "test-remediation",
+						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+					},
 					RemediationID: "test-rem-001",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -64,35 +64,35 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-						TargetResource: aianalysisv1alpha1.TargetResource{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-						},
-						EnrichmentResults: sharedtypes.EnrichmentResults{
-							DetectedLabels: &sharedtypes.DetectedLabels{
-								GitOpsManaged: true,
-								PDBProtected:  true,
+							TargetResource: aianalysisv1alpha1.TargetResource{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 							},
-							OwnerChain: []sharedtypes.OwnerChainEntry{
-								{Namespace: testNamespace, Kind: "Deployment", Name: "test-app"}, // DD-TEST-002
+							EnrichmentResults: sharedtypes.EnrichmentResults{
+								DetectedLabels: &sharedtypes.DetectedLabels{
+									GitOpsManaged: true,
+									PDBProtected:  true,
+								},
+								OwnerChain: []sharedtypes.OwnerChainEntry{
+									{Namespace: testNamespace, Kind: "Deployment", Name: "test-app"}, // DD-TEST-002
+								},
 							},
-						},
 						},
 						AnalysisTypes: []string{"investigation", "root-cause", "workflow-selection"},
 					},
 				},
 			}
-	})
+		})
 
-	It("should transition through all phases successfully", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should transition through all phases successfully", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		By("Creating AIAnalysis CRD")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating AIAnalysis CRD")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			// The controller processes phases very quickly, so instead of checking
 			// intermediate phases (which may have already transitioned by the time
@@ -109,23 +109,23 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
-		// Staging environment should auto-approve per Rego policy
-		Expect(analysis.Status.ApprovalRequired).To(BeFalse())
-		// Should have a selected workflow from HolmesGPT mock
-		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
-		Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("mock-crashloop-config-fix-v1"))
+			// Staging environment should auto-approve per Rego policy
+			Expect(analysis.Status.ApprovalRequired).To(BeFalse())
+			// Should have a selected workflow from HolmesGPT mock
+			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
+			Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("mock-crashloop-config-fix-v1"))
 		})
 
-	It("should require approval for production environment - BR-AI-013", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should require approval for production environment - BR-AI-013", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
+			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
 
-		By("Creating production AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating production AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -138,18 +138,18 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
 		})
 
-	It("should handle recovery attempts with escalation - BR-AI-013", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should handle recovery attempts with escalation - BR-AI-013", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		// Mark as recovery attempt #3 (escalation threshold)
-		analysis.Spec.IsRecoveryAttempt = true
-		analysis.Spec.RecoveryAttemptNumber = 3
+			// Mark as recovery attempt #3 (escalation threshold)
+			analysis.Spec.IsRecoveryAttempt = true
+			analysis.Spec.RecoveryAttemptNumber = 3
 
-		By("Creating recovery attempt AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating recovery attempt AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Waiting for completion")
 			Eventually(func() string {
@@ -167,16 +167,16 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
-		analysis = &aianalysisv1alpha1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      testutil.UniqueTestName("error-recovery"),
-				Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-			},
-			Spec: aianalysisv1alpha1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      "test-remediation",
+			analysis = &aianalysisv1alpha1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      helpers.UniqueTestName("error-recovery"),
 					Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				},
+				Spec: aianalysisv1alpha1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "test-remediation",
+						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+					},
 					RemediationID: "test-rem-002",
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
@@ -185,30 +185,30 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",
-						TargetResource: aianalysisv1alpha1.TargetResource{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+							TargetResource: aianalysisv1alpha1.TargetResource{
+								Kind:      "Pod",
+								Name:      "test-pod",
+								Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
+							},
+							EnrichmentResults: sharedtypes.EnrichmentResults{},
 						},
-						EnrichmentResults: sharedtypes.EnrichmentResults{},
-					},
 						AnalysisTypes: []string{"investigation"},
 					},
 				},
 			}
-	})
+		})
 
-	It("should increment retry count on transient failures", func() {
-		// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
-		defer func() {
-			_ = k8sClient.Delete(ctx, analysis)
-		}()
+		It("should increment retry count on transient failures", func() {
+			// Per 03-testing-strategy.mdc: Cleanup in defer for extra safety
+			defer func() {
+				_ = k8sClient.Delete(ctx, analysis)
+			}()
 
-		// This test verifies the retry mechanism works correctly
-		// The mock HolmesGPT-API can be configured to return transient errors
+			// This test verifies the retry mechanism works correctly
+			// The mock HolmesGPT-API can be configured to return transient errors
 
-		By("Creating AIAnalysis")
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+			By("Creating AIAnalysis")
+			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
 			By("Verifying retry annotation exists after failure")
 			// This assertion depends on HolmesGPT-API behavior

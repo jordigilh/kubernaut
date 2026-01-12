@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package testutil
+package auth
 
 import (
 	"net/http"
@@ -31,7 +31,7 @@ import (
 // WHY SEPARATE FROM PRODUCTION CODE?
 // - ❌ Test logic must NEVER be in production/business code
 // - ✅ Production binaries should contain ZERO test-specific code
-// - ✅ Clear separation: pkg/shared/auth = production, pkg/testutil = test
+// - ✅ Clear separation: pkg/shared/auth = production, test/shared = test
 //
 // USAGE (E2E Tests Only - External Test Runners):
 //
@@ -50,7 +50,7 @@ import (
 // - Solution: Acquire token via TokenRequest API or kubectl, inject via this transport
 //
 // Authority: DD-AUTH-005 (Authoritative client authentication pattern)
-// Related: pkg/testutil/auth_mock.go (integration test mock transport)
+// Related: test/shared/auth_mock.go (integration test mock transport)
 // ========================================
 
 // StaticTokenTransport implements http.RoundTripper for E2E tests.
@@ -118,4 +118,3 @@ func (t *StaticTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 
 	return t.base.RoundTrip(reqClone)
 }
-

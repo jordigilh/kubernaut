@@ -28,11 +28,11 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/handler"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var _ = Describe("AIAnalysisHandler", func() {
@@ -51,7 +51,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("IsWorkflowResolutionFailed", func() {
 			// Test #2: Returns true for WorkflowResolutionFailed
 			It("should return true when Phase=Failed and Reason=WorkflowResolutionFailed", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "WorkflowResolutionFailed"
 
@@ -60,7 +60,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #3: Returns false for other failures
 			It("should return false when Phase=Failed but Reason is different", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 
@@ -69,7 +69,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #4: Returns false for Completed phase
 			It("should return false when Phase=Completed", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
 				ai.Status.Reason = "WorkflowResolutionFailed"
 
@@ -80,7 +80,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("IsWorkflowNotNeeded", func() {
 			// Test #5: Returns true for WorkflowNotNeeded
 			It("should return true when Phase=Completed and Reason=WorkflowNotNeeded", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
 				ai.Status.Reason = "WorkflowNotNeeded"
 
@@ -89,7 +89,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #6: Returns false for normal completion
 			It("should return false when Phase=Completed but Reason is different", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
 				ai.Status.Reason = ""
 
@@ -98,7 +98,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #7: Returns false for Failed phase
 			It("should return false when Phase=Failed", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "WorkflowNotNeeded"
 
@@ -109,7 +109,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("RequiresManualReview", func() {
 			// Test #8: Returns true for WorkflowResolutionFailed
 			It("should return true for WorkflowResolutionFailed", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "WorkflowResolutionFailed"
 
@@ -118,7 +118,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #9: Returns false for normal completion
 			It("should return false for normal completion", func() {
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
 
 				Expect(handler.RequiresManualReview(ai)).To(BeFalse())
@@ -142,12 +142,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("In-Progress Phases", func() {
 			// Test #10: Pending phase - no action
 			It("should return no error for Pending phase", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Pending"
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -157,12 +157,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #11: Investigating phase - no action
 			It("should return no error for Investigating phase", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Investigating"
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -172,12 +172,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #12: Analyzing phase - no action
 			It("should return no error for Analyzing phase", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Analyzing"
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -189,12 +189,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("BR-ORCH-037: WorkflowNotNeeded Handling", func() {
 			// Test #13: Sets RR status to Completed with NoActionRequired
 			It("should set RR status to Completed with Outcome=NoActionRequired", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
 				ai.Status.Reason = "WorkflowNotNeeded"
 				ai.Status.SubReason = "ProblemResolved"
@@ -217,12 +217,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("BR-ORCH-001: Approval Required", func() {
 			// Test #14: Creates approval notification when ApprovalRequired=true
 			It("should create approval notification when ApprovalRequired=true", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
 				ai.Status.ApprovalRequired = true
 				ai.Status.ApprovalReason = "low_confidence"
@@ -243,12 +243,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("BR-ORCH-036: WorkflowResolutionFailed Handling", func() {
 			// Test #15: Creates manual review notification
 			It("should create manual review notification for WorkflowResolutionFailed", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "WorkflowResolutionFailed"
 				ai.Status.SubReason = "WorkflowNotFound"
@@ -269,12 +269,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #16: Sets RR status to Failed with ManualReviewRequired
 			It("should set RR status to Failed with Outcome=ManualReviewRequired", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "WorkflowResolutionFailed"
 				ai.Status.SubReason = "NoMatchingWorkflows"
@@ -295,12 +295,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 			// Test #17: Includes RootCauseAnalysis in context
 			It("should include RootCauseAnalysis in notification context", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "WorkflowResolutionFailed"
 				ai.Status.SubReason = "LowConfidence"
@@ -321,12 +321,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 		Context("Other Failures", func() {
 			// Test #18: Propagates non-WorkflowResolutionFailed failures
 			It("should propagate failure to RR for non-WorkflowResolutionFailed", func() {
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
 
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
 				ai.Status.Reason = "APIError"
 				ai.Status.Message = "LLM API timeout"

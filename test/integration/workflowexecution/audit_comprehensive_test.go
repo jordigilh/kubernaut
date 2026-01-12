@@ -60,8 +60,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Creating a WorkflowExecution")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("audit-started-%d", time.Now().UnixNano()),
-					Namespace: DefaultNamespace,
+					Name:       fmt.Sprintf("audit-started-%d", time.Now().UnixNano()),
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -110,8 +110,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Creating a WorkflowExecution with correlation ID")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("audit-started-meta-%d", time.Now().UnixNano()),
-					Namespace: DefaultNamespace,
+					Name:       fmt.Sprintf("audit-started-meta-%d", time.Now().UnixNano()),
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 					Labels: map[string]string{
 						"correlation-id": fmt.Sprintf("corr-%d", time.Now().UnixNano()),
@@ -162,8 +162,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Creating a WorkflowExecution")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("audit-completed-%d", time.Now().UnixNano()),
-					Namespace: DefaultNamespace,
+					Name:       fmt.Sprintf("audit-completed-%d", time.Now().UnixNano()),
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -247,8 +247,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Creating a WorkflowExecution with invalid workflow reference")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("audit-preexec-fail-%d", time.Now().UnixNano()),
-					Namespace: DefaultNamespace,
+					Name:       fmt.Sprintf("audit-preexec-fail-%d", time.Now().UnixNano()),
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -299,8 +299,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Creating a WorkflowExecution that will complete")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("audit-ordering-%d", time.Now().UnixNano()),
-					Namespace: DefaultNamespace,
+					Name:       fmt.Sprintf("audit-ordering-%d", time.Now().UnixNano()),
+					Namespace:  DefaultNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -357,16 +357,16 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			pr.Status.Conditions = duckv1.Conditions{
 				{Type: apis.ConditionSucceeded, Status: corev1.ConditionTrue, Reason: "Succeeded"},
 			}
-		pr.Status.CompletionTime = &now
-		Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
+			pr.Status.CompletionTime = &now
+			Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
 
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
-			return updated.Status.Phase
-		}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				return updated.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
-		Expect(updated.Status.CompletionTime).ToNot(BeNil())
-		GinkgoWriter.Println("✅ Step 3: workflow.completed audit event emitted")
+			Expect(updated.Status.CompletionTime).ToNot(BeNil())
+			GinkgoWriter.Println("✅ Step 3: workflow.completed audit event emitted")
 			GinkgoWriter.Println("✅ Audit events emitted in correct lifecycle order: started → completed")
 		})
 	})

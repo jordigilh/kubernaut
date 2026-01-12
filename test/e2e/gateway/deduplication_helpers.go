@@ -17,9 +17,9 @@ limitations under the License.
 package gateway
 
 import (
-	"context"
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -53,13 +54,13 @@ type GatewayResponse struct {
 
 // PrometheusAlertPayload represents a Prometheus AlertManager webhook payload
 type PrometheusAlertPayload struct {
-	AlertName   string            `json:"alertName"`
-	Namespace   string            `json:"namespace"`
-	Severity    string            `json:"severity"`
-	PodName     string            `json:"podName"`
+	AlertName   string             `json:"alertName"`
+	Namespace   string             `json:"namespace"`
+	Severity    string             `json:"severity"`
+	PodName     string             `json:"podName"`
 	Resource    ResourceIdentifier `json:"resource"`
-	Labels      map[string]string `json:"labels"`
-	Annotations map[string]string `json:"annotations"`
+	Labels      map[string]string  `json:"labels"`
+	Annotations map[string]string  `json:"annotations"`
 }
 
 // WebhookResponse represents an HTTP response
@@ -249,6 +250,31 @@ func GenerateUniqueNamespace(prefix string) string {
 	return fmt.Sprintf("%s-%d-%s", prefix, processID, timestamp)
 }
 
+// CreateNamespaceAndWait creates a namespace and waits for it to be ready
+// This prevents race conditions where Gateway tries to create CRDs in non-existent namespaces
+func CreateNamespaceAndWait(ctx context.Context, k8sClient client.Client, namespaceName string) error {
+	// Create namespace
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: namespaceName},
+	}
+
+	if err := k8sClient.Create(ctx, ns); err != nil {
+		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// Wait for namespace to be active (with timeout)
+	// This is critical for parallel tests to avoid namespace conflicts
+	Eventually(func() bool {
+		var createdNs corev1.Namespace
+		if err := k8sClient.Get(ctx, client.ObjectKey{Name: namespaceName}, &createdNs); err != nil {
+			return false
+		}
+		return createdNs.Status.Phase == corev1.NamespaceActive
+	}, "10s", "100ms").Should(BeTrue(), fmt.Sprintf("Namespace %s should become active", namespaceName))
+
+	return nil
+}
+
 // =============================================================================
 // TEMPORARY STUBS for E2E test compilation
 // TODO (GW Team): Properly refactor tests to use E2E patterns
@@ -284,7 +310,6 @@ func createPrometheusAlertPayload(opts PrometheusAlertOptions) []byte {
 		Annotations: opts.Annotations,
 	})
 }
-
 
 // sendWebhook is a compatibility shim for E2E tests
 // TODO (GW Team): Replace calls with direct HTTP requests to gatewayURL

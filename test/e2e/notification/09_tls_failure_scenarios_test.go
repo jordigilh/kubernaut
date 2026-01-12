@@ -70,8 +70,8 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notificationName := fmt.Sprintf("tls-conn-refused-%s", uniqueSuffix)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: controllerNamespace,
+					Name:       notificationName,
+					Namespace:  controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -137,8 +137,8 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notificationName := fmt.Sprintf("tls-timeout-%s", uniqueSuffix)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: controllerNamespace,
+					Name:       notificationName,
+					Namespace:  controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -195,8 +195,8 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notificationName := fmt.Sprintf("tls-handshake-%s", uniqueSuffix)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: controllerNamespace,
+					Name:       notificationName,
+					Namespace:  controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -238,8 +238,8 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notificationName := fmt.Sprintf("tls-multichannel-%s", uniqueSuffix)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: controllerNamespace,
+					Name:       notificationName,
+					Namespace:  controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -254,18 +254,27 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#multi-tls-test"},
 					},
+					// Fast retry policy to complete test within 90s timeout
+					RetryPolicy: &notificationv1alpha1.RetryPolicy{
+						MaxAttempts:           3,  // Fewer attempts for faster completion
+						InitialBackoffSeconds: 1,  // Fast retries
+						BackoffMultiplier:     2,  // 1s, 2s, 4s = 7s total
+						MaxBackoffSeconds:     60, // CRD minimum
+					},
 				},
 			}
 
 			Expect(k8sClient.Create(ctx, notif)).Should(Succeed())
 
 			By("Verifying business outcome: Partial delivery on mixed TLS scenario")
+			// DD-E2E-003: Wait for retries to exhaust if Slack fails
+			// Default retry policy may take up to 60s (5 attempts with exponential backoff)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: controllerNamespace}, notif)
 				return notif.Status.Phase
-			}, 30*time.Second, 500*time.Millisecond).Should(Or(
+			}, 90*time.Second, 500*time.Millisecond).Should(Or(
 				Equal(notificationv1alpha1.NotificationPhaseSent),          // Both succeeded
-				Equal(notificationv1alpha1.NotificationPhasePartiallySent), // Console succeeded
+				Equal(notificationv1alpha1.NotificationPhasePartiallySent), // Console succeeded, Slack exhausted retries
 			))
 
 			GinkgoWriter.Printf("  Status: %s (succeeded: %d, failed: %d)\n",
@@ -291,8 +300,8 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notificationName := fmt.Sprintf("tls-retry-%s", uniqueSuffix)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: controllerNamespace,
+					Name:       notificationName,
+					Namespace:  controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -344,8 +353,8 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 			notificationName := fmt.Sprintf("tls-invalid-cert-%s", uniqueSuffix)
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notificationName,
-					Namespace: controllerNamespace,
+					Name:       notificationName,
+					Namespace:  controllerNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{

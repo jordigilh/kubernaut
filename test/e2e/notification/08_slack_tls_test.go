@@ -71,8 +71,8 @@ var _ = Describe("Slack Delivery TLS Certificate Validation (Integration)", Labe
 		// Create test notification fixture
 		notification = &notificationv1alpha1.NotificationRequest{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("tls-test-%d", time.Now().UnixNano()),
-				Namespace: controllerNamespace,
+				Name:       fmt.Sprintf("tls-test-%d", time.Now().UnixNano()),
+				Namespace:  controllerNamespace,
 				Generation: 1, // K8s increments on create/update
 			},
 			Spec: notificationv1alpha1.NotificationRequestSpec{

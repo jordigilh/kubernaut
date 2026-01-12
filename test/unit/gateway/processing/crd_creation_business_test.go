@@ -227,54 +227,54 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 				"Fingerprint label enables filtering duplicate signals")
 		})
 
-	It("creates CRD with timestamp-based naming for unique occurrences", func() {
-		// BUSINESS OUTCOME: Same problem can be remediated multiple times
-		// DD-015: Timestamp ensures each occurrence creates unique CRD
+		It("creates CRD with timestamp-based naming for unique occurrences", func() {
+			// BUSINESS OUTCOME: Same problem can be remediated multiple times
+			// DD-015: Timestamp ensures each occurrence creates unique CRD
 
-		// Use MockClock for fast, deterministic testing (no time.Sleep needed)
-		mockClock := processing.NewMockClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
-		crdCreatorWithClock := processing.NewCRDCreatorWithClock(
-			k8sClient,
-			logr.Discard(),
-			metricsInstance,
-			fallbackNS,
-			retryConfig,
-			mockClock,
-		)
+			// Use MockClock for fast, deterministic testing (no time.Sleep needed)
+			mockClock := processing.NewMockClock(time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC))
+			crdCreatorWithClock := processing.NewCRDCreatorWithClock(
+				k8sClient,
+				logr.Discard(),
+				metricsInstance,
+				fallbackNS,
+				retryConfig,
+				mockClock,
+			)
 
-		signal := &types.NormalizedSignal{
-			AlertName:    "SameIssue",
-			Fingerprint:  "same-fingerprint",
-			Severity:     "critical",
-			SourceType:   "prometheus-alert",
-			Source:       "alertmanager",
-			Namespace:    testNamespace,
-			ReceivedTime: time.Now(),
-			Resource: types.ResourceIdentifier{
-				Kind: "Pod",
-				Name: "test-pod",
-			},
-		}
+			signal := &types.NormalizedSignal{
+				AlertName:    "SameIssue",
+				Fingerprint:  "same-fingerprint",
+				Severity:     "critical",
+				SourceType:   "prometheus-alert",
+				Source:       "alertmanager",
+				Namespace:    testNamespace,
+				ReceivedTime: time.Now(),
+				Resource: types.ResourceIdentifier{
+					Kind: "Pod",
+					Name: "test-pod",
+				},
+			}
 
-		// Create first occurrence
-		rr1, err1 := crdCreatorWithClock.CreateRemediationRequest(ctx, signal)
-		Expect(err1).NotTo(HaveOccurred())
+			// Create first occurrence
+			rr1, err1 := crdCreatorWithClock.CreateRemediationRequest(ctx, signal)
+			Expect(err1).NotTo(HaveOccurred())
 
-		// Advance clock by 1 second (instant, no actual wait)
-		mockClock.Advance(1 * time.Second)
+			// Advance clock by 1 second (instant, no actual wait)
+			mockClock.Advance(1 * time.Second)
 
-		// Create second occurrence (same problem recurring)
-		rr2, err2 := crdCreatorWithClock.CreateRemediationRequest(ctx, signal)
-		Expect(err2).NotTo(HaveOccurred())
+			// Create second occurrence (same problem recurring)
+			rr2, err2 := crdCreatorWithClock.CreateRemediationRequest(ctx, signal)
+			Expect(err2).NotTo(HaveOccurred())
 
-		// BUSINESS OUTCOME: Different CRD names enable tracking each remediation attempt
-		Expect(rr1.Name).NotTo(Equal(rr2.Name),
-			"Timestamp-based naming allows same problem to be remediated multiple times")
-		Expect(rr1.Name).To(MatchRegexp(`^rr-same-fingerp-\d+$`),
-			"CRD name follows rr-{fingerprint-prefix}-{unix-timestamp} pattern")
-		Expect(rr2.Name).To(MatchRegexp(`^rr-same-fingerp-\d+$`),
-			"Each occurrence gets unique timestamp in CRD name")
-	})
+			// BUSINESS OUTCOME: Different CRD names enable tracking each remediation attempt
+			Expect(rr1.Name).NotTo(Equal(rr2.Name),
+				"Timestamp-based naming allows same problem to be remediated multiple times")
+			Expect(rr1.Name).To(MatchRegexp(`^rr-same-fingerp-\d+$`),
+				"CRD name follows rr-{fingerprint-prefix}-{unix-timestamp} pattern")
+			Expect(rr2.Name).To(MatchRegexp(`^rr-same-fingerp-\d+$`),
+				"Each occurrence gets unique timestamp in CRD name")
+		})
 	})
 
 	Context("Business Correctness - Resource Validation", func() {

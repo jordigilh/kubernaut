@@ -34,9 +34,9 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 
 	"github.com/google/uuid"
 )
@@ -50,7 +50,7 @@ import (
 //
 // Per TESTING_GUIDELINES.md: E2E tests validate business value delivery
 //
-// V1.0 Maturity Requirement: Audit validation uses testutil.ValidateAuditEvent (P0 - MANDATORY)
+// V1.0 Maturity Requirement: Audit validation uses validators.ValidateAuditEvent (P0 - MANDATORY)
 // Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Tests MUST use testutil validators
 //
 // V1.0 Maturity Requirement: Use OpenAPI client instead of raw HTTP (P1 enhancement)
@@ -616,17 +616,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			By("Verifying workflowexecution.workflow.failed event includes complete failure details (ADR-034 v1.5)")
 			Expect(failedEvent).ToNot(BeNil())
 
-			// V1.0 Maturity Requirement: Use testutil.ValidateAuditEvent (P0 - MANDATORY)
+			// V1.0 Maturity Requirement: Use validators.ValidateAuditEvent (P0 - MANDATORY)
 			// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Tests MUST use testutil validators
-			By("Validating audit event structure with testutil.ValidateAuditEvent")
-			testutil.ValidateAuditEvent(*failedEvent, testutil.ExpectedAuditEvent{
+			By("Validating audit event structure with validators.ValidateAuditEvent")
+			validators.ValidateAuditEvent(*failedEvent, validators.ExpectedAuditEvent{
 				EventType:     "workflowexecution.workflow.failed", // Per ADR-034 v1.5
 				EventCategory: ogenclient.AuditEventEventCategoryWorkflowexecution,
 				EventAction:   "failed", // EventAction = last part after "." (audit.go:109)
-				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
 				CorrelationID: wfe.Spec.RemediationRequestRef.Name, // RemediationRequest name is the correlation ID
 			})
-			GinkgoWriter.Println("✅ testutil.ValidateAuditEvent passed for workflowexecution.workflow.failed event (ADR-034 v1.5)")
+			GinkgoWriter.Println("✅ validators.ValidateAuditEvent passed for workflowexecution.workflow.failed event (ADR-034 v1.5)")
 
 			// Additional business-specific validation (complements testutil validation)
 			Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))

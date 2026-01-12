@@ -78,7 +78,7 @@ func (d *directStorageClient) StoreBatch(ctx context.Context, events []*ogenclie
 //
 // ========================================
 
-var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client", "timing"), func() {
+var _ = Describe("Audit Client Timing Integration Tests", Label("audit-client", "timing"), func() {
 	var (
 		auditStore    audit.AuditStore
 		testCtx       context.Context
@@ -135,42 +135,42 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 	Context("Flush Timing (RO Team Bug Reproduction)", func() {
 		It("should flush event within configured interval (1 second)", func() {
 			By("Creating audit event using REAL audit client")
-		// Use valid discriminated union type for event data
-		eventData := ogenclient.AuditEventRequestEventData{
-			Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
-			AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
-				EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
-				AnalysisName: "timing-test-analysis",
-				Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
-			},
-		}
+			// Use valid discriminated union type for event data
+			eventData := ogenclient.AuditEventRequestEventData{
+				Type: ogenclient.AuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData,
+				AIAnalysisAuditPayload: ogenclient.AIAnalysisAuditPayload{
+					EventType:    ogenclient.AIAnalysisAuditPayloadEventTypeAianalysisAnalysisCompleted,
+					AnalysisName: "timing-test-analysis",
+					Phase:        ogenclient.AIAnalysisAuditPayloadPhaseCompleted,
+				},
+			}
 
-		event := &ogenclient.AuditEventRequest{
-			Version:        "1.0",
-			EventType:      "aianalysis.analysis.completed",
-			EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
-			EventAction:    "test_action",
-			EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
-			EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
-			CorrelationID:  correlationID,
-			EventData:      eventData,
-		}
+			event := &ogenclient.AuditEventRequest{
+				Version:        "1.0",
+				EventType:      "aianalysis.analysis.completed",
+				EventCategory:  ogenclient.AuditEventRequestEventCategoryAnalysis,
+				EventAction:    "test_action",
+				EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				CorrelationID:  correlationID,
+				EventData:      eventData,
+			}
 
 			By("Emitting event through audit.BufferedStore")
 			start := time.Now()
 			err := auditStore.StoreAudit(testCtx, event)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Waiting for event to appear in PostgreSQL")
-		Eventually(func() int {
-			var count int
-			err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
-			if err != nil {
-				GinkgoWriter.Printf("Query error: %v\n", err)
-				return 0
-			}
-			return count
-		}, "10s", "100ms").Should(Equal(1), "Event should appear in database")
+			By("Waiting for event to appear in PostgreSQL")
+			Eventually(func() int {
+				var count int
+				err := db.QueryRow("SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID).Scan(&count)
+				if err != nil {
+					GinkgoWriter.Printf("Query error: %v\n", err)
+					return 0
+				}
+				return count
+			}, "10s", "100ms").Should(Equal(1), "Event should appear in database")
 
 			elapsed := time.Since(start)
 
@@ -224,16 +224,16 @@ var _ = Describe("Audit Client Timing Integration Tests",  Label("audit-client",
 			// depending on system load. Correctness is validated by database check below.
 
 			By("Verifying all 5 events were flushed")
-		// Handle async database write - Close() triggers flush but data may not be immediately committed
-		Eventually(func() int {
-			var eventCount int
-			err := db.Get(&eventCount, "SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID)
-			if err != nil {
-				return -1
-			}
-			return eventCount
-		}, 5*time.Second, 100*time.Millisecond).Should(Equal(5),
-			"All buffered events should be flushed on Close()")
+			// Handle async database write - Close() triggers flush but data may not be immediately committed
+			Eventually(func() int {
+				var eventCount int
+				err := db.Get(&eventCount, "SELECT COUNT(*) FROM audit_events WHERE correlation_id = $1", correlationID)
+				if err != nil {
+					return -1
+				}
+				return eventCount
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(5),
+				"All buffered events should be flushed on Close()")
 		})
 
 	})

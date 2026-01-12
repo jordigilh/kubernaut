@@ -228,12 +228,12 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		})
 
 		Context("Error Cases - HTTP 4xx (NOT Retryable)", func() {
-		It("should return HTTPError for 400 Bad Request", func() {
-			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json") // Required for ogen client
-				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte(`{"message": "Invalid event data"}`))
-			}))
+			It("should return HTTPError for 400 Bad Request", func() {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"message": "Invalid event data"}`))
+				}))
 
 				var err error
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
@@ -261,18 +261,18 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 					},
 				}
 
-			err = client.StoreBatch(ctx, events)
-			Expect(err).To(HaveOccurred())
-			Expect(audit.Is4xxError(err)).To(BeTrue(), "400 errors should be 4xx")
-			Expect(audit.IsRetryable(err)).To(BeFalse(), "4xx errors should NOT be retryable")
+				err = client.StoreBatch(ctx, events)
+				Expect(err).To(HaveOccurred())
+				Expect(audit.Is4xxError(err)).To(BeTrue(), "400 errors should be 4xx")
+				Expect(audit.IsRetryable(err)).To(BeFalse(), "4xx errors should NOT be retryable")
 			})
 
-		It("should return HTTPError for 422 Unprocessable Entity", func() {
-			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json") // Required for ogen client
-				w.WriteHeader(http.StatusUnprocessableEntity)
-				_, _ = w.Write([]byte(`{"message": "Validation failed"}`))
-			}))
+			It("should return HTTPError for 422 Unprocessable Entity", func() {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.WriteHeader(http.StatusUnprocessableEntity)
+					_, _ = w.Write([]byte(`{"message": "Validation failed"}`))
+				}))
 
 				var err error
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
@@ -308,12 +308,12 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 		})
 
 		Context("Error Cases - HTTP 5xx (Retryable)", func() {
-		It("should return HTTPError for 500 Internal Server Error", func() {
-			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json") // Required for ogen client
-				w.WriteHeader(http.StatusInternalServerError)
-				_, _ = w.Write([]byte(`{"message": "Database connection failed"}`))
-			}))
+			It("should return HTTPError for 500 Internal Server Error", func() {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(`{"message": "Database connection failed"}`))
+				}))
 
 				var err error
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
@@ -347,12 +347,12 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				Expect(audit.IsRetryable(err)).To(BeTrue(), "5xx errors should be retryable")
 			})
 
-		It("should return HTTPError for 503 Service Unavailable", func() {
-			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json") // Required for ogen client
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = w.Write([]byte(`{"message": "Service temporarily unavailable"}`))
-			}))
+			It("should return HTTPError for 503 Service Unavailable", func() {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json") // Required for ogen client
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = w.Write([]byte(`{"message": "Service temporarily unavailable"}`))
+				}))
 
 				var err error
 				client, err = audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)
@@ -399,12 +399,12 @@ var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "
 				Expect(r.URL.Path).To(Equal("/api/v1/audit/events/batch"))
 				Expect(r.Header.Get("Content-Type")).To(ContainSubstring("application/json"))
 
-			// Verify request body is valid JSON array (per OpenAPI spec)
-			Expect(r.Body).ToNot(BeNil())
+				// Verify request body is valid JSON array (per OpenAPI spec)
+				Expect(r.Body).ToNot(BeNil())
 
-			w.Header().Set("Content-Type", "application/json") // Required for ogen client
-			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"message": "Success", "events_created": 1}`))
+				w.Header().Set("Content-Type", "application/json") // Required for ogen client
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte(`{"message": "Success", "events_created": 1}`))
 			}))
 
 			client, err := audit.NewOpenAPIClientAdapter(server.URL, 5*time.Second)

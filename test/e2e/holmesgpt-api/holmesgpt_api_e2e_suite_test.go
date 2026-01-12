@@ -141,45 +141,45 @@ var _ = SynchronizedBeforeSuite(
 		hapiURL = "http://localhost:30120"
 		dataStorageURL = "http://localhost:30098"
 
-	// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
-	// Pods may be ready but NodePort routing needs time to propagate with podman provider
-	logger.Info("⏳ Waiting 5 seconds for Kind NodePort mapping to stabilize...")
-	time.Sleep(5 * time.Second)
+		// CRITICAL: Wait for Kind port mapping to stabilize (per notification E2E pattern)
+		// Pods may be ready but NodePort routing needs time to propagate with podman provider
+		logger.Info("⏳ Waiting 5 seconds for Kind NodePort mapping to stabilize...")
+		time.Sleep(5 * time.Second)
 
-	// Wait for Data Storage HTTP endpoint to be responsive via NodePort
-	// Reduced timeout from 180s to 90s (per notification E2E pattern)
-	// With stabilization wait, this should be sufficient
-	logger.Info("⏳ Waiting for Data Storage service to be ready...")
-	Eventually(func() error {
-		resp, err := http.Get(dataStorageURL + "/health/ready")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("health check returned %d", resp.StatusCode)
-		}
-		return nil
-	}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
+		// Wait for Data Storage HTTP endpoint to be responsive via NodePort
+		// Reduced timeout from 180s to 90s (per notification E2E pattern)
+		// With stabilization wait, this should be sufficient
+		logger.Info("⏳ Waiting for Data Storage service to be ready...")
+		Eventually(func() error {
+			resp, err := http.Get(dataStorageURL + "/health/ready")
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned %d", resp.StatusCode)
+			}
+			return nil
+		}, 90*time.Second, 2*time.Second).Should(Succeed(), "Data Storage health check should succeed")
 
-	// Wait for HAPI HTTP endpoint to be responsive via NodePort
-	logger.Info("⏳ Waiting for HAPI service to be ready...")
-	Eventually(func() error {
-		resp, err := http.Get(hapiURL + "/health")
-		if err != nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("health check returned %d", resp.StatusCode)
-		}
-		return nil
-	}, 90*time.Second, 2*time.Second).Should(Succeed(), "HAPI health check should succeed")
+		// Wait for HAPI HTTP endpoint to be responsive via NodePort
+		logger.Info("⏳ Waiting for HAPI service to be ready...")
+		Eventually(func() error {
+			resp, err := http.Get(hapiURL + "/health")
+			if err != nil {
+				return err
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("health check returned %d", resp.StatusCode)
+			}
+			return nil
+		}, 90*time.Second, 2*time.Second).Should(Succeed(), "HAPI health check should succeed")
 
-	logger.Info("✅ HAPI E2E infrastructure ready")
-	logger.Info("   HAPI URL: " + hapiURL)
-	logger.Info("   Data Storage URL: " + dataStorageURL)
-	logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		logger.Info("✅ HAPI E2E infrastructure ready")
+		logger.Info("   HAPI URL: " + hapiURL)
+		logger.Info("   Data Storage URL: " + dataStorageURL)
+		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Mark setup as successful (for setup failure detection in AfterSuite)
 		setupSucceeded = true
@@ -220,19 +220,19 @@ var _ = Describe("HAPI E2E Tests", Label("e2e"), func() {
 		env = append(env, fmt.Sprintf("DATA_STORAGE_URL=%s", dataStorageURL))
 		env = append(env, "MOCK_LLM_MODE=true")
 
-	// Run pytest
-	cmd := exec.CommandContext(ctx, "python3", "-m", "pytest",
-		pytestDir,
-		"-v",
-		"--tb=short",
-		"-x", // Stop on first failure for faster feedback
-	)
-	cmd.Dir = filepath.Join(projectRoot, "holmesgpt-api")
-	cmd.Env = env
-	cmd.Stdout = GinkgoWriter
-	cmd.Stderr = GinkgoWriter
+		// Run pytest
+		cmd := exec.CommandContext(ctx, "python3", "-m", "pytest",
+			pytestDir,
+			"-v",
+			"--tb=short",
+			"-x", // Stop on first failure for faster feedback
+		)
+		cmd.Dir = filepath.Join(projectRoot, "holmesgpt-api")
+		cmd.Env = env
+		cmd.Stdout = GinkgoWriter
+		cmd.Stderr = GinkgoWriter
 
-	logger.Info("Executing: python3 -m pytest " + pytestDir)
+		logger.Info("Executing: python3 -m pytest " + pytestDir)
 		err := cmd.Run()
 		if err != nil {
 			anyTestFailed = true
@@ -302,5 +302,3 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )
-
-

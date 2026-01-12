@@ -156,4 +156,3 @@ var _ = Describe("JSON Number Handling", func() {
 		Expect(floatVal).To(Equal(float64(1)))
 	})
 })
-

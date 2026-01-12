@@ -33,8 +33,8 @@ import (
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
-	"github.com/prometheus/client_golang/prometheus"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func TestController(t *testing.T) {
@@ -64,8 +64,8 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 		// Create fake client and reconciler
 		// Audit store is nil for unit tests (DD-AUDIT-003 compliant - audit is optional)
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		timeoutConfig := prodcontroller.TimeoutConfig{} // Use default timeout config
-		reconciler = prodcontroller.NewReconciler(fakeClient, scheme, nil, nil, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), timeoutConfig, nil) // Use default routing (will be created)
+		timeoutConfig := prodcontroller.TimeoutConfig{}                                                                                                                     // Use default timeout config
+		reconciler = prodcontroller.NewReconciler(fakeClient, fakeClient, scheme, nil, nil, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()), timeoutConfig, nil) // Use default routing (will be created)
 	})
 
 	Describe("NewReconciler", func() {

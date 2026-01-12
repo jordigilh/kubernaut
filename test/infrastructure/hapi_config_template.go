@@ -20,6 +20,3 @@ audit:
   batch_size: 50
 `
 }
-
-
-

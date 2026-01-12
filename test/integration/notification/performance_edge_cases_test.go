@@ -65,8 +65,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -121,8 +121,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -194,8 +194,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -246,8 +246,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
@@ -269,8 +269,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      notifName,
-					Namespace: testNamespace,
+					Name:       notifName,
+					Namespace:  testNamespace,
 					Generation: 1, // K8s increments on create/update
 				},
 				Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -358,8 +358,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -413,8 +413,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}
@@ -439,8 +439,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 					Spec: notificationv1alpha1.NotificationRequestSpec{
@@ -484,8 +484,8 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			for _, notifName := range notifNames {
 				notif := &notificationv1alpha1.NotificationRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      notifName,
-						Namespace: testNamespace,
+						Name:       notifName,
+						Namespace:  testNamespace,
 						Generation: 1, // K8s increments on create/update
 					},
 				}

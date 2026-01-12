@@ -44,263 +44,263 @@ import (
 
 var _ = Describe("Workflow Audit Event Validation", func() {
 	Context("when validating workflow.catalog.search_completed event", func() {
-	It("should accept valid V1.0 workflow audit event (confidence only)", func() {
-		// BUSINESS SCENARIO: Valid V1.0 workflow audit event is accepted
-		// BR-AUDIT-023: Audit event generation
-		// DD-WORKFLOW-004 v2.0: V1.0 = confidence only (no boost/penalty breakdown)
-		//
-		// TDD Phase: GREEN (using proper ogen union types)
+		It("should accept valid V1.0 workflow audit event (confidence only)", func() {
+			// BUSINESS SCENARIO: Valid V1.0 workflow audit event is accepted
+			// BR-AUDIT-023: Audit event generation
+			// DD-WORKFLOW-004 v2.0: V1.0 = confidence only (no boost/penalty breakdown)
+			//
+			// TDD Phase: GREEN (using proper ogen union types)
 
-		// Create WorkflowSearchAuditPayload with proper ogen nested types
-		query := ogenclient.QueryMetadata{
-			TopK: 3,
-		}
-		query.MinScore.SetTo(0.7)
+			// Create WorkflowSearchAuditPayload with proper ogen nested types
+			query := ogenclient.QueryMetadata{
+				TopK: 3,
+			}
+			query.MinScore.SetTo(0.7)
 
-		results := ogenclient.ResultsMetadata{
-			TotalFound: 5,
-			Returned:   3,
-			Workflows:  []ogenclient.WorkflowResultAudit{},
-		}
+			results := ogenclient.ResultsMetadata{
+				TotalFound: 5,
+				Returned:   3,
+				Workflows:  []ogenclient.WorkflowResultAudit{},
+			}
 
-		searchMetadata := ogenclient.SearchExecutionMetadata{
-			DurationMs:          45,
-			EmbeddingDimensions: 768,
-			EmbeddingModel:      "all-mpnet-base-v2",
-		}
+			searchMetadata := ogenclient.SearchExecutionMetadata{
+				DurationMs:          45,
+				EmbeddingDimensions: 768,
+				EmbeddingModel:      "all-mpnet-base-v2",
+			}
 
-		payload := ogenclient.WorkflowSearchAuditPayload{
-			EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-			Query:          query,
-			Results:        results,
-			SearchMetadata: searchMetadata,
-		}
+			payload := ogenclient.WorkflowSearchAuditPayload{
+				EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+				Query:          query,
+				Results:        results,
+				SearchMetadata: searchMetadata,
+			}
 
-		// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
-		event := pkgaudit.NewAuditEventRequest()
-		event.Version = "1.0"
-		pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
-		pkgaudit.SetEventCategory(event, "workflow")
-		pkgaudit.SetEventAction(event, "search_completed")
-		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
-		pkgaudit.SetActor(event, "service", "datastorage")
-		pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
-		pkgaudit.SetCorrelationID(event, "rr-2025-001")
-		// Use proper ogen union constructor
-		event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
+			// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
+			event := pkgaudit.NewAuditEventRequest()
+			event.Version = "1.0"
+			pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
+			pkgaudit.SetEventCategory(event, "workflow")
+			pkgaudit.SetEventAction(event, "search_completed")
+			pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+			pkgaudit.SetActor(event, "service", "datastorage")
+			pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
+			pkgaudit.SetCorrelationID(event, "rr-2025-001")
+			// Use proper ogen union constructor
+			event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
 
-		// BEHAVIOR: Validate event schema
-		err := validateWorkflowAuditEvent(event)
+			// BEHAVIOR: Validate event schema
+			err := validateWorkflowAuditEvent(event)
 
-		// CORRECTNESS: Event should be valid
-		Expect(err).ToNot(HaveOccurred(), "Valid V1.0 workflow audit event should be accepted")
+			// CORRECTNESS: Event should be valid
+			Expect(err).ToNot(HaveOccurred(), "Valid V1.0 workflow audit event should be accepted")
 
-		// BUSINESS OUTCOME: Workflow selection audit trail is complete
-	})
+			// BUSINESS OUTCOME: Workflow selection audit trail is complete
+		})
 
-	It("should accept workflow audit event with zero-value query (structured types)", func() {
-		// BUSINESS SCENARIO: With structured types, zero values are valid
-		// BR-AUDIT-025: Query metadata capture
-		//
-		// TDD Phase: GREEN (using proper ogen union types)
-		// NOTE: With ogen-generated structured types, all required fields are present
-		// Zero values (e.g., TopK: 0) are valid - validation is type-based, not value-based
+		It("should accept workflow audit event with zero-value query (structured types)", func() {
+			// BUSINESS SCENARIO: With structured types, zero values are valid
+			// BR-AUDIT-025: Query metadata capture
+			//
+			// TDD Phase: GREEN (using proper ogen union types)
+			// NOTE: With ogen-generated structured types, all required fields are present
+			// Zero values (e.g., TopK: 0) are valid - validation is type-based, not value-based
 
-		// Create WorkflowSearchAuditPayload with zero-value query fields
-		results := ogenclient.ResultsMetadata{
-			TotalFound: 0,
-			Returned:   0,
-			Workflows:  []ogenclient.WorkflowResultAudit{},
-		}
+			// Create WorkflowSearchAuditPayload with zero-value query fields
+			results := ogenclient.ResultsMetadata{
+				TotalFound: 0,
+				Returned:   0,
+				Workflows:  []ogenclient.WorkflowResultAudit{},
+			}
 
-		searchMetadata := ogenclient.SearchExecutionMetadata{
-			DurationMs:          30,
-			EmbeddingDimensions: 768,
-			EmbeddingModel:      "all-mpnet-base-v2",
-		}
+			searchMetadata := ogenclient.SearchExecutionMetadata{
+				DurationMs:          30,
+				EmbeddingDimensions: 768,
+				EmbeddingModel:      "all-mpnet-base-v2",
+			}
 
-		payload := ogenclient.WorkflowSearchAuditPayload{
-			EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-			// Query with zero value TopK - valid with structured types
-			Query:          ogenclient.QueryMetadata{TopK: 0},
-			Results:        results,
-			SearchMetadata: searchMetadata,
-		}
+			payload := ogenclient.WorkflowSearchAuditPayload{
+				EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+				// Query with zero value TopK - valid with structured types
+				Query:          ogenclient.QueryMetadata{TopK: 0},
+				Results:        results,
+				SearchMetadata: searchMetadata,
+			}
 
-		// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
-		event := pkgaudit.NewAuditEventRequest()
-		event.Version = "1.0"
-		pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
-		pkgaudit.SetEventCategory(event, "workflow")
-		pkgaudit.SetEventAction(event, "search_completed")
-		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
-		pkgaudit.SetActor(event, "service", "datastorage")
-		pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
-		pkgaudit.SetCorrelationID(event, "rr-2025-001")
-		event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
+			// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
+			event := pkgaudit.NewAuditEventRequest()
+			event.Version = "1.0"
+			pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
+			pkgaudit.SetEventCategory(event, "workflow")
+			pkgaudit.SetEventAction(event, "search_completed")
+			pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+			pkgaudit.SetActor(event, "service", "datastorage")
+			pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
+			pkgaudit.SetCorrelationID(event, "rr-2025-001")
+			event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
 
-		// BEHAVIOR: Validate event schema
-		err := validateWorkflowAuditEvent(event)
+			// BEHAVIOR: Validate event schema
+			err := validateWorkflowAuditEvent(event)
 
-		// CORRECTNESS: Event should be accepted (structured types ensure field presence)
-		Expect(err).ToNot(HaveOccurred(), "Event with zero-value query should be accepted with structured types")
+			// CORRECTNESS: Event should be accepted (structured types ensure field presence)
+			Expect(err).ToNot(HaveOccurred(), "Event with zero-value query should be accepted with structured types")
 
-		// BUSINESS OUTCOME: Type safety ensures all required fields are present (even if zero-valued)
-	})
+			// BUSINESS OUTCOME: Type safety ensures all required fields are present (even if zero-valued)
+		})
 
-	It("should accept workflow audit event with zero-value results (structured types)", func() {
-		// BUSINESS SCENARIO: With structured types, zero values are valid
-		// BR-AUDIT-027: Workflow metadata capture
-		//
-		// TDD Phase: GREEN (using proper ogen union types)
-		// NOTE: With ogen-generated structured types, all required fields are present
-		// Zero values (e.g., TotalFound: 0, Returned: 0) are valid - type safety at compile time
+		It("should accept workflow audit event with zero-value results (structured types)", func() {
+			// BUSINESS SCENARIO: With structured types, zero values are valid
+			// BR-AUDIT-027: Workflow metadata capture
+			//
+			// TDD Phase: GREEN (using proper ogen union types)
+			// NOTE: With ogen-generated structured types, all required fields are present
+			// Zero values (e.g., TotalFound: 0, Returned: 0) are valid - type safety at compile time
 
-		// Create WorkflowSearchAuditPayload with zero-value results fields
-		query := ogenclient.QueryMetadata{
-			TopK: 3,
-		}
+			// Create WorkflowSearchAuditPayload with zero-value results fields
+			query := ogenclient.QueryMetadata{
+				TopK: 3,
+			}
 
-		searchMetadata := ogenclient.SearchExecutionMetadata{
-			DurationMs:          30,
-			EmbeddingDimensions: 768,
-			EmbeddingModel:      "all-mpnet-base-v2",
-		}
+			searchMetadata := ogenclient.SearchExecutionMetadata{
+				DurationMs:          30,
+				EmbeddingDimensions: 768,
+				EmbeddingModel:      "all-mpnet-base-v2",
+			}
 
-		payload := ogenclient.WorkflowSearchAuditPayload{
-			EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-			Query:     query,
-			// Results with zero values - valid with structured types
-			Results:        ogenclient.ResultsMetadata{TotalFound: 0, Returned: 0, Workflows: []ogenclient.WorkflowResultAudit{}},
-			SearchMetadata: searchMetadata,
-		}
+			payload := ogenclient.WorkflowSearchAuditPayload{
+				EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+				Query:     query,
+				// Results with zero values - valid with structured types
+				Results:        ogenclient.ResultsMetadata{TotalFound: 0, Returned: 0, Workflows: []ogenclient.WorkflowResultAudit{}},
+				SearchMetadata: searchMetadata,
+			}
 
-		// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
-		event := pkgaudit.NewAuditEventRequest()
-		event.Version = "1.0"
-		pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
-		pkgaudit.SetEventCategory(event, "workflow")
-		pkgaudit.SetEventAction(event, "search_completed")
-		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
-		pkgaudit.SetActor(event, "service", "datastorage")
-		pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
-		pkgaudit.SetCorrelationID(event, "rr-2025-001")
-		event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
+			// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
+			event := pkgaudit.NewAuditEventRequest()
+			event.Version = "1.0"
+			pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
+			pkgaudit.SetEventCategory(event, "workflow")
+			pkgaudit.SetEventAction(event, "search_completed")
+			pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+			pkgaudit.SetActor(event, "service", "datastorage")
+			pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
+			pkgaudit.SetCorrelationID(event, "rr-2025-001")
+			event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
 
-		// BEHAVIOR: Validate event schema
-		err := validateWorkflowAuditEvent(event)
+			// BEHAVIOR: Validate event schema
+			err := validateWorkflowAuditEvent(event)
 
-		// CORRECTNESS: Event should be accepted (structured types ensure field presence)
-		Expect(err).ToNot(HaveOccurred(), "Event with zero-value results should be accepted with structured types")
+			// CORRECTNESS: Event should be accepted (structured types ensure field presence)
+			Expect(err).ToNot(HaveOccurred(), "Event with zero-value results should be accepted with structured types")
 
-		// BUSINESS OUTCOME: Type safety ensures all required fields are present (even if zero-valued)
-	})
+			// BUSINESS OUTCOME: Type safety ensures all required fields are present (even if zero-valued)
+		})
 
-	It("should reject workflow audit event with missing confidence (V1.0)", func() {
-		// BUSINESS SCENARIO: Audit event without confidence is rejected
-		// BR-AUDIT-026: Scoring capture (V1.0: confidence only)
-		// DD-WORKFLOW-004 v2.0: V1.0 requires confidence field
-		//
-		// TDD Phase: GREEN (using proper ogen union types)
-		// NOTE: WorkflowSearchAuditPayload doesn't have nested workflow arrays in V1.5+
-		// This test validates that workflow results must include scoring data
+		It("should reject workflow audit event with missing confidence (V1.0)", func() {
+			// BUSINESS SCENARIO: Audit event without confidence is rejected
+			// BR-AUDIT-026: Scoring capture (V1.0: confidence only)
+			// DD-WORKFLOW-004 v2.0: V1.0 requires confidence field
+			//
+			// TDD Phase: GREEN (using proper ogen union types)
+			// NOTE: WorkflowSearchAuditPayload doesn't have nested workflow arrays in V1.5+
+			// This test validates that workflow results must include scoring data
 
-		// Create WorkflowSearchAuditPayload with query and results but incomplete workflow data
-		query := ogenclient.QueryMetadata{
-			TopK: 3,
-		}
+			// Create WorkflowSearchAuditPayload with query and results but incomplete workflow data
+			query := ogenclient.QueryMetadata{
+				TopK: 3,
+			}
 
-		results := ogenclient.ResultsMetadata{
-			TotalFound: 1,
-			Returned:   1,
-			Workflows:  []ogenclient.WorkflowResultAudit{},
-		}
+			results := ogenclient.ResultsMetadata{
+				TotalFound: 1,
+				Returned:   1,
+				Workflows:  []ogenclient.WorkflowResultAudit{},
+			}
 
-		searchMetadata := ogenclient.SearchExecutionMetadata{
-			DurationMs:          30,
-			EmbeddingDimensions: 768,
-			EmbeddingModel:      "all-mpnet-base-v2",
-		}
+			searchMetadata := ogenclient.SearchExecutionMetadata{
+				DurationMs:          30,
+				EmbeddingDimensions: 768,
+				EmbeddingModel:      "all-mpnet-base-v2",
+			}
 
-		payload := ogenclient.WorkflowSearchAuditPayload{
-			EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-			Query:          query,
-			Results:        results,
-			SearchMetadata: searchMetadata,
-		}
+			payload := ogenclient.WorkflowSearchAuditPayload{
+				EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+				Query:          query,
+				Results:        results,
+				SearchMetadata: searchMetadata,
+			}
 
-		// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
-		event := pkgaudit.NewAuditEventRequest()
-		event.Version = "1.0"
-		pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
-		pkgaudit.SetEventCategory(event, "workflow")
-		pkgaudit.SetEventAction(event, "search_completed")
-		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
-		pkgaudit.SetActor(event, "service", "datastorage")
-		pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
-		pkgaudit.SetCorrelationID(event, "rr-2025-001")
-		event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
+			// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
+			event := pkgaudit.NewAuditEventRequest()
+			event.Version = "1.0"
+			pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
+			pkgaudit.SetEventCategory(event, "workflow")
+			pkgaudit.SetEventAction(event, "search_completed")
+			pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+			pkgaudit.SetActor(event, "service", "datastorage")
+			pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
+			pkgaudit.SetCorrelationID(event, "rr-2025-001")
+			event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
 
-		// BEHAVIOR: Validate event schema
-		err := validateWorkflowAuditEvent(event)
+			// BEHAVIOR: Validate event schema
+			err := validateWorkflowAuditEvent(event)
 
-		// CORRECTNESS: Event validation passes (flattened structure doesn't require confidence per workflow)
-		// V1.5+ uses flattened WorkflowSearchAuditPayload, not nested workflow arrays
-		Expect(err).ToNot(HaveOccurred(), "Valid WorkflowSearchAuditPayload should be accepted")
+			// CORRECTNESS: Event validation passes (flattened structure doesn't require confidence per workflow)
+			// V1.5+ uses flattened WorkflowSearchAuditPayload, not nested workflow arrays
+			Expect(err).ToNot(HaveOccurred(), "Valid WorkflowSearchAuditPayload should be accepted")
 
-		// BUSINESS OUTCOME: V1.0 scoring validation enforced through flattened structure
-	})
+			// BUSINESS OUTCOME: V1.0 scoring validation enforced through flattened structure
+		})
 
-	It("should accept workflow audit event with empty results", func() {
-		// BUSINESS SCENARIO: Audit event with no matching workflows is valid
-		// BR-AUDIT-023: Every search generates audit event
-		//
-		// TDD Phase: GREEN (using proper ogen union types)
+		It("should accept workflow audit event with empty results", func() {
+			// BUSINESS SCENARIO: Audit event with no matching workflows is valid
+			// BR-AUDIT-023: Every search generates audit event
+			//
+			// TDD Phase: GREEN (using proper ogen union types)
 
-		// Create WorkflowSearchAuditPayload with empty results
-		query := ogenclient.QueryMetadata{
-			TopK: 3,
-		}
+			// Create WorkflowSearchAuditPayload with empty results
+			query := ogenclient.QueryMetadata{
+				TopK: 3,
+			}
 
-		results := ogenclient.ResultsMetadata{
-			TotalFound: 0,
-			Returned:   0,
-			Workflows:  []ogenclient.WorkflowResultAudit{},
-		}
+			results := ogenclient.ResultsMetadata{
+				TotalFound: 0,
+				Returned:   0,
+				Workflows:  []ogenclient.WorkflowResultAudit{},
+			}
 
-		searchMetadata := ogenclient.SearchExecutionMetadata{
-			DurationMs:          30,
-			EmbeddingDimensions: 768,
-			EmbeddingModel:      "all-mpnet-base-v2",
-		}
+			searchMetadata := ogenclient.SearchExecutionMetadata{
+				DurationMs:          30,
+				EmbeddingDimensions: 768,
+				EmbeddingModel:      "all-mpnet-base-v2",
+			}
 
-		payload := ogenclient.WorkflowSearchAuditPayload{
-			EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
-			Query:          query,
-			Results:        results,
-			SearchMetadata: searchMetadata,
-		}
+			payload := ogenclient.WorkflowSearchAuditPayload{
+				EventType:      ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+				Query:          query,
+				Results:        results,
+				SearchMetadata: searchMetadata,
+			}
 
-		// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
-		event := pkgaudit.NewAuditEventRequest()
-		event.Version = "1.0"
-		pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
-		pkgaudit.SetEventCategory(event, "workflow")
-		pkgaudit.SetEventAction(event, "search_completed")
-		pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
-		pkgaudit.SetActor(event, "service", "datastorage")
-		pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
-		pkgaudit.SetCorrelationID(event, "rr-2025-001")
-		event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
+			// Build event using OpenAPI types and helpers (DD-AUDIT-002 V2.0)
+			event := pkgaudit.NewAuditEventRequest()
+			event.Version = "1.0"
+			pkgaudit.SetEventType(event, "workflow.catalog.search_completed")
+			pkgaudit.SetEventCategory(event, "workflow")
+			pkgaudit.SetEventAction(event, "search_completed")
+			pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
+			pkgaudit.SetActor(event, "service", "datastorage")
+			pkgaudit.SetResource(event, "workflow_catalog", "search-query-hash")
+			pkgaudit.SetCorrelationID(event, "rr-2025-001")
+			event.EventData = ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(payload)
 
-		// BEHAVIOR: Validate event schema
-		err := validateWorkflowAuditEvent(event)
+			// BEHAVIOR: Validate event schema
+			err := validateWorkflowAuditEvent(event)
 
-		// CORRECTNESS: Event should be valid (empty results are acceptable)
-		Expect(err).ToNot(HaveOccurred(), "Event with empty results should be accepted")
+			// CORRECTNESS: Event should be valid (empty results are acceptable)
+			Expect(err).ToNot(HaveOccurred(), "Event with empty results should be accepted")
 
-		// BUSINESS OUTCOME: No-match searches are still audited
-	})
+			// BUSINESS OUTCOME: No-match searches are still audited
+		})
 	})
 })
 

@@ -27,11 +27,11 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
-	"github.com/prometheus/client_golang/prometheus"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var _ = Describe("NotificationCreator", func() {
@@ -64,8 +64,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -79,8 +79,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -102,8 +102,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
 				// First call creates the notification
 				name1, err := nc.CreateApprovalNotification(ctx, rr, ai)
@@ -129,8 +129,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
@@ -143,8 +143,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.SelectedWorkflow.WorkflowID = ""
 
 				_, err := nc.CreateApprovalNotification(ctx, rr, ai)
@@ -159,8 +159,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				// Priority now comes from AIAnalysis.Spec.SignalContext.BusinessPriority
 				// (set by AIAnalysisCreator from SP.Status, per schema update notice)
 				ai.Spec.AnalysisRequest.SignalContext.BusinessPriority = inputPriority
@@ -186,8 +186,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.ApprovalReason = approvalReason
 
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
@@ -225,7 +225,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.DuplicateCount = 5
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
@@ -238,7 +238,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.DuplicateCount = 3
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
@@ -257,7 +257,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.DuplicateCount = 2
 
 				// First call
@@ -281,7 +281,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.DuplicateCount = 4
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
@@ -315,9 +315,9 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Spec.Severity = "high"
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 
 				name, err := nc.CreateApprovalNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -339,7 +339,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Status.DuplicateCount = 5
 
 				name, err := nc.CreateBulkDuplicateNotification(ctx, rr)
@@ -374,8 +374,8 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
-				ai := testutil.NewCompletedAIAnalysis("test-ai", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
+				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.ApprovalReason = "low_confidence"
 				ai.Status.SelectedWorkflow.Confidence = 0.75
 				ai.Status.SelectedWorkflow.WorkflowID = "restart-pod"
@@ -417,7 +417,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:    creator.ManualReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
@@ -435,7 +435,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:    creator.ManualReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
@@ -460,7 +460,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:    creator.ManualReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
@@ -489,7 +489,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:    creator.ManualReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",
@@ -515,7 +515,7 @@ var _ = Describe("NotificationCreator", func() {
 					client := fakeClient.Build()
 					nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-					rr := testutil.NewRemediationRequest("test-rr", "default")
+					rr := helpers.NewRemediationRequest("test-rr", "default")
 					reviewCtx := &creator.ManualReviewContext{
 						Source:    creator.ManualReviewSourceAIAnalysis,
 						Reason:    "WorkflowResolutionFailed",
@@ -546,7 +546,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:       creator.ManualReviewSourceWorkflowExecution,
 					Reason:       "ExhaustedRetries",
@@ -572,7 +572,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:            creator.ManualReviewSourceWorkflowExecution,
 					Reason:            "PreviousExecutionFailed",
@@ -598,7 +598,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Spec.Severity = "critical"
 				reviewCtx := &creator.ManualReviewContext{
 					Source:    creator.ManualReviewSourceAIAnalysis,
@@ -628,7 +628,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:            creator.ManualReviewSourceAIAnalysis,
 					Reason:            "WorkflowResolutionFailed",
@@ -656,7 +656,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:       creator.ManualReviewSourceWorkflowExecution,
 					Reason:       "ExhaustedRetries",
@@ -689,7 +689,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:  creator.ManualReviewSourceWorkflowExecution,
 					Reason:  "ExhaustedRetries",
@@ -714,7 +714,7 @@ var _ = Describe("NotificationCreator", func() {
 				client := fakeClient.Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
-				rr := testutil.NewRemediationRequest("test-rr", "default")
+				rr := helpers.NewRemediationRequest("test-rr", "default")
 				reviewCtx := &creator.ManualReviewContext{
 					Source:    creator.ManualReviewSourceAIAnalysis,
 					Reason:    "WorkflowResolutionFailed",

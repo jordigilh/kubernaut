@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package testutil
+package auth
 
 import (
 	"net/http"
@@ -31,11 +31,11 @@ import (
 // WHY SEPARATE FROM PRODUCTION CODE?
 // - ❌ Test logic must NEVER be in production/business code
 // - ✅ Production binaries should contain ZERO test-specific code
-// - ✅ Clear separation: pkg/shared/auth = production, pkg/testutil = test
+// - ✅ Clear separation: pkg/shared/auth = production, test/shared = test
 //
 // USAGE (Integration Tests Only):
 //
-//   transport := testutil.NewMockUserTransport("test-user@example.com")
+//   transport := mocks.NewMockUserTransport("test-user@example.com")
 //   httpClient := &http.Client{Transport: transport}
 //   dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
@@ -64,7 +64,7 @@ type MockUserTransport struct {
 //
 // Example:
 //
-//	transport := testutil.NewMockUserTransport("test-operator@example.com")
+//	transport := mocks.NewMockUserTransport("test-operator@example.com")
 //	httpClient := &http.Client{Transport: transport}
 //	dsClient := datastorage.NewClientWithResponses(url, datastorage.WithHTTPClient(httpClient))
 //
@@ -104,4 +104,3 @@ func (t *MockUserTransport) RoundTrip(req *http.Request) (*http.Response, error)
 
 	return t.base.RoundTrip(reqClone)
 }
-

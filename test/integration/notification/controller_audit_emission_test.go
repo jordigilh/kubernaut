@@ -30,7 +30,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
+	"github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
 // ========================================
@@ -154,13 +154,13 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			// ========================================
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0 - MANDATORY)
-			// Use testutil.ValidateAuditEvent for structured validation
+			// Use validators.ValidateAuditEvent for structured validation
 			// ========================================
-			testutil.ValidateAuditEvent(*sentEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(*sentEvent, validators.ExpectedAuditEvent{
 				EventType:     "notification.message.sent",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
-				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: string(notification.UID),
 			})
 
@@ -227,11 +227,11 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			Expect(slackEvent).ToNot(BeNil(), "Controller must emit audit event for Slack delivery")
 
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
-			testutil.ValidateAuditEvent(*slackEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(*slackEvent, validators.ExpectedAuditEvent{
 				EventType:     "notification.message.sent",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent",
-				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 			})
 
 			// Cleanup
@@ -421,17 +421,17 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 
 			// ========================================
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0 - MANDATORY)
-			// Use testutil.ValidateAuditEvent for structured validation
+			// Use validators.ValidateAuditEvent for structured validation
 			// See: docs/development/business-requirements/TESTING_GUIDELINES.md §1224-1309
 			// ========================================
 			actorType := "service"
 			actorID := "notification-controller"
 
-			testutil.ValidateAuditEvent(*ackEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(*ackEvent, validators.ExpectedAuditEvent{
 				EventType:     "notification.message.acknowledged",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "acknowledged",
-				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
 				CorrelationID: string(notification.UID),
 				ActorType:     &actorType,
 				ActorID:       &actorID,
@@ -579,11 +579,11 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			Expect(failedEvent).ToNot(BeNil(), "Controller must emit 'notification.message.failed' event")
 
 			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0): Use testutil validator
-			testutil.ValidateAuditEvent(*failedEvent, testutil.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(*failedEvent, validators.ExpectedAuditEvent{
 				EventType:     "notification.message.failed",
 				EventCategory: ogenclient.AuditEventEventCategoryNotification,
 				EventAction:   "sent", // Action was "sent" (attempted), outcome is "failure"
-				EventOutcome: testutil.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
+				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeFailure),
 			})
 
 			// Verify error details are included in event_data

@@ -69,7 +69,10 @@ func updateLabelsPolicyFile(policyContent string) {
 
 // BR-SP-072 hot-reload using ConfigMap watching (fsnotify-based).
 // Uses shared pkg/shared/hotreload/FileWatcher component per DD-INFRA-001.
-// Serial: Hot-reload tests manipulate shared policy files and cannot run in parallel
+//
+// ⚠️  Serial: Hot-reload tests manipulate shared policy files on disk
+// This is a LEGITIMATE shared resource constraint (not a metrics/controller issue)
+// DD-TEST-010: This is one of the few valid reasons to keep Serial
 var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 	// Original policy content to restore after each test
 	const originalLabelPolicy = `package signalprocessing.labels

@@ -188,11 +188,11 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 			}, timeout, interval).Should(Succeed(), "Failed to fetch created RAR")
 
 			// Set initial conditions on the fetched object (simulating creator logic)
-		rarconditions.SetApprovalPending(rar, true,
-			fmt.Sprintf("Awaiting decision, expires %s", requiredBy.Format(time.RFC3339)), nil)
-		rarconditions.SetApprovalDecided(rar, false,
-			rarconditions.ReasonPendingDecision, "No decision yet", nil)
-		rarconditions.SetApprovalExpired(rar, false, "Approval has not expired", nil)
+			rarconditions.SetApprovalPending(rar, true,
+				fmt.Sprintf("Awaiting decision, expires %s", requiredBy.Format(time.RFC3339)), nil)
+			rarconditions.SetApprovalDecided(rar, false,
+				rarconditions.ReasonPendingDecision, "No decision yet", nil)
+			rarconditions.SetApprovalExpired(rar, false, "Approval has not expired", nil)
 
 			// Update status to persist conditions (Kubernetes API requirement)
 			Expect(k8sClient.Status().Update(ctx, rar)).To(Succeed())

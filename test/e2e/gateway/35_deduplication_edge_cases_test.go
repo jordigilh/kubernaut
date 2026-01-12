@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"sync"
 	"time"
@@ -42,8 +41,6 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	var (
 		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
 		ctx           context.Context
-		gatewayURL    string
-		server        *httptest.Server
 		testClient    client.Client
 	)
 
@@ -58,19 +55,13 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18090" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
+			dataStorageURL = "http://127.0.0.1:18091" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
 		}
 
-		// Create Gateway server
-		server = httptest.NewServer(nil)
-		gatewayURL = server.URL
+		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
 	})
 
 	AfterEach(func() {
-		// Cleanup server
-		if server != nil {
-			server.Close()
-		}
 
 		// No manual cleanup needed - each parallel process has its own isolated namespace
 	})
@@ -102,7 +93,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// If K8s API field selector fails, should return HTTP 500
@@ -144,7 +135,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Success path: field selector works, deduplication succeeds
@@ -178,7 +169,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// If field selector fails, error should reference:
@@ -289,7 +280,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			_ = resp.Body.Close()
 
 			// Verify initial request succeeded
@@ -386,7 +377,7 @@ _ = err
 			req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 
 			resp, err := http.DefaultClient.Do(req)
-_ = err
+			_ = err
 			defer func() { _ = resp.Body.Close() }()
 
 			// Should handle gracefully (either create new RR or return error)

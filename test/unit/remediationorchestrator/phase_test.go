@@ -211,10 +211,10 @@ var _ = Describe("Phase Types (BR-ORCH-025, BR-ORCH-026)", func() {
 		var manager *phase.Manager
 
 		BeforeEach(func() {
-		manager = phase.NewManager()
-	})
+			manager = phase.NewManager()
+		})
 
-	Context("when determining current phase", func() {
+		Context("when determining current phase", func() {
 			It("should return Pending for empty OverallPhase (initial state)", func() {
 				// Given: A RemediationRequest with no phase set
 				rr := &remediationv1.RemediationRequest{}

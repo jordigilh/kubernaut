@@ -55,13 +55,13 @@ import (
 //   - error: Deployment failure or nil on success
 //
 // Deployment Steps:
-//   1. Build AuthWebhook image (if not already built)
-//   2. Load image to Kind cluster
-//   3. Generate webhook TLS certificates
-//   4. Apply all CRDs (required for webhook registration)
-//   5. Deploy AuthWebhook service + webhook configurations
-//   6. Patch webhook configurations with CA bundle
-//   7. Wait for webhook pod readiness
+//  1. Build AuthWebhook image (if not already built)
+//  2. Load image to Kind cluster
+//  3. Generate webhook TLS certificates
+//  4. Apply all CRDs (required for webhook registration)
+//  5. Deploy AuthWebhook service + webhook configurations
+//  6. Patch webhook configurations with CA bundle
+//  7. Wait for webhook pod readiness
 //
 // Usage:
 //
@@ -319,4 +319,3 @@ func waitForAuthWebhookPodReady(kubeconfigPath, namespace string, writer io.Writ
 
 	return fmt.Errorf("timeout waiting for AuthWebhook pod to become ready (5 minutes)")
 }
-

@@ -138,7 +138,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			topK := 5
 			searchRequest := dsgen.WorkflowSearchRequest{
 				Filters: dsgen.WorkflowSearchFilters{
-					SignalType:  "NonExistentSignalType_12345",             // Will not match any workflow
+					SignalType:  "NonExistentSignalType_12345", // Will not match any workflow
 					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
 					Component:   "deployment",
 					Priority:    dsgen.WorkflowSearchFiltersPriorityP0, // OpenAPI schema requires uppercase (enum: [P0, P1, P2, P3])
@@ -150,9 +150,9 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			// ACT: POST workflow search
 			testLogger.Info("🔍 Posting workflow search with non-existent signal_type...")
 			resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
-		Expect(err).ToNot(HaveOccurred())
-		searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
-		Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
+			Expect(err).ToNot(HaveOccurred())
+			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
 
 			// ASSERT: HTTP 200 OK (not 404 Not Found)
 			Expect(searchResults).ToNot(BeNil())
@@ -161,10 +161,10 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			workflows := searchResults.Workflows
 			Expect(workflows).To(BeEmpty(), "Workflows array should be empty when no workflows match")
 
-		// ASSERT: total_results = 0
-		totalResults := searchResults.TotalResults
-		Expect(totalResults).ToNot(BeNil(), "TotalResults should not be nil")
-		Expect(totalResults.Value).To(Equal(0), "Total results should be 0 for zero matches")
+			// ASSERT: total_results = 0
+			totalResults := searchResults.TotalResults
+			Expect(totalResults).ToNot(BeNil(), "TotalResults should not be nil")
+			Expect(totalResults.Value).To(Equal(0), "Total results should be 0 for zero matches")
 
 			// ASSERT: filters metadata exists
 			filters := searchResults.Filters
@@ -200,7 +200,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 
 			// ACT: POST workflow search
 			_, err := dsClient.SearchWorkflows(ctx, &searchRequest)
-		Expect(err).ToNot(HaveOccurred())
+			Expect(err).ToNot(HaveOccurred())
 
 			// ASSERT: Audit event generated (BR-AUDIT-023 to BR-AUDIT-028)
 			// Query audit_events table for workflow.catalog.search_completed event
@@ -246,10 +246,10 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			content1 := `{"steps":[{"action":"scale","replicas":3}]}`
 			workflow1ID = fmt.Sprintf("tie-breaking-workflow-1-%s", testID)
 			workflow1 := dsgen.RemediationWorkflow{
-				WorkflowName:    workflow1ID,
-				Version:         "v1.0.0",
-				Name:            "Tie Breaking Test Workflow 1",
-				Description:     "First workflow (oldest)",
+				WorkflowName: workflow1ID,
+				Version:      "v1.0.0",
+				Name:         "Tie Breaking Test Workflow 1",
+				Description:  "First workflow (oldest)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
 					Severity:    dsgen.MandatoryLabelsSeverityCritical,
@@ -259,7 +259,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				},
 				Content:         content1,
 				ContentHash:     fmt.Sprintf("%x", sha256.Sum256([]byte(content1))),
-				ExecutionEngine: "tekton", // Required per OpenAPI spec
+				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
 			_, err := dsClient.CreateWorkflow(ctx, &workflow1)
@@ -272,10 +272,10 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			content2 := `{"steps":[{"action":"scale","replicas":5}]}`
 			workflow2ID = fmt.Sprintf("tie-breaking-workflow-2-%s", testID)
 			workflow2 := dsgen.RemediationWorkflow{
-				WorkflowName:    workflow2ID,
-				Version:         "v1.0.0",
-				Name:            "Tie Breaking Test Workflow 2",
-				Description:     "Second workflow (middle)",
+				WorkflowName: workflow2ID,
+				Version:      "v1.0.0",
+				Name:         "Tie Breaking Test Workflow 2",
+				Description:  "Second workflow (middle)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
 					Severity:    dsgen.MandatoryLabelsSeverityCritical,
@@ -285,7 +285,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				},
 				Content:         content2,
 				ContentHash:     fmt.Sprintf("%x", sha256.Sum256([]byte(content2))),
-				ExecutionEngine: "tekton", // Required per OpenAPI spec
+				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
 			_, err = dsClient.CreateWorkflow(ctx, &workflow2)
@@ -298,10 +298,10 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			content3 := `{"steps":[{"action":"scale","replicas":7}]}`
 			workflow3ID = fmt.Sprintf("tie-breaking-workflow-3-%s", testID)
 			workflow3 := dsgen.RemediationWorkflow{
-				WorkflowName:    workflow3ID,
-				Version:         "v1.0.0",
-				Name:            "Tie Breaking Test Workflow 3",
-				Description:     "Third workflow (newest)",
+				WorkflowName: workflow3ID,
+				Version:      "v1.0.0",
+				Name:         "Tie Breaking Test Workflow 3",
+				Description:  "Third workflow (newest)",
 				Labels: dsgen.MandatoryLabels{
 					SignalType:  baseLabels["signal_type"].(string),
 					Severity:    dsgen.MandatoryLabelsSeverityCritical,
@@ -311,7 +311,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				},
 				Content:         content3,
 				ContentHash:     fmt.Sprintf("%x", sha256.Sum256([]byte(content3))),
-				ExecutionEngine: "tekton", // Required per OpenAPI spec
+				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
 			_, err = dsClient.CreateWorkflow(ctx, &workflow3)
@@ -351,9 +351,9 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			var firstResultID string
 			for i := 0; i < 5; i++ {
 				resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
-		Expect(err).ToNot(HaveOccurred())
-		searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
-		Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
+				Expect(err).ToNot(HaveOccurred())
+				searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+				Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
 				Expect(searchResults).ToNot(BeNil())
 
 				workflows := searchResults.Workflows
@@ -409,7 +409,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				},
 				Content:         content1,
 				ContentHash:     fmt.Sprintf("%x", sha256.Sum256([]byte(content1))),
-				ExecutionEngine: "tekton", // Required per OpenAPI spec
+				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
 			_, err := dsClient.CreateWorkflow(ctx, &wildcardWorkflow)
@@ -433,7 +433,7 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				},
 				Content:         content2,
 				ContentHash:     fmt.Sprintf("%x", sha256.Sum256([]byte(content2))),
-				ExecutionEngine: "tekton", // Required per OpenAPI spec
+				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
 			_, err = dsClient.CreateWorkflow(ctx, &specificWorkflow)
@@ -471,9 +471,9 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			}
 
 			resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
-		Expect(err).ToNot(HaveOccurred())
-		searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
-		Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
+			Expect(err).ToNot(HaveOccurred())
+			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
 			Expect(searchResults).ToNot(BeNil())
 
 			workflows := searchResults.Workflows
@@ -512,9 +512,9 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 			}
 
 			resp, err := dsClient.SearchWorkflows(ctx, &searchRequest)
-		Expect(err).ToNot(HaveOccurred())
-		searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
-		Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
+			Expect(err).ToNot(HaveOccurred())
+			searchResults, ok := resp.(*dsgen.WorkflowSearchResponse)
+			Expect(ok).To(BeTrue(), "Expected *WorkflowSearchResponse type")
 			Expect(searchResults).ToNot(BeNil())
 
 			workflows := searchResults.Workflows

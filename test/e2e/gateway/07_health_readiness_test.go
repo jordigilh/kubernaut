@@ -99,12 +99,12 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 		var readyResp *http.Response
 		Eventually(func() int {
 			var err error
-		readyResp, err = httpClient.Get(gatewayURL + "/ready")
-		if err != nil {
-			return 0
-		}
-		defer func() { _ = readyResp.Body.Close() }()
-		return readyResp.StatusCode
+			readyResp, err = httpClient.Get(gatewayURL + "/ready")
+			if err != nil {
+				return 0
+			}
+			defer func() { _ = readyResp.Body.Close() }()
+			return readyResp.StatusCode
 		}, 30*time.Second, 2*time.Second).Should(Or(
 			Equal(http.StatusOK),
 			Equal(http.StatusNotFound), // Some services don't have /ready
@@ -184,12 +184,12 @@ var _ = Describe("Test 07: Health & Readiness Endpoints (BR-GATEWAY-018)", Order
 
 		// Verify health endpoint still responds quickly
 		start := time.Now()
-	healthAfterLoad, err := httpClient.Get(gatewayURL + "/health")
-	latency := time.Since(start)
-	Expect(err).ToNot(HaveOccurred())
-	_ = healthAfterLoad.Body.Close()
+		healthAfterLoad, err := httpClient.Get(gatewayURL + "/health")
+		latency := time.Since(start)
+		Expect(err).ToNot(HaveOccurred())
+		_ = healthAfterLoad.Body.Close()
 
-	Expect(healthAfterLoad.StatusCode).To(Equal(http.StatusOK),
+		Expect(healthAfterLoad.StatusCode).To(Equal(http.StatusOK),
 			"/health should return 200 OK after load")
 		Expect(latency).To(BeNumerically("<", 5*time.Second),
 			"/health should respond within 5 seconds")

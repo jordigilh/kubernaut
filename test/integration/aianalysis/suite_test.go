@@ -36,7 +36,8 @@ limitations under the License.
 // - PostgreSQL (port 15438): Persistence layer
 // - Redis (port 16384): Caching layer
 // - Data Storage API (port 18095): Audit trail
-// - HolmesGPT API (port 18120): AI analysis service (MOCK_LLM_MODE=true)
+// - Mock LLM Service (port 18141): Standalone OpenAI-compatible mock (AIAnalysis-specific)
+// - HolmesGPT API (port 18120): AI analysis service (uses Mock LLM at 18141)
 //
 // Per-Process Setup (Phase 2, all processes):
 // - envtest: In-memory Kubernetes API server (per process)
@@ -80,8 +81,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	hgclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // DD-TEST-010: Per-process variables (no shared state between processes)
@@ -145,7 +146,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	GinkgoWriter.Println("  • PostgreSQL + pgvector (port 15438)")
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
-	GinkgoWriter.Println("  • HolmesGPT-API HTTP service (port 18120, MOCK_LLM_MODE=true)")
+	GinkgoWriter.Println("  • Mock LLM Service (port 18141 - AIAnalysis-specific)")
+	GinkgoWriter.Println("  • HolmesGPT-API HTTP service (port 18120, uses Mock LLM)")
 	GinkgoWriter.Println("")
 	GinkgoWriter.Println("Phase 2 will create PER-PROCESS (all processes):")
 	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
@@ -172,10 +174,28 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	By("Starting Mock LLM service (replaces HAPI embedded mock logic)")
+	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
+	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
+	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
+	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(specCtx, mockLLMConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
+	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
+	GinkgoWriter.Printf("✅ Mock LLM service started and healthy (port %d)\n", mockLLMConfig.Port)
+
+	// Clean up Mock LLM on exit
+	DeferCleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stopCancel()
+		if err := infrastructure.StopMockLLMContainer(stopCtx, mockLLMConfig, GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to stop Mock LLM container: %v\n", err)
+		}
+	})
+
 	By("Starting HolmesGPT-API HTTP service (programmatically)")
 	// AA integration tests use OpenAPI HAPI client (HTTP-based)
-	// DD-TEST-001 v1.3: Infrastructure image format for shared services
-	// HAPI port 18120, runs with MOCK_LLM_MODE=true to avoid LLM costs
+	// DD-TEST-001 v2.3: HAPI port 18120, Mock LLM port 18141
+	// MOCK_LLM_MODE removed - now uses standalone Mock LLM service
 	projectRoot := filepath.Join("..", "..", "..") // test/integration/aianalysis -> project root
 	hapiConfigDir, err := filepath.Abs("hapi-config")
 	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
@@ -185,7 +205,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		Network: "aianalysis_test_network",
 		Ports:   map[int]int{8080: 18120}, // container:host
 		Env: map[string]string{
-			"MOCK_LLM_MODE":    "true",
+			"LLM_ENDPOINT":     infrastructure.GetMockLLMEndpoint(mockLLMConfig), // http://127.0.0.1:18141
+			"LLM_MODEL":        "mock-model",
 			"DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080", // Container-to-container communication
 			"PORT":             "8080",
 			"LOG_LEVEL":        "DEBUG",
@@ -202,7 +223,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	}
 	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "HAPI container must start successfully")
-	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://localhost:18120 (container: %s)\n", hapiContainer.ID)
+	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
+	GinkgoWriter.Printf("   Using Mock LLM at %s\n", infrastructure.GetMockLLMEndpoint(mockLLMConfig))
 
 	// Clean up HAPI container on exit
 	DeferCleanup(func() {
@@ -293,7 +315,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	By(fmt.Sprintf("[Process %d] Creating per-process audit store", processNum))
 	// Each process connects to shared DataStorage (from Phase 1)
 	// but maintains its own buffer and client
-	auditMockTransport := testutil.NewMockUserTransport(
+	auditMockTransport := testauth.NewMockUserTransport(
 		fmt.Sprintf("test-aianalysis@integration.test-p%d", processNum),
 	)
 	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
@@ -315,7 +337,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process HAPI client", processNum))
 	// Each process gets its own HAPI HTTP client (connects to shared HAPI service)
-	hapiMockTransport := testutil.NewMockUserTransport(
+	hapiMockTransport := testauth.NewMockUserTransport(
 		fmt.Sprintf("aianalysis-service@integration.test-p%d", processNum),
 	)
 	realHGClient, err = hgclient.NewHolmesGPTClientWithTransport(hgclient.Config{
@@ -351,7 +373,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		Scheme:               k8sManager.GetScheme(),
 		Recorder:             k8sManager.GetEventRecorderFor("aianalysis-controller"),
 		Log:                  ctrl.Log.WithName("aianalysis-controller"),
-		StatusManager:        status.NewManager(k8sManager.GetClient()), // DD-PERF-001: Atomic status updates
+		StatusManager:        status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
 		InvestigatingHandler: investigatingHandler,
 		AnalyzingHandler:     analyzingHandler,
 		AuditClient:          auditClient,
@@ -395,7 +417,7 @@ var _ = SynchronizedAfterSuite(func() {
 	defer flushCancel()
 
 	if auditStore != nil {
-	if err := auditStore.Flush(flushCtx); err != nil {
+		if err := auditStore.Flush(flushCtx); err != nil {
 			GinkgoWriter.Printf("⚠️  [Process %d] Failed to flush audit store: %v\n", processNum, err)
 		}
 		if err := auditStore.Close(); err != nil {

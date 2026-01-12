@@ -31,7 +31,6 @@ package signalprocessing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -75,8 +74,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/rego"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
-	"github.com/jordigilh/kubernaut/pkg/testutil"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // Test constants for timeout and polling intervals
@@ -225,9 +224,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	}
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("✅ Phase 1 Complete: Shared infrastructure ready")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	// DD-TEST-010: Multi-Controller Pattern - No config serialization needed
+	// Each process will create its own envtest + controller in Phase 2
+	return []byte{}
+}, func(data []byte) {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// PHASE 2: ALL PROCESSES (DD-TEST-010 Multi-Controller Pattern)
+	// Each process creates: envtest + k8sManager + controller + all dependencies
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
+	// Create per-process context
+	ctx, cancel = context.WithCancel(context.TODO())
 
 	By("Registering SignalProcessing CRD scheme")
-	err = signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
+	err := signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Registering Remediation CRD scheme for BR-SP-003 tests")
@@ -244,7 +258,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	err = networkingv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Bootstrapping test environment")
+	By("Bootstrapping per-process test environment (envtest)")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -264,59 +278,42 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
 
-	By("Creating namespaces for testing")
-	// Create kubernaut-system namespace for controller
-	systemNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-system",
-		},
-	}
-	err = k8sClient.Create(ctx, systemNs)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create default namespace for tests
-	defaultNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "default",
-		},
-	}
-	_ = k8sClient.Create(ctx, defaultNs) // May already exist
-
-	GinkgoWriter.Println("✅ Namespaces created: kubernaut-system, default")
-
-	By("Creating environment classification ConfigMap")
-	createEnvironmentConfigMap()
-	GinkgoWriter.Println("✅ Environment ConfigMap created in kubernaut-system namespace")
-
-	// Create audit store (BufferedStore pattern per ADR-038)
-	// Uses DataStorage API on port 18094 (per DD-TEST-001)
+	// Create DataStorage client adapter for audit store (per-process)
 	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	// DD-AUTH-005: Integration tests use mock user transport (no oauth-proxy)
-	GinkgoWriter.Println("📋 Setting up audit store...")
-	mockTransport := testutil.NewMockUserTransport("test-signalprocessing@integration.test")
-	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
-		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort), // IPv4 explicit for CI
+	mockTransport := testauth.NewMockUserTransport("test-signalprocessing@integration.test")
+	dsAuditClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
 		5*time.Second,
-		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
+		mockTransport,
 	)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI client adapter")
+	Expect(err).NotTo(HaveOccurred(), "Failed to create OpenAPI client adapter")
 
+	// SP-CACHE-001: Create audit store per-process (uses shared DataStorage infrastructure)
 	auditConfig := audit.DefaultConfig()
 	auditConfig.FlushInterval = 100 * time.Millisecond // Faster flush for tests
 	logger := zap.New(zap.WriteTo(GinkgoWriter))
 
-	auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "signalprocessing", logger)
-	Expect(err).ToNot(HaveOccurred(), "Audit store creation must succeed for BR-SP-090")
-	GinkgoWriter.Println("✅ Audit store configured")
+	auditStore, err = audit.NewBufferedStore(dsAuditClient, auditConfig, "signalprocessing", logger)
+	Expect(err).NotTo(HaveOccurred(), "Audit store creation must succeed for BR-SP-090")
+	GinkgoWriter.Println("✅ Per-process audit store configured")
 
-	By("Setting up the controller manager")
+	// Create DataStorage ogen client for audit event queries in tests
+	// Per service boundary rules: SignalProcessing queries DataStorage via HTTP API
+	dsClient, err = ogenclient.NewClient(
+		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
+	)
+	Expect(err).NotTo(HaveOccurred(), "DataStorage ogen client creation must succeed")
+	GinkgoWriter.Printf("✅ DataStorage ogen client ready for test queries\n")
+
+	By("Setting up the per-process controller manager")
 	k8sManager, err = ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: "0", // Use random port to avoid conflicts in parallel tests
+			BindAddress: "0", // DD-TEST-010: Random port per process to avoid conflicts
 		},
 	})
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	By("Setting up the SignalProcessing controller with audit client")
 	// Create audit client for BR-SP-090 compliance
@@ -326,7 +323,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Day 10 Integration: Create Rego policy files (IMPLEMENTATION_PLAN_V1.31.md)
 	// These files match the classifier's expected input schema
 	envPolicyFile, err := os.CreateTemp("", "environment-*.rego")
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_, err = envPolicyFile.WriteString(`package signalprocessing.environment
 
 import rego.v1
@@ -355,11 +352,11 @@ else := {"environment": "development", "confidence": 0.80, "source": "configmap"
 # BR-SP-053: Default fallback (confidence 0.0)
 else := {"environment": "unknown", "confidence": 0.0, "source": "default"}
 `)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_ = envPolicyFile.Close()
 
 	priorityPolicyFile, err := os.CreateTemp("", "priority-*.rego")
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_, err = priorityPolicyFile.WriteString(`package signalprocessing.priority
 
 import rego.v1
@@ -415,21 +412,26 @@ else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if 
 # Default
 else := {"priority": "P3", "confidence": 0.5, "source": "default"}
 `)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_ = priorityPolicyFile.Close()
 
-	By("Initializing classifiers (Day 10 integration)")
+	// Schedule cleanup of temp files and hot-reload watchers
+	DeferCleanup(func() {
+		_ = os.Remove(envPolicyFile.Name())
+		_ = os.Remove(priorityPolicyFile.Name())
+	})
+
 	// Initialize Environment Classifier (BR-SP-051, BR-SP-052, BR-SP-053)
 	envClassifier, err := classifier.NewEnvironmentClassifier(
 		ctx,
 		envPolicyFile.Name(),
 		logger,
 	)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	// BR-SP-072: Start hot-reload for Environment Classifier
 	err = envClassifier.StartHotReload(ctx)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	// Initialize Priority Engine (BR-SP-070, BR-SP-071, BR-SP-072)
 	priorityEngine, err := classifier.NewPriorityEngine(
@@ -437,31 +439,24 @@ else := {"priority": "P3", "confidence": 0.5, "source": "default"}
 		priorityPolicyFile.Name(),
 		logger,
 	)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	// BR-SP-072: Start hot-reload for Priority Engine
 	err = priorityEngine.StartHotReload(ctx)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	// Create business policy file for BR-SP-002, BR-SP-080, BR-SP-081
 	businessPolicyFile, err := os.CreateTemp("", "business-*.rego")
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_, err = businessPolicyFile.WriteString(`package signalprocessing.business
-
 import rego.v1
-
 # BR-SP-002: Business unit classification
-# Simple policy for testing - uses namespace labels
-result := {
-    "business_unit": input.namespace.labels["kubernaut.ai/business-unit"],
-    "service_owner": input.namespace.labels["kubernaut.ai/service-owner"],
-    "criticality": input.namespace.labels["kubernaut.ai/criticality"],
-    "sla_requirement": input.namespace.labels["kubernaut.ai/sla"],
-    "confidence": 0.95,
-    "source": "namespace-labels"
+result := {"business_unit": "platform", "criticality": "high", "confidence": 0.9, "source": "namespace-labels"} if {
+    input.namespace.labels["kubernaut.ai/business-unit"] == "platform"
 }
+else := {"business_unit": "unknown", "criticality": "medium", "confidence": 0.5, "source": "default"}
 `)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_ = businessPolicyFile.Close()
 
 	// Initialize Business Classifier (BR-SP-002, BR-SP-080, BR-SP-081)
@@ -470,224 +465,89 @@ result := {
 		businessPolicyFile.Name(),
 		logger,
 	)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
-	By("Initializing owner chain builder (Day 7 integration)")
-	// Initialize Owner Chain Builder (BR-SP-100)
+	// Initialize owner chain builder (Day 7 integration)
 	ownerChainBuilder := ownerchain.NewBuilder(k8sManager.GetClient(), logger)
 
-	By("Initializing Rego engine and label detector (Day 8 integration)")
-	// Create CustomLabels policy file for BR-SP-102, BR-SP-104
+	// Initialize CustomLabels Rego engine (BR-SP-102, BR-SP-104, BR-SP-072)
 	labelsPolicyFile, err := os.CreateTemp("", "labels-*.rego")
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_, err = labelsPolicyFile.WriteString(`package signalprocessing.labels
-
 import rego.v1
-
-# BR-SP-102: CustomLabels extraction with degraded mode support
-# Extract kubernaut.ai/* labels from namespace (degraded mode)
-
-# Extract all kubernaut.ai/* labels dynamically
-labels := result if {
-	input.kubernetes.namespaceLabels
-	result := {key: [val] |
-		some full_key, val in input.kubernetes.namespaceLabels
-		startswith(full_key, "kubernaut.ai/")
-		key := substring(full_key, count("kubernaut.ai/"), -1)
-	}
-	count(result) > 0
-} else := {}
+result := {}
 `)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	_ = labelsPolicyFile.Close()
+	labelsPolicyFilePath = labelsPolicyFile.Name() // Store for hot-reload tests
 
-	// BR-SP-072: Store policy file path for hot-reload testing
-	labelsPolicyFilePath = labelsPolicyFile.Name()
-
-	// Initialize Rego Engine (BR-SP-102, BR-SP-104)
 	regoEngine := rego.NewEngine(logger, labelsPolicyFilePath)
 
 	// Load initial policy
 	policyContent, err := os.ReadFile(labelsPolicyFile.Name())
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 	err = regoEngine.LoadPolicy(string(policyContent))
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	// BR-SP-072: Start hot-reload for CustomLabels Engine
 	err = regoEngine.StartHotReload(ctx)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
 	// Initialize Label Detector (BR-SP-101)
 	labelDetector := detection.NewLabelDetector(k8sManager.GetClient(), logger)
 
 	// Initialize Metrics (DD-005: Observability)
 	// Per AIAnalysis pattern: Use global prometheus.DefaultRegisterer
-	// This enables ALL parallel processes to query metrics from Process 1's controller
-	// Tests query prometheus.DefaultGatherer to access same metrics
-	// CRITICAL: Create metrics instance ONCE and share between enricher + controller
-	// Multiple calls to NewMetrics() would cause duplicate registration panic
 	sharedMetrics := spmetrics.NewMetrics() // No args = uses global prometheus.DefaultRegisterer
 
-	// Initialize K8sEnricher (BR-SP-001)
+	// Initialize K8s Enricher (BR-SP-001)
 	// Metrics are MANDATORY for observability (per k8s_enricher.go panic guard)
-	// Shares metrics instance with controller to avoid duplicate registration
-	k8sEnricher := enricher.NewK8sEnricher(k8sManager.GetClient(), logger, sharedMetrics, 5*time.Second)
+	k8sEnricher := enricher.NewK8sEnricher(
+		k8sManager.GetClient(),
+		logger,
+		sharedMetrics, // Pass shared metrics to enricher
+		5*time.Second, // Timeout for K8s API calls
+	)
 
 	// Initialize StatusManager (DD-PERF-001: Atomic Status Updates)
-	statusManager := spstatus.NewManager(k8sManager.GetClient())
+	// SP-CACHE-001: Pass APIReader to bypass cache for fresh refetches
+	statusManager := spstatus.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader())
 
 	// Initialize EventRecorder (K8s best practice)
-	eventRecorder := k8sManager.GetEventRecorderFor("signalprocessing-controller")
+	recorder := k8sManager.GetEventRecorderFor("signalprocessing-controller")
 
-	// Create controller with ALL MANDATORY fields
+	// Initialize SignalProcessing controller with ALL dependencies
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
-		AuditClient:        auditClient,        // BR-SP-090: Audit is MANDATORY
-		StatusManager:      statusManager,      // DD-PERF-001: Atomic Status Updates
-		Metrics:            sharedMetrics,      // DD-005: Observability (shared with enricher)
-		Recorder:           eventRecorder,      // K8s EventRecorder for debugging
-		EnvClassifier:      envClassifier,      // BR-SP-051-053: Environment classification (interface)
-		PriorityAssigner:   priorityEngine,     // BR-SP-070-072: Priority assignment (interface)
-		BusinessClassifier: businessClassifier, // BR-SP-002, BR-SP-080-081: Business classification
-		OwnerChainBuilder:  ownerChainBuilder,  // BR-SP-100: Owner chain traversal
-		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
-		LabelDetector:      labelDetector,      // BR-SP-101: Detected labels
-		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
+		AuditClient:        auditClient,
+		Metrics:            sharedMetrics, // DD-005: Observability
+		Recorder:           recorder,
+		StatusManager:      statusManager, // DD-PERF-001 + SP-CACHE-001
+		EnvClassifier:      envClassifier,
+		PriorityAssigner:   priorityEngine, // PriorityEngine implements PriorityAssigner interface
+		BusinessClassifier: businessClassifier,
+		RegoEngine:         regoEngine,        // BR-SP-102, BR-SP-104: CustomLabels extraction
+		LabelDetector:      labelDetector,     // BR-SP-101: Detected labels
+		K8sEnricher:        k8sEnricher,       // BR-SP-001: K8s context enrichment (interface)
+		OwnerChainBuilder:  ownerChainBuilder, // BR-SP-100: Owner chain analysis
 	}).SetupWithManager(k8sManager)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).NotTo(HaveOccurred())
 
-	// Schedule cleanup of temp files and hot-reload watchers
-	DeferCleanup(func() {
-		// BR-SP-072: Stop hot-reload watchers before removing files
-		if priorityEngine != nil {
-			priorityEngine.Stop()
-		}
-		if envClassifier != nil {
-			envClassifier.Stop()
-		}
-		if regoEngine != nil {
-			regoEngine.Stop()
-		}
-
-		// Remove temp policy files
-		_ = os.Remove(envPolicyFile.Name())
-		_ = os.Remove(priorityPolicyFile.Name())
-		_ = os.Remove(businessPolicyFile.Name())
-		_ = os.Remove(labelsPolicyFile.Name())
-	})
-
-	By("Starting the controller manager")
+	By("Starting the per-process controller manager")
 	go func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
 
-	// Wait for manager to be ready
-	time.Sleep(2 * time.Second)
-
-	// Note: Metrics server is configured with random port (BindAddress: "0")
-	// This prevents port conflicts in parallel tests (DD-TEST-002)
-	// The actual port is assigned dynamically by the OS
-	GinkgoWriter.Println("✅ Metrics server configured with dynamic port assignment")
-
-	GinkgoWriter.Println("✅ SignalProcessing integration test environment ready!")
-	GinkgoWriter.Println("")
-	GinkgoWriter.Println("Environment:")
-	GinkgoWriter.Println("  • ENVTEST with real Kubernetes API (etcd + kube-apiserver)")
-	GinkgoWriter.Println("  • SignalProcessing CRD installed")
-	GinkgoWriter.Println("  • SignalProcessing controller running")
-	GinkgoWriter.Println("  • Environment ConfigMap ready")
-	GinkgoWriter.Println("  • Audit infrastructure: PostgreSQL:15436, Redis:16382, DataStorage:18094")
-	GinkgoWriter.Println("")
-
-	// DD-TEST-002: Serialize REST config for parallel processes
-	// Each process needs its own k8sClient and context
-	// Include metrics address for metrics tests
-	configData := struct {
-		Host     string
-		CAData   []byte
-		CertData []byte
-		KeyData  []byte
-	}{
-		Host:     cfg.Host,
-		CAData:   cfg.CAData,
-		CertData: cfg.CertData,
-		KeyData:  cfg.KeyData,
-	}
-	data, err := json.Marshal(configData)
-	Expect(err).NotTo(HaveOccurred())
-	return data
-}, func(data []byte) {
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// ALL PROCESSES: Setup per-process references (runs on EVERY parallel process)
-	// DD-TEST-002: Each process MUST create its own k8sClient and context
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
-
-	// Create per-process context
-	ctx, cancel = context.WithCancel(context.TODO())
-
-	// Deserialize REST config from process 1
-	var configData struct {
-		Host        string
-		CAData      []byte
-		CertData    []byte
-		KeyData     []byte
-		MetricsAddr string
-	}
-	err := json.Unmarshal(data, &configData)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register SignalProcessing CRD scheme (MUST be done before creating client)
-	err = signalprocessingv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register Remediation CRD scheme for BR-SP-003 tests
-	err = remediationv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Register additional K8s types needed for integration tests
-	err = appsv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = autoscalingv2.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = policyv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-	err = networkingv1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
-
-	// Create per-process REST config
-	cfg = &rest.Config{
-		Host: configData.Host,
-		TLSClientConfig: rest.TLSClientConfig{
-			CAData:   configData.CAData,
-			CertData: configData.CertData,
-			KeyData:  configData.KeyData,
-		},
-	}
-
-	// Create per-process k8s client
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(k8sClient).NotTo(BeNil())
-
-	// Create DataStorage ogen client for audit event queries
-	// Per service boundary rules: SignalProcessing queries DataStorage via HTTP API (not direct DB)
-	// This mirrors production behavior where services use HTTP API, not database access
-	By("Creating DataStorage ogen client for audit event queries")
-	dsClient, err = ogenclient.NewClient(
-		fmt.Sprintf("http://127.0.0.1:%d", infrastructure.SignalProcessingIntegrationDataStoragePort),
-	)
-	Expect(err).NotTo(HaveOccurred(), "DataStorage ogen client creation must succeed")
-
-	GinkgoWriter.Printf("✅ DataStorage ogen client ready (http://127.0.0.1:%d)\n", infrastructure.SignalProcessingIntegrationDataStoragePort)
-
-	// Note: Metrics use global prometheus.DefaultRegisterer (AIAnalysis pattern)
-	// No per-process registry needed - all processes query the same global registry
-
-	GinkgoWriter.Printf("✅ Process setup complete (k8sClient + testDB initialized for this process)\n")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	GinkgoWriter.Println("✅ Phase 2 Complete: Per-process controller ready")
+	GinkgoWriter.Println("  • envtest: Per-process in-memory K8s API server")
+	GinkgoWriter.Println("  • k8sManager: Per-process controller-runtime manager")
+	GinkgoWriter.Println("  • SignalProcessing controller: Running in this process")
+	GinkgoWriter.Println("  • Audit infrastructure: Shared (PostgreSQL:15436, Redis:16382, DataStorage:18094)")
+	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
 
 // SP-BUG-005: Use SynchronizedAfterSuite to make Process 1-only cleanup explicit
@@ -696,17 +556,34 @@ labels := result if {
 var _ = SynchronizedAfterSuite(
 	func() {
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// ALL PROCESSES: Per-process cleanup
+		// ALL PROCESSES: Per-process cleanup (DD-TEST-010 Multi-Controller)
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		By("Tearing down per-process test environment")
 
-		// Note: ogen client (dsClient) uses http.DefaultClient which doesn't require explicit cleanup
-		GinkgoWriter.Println("✅ DataStorage ogen client cleanup (no-op for HTTP client)")
+		// Flush audit store before shutdown (BR-SP-090)
+		if auditStore != nil {
+			flushCtx, flushCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer flushCancel()
+			if err := auditStore.Flush(flushCtx); err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to flush audit store during cleanup: %v\n", err)
+			}
+		}
 
-		// Cancel context if it was created
+		// Cancel context to stop controller manager
 		if cancel != nil {
 			cancel()
 		}
+
+		// Stop per-process envtest
+		if testEnv != nil {
+			By("Stopping per-process envtest")
+			err := testEnv.Stop()
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Failed to stop envtest: %v\n", err)
+			}
+		}
+
+		GinkgoWriter.Println("✅ Per-process cleanup complete (envtest, controller, audit store)")
 
 		// Stop testEnv if it was created (each process has its own)
 		if testEnv != nil {
