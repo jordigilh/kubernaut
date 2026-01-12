@@ -28,7 +28,9 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from typing import Dict, Any
 
-from tests.mock_llm_server import MockLLMServer
+# V3.0 (Mock LLM Migration - January 12, 2026):
+# Removed embedded MockLLMServer - now using standalone Mock LLM service
+# from tests.mock_llm_server import MockLLMServer
 
 
 # ========================================
@@ -67,25 +69,16 @@ def setup_mock_llm_mode():
     os.environ.pop("MOCK_LLM_MODE", None)
 
 
-@pytest.fixture(scope="session")
-def mock_llm_server():
-    """
-    Session-scoped mock LLM server.
-
-    Provides a mock Ollama-compatible endpoint for integration tests.
-    The server returns predictable responses based on prompt content.
-    """
-    with MockLLMServer() as server:
-        yield server
-
-
 @pytest.fixture
-def test_config(mock_llm_server) -> Dict[str, Any]:
+def test_config() -> Dict[str, Any]:
     """
-    Test configuration with mock LLM endpoint.
+    Test configuration for unit tests.
 
-    No DEV_MODE - tests use actual code paths with mock LLM server.
-    Uses "openai" provider with custom endpoint (Ollama-compatible).
+    V3.0 (Mock LLM Migration - January 12, 2026):
+    - Removed dependency on embedded MockLLMServer
+    - Uses environment variables or config file for LLM endpoint
+    - Unit tests use TestClient with mocked config (see unit/conftest.py)
+    - Integration tests use real Mock LLM container (see integration/conftest.py)
     """
     return {
         "service_name": "holmesgpt-api",
@@ -93,9 +86,9 @@ def test_config(mock_llm_server) -> Dict[str, Any]:
         "environment": "test",
         "auth_enabled": False,
         "llm": {
-            "provider": "openai",  # Ollama uses OpenAI-compatible API
+            "provider": "openai",
             "model": "mock-model",
-            "endpoint": mock_llm_server.url,
+            "endpoint": os.environ.get("LLM_ENDPOINT", "http://127.0.0.1:8080"),
         },
     }
 
