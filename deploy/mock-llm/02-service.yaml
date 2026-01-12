@@ -1,0 +1,18 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock-llm
+  namespace: kubernaut-system
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+spec:
+  type: ClusterIP  # Internal only - accessed by HAPI/AIAnalysis inside cluster
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  selector:
+    app: mock-llm
