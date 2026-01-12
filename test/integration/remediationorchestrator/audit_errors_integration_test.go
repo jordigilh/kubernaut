@@ -101,21 +101,29 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 					FiringTime:   now,
 					ReceivedTime: now,
 				},
-				Status: remediationv1.RemediationRequestStatus{
-					// Invalid timeout configuration (negative duration) - moved from Spec to Status per Gap #8
-					TimeoutConfig: &remediationv1.TimeoutConfig{
-						Global: &metav1.Duration{Duration: -100 * time.Second}, // Invalid: negative
-					},
-				},
+				// NOTE: Status field intentionally omitted - Kubernetes ignores Status on CRD creation
+				// We'll set it after creation via status update (simulates operator error or webhook bypass)
 			}
 
-			// When: Create RemediationRequest CRD (controller will detect invalid config)
+			// When: Create RemediationRequest CRD
 			err := k8sClient.Create(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 
 			correlationID := string(rr.UID)
 
-			// Then: Should transition to Failed due to invalid timeout config
+			// Wait for controller to initialize status.timeoutConfig with defaults
+			Eventually(func() bool {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				return rr.Status.TimeoutConfig != nil
+			}, timeout, interval).Should(BeTrue(), "Controller should initialize status.timeoutConfig")
+
+			// Now inject invalid timeout via status update (simulates operator error or webhook bypass)
+			// Gap #7: Tests controller detection of invalid configuration
+			rr.Status.TimeoutConfig.Global = &metav1.Duration{Duration: -100 * time.Second} // Invalid: negative
+			err = k8sClient.Status().Update(ctx, rr)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Then: Controller should detect invalid config and transition to Failed
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.OverallPhase
