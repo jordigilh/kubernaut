@@ -77,13 +77,12 @@ USER 1001
 
 # Environment variables
 # CRITICAL: PYTHONPATH ensures Python 3.12 finds packages in /opt/app-root/lib/python3.12/site-packages
-# MOCK_LLM_MODE: Enable mock LLM responses for E2E tests (BR-HAPI-212)
+# V2.0 (Mock LLM Migration - January 2026): MOCK_LLM_MODE removed, now uses standalone Mock LLM service
 ENV PYTHONUNBUFFERED=1 \
 	PYTHONDONTWRITEBYTECODE=1 \
 	PATH="/opt/app-root/bin:${PATH}" \
 	PYTHONPATH="/opt/app-root/lib/python3.12/site-packages:${PYTHONPATH}" \
-	HOME=/opt/app-root \
-	MOCK_LLM_MODE=true
+	HOME=/opt/app-root
 
 # Expose port
 EXPOSE 8080
