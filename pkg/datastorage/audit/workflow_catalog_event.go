@@ -48,7 +48,7 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.created")
-	pkgaudit.SetEventCategory(auditEvent, "workflow_catalog")
+	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
 	pkgaudit.SetEventAction(auditEvent, "create")
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
@@ -122,7 +122,7 @@ func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields ogenclient.Wo
 	// Create OpenAPI audit event
 	auditEvent := pkgaudit.NewAuditEventRequest()
 	pkgaudit.SetEventType(auditEvent, "datastorage.workflow.updated")
-	pkgaudit.SetEventCategory(auditEvent, "workflow_catalog")
+	pkgaudit.SetEventCategory(auditEvent, "workflow")  // Must be "workflow" per OpenAPI schema (not "workflow_catalog")
 	pkgaudit.SetEventAction(auditEvent, "update")
 	pkgaudit.SetEventOutcome(auditEvent, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
