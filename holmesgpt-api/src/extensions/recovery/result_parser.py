@@ -127,7 +127,6 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
     # Format: "# selected_workflow\n{'workflow_id': '...', ...}"
     if not json_match and ('# selected_workflow' in analysis_text or '# root_cause_analysis' in analysis_text):
         # Extract the dict portions and combine them
-        import re
         parts = {}
         
         # Extract root_cause_analysis  
