@@ -1,7 +1,7 @@
 # Testing Guidelines: Business Requirements vs Unit Tests
 
-**Version**: 2.5.0
-**Last Updated**: 2025-12-26
+**Version**: 2.5.1
+**Last Updated**: 2026-01-12
 **Status**: Active
 
 This document provides clear guidance on **when** and **how** to use each type of test in the kubernaut system.
@@ -9,6 +9,12 @@ This document provides clear guidance on **when** and **how** to use each type o
 ---
 
 ## 📋 **Changelog**
+
+### Version 2.5.1 (2026-01-12)
+- **ADDED**: RR Reconstruction example to HTTP anti-pattern section
+- **CORRECTED**: Integration test anti-pattern discovered in reconstruction feature (January 12, 2026)
+- **EXAMPLE**: Demonstrates correct pattern (direct business logic calls) vs wrong pattern (HTTP endpoint testing)
+- **REFERENCE**: Links to `RECONSTRUCTION_TESTING_TIERS.md` for feature-specific tier clarification
 
 ### Version 2.5.0 (2025-12-26)
 - **CRITICAL**: Added ANTI-PATTERN section for direct audit infrastructure testing
@@ -2527,6 +2533,81 @@ var _ = Describe("Audit Repository Integration", func() {
 3. ✅ **Fast Execution**: No HTTP serialization/deserialization
 4. ✅ **Correct Tier**: Integration tests repository with real database
 5. ✅ **Clear Separation**: HTTP API tests moved to E2E tier
+
+#### ✅ CORRECT PATTERN: RR Reconstruction WITHOUT HTTP (January 2026)
+
+```go
+// ✅ CORRECT: RR Reconstruction integration test WITHOUT HTTP (January 2026)
+var _ = Describe("RemediationRequest Reconstruction Integration", func() {
+    var (
+        db     *sql.DB
+        logger logr.Logger
+    )
+
+    It("should reconstruct RR from audit events using business logic directly", func() {
+        // Given: Audit events in database
+        correlationID := "test-correlation-123"
+        // (Assume events were inserted via integration setup)
+
+        // ✅ CORRECT: Call business logic directly (no HTTP)
+        // Step 1: Query audit events
+        events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db, logger, correlationID)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(events).ToNot(BeEmpty())
+
+        // Step 2: Parse events
+        parsedData := make([]*reconstruction.ParsedAuditData, 0, len(events))
+        for _, event := range events {
+            parsed, err := reconstruction.ParseAuditEvent(event)
+            Expect(err).ToNot(HaveOccurred())
+            parsedData = append(parsedData, parsed)
+        }
+
+        // Step 3: Merge audit data
+        rrFields, err := reconstruction.MergeAuditData(parsedData)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Step 4: Build RemediationRequest
+        rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Step 5: Validate reconstruction
+        validation, err := reconstruction.ValidateReconstructedRR(rr)
+        Expect(err).ToNot(HaveOccurred())
+
+        // ✅ CORRECT: Verify business outcomes (not HTTP status codes)
+        Expect(rr.Spec.SignalName).To(Equal("HighCPU"))
+        Expect(rr.Status.TimeoutConfig).ToNot(BeNil())
+        Expect(validation.IsValid).To(BeTrue())
+        Expect(validation.CompletenessPercentage).To(BeNumerically(">=", 50))
+    })
+})
+```
+
+**Why This is Correct**:
+1. ✅ **Tests Business Flow**: Query → Parse → Merge → Build → Validate pipeline
+2. ✅ **Real PostgreSQL**: Uses actual database with audit events
+3. ✅ **No HTTP Overhead**: Direct function calls, fast execution
+4. ✅ **Correct Tier**: Tests component coordination, not transport layer
+5. ✅ **Clear Intent**: Validates reconstruction logic, not API contract
+
+**❌ WRONG Pattern (Original Implementation - Corrected January 2026)**:
+```go
+// ❌ FORBIDDEN: Testing HTTP endpoint in integration test
+var _ = Describe("Reconstruction API Integration", func() {
+    var testServer *httptest.Server  // ❌ HTTP server
+
+    It("should reconstruct RR via HTTP endpoint", func() {
+        // ❌ WRONG: HTTP request in integration test
+        resp, err := testServer.ServeHTTP(req)
+        Expect(resp.StatusCode).To(Equal(200))  // ❌ Testing HTTP layer
+    })
+})
+```
+
+**Correction Applied**: January 12, 2026 - Refactored to call business logic directly, moved HTTP endpoint testing to E2E tier.
+
+**Reference**: `docs/development/SOC2/RECONSTRUCTION_TESTING_TIERS.md` - Clarifies integration vs E2E boundaries for reconstruction feature.
 
 #### When HTTP IS Acceptable
 
