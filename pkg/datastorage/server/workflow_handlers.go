@@ -282,6 +282,13 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		filters.Component = component
 	}
 
+	// Workflow name filter (exact match for metadata lookup)
+	// Authority: DD-API-001 (OpenAPI client mandatory - added in Jan 2026)
+	// Used for test idempotency and workflow lookup by human-readable name
+	if workflowName := r.URL.Query().Get("workflow_name"); workflowName != "" {
+		filters.WorkflowName = workflowName
+	}
+
 	// DD-WORKFLOW-001 v1.5: Custom labels (subdomain-based)
 	// Format: custom_labels[subdomain]=value1,value2
 	// Example: custom_labels[constraint]=cost-constrained,stateful-safe

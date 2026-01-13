@@ -564,6 +564,12 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{}, updateErr
 	}
 
+	// Record classification decision audit event (BR-SP-105, DD-SEVERITY-001)
+	// Must be called after atomic status update to include normalized severity
+	if r.AuditClient != nil && severityResult != nil {
+		r.AuditClient.RecordClassificationDecision(ctx, sp)
+	}
+
 	// Record phase transition audit event (BR-SP-090)
 	// ADR-032: Audit is MANDATORY - return error if not configured
 	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseCategorizing)); err != nil {

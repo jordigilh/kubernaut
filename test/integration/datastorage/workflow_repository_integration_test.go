@@ -461,6 +461,40 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(total).To(Equal(3), "Total should be 3 (all workflows)")
 			})
 		})
+
+		Context("with workflow_name filter", func() {
+			It("should filter workflows by exact workflow name match", func() {
+				// ARRANGE: Specific workflow name we want to find
+				targetWorkflowName := fmt.Sprintf("wf-repo-%s-list-1", testID)
+
+				// ACT: List workflows filtered by workflow_name
+				// Authority: DD-API-001 (OpenAPI client mandatory - workflow_name filter added Jan 2026)
+				// Used for test idempotency and workflow lookup by human-readable name
+				filters := &models.WorkflowSearchFilters{
+					WorkflowName: targetWorkflowName,
+				}
+				workflows, total, err := workflowRepo.List(ctx, filters, 50, 0)
+
+				// ASSERT: Only the specific workflow returned
+				Expect(err).ToNot(HaveOccurred())
+				Expect(workflows).To(HaveLen(1), "Should return exactly 1 workflow matching the name")
+				Expect(total).To(Equal(1), "Total should be 1")
+				Expect(workflows[0].WorkflowName).To(Equal(targetWorkflowName))
+			})
+
+			It("should return empty result for non-existent workflow name", func() {
+				// ACT: List workflows with non-existent workflow_name
+				filters := &models.WorkflowSearchFilters{
+					WorkflowName: "non-existent-workflow-name",
+				}
+				workflows, total, err := workflowRepo.List(ctx, filters, 50, 0)
+
+				// ASSERT: Empty result set
+				Expect(err).ToNot(HaveOccurred())
+				Expect(workflows).To(HaveLen(0), "Should return no workflows")
+				Expect(total).To(Equal(0), "Total should be 0")
+			})
+		})
 	})
 
 	// ========================================

@@ -1199,7 +1199,7 @@ var _ = Describe("SOC2 CC8.1: Operator Attribution E2E", func() {
 |-----|-------|---------------------|--------------|------------------------|--------|
 | #1-3 | Gateway fields | ✅ 100% | ✅ 100% | `Equal(1)` ✅ | ✅ **COMPLETE** |
 | #4 | `providerData` | ✅ 100% | ✅ 100% | `Equal(2)` ✅ | ✅ **COMPLETE** |
-| #5-6 | Workflow refs | ✅ 100% | ⬜ Pending | `Equal(2)` ✅ | ✅ **COMPLETE** (Integration) |
+| #5-6 | Workflow refs | ✅ 100% | ⚠️ Partial | `Equal(2)` ✅ | ✅ **COMPLETE** (Integration) |
 | #7 | `error_details` | ❌ Not Started | ❌ Not Started | Per scenario 📋 | ⬜ Pending |
 | #8 | `timeoutConfig` | ✅ 100% | ✅ 100% | `BeNumerically(">=",1)` ✅ | ✅ **COMPLETE** |
 | **Integration** | Full RR reconstruction | ❌ Not Started | ❌ Not Started | `Equal(5+)` 📋 | ⬜ Pending (Needs Gaps 5-7) |
