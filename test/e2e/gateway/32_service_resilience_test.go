@@ -230,7 +230,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 					GinkgoWriter.Printf("📋 List query succeeded but found 0 items (waiting...)\n")
 				}
 				return len(rrList.Items)
-			}, 45*time.Second, 1*time.Second).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability (increased timeout for cache sync)")
+			}, 60*time.Second, 1*time.Second).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability (60s for K8s cache sync - DD-E2E-K8S-CLIENT-001 Phase 1)")
 		})
 
 		It("should log DataStorage failures without blocking alert processing", FlakeAttempts(3), func() {
@@ -272,7 +272,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 					GinkgoWriter.Printf("📋 Waiting for CRD (cache sync)...\n")
 				}
 				return len(rrList.Items) > 0
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "CRD should be created (increased timeout for cache sync)")
+			}, 60*time.Second, 1*time.Second).Should(BeTrue(), "CRD should be created (60s for K8s cache sync - DD-E2E-K8S-CLIENT-001 Phase 1)")
 
 			// Note: In production, this would validate logs contain DataStorage error
 			// but alert processing continued (non-blocking error logging)
@@ -310,7 +310,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				rrList := &remediationv1alpha1.RemediationRequestList{}
 				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
 				return err == nil && len(rrList.Items) > 0
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "CRD should be created after DataStorage recovery (increased timeout for cache sync)")
+			}, 60*time.Second, 1*time.Second).Should(BeTrue(), "CRD should be created after DataStorage recovery (60s for K8s cache sync - DD-E2E-K8S-CLIENT-001 Phase 1)")
 
 			// Note: When DataStorage is available, audit events should succeed
 			// This validates the service doesn't permanently disable audit after failures

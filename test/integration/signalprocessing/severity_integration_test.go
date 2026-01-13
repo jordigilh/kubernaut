@@ -43,6 +43,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/google/uuid"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,9 +62,10 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 		// ctx, k8sClient, dsClient, auditStore are package-level variables from suite_test.go
 
 		// ✅ PARALLEL-SAFE: Unique namespace per test execution
-		// Use GinkgoParallelProcess() to ensure unique namespace per test worker
-		namespace = fmt.Sprintf("sp-severity-integration-%d-%d",
-			GinkgoParallelProcess(), GinkgoRandomSeed())
+		// Use GinkgoParallelProcess() + UUID to ensure uniqueness across parallel runs
+		testID := uuid.New().String()[:8] // First 8 chars of UUID
+		namespace = fmt.Sprintf("sp-severity-%d-%s",
+			GinkgoParallelProcess(), testID)
 
 		// Create test namespace
 		ns := &corev1.Namespace{

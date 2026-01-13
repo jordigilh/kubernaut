@@ -334,6 +334,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		// Verify CRD actually exists in K8s before sending duplicate
 		// Query API server directly (not Gateway's cache) to ensure CRD is queryable
 		// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
+		// K8s Cache Synchronization: Gateway (in-cluster) and E2E tests (external client)
+		// use separate K8s clients with different cache states. Allow 60s for cache sync.
+		// Authority: DD-E2E-K8S-CLIENT-001 (Phase 1 - eventual consistency acknowledgment)
 		Eventually(func() int {
 			var crdList2 remediationv1alpha1.RemediationRequestList
 			err := k8sClient.List(ctx, &crdList2, client.InNamespace(prodNamespace))
@@ -341,8 +344,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				return 0
 			}
 			return len(crdList2.Items)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"CRD should exist in K8s before testing deduplication")
+		}, 60*time.Second, 1*time.Second).Should(Equal(1),
+			"CRD should be visible within 60s (K8s cache sync between in-cluster Gateway and external test client)")
 
 		// Second alert: Duplicate (CRD still in non-terminal phase)
 		req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -465,6 +468,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				// BUSINESS OUTCOME: CRD created in correct namespace
 				// Use Eventually to handle async CRD creation
 				var crd remediationv1alpha1.RemediationRequest
+				// K8s Cache Synchronization: Allow 60s for cache sync (DD-E2E-K8S-CLIENT-001 Phase 1)
 				Eventually(func() bool {
 					var crdList remediationv1alpha1.RemediationRequestList
 					err = k8sClient.List(ctx, &crdList, client.InNamespace(tc.namespace))
@@ -473,8 +477,8 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 					}
 					crd = crdList.Items[0]
 					return true
-				}, "10s", "200ms").Should(BeTrue(),
-					"Alert in %s namespace should create CRD", tc.namespace)
+				}, "60s", "1s").Should(BeTrue(),
+					"Alert in %s namespace should create CRD (visible within 60s)", tc.namespace)
 				// Note: Environment/Priority assertions removed (2025-12-06)
 				// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 				// Gateway only creates CRD, SP enriches with classification

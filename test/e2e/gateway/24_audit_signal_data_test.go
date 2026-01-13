@@ -704,6 +704,8 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
 			By("Waiting for initial signal audit event to be written")
 			eventTypeReceived := "gateway.signal.received"
+			// K8s Cache Synchronization: Audit events depend on CRD visibility. Allow 60s for cache sync.
+			// Authority: DD-E2E-K8S-CLIENT-001 (Phase 1 - eventual consistency acknowledgment)
 			Eventually(func() int {
 				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventTypeReceived),
@@ -716,7 +718,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 					return resp.Pagination.Value.Total.Value
 				}
 				return 0
-			}, 10*time.Second, 200*time.Millisecond).Should(Equal(1), "First audit event should be written")
+			}, 60*time.Second, 1*time.Second).Should(Equal(1), "First audit event should be written (waits for CRD visibility)")
 
 			By("Sending duplicate alert to trigger gateway.signal.deduplicated event")
 

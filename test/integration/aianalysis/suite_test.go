@@ -292,12 +292,16 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-TEST-010: Deserialize workflow UUIDs from Phase 1
 	// All processes receive the same workflow UUID mapping for test assertions
 	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
-	err := json.Unmarshal(data, &workflowUUIDs)
-	Expect(err).ToNot(HaveOccurred(), "workflowUUIDs must deserialize from Phase 1")
+	deserializeErr := json.Unmarshal(data, &workflowUUIDs)
+	Expect(deserializeErr).ToNot(HaveOccurred(), "workflowUUIDs must deserialize from Phase 1")
 
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("━━━ [Process %d] Phase 2: Per-Process Controller Setup ━━━\n", processNum)
 	GinkgoWriter.Printf("✅ [Process %d] Received %d workflow UUID mappings from Phase 1\n", processNum, len(workflowUUIDs))
+
+	// Declare Phase 2 variables
+	var err error
+	var cfg *rest.Config
 
 	By(fmt.Sprintf("[Process %d] Creating per-process context", processNum))
 	ctx, cancel = context.WithCancel(context.Background())
