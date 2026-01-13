@@ -282,16 +282,16 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 			DataStorageURL: dataStorageURL,
 		},
 
-	Processing: config.ProcessingSettings{
-		// DD-GATEWAY-011: Status-based deduplication
-		// Note: Environment and Priority settings removed (2025-12-06)
-		// Classification now owned by Signal Processing per DD-CATEGORIZATION-001
-		Retry: config.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
-		Deduplication: config.DeduplicationSettings{
-			TTL: 10 * time.Second, // Integration test TTL (production default: 5 minutes)
+		Processing: config.ProcessingSettings{
+			// DD-GATEWAY-011: Status-based deduplication
+			// Note: Environment and Priority settings removed (2025-12-06)
+			// Classification now owned by Signal Processing per DD-CATEGORIZATION-001
+			Retry: config.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
+			Deduplication: config.DeduplicationSettings{
+				TTL: 10 * time.Second, // Integration test TTL (production default: 5 minutes)
+			},
 		},
-	},
-	}	
+	}
 
 	logger.Info("Creating Gateway server for integration tests")
 
@@ -1336,7 +1336,7 @@ func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sCl
 	// multiple Gateway servers are created in parallel tests
 	registry := prometheus.NewRegistry()
 	metricsInstance := metrics.NewMetricsWithRegistry(registry)
-	
+
 	return gateway.NewServerWithK8sClient(cfg, testLogger, metricsInstance, k8sClient)
 }
 

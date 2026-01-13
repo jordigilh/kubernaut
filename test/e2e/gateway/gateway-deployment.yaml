@@ -35,8 +35,8 @@ data:
       data_storage_url: "http://datastorage.kubernaut-system.svc.cluster.local:8080"
 
     processing:
-      deduplication:
-        ttl: 10s  # Minimum allowed TTL (production: 5m)
+      # NOTE: Deduplication is now status-based (DD-GATEWAY-011)
+      # Uses RemediationRequest CRD phase, not TTL-based Redis expiration
 
       environment:
         cache_ttl: 5s              # Fast cache for E2E tests (production: 30s)
