@@ -56,12 +56,11 @@ import (
 
 var _ = Describe("Severity Determination Integration Tests", Label("integration", "severity", "signalprocessing"), func() {
 	var (
-		ctx       context.Context
 		namespace string
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		// ctx, k8sClient, dsClient, auditStore are package-level variables from suite_test.go
 
 		// ✅ PARALLEL-SAFE: Unique namespace per test execution
 		// Use GinkgoParallelProcess() to ensure unique namespace per test worker
@@ -231,9 +230,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				flushAuditStoreAndWait(ctx)
 
 				// Query for classification.decision audit event
-				events := queryAuditEvents(ctx, namespace,
-					ogenclient.AuditEventEventCategoryClassification,
-					ogenclient.AuditEventEventActionDecision)
+				events := queryAuditEvents(ctx, namespace, "classification.decision")
 
 				// THEN: Audit event contains both severities
 				g.Expect(events).ToNot(BeEmpty(), "classification.decision audit event should exist")
@@ -289,9 +286,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			Eventually(func(g Gomega) {
 				flushAuditStoreAndWait(ctx)
 
-				events := queryAuditEvents(ctx, namespace,
-					ogenclient.AuditEventEventCategoryClassification,
-					ogenclient.AuditEventEventActionDecision)
+				events := queryAuditEvents(ctx, namespace, "classification.decision")
 
 				g.Expect(events).ToNot(BeEmpty())
 
@@ -340,9 +335,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			Eventually(func(g Gomega) {
 				flushAuditStoreAndWait(ctx)
 
-				events := queryAuditEvents(ctx, namespace,
-					ogenclient.AuditEventEventCategoryClassification,
-					ogenclient.AuditEventEventActionDecision)
+				events := queryAuditEvents(ctx, namespace, "classification.decision")
 
 				g.Expect(events).ToNot(BeEmpty())
 
@@ -425,9 +418,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				flushAuditStoreAndWait(ctx)
 
 				// Query for error audit events
-				events := queryAuditEvents(ctx, namespace,
-					ogenclient.AuditEventEventCategoryClassification,
-					ogenclient.AuditEventEventActionError)
+				events := queryAuditEvents(ctx, namespace, "error.occurred")
 
 				// THEN: Error audit event is emitted
 				if len(events) > 0 {
@@ -583,13 +574,12 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 	}
 }
 
-// queryAuditEvents queries DataStorage for audit events by category and action.
+// queryAuditEvents queries DataStorage for audit events by event type and namespace.
 // Uses ogen client per DD-TESTING-001 standards.
-func queryAuditEvents(ctx context.Context, namespace string, category, action ogenclient.AuditEventEventCategory) []ogenclient.AuditEvent {
+func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogenclient.AuditEvent {
 	params := ogenclient.QueryAuditEventsParams{
-		EventCategory: ogenclient.NewOptString(string(category)),
-		EventAction:   ogenclient.NewOptString(string(action)),
-		Namespace:     ogenclient.NewOptString(namespace),
+		EventType: ogenclient.NewOptString(eventType),
+		Namespace: ogenclient.NewOptString(namespace),
 	}
 
 	resp, err := dsClient.QueryAuditEvents(ctx, params)
@@ -598,12 +588,7 @@ func queryAuditEvents(ctx context.Context, namespace string, category, action og
 		return []ogenclient.AuditEvent{}
 	}
 	
-	// Check response type (QueryAuditEventsOK has Data field)
-	if respOK, ok := resp.(*ogenclient.QueryAuditEventsOK); ok {
-		return respOK.Data
-	}
-	
-	return []ogenclient.AuditEvent{}
+	return resp.Data
 }
 
 // eventDataToMap converts AuditEventEventData to map[string]interface{} for validation.
