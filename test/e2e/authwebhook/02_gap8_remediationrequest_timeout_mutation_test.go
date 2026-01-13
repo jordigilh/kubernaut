@@ -183,27 +183,45 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// ========================================
 			// THEN: Webhook audit event emitted
 			// ========================================
-			webhookEventType := "webhook.remediationrequest.timeout_modified"
-			var webhookEvents []ogenclient.AuditEvent
+			// DIAGNOSTIC: First query for ALL events with this correlation ID
+			var allEvents []ogenclient.AuditEvent
 
 			Eventually(func() int {
-				// Query audit events using shared helper
-				// Per ADR-034 v1.2: event_type filter for webhook audit events
+				// Query ALL audit events for this correlation ID (no event_type filter)
 				events, _, err := helpers.QueryAuditEvents(
 					ctx,
 					auditClient,
 					&correlationID,
-					&webhookEventType,
-					nil, // No event_category filter needed (webhook event type is unique)
+					nil, // event_type = nil (query ALL event types)
+					nil, // event_category = nil
 				)
 				if err != nil {
 					GinkgoWriter.Printf("⚠️  Audit query error: %v\n", err)
 					return 0
 				}
-				webhookEvents = events
-				return len(events)
-			}, 30*time.Second, 2*time.Second).Should(Equal(1),
-				"webhook.remediationrequest.timeout_modified event should be emitted")
+				allEvents = events
+				return len(allEvents)
+			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
+				"At least one audit event should exist for this correlation_id (diagnostic)")
+
+			// Log ALL events found for diagnostic purposes
+			GinkgoWriter.Printf("📊 DIAGNOSTIC: Found %d audit events for correlation_id=%s:\n", len(allEvents), correlationID)
+			for i, evt := range allEvents {
+				GinkgoWriter.Printf("  [%d] event_type=%s, event_category=%s, event_action=%s, outcome=%s\n",
+					i+1, evt.EventType, evt.EventCategory, evt.EventAction, evt.EventOutcome)
+			}
+
+			// Filter for webhook.remediationrequest.timeout_modified events
+			webhookEvents := []ogenclient.AuditEvent{}
+			for _, evt := range allEvents {
+				if evt.EventType == "webhook.remediationrequest.timeout_modified" {
+					webhookEvents = append(webhookEvents, evt)
+				}
+			}
+
+			Expect(webhookEvents).To(HaveLen(1),
+				"Should have exactly 1 webhook.remediationrequest.timeout_modified event (found %d webhook events out of %d total events)",
+				len(webhookEvents), len(allEvents))
 
 			// Validate webhook event structure (ADR-034 compliance)
 			webhookEvent := webhookEvents[0]
@@ -212,6 +230,8 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
 			Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 			Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
+
+			GinkgoWriter.Printf("✅ Found webhook audit event (event_id=%s)\n", webhookEvent.EventID)
 
 			// ========================================
 			// THEN: LastModifiedBy/LastModifiedAt populated by webhook
