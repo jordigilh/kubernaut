@@ -131,7 +131,7 @@ func TestAIAnalysisIntegration(t *testing.T) {
 // CI environments (GitHub Actions) have slower container startup times, especially HAPI.
 // Default Ginkgo timeout (60s) is insufficient, causing INTERRUPTED in parallel mode.
 // NodeTimeout(5*time.Minute) ensures sufficient time for complete infrastructure startup in CI.
-var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecContext) []byte {
+var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecContext) []byte {
 	// ═══════════════════════════════════════════════════════════════════════════════
 	// Phase 1: Infrastructure ONLY (Process 1 ONLY)
 	// ═══════════════════════════════════════════════════════════════════════════════
