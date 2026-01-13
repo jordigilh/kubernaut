@@ -21,6 +21,7 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -70,8 +71,8 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 	BeforeEach(func() {
 		// Create test namespace with audit enabled
 		// Support parallel execution by including process ID
-		testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s", 
-			GinkgoParallelProcess(), 
+		testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s",
+			GinkgoParallelProcess(),
 			time.Now().Format("150405"))
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -151,7 +152,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 				if err != nil {
 					return false
 				}
-				return rr.Status.TimeoutConfig != nil && 
+				return rr.Status.TimeoutConfig != nil &&
 				       rr.Status.TimeoutConfig.Global != nil
 			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
 				"RemediationOrchestrator controller should initialize default TimeoutConfig")
