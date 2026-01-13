@@ -331,10 +331,18 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 		// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
 
-		// Wait for Gateway cache to sync CRD (E2E-specific delay)
-		// Gateway uses controller-runtime cache which has eventual consistency
-		// Integration tests don't need this because they use shared K8s client
-		time.Sleep(2 * time.Second)
+		// Verify CRD actually exists in K8s before sending duplicate
+		// Query API server directly (not Gateway's cache) to ensure CRD is queryable
+		// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
+		Eventually(func() int {
+			var crdList2 remediationv1alpha1.RemediationRequestList
+			err := k8sClient.List(ctx, &crdList2, client.InNamespace(prodNamespace))
+			if err != nil {
+				return 0
+			}
+			return len(crdList2.Items)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"CRD should exist in K8s before testing deduplication")
 
 		// Second alert: Duplicate (CRD still in non-terminal phase)
 		req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
