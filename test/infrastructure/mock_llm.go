@@ -308,8 +308,17 @@ func StopMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.W
 //	os.Setenv("LLM_ENDPOINT", endpoint)
 //
 // Note: Uses 127.0.0.1 (not localhost) to avoid IPv6 mapping issues in GitHub Actions CI/CD
+// GetMockLLMEndpoint returns the Mock LLM endpoint for host-to-container communication
+// Use this when accessing Mock LLM from the test host (e.g., health checks, curl)
 func GetMockLLMEndpoint(config MockLLMConfig) string {
 	return fmt.Sprintf("http://127.0.0.1:%d", config.Port)
+}
+
+// GetMockLLMContainerEndpoint returns the Mock LLM endpoint for container-to-container communication
+// Use this when configuring services running in containers (e.g., HAPI LLM_ENDPOINT)
+// Example: "http://mock-llm-aianalysis:8080"
+func GetMockLLMContainerEndpoint(config MockLLMConfig) string {
+	return fmt.Sprintf("http://%s:8080", config.ContainerName)
 }
 
 // MockLLMContainerInfo represents information about the Mock LLM container

@@ -4,7 +4,7 @@ logging:
 llm:
   provider: "openai"
   model: "mock-model"
-  endpoint: "http://127.0.0.1:18141"
+  endpoint: "http://mock-llm-aianalysis:8080"  # Container-to-container (was 127.0.0.1:18141 which only works from host)
   secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
 
 data_storage:
