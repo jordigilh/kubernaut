@@ -98,9 +98,8 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	projectRoot := getProjectRoot()
 	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
 
-	// Build image
+	// Build image (uses cache for faster builds now that threading/scenario fixes are committed)
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
-		"--no-cache", // Force rebuild to pick up threading fix
 		"-t", fullImageName,
 		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
 		buildContext,
@@ -108,7 +107,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 
 	output, err := buildCmd.CombinedOutput()
 	
-	// ALWAYS show build output for debugging (especially to verify --no-cache)
+	// ALWAYS show build output for debugging
 	_, _ = fmt.Fprintf(writer, "\n📋 Podman Build Output:\n%s\n", string(output))
 	
 	if err != nil {
