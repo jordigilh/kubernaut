@@ -2,19 +2,19 @@
 
 ## 🔍 **Issue Summary**
 
-**Status**: ⚠️ **E2E Test Failing** - Webhook audit event not being emitted  
-**Test**: `test/e2e/authwebhook/02_gap8_remediationrequest_timeout_mutation_test.go`  
+**Status**: ⚠️ **E2E Test Failing** - Webhook audit event not being emitted
+**Test**: `test/e2e/authwebhook/02_gap8_remediationrequest_timeout_mutation_test.go`
 **Error**: Timeout waiting for `webhook.remediationrequest.timeout_modified` audit event (expected 1, got 0)
 
 ---
 
 ## 📋 **What Works**
 
-✅ **RemediationRequest Creation**: CRD created successfully  
-✅ **TimeoutConfig Initialization**: Manually set via Status().Update()  
-✅ **Operator Mutation**: Status update submitted without errors  
-✅ **Test Infrastructure**: Kind cluster, webhook server, DataStorage all running  
-✅ **Integration Tests**: 47/47 passing (100%)  
+✅ **RemediationRequest Creation**: CRD created successfully
+✅ **TimeoutConfig Initialization**: Manually set via Status().Update()
+✅ **Operator Mutation**: Status update submitted without errors
+✅ **Test Infrastructure**: Kind cluster, webhook server, DataStorage all running
+✅ **Integration Tests**: 47/47 passing (100%)
 
 ---
 
@@ -27,7 +27,7 @@ Expected <int>: 0
 to equal <int>: 1
 ```
 
-**Query**: `correlation_id=<uuid>`, `event_type=webhook.remediationrequest.timeout_modified`  
+**Query**: `correlation_id=<uuid>`, `event_type=webhook.remediationrequest.timeout_modified`
 **Result**: 0 events found
 
 ---
@@ -126,18 +126,18 @@ curl "http://localhost:28099/api/v1/audit/events?event_type=webhook.remediationr
 ## 🛠️ **Attempted Fixes**
 
 ### **Fix #1: Valid SHA-256 Fingerprint** ✅
-**Problem**: SignalFingerprint validation error  
-**Solution**: Use valid 64-char hex string  
+**Problem**: SignalFingerprint validation error
+**Solution**: Use valid 64-char hex string
 **Result**: ✅ RemediationRequest created successfully
 
 ### **Fix #2: Manual TimeoutConfig Initialization** ✅
-**Problem**: RemediationOrchestrator controller not running in AuthWebhook E2E suite  
-**Solution**: Manually initialize TimeoutConfig in test  
+**Problem**: RemediationOrchestrator controller not running in AuthWebhook E2E suite
+**Solution**: Manually initialize TimeoutConfig in test
 **Result**: ✅ Test proceeds to webhook validation
 
 ### **Fix #3: Audit Query Integration** ✅
-**Problem**: Test had TODO placeholders  
-**Solution**: Integrate `helpers.QueryAuditEvents()`  
+**Problem**: Test had TODO placeholders
+**Solution**: Integrate `helpers.QueryAuditEvents()`
 **Result**: ✅ Query executes (but finds 0 events)
 
 ---
@@ -267,9 +267,9 @@ curl "http://localhost:28099/api/v1/audit/events?event_type=webhook.remediationr
 
 ---
 
-**Document Version**: 1.0  
-**Created**: January 13, 2026  
-**Status**: ⚠️ **Issue Documented - Investigation Needed**  
-**Priority**: **High** - Blocks Gap #8 E2E validation  
-**Estimated Fix Time**: 2-4 hours  
+**Document Version**: 1.0
+**Created**: January 13, 2026
+**Status**: ⚠️ **Issue Documented - Investigation Needed**
+**Priority**: **High** - Blocks Gap #8 E2E validation
+**Estimated Fix Time**: 2-4 hours
 **BR-AUDIT-005 v2.0**: Gap #8 - TimeoutConfig mutation audit capture
