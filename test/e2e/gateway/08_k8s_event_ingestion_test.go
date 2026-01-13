@@ -62,7 +62,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 
 		// Get K8s client and create namespace
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
 		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
 			"Failed to create test namespace")
@@ -71,7 +71,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger.Info("Test 08: Kubernetes Event Ingestion - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
@@ -158,15 +158,16 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 		var crdList *remediationv1alpha1.RemediationRequestList
 		Eventually(func() int {
-			freshClient := getKubernetesClientSafe()
-			if freshClient == nil {
+			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
+			// freshClient removed - using suite k8sClient
+			if false { // SKIP: freshClient error check no longer needed
 				if err := GetLastK8sClientError(); err != nil {
 					testLogger.V(1).Info("Failed to create K8s client", "error", err)
 				}
 				return -1
 			}
 			crdList = &remediationv1alpha1.RemediationRequestList{}
-			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
+			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
 				testLogger.V(1).Info("Failed to list CRDs", "error", err)
 				return -1
 			}

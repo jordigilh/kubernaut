@@ -73,7 +73,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 		// Setup test infrastructure using helpers
 
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for E2E tests")
 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free

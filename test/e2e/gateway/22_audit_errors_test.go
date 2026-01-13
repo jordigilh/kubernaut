@@ -74,7 +74,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = getKubernetesClient()
+		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 		testNamespace = fmt.Sprintf("test-error-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 

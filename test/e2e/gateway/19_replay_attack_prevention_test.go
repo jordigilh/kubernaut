@@ -47,7 +47,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 		testNamespace = GenerateUniqueNamespace("replay-attack")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		k8sClient := getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
 		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 

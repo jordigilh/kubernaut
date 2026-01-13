@@ -52,7 +52,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testNamespace = GenerateUniqueNamespace("security-headers")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// Use suite ctx (no timeout) for namespace creation
 		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 

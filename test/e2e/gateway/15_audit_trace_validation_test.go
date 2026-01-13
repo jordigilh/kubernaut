@@ -85,7 +85,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 	testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 	// Create namespace
-	k8sClient = getKubernetesClient()
+	// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	// Use suite ctx (no timeout) for namespace creation
 	Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 

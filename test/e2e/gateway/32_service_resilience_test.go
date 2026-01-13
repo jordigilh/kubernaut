@@ -46,7 +46,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = getKubernetesClient()
+		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
 		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
 		testNamespace = fmt.Sprintf("gw-resilience-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])

@@ -28,7 +28,12 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
@@ -46,9 +51,10 @@ func TestGatewayE2E(t *testing.T) {
 }
 
 var (
-	ctx    context.Context
-	cancel context.CancelFunc
-	logger logr.Logger // DD-005: logr.Logger for unified logging
+	ctx       context.Context
+	cancel    context.CancelFunc
+	logger    logr.Logger       // DD-005: logr.Logger for unified logging
+	k8sClient client.Client     // DD-E2E-K8S-CLIENT-001: Suite-level K8s client (1 per process)
 
 	// Cluster configuration (shared across all tests)
 	clusterName      string
@@ -176,6 +182,27 @@ var _ = SynchronizedBeforeSuite(
 		err := os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// DD-E2E-K8S-CLIENT-001: Create suite-level K8s client (same pattern as RO/AIAnalysis)
+		// This prevents rate limiter contention by reusing 1 client per process instead of
+		// creating ~100 clients (1 per test). See docs/handoff/E2E_RATE_LIMITER_ROOT_CAUSE_JAN13_2026.md
+		logger.Info("Creating Kubernetes client for this process (DD-E2E-K8S-CLIENT-001)")
+		cfg, err := config.GetConfig()
+		Expect(err).ToNot(HaveOccurred(), "Failed to get kubeconfig")
+
+		// Register RemediationRequest CRD scheme
+		scheme := k8sruntime.NewScheme()
+		err = remediationv1alpha1.AddToScheme(scheme)
+		Expect(err).ToNot(HaveOccurred(), "Failed to add RemediationRequest CRD to scheme")
+		err = corev1.AddToScheme(scheme)
+		Expect(err).ToNot(HaveOccurred(), "Failed to add core/v1 to scheme")
+
+		// Create K8s client once for this process (reused across all tests)
+		k8sClient, err = client.New(cfg, client.Options{Scheme: scheme})
+		Expect(err).ToNot(HaveOccurred(), "Failed to create Kubernetes client")
+		logger.Info("✅ Kubernetes client created for process",
+			"process", GinkgoParallelProcess(),
+			"pattern", "suite-level (1 per process)")
+
 		// Set cluster configuration (shared across all processes)
 		clusterName = "gateway-e2e"
 		gatewayURL = "http://127.0.0.1:8080" // Kind extraPortMapping hostPort (maps to NodePort 30080) - Use 127.0.0.1 for CI/CD IPv4 compatibility
@@ -188,6 +215,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 		logger.Info(fmt.Sprintf("  • Gateway URL: %s", gatewayURL))
 		logger.Info(fmt.Sprintf("  • Gateway Namespace: %s", gatewayNamespace))
+		logger.Info(fmt.Sprintf("  • K8s Client: Suite-level (1 per process)"))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	},
 )

@@ -56,7 +56,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testNamespace = GenerateUniqueNamespace("logging")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// Use ctx (suite context) instead of testCtx to avoid timeout issues
 		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 

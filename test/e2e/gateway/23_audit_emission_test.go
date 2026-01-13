@@ -99,7 +99,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = getKubernetesClient()
+		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		// Per DD-TEST-001: All parallel processes share same Data Storage instance
