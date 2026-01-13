@@ -111,7 +111,8 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 					Namespace: testNamespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "test-fp-gap8-webhook",
+					// SignalFingerprint must be valid 64-char hex string (SHA-256 format)
+					SignalFingerprint: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 					SignalName:        "Gap8WebhookTest",
 					Severity:          "warning",
 					SignalType:        "prometheus",
