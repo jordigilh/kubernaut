@@ -385,14 +385,26 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"CRD status should be updated to Completed")
 
-			By("3. Send 'duplicate' alert (should be treated as new incident)")
-			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+		By("3. Verify CRD status propagation before testing terminal state logic")
+		// DD-STATUS-001: Gateway uses apiReader for fresh reads, but status updates
+		// still need time to propagate through K8s API eventual consistency
+		Eventually(func() string {
+			updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			if updatedCRD == nil {
+				return ""
+			}
+			return string(updatedCRD.Status.OverallPhase)
+		}, 30*time.Second, 1*time.Second).Should(Equal("Completed"),
+			"CRD status should reflect Completed state before sending duplicate signal")
 
-			// v1.0 EXPECTED BEHAVIOR: AlreadyExists error, fetch existing CRD
-			// Status could be 201 (if CRD re-creation succeeds) or 200 (if fetched)
-			// For now, we expect it to NOT be 202 (duplicate)
-			Expect(resp2.StatusCode).ToNot(Equal(http.StatusAccepted),
-				"Completed CRD should not trigger duplicate response")
+		By("4. Send 'duplicate' alert (should be treated as new incident)")
+		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+
+		// v1.0 EXPECTED BEHAVIOR: AlreadyExists error, fetch existing CRD
+		// Status could be 201 (if CRD re-creation succeeds) or 200 (if fetched)
+		// For now, we expect it to NOT be 202 (duplicate)
+		Expect(resp2.StatusCode).ToNot(Equal(http.StatusAccepted),
+			"Completed CRD should not trigger duplicate response")
 
 			// v1.1 TODO: After DD-015, verify TWO CRDs exist with different timestamps
 			// Eventually(func() int {
