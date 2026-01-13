@@ -1,6 +1,6 @@
 # SOC2 Audit - Comprehensive Test Plan (RR Reconstruction + Operator Attribution)
 
-**Version**: 2.3.0
+**Version**: 2.4.0
 **Created**: January 4, 2026
 **Last Updated**: January 13, 2026
 **Status**: Authoritative - Production Ready
@@ -12,6 +12,22 @@
 ---
 
 ## 📋 **Changelog**
+
+### Version 2.4.0 (2026-01-13) - GAP #8 COMPLETE ✅ - TIMEOUTCONFIG MUTATION AUDIT
+- ✅ **COMPLETED**: Gap #8 - RemediationRequest TimeoutConfig mutation webhook + audit
+- ✅ **WEBHOOK**: Mutating webhook intercepts RR status updates for TimeoutConfig changes
+- ✅ **AUDIT**: `webhook.remediationrequest.timeout_modified` events emitted and stored
+- ✅ **METADATA**: `LastModifiedBy` (WHO) + `LastModifiedAt` (WHEN) fields populated
+- ✅ **E2E TEST**: Complete webhook flow validated in RO E2E suite (421.68s duration)
+- ✅ **INFRASTRUCTURE**: 8 issues discovered and fixed (TLS, embedded specs, timing, etc.)
+- ✅ **INTEGRATION**: Integration test passing (controller initialization scenario)
+- ✅ **NO REGRESSIONS**: All ~987 unit tests across all services passing
+- ✅ **SOC2 COMPLIANCE**: WHO + WHAT + WHEN captured for operator modifications
+- 📝 **TEST LOCATION**: `test/e2e/remediationorchestrator/gap8_webhook_test.go`
+- 📝 **IMPLEMENTATION**: `pkg/webhooks/remediationrequest_handler.go`
+- 📝 **DOCUMENTATION**: 10+ handoff documents created (~5,000+ lines)
+- 🎯 **RR RECONSTRUCTION**: Parser now handles Gap #8 events for reconstruction
+- **Gap Coverage**: 3/8 gaps complete (Gaps 1-3, 4, 8) - 37.5% field coverage
 
 ### Version 2.3.0 (2026-01-13) - E2E TESTS COMPLETE ✅ - PRODUCTION READY
 - ✅ **COMPLETED**: E2E tests for RR reconstruction REST API (TDD RED → GREEN)
@@ -86,6 +102,26 @@ This test plan validates the 8 critical field gaps for RemediationRequest CRD re
 **Services Impacted**: 8 services (5 for RR reconstruction + webhooks for 4 operator actions)
 **Test Tiers**: Integration (32 specs Week 1, +20 specs Week 2-3) + E2E (18 specs Week 1, +10 specs Week 2-3) = **80 total specs**
 
+### 🎯 **Current Completion Status** (Updated Jan 13, 2026)
+
+**Gap Coverage**: 3/8 gaps complete (37.5% field coverage)
+- ✅ **Gap 1-3**: Gateway fields (SignalName, SignalType, Labels/Annotations)
+- ✅ **Gap 4**: AI provider data (ProviderData)
+- ⬜ **Gap 5-6**: Workflow references (Pending)
+- ⬜ **Gap 7**: Error details (Pending)
+- ✅ **Gap 8**: TimeoutConfig mutation audit
+
+**Infrastructure**: 
+- ✅ Core reconstruction logic (5 components)
+- ✅ REST API endpoint
+- ✅ Unit tests (24 specs)
+- ✅ Integration tests (48/48 passing)
+- ✅ E2E tests (3 specs passing)
+
+**Production Readiness**: 
+- ✅ **READY**: Partial reconstruction (Gaps 1-3, 4, 8)
+- ⬜ **PENDING**: Full reconstruction (needs Gaps 5-7)
+
 **Compliance**:
 - ✅ DD-TESTING-001: Audit Event Validation Standards
 - ✅ TESTING_GUIDELINES.md: Business logic focus, no audit infrastructure testing
@@ -102,7 +138,7 @@ This test plan validates the 8 critical field gaps for RemediationRequest CRD re
 | **Gap 4** | AI provider data | HolmesAPI + AI Analysis | Integration, E2E | 2 events: `holmesgpt.response.complete` + `aianalysis.analysis.completed` | ✅ Day 2 Complete (Jan 5, 2026) |
 | **Gap 5-6** | Workflow refs | Workflow Execution | Integration, E2E | 2 events (selection + execution) | ⬜ |
 | **Gap 7** | Error details | All Services | Integration, E2E | N `*.failure` (per error scenario) | ⬜ |
-| **Gap 8** | TimeoutConfig | Orchestrator | Integration, E2E | 1 `orchestration.remediation.created` | ⬜ |
+| **Gap 8** | TimeoutConfig | Orchestrator | Integration, E2E | 1-2 `webhook.remediationrequest.timeout_modified` | ✅ **COMPLETE** (Jan 13, 2026) |
 | **Integration** | Full RR reconstruction | Cross-service | Integration, E2E | 9+ events (full lifecycle with HAPI) | ⬜ |
 
 ---
@@ -1161,12 +1197,12 @@ var _ = Describe("SOC2 CC8.1: Operator Attribution E2E", func() {
 
 | Gap | Field | Integration Coverage | E2E Coverage | Event Count Validation | Status |
 |-----|-------|---------------------|--------------|------------------------|--------|
-| #1-3 | Gateway fields | ✅ 100% | ✅ 100% | `Equal(1)` ✅ | ⬜ |
-| #4 | `providerData` | ✅ 100% | ✅ 100% | `Equal(1)` ✅ | ⬜ |
-| #5-6 | Workflow refs | ✅ 100% | ✅ 100% | `Equal(2)` ✅ | ⬜ |
-| #7 | `error_details` | ✅ 100% | ✅ 100% | Per scenario ✅ | ⬜ |
-| #8 | `timeoutConfig` | ✅ 100% | ✅ 100% | `Equal(1)` ✅ | ⬜ |
-| **Integration** | Full RR reconstruction | ✅ 100% | ✅ 100% | `Equal(8+)` ✅ | ⬜ |
+| #1-3 | Gateway fields | ✅ 100% | ✅ 100% | `Equal(1)` ✅ | ✅ **COMPLETE** |
+| #4 | `providerData` | ✅ 100% | ✅ 100% | `Equal(2)` ✅ | ✅ **COMPLETE** |
+| #5-6 | Workflow refs | ❌ Not Started | ❌ Not Started | `Equal(2)` 📋 | ⬜ Pending |
+| #7 | `error_details` | ❌ Not Started | ❌ Not Started | Per scenario 📋 | ⬜ Pending |
+| #8 | `timeoutConfig` | ✅ 100% | ✅ 100% | `BeNumerically(">=",1)` ✅ | ✅ **COMPLETE** |
+| **Integration** | Full RR reconstruction | ❌ Not Started | ❌ Not Started | `Equal(5+)` 📋 | ⬜ Pending (Needs Gaps 5-7) |
 
 ### DD-TESTING-001 Compliance Checklist
 

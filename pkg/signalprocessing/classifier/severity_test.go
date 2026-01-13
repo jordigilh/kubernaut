@@ -117,7 +117,7 @@ var _ = Describe("Severity Classifier Unit Tests", Label("unit", "severity", "cl
 				// THEN: Downstream consumers receive normalized severity they can interpret
 				Expect(err).ToNot(HaveOccurred(), 
 					"Severity classification should succeed for %s", tc.Source)
-				Expect(result.Severity).To(BeElementOf([]string{"critical", "warning", "info", "unknown"}),
+				Expect(result.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
 					"Normalized severity enables downstream services to interpret urgency")
 				Expect(result.Source).To(Equal("rego-policy"),
 					"Source attribution enables audit traceability")
@@ -331,6 +331,51 @@ determine_severity := result {
 			// ✅ Permissive operators can downgrade unknowns to info (tested elsewhere)
 			// ✅ No opinionated system behavior imposed on customers
 		})
+
+		It("should error when Rego policy returns no severity for unmapped values", func() {
+			// BUSINESS CONTEXT:
+			// Operator policy is incomplete - missing catch-all clause for unmapped severities.
+			//
+			// BUSINESS VALUE:
+			// System provides clear error to guide operator to fix policy.
+			// Forces operator to think about unmapped severity handling strategy.
+			//
+			// PREVENTS: Silent failures or system-imposed behavior
+
+			// GIVEN: Policy WITHOUT catch-all clause (incomplete)
+			incompletePolicy := `
+package signalprocessing.severity
+
+determine_severity := "critical" {
+	input.signal.severity == "Sev1"
+} else := "warning" {
+	input.signal.severity == "Sev2"
+}
+# Missing else clause for unmapped values
+`
+			err := severityClassifier.LoadRegoPolicy(incompletePolicy)
+			Expect(err).ToNot(HaveOccurred(), "Policy should compile (syntax is valid)")
+
+			// WHEN: Unmapped severity is evaluated
+			sp := createTestSignalProcessing("test-incomplete", "default")
+			sp.Spec.Signal.Severity = "UNMAPPED_VALUE"
+
+			result, err := severityClassifier.ClassifySeverity(ctx, sp)
+
+			// THEN: System returns clear error (not silent failure)
+			Expect(err).To(HaveOccurred(),
+				"System should error when policy returns no severity")
+			Expect(err.Error()).To(ContainSubstring("no severity determined"),
+				"Error should explain policy issue")
+			Expect(result).To(BeNil(),
+				"Result should be nil on error")
+
+			// Error message should guide operator to fix
+			Expect(err.Error()).To(MatchRegexp("add.*else.*clause|catch-all|unmapped"),
+				"Error should guide operator to add catch-all clause to policy")
+
+			// BUSINESS OUTCOME: Operator receives actionable error to fix policy
+		})
 	})
 
 	// ========================================
@@ -515,33 +560,40 @@ determine_severity := "critical"
 			// BUSINESS OUTCOME: Controller never hangs on expensive policies
 		})
 
-		It("should operate with no policy loaded (default behavior)", func() {
+		It("should error when no policy is loaded (policy is mandatory)", func() {
 			// BUSINESS CONTEXT:
-			// Operator hasn't loaded custom Rego policy yet, or policy was deleted.
+			// Operator hasn't loaded Rego policy yet, or policy ConfigMap is missing.
+			// Severity policy is MANDATORY (same as environment/priority/customlabels policies).
 			//
 			// BUSINESS VALUE:
-			// System uses default severity mapping without custom policy.
+			// System fails fast at startup if policy is missing, forcing operator to provide policy.
+			// No silent fallback behavior that hides misconfiguration.
 			//
-			// PREVENTS: System failure when policy ConfigMap is missing
+			// PREVENTS: System operating with unexpected default behavior
 
-			// GIVEN: No custom policy loaded (fresh classifier)
+			// GIVEN: No policy loaded (fresh classifier without policy initialization)
 			freshClassifier := classifier.NewSeverityClassifier(mockK8sClient, logger)
+			// Note: In production, controller would call LoadRegoPolicy() or StartHotReload()
+			// Test simulates missing policy scenario
 
-			// WHEN: Severity classification is attempted
+			// WHEN: Severity classification is attempted without loaded policy
 			sp := createTestSignalProcessing("test-no-policy", "default")
 			sp.Spec.Signal.Severity = "critical"
 
 			result, err := freshClassifier.ClassifySeverity(ctx, sp)
 
-			// THEN: System uses default pass-through behavior
-			Expect(err).ToNot(HaveOccurred(),
-				"System should operate without custom policy")
-			Expect(result.Severity).To(Equal("critical"),
-				"Default behavior should pass through standard severity values")
-			Expect(result.Source).To(Equal("default"),
-				"Source should indicate default behavior was used")
+			// THEN: System returns error (no silent default behavior)
+			Expect(err).To(HaveOccurred(),
+				"System should error when no policy is loaded")
+			Expect(err.Error()).To(ContainSubstring("no policy loaded"),
+				"Error should explain policy is missing")
+			Expect(result).To(BeNil(),
+				"Result should be nil when no policy is loaded")
 
-			// BUSINESS OUTCOME: System functions even without operator-provided policy
+			// BUSINESS OUTCOME VERIFIED:
+			// ✅ System fails fast if policy ConfigMap is missing (deployment bug detected)
+			// ✅ No silent default behavior that could cause unexpected severity mappings
+			// ✅ Operator forced to provide policy (same pattern as BR-SP-072 CustomLabels)
 		})
 	})
 })

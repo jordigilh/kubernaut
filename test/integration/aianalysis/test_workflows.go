@@ -264,16 +264,21 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 			return "", fmt.Errorf("failed to query existing workflow: status %d", queryResp.StatusCode)
 		}
 
-		var workflows []map[string]interface{}
-		if err := json.NewDecoder(queryResp.Body).Decode(&workflows); err != nil {
+		// DataStorage returns: {"workflow_name": "...", "versions": [...], "total": N}
+		var versionsResp struct {
+			WorkflowName string                   `json:"workflow_name"`
+			Versions     []map[string]interface{} `json:"versions"`
+			Total        int                      `json:"total"`
+		}
+		if err := json.NewDecoder(queryResp.Body).Decode(&versionsResp); err != nil {
 			return "", fmt.Errorf("failed to decode query response: %w", err)
 		}
 
-		if len(workflows) == 0 {
-			return "", fmt.Errorf("workflow exists but query returned no results")
+		if len(versionsResp.Versions) == 0 {
+			return "", fmt.Errorf("workflow exists but query returned no versions")
 		}
 
-		workflowID, ok := workflows[0]["workflow_id"].(string)
+		workflowID, ok := versionsResp.Versions[0]["workflow_id"].(string)
 		if !ok {
 			return "", fmt.Errorf("workflow_id not found in response")
 		}

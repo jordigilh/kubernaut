@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,21 +67,15 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 			testLogger.Info("To debug:")
 			testLogger.Info(fmt.Sprintf("  export KUBECONFIG=%s", kubeconfigPath))
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
-			testLogger.Info(fmt.Sprintf("  kubectl logs -n kubernaut-system deployment/gateway -f"))
-			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		testLogger.Info(fmt.Sprintf("  kubectl logs -n kubernaut-system deployment/gateway -f"))
+		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+		return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
+	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+	// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
 
-		if testCancel != nil {
-			testCancel()
-		}
-		testLogger.Info("✅ Test cleanup complete")
+	testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
