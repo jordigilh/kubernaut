@@ -99,6 +99,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 
 	// Build image
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"--no-cache", // Force rebuild to pick up threading fix
 		"-t", fullImageName,
 		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
 		buildContext,
