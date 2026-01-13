@@ -76,6 +76,58 @@ type MockLLMConfig struct {
 	ImageTag      string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
 }
 
+// BuildMockLLMImage builds the Mock LLM container image for integration tests
+//
+// Pattern: DD-INTEGRATION-001 v2.0 - Programmatic Podman Setup
+// Image Naming: DD-TEST-004 - Unique Resource Naming
+//
+// Returns: Full image name with tag (e.g., "localhost/mock-llm:hapi-abc123")
+func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(writer, "Building Mock LLM Image (%s Integration Tests)\n", serviceName)
+	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	// Generate DD-TEST-004 compliant unique image tag
+	imageTag := GenerateInfraImageName("mock-llm", serviceName)
+	fullImageName := fmt.Sprintf("localhost/mock-llm:%s", imageTag)
+
+	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image: %s\n", fullImageName)
+
+	// Build context is test/services/mock-llm/
+	projectRoot := getProjectRoot()
+	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
+
+	// Build image
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"-t", fullImageName,
+		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
+		buildContext,
+	)
+
+	output, err := buildCmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to build Mock LLM image: %w\nOutput: %s", err, string(output))
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Mock LLM image built successfully: %s\n", fullImageName)
+	_, _ = fmt.Fprintf(writer, "\n")
+
+	return fullImageName, nil
+}
+
+// getProjectRoot returns the absolute path to the project root
+func getProjectRoot() string {
+	// This assumes the test is running from the project root or a subdirectory
+	// In CI/CD, this should be set via environment variable or working directory
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback to current directory if git is not available
+		return "."
+	}
+	return string(output[:len(output)-1]) // Remove trailing newline
+}
+
 // GetMockLLMConfigForHAPI returns the Mock LLM configuration for HAPI integration tests
 // Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
 func GetMockLLMConfigForHAPI() MockLLMConfig {

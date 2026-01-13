@@ -68,11 +68,18 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully (DD-INTEGRATION-001 v2.0)")
 	GinkgoWriter.Println("✅ All services started and healthy (Go programmatic setup)")
 
+	By("Building Mock LLM image (DD-TEST-004 unique tag)")
+	// Per DD-TEST-004: Generate unique image tag to prevent collisions
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	mockLLMImageName, err := infrastructure.BuildMockLLMImage(ctx, "hapi", GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
+	Expect(mockLLMImageName).ToNot(BeEmpty(), "Mock LLM image name must be returned")
+	GinkgoWriter.Printf("✅ Mock LLM image built: %s\n", mockLLMImageName)
+
 	By("Starting Mock LLM service (replaces embedded mock logic)")
 	// Per DD-TEST-001 v1.8: Port 18140 (HAPI-specific, unique)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
 	mockLLMConfig := infrastructure.GetMockLLMConfigForHAPI()
 	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(ctx, mockLLMConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")

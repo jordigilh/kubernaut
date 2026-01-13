@@ -174,6 +174,13 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
+	By("Building Mock LLM image (DD-TEST-004 unique tag)")
+	// Per DD-TEST-004: Generate unique image tag to prevent collisions
+	mockLLMImageName, err := infrastructure.BuildMockLLMImage(specCtx, "aianalysis", GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
+	Expect(mockLLMImageName).ToNot(BeEmpty(), "Mock LLM image name must be returned")
+	GinkgoWriter.Printf("✅ Mock LLM image built: %s\n", mockLLMImageName)
+
 	By("Starting Mock LLM service (replaces HAPI embedded mock logic)")
 	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
