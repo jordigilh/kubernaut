@@ -140,11 +140,15 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
-	if err := waitForDSBootstrapPostgresReady(infra, writer); err != nil {
+	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready (two-phase: connection + queryability)...\n")
+	// CRITICAL: Use two-phase health check to prevent "database system is starting up" errors
+	// Phase 1: pg_isready (connection check)
+	// Phase 2: SELECT 1 (queryability check)
+	// Per DD-TEST-002: This prevents race condition in migrations
+	if err := WaitForPostgreSQLReady(infra.PostgresContainer, defaultPostgresUser, defaultPostgresDB, writer); err != nil {
 		return nil, fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
+	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready and queryable\n\n")
 
 	// Step 4: Migrations
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
