@@ -96,13 +96,23 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			Component:    "deployment",
 			Priority:     "P2",
 		},
+		{
+			WorkflowID:   "test-signal-handler-v1",
+			Name:         "Test Signal Handler",
+			Description:  "Generic workflow for test signals (graceful shutdown tests)",
+			SignalType:   "TestSignal",
+			Severity:     "critical",
+			Component:    "pod",
+			Priority:     "P1",
+		},
 	}
 
-	// Create workflows for BOTH staging and production
+	// Create workflows for staging, production, AND test environments
 	// Pattern: Environment-specific workflow instances
 	// - Most tests use staging (metrics_integration_test.go)
 	// - Some tests use production (approval decision tests)
-	// - DataStorage filters by environment, so we need both
+	// - Graceful shutdown tests use test (graceful_shutdown_test.go)
+	// - DataStorage filters by environment, so we need all three
 	var allWorkflows []TestWorkflow
 	for _, wf := range baseWorkflows {
 		// Staging version
@@ -114,6 +124,11 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 		prodWf := wf
 		prodWf.Environment = "production"
 		allWorkflows = append(allWorkflows, prodWf)
+
+		// Test version (for graceful shutdown and infrastructure tests)
+		testWf := wf
+		testWf.Environment = "test"
+		allWorkflows = append(allWorkflows, testWf)
 	}
 
 	return allWorkflows
@@ -132,7 +147,7 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) err
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	workflows := GetAIAnalysisTestWorkflows()
-	_, _ = fmt.Fprintf(output, "📋 Registering %d test workflows (staging + production)...\n", len(workflows))
+	_, _ = fmt.Fprintf(output, "📋 Registering %d test workflows (staging + production + test)...\n", len(workflows))
 
 	for _, wf := range workflows {
 		if err := registerWorkflowInDataStorage(dataStorageURL, wf, output); err != nil {
