@@ -337,8 +337,8 @@ Eventually(func() bool {
 
 ### **Gap #8 Webhook Test** (1/48 failures)
 
-**Test**: `should emit webhook.remediationrequest.timeout_modified on operator mutation`  
-**File**: `test/integration/remediationorchestrator/gap8_timeout_config_audit_test.go:259`  
+**Test**: `should emit webhook.remediationrequest.timeout_modified on operator mutation`
+**File**: `test/integration/remediationorchestrator/gap8_timeout_config_audit_test.go:259`
 **Status**: ⏳ **PENDING E2E** (Expected failure in integration tests)
 
 **Why This is Expected**:
@@ -359,7 +359,7 @@ Eventually(func() bool {
 ## 🎓 **Lessons Learned**
 
 ### **1. Discriminated Unions with Ogen**
-**Problem**: Raw JSON from database lacks discriminator field.  
+**Problem**: Raw JSON from database lacks discriminator field.
 **Solution**: Manually construct union variants based on a separate field (e.g., `event_type`).
 
 ```go
@@ -376,7 +376,7 @@ case "gateway.signal.received":
 ```
 
 ### **2. SQL Scanning with Nullable Fields**
-**Problem**: `sql` package can't scan NULL into custom types like `OptString`.  
+**Problem**: `sql` package can't scan NULL into custom types like `OptString`.
 **Solution**: Use `sql.NullString` intermediates.
 
 ```go
@@ -393,7 +393,7 @@ if resourceTypeNull.Valid {
 ```
 
 ### **3. Phase 1 Integration Test Pattern**
-**Problem**: Manual status updates get overwritten by controller when child CRDs exist.  
+**Problem**: Manual status updates get overwritten by controller when child CRDs exist.
 **Solution**: Delete child CRDs before manual status updates.
 
 ```go
@@ -470,8 +470,8 @@ The RemediationRequest Reconstruction feature is **100% complete** and **product
 
 ---
 
-**Document Version**: 1.0  
-**Created**: January 13, 2026  
-**Author**: AI Assistant (with user validation)  
-**Status**: ✅ Complete  
+**Document Version**: 1.0
+**Created**: January 13, 2026
+**Author**: AI Assistant (with user validation)
+**Status**: ✅ Complete
 **BR-AUDIT-006**: RemediationRequest Reconstruction from Audit Traces
