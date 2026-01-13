@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -103,9 +104,29 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 			result.Status.TimeoutConfig = tc
 		}
 
+	case "workflowexecution.selection.completed":
+		// Map Workflow Selection audit data to RR Status (Gap #5)
+		if parsedData.SelectedWorkflowRef != nil {
+			result.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
+				WorkflowID:      parsedData.SelectedWorkflowRef.WorkflowID,
+				Version:         parsedData.SelectedWorkflowRef.Version,
+				ContainerImage:  parsedData.SelectedWorkflowRef.ContainerImage,
+				ContainerDigest: parsedData.SelectedWorkflowRef.ContainerDigest,
+			}
+		}
+
+	case "workflowexecution.execution.started":
+		// Map Workflow Execution audit data to RR Status (Gap #6)
+		if parsedData.ExecutionRef != nil {
+			result.Status.ExecutionRef = &corev1.ObjectReference{
+				APIVersion: parsedData.ExecutionRef.APIVersion,
+				Kind:       parsedData.ExecutionRef.Kind,
+				Name:       parsedData.ExecutionRef.Name,
+				Namespace:  parsedData.ExecutionRef.Namespace,
+			}
+		}
+
 	// Add other event types as they become relevant
-	// case "workflowexecution.selection.completed":
-	// case "workflowexecution.execution.started":
 	// case "orchestrator.lifecycle.completed":
 	// case "webhook.remediationrequest.timeout_modified":
 
