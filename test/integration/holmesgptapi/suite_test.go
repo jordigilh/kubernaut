@@ -81,6 +81,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Per DD-TEST-001 v1.8: Port 18140 (HAPI-specific, unique)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig := infrastructure.GetMockLLMConfigForHAPI()
+	mockLLMConfig.ImageTag = mockLLMImageName // Use the built image tag
 	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(ctx, mockLLMConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
