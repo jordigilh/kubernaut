@@ -36,8 +36,10 @@ var _ = Describe("Reconstruction Validator", func() {
 			// Validates validator accepts RR with all required fields
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalName: "HighCPU",
-					SignalType: "prometheus-alert",
+					SignalName:      "HighCPU",
+					SignalType:      "prometheus-alert",
+					SignalLabels:    map[string]string{"alertname": "HighCPU"},
+					OriginalPayload: []byte(`{"alert":"data"}`),
 				},
 			}
 
@@ -172,6 +174,7 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalType:        "prometheus-alert",
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
+					OriginalPayload:   []byte(`{"alert":"data"}`),
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					TimeoutConfig: &remediationv1.TimeoutConfig{
