@@ -75,6 +75,10 @@ func QueryAuditEventsForReconstruction(
 			namespace     sql.NullString
 			clusterName   sql.NullString
 			severity      sql.NullString
+			resourceType  sql.NullString
+			resourceID    sql.NullString
+			actorType     sql.NullString
+			actorID       sql.NullString
 			durationMs    sql.NullInt32
 			errorCode     sql.NullString
 			errorMessage  sql.NullString
@@ -92,10 +96,10 @@ func QueryAuditEventsForReconstruction(
 			&event.EventTimestamp,
 			&event.EventOutcome,
 			&severity,
-			&event.ResourceType,
-			&event.ResourceID,
-			&event.ActorType,
-			&event.ActorID,
+			&resourceType,
+			&resourceID,
+			&actorType,
+			&actorID,
 			&parentEventID,
 			&eventDataJSON,
 			&eventDate,
@@ -126,6 +130,18 @@ func QueryAuditEventsForReconstruction(
 		}
 		if namespace.Valid {
 			event.Namespace.SetTo(namespace.String)
+		}
+		if resourceType.Valid {
+			event.ResourceType.SetTo(resourceType.String)
+		}
+		if resourceID.Valid {
+			event.ResourceID.SetTo(resourceID.String)
+		}
+		if actorType.Valid {
+			event.ActorType.SetTo(actorType.String)
+		}
+		if actorID.Valid {
+			event.ActorID.SetTo(actorID.String)
 		}
 		if clusterName.Valid {
 			event.ClusterName.SetTo(clusterName.String)

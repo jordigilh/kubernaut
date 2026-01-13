@@ -17,48 +17,42 @@ limitations under the License.
 package datastorage
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/yaml"
 
-	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
 // ========================================
-// RECONSTRUCTION ENDPOINT INTEGRATION TESTS
+// RECONSTRUCTION BUSINESS LOGIC INTEGRATION TESTS
 // ========================================
 //
-// Purpose: Test reconstruction REST API endpoint against REAL PostgreSQL database
-// to validate end-to-end reconstruction workflow.
+// Purpose: Test reconstruction business logic components against REAL PostgreSQL database
+// to validate component interactions with real infrastructure.
 //
 // Business Requirements:
 // - BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
 //
-// Test Strategy:
-// - Uses REAL PostgreSQL database (not mocks)
-// - Seeds audit events for gateway and orchestrator
-// - Calls reconstruction HTTP endpoint
-// - Validates YAML output and validation results
+// Test Strategy (per 03-testing-strategy.mdc):
+// - Integration Tests (>50%): Test business components with REAL database
+// - NO HTTP server (that's for E2E tests)
+// - Call reconstruction.* functions directly
+// - Validate database interactions, field mapping, and business logic
 //
 // Test Plan Reference:
 // - docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md
 // - Test Tier: Integration Tests (Tier 2)
-// - Gap Coverage: Gaps #1-3, #8 (E2E reconstruction flow)
+// - Gap Coverage: Gaps #1-3, #8 (business logic with real DB)
 //
 // ========================================
 
-var _ = Describe("Reconstruction Integration Tests (BR-AUDIT-006)", func() {
+var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)", func() {
 	var (
-		testServer    *server.Server
 		auditRepo     *repository.AuditEventsRepository
 		testID        string
 		correlationID string
@@ -72,18 +66,8 @@ var _ = Describe("Reconstruction Integration Tests (BR-AUDIT-006)", func() {
 		testID = generateTestID()
 		correlationID = fmt.Sprintf("test-reconstruction-%s", testID)
 
-		// Create test server with real database
-		var err error
-		testServer, err = server.NewServer(
-			db.DB,
-			redisClient,
-			logger,
-			server.WithAddress(":0"), // Random port for testing
-		)
-		Expect(err).ToNot(HaveOccurred())
-
 		// Clean up test data
-		_, err = db.ExecContext(ctx,
+		_, err := db.ExecContext(ctx,
 			"DELETE FROM audit_events WHERE correlation_id = $1",
 			correlationID)
 		Expect(err).ToNot(HaveOccurred())
@@ -99,11 +83,81 @@ var _ = Describe("Reconstruction Integration Tests (BR-AUDIT-006)", func() {
 	})
 
 	// ========================================
-	// SUCCESSFUL RECONSTRUCTION TESTS
+	// QUERY COMPONENT INTEGRATION TESTS
 	// ========================================
-	Context("INTEGRATION-01: Complete audit trail", func() {
+	Context("INTEGRATION-QUERY-01: Query audit events from real database", func() {
+		It("should retrieve audit events by correlation ID", func() {
+			// ARRANGE: Seed audit events in real PostgreSQL
+			gatewayEvent := &repository.AuditEvent{
+				EventID:        uuid.New(),
+				Version:        "1.0",
+				EventTimestamp: time.Now().Add(-10 * time.Second).UTC(),
+				EventType:      "gateway.signal.received",
+				EventCategory:  "gateway",
+				EventAction:    "received",
+				EventOutcome:   "success",
+				CorrelationID:  correlationID,
+				ResourceType:   "Signal",
+				ResourceID:     "signal-123",
+				EventData: map[string]interface{}{
+					"signal_name": "HighCPU",
+					"signal_type": "prometheus-alert",
+				},
+			}
+
+			_, err := auditRepo.Create(ctx, gatewayEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			orchestratorEvent := &repository.AuditEvent{
+				EventID:        uuid.New(),
+				Version:        "1.0",
+				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
+				EventType:      "orchestrator.lifecycle.created",
+				EventCategory:  "orchestrator",
+				EventAction:    "created",
+				EventOutcome:   "success",
+				CorrelationID:  correlationID,
+				ResourceType:   "RemediationRequest",
+				ResourceID:     "rr-123",
+				EventData: map[string]interface{}{
+					"timeout_config": map[string]interface{}{
+						"global": "1h",
+					},
+				},
+			}
+
+			_, err = auditRepo.Create(ctx, orchestratorEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT: Call query component directly (business logic, not HTTP)
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
+
+			// ASSERT: Query succeeds and returns events
+			Expect(err).ToNot(HaveOccurred(), "Query should succeed")
+			Expect(events).To(HaveLen(2), "Should return 2 events")
+
+			// ASSERT: Events are ordered chronologically
+			Expect(events[0].EventType).To(Equal("gateway.signal.received"))
+			Expect(events[1].EventType).To(Equal("orchestrator.lifecycle.created"))
+		})
+
+		It("should return empty slice for non-existent correlation ID", func() {
+			// ACT: Query with non-existent correlation ID
+			nonExistentID := fmt.Sprintf("nonexistent-%s", testID)
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, nonExistentID)
+
+			// ASSERT: No error, empty slice
+			Expect(err).ToNot(HaveOccurred())
+			Expect(events).To(BeEmpty())
+		})
+	})
+
+	// ========================================
+	// PARSE + MAP + BUILD COMPONENT INTEGRATION TESTS
+	// ========================================
+	Context("INTEGRATION-COMPONENTS-01: Full reconstruction pipeline with real database", func() {
 		It("should reconstruct RR from gateway and orchestrator events", func() {
-			// ARRANGE: Seed audit events
+			// ARRANGE: Seed audit events in real PostgreSQL
 			gatewayEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
 				Version:        "1.0",
@@ -157,90 +211,56 @@ var _ = Describe("Reconstruction Integration Tests (BR-AUDIT-006)", func() {
 			_, err = auditRepo.Create(ctx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			// ACT: Call reconstruction endpoint
-			req := httptest.NewRequest(http.MethodPost,
-				fmt.Sprintf("/api/v1/audit/remediation-requests/%s/reconstruct", correlationID),
-				nil)
-			req = req.WithContext(ctx)
+			// ACT: Call business logic components directly (NO HTTP)
 
-			rr := httptest.NewRecorder()
-			testServer.ServeHTTP(rr, req)
-
-			// ASSERT: HTTP 200 OK
-			Expect(rr.Code).To(Equal(http.StatusOK), "Expected HTTP 200 OK")
-
-			// ASSERT: Valid JSON response
-			var response map[string]interface{}
-			err = json.Unmarshal(rr.Body.Bytes(), &response)
-			Expect(err).ToNot(HaveOccurred(), "Response should be valid JSON")
-
-			// ASSERT: Response structure
-			Expect(response).To(HaveKey("remediation_request_yaml"))
-			Expect(response).To(HaveKey("validation"))
-			Expect(response).To(HaveKey("reconstructed_at"))
-			Expect(response).To(HaveKey("correlation_id"))
-			Expect(response["correlation_id"]).To(Equal(correlationID))
-
-			// ASSERT: YAML contains K8s structure
-			yamlContent := response["remediation_request_yaml"].(string)
-			Expect(yamlContent).To(ContainSubstring("apiVersion: remediation.kubernaut.ai/v1alpha1"))
-			Expect(yamlContent).To(ContainSubstring("kind: RemediationRequest"))
-			Expect(yamlContent).To(ContainSubstring("metadata:"))
-			Expect(yamlContent).To(ContainSubstring("spec:"))
-			Expect(yamlContent).To(ContainSubstring("status:"))
-
-			// ASSERT: Validation results
-			validation := response["validation"].(map[string]interface{})
-			Expect(validation["is_valid"]).To(BeTrue())
-			Expect(validation["completeness"]).To(BeNumerically(">=", 50))
-			Expect(validation["errors"]).To(BeEmpty())
-
-			// ASSERT: YAML can be parsed as RemediationRequest
-			var reconstructedRR remediationv1.RemediationRequest
-			err = yaml.Unmarshal([]byte(yamlContent), &reconstructedRR)
-			Expect(err).ToNot(HaveOccurred(), "YAML should be valid RemediationRequest")
-
-			// ASSERT: Reconstructed fields match input
-			Expect(reconstructedRR.Spec.SignalName).To(Equal("HighCPU"))
-			Expect(reconstructedRR.Spec.SignalType).To(Equal("prometheus-alert"))
-			Expect(reconstructedRR.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
-			Expect(reconstructedRR.Spec.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
-			Expect(reconstructedRR.Status.TimeoutConfig.Global.Duration).To(Equal(time.Hour))
-		})
-	})
-
-	// ========================================
-	// ERROR HANDLING TESTS
-	// ========================================
-	Context("INTEGRATION-02: Missing correlation ID", func() {
-		It("should return HTTP 404 for non-existent correlation ID", func() {
-			// ACT: Call reconstruction with non-existent correlation ID
-			nonExistentID := fmt.Sprintf("nonexistent-%s", testID)
-			req := httptest.NewRequest(http.MethodPost,
-				fmt.Sprintf("/api/v1/audit/remediation-requests/%s/reconstruct", nonExistentID),
-				nil)
-			req = req.WithContext(ctx)
-
-			rr := httptest.NewRecorder()
-			testServer.ServeHTTP(rr, req)
-
-			// ASSERT: HTTP 404 Not Found
-			Expect(rr.Code).To(Equal(http.StatusNotFound), "Expected HTTP 404 Not Found")
-
-			// ASSERT: RFC 7807 error response
-			var errorResponse map[string]interface{}
-			err := json.Unmarshal(rr.Body.Bytes(), &errorResponse)
+			// Step 1: Query events from real database
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(events).To(HaveLen(2))
 
-			Expect(errorResponse).To(HaveKey("type"))
-			Expect(errorResponse).To(HaveKey("title"))
-			Expect(errorResponse).To(HaveKey("status"))
-			Expect(errorResponse["status"]).To(Equal(float64(404)))
+			// Step 2: Parse events to extract structured data
+			parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+			for _, event := range events {
+				parsed, err := reconstruction.ParseAuditEvent(event)
+				Expect(err).ToNot(HaveOccurred())
+				parsedData = append(parsedData, *parsed)
+			}
+			Expect(parsedData).To(HaveLen(2))
+
+			// Step 3: Map parsed data to RR Spec/Status fields
+			rrFields, err := reconstruction.MergeAuditData(parsedData)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+
+			// Step 4: Build complete RemediationRequest CRD
+			rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr).ToNot(BeNil())
+
+			// Step 5: Validate reconstructed RR
+			validationResult, err := reconstruction.ValidateReconstructedRR(rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(validationResult.IsValid).To(BeTrue())
+			Expect(validationResult.Completeness).To(BeNumerically(">=", 50))
+
+			// ASSERT: Reconstructed fields match seeded data
+			Expect(rr.Spec.SignalName).To(Equal("HighCPU"))
+			Expect(rr.Spec.SignalType).To(Equal("prometheus-alert"))
+			Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
+			Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
+			Expect(rr.Spec.SignalAnnotations).To(HaveKeyWithValue("summary", "CPU usage is high"))
+			Expect(rr.Spec.OriginalPayload).To(ContainSubstring("alert"))
+			Expect(rr.Status.TimeoutConfig.Global.Duration).To(Equal(time.Hour))
+			Expect(rr.Status.TimeoutConfig.Processing.Duration).To(Equal(10 * time.Minute))
+			Expect(rr.Status.TimeoutConfig.Analyzing.Duration).To(Equal(15 * time.Minute))
 		})
 	})
 
-	Context("INTEGRATION-03: Missing gateway event", func() {
-		It("should return HTTP 400 when only orchestrator event exists", func() {
+	// ========================================
+	// ERROR HANDLING INTEGRATION TESTS
+	// ========================================
+	Context("INTEGRATION-ERROR-01: Missing gateway event", func() {
+		It("should return error when only orchestrator event exists", func() {
 			// ARRANGE: Seed only orchestrator event (no gateway event)
 			orchestratorEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
@@ -263,28 +283,81 @@ var _ = Describe("Reconstruction Integration Tests (BR-AUDIT-006)", func() {
 			_, err := auditRepo.Create(ctx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			// ACT: Call reconstruction endpoint
-			req := httptest.NewRequest(http.MethodPost,
-				fmt.Sprintf("/api/v1/audit/remediation-requests/%s/reconstruct", correlationID),
-				nil)
-			req = req.WithContext(ctx)
+			// ACT: Call business logic components directly
 
-			rr := httptest.NewRecorder()
-			testServer.ServeHTTP(rr, req)
-
-			// ASSERT: HTTP 400 Bad Request
-			Expect(rr.Code).To(Equal(http.StatusBadRequest), "Expected HTTP 400 Bad Request")
-
-			// ASSERT: RFC 7807 error with gateway event message
-			var errorResponse map[string]interface{}
-			err = json.Unmarshal(rr.Body.Bytes(), &errorResponse)
+			// Step 1: Query events
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
 			Expect(err).ToNot(HaveOccurred())
+			Expect(events).To(HaveLen(1))
 
-			Expect(errorResponse["type"].(string)).To(ContainSubstring("missing-gateway-event"))
-			Expect(errorResponse["detail"].(string)).To(ContainSubstring("gateway.signal.received"))
+			// Step 2: Parse events
+			parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+			for _, event := range events {
+				parsed, err := reconstruction.ParseAuditEvent(event)
+				Expect(err).ToNot(HaveOccurred())
+				parsedData = append(parsedData, *parsed)
+			}
+
+			// Step 3: Map should fail due to missing gateway event
+			_, err = reconstruction.MergeAuditData(parsedData)
+
+			// ASSERT: Error indicates missing gateway event
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("gateway.signal.received"))
 		})
 	})
 
-	// NOTE: Additional integration tests for partial reconstruction,
-	// malformed events, and performance benchmarks can be added here
+	Context("INTEGRATION-VALIDATION-01: Incomplete reconstruction", func() {
+		It("should report low completeness when fields are missing", func() {
+			// ARRANGE: Seed minimal gateway event (missing optional fields)
+			gatewayEvent := &repository.AuditEvent{
+				EventID:        uuid.New(),
+				Version:        "1.0",
+				EventTimestamp: time.Now().UTC(),
+				EventType:      "gateway.signal.received",
+				EventCategory:  "gateway",
+				EventAction:    "received",
+				EventOutcome:   "success",
+				CorrelationID:  correlationID,
+				ResourceType:   "Signal",
+				ResourceID:     "signal-123",
+				EventData: map[string]interface{}{
+					"signal_name": "HighCPU",
+					"signal_type": "prometheus-alert",
+					// Missing: signal_labels, signal_annotations, original_payload
+				},
+			}
+
+			_, err := auditRepo.Create(ctx, gatewayEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT: Full reconstruction pipeline
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
+			Expect(err).ToNot(HaveOccurred())
+
+			parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+			for _, event := range events {
+				parsed, err := reconstruction.ParseAuditEvent(event)
+				Expect(err).ToNot(HaveOccurred())
+				parsedData = append(parsedData, *parsed)
+			}
+
+			rrFields, err := reconstruction.MergeAuditData(parsedData)
+			Expect(err).ToNot(HaveOccurred())
+
+			rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Step 5: Validate - should report low completeness
+			validationResult, err := reconstruction.ValidateReconstructedRR(rr)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ASSERT: Low completeness due to missing fields
+			Expect(validationResult.Completeness).To(BeNumerically("<", 80))
+			Expect(validationResult.Warnings).ToNot(BeEmpty())
+		})
+	})
+
+	// NOTE: Additional integration tests for database constraints,
+	// concurrent access, and transaction handling can be added here
 })
