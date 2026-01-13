@@ -240,6 +240,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 				"signal_severity", "resource_type", "resource_id", "actor_type",
 				"actor_id", "parent_event_id", "event_data", "event_date",
 				"namespace", "cluster_name",
+				"duration_ms", "error_code", "error_message", // DD-TESTING-001: Added for schema consistency
 			}).
 				AddRow(
 					"550e8400-e29b-41d4-a716-446655440001", "1.0", "gateway.signal.received", "gateway",
@@ -248,6 +249,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 					sql.NullString{String: "gateway", Valid: true}, sql.NullString{String: "gateway-pod", Valid: true},
 					sql.NullString{}, []byte(`{}`), time.Now(),
 					sql.NullString{String: "audit-11-1767754293143527000", Valid: true}, sql.NullString{},
+					sql.NullInt64{}, sql.NullString{}, sql.NullString{}, // DD-TESTING-001: duration_ms, error_code, error_message
 				).
 				AddRow(
 					"550e8400-e29b-41d4-a716-446655440002", "1.0", "gateway.crd.created", "gateway",
@@ -256,6 +258,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 					sql.NullString{String: "gateway", Valid: true}, sql.NullString{String: "gateway-pod", Valid: true},
 					sql.NullString{}, []byte(`{}`), time.Now(),
 					sql.NullString{String: "audit-11-1767754293143527000", Valid: true}, sql.NullString{},
+					sql.NullInt64{}, sql.NullString{}, sql.NullString{}, // DD-TESTING-001: duration_ms, error_code, error_message
 				)
 
 			mock.ExpectQuery("SELECT \\* FROM audit_events").
