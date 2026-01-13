@@ -103,8 +103,8 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		}
 
 		// ✅ Cleanup test namespace (CRDs only)
-		// Note: Redis flush removed for parallel execution safety
-		// Redis keys are namespaced by fingerprint, TTL handles cleanup
+		// Note: Gateway uses status-based deduplication (DD-GATEWAY-011)
+		// Deduplication state stored in RemediationRequest CRD status, not Redis
 		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},

@@ -85,11 +85,20 @@ type ProcessingSettings struct {
 }
 
 // DeduplicationSettings contains deduplication configuration.
+//
+// DEPRECATED: TTL-based deduplication removed in DD-GATEWAY-011
+// Gateway now uses status-based deduplication via RemediationRequest CRD phase.
+// The TTL field is preserved for backwards compatibility only - it is NOT used.
 type DeduplicationSettings struct {
 	// TTL for deduplication fingerprints
-	// For testing: set to 5*time.Second for fast tests
-	// For production: use default (0) for 5-minute TTL
-	TTL time.Duration `yaml:"ttl"` // Default: 5m
+	//
+	// DEPRECATED: No longer used (DD-GATEWAY-011)
+	// Gateway uses RemediationRequest CRD phase for deduplication, not time-based expiration.
+	// This field is parsed for backwards compatibility but has NO EFFECT on Gateway behavior.
+	//
+	// Migration: Remove this field from your configuration files.
+	// Status-based deduplication is automatic and requires no configuration.
+	TTL time.Duration `yaml:"ttl"` // DEPRECATED: No effect
 }
 
 // Note: EnvironmentSettings struct removed (2025-12-06)
@@ -353,15 +362,18 @@ func (c *ServerConfig) Validate() error {
 		return err
 	}
 
-	// Deduplication TTL validation (enhanced with structured errors)
+	// Deduplication TTL validation
+	// DEPRECATED: TTL-based deduplication removed in DD-GATEWAY-011
+	// Gateway now uses status-based deduplication via RemediationRequest CRD phase.
+	// Validation kept for backwards compatibility only - field has NO EFFECT.
 	if c.Processing.Deduplication.TTL < 0 {
 		err := NewConfigError(
 			"processing.deduplication.ttl",
 			c.Processing.Deduplication.TTL.String(),
 			"must be >= 0",
-			"Use 5m for production (recommended), minimum 10s",
+			"DEPRECATED: This field no longer affects Gateway behavior (DD-GATEWAY-011). Remove from config.",
 		)
-		err.Impact = "Negative TTL is invalid"
+		err.Impact = "Negative TTL is invalid (but field is deprecated and unused)"
 		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
 		return err
 	}
@@ -370,9 +382,9 @@ func (c *ServerConfig) Validate() error {
 			"processing.deduplication.ttl",
 			c.Processing.Deduplication.TTL.String(),
 			"below minimum threshold (< 10s)",
-			"Use 5m for production, minimum 10s",
+			"DEPRECATED: This field no longer affects Gateway behavior (DD-GATEWAY-011). Remove from config.",
 		)
-		err.Impact = "May cause duplicate RemediationRequest CRDs"
+		err.Impact = "Invalid range (but field is deprecated and unused)"
 		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
 		return err
 	}
@@ -381,9 +393,9 @@ func (c *ServerConfig) Validate() error {
 			"processing.deduplication.ttl",
 			c.Processing.Deduplication.TTL.String(),
 			"exceeds recommended maximum (24h)",
-			"Use 5m for production (recommended)",
+			"DEPRECATED: This field no longer affects Gateway behavior (DD-GATEWAY-011). Remove from config.",
 		)
-		err.Impact = "May cause excessive memory usage for fingerprint storage"
+		err.Impact = "Exceeds maximum (but field is deprecated and unused)"
 		err.Documentation = "docs/services/stateless/gateway-service/configuration.md#deduplication"
 		return err
 	}
