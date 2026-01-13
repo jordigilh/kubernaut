@@ -738,8 +738,10 @@ type ListWorkflowsParams struct {
 	Environment OptString              `json:",omitempty,omitzero"`
 	Priority    OptString              `json:",omitempty,omitzero"`
 	Component   OptString              `json:",omitempty,omitzero"`
-	Limit       OptInt                 `json:",omitempty,omitzero"`
-	Offset      OptInt                 `json:",omitempty,omitzero"`
+	// Filter by workflow name (exact match for test idempotency).
+	WorkflowName OptString `json:",omitempty,omitzero"`
+	Limit        OptInt    `json:",omitempty,omitzero"`
+	Offset       OptInt    `json:",omitempty,omitzero"`
 }
 
 func unpackListWorkflowsParams(packed middleware.Parameters) (params ListWorkflowsParams) {
@@ -777,6 +779,15 @@ func unpackListWorkflowsParams(packed middleware.Parameters) (params ListWorkflo
 		}
 		if v, ok := packed[key]; ok {
 			params.Component = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "workflow_name",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.WorkflowName = v.(OptString)
 		}
 	}
 	{
@@ -977,6 +988,47 @@ func decodeListWorkflowsParams(args [0]string, argsEscaped bool, r *http.Request
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "component",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: workflow_name.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "workflow_name",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotWorkflowNameVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotWorkflowNameVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.WorkflowName.SetTo(paramsDotWorkflowNameVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "workflow_name",
 			In:   "query",
 			Err:  err,
 		}

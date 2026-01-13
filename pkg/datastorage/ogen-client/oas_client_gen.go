@@ -1428,6 +1428,23 @@ func (c *Client) sendListWorkflows(ctx context.Context, params ListWorkflowsPara
 		}
 	}
 	{
+		// Encode "workflow_name" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "workflow_name",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.WorkflowName.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
 		// Encode "limit" parameter.
 		cfg := uri.QueryParameterEncodingConfig{
 			Name:    "limit",

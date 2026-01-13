@@ -590,7 +590,7 @@ func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogencl
 		GinkgoWriter.Printf("Query error: %v\n", err)
 		return []ogenclient.AuditEvent{}
 	}
-	
+
 	// Filter by namespace if needed (event data contains namespace)
 	var filtered []ogenclient.AuditEvent
 	for _, event := range resp.Data {
@@ -598,7 +598,7 @@ func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogencl
 			filtered = append(filtered, event)
 		}
 	}
-	
+
 	return filtered
 }
 

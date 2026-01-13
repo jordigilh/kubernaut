@@ -274,40 +274,25 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 	// For 409 Conflict or other errors, query by workflow_name to get existing UUID
 	// Authority: DD-WORKFLOW-002 v3.0 (UUID primary key, workflow_name is metadata)
 	// This is idempotent - safe to call in tests even if workflow exists
-	// Note: Using raw HTTP here because ListWorkflowVersions is not yet available in client
-	// TODO: Replace with OpenAPI client method once available
-	queryURL := fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions?version=%s",
-		dataStorageURL, wf.WorkflowID, version)
-	queryResp, err := httpClient.Get(queryURL)
+	// DD-API-001: Use OpenAPI client (added workflow_name filter to listWorkflows endpoint)
+	listResp, err := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
+		WorkflowName: ogenclient.NewOptString(wf.WorkflowID),
+		Limit:        ogenclient.NewOptInt(1), // Only need first match
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to query existing workflow: %w", err)
 	}
-	defer queryResp.Body.Close()
 
-	if queryResp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("workflow query failed with status %d", queryResp.StatusCode)
+	// Extract workflow_id from response
+	switch r := listResp.(type) {
+	case *ogenclient.WorkflowListResponse:
+		if len(r.Workflows) == 0 {
+			return "", fmt.Errorf("workflow exists but query returned no results")
+		}
+		return r.Workflows[0].WorkflowID.Value.String(), nil
+	default:
+		return "", fmt.Errorf("unexpected response type from ListWorkflows: %T", listResp)
 	}
-
-	// Parse response: DataStorage returns {"workflow_name": "...", "versions": [...], "total": N}
-	var versionsResp struct {
-		WorkflowName string                   `json:"workflow_name"`
-		Versions     []map[string]interface{} `json:"versions"`
-		Total        int                      `json:"total"`
-	}
-	if err := json.NewDecoder(queryResp.Body).Decode(&versionsResp); err != nil {
-		return "", fmt.Errorf("failed to decode query response: %w", err)
-	}
-
-	if len(versionsResp.Versions) == 0 {
-		return "", fmt.Errorf("workflow exists but query returned no versions")
-	}
-
-	workflowID, ok := versionsResp.Versions[0]["workflow_id"].(string)
-	if !ok {
-		return "", fmt.Errorf("workflow_id not found in query response")
-	}
-
-	return workflowID, nil
 }
 
 // UpdateMockLLMWithUUIDs sends the actual workflow UUIDs to Mock LLM

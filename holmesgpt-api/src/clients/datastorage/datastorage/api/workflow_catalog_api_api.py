@@ -891,6 +891,7 @@ class WorkflowCatalogAPIApi:
         environment: Optional[StrictStr] = None,
         priority: Optional[StrictStr] = None,
         component: Optional[StrictStr] = None,
+        workflow_name: Annotated[Optional[StrictStr], Field(description="Filter by workflow name (exact match for test idempotency)")] = None,
         limit: Optional[Annotated[int, Field(le=1000, strict=True)]] = None,
         offset: Optional[StrictInt] = None,
         _request_timeout: Union[
@@ -918,6 +919,8 @@ class WorkflowCatalogAPIApi:
         :type priority: str
         :param component:
         :type component: str
+        :param workflow_name: Filter by workflow name (exact match for test idempotency)
+        :type workflow_name: str
         :param limit:
         :type limit: int
         :param offset:
@@ -949,6 +952,7 @@ class WorkflowCatalogAPIApi:
             environment=environment,
             priority=priority,
             component=component,
+            workflow_name=workflow_name,
             limit=limit,
             offset=offset,
             _request_auth=_request_auth,
@@ -979,6 +983,7 @@ class WorkflowCatalogAPIApi:
         environment: Optional[StrictStr] = None,
         priority: Optional[StrictStr] = None,
         component: Optional[StrictStr] = None,
+        workflow_name: Annotated[Optional[StrictStr], Field(description="Filter by workflow name (exact match for test idempotency)")] = None,
         limit: Optional[Annotated[int, Field(le=1000, strict=True)]] = None,
         offset: Optional[StrictInt] = None,
         _request_timeout: Union[
@@ -1006,6 +1011,8 @@ class WorkflowCatalogAPIApi:
         :type priority: str
         :param component:
         :type component: str
+        :param workflow_name: Filter by workflow name (exact match for test idempotency)
+        :type workflow_name: str
         :param limit:
         :type limit: int
         :param offset:
@@ -1037,6 +1044,7 @@ class WorkflowCatalogAPIApi:
             environment=environment,
             priority=priority,
             component=component,
+            workflow_name=workflow_name,
             limit=limit,
             offset=offset,
             _request_auth=_request_auth,
@@ -1067,6 +1075,7 @@ class WorkflowCatalogAPIApi:
         environment: Optional[StrictStr] = None,
         priority: Optional[StrictStr] = None,
         component: Optional[StrictStr] = None,
+        workflow_name: Annotated[Optional[StrictStr], Field(description="Filter by workflow name (exact match for test idempotency)")] = None,
         limit: Optional[Annotated[int, Field(le=1000, strict=True)]] = None,
         offset: Optional[StrictInt] = None,
         _request_timeout: Union[
@@ -1094,6 +1103,8 @@ class WorkflowCatalogAPIApi:
         :type priority: str
         :param component:
         :type component: str
+        :param workflow_name: Filter by workflow name (exact match for test idempotency)
+        :type workflow_name: str
         :param limit:
         :type limit: int
         :param offset:
@@ -1125,6 +1136,7 @@ class WorkflowCatalogAPIApi:
             environment=environment,
             priority=priority,
             component=component,
+            workflow_name=workflow_name,
             limit=limit,
             offset=offset,
             _request_auth=_request_auth,
@@ -1150,6 +1162,7 @@ class WorkflowCatalogAPIApi:
         environment,
         priority,
         component,
+        workflow_name,
         limit,
         offset,
         _request_auth,
@@ -1187,6 +1200,10 @@ class WorkflowCatalogAPIApi:
         if component is not None:
             
             _query_params.append(('component', component))
+            
+        if workflow_name is not None:
+            
+            _query_params.append(('workflow_name', workflow_name))
             
         if limit is not None:
             

@@ -110,10 +110,14 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 			// Staging environment should auto-approve per Rego policy
-			Expect(analysis.Status.ApprovalRequired).To(BeFalse())
-			// Should have a selected workflow from HolmesGPT mock
-			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
-			Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal("mock-crashloop-config-fix-v1"))
+		Expect(analysis.Status.ApprovalRequired).To(BeFalse())
+		// Should have a selected workflow from HolmesGPT mock
+		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
+		// DD-WORKFLOW-002 v3.0: Test assertions use actual UUIDs from DataStorage
+		// Mock LLM returns workflow for CrashLoopBackOff → crashloop-config-fix-v1 (production environment)
+		expectedWorkflowID := workflowUUIDs["crashloop-config-fix-v1:production"]
+		Expect(expectedWorkflowID).NotTo(BeEmpty(), "crashloop-config-fix-v1:production UUID must be seeded")
+		Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal(expectedWorkflowID))
 		})
 
 		It("should require approval for production environment - BR-AI-013", func() {

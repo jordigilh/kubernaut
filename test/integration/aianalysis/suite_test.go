@@ -116,6 +116,11 @@ var (
 
 	// DD-TEST-010: Track infrastructure for cleanup (shared reference)
 	dsInfra *infrastructure.DSBootstrapInfra
+
+	// DD-WORKFLOW-002 v3.0: Workflow UUID mapping for test assertions
+	// Map format: "workflow_name:environment" → "actual-uuid-from-datastorage"
+	// Example: "oomkill-increase-memory-v1:production" → "02fad812-0ad1-4da6-b3bb-cc322a1fda47"
+	workflowUUIDs map[string]string
 )
 
 func TestAIAnalysisIntegration(t *testing.T) {
@@ -243,7 +248,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-WORKFLOW-002 v3.0: DataStorage auto-generates UUIDs (cannot be specified)
 	By("Seeding test workflows into DataStorage")
 	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
+	var err error
+	workflowUUIDs, err = SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
 	// Update Mock LLM scenarios with actual DataStorage UUIDs

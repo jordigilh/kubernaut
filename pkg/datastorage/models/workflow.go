@@ -241,6 +241,16 @@ type WorkflowSearchFilters struct {
 	CustomLabels map[string][]string `json:"custom_labels,omitempty"`
 
 	// ========================================
+	// METADATA FILTERS
+	// ========================================
+
+	// WorkflowName filters by exact workflow name match (metadata field)
+	// Used for test idempotency and workflow lookup by human-readable name
+	// Authority: DD-API-001 (OpenAPI client mandatory - added in Jan 2026)
+	// Example: "oomkill-increase-memory-v1"
+	WorkflowName string `json:"workflow_name,omitempty"`
+
+	// ========================================
 	// LIFECYCLE FILTERS
 	// ========================================
 
