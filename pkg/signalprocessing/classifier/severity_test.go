@@ -115,7 +115,7 @@ var _ = Describe("Severity Classifier Unit Tests", Label("unit", "severity", "cl
 				result, err := severityClassifier.ClassifySeverity(ctx, sp)
 
 				// THEN: Downstream consumers receive normalized severity they can interpret
-				Expect(err).ToNot(HaveOccurred(), 
+				Expect(err).ToNot(HaveOccurred(),
 					"Severity classification should succeed for %s", tc.Source)
 				Expect(result.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
 					"Normalized severity enables downstream services to interpret urgency")

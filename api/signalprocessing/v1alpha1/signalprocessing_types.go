@@ -183,6 +183,14 @@ type SignalProcessingStatus struct {
 	PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
 	BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
 
+	// Severity determination (DD-SEVERITY-001)
+	// Normalized severity determined by Rego policy: "critical", "warning", or "info"
+	// Enables downstream services (AIAnalysis, RemediationOrchestrator, Notification)
+	// to interpret alert urgency without understanding external severity schemes.
+	// +kubebuilder:validation:Enum=critical;warning;info
+	// +optional
+	Severity string `json:"severity,omitempty"`
+
 	// Conditions for detailed status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
