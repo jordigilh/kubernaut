@@ -490,24 +490,33 @@ class TestAuditPipelineE2E:
         events = query_audit_events_with_retry(
             data_storage_url,
             unique_remediation_id,
-            min_expected_events=3,  # llm_request + llm_response + workflow_validation_attempt
+            min_expected_events=5,  # DD-HAPI-002 v1.2: llm_request + llm_response + multiple workflow_validation_attempt events (up to 3)
             timeout_seconds=30  # Increased for E2E with real LLM mock delays
         )
 
         # Verify validation attempt event exists (Pydantic model attribute access)
         validation_events = [e for e in events if e.event_type == "workflow_validation_attempt"]
-        # DD-TESTING-001: Deterministic count - exactly 1 validation attempt per incident analysis
-        assert len(validation_events) == 1, f"Expected exactly 1 workflow_validation_attempt event. Found events: {[e.event_type for e in events]}"
-
-        # ADR-034: Fields are in event_data
-        event = validation_events[0]
-        assert event.correlation_id == unique_remediation_id
-        # event_data is a oneOf discriminated union - access actual_instance
-        event_data = event.event_data if hasattr(event, 'event_data') else None
-        assert event_data is not None, "event_data should be present"
-        assert hasattr(event_data, 'actual_instance'), "event_data should have actual_instance (oneOf wrapper)"
-        payload = event_data.actual_instance
-        assert hasattr(payload, 'incident_id') and payload.incident_id == unique_incident_id
+        # DD-HAPI-002 v1.2: Workflow validation with self-correction creates multiple attempts (up to 3)
+        assert len(validation_events) >= 1, f"Expected at least 1 workflow_validation_attempt event. Found events: {[e.event_type for e in events]}"
+        
+        # Verify all validation events have correct correlation_id
+        for event in validation_events:
+            assert event.correlation_id == unique_remediation_id, f"Validation event should have correlation_id {unique_remediation_id}"
+            
+            # ADR-034: Fields are in event_data
+            # event_data is a oneOf discriminated union - access actual_instance
+            event_data = event.event_data if hasattr(event, 'event_data') else None
+            assert event_data is not None, "event_data should be present"
+            assert hasattr(event_data, 'actual_instance'), "event_data should have actual_instance (oneOf wrapper)"
+            payload = event_data.actual_instance
+            assert hasattr(payload, 'incident_id') and payload.incident_id == unique_incident_id, \
+                f"Validation event should have incident_id {unique_incident_id}"
+            
+        # Verify at least one final attempt exists (DD-HAPI-002 v1.2: is_final_attempt=True)
+        final_attempts = [e for e in validation_events 
+                         if hasattr(e.event_data.actual_instance, 'is_final_attempt') 
+                         and e.event_data.actual_instance.is_final_attempt]
+        assert len(final_attempts) >= 1, "Expected at least 1 final validation attempt (is_final_attempt=True)"
         assert hasattr(payload, 'attempt'), "payload should have attempt"
         assert hasattr(payload, 'max_attempts'), "payload should have max_attempts"
         assert hasattr(payload, 'is_valid'), "payload should have is_valid"
