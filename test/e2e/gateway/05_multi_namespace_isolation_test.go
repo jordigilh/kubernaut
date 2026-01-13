@@ -207,11 +207,11 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			}
 			crdCountNS1 = len(crdList.Items)
 			if crdCountNS1 == 0 {
-				testLogger.V(1).Info("No CRDs found yet in NS1, retrying...")
+				GinkgoWriter.Printf("⚠️  No CRDs in NS1 yet (K8s cache sync delay), retrying...\n")
 			}
 			return crdCountNS1
-		}, 120*time.Second, 3*time.Second).Should(BeNumerically(">=", 1),
-			"Namespace 1 should have at least 1 CRD (increased timeout for late-running test)")
+		}, 240*time.Second, 3*time.Second).Should(BeNumerically(">=", 1),
+			"Namespace 1 should have at least 1 CRD (increased timeout for K8s client cache synchronization)")
 
 		testLogger.Info(fmt.Sprintf("  Namespace 1: %d CRDs", crdCountNS1))
 
@@ -239,11 +239,11 @@ var _ = Describe("Test 05: Multi-Namespace Isolation (BR-GATEWAY-011)", Ordered,
 			}
 			crdCountNS2 = len(crdList.Items)
 			if crdCountNS2 == 0 {
-				testLogger.V(1).Info("No CRDs found yet in NS2, retrying...")
+				GinkgoWriter.Printf("⚠️  No CRDs in NS2 yet (K8s cache sync delay), retrying...\n")
 			}
 			return crdCountNS2
-		}, 120*time.Second, 3*time.Second).Should(BeNumerically(">=", 1),
-			"Namespace 2 should have at least 1 CRD (increased timeout for late-running test)")
+		}, 240*time.Second, 3*time.Second).Should(BeNumerically(">=", 1),
+			"Namespace 2 should have at least 1 CRD (increased timeout for K8s client cache synchronization)")
 
 		testLogger.Info(fmt.Sprintf("  Namespace 2: %d CRDs", crdCountNS2))
 

@@ -1,0 +1,130 @@
+/*
+Copyright 2025 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package datastorage_test
+
+import (
+	"context"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+)
+
+// ========================================
+// RECONSTRUCTION E2E TESTS (FUTURE)
+// ========================================
+//
+// Purpose: Test reconstruction REST API endpoint via OpenAPI client
+// to validate complete end-to-end workflow including HTTP layer.
+//
+// Business Requirements:
+// - BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
+//
+// Test Strategy (per 03-testing-strategy.mdc):
+// - E2E Tests (10-15%): Test complete workflow via REST API
+// - Use OpenAPI-generated client (ogenclient)
+// - Test against real DataStorage HTTP endpoint
+// - Validate HTTP status codes, JSON responses
+// - Test authentication (OAuth-proxy)
+//
+// Difference from Integration Tests:
+// - Integration: Call reconstruction.* functions directly
+// - E2E: Use ogenclient to call HTTP endpoint
+//
+// ========================================
+
+var _ = Describe("Reconstruction E2E Tests (BR-AUDIT-006)", func() {
+	var (
+		client        *ogenclient.Client
+		ctx           context.Context
+		correlationID string
+	)
+
+	BeforeEach(func() {
+		ctx = context.Background()
+		
+		// Create OpenAPI client pointing to DataStorage service
+		// In real E2E tests, this would be the actual service URL
+		client, _ = ogenclient.NewClient("http://data-storage-service.kubernaut.svc.cluster.local:8080")
+		
+		correlationID = "test-e2e-correlation-123"
+		
+		// In real E2E tests, seed audit events via Gateway/Orchestrator services
+		// NOT directly in database (that's integration testing)
+	})
+
+	// ========================================
+	// E2E: HTTP ENDPOINT TESTS
+	// ========================================
+	Context("E2E-01: Successful reconstruction via HTTP", func() {
+		It("should reconstruct RR using OpenAPI client", func() {
+			Skip("Example only - would be implemented for E2E testing")
+			
+			// ACT: Call HTTP endpoint via OpenAPI client
+			response, err := client.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+				CorrelationID: correlationID,
+			})
+			
+			// ASSERT: HTTP response structure
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response).To(BeAssignableToTypeOf(&ogenclient.ReconstructionResponse{}))
+			
+			reconstructionResp := response.(*ogenclient.ReconstructionResponse)
+			Expect(reconstructionResp.RemediationRequestYaml).ToNot(BeEmpty())
+			Expect(reconstructionResp.Validation.IsValid).To(BeTrue())
+			Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 50))
+		})
+	})
+
+	Context("E2E-02: Error handling via HTTP", func() {
+		It("should return 404 for non-existent correlation ID", func() {
+			Skip("Example only - would be implemented for E2E testing")
+			
+			// ACT: Call with non-existent correlation ID
+			_, err := client.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+				CorrelationID: "nonexistent-correlation",
+			})
+			
+			// ASSERT: HTTP 404 error
+			Expect(err).To(HaveOccurred())
+			// Check for specific HTTP error type from OpenAPI client
+		})
+	})
+
+	Context("E2E-03: Authentication", func() {
+		It("should require valid ServiceAccount token", func() {
+			Skip("Example only - would be implemented for E2E testing")
+			
+			// ACT: Call without authentication
+			// (OpenAPI client would not include Authorization header)
+			_, err := client.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+				CorrelationID: correlationID,
+			})
+			
+			// ASSERT: HTTP 401 Unauthorized (from OAuth-proxy)
+			Expect(err).To(HaveOccurred())
+			// Check for authentication error
+		})
+	})
+
+	// NOTE: Full E2E tests would include:
+	// - Complete workflow: Signal → Gateway → Orchestrator → Reconstruction
+	// - Authentication via OAuth-proxy
+	// - kubectl apply of reconstructed RR
+	// - Validation that RR is applied to cluster successfully
+})

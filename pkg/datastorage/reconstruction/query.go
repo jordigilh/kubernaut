@@ -3,6 +3,7 @@ package reconstruction
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -156,14 +157,42 @@ func QueryAuditEventsForReconstruction(
 			event.EventDate.SetTo(eventDate.Time)
 		}
 
-		// Unmarshal event_data JSONB to ogen-generated union type
+		// Manually construct discriminated union variant based on event_type
+		// The raw JSON in database doesn't have discriminator, so we determine variant from event_type
 		if len(eventDataJSON) > 0 {
-			if err := event.EventData.UnmarshalJSON(eventDataJSON); err != nil {
-				logger.Error(err, "Failed to unmarshal event_data",
-					"correlationID", correlationID,
+			switch event.EventType {
+			case "gateway.signal.received":
+				var payload ogenclient.GatewayAuditPayload
+				if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+					logger.Error(err, "Failed to unmarshal gateway event_data",
+						"correlationID", correlationID,
+						"eventID", eventID)
+					return nil, fmt.Errorf("failed to unmarshal gateway event_data: %w", err)
+				}
+				event.EventData.SetGatewayAuditPayload(
+					ogenclient.AuditEventEventDataGatewaySignalReceivedAuditEventEventData,
+					payload,
+				)
+
+			case "orchestrator.lifecycle.created":
+				var payload ogenclient.RemediationOrchestratorAuditPayload
+				if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+					logger.Error(err, "Failed to unmarshal orchestrator event_data",
+						"correlationID", correlationID,
+						"eventID", eventID)
+					return nil, fmt.Errorf("failed to unmarshal orchestrator event_data: %w", err)
+				}
+				event.EventData.SetRemediationOrchestratorAuditPayload(
+					ogenclient.AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData,
+					payload,
+				)
+
+			default:
+				logger.V(1).Info("Skipping unsupported event type for reconstruction",
 					"eventType", event.EventType,
-					"eventID", eventID)
-				return nil, fmt.Errorf("failed to unmarshal event_data: %w", err)
+					"correlationID", correlationID)
+				// Skip unsupported event types - they're filtered by query but defense-in-depth
+				continue
 			}
 		}
 

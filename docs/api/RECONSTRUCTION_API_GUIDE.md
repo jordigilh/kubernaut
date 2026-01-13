@@ -1,7 +1,7 @@
 # RemediationRequest Reconstruction API - User Guide
 
-**Version**: 1.0  
-**Last Updated**: 2026-01-12  
+**Version**: 1.0
+**Last Updated**: 2026-01-12
 **Business Requirement**: BR-AUDIT-006
 
 ## Overview

@@ -184,6 +184,105 @@ grep -r "Mock.*Engine\|Mock.*Analytics\|Mock.*Safety" test/ --include="*_test.go
 # Any matches = IMMEDIATE REJECTION
 ```
 
+### **ANTI-PATTERN 5: HTTP SERVER IN INTEGRATION TESTS (CRITICAL)**
+
+**Definition**: Using HTTP server/endpoint in integration tests instead of calling business logic directly
+
+**SEVERITY**: Critical - Violates testing tier boundaries (per [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc))
+
+**DISCOVERED**: 2026-01-12 during RR Reconstruction feature development
+
+**WHY THIS IS WRONG**:
+- Integration tests MUST test business logic with real infrastructure (database, etc.)
+- HTTP layer testing belongs in E2E tests (10-15% coverage tier)
+- Using HTTP server conflates integration and E2E testing tiers
+- Prevents proper testing pyramid architecture
+
+**❌ VIOLATION EXAMPLES**:
+```go
+// ❌ WRONG: Integration test using HTTP server
+testServer, err := server.NewServer(db.DB, redisClient, logger)
+req := httptest.NewRequest(http.MethodPost, "/api/v1/endpoint", nil)
+rr := httptest.NewRecorder()
+testServer.ServeHTTP(rr, req)                    // ❌ VIOLATION: HTTP testing in integration tests
+
+// Asserting HTTP responses in integration tests
+Expect(rr.Code).To(Equal(http.StatusOK))         // ❌ VIOLATION: Testing HTTP status codes
+var response map[string]interface{}
+json.Unmarshal(rr.Body.Bytes(), &response)       // ❌ VIOLATION: Testing JSON serialization
+```
+
+**✅ CORRECT INTEGRATION TESTING**:
+```go
+// ✅ CORRECT: Integration test calls business logic directly
+// Test with REAL database, REAL business components
+events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
+Expect(err).ToNot(HaveOccurred())
+
+parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+for _, event := range events {
+    parsed, err := reconstruction.ParseAuditEvent(event)
+    Expect(err).ToNot(HaveOccurred())
+    parsedData = append(parsedData, *parsed)
+}
+
+rrFields, err := reconstruction.MergeAuditData(parsedData)
+Expect(err).ToNot(HaveOccurred())
+
+rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+Expect(err).ToNot(HaveOccurred())
+
+// Assert business outcomes, NOT HTTP responses
+Expect(rr.Spec.SignalName).To(Equal("HighCPU"))
+Expect(rr.Status.TimeoutConfig.Global.Duration).To(Equal(time.Hour))
+```
+
+**✅ CORRECT E2E TESTING (For HTTP Layer)**:
+```go
+// ✅ CORRECT: E2E test uses OpenAPI client for HTTP endpoint
+client, _ := ogenclient.NewClient("http://data-storage-service:8080")
+response, err := client.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+    CorrelationID: correlationID,
+})
+
+// Assert HTTP-level concerns
+Expect(err).ToNot(HaveOccurred())
+Expect(response.RemediationRequestYaml).ToNot(BeEmpty())
+Expect(response.Validation.IsValid).To(BeTrue())
+```
+
+**TESTING TIER DECISION MATRIX**:
+
+| Question | Unit | Integration | E2E |
+|----------|------|-------------|-----|
+| Uses httptest.NewRecorder()? | ❌ Never | ❌ Never | ✅ Yes |
+| Uses testServer.ServeHTTP()? | ❌ Never | ❌ Never | ✅ Yes |
+| Calls business logic directly? | ✅ Yes | ✅ Yes | ❌ No |
+| Uses OpenAPI client? | ❌ No | ❌ No | ✅ Yes |
+| Tests HTTP status codes? | ❌ No | ❌ No | ✅ Yes |
+| Tests JSON serialization? | ❌ No | ❌ No | ✅ Yes |
+| Uses real database? | ❌ No (mock) | ✅ Yes | ✅ Yes |
+
+**Automated Detection**:
+```bash
+# Detect HTTP SERVER usage in integration tests
+grep -r "testServer\.ServeHTTP\|httptest\.NewRecorder\|NewServer.*http" test/integration/ --include="*_test.go"
+# Any matches in test/integration/ = IMMEDIATE REJECTION
+
+# Verify integration tests call business logic directly
+grep -r "\.Query.*ForReconstruction\|\.Parse.*Event\|\.Build.*Request\|\.Validate.*RR" test/integration/ --include="*_test.go"
+# No matches = MISSING BUSINESS LOGIC CALLS
+```
+
+**REFERENCE AUTHORITY**:
+- **Testing Strategy**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing pyramid and tier boundaries
+- **Testing Tiers Guide**: `docs/development/SOC2/RECONSTRUCTION_TESTING_TIERS.md` - Detailed tier specifications
+- **Coverage Standards**: [15-testing-coverage-standards.mdc](mdc:.cursor/rules/15-testing-coverage-standards.mdc) - >50% integration coverage requirement
+
+**IMPACT**:
+- ❌ Incorrect: 3 integration tests using HTTP server (VIOLATED testing tier boundaries)
+- ✅ Corrected: 5 integration tests calling business logic directly (COMPLIANT with testing tiers)
+
 ---
 
 ## 🔧 **AUTOMATED VALIDATION SCRIPTS**
