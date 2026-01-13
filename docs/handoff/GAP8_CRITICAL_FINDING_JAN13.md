@@ -2,8 +2,8 @@
 
 ## 🚨 **CRITICAL DISCOVERY**
 
-**Finding**: **0 audit events emitted** for correlation_id after Status().Update()  
-**Impact**: Webhook is NOT intercepting RemediationRequest status updates  
+**Finding**: **0 audit events emitted** for correlation_id after Status().Update()
+**Impact**: Webhook is NOT intercepting RemediationRequest status updates
 **Confidence**: 100% (diagnostic test confirms)
 
 ---
@@ -21,7 +21,7 @@
 ❌ At least one audit event should exist for this correlation_id (diagnostic)
 ```
 
-**Audit Query**: Query for ALL event types with `correlation_id=2e50c10c-3aea-48d7-af10-f8115e5dce01`  
+**Audit Query**: Query for ALL event types with `correlation_id=2e50c10c-3aea-48d7-af10-f8115e5dce01`
 **Result**: **0 total events found**
 
 **Conclusion**: Webhook is **NOT intercepting** ANY RemediationRequest status updates
@@ -203,17 +203,17 @@ Kubernetes webhooks intercept API server requests, but **status subresource upda
 
 ### **1. Manual Status Updates Don't Trigger Webhooks Reliably**
 
-**Lesson**: Kubernetes webhooks expect controller-managed CRDs  
+**Lesson**: Kubernetes webhooks expect controller-managed CRDs
 **Impact**: E2E tests should deploy controllers for realistic testing
 
 ### **2. Integration vs. E2E Test Scope**
 
-**Lesson**: Integration tests validated controller logic correctly  
+**Lesson**: Integration tests validated controller logic correctly
 **Impact**: E2E test failure doesn't mean feature is broken - just test environment is incomplete
 
 ### **3. Webhook Interception Requires Controller Context**
 
-**Lesson**: Webhooks work best with running controllers managing CRDs  
+**Lesson**: Webhooks work best with running controllers managing CRDs
 **Impact**: Production deployment will work fine (controllers always running)
 
 ---
@@ -253,8 +253,8 @@ Kubernetes webhooks intercept API server requests, but **status subresource upda
 
 ---
 
-**Document Version**: 1.0  
-**Created**: January 13, 2026 1:00 PM EST  
-**Status**: 🔴 **CRITICAL FINDING - Root Cause Identified**  
-**Recommended Action**: Deploy RO controller to AuthWebhook E2E suite (Option 1, 1 hour)  
+**Document Version**: 1.0
+**Created**: January 13, 2026 1:00 PM EST
+**Status**: 🔴 **CRITICAL FINDING - Root Cause Identified**
+**Recommended Action**: Deploy RO controller to AuthWebhook E2E suite (Option 1, 1 hour)
 **BR-AUDIT-005 v2.0**: Gap #8 - TimeoutConfig mutation audit capture

@@ -328,11 +328,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			firstCRDName := crdList1.Items[0].Name
 
-			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
-			// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
+		// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
+		// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
 
-			// Second alert: Duplicate (CRD still in non-terminal phase)
-			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+		// Wait for Gateway cache to sync CRD (E2E-specific delay)
+		// Gateway uses controller-runtime cache which has eventual consistency
+		// Integration tests don't need this because they use shared K8s client
+		time.Sleep(2 * time.Second)
+
+		// Second alert: Duplicate (CRD still in non-terminal phase)
+		req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 			_ = err
 			req2.Header.Set("Content-Type", "application/json")
 			req2.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
