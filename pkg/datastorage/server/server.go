@@ -390,6 +390,11 @@ func (s *Server) Handler() http.Handler {
 		s.logger.V(1).Info("Registering /api/v1/audit/export handler (SOC2 Day 9)")
 		r.Get("/audit/export", s.HandleExportAuditEvents)
 
+		// BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
+		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
+		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
+		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequest)
+
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
 		// DD-STORAGE-008: Workflow catalog schema
