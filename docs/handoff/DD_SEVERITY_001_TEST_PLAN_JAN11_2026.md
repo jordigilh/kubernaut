@@ -42,6 +42,448 @@ This document defines **all test scenarios** required to validate DD-SEVERITY-00
 
 ---
 
+## 🔴🟢🔵 **TDD Methodology - MANDATORY SEQUENCE**
+
+**Per 03-testing-strategy.mdc & TESTING_GUIDELINES.md**: Test-Driven Development is **REQUIRED** for all implementation.
+
+### **RED-GREEN-REFACTOR Cycle**
+
+Each phase follows this **MANDATORY** sequence:
+
+#### **🔴 RED Phase: Write Failing Tests FIRST**
+**Duration**: 1-2 days per phase  
+**Action**: Write ALL tests before any implementation  
+**Validation**: `go test ./test/... | grep FAIL` should show ALL tests failing
+
+```bash
+# Example: Phase 1 (SignalProcessing)
+# Day 1-2: Write all 21 tests
+go test ./pkg/signalprocessing/classifier/...  # 10 unit tests FAIL
+go test ./test/integration/signalprocessing/... # 8 integration tests FAIL
+go test ./test/e2e/signalprocessing/...        # 3 E2E tests FAIL
+
+# Expected: 21 FAIL, 0 PASS
+```
+
+**Critical Rule**: NO implementation code until ALL tests are written and failing.
+
+#### **🟢 GREEN Phase: Minimal Implementation**
+**Duration**: 2-3 days per phase  
+**Action**: Write simplest code to make tests pass  
+**Validation**: ALL tests should PASS
+
+```bash
+# Example: Phase 1 (SignalProcessing)
+# Day 3-4: Implement minimal functionality
+# - Add CRD Status.Severity field
+# - Create basic Rego policy
+# - Wire controller to call Rego
+
+go test ./test/...  # Expected: 0 FAIL, 21 PASS
+```
+
+**Critical Rule**: Keep implementation minimal - NO sophisticated logic yet.
+
+#### **🔵 REFACTOR Phase: Enhance Implementation**
+**Duration**: 1-2 days per phase  
+**Action**: Improve code quality while keeping tests green  
+**Validation**: ALL tests still PASS after enhancements
+
+```bash
+# Example: Phase 1 (SignalProcessing)
+# Day 5: Enhance with sophisticated logic
+# - Improve Rego policy (custom severity mappings)
+# - Add ConfigMap-based policy loading
+# - Performance optimization
+# - Error handling improvements
+
+go test ./test/...  # Expected: 0 FAIL, 21 PASS (tests unchanged)
+```
+
+**Critical Rule**: Tests should NOT change during REFACTOR - only implementation improves.
+
+### **Phase Timeline with TDD**
+
+| Phase | RED (Write Tests) | GREEN (Minimal) | REFACTOR (Enhance) | Total |
+|-------|-------------------|-----------------|-------------------|-------|
+| **Phase 1: SP** | Days 1-2 (21 tests) | Days 3-4 | Day 5 | 5 days |
+| **Phase 2: GW** | Days 1-2 (11 tests) | Days 3-4 | Day 5 | 5 days |
+| **Phase 3: Consumers** | Days 1-3 (11 tests) | Days 4-6 | Days 7-8 | 8 days |
+
+**Total Implementation Time**: 18 days (~4 weeks) with TDD discipline
+
+---
+
+## 🚫 **FORBIDDEN PATTERNS - ABSOLUTE PROHIBITIONS**
+
+**Per TESTING_GUIDELINES.md lines 587-999**: These patterns are **ABSOLUTELY FORBIDDEN** with **NO EXCEPTIONS**.
+
+### **❌ NEVER Use time.Sleep() for Async Operations**
+
+```go
+// ❌ FORBIDDEN: Guessing timing with sleep
+time.Sleep(5 * time.Second)  // Wait for SP to complete
+Expect(sp.Status.Severity).To(Equal("critical"))
+
+// ✅ REQUIRED: Eventually() for all async operations
+Eventually(func() string {
+    _ = k8sClient.Get(ctx, key, &sp)
+    return sp.Status.Severity
+}, 30*time.Second, 1*time.Second).Should(Equal("critical"))
+```
+
+**Why Forbidden**: `time.Sleep()` is a **guess** about timing. `Eventually()` is a **verification**.
+
+### **❌ NEVER Use Skip() to Avoid Failures**
+
+```go
+// ❌ FORBIDDEN: Skipping when service unavailable
+if !isDataStorageRunning() {
+    Skip("Data Storage not available")
+}
+
+// ✅ REQUIRED: Fail with clear error message
+Expect(isDataStorageRunning()).To(BeTrue(),
+    "Data Storage REQUIRED - start infrastructure first")
+```
+
+**Why Forbidden**: Skipped tests show "green" but don't validate anything.
+
+### **❌ NEVER Test Implementation Details**
+
+```go
+// ❌ FORBIDDEN: Testing HOW it works
+It("should map 'Sev1' to 'critical' via Rego evaluation", func() {
+    result := classifier.ClassifySeverity(ctx, spWithSeverity("Sev1"))
+    Expect(result.Severity).To(Equal("critical"))  // Tests implementation
+})
+
+// ✅ REQUIRED: Testing WHAT business outcome
+It("BR-SP-105: should enable customers to adopt without reconfiguration", func() {
+    // BUSINESS CONTEXT: Enterprise uses Sev1-4 scheme
+    // BUSINESS VALUE: No infrastructure reconfiguration needed
+    // CUSTOMER VALUE: $50K cost savings
+    // Test validates customer onboarding enablement
+})
+```
+
+**Why Forbidden**: Business requirements are stable, implementation changes frequently.
+
+### **❌ NEVER Mock Business Logic**
+
+```go
+// ❌ FORBIDDEN: Mocking Rego evaluator (business logic)
+mockRegoEvaluator := &MockRegoEvaluator{}
+classifier := NewClassifier(mockRegoEvaluator)
+
+// ✅ REQUIRED: Use REAL Rego evaluator in unit tests
+realRegoEvaluator := rego.NewEvaluator(policyBytes)
+classifier := NewClassifier(realRegoEvaluator)
+```
+
+**Why Forbidden**: Mock business logic = NOT testing actual business behavior.
+
+### **Acceptable Use of time.Sleep()**
+
+**ONLY acceptable in these scenarios:**
+
+```go
+// ✅ Acceptable: Testing timing behavior itself
+It("should timeout after 5 seconds", func() {
+    start := time.Now()
+    err := operationWithTimeout(5 * time.Second)
+    duration := time.Since(start)
+    Expect(duration).To(BeNumerically("~", 5*time.Second, 500*time.Millisecond))
+})
+
+// ✅ Acceptable: Staggering requests for load testing
+for i := 0; i < 20; i++ {
+    time.Sleep(50 * time.Millisecond)  // Intentional stagger
+    sendRequest()
+}
+// But then use Eventually() to wait for processing!
+Eventually(func() bool {
+    return allRequestsProcessed()
+}, 30*time.Second, 1*time.Second).Should(BeTrue())
+```
+
+---
+
+## 🏗️ **Test Infrastructure Requirements**
+
+**Per 03-testing-strategy.mdc lines 130-237 & TESTING_GUIDELINES.md lines 1010-1248**
+
+### **Phase 1: SignalProcessing (Weeks 1-2)**
+
+| Test Tier | Infrastructure | K8s Environment | Services Required | Mock Strategy |
+|-----------|---------------|-----------------|-------------------|---------------|
+| **Unit (10 tests)** | None | **Fake K8s Client** (mandatory) | None | Mock external deps ONLY |
+| **Integration (8 tests)** | envtest | Real K8s API server | None | Mock DataStorage for speed |
+| **E2E (3 tests)** | KIND cluster | Real K8s cluster | DataStorage, Redis | Mock LLM (cost) |
+
+**Critical Requirements**:
+- ✅ **Unit tests MUST use `fake.NewClientBuilder()`** per ADR-004 (compile-time API safety)
+- ✅ **Integration tests use envtest** for real K8s API without full cluster overhead
+- ✅ **E2E tests deploy to KIND** for production-like environment validation
+
+**Infrastructure Setup Commands**:
+
+```bash
+# Unit tests (no infrastructure needed)
+go test ./pkg/signalprocessing/classifier/... -v
+
+# Integration tests (envtest - automatic setup)
+go test ./test/integration/signalprocessing/... -v
+
+# E2E tests (KIND cluster required)
+make test-e2e-signalprocessing  # Creates KIND cluster, deploys services
+```
+
+### **Phase 2: Gateway (Week 3)**
+
+| Test Tier | Infrastructure | K8s Environment | Services Required | Mock Strategy |
+|-----------|---------------|-----------------|-------------------|---------------|
+| **Unit (3 tests)** | None | Fake K8s Client | None | Mock Redis, K8s |
+| **Integration (6 tests)** | Redis, envtest | Real K8s API | Redis (podman) | Mock DataStorage |
+| **E2E (2 tests)** | KIND + Redis + DS | Real K8s cluster | All services | Mock LLM |
+
+**Infrastructure Setup**:
+
+```bash
+# Integration tests require Redis
+podman run -d --name gw-redis -p 16380:6379 redis:7-alpine
+
+go test ./test/integration/gateway/... -v
+
+# Cleanup
+podman stop gw-redis && podman rm gw-redis
+```
+
+### **Phase 3: AIAnalysis & RemediationOrchestrator (Week 4)**
+
+| Service | Integration Infrastructure | E2E Infrastructure |
+|---------|---------------------------|-------------------|
+| **AIAnalysis** | envtest + mock DataStorage | KIND + DataStorage + HolmesGPT (mock LLM) |
+| **RemediationOrchestrator** | envtest + mock DataStorage | KIND + DataStorage + all controllers |
+
+---
+
+## 🎭 **Mock Strategy Matrix**
+
+**Per 03-testing-strategy.mdc lines 409-445**: Mock external dependencies ONLY, use REAL business logic.
+
+### **What to Mock vs What to Use Real**
+
+| Component Type | Unit Tests | Integration Tests | E2E Tests | Rationale |
+|----------------|-----------|-------------------|-----------|-----------|
+| **Kubernetes API** | **FAKE CLIENT** ⚠️ | REAL (envtest) | REAL (KIND) | ADR-004: Compile-time API safety |
+| **Rego Policy Evaluator** | REAL | REAL | REAL | Business logic - test actual behavior |
+| **Severity Classifier** | REAL | REAL | REAL | Business logic - core functionality |
+| **DataStorage Audit** | MOCK | MOCK | REAL | External service dependency |
+| **LLM (HolmesGPT)** | MOCK | MOCK | MOCK | Cost constraint |
+| **Redis Cache** | MOCK | REAL | REAL | Infrastructure dependency |
+
+### **Phase 1: SignalProcessing Mock Strategy**
+
+#### **Unit Tests (10 tests)**
+```go
+var _ = Describe("Severity Classifier Unit Tests", func() {
+    var (
+        // ✅ MOCK: External dependencies ONLY
+        mockAuditClient audit.AuditStore  // External: DataStorage
+        mockK8sClient   client.Client      // Use fake.NewClientBuilder()
+        
+        // ✅ REAL: Business logic components
+        regoEvaluator   *rego.Evaluator    // REAL Rego engine
+        classifier      *classifier.SeverityClassifier  // REAL business logic
+    )
+    
+    BeforeEach(func() {
+        // Setup fake K8s client (mandatory per ADR-004)
+        scheme := runtime.NewScheme()
+        _ = signalprocessingv1alpha1.AddToScheme(scheme)
+        mockK8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+        
+        // Setup mock audit client
+        mockAuditClient = testutil.NewMockAuditStore()
+        
+        // Setup REAL Rego evaluator (business logic)
+        policyBytes := []byte(defaultRegoPolicy)
+        regoEvaluator = rego.NewEvaluator(policyBytes)
+        
+        // Create REAL classifier with real Rego + mocked externals
+        classifier = classifier.NewSeverityClassifier(
+            regoEvaluator,      // REAL business logic
+            mockK8sClient,      // Fake K8s (mandatory)
+            mockAuditClient,    // Mock external service
+            logger,
+        )
+    })
+})
+```
+
+#### **Integration Tests (8 tests)**
+```go
+var _ = Describe("SignalProcessing Integration Tests", func() {
+    var (
+        // ✅ REAL: All components except external services
+        k8sClient      client.Client  // envtest provides real K8s API
+        regoEvaluator  *rego.Evaluator
+        reconciler     *SignalProcessingReconciler
+        
+        // ✅ MOCK: External services for speed
+        mockAuditClient audit.AuditStore
+    )
+    
+    BeforeEach(func() {
+        // k8sClient provided by envtest (real K8s API server)
+        // Setup mock audit for faster tests
+        mockAuditClient = testutil.NewMockAuditStore()
+        
+        // REAL Rego evaluator
+        regoEvaluator = rego.NewEvaluator(policyBytes)
+        
+        // REAL reconciler with real K8s + real Rego
+        reconciler = NewSignalProcessingReconciler(
+            k8sClient,          // REAL K8s API from envtest
+            regoEvaluator,      // REAL business logic
+            mockAuditClient,    // Mock for speed
+            logger,
+        )
+    })
+})
+```
+
+#### **E2E Tests (3 tests)**
+```go
+var _ = Describe("SignalProcessing E2E Tests", func() {
+    // ✅ ALL REAL except LLM (cost constraint)
+    // - Real KIND cluster
+    // - Real SignalProcessing controller
+    // - Real Rego policy from ConfigMap
+    // - Real DataStorage service
+    // - Mock LLM (cost)
+})
+```
+
+---
+
+## 🔄 **Parallel Execution Patterns - MANDATORY**
+
+**Per 03-testing-strategy.mdc lines 70-144**: ALL tests MUST support parallel execution (4 concurrent processors).
+
+### **Pattern 1: Unique Resource Names**
+
+```go
+It("BR-SP-105: should normalize external severity", func() {
+    // ✅ CORRECT: Unique namespace per test for parallel safety
+    testNamespace := fmt.Sprintf("test-sp-%d-%d", 
+        GinkgoParallelProcess(),     // Parallel process ID (1-4)
+        time.Now().UnixNano())       // Timestamp for uniqueness
+    
+    sp := createTestSignalProcessing("test-sp", testNamespace)
+    sp.Spec.Signal.Severity = "Sev1"
+    
+    Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+    
+    // ... test logic ...
+})
+```
+
+### **Pattern 2: Cleanup in Defer**
+
+```go
+It("BR-SP-105: should support enterprise severity schemes", func() {
+    testNamespace := fmt.Sprintf("test-sp-%d", GinkgoParallelProcess())
+    
+    // ✅ CORRECT: Cleanup in defer for parallel safety
+    defer func() {
+        // Always cleanup, even if test fails
+        cleanupResources(testNamespace)
+    }()
+    
+    // Create test resources
+    sp := createTestSignalProcessing("test-sp", testNamespace)
+    Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+    
+    // ... test logic ...
+})
+```
+
+### **Pattern 3: Avoid Shared Mutable State**
+
+```go
+var _ = Describe("Severity Classifier", func() {
+    // ❌ WRONG: Shared counter across tests
+    var sharedCounter int
+    
+    It("test 1", func() {
+        sharedCounter++  // Race condition!
+    })
+    
+    It("test 2", func() {
+        sharedCounter++  // Race condition!
+    })
+    
+    // ✅ CORRECT: Test-scoped state
+    It("test 1", func() {
+        localCounter := 0
+        localCounter++  // No race condition
+    })
+    
+    It("test 2", func() {
+        localCounter := 0
+        localCounter++  // No race condition
+    })
+})
+```
+
+### **Pattern 4: Shared Infrastructure, Isolated Data**
+
+```go
+var _ = Describe("Integration Tests", func() {
+    var (
+        // ✅ Shared: Infrastructure (K8s API, Redis)
+        k8sClient   client.Client  // Shared envtest K8s API
+        redisClient *redis.Client  // Shared Redis instance
+        
+        // ✅ Isolated: Test data
+        testNamespace string  // Unique per test
+    )
+    
+    BeforeEach(func() {
+        // Each test gets unique namespace
+        testNamespace = fmt.Sprintf("test-%d", GinkgoParallelProcess())
+    })
+    
+    It("test 1", func() {
+        // Uses shared infrastructure, isolated namespace
+        sp := createTestSP("sp1", testNamespace)  // Isolated data
+        Expect(k8sClient.Create(ctx, sp)).To(Succeed())  // Shared infra
+    })
+    
+    It("test 2", func() {
+        // Different namespace, no collision
+        sp := createTestSP("sp2", testNamespace)  // Different namespace
+        Expect(k8sClient.Create(ctx, sp)).To(Succeed())
+    })
+})
+```
+
+### **Parallel Execution Validation**
+
+```bash
+# Run tests with 4 parallel processors (default)
+ginkgo -p --procs=4 ./test/unit/...
+ginkgo -p --procs=4 ./test/integration/...
+ginkgo -p --procs=4 ./test/e2e/...
+
+# Expected: 70% faster than sequential execution
+# Sequential: ~300s → Parallel (4 procs): ~90s
+```
+
+---
+
 ## 🎯 **Test Coverage Matrix**
 
 > **✅ REVISED** (January 11, 2026): Test plan updated per TESTING_GUIDELINES.md triage - reduced from 56 to **42 tests** by eliminating implementation testing anti-patterns and focusing on business outcomes.
