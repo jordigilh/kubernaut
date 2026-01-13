@@ -209,10 +209,12 @@ class TestIncidentAnalysisE2E:
 
         V3.0: Uses OpenAPI client for true E2E testing.
         """
-        from generated.holmesgpt.models.incident_analysis_request import IncidentAnalysisRequest
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         request = IncidentAnalysisRequest(**sample_incident_request)
-        response = incidents_api.analyze_incident(incident_analysis_request=request)
+        response = incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=request
+        )
 
         # Validate response structure
         assert response is not None, "Response should not be None"
@@ -236,10 +238,12 @@ class TestIncidentAnalysisE2E:
 
         V3.0: Validates business outcome (workflow selected with labels) without inspecting LLM internals.
         """
-        from generated.holmesgpt.models.incident_analysis_request import IncidentAnalysisRequest
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         request = IncidentAnalysisRequest(**sample_incident_request)
-        response = incidents_api.analyze_incident(incident_analysis_request=request)
+        response = incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+            incident_request=request
+        )
 
         assert response is not None
         assert response.selected_workflow is not None, \
@@ -268,10 +272,12 @@ class TestRecoveryAnalysisE2E:
 
         V3.0: Uses OpenAPI client for true E2E testing.
         """
-        from generated.holmesgpt.models.recovery_analysis_request import RecoveryAnalysisRequest
+        from holmesgpt_api_client.models.recovery_request import RecoveryRequest as RecoveryAnalysisRequest
 
         request = RecoveryAnalysisRequest(**sample_recovery_request)
-        response = recovery_api.analyze_recovery(recovery_analysis_request=request)
+        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=request
+        )
 
         # Validate required recovery response fields
         assert response is not None, "Response should not be None"
@@ -295,10 +301,12 @@ class TestRecoveryAnalysisE2E:
         Recovery requests should generate different workflows than initial attempts.
         V3.0: Validates business outcome without inspecting LLM internals.
         """
-        from generated.holmesgpt.models.recovery_analysis_request import RecoveryAnalysisRequest
+        from holmesgpt_api_client.models.recovery_request import RecoveryRequest as RecoveryAnalysisRequest
 
         request = RecoveryAnalysisRequest(**sample_recovery_request)
-        response = recovery_api.analyze_recovery(recovery_analysis_request=request)
+        response = recovery_api.recovery_analyze_endpoint_api_v1_recovery_analyze_post(
+            recovery_request=request
+        )
 
         assert response is not None
         assert response.strategies is not None, "Strategies should be present for recovery attempt"
@@ -321,7 +329,7 @@ class TestErrorHandlingE2E:
 
         V3.0: Uses OpenAPI client for error validation.
         """
-        from generated.holmesgpt.models.incident_analysis_request import IncidentAnalysisRequest
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         # Invalid request (missing required fields)
         invalid_request_data = {
@@ -332,7 +340,9 @@ class TestErrorHandlingE2E:
         # OpenAPI client validation should raise error
         with pytest.raises(Exception):  # Pydantic ValidationError or API error
             request = IncidentAnalysisRequest(**invalid_request_data)
-            incidents_api.analyze_incident(incident_analysis_request=request)
+            incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+                incident_request=request
+            )
 
     @pytest.mark.e2e
     def test_missing_remediation_id_returns_error(self, incidents_api):
@@ -341,7 +351,7 @@ class TestErrorHandlingE2E:
 
         V3.0: Uses OpenAPI client for error validation.
         """
-        from generated.holmesgpt.models.incident_analysis_request import IncidentAnalysisRequest
+        from holmesgpt_api_client.models.incident_request import IncidentRequest as IncidentAnalysisRequest
 
         # Request missing remediation_id
         invalid_request_data = {
@@ -364,7 +374,9 @@ class TestErrorHandlingE2E:
         # OpenAPI client validation should raise error
         with pytest.raises(Exception):  # Pydantic ValidationError
             request = IncidentAnalysisRequest(**invalid_request_data)
-            incidents_api.analyze_incident(incident_analysis_request=request)
+            incidents_api.incident_analyze_endpoint_api_v1_incident_analyze_post(
+                incident_request=request
+            )
 
 
 if __name__ == "__main__":
