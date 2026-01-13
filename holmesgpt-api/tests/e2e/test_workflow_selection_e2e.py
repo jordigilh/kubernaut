@@ -53,9 +53,17 @@ import os
 import sys
 import pytest
 from typing import Dict, Any
+from pathlib import Path
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+# Add tests/clients to path (absolute path resolution for CI) - for OpenAPI client
+sys.path.insert(0, str(Path(__file__).parent.parent / 'clients'))
+
+# Import OpenAPI client (from tests/clients/holmesgpt_api_client)
+from holmesgpt_api_client import ApiClient, Configuration
+from holmesgpt_api_client.api.incident_analysis_api import IncidentAnalysisApi
+from holmesgpt_api_client.api.recovery_analysis_api import RecoveryAnalysisApi
 
 
 # ========================================
@@ -65,17 +73,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 @pytest.fixture
 def hapi_client_config(hapi_service_url):
     """Create HAPI OpenAPI client configuration"""
-    # Import here to avoid module-level import errors
-    from generated.holmesgpt.api_client import Configuration
     return Configuration(host=hapi_service_url)
 
 
 @pytest.fixture
 def incidents_api(hapi_client_config):
     """Create Incidents API instance"""
-    # Import here to avoid module-level import errors
-    from generated.holmesgpt.api_client import ApiClient
-    from generated.holmesgpt.api.incident_analysis_api import IncidentAnalysisApi
     client = ApiClient(configuration=hapi_client_config)
     return IncidentAnalysisApi(client)
 
@@ -83,9 +86,6 @@ def incidents_api(hapi_client_config):
 @pytest.fixture
 def recovery_api(hapi_client_config):
     """Create Recovery API instance"""
-    # Import here to avoid module-level import errors
-    from generated.holmesgpt.api_client import ApiClient
-    from generated.holmesgpt.api.recovery_analysis_api import RecoveryAnalysisApi
     client = ApiClient(configuration=hapi_client_config)
     return RecoveryAnalysisApi(client)
 
