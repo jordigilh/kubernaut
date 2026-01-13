@@ -529,7 +529,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	classificationMessage := fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s)",
 		envClass.Environment, envClass.Source,
 		priorityAssignment.Priority, priorityAssignment.Source)
-	
+
 	// Add severity to classification message if determined
 	if severityResult != nil {
 		classificationMessage = fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s), severity=%s (source=%s)",

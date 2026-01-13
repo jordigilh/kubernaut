@@ -264,7 +264,7 @@ func main() {
 		ctrl.Log.WithName("classifier.severity"),
 	)
 	severityClassifier.SetPolicyPath("/etc/signalprocessing/policies/severity.rego")
-	
+
 	// Load policy from file
 	severityPolicyContent, err := os.ReadFile("/etc/signalprocessing/policies/severity.rego")
 	if err != nil {
@@ -280,7 +280,7 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("severity classifier configured successfully")
-	
+
 	// BR-SP-072: Start hot-reload for severity policy
 	if err := severityClassifier.StartHotReload(ctx); err != nil {
 		setupLog.Error(err, "FATAL: severity policy hot-reload failed",

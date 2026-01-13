@@ -39,7 +39,9 @@ package signalprocessing_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -581,23 +583,58 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 	}
 }
 
-// queryAuditEvents queries DataStorage for audit events (helper from existing test infrastructure).
+// queryAuditEvents queries DataStorage for audit events by category and action.
 // Uses ogen client per DD-TESTING-001 standards.
 func queryAuditEvents(ctx context.Context, namespace string, category, action ogenclient.AuditEventEventCategory) []ogenclient.AuditEvent {
-	// This helper function will use existing infrastructure from audit_integration_test.go
-	// Implementation delegates to existing helper after GREEN phase migration
-	return []ogenclient.AuditEvent{} // Placeholder for RED phase
+	params := ogenclient.QueryAuditEventsParams{
+		EventCategory: ogenclient.NewOptString(string(category)),
+		EventAction:   ogenclient.NewOptString(string(action)),
+		Namespace:     ogenclient.NewOptString(namespace),
+	}
+
+	resp, err := dsClient.QueryAuditEvents(ctx, params)
+	if err != nil {
+		GinkgoWriter.Printf("Query error: %v\n", err)
+		return []ogenclient.AuditEvent{}
+	}
+	
+	// Check response type (QueryAuditEventsOK has Data field)
+	if respOK, ok := resp.(*ogenclient.QueryAuditEventsOK); ok {
+		return respOK.Data
+	}
+	
+	return []ogenclient.AuditEvent{}
 }
 
-// eventDataToMap converts ogen AuditEventEventData to map for validation (helper from existing infrastructure).
+// eventDataToMap converts AuditEventEventData to map[string]interface{} for validation.
+// This helper is needed because event_data is a structured type (discriminated union).
 func eventDataToMap(eventData ogenclient.AuditEventEventData) map[string]interface{} {
-	// This helper function will use existing infrastructure from audit_integration_test.go
-	// Implementation delegates to existing helper after GREEN phase migration
-	return make(map[string]interface{}) // Placeholder for RED phase
+	// Marshal the structured type back to JSON
+	bytes, err := json.Marshal(eventData)
+	if err != nil {
+		GinkgoWriter.Printf("Marshal error: %v\n", err)
+		return make(map[string]interface{})
+	}
+	
+	// Unmarshal into map
+	var result map[string]interface{}
+	if err := json.Unmarshal(bytes, &result); err != nil {
+		GinkgoWriter.Printf("Unmarshal error: %v\n", err)
+		return make(map[string]interface{})
+	}
+	
+	return result
 }
 
-// flushAuditStoreAndWait ensures audit events are persisted before querying (helper from existing infrastructure).
+// flushAuditStoreAndWait ensures audit events are persisted before querying.
 func flushAuditStoreAndWait(ctx context.Context) {
-	// This helper function will use existing infrastructure from audit_integration_test.go
-	// Implementation delegates to existing helper after GREEN phase migration
+	By("Flushing audit store to ensure events are written to DataStorage")
+	flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer flushCancel()
+
+	err := auditStore.Flush(flushCtx)
+	Expect(err).NotTo(HaveOccurred(), "Audit store flush must succeed")
+
+	// Small delay to ensure HTTP API has processed the write
+	time.Sleep(100 * time.Millisecond)
 }
