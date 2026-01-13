@@ -1,7 +1,7 @@
 # Test Suite Triage - Embedded Mock LLM Usage - January 12, 2026
 
-**Date**: January 12, 2026 16:45 EST  
-**Status**: 🔍 **TRIAGE COMPLETE**  
+**Date**: January 12, 2026 16:45 EST
+**Status**: 🔍 **TRIAGE COMPLETE**
 **Scope**: All test files in holmesgpt-api/tests/
 
 ---
@@ -163,12 +163,12 @@ def test_recovery_analysis_calls_workflow_search_tool(
 ):
     mock_llm_e2e_server.clear_tool_calls()
     mock_llm_e2e_server.set_scenario("recovery")
-    
+
     response = e2e_client.post(
         "/api/v1/recovery/analyze",
         json=sample_recovery_request
     )
-    
+
     assert response.status_code == 200
     data = response.json()
 ```
@@ -183,10 +183,10 @@ def test_recovery_analysis_calls_workflow_search_tool(
     test_workflows_bootstrapped  # Ensure workflows available
 ):
     from generated.holmesgpt.models.recovery_analysis_request import RecoveryAnalysisRequest
-    
+
     request = RecoveryAnalysisRequest(**sample_recovery_request)
     response = recovery_api.analyze_recovery(recovery_analysis_request=request)
-    
+
     assert response is not None
     # response is a Pydantic model, no .json() needed
     assert response.incident_id == sample_recovery_request["incident_id"]
@@ -386,5 +386,5 @@ rm holmesgpt-api/tests/mock_llm_server.py
 
 ---
 
-**Last Updated**: 2026-01-12 16:45 EST  
+**Last Updated**: 2026-01-12 16:45 EST
 **Status**: ⏳ **READY FOR IMPLEMENTATION**
