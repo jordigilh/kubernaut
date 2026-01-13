@@ -295,8 +295,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
         # Check for recovery scenario (has priority over regular signals)
         # Be more specific: require "recovery" or "previous remediation" or "workflow execution failed"
-        # Don't just check for "failed" alone as that's too broad
-        if "recovery" in content or "previous remediation" in content or "workflow execution failed" in content or "previous execution" in content:
+        # Don't check for "previous execution" - too broad, matches validation error messages
+        if "recovery" in content or "previous remediation" in content or "workflow execution failed" in content:
             return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
 
         # Check for signal types
