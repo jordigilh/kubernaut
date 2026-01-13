@@ -88,8 +88,8 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	// Generate DD-TEST-004 compliant unique image tag
-	imageTag := GenerateInfraImageName("mock-llm", serviceName)
-	fullImageName := fmt.Sprintf("localhost/mock-llm:%s", imageTag)
+	// Note: GenerateInfraImageName returns full image name (e.g., "localhost/mock-llm:hapi-abc123")
+	fullImageName := GenerateInfraImageName("mock-llm", serviceName)
 
 	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image: %s\n", fullImageName)
 
