@@ -45,21 +45,20 @@ var _ = Describe("Audit Event Mapper", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
 			Expect(rrFields.Spec).ToNot(BeNil())
-			
+
 			// Validate Signal field mapping
-			Expect(rrFields.Spec.Signal).ToNot(BeNil())
-			Expect(rrFields.Spec.Signal.Name).To(Equal("HighCPU"))
-			Expect(rrFields.Spec.Signal.Type).To(Equal("prometheus-alert"))
-			
+			Expect(rrFields.Spec.SignalName).To(Equal("HighCPU"))
+			Expect(rrFields.Spec.SignalType).To(Equal("prometheus-alert"))
+
 			// Validate SignalLabels mapping
 			Expect(rrFields.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighCPU"))
 			Expect(rrFields.Spec.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
-			
+
 			// Validate SignalAnnotations mapping
 			Expect(rrFields.Spec.SignalAnnotations).To(HaveKeyWithValue("summary", "CPU usage is high"))
-			
-			// Validate OriginalPayload mapping
-			Expect(rrFields.Spec.OriginalPayload).To(Equal(`{"alert":"data"}`))
+
+			// Validate OriginalPayload mapping ([]byte)
+			Expect(rrFields.Spec.OriginalPayload).To(Equal([]byte(`{"alert":"data"}`)))
 		})
 
 		It("should return error for missing required alert name", func() {
@@ -95,13 +94,17 @@ var _ = Describe("Audit Event Mapper", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
 			Expect(rrFields.Status).ToNot(BeNil())
-			
-			// Validate TimeoutConfig in status
+
+			// Validate TimeoutConfig in status (metav1.Duration pointers)
 			Expect(rrFields.Status.TimeoutConfig).ToNot(BeNil())
-			Expect(rrFields.Status.TimeoutConfig.Global).To(Equal("1h0m0s"))
-			Expect(rrFields.Status.TimeoutConfig.Processing).To(Equal("30m0s"))
-			Expect(rrFields.Status.TimeoutConfig.Analyzing).To(Equal("15m0s"))
-			Expect(rrFields.Status.TimeoutConfig.Executing).To(Equal("45m0s"))
+			Expect(rrFields.Status.TimeoutConfig.Global).ToNot(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Global.Duration.String()).To(Equal("1h0m0s"))
+			Expect(rrFields.Status.TimeoutConfig.Processing).ToNot(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Processing.Duration.String()).To(Equal("30m0s"))
+			Expect(rrFields.Status.TimeoutConfig.Analyzing).ToNot(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Analyzing.Duration.String()).To(Equal("15m0s"))
+			Expect(rrFields.Status.TimeoutConfig.Executing).ToNot(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Executing.Duration.String()).To(Equal("45m0s"))
 		})
 
 		It("should handle partial TimeoutConfig", func() {
@@ -117,10 +120,11 @@ var _ = Describe("Audit Event Mapper", func() {
 			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(rrFields.Status.TimeoutConfig.Global).To(Equal("1h0m0s"))
-			Expect(rrFields.Status.TimeoutConfig.Processing).To(BeEmpty())
-			Expect(rrFields.Status.TimeoutConfig.Analyzing).To(BeEmpty())
-			Expect(rrFields.Status.TimeoutConfig.Executing).To(BeEmpty())
+			Expect(rrFields.Status.TimeoutConfig.Global).ToNot(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Global.Duration.String()).To(Equal("1h0m0s"))
+			Expect(rrFields.Status.TimeoutConfig.Processing).To(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Analyzing).To(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Executing).To(BeNil())
 		})
 	})
 
@@ -147,13 +151,14 @@ var _ = Describe("Audit Event Mapper", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields).ToNot(BeNil())
-			
+
 			// Validate gateway data in spec
-			Expect(rrFields.Spec.Signal.Name).To(Equal("HighMemory"))
+			Expect(rrFields.Spec.SignalName).To(Equal("HighMemory"))
 			Expect(rrFields.Spec.SignalLabels).To(HaveKeyWithValue("alertname", "HighMemory"))
-			
+
 			// Validate orchestrator data in status
-			Expect(rrFields.Status.TimeoutConfig.Global).To(Equal("2h0m0s"))
+			Expect(rrFields.Status.TimeoutConfig.Global).ToNot(BeNil())
+			Expect(rrFields.Status.TimeoutConfig.Global.Duration.String()).To(Equal("2h0m0s"))
 		})
 
 		It("should return error when gateway event is missing", func() {
