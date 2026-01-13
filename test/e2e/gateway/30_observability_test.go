@@ -17,7 +17,7 @@ import (
 var _ = Describe("Observability E2E Tests", func() {
 	var (
 		// TODO (GW Team): ctx           context.Context
-		cancel        context.CancelFunc
+		cancel context.CancelFunc
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		testNamespace string
 		testCounter   int

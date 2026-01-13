@@ -379,11 +379,13 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
            ("workflow execution failed" in content and "recovery" in content):
             return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
 
-        # Check for signal types
-        if "oomkilled" in content or "oom" in content:
-            return MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
-        elif "crashloop" in content:
+        # Check for signal types (most specific first to avoid false matches)
+        # DD-TEST-010: Match exact signal types, not generic substrings
+        # "crashloop" is more specific than "oom", check it first
+        if "crashloop" in content:
             return MOCK_SCENARIOS.get("crashloop", DEFAULT_SCENARIO)
+        elif "oomkilled" in content:
+            return MOCK_SCENARIOS.get("oomkilled", DEFAULT_SCENARIO)
         elif "nodenotready" in content or "node not ready" in content:
             return MOCK_SCENARIOS.get("node_not_ready", DEFAULT_SCENARIO)
 
