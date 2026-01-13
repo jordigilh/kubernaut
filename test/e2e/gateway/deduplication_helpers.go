@@ -239,6 +239,10 @@ var lastK8sClientError error
 // getKubernetesClientSafe creates a Kubernetes client without panicking on error
 // Returns nil if client creation fails - suitable for use inside Eventually
 // Check lastK8sClientError for the actual error if nil is returned
+//
+// DEPRECATED (DD-E2E-K8S-CLIENT-001): Use suite-level k8sClient instead
+// This function creates a new K8s client on every call, causing rate limiter contention.
+// See docs/handoff/E2E_RATE_LIMITER_ROOT_CAUSE_JAN13_2026.md for details.
 func getKubernetesClientSafe() client.Client {
 	// Load kubeconfig from standard Kind location
 	homeDir, err := os.UserHomeDir()
