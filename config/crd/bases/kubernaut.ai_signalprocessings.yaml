@@ -131,11 +131,10 @@ spec:
                     format: date-time
                     type: string
                   severity:
-                    description: Severity level
-                    enum:
-                    - critical
-                    - warning
-                    - info
+                    description: |-
+                      Severity level (external/raw value from monitoring system)
+                      DD-SEVERITY-001: No enum restriction - allows external severity schemes (Sev1-4, P0-P4, etc.)
+                      Normalized severity is stored in Status.Severity
                     type: string
                   source:
                     description: Adapter that ingested the signal

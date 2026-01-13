@@ -557,20 +557,20 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 				Name:      "test-rr",
 				Namespace: namespace,
 			},
-			Signal: signalprocessingv1alpha1.SignalData{
-				Fingerprint:  "test-fingerprint-abc123",
-				Name:         "TestAlert",
-				Severity:     "critical", // Default, overridden by tests
-				Type:         "prometheus",
-				Source:       "test-source",
-				TargetType:   "kubernetes",
-				ReceivedTime: metav1.Now(),
-				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-pod",
-					Namespace: namespace,
-				},
+		Signal: signalprocessingv1alpha1.SignalData{
+			Fingerprint:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // Valid 64-char hex fingerprint
+			Name:         "TestAlert",
+			Severity:     "critical", // Default, overridden by tests
+			Type:         "prometheus",
+			Source:       "test-source",
+			TargetType:   "kubernetes",
+			ReceivedTime: metav1.Now(),
+			TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-pod",
+				Namespace: namespace,
 			},
+		},
 		},
 	}
 }

@@ -49,6 +49,7 @@ package aianalysis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -190,8 +191,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
-	mockLLMConfig.ImageTag = mockLLMImageName                // Use the built image tag
-	mockLLMConfig.Network = "aianalysis_test_network"        // Join same network as HAPI for container-to-container DNS
+	mockLLMConfig.ImageTag = mockLLMImageName         // Use the built image tag
+	mockLLMConfig.Network = "aianalysis_test_network" // Join same network as HAPI for container-to-container DNS
 	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(specCtx, mockLLMConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
@@ -221,9 +222,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Env: map[string]string{
 			"LLM_ENDPOINT":     infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig), // http://mock-llm-aianalysis:8080 (container-to-container)
 			"LLM_MODEL":        "mock-model",
-			"LLM_PROVIDER":     "openai",                                                   // Required by litellm
-			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",                      // Required by litellm even for mock endpoints
-			"DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080",                 // Container-to-container communication
+			"LLM_PROVIDER":     "openai",                                  // Required by litellm
+			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",      // Required by litellm even for mock endpoints
+			"DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080", // Container-to-container communication
 			"PORT":             "8080",
 			"LOG_LEVEL":        "DEBUG",
 		},
@@ -248,7 +249,6 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// DD-WORKFLOW-002 v3.0: DataStorage auto-generates UUIDs (cannot be specified)
 	By("Seeding test workflows into DataStorage")
 	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
-	var err error
 	workflowUUIDs, err = SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
@@ -276,9 +276,12 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("  Phase 2 will now run on ALL processes (per-process controller setup)")
 	GinkgoWriter.Println("")
 
-	// DD-TEST-010: Share NOTHING between processes
-	// Each process creates its own envtest, controller, handlers, metrics
-	return []byte{}
+	// DD-TEST-010: Phase 1 → Phase 2 data passing
+	// Serialize workflowUUIDs map so ALL processes can access actual UUIDs
+	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
+	workflowUUIDsJSON, err := json.Marshal(workflowUUIDs)
+	Expect(err).ToNot(HaveOccurred(), "workflowUUIDs must serialize for Phase 2")
+	return workflowUUIDsJSON
 }, func(specCtx SpecContext, data []byte) {
 	// ═══════════════════════════════════════════════════════════════════════════════
 	// Phase 2: Per-Process Controller Environment (ALL Processes)
@@ -286,14 +289,21 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Per DD-TEST-010: Each process gets its own controller, envtest, metrics, etc.
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
+	// DD-TEST-010: Deserialize workflow UUIDs from Phase 1
+	// All processes receive the same workflow UUID mapping for test assertions
+	// Authority: DD-WORKFLOW-002 v3.0 (DataStorage generates UUIDs, tests use actual values)
+	err := json.Unmarshal(data, &workflowUUIDs)
+	Expect(err).ToNot(HaveOccurred(), "workflowUUIDs must deserialize from Phase 1")
+
 	processNum := GinkgoParallelProcess()
 	GinkgoWriter.Printf("━━━ [Process %d] Phase 2: Per-Process Controller Setup ━━━\n", processNum)
+	GinkgoWriter.Printf("✅ [Process %d] Received %d workflow UUID mappings from Phase 1\n", processNum, len(workflowUUIDs))
 
 	By(fmt.Sprintf("[Process %d] Creating per-process context", processNum))
 	ctx, cancel = context.WithCancel(context.Background())
 
 	By(fmt.Sprintf("[Process %d] Registering AIAnalysis CRD scheme", processNum))
-	err := aianalysisv1alpha1.AddToScheme(scheme.Scheme)
+	err = aianalysisv1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By(fmt.Sprintf("[Process %d] Bootstrapping per-process envtest environment", processNum))

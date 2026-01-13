@@ -81,8 +81,9 @@ type SignalData struct {
 	// +kubebuilder:validation:MaxLength=253
 	Name string `json:"name"`
 
-	// Severity level
-	// +kubebuilder:validation:Enum=critical;warning;info
+	// Severity level (external/raw value from monitoring system)
+	// DD-SEVERITY-001: No enum restriction - allows external severity schemes (Sev1-4, P0-P4, etc.)
+	// Normalized severity is stored in Status.Severity
 	Severity string `json:"severity"`
 
 	// Signal type: "prometheus", "kubernetes-event", "aws-cloudwatch", etc.

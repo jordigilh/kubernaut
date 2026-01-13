@@ -176,6 +176,9 @@ var _ = Describe("Observability E2E Tests", func() {
 			// Verify CRD actually exists in K8s before sending duplicate
 			// Query API server directly (not Gateway's cache) to ensure CRD is queryable
 			// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
+			// K8s Cache Synchronization: Gateway (in-cluster) and E2E tests (external client)
+			// use separate K8s clients with different cache states. Allow 60s for cache sync.
+			// Authority: DD-E2E-K8S-CLIENT-001 (Phase 1 - eventual consistency acknowledgment)
 			Eventually(func() int {
 				var rrList remediationv1alpha1.RemediationRequestList
 				err := k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
@@ -183,8 +186,8 @@ var _ = Describe("Observability E2E Tests", func() {
 					return 0
 				}
 				return len(rrList.Items)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-				"CRD should exist in K8s before testing deduplication")
+			}, 60*time.Second, 1*time.Second).Should(Equal(1),
+				"CRD should be visible within 60s (K8s cache sync between in-cluster Gateway and external test client)")
 
 			// Second request (deduplicated)
 			resp2 := SendWebhook(gatewayURL, payload)

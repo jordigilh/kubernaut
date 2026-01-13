@@ -199,17 +199,30 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 			Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 80),
 				"Completeness should be >= 80% for complete audit trail")
 
-			// ASSERT: Core fields reconstructed correctly
-			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
-				"YAML should contain signal name")
-			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("prometheus-alert"),
-				"YAML should contain signal type")
-			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
-				"YAML should contain timeout config")
+		// ASSERT: Core fields reconstructed correctly
+		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
+			"YAML should contain signal name")
+		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("prometheus-alert"),
+			"YAML should contain signal type")
+		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
+			"YAML should contain timeout config")
 
-			GinkgoWriter.Printf("✅ Reconstruction succeeded: completeness=%d%%, warnings=%d\n",
-				reconstructionResp.Validation.Completeness,
-				len(reconstructionResp.Validation.Warnings))
+		// ASSERT: Gap #5-6 fields present (Workflow References)
+		// These fields validate that the reconstruction API correctly processes
+		// workflowexecution.selection.completed and workflowexecution.execution.started events
+		// Note: This E2E test doesn't seed these events yet, so we validate field presence, not values
+		// TODO: Add workflow events to test data seeding for complete Gap #5-6 E2E validation
+		if reconstructionResp.Validation.Completeness >= 90 {
+			// Only validate if we expect complete reconstruction
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("selectedWorkflowRef"),
+				"YAML should contain Gap #5 field (workflow selection)")
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("executionRef"),
+				"YAML should contain Gap #6 field (execution reference)")
+		}
+
+		GinkgoWriter.Printf("✅ Reconstruction succeeded: completeness=%d%%, warnings=%d\n",
+			reconstructionResp.Validation.Completeness,
+			len(reconstructionResp.Validation.Warnings))
 		})
 	})
 
