@@ -135,7 +135,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
 				"First occurrence must create CRD (201 Created)")
 
-			// Parse response to get fingerprint (for Redis check before TTL expires)
+			// Parse response to get fingerprint (for deduplication check while CRD active)
 			var response map[string]interface{}
 			err = json.NewDecoder(resp.Body).Decode(&response)
 			Expect(err).NotTo(HaveOccurred(), "Should parse JSON response")
@@ -181,7 +181,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 	Context("BR-GATEWAY-003-005: Deduplication", func() {
-		It("returns 202 Accepted for duplicate alerts within TTL window", func() {
+		It("returns 202 Accepted for duplicate alerts while CRD active", func() {
 			// BR-GATEWAY-003-005: Duplicate detection prevents CRD spam
 			// BUSINESS SCENARIO: Same alert fires 3 times in 5 seconds
 			// Expected: First = 201 Created, subsequent = 202 Accepted, NO duplicate CRDs
@@ -231,7 +231,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			firstCRDName = crdList1.Items[0].Name
 
-			// Second alert: Duplicate (within TTL)
+			// Second alert: Duplicate (CRD still in non-terminal phase)
 			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 
 			Expect(err).ToNot(HaveOccurred())
