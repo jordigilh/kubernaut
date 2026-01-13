@@ -52,7 +52,7 @@ import (
 var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", func() {
 	var (
 		ctx       context.Context
-		k8sClient client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		logger    *zap.Logger
 		// Unique namespace names per test run (avoids parallel test interference)
 		prodNamespace    string

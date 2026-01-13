@@ -574,12 +574,14 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 	}
 }
 
-// queryAuditEvents queries DataStorage for audit events by event type and namespace.
+// queryAuditEvents queries DataStorage for audit events by event type.
 // Uses ogen client per DD-TESTING-001 standards.
+// Note: Namespace filtering happens via correlation ID or resource context in event data
 func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogenclient.AuditEvent {
 	params := ogenclient.QueryAuditEventsParams{
 		EventType: ogenclient.NewOptString(eventType),
-		Namespace: ogenclient.NewOptString(namespace),
+		// Note: Namespace field doesn't exist in QueryAuditEventsParams
+		// Filtering by namespace happens in post-processing or via correlation ID
 	}
 
 	resp, err := dsClient.QueryAuditEvents(ctx, params)
@@ -588,7 +590,15 @@ func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogencl
 		return []ogenclient.AuditEvent{}
 	}
 	
-	return resp.Data
+	// Filter by namespace if needed (event data contains namespace)
+	var filtered []ogenclient.AuditEvent
+	for _, event := range resp.Data {
+		if event.Namespace.Value == namespace {
+			filtered = append(filtered, event)
+		}
+	}
+	
+	return filtered
 }
 
 // eventDataToMap converts AuditEventEventData to map[string]interface{} for validation.
@@ -600,14 +610,14 @@ func eventDataToMap(eventData ogenclient.AuditEventEventData) map[string]interfa
 		GinkgoWriter.Printf("Marshal error: %v\n", err)
 		return make(map[string]interface{})
 	}
-	
+
 	// Unmarshal into map
 	var result map[string]interface{}
 	if err := json.Unmarshal(bytes, &result); err != nil {
 		GinkgoWriter.Printf("Unmarshal error: %v\n", err)
 		return make(map[string]interface{})
 	}
-	
+
 	return result
 }
 
