@@ -237,6 +237,14 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
 	GinkgoWriter.Printf("   Using Mock LLM at %s\n", infrastructure.GetMockLLMEndpoint(mockLLMConfig))
 
+	// Seed test workflows into DataStorage for Mock LLM integration
+	// Pattern: Test data alignment - Mock LLM returns these workflow IDs
+	// Must exist in DataStorage catalog for HAPI validation to succeed
+	By("Seeding test workflows into DataStorage")
+	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
+	err = SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
+
 	// Clean up HAPI container on exit
 	DeferCleanup(func() {
 		// Capture HAPI logs before stopping container (for HTTP 500 RCA)
