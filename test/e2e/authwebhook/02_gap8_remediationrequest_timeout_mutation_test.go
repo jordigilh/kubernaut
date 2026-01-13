@@ -26,6 +26,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // E2E Test for Gap #8: TimeoutConfig Mutation Webhook Audit
@@ -171,43 +173,34 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// THEN: Webhook audit event emitted
 			// ========================================
 			webhookEventType := "webhook.remediationrequest.timeout_modified"
-			var webhookEvents []interface{} // Use generic type for now
+			var webhookEvents []ogenclient.AuditEvent
 
 			Eventually(func() int {
-				// Query audit events via DataStorage OpenAPI client
-				params := map[string]interface{}{
-					"correlation_id": correlationID,
-					"event_type":     webhookEventType,
+				// Query audit events using shared helper
+				// Per ADR-034 v1.2: event_type filter for webhook audit events
+				events, _, err := helpers.QueryAuditEvents(
+					ctx,
+					auditClient,
+					&correlationID,
+					&webhookEventType,
+					nil, // No event_category filter needed (webhook event type is unique)
+				)
+				if err != nil {
+					GinkgoWriter.Printf("⚠️  Audit query error: %v\n", err)
+					return 0
 				}
-
-				// For now, we'll use a simplified query
-				// The actual implementation will depend on the auditClient helper
-				// from the AuthWebhook E2E suite
-				_ = params
-
-				// TODO: Replace with actual audit query helper
-				// events, _, err := helpers.QueryAuditEvents(ctx, auditClient, &correlationID, &webhookEventType, nil)
-				// if err != nil {
-				//     GinkgoWriter.Printf("⚠️  Query error: %v\n", err)
-				//     return 0
-				// }
-				// webhookEvents = events
-				// return len(events)
-
-				// For now, return placeholder
-				return 0
+				webhookEvents = events
+				return len(events)
 			}, 30*time.Second, 2*time.Second).Should(Equal(1),
 				"webhook.remediationrequest.timeout_modified event should be emitted")
 
-			_ = webhookEvents // Suppress unused warning until helper is integrated
-
-			// TODO: Validate webhook event structure once audit query is working
-			// webhookEvent := webhookEvents[0]
-			// Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
-			// Expect(webhookEvent.EventCategory).To(Equal("webhook"))
-			// Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
-			// Expect(webhookEvent.EventOutcome).To(Equal("success"))
-			// Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
+			// Validate webhook event structure (ADR-034 compliance)
+			webhookEvent := webhookEvents[0]
+			Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
+			Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWebhook))
+			Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
+			Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+			Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
 
 			// ========================================
 			// THEN: LastModifiedBy/LastModifiedAt populated by webhook
@@ -227,7 +220,13 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			GinkgoWriter.Printf("   • Webhook intercepted TimeoutConfig mutation\n")
 			GinkgoWriter.Printf("   • LastModifiedBy: %s\n", rr.Status.LastModifiedBy)
 			GinkgoWriter.Printf("   • LastModifiedAt: %s\n", rr.Status.LastModifiedAt.Time)
-			GinkgoWriter.Printf("   • Audit event: webhook.remediationrequest.timeout_modified\n")
+			GinkgoWriter.Printf("   • Audit event: %s (category=%s, action=%s, outcome=%s)\n",
+				webhookEvent.EventType,
+				webhookEvent.EventCategory,
+				webhookEvent.EventAction,
+				webhookEvent.EventOutcome)
+			GinkgoWriter.Printf("   • Event ID: %s\n", webhookEvent.EventID)
+			GinkgoWriter.Printf("   • Correlation ID: %s\n", webhookEvent.CorrelationID)
 			GinkgoWriter.Printf("   • SOC2 compliance: WHO + WHAT + WHEN captured\n")
 		})
 	})

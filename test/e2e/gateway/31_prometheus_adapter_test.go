@@ -331,7 +331,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 			// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
 
-			// Second alert: Duplicate (within TTL)
+			// Second alert: Duplicate (CRD still in non-terminal phase)
 			req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
 			_ = err
 			req2.Header.Set("Content-Type", "application/json")
