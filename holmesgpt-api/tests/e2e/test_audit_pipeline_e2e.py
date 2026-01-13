@@ -527,7 +527,8 @@ class TestAuditPipelineE2E:
         mock_llm_response_valid,
         mock_config,
         unique_incident_id,
-        unique_remediation_id
+        unique_remediation_id,
+        test_workflows_bootstrapped  # Ensure workflows are seeded for validation
     ):
         """
         BR-AUDIT-005: Complete audit trail (all event types) persisted.
