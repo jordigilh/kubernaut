@@ -231,10 +231,10 @@ var _ = Describe("Gap #5-6 Edge Cases (BR-AUDIT-005)", func() {
 				EventType:     "workflowexecution.selection.completed",
 				CorrelationID: "test-corr-007",
 				SelectedWorkflowRef: &reconstructionpkg.WorkflowRefData{
-					WorkflowID:      "",    // Empty
-					Version:         "",    // Empty
-					ContainerImage:  "",    // Empty
-					ContainerDigest: "",    // Empty
+					WorkflowID:      "", // Empty
+					Version:         "", // Empty
+					ContainerImage:  "", // Empty
+					ContainerDigest: "", // Empty
 				},
 			}
 
