@@ -10932,6 +10932,76 @@ type ReadinessCheckServiceUnavailable struct{}
 
 func (*ReadinessCheckServiceUnavailable) readinessCheckRes() {}
 
+type ReconstructRemediationRequestBadRequest RFC7807Problem
+
+func (*ReconstructRemediationRequestBadRequest) reconstructRemediationRequestRes() {}
+
+type ReconstructRemediationRequestInternalServerError RFC7807Problem
+
+func (*ReconstructRemediationRequestInternalServerError) reconstructRemediationRequestRes() {}
+
+type ReconstructRemediationRequestNotFound RFC7807Problem
+
+func (*ReconstructRemediationRequestNotFound) reconstructRemediationRequestRes() {}
+
+// Response for RemediationRequest reconstruction from audit trail.
+// Contains the reconstructed RR in YAML format and validation results.
+// Implements BR-AUDIT-006 (SOC2 compliance).
+// Ref: #/components/schemas/ReconstructionResponse
+type ReconstructionResponse struct {
+	// Complete RemediationRequest CRD in YAML format.
+	// Can be applied directly to Kubernetes cluster with kubectl.
+	// Includes TypeMeta, ObjectMeta, Spec, and Status.
+	RemediationRequestYaml string           `json:"remediation_request_yaml"`
+	Validation             ValidationResult `json:"validation"`
+	// Timestamp when reconstruction was performed.
+	ReconstructedAt OptDateTime `json:"reconstructed_at"`
+	// Correlation ID used for reconstruction.
+	CorrelationID OptString `json:"correlation_id"`
+}
+
+// GetRemediationRequestYaml returns the value of RemediationRequestYaml.
+func (s *ReconstructionResponse) GetRemediationRequestYaml() string {
+	return s.RemediationRequestYaml
+}
+
+// GetValidation returns the value of Validation.
+func (s *ReconstructionResponse) GetValidation() ValidationResult {
+	return s.Validation
+}
+
+// GetReconstructedAt returns the value of ReconstructedAt.
+func (s *ReconstructionResponse) GetReconstructedAt() OptDateTime {
+	return s.ReconstructedAt
+}
+
+// GetCorrelationID returns the value of CorrelationID.
+func (s *ReconstructionResponse) GetCorrelationID() OptString {
+	return s.CorrelationID
+}
+
+// SetRemediationRequestYaml sets the value of RemediationRequestYaml.
+func (s *ReconstructionResponse) SetRemediationRequestYaml(val string) {
+	s.RemediationRequestYaml = val
+}
+
+// SetValidation sets the value of Validation.
+func (s *ReconstructionResponse) SetValidation(val ValidationResult) {
+	s.Validation = val
+}
+
+// SetReconstructedAt sets the value of ReconstructedAt.
+func (s *ReconstructionResponse) SetReconstructedAt(val OptDateTime) {
+	s.ReconstructedAt = val
+}
+
+// SetCorrelationID sets the value of CorrelationID.
+func (s *ReconstructionResponse) SetCorrelationID(val OptString) {
+	s.CorrelationID = val
+}
+
+func (*ReconstructionResponse) reconstructRemediationRequestRes() {}
+
 type ReleaseLegalHoldBadRequest RFC7807Problem
 
 func (*ReleaseLegalHoldBadRequest) releaseLegalHoldRes() {}
@@ -13277,6 +13347,66 @@ func (*UpdateWorkflowBadRequest) updateWorkflowRes() {}
 type UpdateWorkflowNotFound RFC7807Problem
 
 func (*UpdateWorkflowNotFound) updateWorkflowRes() {}
+
+// Validation result for reconstructed RemediationRequest.
+// Indicates completeness, errors, and warnings.
+// Ref: #/components/schemas/ValidationResult
+type ValidationResult struct {
+	// Whether the RR passes validation (no blocking errors).
+	// true = ready to apply, false = missing required fields.
+	IsValid bool `json:"is_valid"`
+	// Completeness percentage (0-100%) based on field presence.
+	// 100% = all fields present (Gaps #1-8 complete).
+	// 50-99% = required fields + some optional fields.
+	// 0-49% = only required fields or incomplete.
+	Completeness int `json:"completeness"`
+	// Blocking validation errors (missing required fields).
+	// Empty array if is_valid = true.
+	Errors []string `json:"errors"`
+	// Non-blocking warnings for missing optional fields.
+	// Helps identify gaps in reconstruction.
+	Warnings []string `json:"warnings"`
+}
+
+// GetIsValid returns the value of IsValid.
+func (s *ValidationResult) GetIsValid() bool {
+	return s.IsValid
+}
+
+// GetCompleteness returns the value of Completeness.
+func (s *ValidationResult) GetCompleteness() int {
+	return s.Completeness
+}
+
+// GetErrors returns the value of Errors.
+func (s *ValidationResult) GetErrors() []string {
+	return s.Errors
+}
+
+// GetWarnings returns the value of Warnings.
+func (s *ValidationResult) GetWarnings() []string {
+	return s.Warnings
+}
+
+// SetIsValid sets the value of IsValid.
+func (s *ValidationResult) SetIsValid(val bool) {
+	s.IsValid = val
+}
+
+// SetCompleteness sets the value of Completeness.
+func (s *ValidationResult) SetCompleteness(val int) {
+	s.Completeness = val
+}
+
+// SetErrors sets the value of Errors.
+func (s *ValidationResult) SetErrors(val []string) {
+	s.Errors = val
+}
+
+// SetWarnings sets the value of Warnings.
+func (s *ValidationResult) SetWarnings(val []string) {
+	s.Warnings = val
+}
 
 // Audit payload for workflow catalog creation (datastorage.workflow.created).
 // Ref: #/components/schemas/WorkflowCatalogCreatedPayload

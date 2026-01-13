@@ -196,6 +196,28 @@ type Invoker interface {
 	//
 	// GET /health/ready
 	ReadinessCheck(ctx context.Context) (ReadinessCheckRes, error)
+	// ReconstructRemediationRequest invokes reconstructRemediationRequest operation.
+	//
+	// Reconstructs a complete RemediationRequest CRD from audit trail events.
+	// **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+	// **Workflow**:
+	// 1. Query audit events for given correlation_id
+	// 2. Parse gateway and orchestrator events
+	// 3. Map audit data to RR Spec/Status fields
+	// 4. Build complete Kubernetes-compliant CRD
+	// 5. Validate completeness and quality
+	// **Use Cases**:
+	// - Disaster recovery (recreate lost RRs from audit trail)
+	// - Compliance audits (prove RR state at any point in time)
+	// - Debugging (understand RR evolution from audit events)
+	// **Returns**:
+	// - Reconstructed RR in YAML format
+	// - Validation result (completeness percentage, warnings, errors)
+	// **Authentication**: Protected by OAuth-proxy in production/E2E.
+	// Integration tests use mock X-Auth-Request-User header.
+	//
+	// POST /api/v1/audit/remediation-requests/{correlation_id}/reconstruct
+	ReconstructRemediationRequest(ctx context.Context, params ReconstructRemediationRequestParams) (ReconstructRemediationRequestRes, error)
 	// ReleaseLegalHold invokes releaseLegalHold operation.
 	//
 	// Releases a legal hold on all audit events for a given correlation_id.
@@ -1924,6 +1946,114 @@ func (c *Client) sendReadinessCheck(ctx context.Context) (res ReadinessCheckRes,
 
 	stage = "DecodeResponse"
 	result, err := decodeReadinessCheckResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ReconstructRemediationRequest invokes reconstructRemediationRequest operation.
+//
+// Reconstructs a complete RemediationRequest CRD from audit trail events.
+// **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+// **Workflow**:
+// 1. Query audit events for given correlation_id
+// 2. Parse gateway and orchestrator events
+// 3. Map audit data to RR Spec/Status fields
+// 4. Build complete Kubernetes-compliant CRD
+// 5. Validate completeness and quality
+// **Use Cases**:
+// - Disaster recovery (recreate lost RRs from audit trail)
+// - Compliance audits (prove RR state at any point in time)
+// - Debugging (understand RR evolution from audit events)
+// **Returns**:
+// - Reconstructed RR in YAML format
+// - Validation result (completeness percentage, warnings, errors)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+// Integration tests use mock X-Auth-Request-User header.
+//
+// POST /api/v1/audit/remediation-requests/{correlation_id}/reconstruct
+func (c *Client) ReconstructRemediationRequest(ctx context.Context, params ReconstructRemediationRequestParams) (ReconstructRemediationRequestRes, error) {
+	res, err := c.sendReconstructRemediationRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendReconstructRemediationRequest(ctx context.Context, params ReconstructRemediationRequestParams) (res ReconstructRemediationRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("reconstructRemediationRequest"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/v1/audit/remediation-requests/{correlation_id}/reconstruct"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ReconstructRemediationRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/v1/audit/remediation-requests/"
+	{
+		// Encode "correlation_id" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "correlation_id",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.CorrelationID))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/reconstruct"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	defer resp.Body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeReconstructRemediationRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

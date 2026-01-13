@@ -227,6 +227,31 @@ func (UnimplementedHandler) ReadinessCheck(ctx context.Context) (r ReadinessChec
 	return r, ht.ErrNotImplemented
 }
 
+// ReconstructRemediationRequest implements reconstructRemediationRequest operation.
+//
+// Reconstructs a complete RemediationRequest CRD from audit trail events.
+// **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+// **Workflow**:
+// 1. Query audit events for given correlation_id
+// 2. Parse gateway and orchestrator events
+// 3. Map audit data to RR Spec/Status fields
+// 4. Build complete Kubernetes-compliant CRD
+// 5. Validate completeness and quality
+// **Use Cases**:
+// - Disaster recovery (recreate lost RRs from audit trail)
+// - Compliance audits (prove RR state at any point in time)
+// - Debugging (understand RR evolution from audit events)
+// **Returns**:
+// - Reconstructed RR in YAML format
+// - Validation result (completeness percentage, warnings, errors)
+// **Authentication**: Protected by OAuth-proxy in production/E2E.
+// Integration tests use mock X-Auth-Request-User header.
+//
+// POST /api/v1/audit/remediation-requests/{correlation_id}/reconstruct
+func (UnimplementedHandler) ReconstructRemediationRequest(ctx context.Context, params ReconstructRemediationRequestParams) (r ReconstructRemediationRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ReleaseLegalHold implements releaseLegalHold operation.
 //
 // Releases a legal hold on all audit events for a given correlation_id.

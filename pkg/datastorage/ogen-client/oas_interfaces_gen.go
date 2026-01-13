@@ -41,6 +41,10 @@ type ReadinessCheckRes interface {
 	readinessCheckRes()
 }
 
+type ReconstructRemediationRequestRes interface {
+	reconstructRemediationRequestRes()
+}
+
 type ReleaseLegalHoldRes interface {
 	releaseLegalHoldRes()
 }

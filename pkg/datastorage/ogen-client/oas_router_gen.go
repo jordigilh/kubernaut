@@ -236,6 +236,51 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 
+					case 'r': // Prefix: "remediation-requests/"
+
+						if l := len("remediation-requests/"); len(elem) >= l && elem[0:l] == "remediation-requests/" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						// Param: "correlation_id"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/reconstruct"
+
+							if l := len("/reconstruct"); len(elem) >= l && elem[0:l] == "/reconstruct" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "POST":
+									s.handleReconstructRemediationRequestRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, "POST")
+								}
+
+								return
+							}
+
+						}
+
 					}
 
 				case 'w': // Prefix: "workflows"
@@ -757,6 +802,54 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							default:
 								return
 							}
+						}
+
+					case 'r': // Prefix: "remediation-requests/"
+
+						if l := len("remediation-requests/"); len(elem) >= l && elem[0:l] == "remediation-requests/" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						// Param: "correlation_id"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/reconstruct"
+
+							if l := len("/reconstruct"); len(elem) >= l && elem[0:l] == "/reconstruct" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = ReconstructRemediationRequestOperation
+									r.summary = "Reconstruct RemediationRequest from audit trail"
+									r.operationID = "reconstructRemediationRequest"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/audit/remediation-requests/{correlation_id}/reconstruct"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
+							}
+
 						}
 
 					}
