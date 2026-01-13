@@ -42,7 +42,7 @@ Architecture:
 import json
 import threading
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
 import logging
@@ -565,7 +565,7 @@ class MockLLMServer:
         self.host = host
         self.port = port
         self.force_text_response = force_text_response
-        self.server: Optional[HTTPServer] = None
+        self.server: Optional[ThreadingHTTPServer] = None
         self.thread: Optional[threading.Thread] = None
 
     def __enter__(self) -> "MockLLMServer":
@@ -586,7 +586,7 @@ class MockLLMServer:
         # Clear tool call tracker
         tool_call_tracker.clear()
 
-        self.server = HTTPServer((self.host, self.port), MockLLMRequestHandler)
+        self.server = ThreadingHTTPServer((self.host, self.port), MockLLMRequestHandler)
 
         # Get the actual port if auto-assigned
         if self.port == 0:
