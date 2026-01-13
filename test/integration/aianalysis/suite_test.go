@@ -185,7 +185,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(5*time.Minute), func(specCtx SpecCon
 	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
-	mockLLMConfig.ImageTag = mockLLMImageName // Use the built image tag
+	mockLLMConfig.ImageTag = mockLLMImageName                // Use the built image tag
+	mockLLMConfig.Network = "aianalysis_test_network"        // Join same network as HAPI for container-to-container DNS
 	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(specCtx, mockLLMConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")

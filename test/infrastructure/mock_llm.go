@@ -74,6 +74,7 @@ type MockLLMConfig struct {
 	Port          int    // Host port to expose (per DD-TEST-001 v1.8)
 	ContainerName string // Unique container name per service
 	ImageTag      string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
+	Network       string // Podman network for container-to-container communication (e.g., "aianalysis_test_network")
 }
 
 // BuildMockLLMImage builds the Mock LLM container image for integration tests
@@ -180,16 +181,23 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 
 	// Start Mock LLM container
 	_, _ = fmt.Fprintf(writer, "🚀 Starting Mock LLM container...\n")
-	cmd := exec.CommandContext(ctx, "podman", "run",
-		"-d",
-		"--rm",
+	args := []string{"run", "-d", "--rm",
 		"--name", config.ContainerName,
 		"-p", fmt.Sprintf("%d:8080", config.Port),
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
 		"-e", "MOCK_LLM_PORT=8080",
 		"-e", "MOCK_LLM_FORCE_TEXT=false",
-		config.ImageTag, // Use unique image tag per DD-TEST-004
-	)
+	}
+
+	// Add network if specified (for container-to-container communication)
+	if config.Network != "" {
+		args = append(args, "--network", config.Network)
+		_, _ = fmt.Fprintf(writer, "📡 Joining Podman network: %s\n", config.Network)
+	}
+
+	args = append(args, config.ImageTag) // Use unique image tag per DD-TEST-004
+
+	cmd := exec.CommandContext(ctx, "podman", args...)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
