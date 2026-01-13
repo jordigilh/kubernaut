@@ -184,15 +184,15 @@ func parseExecutionWorkflowStarted(event ogenclient.AuditEvent) (*ParsedAuditDat
 	}
 
 	// Extract execution reference (Gap #6)
-	if payload.PipelinerunName.IsSet() {
-		// ExecutionRef points to the WorkflowExecution CRD, not the PipelineRun
-		// Per BR-AUDIT-005: Link RR to WFE CRD for complete lifecycle tracking
-		data.ExecutionRef = &ExecutionRefData{
-			APIVersion: "workflowexecution.kubernaut.ai/v1alpha1",
-			Kind:       "WorkflowExecution",
-			Name:       payload.ExecutionName, // WFE CRD name
-			Namespace:  event.Namespace.Value,
-		}
+	// ExecutionRef points to the WorkflowExecution CRD, not the PipelineRun
+	// Per BR-AUDIT-005: Link RR to WFE CRD for complete lifecycle tracking
+	// Note: ExecutionRef is always created because WFE CRD always exists when this event is emitted
+	// PipelinerunName is optional and only for troubleshooting (stored separately in audit payload)
+	data.ExecutionRef = &ExecutionRefData{
+		APIVersion: "workflowexecution.kubernaut.ai/v1alpha1",
+		Kind:       "WorkflowExecution",
+		Name:       payload.ExecutionName, // WFE CRD name
+		Namespace:  event.Namespace.Value,
 	}
 
 	return data, nil
