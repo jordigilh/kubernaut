@@ -160,7 +160,10 @@ class WorkflowResponseValidator:
         logger.debug(f"Validating workflow exists: {workflow_id}")
 
         try:
-            workflow = self.ds_client.get_workflow_by_uuid(workflow_id)
+            # Generated OpenAPI client method: get_workflow_by_id (not get_workflow_by_uuid)
+            # Maps to: GET /api/v1/workflows/{workflowID}
+            # DD-WORKFLOW-002 v3.0: workflow_id is UUID primary key
+            workflow = self.ds_client.get_workflow_by_id(workflow_id)
             if workflow is None:
                 logger.info(f"Workflow not found in catalog: {workflow_id}")
             return workflow
