@@ -17,6 +17,7 @@ limitations under the License.
 package reconstruction
 
 import (
+	"encoding/json"
 	"fmt"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -70,6 +71,8 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 	}
 
 	data := &ParsedAuditData{
+		EventType:         event.EventType,
+		CorrelationID:     event.CorrelationID,
 		SignalType:        string(payload.SignalType),
 		AlertName:         payload.AlertName,
 		SignalLabels:      make(map[string]string),
@@ -86,13 +89,25 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 		data.SignalAnnotations = payload.SignalAnnotations.Value
 	}
 
+	// Extract optional original payload
+	if payload.OriginalPayload.IsSet() {
+		originalPayloadBytes, err := json.Marshal(payload.OriginalPayload.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal original_payload: %w", err)
+		}
+		data.OriginalPayload = string(originalPayloadBytes)
+	}
+
 	return data, nil
 }
 
 func parseOrchestratorLifecycleCreated(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.RemediationOrchestratorAuditPayload
 
-	data := &ParsedAuditData{}
+	data := &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+	}
 
 	// Extract TimeoutConfig if present
 	if payload.TimeoutConfig.IsSet() {
