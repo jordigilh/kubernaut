@@ -270,12 +270,25 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
 	}
 
+	// DD-STATUS-001: Create UNCACHED client for fresh API reads (adopted from RO pattern)
+	// This is critical for reading CRDs immediately after creation (bypasses cache sync delays)
+	// RO uses mgr.GetAPIReader() which returns an uncached client - we replicate that here
+	apiReader, err := client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		// NO Cache option = direct API server reads (no cache)
+	})
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create uncached API reader: %w", err)
+	}
+
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// DD-STATUS-001: Use ctrlClient as apiReader for cache-bypassed reads
-	// In production, this provides direct K8s API access bypassing controller-runtime cache
-	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient)
+	// DD-STATUS-001: Pass separate cached client and uncached apiReader
+	// ctrlClient: Cached reads/writes for normal operations
+	// apiReader: Uncached reads for fresh data (status refetch after CRD creation)
+	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient)
 	if err != nil {
 		cancel()
 		return nil, err
