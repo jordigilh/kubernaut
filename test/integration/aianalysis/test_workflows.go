@@ -200,7 +200,10 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+	// 201 Created = new workflow created
+	// 200 OK = workflow updated (shouldn't happen with same version)
+	// 409 Conflict = workflow already exists (ACCEPTABLE - treat as success)
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("DataStorage returned status %d: %s", resp.StatusCode, string(bodyBytes))
 	}
