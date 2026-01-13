@@ -25,6 +25,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // TestWorkflow represents a workflow for AIAnalysis integration tests
@@ -160,8 +162,19 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) err
 	return nil
 }
 
+// GenerateDeterministicWorkflowUUID generates a deterministic UUID from workflow_name
+// Pattern: UUID v5 (name-based SHA-1) for test reproducibility
+// DD-WORKFLOW-002 v3.0: workflow_id must be UUID (this generates predictable UUIDs for tests)
+func GenerateDeterministicWorkflowUUID(workflowName string) uuid.UUID {
+	// Kubernaut test namespace UUID (derived from DNS namespace)
+	// This ensures our test UUIDs don't collide with any real UUIDs
+	testNamespace := uuid.MustParse("6ba7b810-9dad-11d1-80b4-00c04fd430c8") // DNS namespace
+	return uuid.NewSHA1(testNamespace, []byte(workflowName))
+}
+
 // registerWorkflowInDataStorage registers a single workflow via DataStorage REST API
 // Pattern: BR-STORAGE-014 Workflow Catalog Management
+// DD-WORKFLOW-002 v3.0: Uses deterministic UUID for test workflows
 func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, output io.Writer) error {
 	version := "1.0.0"
 	content := fmt.Sprintf("# Test workflow %s\nversion: %s\ndescription: %s", wf.WorkflowID, version, wf.Description)
@@ -169,10 +182,15 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
 
+	// Generate deterministic UUID for this workflow (Option B per DD-WORKFLOW-002 v3.0)
+	// This allows Mock LLM to return the same UUID without querying DataStorage
+	deterministicUUID := GenerateDeterministicWorkflowUUID(wf.WorkflowID)
+
 	// Build payload matching DataStorage OpenAPI schema
 	// See: test/infrastructure/workflow_bundles.go:261-288 for pattern
 	workflowReq := map[string]interface{}{
-		"workflow_name":    wf.WorkflowID, // Primary key (workflow_name + version)
+		"workflow_id":      deterministicUUID.String(), // DD-WORKFLOW-002 v3.0: Explicit UUID for tests
+		"workflow_name":    wf.WorkflowID,              // Human-readable identifier
 		"version":          version,
 		"name":             wf.Name,
 		"description":      wf.Description,
