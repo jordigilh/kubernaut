@@ -88,19 +88,21 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	_, _ = fmt.Fprintf(writer, "Building Mock LLM Image (%s Integration Tests)\n", serviceName)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-	// Generate DD-TEST-004 compliant unique image tag
-	// Note: GenerateInfraImageName returns full image name (e.g., "localhost/mock-llm:hapi-abc123")
-	fullImageName := GenerateInfraImageName("mock-llm", serviceName)
+	// Build with stable base tag for Docker cache, then tag with unique name
+	// Pattern: Build once with cache, tag multiple times for DD-TEST-004 compliance
+	baseImageName := "localhost/mock-llm:latest"
+	uniqueImageName := GenerateInfraImageName("mock-llm", serviceName)
 
-	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image: %s\n", fullImageName)
+	_, _ = fmt.Fprintf(writer, "🔨 Building Mock LLM image: %s (cache-friendly)\n", baseImageName)
+	_, _ = fmt.Fprintf(writer, "   Will tag as: %s (DD-TEST-004 unique)\n", uniqueImageName)
 
 	// Build context is test/services/mock-llm/
 	projectRoot := getProjectRoot()
 	buildContext := fmt.Sprintf("%s/test/services/mock-llm", projectRoot)
 
-	// Build image (uses cache for faster builds now that threading/scenario fixes are committed)
+	// Build with stable tag for cache reuse
 	buildCmd := exec.CommandContext(ctx, "podman", "build",
-		"-t", fullImageName,
+		"-t", baseImageName,
 		"-f", fmt.Sprintf("%s/Dockerfile", buildContext),
 		buildContext,
 	)
@@ -114,10 +116,17 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 		return "", fmt.Errorf("failed to build Mock LLM image: %w\nOutput: %s", err, string(output))
 	}
 
-	_, _ = fmt.Fprintf(writer, "✅ Mock LLM image built successfully: %s\n", fullImageName)
-	_, _ = fmt.Fprintf(writer, "\n")
+	_, _ = fmt.Fprintf(writer, "✅ Mock LLM image built with cache: %s\n", baseImageName)
 
-	return fullImageName, nil
+	// Tag with unique name for DD-TEST-004 compliance
+	tagCmd := exec.CommandContext(ctx, "podman", "tag", baseImageName, uniqueImageName)
+	if err := tagCmd.Run(); err != nil {
+		return "", fmt.Errorf("failed to tag Mock LLM image: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Tagged as unique image: %s\n\n", uniqueImageName)
+
+	return uniqueImageName, nil
 }
 
 // GetMockLLMConfigForHAPI returns the Mock LLM configuration for HAPI integration tests
