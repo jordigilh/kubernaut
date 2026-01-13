@@ -240,9 +240,9 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		// Phase 1 Pattern: Manually force RR to Completed by deleting child CRDs
 		// This simulates terminal phase without needing to complete full orchestration pipeline
 		// (no child controllers running - SP, AI, WE)
-		
+
 		GinkgoWriter.Println("✅ Simulating RR1 completion by deleting child CRDs (Phase 1: manual control)...")
-		
+
 		// Delete SignalProcessing CRD if it exists
 		spName := "sp-rr-signal-complete-1"
 		sp := &signalprocessingv1.SignalProcessing{}
