@@ -90,6 +90,10 @@ tags:
     description: Health check endpoints (DD-007 graceful shutdown support)
   - name: Metrics
     description: Prometheus metrics endpoint (BR-STORAGE-019)
+  - name: Audit Reconstruction API
+    description: |
+      RemediationRequest reconstruction from audit trail.
+      Implements BR-AUDIT-006 (SOC2 compliance).
 
 paths:
   /api/v1/workflows/search:
@@ -995,6 +999,101 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
 
+  /api/v1/audit/remediation-requests/{correlation_id}/reconstruct:
+    post:
+      tags:
+        - Audit Reconstruction API
+      summary: Reconstruct RemediationRequest from audit trail
+      description: |
+        Reconstructs a complete RemediationRequest CRD from audit trail events.
+        
+        **Business Requirement**: BR-AUDIT-006 (SOC2 compliance)
+        
+        **Workflow**:
+        1. Query audit events for given correlation_id
+        2. Parse gateway and orchestrator events
+        3. Map audit data to RR Spec/Status fields
+        4. Build complete Kubernetes-compliant CRD
+        5. Validate completeness and quality
+        
+        **Use Cases**:
+        - Disaster recovery (recreate lost RRs from audit trail)
+        - Compliance audits (prove RR state at any point in time)
+        - Debugging (understand RR evolution from audit events)
+        
+        **Returns**:
+        - Reconstructed RR in YAML format
+        - Validation result (completeness percentage, warnings, errors)
+        
+        **Authentication**: Protected by OAuth-proxy in production/E2E.
+        Integration tests use mock X-Auth-Request-User header.
+      operationId: reconstructRemediationRequest
+      parameters:
+        - name: correlation_id
+          in: path
+          required: true
+          description: Unique correlation ID for the remediation lifecycle
+          schema:
+            type: string
+            example: "rr-prometheus-alert-highcpu-abc123"
+      responses:
+        '200':
+          description: |
+            RemediationRequest successfully reconstructed.
+            Returns RR YAML and validation results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconstructionResponse'
+        '400':
+          description: |
+            Bad Request - reconstruction failed validation.
+            Missing required audit events or invalid data.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                missing_gateway_event:
+                  summary: Missing gateway.signal.received event
+                  value:
+                    type: "https://kubernaut.ai/problems/reconstruction/missing-gateway-event"
+                    title: "Reconstruction Failed"
+                    status: 400
+                    detail: "gateway.signal.received event is required for reconstruction"
+                    instance: "/api/v1/audit/remediation-requests/invalid-correlation/reconstruct"
+                incomplete_data:
+                  summary: Incomplete reconstruction (< 50% complete)
+                  value:
+                    type: "https://kubernaut.ai/problems/reconstruction/incomplete-data"
+                    title: "Incomplete Reconstruction"
+                    status: 400
+                    detail: "Reconstructed RR is only 33% complete (SignalName and SignalType only)"
+                    instance: "/api/v1/audit/remediation-requests/partial-correlation/reconstruct"
+        '404':
+          description: |
+            Not Found - no audit events found for correlation_id.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+              examples:
+                no_events:
+                  summary: No audit events for correlation ID
+                  value:
+                    type: "https://kubernaut.ai/problems/audit/correlation-not-found"
+                    title: "Audit Events Not Found"
+                    status: 404
+                    detail: "No audit events found for correlation_id: nonexistent-correlation"
+                    instance: "/api/v1/audit/remediation-requests/nonexistent-correlation/reconstruct"
+        '500':
+          description: |
+            Internal Server Error - database or reconstruction logic failure.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RFC7807Problem'
+
   /health:
     get:
       tags:
@@ -1222,6 +1321,111 @@ components:
                 Timestamp when record was last updated in PostgreSQL.
               example: "2025-11-03T12:00:01Z"
 
+    ReconstructionResponse:
+      type: object
+      description: |
+        Response for RemediationRequest reconstruction from audit trail.
+        Contains the reconstructed RR in YAML format and validation results.
+        Implements BR-AUDIT-006 (SOC2 compliance).
+      required:
+        - remediation_request_yaml
+        - validation
+      properties:
+        remediation_request_yaml:
+          type: string
+          description: |
+            Complete RemediationRequest CRD in YAML format.
+            Can be applied directly to Kubernetes cluster with kubectl.
+            Includes TypeMeta, ObjectMeta, Spec, and Status.
+          example: |
+            apiVersion: remediation.kubernaut.ai/v1alpha1
+            kind: RemediationRequest
+            metadata:
+              name: rr-reconstructed-rr-prometheus-alert-highcpu-abc123-1768265580
+              namespace: kubernaut-system
+              labels:
+                app.kubernetes.io/managed-by: kubernaut-datastorage
+                kubernaut.ai/reconstructed: "true"
+                kubernaut.ai/correlation-id: rr-prometheus-alert-highcpu-abc123
+              annotations:
+                kubernaut.ai/reconstructed-at: "2026-01-12T19:53:00Z"
+                kubernaut.ai/reconstruction-source: audit-trail
+                kubernaut.ai/correlation-id: rr-prometheus-alert-highcpu-abc123
+              finalizers:
+                - kubernaut.ai/audit-retention
+            spec:
+              signalName: HighCPU
+              signalType: prometheus-alert
+              signalLabels:
+                alertname: HighCPU
+                severity: critical
+              signalAnnotations:
+                summary: CPU usage is high
+              originalPayload: '{"alert":"data"}'
+            status:
+              timeoutConfig:
+                global: 1h0m0s
+                processing: 10m0s
+                analyzing: 15m0s
+        validation:
+          $ref: '#/components/schemas/ValidationResult'
+        reconstructed_at:
+          type: string
+          format: date-time
+          description: |
+            Timestamp when reconstruction was performed.
+          example: "2026-01-12T19:53:00Z"
+        correlation_id:
+          type: string
+          description: |
+            Correlation ID used for reconstruction.
+          example: "rr-prometheus-alert-highcpu-abc123"
+    
+    ValidationResult:
+      type: object
+      description: |
+        Validation result for reconstructed RemediationRequest.
+        Indicates completeness, errors, and warnings.
+      required:
+        - is_valid
+        - completeness
+        - errors
+        - warnings
+      properties:
+        is_valid:
+          type: boolean
+          description: |
+            Whether the RR passes validation (no blocking errors).
+            true = ready to apply, false = missing required fields.
+          example: true
+        completeness:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            Completeness percentage (0-100%) based on field presence.
+            100% = all fields present (Gaps #1-8 complete).
+            50-99% = required fields + some optional fields.
+            0-49% = only required fields or incomplete.
+          example: 83
+        errors:
+          type: array
+          items:
+            type: string
+          description: |
+            Blocking validation errors (missing required fields).
+            Empty array if is_valid = true.
+          example: []
+        warnings:
+          type: array
+          items:
+            type: string
+          description: |
+            Non-blocking warnings for missing optional fields.
+            Helps identify gaps in reconstruction.
+          example:
+            - "SignalAnnotations are missing (Gap #3) - annotations provide additional metadata"
+    
     RFC7807Problem:
       type: object
       description: |
@@ -1398,6 +1602,7 @@ components:
             - $ref: '#/components/schemas/LLMResponsePayload'
             - $ref: '#/components/schemas/LLMToolCallPayload'
             - $ref: '#/components/schemas/WorkflowValidationPayload'
+            - $ref: '#/components/schemas/RemediationRequestWebhookAuditPayload'
           discriminator:
             propertyName: event_type
             mapping:
@@ -1430,6 +1635,7 @@ components:
               'webhook.notification.acknowledged': '#/components/schemas/NotificationAuditPayload'
               'webhook.workflow.unblocked': '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
               'webhook.approval.decided': '#/components/schemas/RemediationApprovalAuditPayload'
+              'webhook.remediationrequest.timeout_modified': '#/components/schemas/RemediationRequestWebhookAuditPayload'
               'workflow.catalog.search_completed': '#/components/schemas/WorkflowSearchAuditPayload'
               'datastorage.workflow.created': '#/components/schemas/WorkflowCatalogCreatedPayload'
               'datastorage.workflow.updated': '#/components/schemas/WorkflowCatalogUpdatedPayload'
@@ -2312,7 +2518,7 @@ components:
         notification_name:
           type: string
           description: Associated notification name
-        
+
         # Gap #8: TimeoutConfig (BR-AUDIT-005, orchestrator.lifecycle.created)
         timeout_config:
           $ref: '#/components/schemas/TimeoutConfig'
@@ -2691,6 +2897,38 @@ components:
         ai_analysis_ref:
           type: string
           description: Name of the referenced AIAnalysis
+
+    RemediationRequestWebhookAuditPayload:
+      type: object
+      required: [rr_name, namespace, event_type, modified_by, modified_at]
+      description: Type-safe audit event payload for RemediationRequest webhooks (timeout_modified)
+      properties:
+        event_type:
+          type: string
+          enum: ['webhook.remediationrequest.timeout_modified']
+          description: Event type for discriminator (matches parent event_type)
+        rr_name:
+          type: string
+          description: Name of the RemediationRequest
+          example: "rr-payment-restart-123"
+        namespace:
+          type: string
+          description: Kubernetes namespace
+          example: "production"
+        modified_by:
+          type: string
+          description: User who modified the timeout configuration
+          example: "ops-user@example.com"
+        modified_at:
+          type: string
+          format: date-time
+          description: When the modification occurred
+        old_timeout_config:
+          $ref: '#/components/schemas/TimeoutConfig'
+          description: Previous timeout configuration
+        new_timeout_config:
+          $ref: '#/components/schemas/TimeoutConfig'
+          description: New timeout configuration after operator modification
 
     # ========================================
     # DataStorage Audit Payloads

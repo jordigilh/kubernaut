@@ -413,7 +413,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "contributing_factors": ["identified_by_mock_llm"] if scenario.workflow_id else []
             }
         }
-        
+
         # Handle no workflow found case
         if not scenario.workflow_id:
             analysis_json["selected_workflow"] = None
@@ -535,7 +535,7 @@ The previous remediation attempt failed. I've analyzed the current cluster state
 }}
 ```
 """
-        
+
         return f"""Based on my investigation of the recovery scenario:
 
 ## Analysis
@@ -583,7 +583,7 @@ The previous remediation attempt failed. I've analyzed the current cluster state
 }}
 ```
 """
-        
+
         return f"""Based on my investigation of the incident:
 
 ## Root Cause Analysis
