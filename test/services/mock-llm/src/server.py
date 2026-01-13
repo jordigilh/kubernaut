@@ -284,6 +284,36 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             response = {"status": "ok"}
         self._send_json_response(response)
 
+    def do_PUT(self):
+        """Handle PUT requests (scenario UUID updates)."""
+        if self.path == "/api/test/update-uuids":
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length).decode('utf-8')
+
+            try:
+                uuid_mapping = json.loads(body) if body else {}
+                # Update Mock LLM scenarios with actual UUIDs from DataStorage
+                # Format: {"workflow_name:environment": "actual-uuid-from-datastorage"}
+                updated_count = 0
+                for scenario_key, scenario in MOCK_SCENARIOS.items():
+                    workflow_key = f"{scenario.workflow_title}:production"  # Default to production
+                    if workflow_key in uuid_mapping:
+                        scenario.workflow_id = uuid_mapping[workflow_key]
+                        updated_count += 1
+
+                response = {
+                    "status": "ok",
+                    "updated_scenarios": updated_count,
+                    "message": f"Updated {updated_count} Mock LLM scenarios with actual DataStorage UUIDs"
+                }
+                self._send_json_response(response)
+            except Exception as e:
+                response = {"status": "error", "message": str(e)}
+                self._send_json_response(response, status_code=500)
+        else:
+            response = {"status": "error", "message": "Unknown endpoint"}
+            self._send_json_response(response, status_code=404)
+
     def _handle_openai_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate OpenAI-compatible response with tool call support."""
         messages = request_data.get("messages", [])

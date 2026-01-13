@@ -240,10 +240,18 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Seed test workflows into DataStorage for Mock LLM integration
 	// Pattern: Test data alignment - Mock LLM returns these workflow IDs
 	// Must exist in DataStorage catalog for HAPI validation to succeed
+	// DD-WORKFLOW-002 v3.0: DataStorage auto-generates UUIDs (cannot be specified)
 	By("Seeding test workflows into DataStorage")
 	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
-	err = SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
+
+	// Update Mock LLM scenarios with actual DataStorage UUIDs
+	// Pattern: Test data synchronization - Mock LLM scenarios use real UUIDs
+	// This ensures HAPI validation succeeds (UUID from LLM matches DataStorage)
+	By("Updating Mock LLM with actual workflow UUIDs")
+	err = UpdateMockLLMWithUUIDs(mockLLMConfig, workflowUUIDs, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM UUID update must succeed")
 
 	// Clean up HAPI container on exit
 	DeferCleanup(func() {
