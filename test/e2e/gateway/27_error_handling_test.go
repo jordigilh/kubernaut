@@ -43,7 +43,7 @@ import (
 var _ = Describe("Error Handling & Edge Cases", func() {
 	var (
 		testNamespace string
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// testServer removed - using deployed Gateway
 		ctx context.Context
 	)

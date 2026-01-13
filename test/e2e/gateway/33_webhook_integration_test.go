@@ -49,7 +49,7 @@ import (
 var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests", func() {
 	var (
 		ctx           context.Context
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		logger        logr.Logger // DD-005: Use logr.Logger
 		testNamespace string      // Unique namespace per test
 		testCounter   int         // Counter to ensure unique namespaces

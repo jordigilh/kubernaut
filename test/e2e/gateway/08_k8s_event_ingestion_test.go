@@ -48,7 +48,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {

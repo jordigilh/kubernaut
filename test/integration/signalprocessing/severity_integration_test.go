@@ -35,13 +35,11 @@ limitations under the License.
 // 🔴 RED Phase (Day 1-2): These tests are EXPECTED TO FAIL
 // Tests are written FIRST to define business contract
 // Implementation will follow in GREEN phase (Day 3-4)
-package signalprocessing_test
+package signalprocessing
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -169,17 +167,16 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			sp.Spec.Signal.Severity = "CUSTOM_VALUE"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			// WHEN: Initial severity is determined
-			var initialSeverity string
-			Eventually(func(g Gomega) {
-				var updated signalprocessingv1alpha1.SignalProcessing
-				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
-					Name:      sp.Name,
-					Namespace: sp.Namespace,
-				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).ToNot(BeEmpty())
-				initialSeverity = updated.Status.Severity
-			}, "30s", "1s").Should(Succeed())
+		// WHEN: Initial severity is determined
+		Eventually(func(g Gomega) {
+			var updated signalprocessingv1alpha1.SignalProcessing
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      sp.Name,
+				Namespace: sp.Namespace,
+			}, &updated)).To(Succeed())
+			g.Expect(updated.Status.Severity).ToNot(BeEmpty())
+			// Note: Could capture initial severity and compare after reload in REFACTOR phase
+		}, "30s", "1s").Should(Succeed())
 
 			// AND: Operator updates Rego policy ConfigMap
 			// (In real scenario, this would be ConfigMap update detected by fsnotify)
@@ -227,7 +224,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// WHEN: Controller determines severity
 			Eventually(func(g Gomega) {
 				// Flush audit store to ensure events are persisted
-				flushAuditStoreAndWait(ctx)
+				flushAuditStoreAndWait()
 
 				// Query for classification.decision audit event
 				events := queryAuditEvents(ctx, namespace, "classification.decision")
@@ -235,11 +232,12 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// THEN: Audit event contains both severities
 				g.Expect(events).ToNot(BeEmpty(), "classification.decision audit event should exist")
 
-				latestEvent := events[len(events)-1]
-				eventData := eventDataToMap(latestEvent.EventData)
+			latestEvent := events[len(events)-1]
+			eventData, err := eventDataToMap(latestEvent.EventData)
+			g.Expect(err).ToNot(HaveOccurred(), "Event data conversion should succeed")
 
-				// Validate external severity is captured
-				g.Expect(eventData).To(HaveKeyWithValue("external_severity", "Sev2"),
+			// Validate external severity is captured
+			g.Expect(eventData).To(HaveKeyWithValue("external_severity", "Sev2"),
 					"Audit event should capture original external severity")
 
 				// Validate normalized severity is captured
@@ -284,16 +282,17 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// WHEN: Controller determines severity using policy-defined fallback
 			Eventually(func(g Gomega) {
-				flushAuditStoreAndWait(ctx)
+				flushAuditStoreAndWait()
 
 				events := queryAuditEvents(ctx, namespace, "classification.decision")
 
-				g.Expect(events).ToNot(BeEmpty())
+			g.Expect(events).ToNot(BeEmpty())
 
-				latestEvent := events[len(events)-1]
-				eventData := eventDataToMap(latestEvent.EventData)
+			latestEvent := events[len(events)-1]
+			eventData, err := eventDataToMap(latestEvent.EventData)
+			g.Expect(err).ToNot(HaveOccurred(), "Event data conversion should succeed")
 
-				// THEN: Audit event shows policy-defined fallback (not system "unknown")
+			// THEN: Audit event shows policy-defined fallback (not system "unknown")
 				g.Expect(eventData).To(HaveKey("normalized_severity"),
 					"Audit event should record normalized severity")
 
@@ -333,16 +332,17 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// WHEN: Controller determines severity
 			Eventually(func(g Gomega) {
-				flushAuditStoreAndWait(ctx)
+				flushAuditStoreAndWait()
 
 				events := queryAuditEvents(ctx, namespace, "classification.decision")
 
-				g.Expect(events).ToNot(BeEmpty())
+			g.Expect(events).ToNot(BeEmpty())
 
-				latestEvent := events[len(events)-1]
-				eventData := eventDataToMap(latestEvent.EventData)
+			latestEvent := events[len(events)-1]
+			eventData, err := eventDataToMap(latestEvent.EventData)
+			g.Expect(err).ToNot(HaveOccurred(), "Event data conversion should succeed")
 
-				// THEN: Audit event includes policy hash for version tracking
+			// THEN: Audit event includes policy hash for version tracking
 				g.Expect(eventData).To(HaveKey("policy_hash"),
 					"Audit event should include policy hash (SHA256) for version traceability")
 
@@ -415,17 +415,18 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// WHEN: Controller attempts severity determination
 			Eventually(func(g Gomega) {
-				flushAuditStoreAndWait(ctx)
+				flushAuditStoreAndWait()
 
 				// Query for error audit events
 				events := queryAuditEvents(ctx, namespace, "error.occurred")
 
-				// THEN: Error audit event is emitted
-				if len(events) > 0 {
-					latestEvent := events[len(events)-1]
-					eventData := eventDataToMap(latestEvent.EventData)
+			// THEN: Error audit event is emitted
+			if len(events) > 0 {
+				latestEvent := events[len(events)-1]
+				eventData, err := eventDataToMap(latestEvent.EventData)
+				g.Expect(err).ToNot(HaveOccurred(), "Event data conversion should succeed")
 
-					g.Expect(eventData).To(HaveKey("error_message"),
+				g.Expect(eventData).To(HaveKey("error_message"),
 						"Error audit event should include diagnostic message")
 					g.Expect(latestEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure),
 						"Error audit event should have failure outcome")
@@ -601,35 +602,5 @@ func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogencl
 	return filtered
 }
 
-// eventDataToMap converts AuditEventEventData to map[string]interface{} for validation.
-// This helper is needed because event_data is a structured type (discriminated union).
-func eventDataToMap(eventData ogenclient.AuditEventEventData) map[string]interface{} {
-	// Marshal the structured type back to JSON
-	bytes, err := json.Marshal(eventData)
-	if err != nil {
-		GinkgoWriter.Printf("Marshal error: %v\n", err)
-		return make(map[string]interface{})
-	}
-
-	// Unmarshal into map
-	var result map[string]interface{}
-	if err := json.Unmarshal(bytes, &result); err != nil {
-		GinkgoWriter.Printf("Unmarshal error: %v\n", err)
-		return make(map[string]interface{})
-	}
-
-	return result
-}
-
-// flushAuditStoreAndWait ensures audit events are persisted before querying.
-func flushAuditStoreAndWait(ctx context.Context) {
-	By("Flushing audit store to ensure events are written to DataStorage")
-	flushCtx, flushCancel := context.WithTimeout(ctx, 10*time.Second)
-	defer flushCancel()
-
-	err := auditStore.Flush(flushCtx)
-	Expect(err).NotTo(HaveOccurred(), "Audit store flush must succeed")
-
-	// Small delay to ensure HTTP API has processed the write
-	time.Sleep(100 * time.Millisecond)
-}
+// Note: eventDataToMap() and flushAuditStoreAndWait() helpers are defined in audit_integration_test.go
+// and shared across all integration tests in this package.

@@ -30,7 +30,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
@@ -59,7 +58,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		auditClient   *dsgen.Client
 	)
 
