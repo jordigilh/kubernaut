@@ -104,10 +104,10 @@ This test plan validates the 8 critical field gaps for RemediationRequest CRD re
 
 ### 🎯 **Current Completion Status** (Updated Jan 13, 2026)
 
-**Gap Coverage**: 3/8 gaps complete (37.5% field coverage)
+**Gap Coverage**: 5/8 gaps complete (62.5% field coverage)
 - ✅ **Gap 1-3**: Gateway fields (SignalName, SignalType, Labels/Annotations)
 - ✅ **Gap 4**: AI provider data (ProviderData)
-- ⬜ **Gap 5-6**: Workflow references (Pending)
+- ✅ **Gap 5-6**: Workflow references (SelectedWorkflowRef, ExecutionRef) - **COMPLETE** (Jan 13, 2026)
 - ⬜ **Gap 7**: Error details (Pending)
 - ✅ **Gap 8**: TimeoutConfig mutation audit
 
@@ -136,7 +136,7 @@ This test plan validates the 8 critical field gaps for RemediationRequest CRD re
 |-------|-------|---------|-------------------|----------------------|--------|
 | **Gap 1-3** | Gateway fields | Gateway | Integration, E2E | 1 `gateway.signal.received` | ✅ Day 1 Complete |
 | **Gap 4** | AI provider data | HolmesAPI + AI Analysis | Integration, E2E | 2 events: `holmesgpt.response.complete` + `aianalysis.analysis.completed` | ✅ Day 2 Complete (Jan 5, 2026) |
-| **Gap 5-6** | Workflow refs | Workflow Execution | Integration, E2E | 2 events (selection + execution) | ⬜ |
+| **Gap 5-6** | Workflow refs | Workflow Execution | Integration, E2E | 2 events: `workflowexecution.selection.completed` + `workflowexecution.execution.started` | ✅ **COMPLETE** (Jan 13, 2026) |
 | **Gap 7** | Error details | All Services | Integration, E2E | N `*.failure` (per error scenario) | ⬜ |
 | **Gap 8** | TimeoutConfig | Orchestrator | Integration, E2E | 1-2 `webhook.remediationrequest.timeout_modified` | ✅ **COMPLETE** (Jan 13, 2026) |
 | **Integration** | Full RR reconstruction | Cross-service | Integration, E2E | 9+ events (full lifecycle with HAPI) | ⬜ |
@@ -1199,7 +1199,7 @@ var _ = Describe("SOC2 CC8.1: Operator Attribution E2E", func() {
 |-----|-------|---------------------|--------------|------------------------|--------|
 | #1-3 | Gateway fields | ✅ 100% | ✅ 100% | `Equal(1)` ✅ | ✅ **COMPLETE** |
 | #4 | `providerData` | ✅ 100% | ✅ 100% | `Equal(2)` ✅ | ✅ **COMPLETE** |
-| #5-6 | Workflow refs | ❌ Not Started | ❌ Not Started | `Equal(2)` 📋 | ⬜ Pending |
+| #5-6 | Workflow refs | ✅ 100% | ⬜ Pending | `Equal(2)` ✅ | ✅ **COMPLETE** (Integration) |
 | #7 | `error_details` | ❌ Not Started | ❌ Not Started | Per scenario 📋 | ⬜ Pending |
 | #8 | `timeoutConfig` | ✅ 100% | ✅ 100% | `BeNumerically(">=",1)` ✅ | ✅ **COMPLETE** |
 | **Integration** | Full RR reconstruction | ❌ Not Started | ❌ Not Started | `Equal(5+)` 📋 | ⬜ Pending (Needs Gaps 5-7) |
