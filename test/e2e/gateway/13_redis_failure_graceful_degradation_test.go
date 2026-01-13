@@ -44,7 +44,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {

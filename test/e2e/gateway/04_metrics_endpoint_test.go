@@ -31,7 +31,6 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/google/uuid"
 )
@@ -51,7 +50,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
-		k8sClient     client.Client
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeAll(func() {

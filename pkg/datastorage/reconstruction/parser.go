@@ -39,6 +39,10 @@ type ParsedAuditData struct {
 
 	// Orchestrator fields (from orchestrator.lifecycle.created)
 	TimeoutConfig *TimeoutConfigData
+
+	// Workflow fields (Gap #5-6)
+	SelectedWorkflowRef *WorkflowRefData     // from workflowexecution.selection.completed
+	ExecutionRef        *ExecutionRefData    // from workflowexecution.execution.started
 }
 
 // TimeoutConfigData represents timeout configuration extracted from audit events.
@@ -49,6 +53,22 @@ type TimeoutConfigData struct {
 	Executing  string
 }
 
+// WorkflowRefData represents workflow reference extracted from workflowexecution.selection.completed event (Gap #5).
+type WorkflowRefData struct {
+	WorkflowID      string
+	Version         string
+	ContainerImage  string
+	ContainerDigest string
+}
+
+// ExecutionRefData represents execution reference extracted from workflowexecution.execution.started event (Gap #6).
+type ExecutionRefData struct {
+	APIVersion string
+	Kind       string
+	Name       string
+	Namespace  string
+}
+
 // ParseAuditEvent extracts structured data from an audit event for RR reconstruction.
 // TDD GREEN: Minimal implementation to pass current tests.
 func ParseAuditEvent(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
@@ -57,6 +77,10 @@ func ParseAuditEvent(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 		return parseGatewaySignalReceived(event)
 	case "orchestrator.lifecycle.created":
 		return parseOrchestratorLifecycleCreated(event)
+	case "workflowexecution.selection.completed":
+		return parseWorkflowSelectionCompleted(event)
+	case "workflowexecution.execution.started":
+		return parseExecutionWorkflowStarted(event)
 	default:
 		return nil, fmt.Errorf("unsupported event type: %s", event.EventType)
 	}
@@ -129,4 +153,47 @@ func getOptString(opt ogenclient.OptString) string {
 		return opt.Value
 	}
 	return ""
+}
+
+// parseWorkflowSelectionCompleted extracts workflow reference from workflowexecution.selection.completed event (Gap #5).
+func parseWorkflowSelectionCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	payload := event.EventData.WorkflowExecutionAuditPayload
+
+	data := &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+	}
+
+	// Extract workflow reference (Gap #5)
+	data.SelectedWorkflowRef = &WorkflowRefData{
+		WorkflowID:     payload.WorkflowID,
+		Version:        payload.WorkflowVersion,
+		ContainerImage: payload.ContainerImage,
+	}
+
+	return data, nil
+}
+
+// parseExecutionWorkflowStarted extracts execution reference from workflowexecution.execution.started event (Gap #6).
+func parseExecutionWorkflowStarted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	payload := event.EventData.WorkflowExecutionAuditPayload
+
+	data := &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+	}
+
+	// Extract execution reference (Gap #6)
+	if payload.PipelinerunName.IsSet() {
+		// ExecutionRef points to the WorkflowExecution CRD, not the PipelineRun
+		// Per BR-AUDIT-005: Link RR to WFE CRD for complete lifecycle tracking
+		data.ExecutionRef = &ExecutionRefData{
+			APIVersion: "workflowexecution.kubernaut.ai/v1alpha1",
+			Kind:       "WorkflowExecution",
+			Name:       payload.ExecutionName, // WFE CRD name
+			Namespace:  event.Namespace.Value,
+		}
+	}
+
+	return data, nil
 }

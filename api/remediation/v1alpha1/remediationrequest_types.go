@@ -675,6 +675,40 @@ type RemediationRequestStatus struct {
 
 	// CurrentProcessingRef references the current SignalProcessing CRD (may differ during recovery)
 	CurrentProcessingRef *corev1.ObjectReference `json:"currentProcessingRef,omitempty"`
+
+	// ========================================
+	// WORKFLOW REFERENCES (BR-AUDIT-005 Gap #5-6)
+	// ========================================
+
+	// SelectedWorkflowRef captures the workflow selected by AI for this remediation.
+	// Populated from workflowexecution.selection.completed audit event.
+	// Reference: BR-AUDIT-005 Gap #5 (Workflow Selection)
+	// +optional
+	SelectedWorkflowRef *WorkflowReference `json:"selectedWorkflowRef,omitempty"`
+
+	// ExecutionRef references the WorkflowExecution CRD for this remediation.
+	// Populated from workflowexecution.execution.started audit event.
+	// Reference: BR-AUDIT-005 Gap #6 (Execution Reference)
+	// +optional
+	ExecutionRef *corev1.ObjectReference `json:"executionRef,omitempty"`
+}
+
+// WorkflowReference captures workflow catalog information for audit trail.
+// Used in RemediationRequestStatus.SelectedWorkflowRef (Gap #5).
+type WorkflowReference struct {
+	// WorkflowID is the catalog lookup key
+	WorkflowID string `json:"workflowId"`
+
+	// Version of the workflow
+	Version string `json:"version"`
+
+	// ContainerImage resolved from workflow catalog
+	// OCI bundle reference for Tekton PipelineRun
+	ContainerImage string `json:"containerImage"`
+
+	// ContainerDigest for audit trail and reproducibility
+	// +optional
+	ContainerDigest string `json:"containerDigest,omitempty"`
 }
 
 // ========================================

@@ -26,86 +26,87 @@ import (
 	"net/http"
 	"time"
 
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // TestWorkflow represents a workflow for AIAnalysis integration tests
 // These workflows match the Mock LLM responses to enable end-to-end testing
 type TestWorkflow struct {
-	WorkflowID   string // Must match Mock LLM workflow_id (e.g., "oomkill-increase-memory-v1")
-	Name         string
-	Description  string
-	SignalType   string // Must match test scenarios (e.g., "OOMKilled")
-	Severity     string
-	Component    string
-	Environment  string
-	Priority     string
+	WorkflowID  string // Must match Mock LLM workflow_id (e.g., "oomkill-increase-memory-v1")
+	Name        string
+	Description string
+	SignalType  string // Must match test scenarios (e.g., "OOMKilled")
+	Severity    string
+	Component   string
+	Environment string
+	Priority    string
 }
 
 // GetAIAnalysisTestWorkflows returns the workflows that Mock LLM expects
 // These must be registered in DataStorage before tests run
 //
 // Pattern: Test data alignment between Mock LLM and DataStorage
-// - Mock LLM returns workflow IDs (e.g., "oomkill-increase-memory-v1")
-// - HAPI validates workflows via DataStorage API
-// - Tests fail if workflows don't exist in catalog
-// - Workflows created for BOTH staging and production environments
-//   (tests use staging by default, but some use production)
+//   - Mock LLM returns workflow IDs (e.g., "oomkill-increase-memory-v1")
+//   - HAPI validates workflows via DataStorage API
+//   - Tests fail if workflows don't exist in catalog
+//   - Workflows created for BOTH staging and production environments
+//     (tests use staging by default, but some use production)
 func GetAIAnalysisTestWorkflows() []TestWorkflow {
 	baseWorkflows := []TestWorkflow{
 		{
-			WorkflowID:   "oomkill-increase-memory-v1",
-			Name:         "OOMKill Recovery - Increase Memory Limits",
-			Description:  "Increase memory limits for pods hitting OOMKill",
-			SignalType:   "OOMKilled",
-			Severity:     "critical",
-			Component:    "deployment",
-			Priority:     "P0",
+			WorkflowID:  "oomkill-increase-memory-v1",
+			Name:        "OOMKill Recovery - Increase Memory Limits",
+			Description: "Increase memory limits for pods hitting OOMKill",
+			SignalType:  "OOMKilled",
+			Severity:    "critical",
+			Component:   "deployment",
+			Priority:    "P0",
 		},
 		{
-			WorkflowID:   "crashloop-config-fix-v1",
-			Name:         "CrashLoopBackOff - Configuration Fix",
-			Description:  "Fix missing configuration causing CrashLoopBackOff",
-			SignalType:   "CrashLoopBackOff",
-			Severity:     "high",
-			Component:    "deployment",
-			Priority:     "P1",
+			WorkflowID:  "crashloop-config-fix-v1",
+			Name:        "CrashLoopBackOff - Configuration Fix",
+			Description: "Fix missing configuration causing CrashLoopBackOff",
+			SignalType:  "CrashLoopBackOff",
+			Severity:    "high",
+			Component:   "deployment",
+			Priority:    "P1",
 		},
 		{
-			WorkflowID:   "node-drain-reboot-v1",
-			Name:         "NodeNotReady - Drain and Reboot",
-			Description:  "Drain node and reboot to resolve NodeNotReady",
-			SignalType:   "NodeNotReady",
-			Severity:     "critical",
-			Component:    "node",
-			Priority:     "P0",
+			WorkflowID:  "node-drain-reboot-v1",
+			Name:        "NodeNotReady - Drain and Reboot",
+			Description: "Drain node and reboot to resolve NodeNotReady",
+			SignalType:  "NodeNotReady",
+			Severity:    "critical",
+			Component:   "node",
+			Priority:    "P0",
 		},
 		{
-			WorkflowID:   "memory-optimize-v1",
-			Name:         "Memory Optimization - Alternative Approach",
-			Description:  "Optimize memory usage after failed scaling attempt",
-			SignalType:   "OOMKilled",
-			Severity:     "critical",
-			Component:    "deployment",
-			Priority:     "P0",
+			WorkflowID:  "memory-optimize-v1",
+			Name:        "Memory Optimization - Alternative Approach",
+			Description: "Optimize memory usage after failed scaling attempt",
+			SignalType:  "OOMKilled",
+			Severity:    "critical",
+			Component:   "deployment",
+			Priority:    "P0",
 		},
 		{
-			WorkflowID:   "generic-restart-v1",
-			Name:         "Generic Pod Restart",
-			Description:  "Generic pod restart for unknown issues",
-			SignalType:   "Unknown",
-			Severity:     "medium",
-			Component:    "deployment",
-			Priority:     "P2",
+			WorkflowID:  "generic-restart-v1",
+			Name:        "Generic Pod Restart",
+			Description: "Generic pod restart for unknown issues",
+			SignalType:  "Unknown",
+			Severity:    "medium",
+			Component:   "deployment",
+			Priority:    "P2",
 		},
 		{
-			WorkflowID:   "test-signal-handler-v1",
-			Name:         "Test Signal Handler",
-			Description:  "Generic workflow for test signals (graceful shutdown tests)",
-			SignalType:   "TestSignal",
-			Severity:     "critical",
-			Component:    "pod",
-			Priority:     "P1",
+			WorkflowID:  "test-signal-handler-v1",
+			Name:        "Test Signal Handler",
+			Description: "Generic workflow for test signals (graceful shutdown tests)",
+			SignalType:  "TestSignal",
+			Severity:    "critical",
+			Component:   "pod",
+			Priority:    "P1",
 		},
 	}
 
@@ -175,9 +176,9 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) (ma
 	return workflowUUIDs, nil
 }
 
-
-// registerWorkflowInDataStorage registers a single workflow via DataStorage REST API
-// Pattern: BR-STORAGE-014 Workflow Catalog Management
+// registerWorkflowInDataStorage registers a single workflow via DataStorage OpenAPI Client
+// Pattern: DD-API-001 (OpenAPI Generated Client MANDATORY)
+// Authority: .cursor/rules/* - All Go services must use OpenAPI clients
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
 // Returns the actual UUID assigned by DataStorage
 func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, output io.Writer) (string, error) {
@@ -187,120 +188,123 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 	hash := sha256.Sum256(contentBytes)
 	contentHash := fmt.Sprintf("%x", hash)
 
-	// DD-WORKFLOW-002 v3.0: workflow_id is NOT included in request (generated by DataStorage)
-	// Security: Prevents ID collision attacks by letting DataStorage control UUID generation
-	// Build payload matching DataStorage OpenAPI schema
-	// See: test/infrastructure/workflow_bundles.go:261-288 for pattern
-	workflowReq := map[string]interface{}{
-		// Note: workflow_id is NOT included - DataStorage generates it
-		"workflow_name":    wf.WorkflowID, // Human-readable identifier
-		"version":          version,
-		"name":             wf.Name,
-		"description":      wf.Description,
-		"content":          content,
-		"content_hash":     contentHash,
-		"execution_engine": "tekton",
-		"container_image":  fmt.Sprintf("quay.io/jordigilh/test-workflows/%s:%s", wf.WorkflowID, version),
-		"labels": map[string]interface{}{
-			"signal_type": wf.SignalType,   // Mandatory
-			"severity":    wf.Severity,     // Mandatory
-			"component":   wf.Component,    // Mandatory
-			"environment": wf.Environment,  // Mandatory
-			"priority":    wf.Priority,     // Mandatory
-		},
-		"status": "active",
+	// DD-API-001: Create OpenAPI client (type-safe, spec-validated)
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	client, err := ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
+	if err != nil {
+		return "", fmt.Errorf("failed to create OpenAPI client: %w", err)
 	}
 
-	jsonPayload, err := json.Marshal(workflowReq)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal workflow payload: %w", err)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// DD-WORKFLOW-002 v3.0: workflow_id is NOT included in request (generated by DataStorage)
+	// Security: Prevents ID collision attacks by letting DataStorage control UUID generation
+	// Convert string severity to OpenAPI enum type
+	var severity ogenclient.MandatoryLabelsSeverity
+	switch wf.Severity {
+	case "critical":
+		severity = ogenclient.MandatoryLabelsSeverityCritical
+	case "high":
+		severity = ogenclient.MandatoryLabelsSeverityHigh
+	case "medium":
+		severity = ogenclient.MandatoryLabelsSeverityMedium
+	case "low":
+		severity = ogenclient.MandatoryLabelsSeverityLow
+	default:
+		severity = ogenclient.MandatoryLabelsSeverityCritical // Default to critical
+	}
+
+	// Convert string priority to OpenAPI enum type
+	var priority ogenclient.MandatoryLabelsPriority
+	switch wf.Priority {
+	case "P0":
+		priority = ogenclient.MandatoryLabelsPriority_P0
+	case "P1":
+		priority = ogenclient.MandatoryLabelsPriority_P1
+	case "P2":
+		priority = ogenclient.MandatoryLabelsPriority_P2
+	case "P3":
+		priority = ogenclient.MandatoryLabelsPriority_P3
+	default:
+		priority = ogenclient.MandatoryLabelsPriority_P2 // Default to P2
+	}
+
+	// Build workflow request using OpenAPI generated types (compile-time validation)
+	workflowReq := &ogenclient.RemediationWorkflow{
+		// Note: WorkflowID is NOT set - DataStorage auto-generates it
+		WorkflowName:    wf.WorkflowID, // Human-readable identifier (workflow_name field)
+		Version:         version,
+		Name:            wf.Name,
+		Description:     wf.Description,
+		Content:         content,
+		ContentHash:     contentHash,
+		ExecutionEngine: "tekton",
+		ContainerImage:  ogenclient.NewOptString(fmt.Sprintf("quay.io/jordigilh/test-workflows/%s:%s", wf.WorkflowID, version)),
+		Labels: ogenclient.MandatoryLabels{
+			SignalType:  wf.SignalType,
+			Severity:    severity,
+			Component:   wf.Component,
+			Environment: wf.Environment,
+			Priority:    priority,
+		},
+		Status: "active",
 	}
 
 	// POST to DataStorage workflow creation endpoint
 	// BR-STORAGE-014: Workflow catalog management
-	endpoint := fmt.Sprintf("%s/api/v1/workflows", dataStorageURL)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewBuffer(jsonPayload))
+	resp, err := client.CreateWorkflow(ctx, workflowReq)
 	if err != nil {
-		return "", fmt.Errorf("failed to create HTTP request: %w", err)
+		// DD-WORKFLOW-002 v3.0: If creation fails (likely 409 Conflict), query for existing UUID
+		// OpenAPI client returns errors for non-2xx responses
+		// We handle this by falling through to query logic - idempotent workflow registration
+		_, _ = fmt.Fprintf(output, "  ⚠️  Workflow may already exist (%v), querying for UUID...\n", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	// Extract workflow_id from successful response
+	if err == nil {
+		switch r := resp.(type) {
+		case *ogenclient.RemediationWorkflow:
+			return r.WorkflowID.Value.String(), nil
+		default:
+			return "", fmt.Errorf("unexpected response type from CreateWorkflow: %T", resp)
+		}
+	}
+
+	// For 409 Conflict or other errors, query by workflow_name to get existing UUID
+	// Authority: DD-WORKFLOW-002 v3.0 (UUID primary key, workflow_name is metadata)
+	// This is idempotent - safe to call in tests even if workflow exists
+	// Note: Using raw HTTP here because ListWorkflowVersions is not yet available in client
+	// TODO: Replace with OpenAPI client method once available
+	queryURL := fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions?version=%s",
+		dataStorageURL, wf.WorkflowID, version)
+	queryResp, err := httpClient.Get(queryURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to POST workflow to DataStorage: %w", err)
+		return "", fmt.Errorf("failed to query existing workflow: %w", err)
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer queryResp.Body.Close()
 
-	// Check response status
-	// 201 Created = new workflow created
-	// 200 OK = workflow updated (shouldn't happen with same version)
-	// 409 Conflict = workflow already exists (need to query for UUID)
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusConflict {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("DataStorage returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	if queryResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("workflow query failed with status %d", queryResp.StatusCode)
 	}
 
-	// For 409 Conflict, workflow already exists - query to get its UUID
-	if resp.StatusCode == http.StatusConflict {
-		// Query by workflow_name and version to get the existing UUID
-		queryEndpoint := fmt.Sprintf("%s/api/v1/workflows/by-name/%s/versions?version=%s",
-			dataStorageURL, wf.WorkflowID, version)
-		queryReq, err := http.NewRequestWithContext(ctx, "GET", queryEndpoint, nil)
-		if err != nil {
-			return "", fmt.Errorf("failed to create query request: %w", err)
-		}
-
-		queryResp, err := client.Do(queryReq)
-		if err != nil {
-			return "", fmt.Errorf("failed to query existing workflow: %w", err)
-		}
-		defer func() { _ = queryResp.Body.Close() }()
-
-		if queryResp.StatusCode != http.StatusOK {
-			return "", fmt.Errorf("failed to query existing workflow: status %d", queryResp.StatusCode)
-		}
-
-		// DataStorage returns: {"workflow_name": "...", "versions": [...], "total": N}
-		var versionsResp struct {
-			WorkflowName string                   `json:"workflow_name"`
-			Versions     []map[string]interface{} `json:"versions"`
-			Total        int                      `json:"total"`
-		}
-		if err := json.NewDecoder(queryResp.Body).Decode(&versionsResp); err != nil {
-			return "", fmt.Errorf("failed to decode query response: %w", err)
-		}
-
-		if len(versionsResp.Versions) == 0 {
-			return "", fmt.Errorf("workflow exists but query returned no versions")
-		}
-
-		workflowID, ok := versionsResp.Versions[0]["workflow_id"].(string)
-		if !ok {
-			return "", fmt.Errorf("workflow_id not found in response")
-		}
-
-		return workflowID, nil
+	// Parse response: DataStorage returns {"workflow_name": "...", "versions": [...], "total": N}
+	var versionsResp struct {
+		WorkflowName string                   `json:"workflow_name"`
+		Versions     []map[string]interface{} `json:"versions"`
+		Total        int                      `json:"total"`
+	}
+	if err := json.NewDecoder(queryResp.Body).Decode(&versionsResp); err != nil {
+		return "", fmt.Errorf("failed to decode query response: %w", err)
 	}
 
-	// For 201 Created or 200 OK, parse response body to get generated workflow_id
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response body: %w", err)
+	if len(versionsResp.Versions) == 0 {
+		return "", fmt.Errorf("workflow exists but query returned no versions")
 	}
 
-	var responseData map[string]interface{}
-	if err := json.Unmarshal(bodyBytes, &responseData); err != nil {
-		return "", fmt.Errorf("failed to parse response JSON: %w", err)
-	}
-
-	// Extract workflow_id from response
-	workflowID, ok := responseData["workflow_id"].(string)
+	workflowID, ok := versionsResp.Versions[0]["workflow_id"].(string)
 	if !ok {
-		return "", fmt.Errorf("workflow_id not found in response")
+		return "", fmt.Errorf("workflow_id not found in query response")
 	}
 
 	return workflowID, nil

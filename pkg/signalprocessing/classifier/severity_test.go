@@ -73,7 +73,7 @@ var _ = Describe("Severity Classifier Unit Tests", Label("unit", "severity", "cl
 
 		// Create REAL severity classifier with fake K8s client
 		severityClassifier = classifier.NewSeverityClassifier(mockK8sClient, logger)
-		
+
 		// Load default policy for tests that need it
 		// Tests that require NO policy will create a fresh classifier
 		defaultPolicy := `
