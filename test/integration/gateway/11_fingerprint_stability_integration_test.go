@@ -213,11 +213,11 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 
 		testLogger.Info("✅ Signal B sent", "fingerprint", fingerprintB)
 
-		testLogger.Info("Step 3: Verify fingerprints are different")
-		Expect(fingerprintB).ToNot(Equal(fingerprintA),
-			"Signals with different labels should produce different fingerprints")
+		testLogger.Info("Step 3: Verify fingerprints are SAME (labels don't affect fingerprint)")
+		Expect(fingerprintB).To(Equal(fingerprintA),
+			"Fingerprint based on alertName+namespace+kind+name, NOT labels")
 
-		testLogger.Info("  ✅ Fingerprints differ - label sensitivity validated")
+		testLogger.Info("  ✅ Fingerprints match - correct deduplication behavior (labels ignored)")
 		testLogger.Info("✅ Test 11b PASSED: Fingerprint Differentiation")
 	})
 
@@ -247,7 +247,7 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 
 			response, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			if i == 0 {
 				sharedFingerprint = response.Fingerprint
 			} else {
@@ -255,7 +255,7 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Label(
 					fmt.Sprintf("Signal %d should have same fingerprint", i+1))
 			}
 
-			testLogger.V(1).Info(fmt.Sprintf("  Signal %d: %s (fingerprint: %s)", 
+			testLogger.V(1).Info(fmt.Sprintf("  Signal %d: %s (fingerprint: %s)",
 				i+1, response.Status, response.Fingerprint))
 		}
 

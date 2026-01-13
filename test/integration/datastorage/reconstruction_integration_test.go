@@ -102,8 +102,8 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 				EventData: map[string]interface{}{
 					"event_type":  "gateway.signal.received", // Required for discriminator
 					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPU", // Required field
-					"namespace":   "default", // Required field
+					"alert_name":  "HighCPU",     // Required field
+					"namespace":   "default",     // Required field
 					"fingerprint": "test-fp-123", // Required field
 				},
 			}
@@ -124,8 +124,8 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 				ResourceID:     "rr-123",
 				EventData: map[string]interface{}{
 					"event_type": "orchestrator.lifecycle.created", // Required for discriminator
-					"rr_name":    "test-rr", // Required field
-					"namespace":  "default", // Required field
+					"rr_name":    "test-rr",                        // Required field
+					"namespace":  "default",                        // Required field
 					"timeout_config": map[string]interface{}{
 						"global": "1h",
 					},
@@ -178,8 +178,8 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 				EventData: map[string]interface{}{
 					"event_type":  "gateway.signal.received", // Required for discriminator
 					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPU", // Required field
-					"namespace":   "default", // Required field
+					"alert_name":  "HighCPU",     // Required field
+					"namespace":   "default",     // Required field
 					"fingerprint": "test-fp-456", // Required field
 					"signal_labels": map[string]interface{}{
 						"alertname": "HighCPU",
@@ -210,8 +210,8 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 				ResourceID:     "rr-123",
 				EventData: map[string]interface{}{
 					"event_type": "orchestrator.lifecycle.created", // Required for discriminator
-					"rr_name":    "test-rr", // Required field
-					"namespace":  "default", // Required field
+					"rr_name":    "test-rr",                        // Required field
+					"namespace":  "default",                        // Required field
 					"timeout_config": map[string]interface{}{
 						"global":     "1h",
 						"processing": "10m",
@@ -287,8 +287,8 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 				ResourceID:     "rr-123",
 				EventData: map[string]interface{}{
 					"event_type": "orchestrator.lifecycle.created", // Required for discriminator
-					"rr_name":    "test-rr", // Required field
-					"namespace":  "default", // Required field
+					"rr_name":    "test-rr",                        // Required field
+					"namespace":  "default",                        // Required field
 					"timeout_config": map[string]interface{}{
 						"global": "1h",
 					},
@@ -339,8 +339,8 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 				EventData: map[string]interface{}{
 					"event_type":  "gateway.signal.received", // Required for discriminator
 					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPU", // Required field
-					"namespace":   "default", // Required field
+					"alert_name":  "HighCPU",     // Required field
+					"namespace":   "default",     // Required field
 					"fingerprint": "test-fp-789", // Required field
 					// Missing: signal_labels, signal_annotations, original_payload (intentional for incomplete validation test)
 				},

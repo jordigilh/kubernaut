@@ -159,7 +159,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		})
 
 		testLogger.Info("Step 2: Call ProcessSignal - helper applies defaults, so signal is valid")
-		response, err := gwServer.ProcessSignal(ctx, invalidSignal)
+		response, err := gwServer.ProcessSignal(ctx, signalWithDefaults)
 
 		// Helper applies default AlertName="TestAlert", so signal is valid
 		Expect(err).ToNot(HaveOccurred(), "Signal should be processed (helper applied defaults)")
@@ -171,7 +171,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		err = k8sClient.List(ctx, crdList, client.InNamespace(testNamespace))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(crdList.Items).To(HaveLen(2), "2 CRDs should exist (21b + 21c)")
-		
+
 		// Find the CRD with default AlertName
 		var defaultCRD *remediationv1alpha1.RemediationRequest
 		for i := range crdList.Items {
@@ -206,7 +206,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Lab
 		testLogger.Info("Step 2: Process signal")
 		response, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response.Status).To(Equal(gateway.StatusAccepted))
+		Expect(response.Status).To(Equal(gateway.StatusCreated), "First signal should create new CRD")
 
 		testLogger.Info("Step 3: Retrieve CRD and validate all fields")
 		crdList := &remediationv1alpha1.RemediationRequestList{}
