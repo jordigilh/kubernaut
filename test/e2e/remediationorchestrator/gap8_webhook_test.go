@@ -205,24 +205,47 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 				"At least one audit event should exist for this correlation_id (diagnostic)")
 
-			// Log ALL events found for diagnostic purposes
-			GinkgoWriter.Printf("📊 DIAGNOSTIC: Found %d audit events for correlation_id=%s:\n", len(allEvents), correlationID)
-			for i, evt := range allEvents {
-				GinkgoWriter.Printf("  [%d] event_type=%s, event_category=%s, event_action=%s, outcome=%s\n",
-					i+1, evt.EventType, evt.EventCategory, evt.EventAction, evt.EventOutcome)
+		// Log ALL events found for diagnostic purposes
+		GinkgoWriter.Printf("📊 DIAGNOSTIC: Found %d audit events for correlation_id=%s:\n", len(allEvents), correlationID)
+		for i, evt := range allEvents {
+			GinkgoWriter.Printf("  [%d] event_type=%s, event_category=%s, event_action=%s, outcome=%s\n",
+				i+1, evt.EventType, evt.EventCategory, evt.EventAction, evt.EventOutcome)
+		}
+
+		// Wait for webhook.remediationrequest.timeout_modified event to arrive
+		// NOTE: Webhook events take longer due to buffer flush interval + database write
+		// - AuthWebhook buffer flush: 5 seconds
+		// - Network + database write: 1-2 seconds
+		// - Total expected: ~7-8 seconds
+		webhookEvents := []ogenclient.AuditEvent{}
+		Eventually(func() int {
+			// Re-query ALL events to get fresh data including webhook events
+			events, _, err := helpers.QueryAuditEvents(
+				ctx,
+				auditClient,
+				&correlationID,
+				nil, // event_type = nil (query ALL event types)
+				nil, // event_category = nil
+			)
+			if err != nil {
+				GinkgoWriter.Printf("⚠️  Webhook event query error: %v\n", err)
+				return 0
 			}
 
 			// Filter for webhook.remediationrequest.timeout_modified events
-			webhookEvents := []ogenclient.AuditEvent{}
-			for _, evt := range allEvents {
+			webhookEvents = []ogenclient.AuditEvent{}
+			for _, evt := range events {
 				if evt.EventType == "webhook.remediationrequest.timeout_modified" {
 					webhookEvents = append(webhookEvents, evt)
 				}
 			}
-
-			Expect(webhookEvents).To(HaveLen(1),
-				"Should have exactly 1 webhook.remediationrequest.timeout_modified event (found %d webhook events out of %d total events)",
-				len(webhookEvents), len(allEvents))
+			
+			if len(webhookEvents) > 0 {
+				GinkgoWriter.Printf("✅ Found %d webhook events after %v\n", len(webhookEvents), time.Since(now.Time))
+			}
+			return len(webhookEvents)
+		}, 20*time.Second, 2*time.Second).Should(Equal(1),
+			"Should have exactly 1 webhook.remediationrequest.timeout_modified event")
 
 			// Validate webhook event structure (ADR-034 compliance)
 			webhookEvent := webhookEvents[0]
