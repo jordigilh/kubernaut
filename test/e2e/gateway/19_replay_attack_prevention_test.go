@@ -32,15 +32,12 @@ import (
 
 var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-075)", Ordered, func() {
 	var (
-		testCtx       context.Context
-		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "replay-attack-prevention")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 

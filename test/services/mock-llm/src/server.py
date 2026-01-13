@@ -60,6 +60,7 @@ class MockScenario:
     name: str
     signal_type: str
     severity: str = "critical"
+    workflow_name: str = ""  # Workflow name for UUID mapping (e.g., "oomkill-increase-memory-v1")
     workflow_id: str = "mock-workflow-v1"
     workflow_title: str = "Mock Workflow"
     confidence: float = 0.92
@@ -74,6 +75,7 @@ class MockScenario:
 MOCK_SCENARIOS: Dict[str, MockScenario] = {
     "oomkilled": MockScenario(
         name="oomkilled",
+        workflow_name="oomkill-increase-memory-v1",
         signal_type="OOMKilled",
         severity="critical",
         workflow_id="21053597-2865-572b-89bf-de49b5b685da",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for oomkill-increase-memory-v1
@@ -87,6 +89,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "crashloop": MockScenario(
         name="crashloop",
+        workflow_name="crashloop-config-fix-v1",
         signal_type="CrashLoopBackOff",
         severity="high",
         workflow_id="42b90a37-0d1b-5561-911a-2939ed9e1c30",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for crashloop-config-fix-v1
@@ -100,6 +103,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "node_not_ready": MockScenario(
         name="node_not_ready",
+        workflow_name="node-drain-reboot-v1",
         signal_type="NodeNotReady",
         severity="critical",
         workflow_id="node-drain-reboot-v1",
@@ -113,6 +117,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "recovery": MockScenario(
         name="recovery",
+        workflow_name="memory-optimize-v1",
         signal_type="OOMKilled",
         severity="critical",
         workflow_id="99f4a9b8-d6b5-5191-85a4-93e5dbf61321",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for memory-optimize-v1
@@ -126,6 +131,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "test_signal": MockScenario(
         name="test_signal",
+        workflow_name="test-signal-handler-v1",
         signal_type="TestSignal",
         severity="critical",
         workflow_id="2faf3306-1d6c-5d2f-9e9f-2e1a4844ca70",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for test-signal-handler-v1
@@ -152,6 +158,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
     ),
     "low_confidence": MockScenario(
         name="low_confidence",
+        workflow_name="generic-restart-v1",
         signal_type="MOCK_LOW_CONFIDENCE",
         severity="critical",
         workflow_id="d2c84d90-55ba-5ae1-b48d-6cc16e0edb5c",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for generic-restart-v1
@@ -289,18 +296,27 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/api/test/update-uuids":
             content_length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(content_length).decode('utf-8')
-
+            
             try:
                 uuid_mapping = json.loads(body) if body else {}
                 # Update Mock LLM scenarios with actual UUIDs from DataStorage
-                # Format: {"workflow_name:environment": "actual-uuid-from-datastorage"}
+                # Input format: {"workflow_name:environment": "actual-uuid-from-datastorage"}
+                # Example: {"oomkill-increase-memory-v1:production": "uuid1", "test-signal-handler-v1:test": "uuid2"}
                 updated_count = 0
                 for scenario_key, scenario in MOCK_SCENARIOS.items():
-                    workflow_key = f"{scenario.workflow_title}:production"  # Default to production
+                    if not scenario.workflow_name:
+                        continue  # Skip scenarios without workflow_name
+                    
+                    # Match by workflow_name + environment
+                    # Default to production for most scenarios, test for test_signal
+                    environment = "test" if scenario_key == "test_signal" else "production"
+                    workflow_key = f"{scenario.workflow_name}:{environment}"
+                    
                     if workflow_key in uuid_mapping:
                         scenario.workflow_id = uuid_mapping[workflow_key]
                         updated_count += 1
-
+                        print(f"  Updated {scenario_key}: {scenario.workflow_name} → {scenario.workflow_id}")
+                
                 response = {
                     "status": "ok",
                     "updated_scenarios": updated_count,
@@ -308,6 +324,7 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 }
                 self._send_json_response(response)
             except Exception as e:
+                print(f"Error updating UUIDs: {e}")
                 response = {"status": "error", "message": str(e)}
                 self._send_json_response(response, status_code=500)
         else:

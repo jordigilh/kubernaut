@@ -253,40 +253,83 @@ determine_severity := result {
 			// ✅ ConfigMap-based policy enables GitOps workflow
 		})
 
-		It("should fall back to 'unknown' for unmapped severity values", func() {
+		It("should require Rego policy to define fallback behavior for unmapped severities", func() {
 			// BUSINESS CONTEXT:
-			// New monitoring tool sends severity values not in Rego policy mapping.
+			// Operator must define how to handle unmapped severity values in Rego policy.
+			// Different customers have different safety postures:
+			// - Conservative: unmapped → critical (escalate for safety)
+			// - Permissive: unmapped → info (ignore unknown alerts)
 			//
 			// BUSINESS VALUE:
-			// System degrades gracefully without failing, allows operator to update policy.
+			// Operators have full control over unmapped severity handling strategy.
+			// No system-imposed "unknown" fallback that removes operator choice.
 			//
-			// PREVENTS: Alert processing failures when encountering unexpected severity values
+			// PREVENTS: System making opinionated decisions about customer severity handling
 
-			unmappedSeverities := []string{
-				"CustomValue999",
-				"SUPER_CRITICAL",
-				"undefined",
-				"",
+			// GIVEN: Policy with explicit catch-all that escalates unmapped to critical
+			conservativePolicy := `
+package signalprocessing.severity
+
+severity_map := {
+	"Sev1": "critical",
+	"Sev2": "warning"
+}
+
+determine_severity := result {
+	input_severity := input.signal.severity
+	result := object.get(severity_map, input_severity, "")
+	result != ""
+} else := "critical" {
+	# Conservative fallback: unmapped severities escalate to critical for safety
+	true
+}
+`
+			err := severityClassifier.LoadRegoPolicy(conservativePolicy)
+			Expect(err).ToNot(HaveOccurred(), "Conservative policy should load successfully")
+
+			unmappedSeverities := []struct {
+				Severity         string
+				ExpectedFallback string
+				Rationale        string
+			}{
+				{
+					Severity:         "CustomValue999",
+					ExpectedFallback: "critical",
+					Rationale:        "Conservative policy escalates unknown severities to critical",
+				},
+				{
+					Severity:         "SUPER_CRITICAL",
+					ExpectedFallback: "critical",
+					Rationale:        "Operator-defined fallback ensures safety-first handling",
+				},
+				{
+					Severity:         "",
+					ExpectedFallback: "critical",
+					Rationale:        "Empty severity falls back per operator policy (not system decision)",
+				},
 			}
 
-			for _, unknownSeverity := range unmappedSeverities {
-				// GIVEN: Alert with unmapped severity
-				sp := createTestSignalProcessing("test-unknown", "default")
-				sp.Spec.Signal.Severity = unknownSeverity
+			for _, tc := range unmappedSeverities {
+				// WHEN: Alert with unmapped severity is processed
+				sp := createTestSignalProcessing("test-unmapped", "default")
+				sp.Spec.Signal.Severity = tc.Severity
 
-				// WHEN: Severity is classified
 				result, err := severityClassifier.ClassifySeverity(ctx, sp)
 
-				// THEN: System falls back to "unknown" gracefully
-				Expect(err).ToNot(HaveOccurred(), 
-					"System should handle unmapped severity %q gracefully", unknownSeverity)
-				Expect(result.Severity).To(Equal("unknown"),
-					"Unmapped severity %q should fall back to 'unknown'", unknownSeverity)
-				Expect(result.Source).To(Equal("fallback"),
-					"Source should indicate fallback was used")
-
-				// BUSINESS OUTCOME: System continues processing instead of failing
+				// THEN: Operator-defined fallback is used (not system-imposed "unknown")
+				Expect(err).ToNot(HaveOccurred(),
+					"Policy-defined fallback should handle unmapped severity %q", tc.Severity)
+				Expect(result.Severity).To(Equal(tc.ExpectedFallback),
+					"Fallback should use operator policy: %s", tc.Rationale)
+				Expect(result.Source).To(Equal("rego-policy"),
+					"Source should be 'rego-policy' (not 'fallback') - operator defined behavior")
 			}
+
+			// BUSINESS OUTCOME VERIFIED:
+			// ✅ Operator controls unmapped severity handling (not system)
+			// ✅ Conservative operators can escalate unknowns to critical
+			// ✅ Permissive operators can downgrade unknowns to info (tested elsewhere)
+			// ✅ No opinionated system behavior imposed on customers
 		})
 	})
 
