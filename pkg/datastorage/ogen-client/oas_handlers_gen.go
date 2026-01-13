@@ -1610,6 +1610,10 @@ func (s *Server) handleListWorkflowsRequest(args [0]string, argsEscaped bool, w 
 					In:   "query",
 				}: params.Component,
 				{
+					Name: "workflow_name",
+					In:   "query",
+				}: params.WorkflowName,
+				{
 					Name: "limit",
 					In:   "query",
 				}: params.Limit,

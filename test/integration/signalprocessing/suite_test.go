@@ -467,6 +467,60 @@ else := {"business_unit": "unknown", "criticality": "medium", "confidence": 0.5,
 	)
 	Expect(err).NotTo(HaveOccurred())
 
+	// Create severity policy file for BR-SP-105, DD-SEVERITY-001
+	severityPolicyFile, err := os.CreateTemp("", "severity-*.rego")
+	Expect(err).NotTo(HaveOccurred())
+	_, err = severityPolicyFile.WriteString(`package signalprocessing.severity
+import rego.v1
+# BR-SP-105: Severity Determination via Rego Policy
+# DD-SEVERITY-001: Strategy B - Policy-Defined Fallback
+determine_severity := "critical" if {
+	input.signal.severity == "Sev1"
+} else := "critical" if {
+	input.signal.severity == "P0"
+} else := "critical" if {
+	input.signal.severity == "P1"
+} else := "warning" if {
+	input.signal.severity == "Sev2"
+} else := "warning" if {
+	input.signal.severity == "P2"
+} else := "info" if {
+	input.signal.severity == "Sev3"
+} else := "info" if {
+	input.signal.severity == "P3"
+} else := "critical" if {
+	# Fallback: unmapped → critical (conservative, operator-defined)
+	true
+}
+`)
+	Expect(err).NotTo(HaveOccurred())
+	_ = severityPolicyFile.Close()
+
+	// Initialize Severity Classifier (BR-SP-105, DD-SEVERITY-001)
+	severityClassifier := classifier.NewSeverityClassifier(
+		k8sManager.GetClient(),
+		logger,
+	)
+
+	// Load severity policy
+	severityPolicyContent, err := os.ReadFile(severityPolicyFile.Name())
+	Expect(err).NotTo(HaveOccurred())
+	err = severityClassifier.LoadRegoPolicy(string(severityPolicyContent))
+	Expect(err).NotTo(HaveOccurred())
+
+	// Set policy path for hot-reload (must be done before StartHotReload)
+	severityClassifier.SetPolicyPath(severityPolicyFile.Name())
+
+	// BR-SP-072: Start hot-reload for Severity Classifier (DD-SEVERITY-001)
+	err = severityClassifier.StartHotReload(ctx)
+	Expect(err).NotTo(HaveOccurred())
+
+	// Schedule cleanup of business and severity policy files
+	DeferCleanup(func() {
+		_ = os.Remove(businessPolicyFile.Name())
+		_ = os.Remove(severityPolicyFile.Name())
+	})
+
 	// Initialize owner chain builder (Day 7 integration)
 	ownerChainBuilder := ownerchain.NewBuilder(k8sManager.GetClient(), logger)
 
@@ -527,10 +581,11 @@ result := {}
 		EnvClassifier:      envClassifier,
 		PriorityAssigner:   priorityEngine, // PriorityEngine implements PriorityAssigner interface
 		BusinessClassifier: businessClassifier,
-		RegoEngine:         regoEngine,        // BR-SP-102, BR-SP-104: CustomLabels extraction
-		LabelDetector:      labelDetector,     // BR-SP-101: Detected labels
-		K8sEnricher:        k8sEnricher,       // BR-SP-001: K8s context enrichment (interface)
-		OwnerChainBuilder:  ownerChainBuilder, // BR-SP-100: Owner chain analysis
+		SeverityClassifier: severityClassifier, // BR-SP-105, DD-SEVERITY-001: Severity determination
+		RegoEngine:         regoEngine,         // BR-SP-102, BR-SP-104: CustomLabels extraction
+		LabelDetector:      labelDetector,      // BR-SP-101: Detected labels
+		K8sEnricher:        k8sEnricher,        // BR-SP-001: K8s context enrichment (interface)
+		OwnerChainBuilder:  ownerChainBuilder,  // BR-SP-100: Owner chain analysis
 	}).SetupWithManager(k8sManager)
 	Expect(err).NotTo(HaveOccurred())
 
