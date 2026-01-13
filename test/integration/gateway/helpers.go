@@ -1331,7 +1331,13 @@ func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
 
 // createGatewayServer creates a Gateway server with shared K8s client for integration tests
 func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sClient client.Client) (*gateway.Server, error) {
-	return gateway.NewServerWithK8sClient(cfg, testLogger, nil, k8sClient)
+	// Create isolated Prometheus registry for this Gateway instance
+	// This prevents "duplicate metrics collector registration" panics when
+	// multiple Gateway servers are created in parallel tests
+	registry := prometheus.NewRegistry()
+	metricsInstance := metrics.NewMetricsWithRegistry(registry)
+	
+	return gateway.NewServerWithK8sClient(cfg, testLogger, metricsInstance, k8sClient)
 }
 
 // SignalBuilder provides optional fields for creating test signals
