@@ -58,9 +58,10 @@ import (
 )
 
 // TODO: This test requires investigation of Gateway's deduplication behavior in integration tier
-// Issue: ProcessSignal() returns StatusCreated for duplicate instead of StatusAccepted
-// Possible causes: CRD status updates not visible to deduplication logic, timing issues
-var _ = PDescribe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", Label("deduplication", "integration", "status-tracking", "pending-dedup-investigation"), func() {
+// Test validates status-based deduplication tracking per DD-GATEWAY-011
+// Fixed: Added Eventually() after status updates to ensure K8s API propagation
+// before deduplication check runs
+var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", Label("deduplication", "integration", "status-tracking"), func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string
@@ -138,16 +139,24 @@ var _ = PDescribe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)",
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred(), "CRD should exist")
 
-			testLogger.Info("Step 3: Set CRD state to Pending (RO has picked it up)")
-			crd.Status.OverallPhase = "Pending"
-			err = k8sClient.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+		testLogger.Info("Step 3: Set CRD state to Pending (RO has picked it up)")
+		crd.Status.OverallPhase = "Pending"
+		err = k8sClient.Status().Update(ctx, crd)
+		Expect(err).ToNot(HaveOccurred())
 
-			testLogger.Info("Step 4: Send duplicate signal")
-			response2, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response2.Status).To(Equal(gateway.StatusAccepted), "Duplicate signal should be accepted")
-			Expect(response2.Duplicate).To(BeTrue(), "Response should indicate duplicate")
+		// Wait for status update to propagate (K8s API eventual consistency)
+		Eventually(func() string {
+			var updated remediationv1alpha1.RemediationRequest
+			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, &updated)
+			return string(updated.Status.OverallPhase)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
+			"Status update should propagate before deduplication check")
+
+		testLogger.Info("Step 4: Send duplicate signal")
+		response2, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response2.Status).To(Equal(gateway.StatusDuplicate), "Duplicate signal should return StatusDuplicate")
+		Expect(response2.Duplicate).To(BeTrue(), "Response should indicate duplicate")
 
 			testLogger.Info("Step 5: BUSINESS OUTCOME - RO can see duplicate count in RR status")
 			// Refresh CRD to see status updates
@@ -198,20 +207,29 @@ var _ = PDescribe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)",
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
-			crd.Status.OverallPhase = "Pending"
-			err = k8sClient.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+		crd.Status.OverallPhase = "Pending"
+		err = k8sClient.Status().Update(ctx, crd)
+		Expect(err).ToNot(HaveOccurred())
 
-			testLogger.Info("Step 3: Same alert fires again (pod still crash-looping)")
-			response2, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response2.Status).To(Equal(gateway.StatusAccepted),
-				"Duplicate alert should be accepted, not create new incident")
+		// Wait for status update to propagate
+		Eventually(func() string {
+			var updated remediationv1alpha1.RemediationRequest
+			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, &updated)
+			return string(updated.Status.OverallPhase)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
+			"Status update should propagate before deduplication check")
 
-			testLogger.Info("Step 4: Alert fires a third time (escalating situation)")
-			response3, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response3.Status).To(Equal(gateway.StatusAccepted))
+		testLogger.Info("Step 3: Same alert fires again (pod still crash-looping)")
+		response2, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response2.Status).To(Equal(gateway.StatusDuplicate),
+			"Duplicate alert should return StatusDuplicate, not create new incident")
+
+		testLogger.Info("Step 4: Alert fires a third time (escalating situation)")
+		response3, err := gwServer.ProcessSignal(ctx, signal)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response3.Status).To(Equal(gateway.StatusDuplicate),
+			"Third duplicate should also return StatusDuplicate")
 
 			testLogger.Info("Step 5: BUSINESS OUTCOME - Accurate occurrence count for SLA reporting")
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
@@ -263,16 +281,24 @@ var _ = PDescribe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)",
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
 			Expect(err).ToNot(HaveOccurred())
 
-			crd.Status.OverallPhase = "Pending"
-			err = k8sClient.Status().Update(ctx, crd)
-			Expect(err).ToNot(HaveOccurred())
+		crd.Status.OverallPhase = "Pending"
+		err = k8sClient.Status().Update(ctx, crd)
+		Expect(err).ToNot(HaveOccurred())
 
-			testLogger.Info("Step 3: Same alert fires 9 more times (storm pattern)")
+		// Wait for status update to propagate
+		Eventually(func() string {
+			var updated remediationv1alpha1.RemediationRequest
+			_ = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, &updated)
+			return string(updated.Status.OverallPhase)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal("Pending"),
+			"Status update should propagate before deduplication check")
+
+		testLogger.Info("Step 3: Same alert fires 9 more times (storm pattern)")
 			for i := 2; i <= 10; i++ {
-				resp, err := gwServer.ProcessSignal(ctx, signal)
-				Expect(err).ToNot(HaveOccurred())
-				Expect(resp.Status).To(Equal(gateway.StatusAccepted),
-					fmt.Sprintf("Alert %d should be deduplicated (same fingerprint)", i))
+			resp, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.Status).To(Equal(gateway.StatusDuplicate),
+				fmt.Sprintf("Alert %d should be deduplicated (StatusDuplicate)", i))
 				time.Sleep(10 * time.Millisecond) // Small delay between signals
 			}
 

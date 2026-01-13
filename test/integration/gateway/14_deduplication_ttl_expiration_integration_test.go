@@ -48,9 +48,12 @@ import (
 	"github.com/google/uuid"
 )
 
-// TODO: This test requires Gateway TTL configuration (default 5m) to be reduced to ~10s for integration tests
-// Current workaround: Skip in integration tier, keep in E2E tier where deployment YAML sets TTL=10s
-var _ = PDescribe("Test 14: Deduplication TTL Expiration (Integration)", Label("deduplication", "integration", "ttl", "pending-ttl-config"), Ordered, func() {
+// TODO: Gateway no longer uses TTL-based deduplication (as of DD-GATEWAY-011)
+// Gateway switched to pure status-based deduplication using K8s CRDs
+// pkg/gateway/server.go line 1497: "Redis is no longer used for deduplication state"
+// This test validates a feature that no longer exists in the current architecture
+// Recommendation: Keep this test in E2E tier only, or redesign for status-based deduplication
+var _ = PDescribe("Test 14: Deduplication TTL Expiration (Integration)", Label("deduplication", "integration", "ttl", "pending-no-ttl-implementation"), Ordered, func() {
 	var (
 		testLogger    logr.Logger
 		testNamespace string
