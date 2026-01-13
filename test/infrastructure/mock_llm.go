@@ -106,6 +106,10 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	)
 
 	output, err := buildCmd.CombinedOutput()
+	
+	// ALWAYS show build output for debugging (especially to verify --no-cache)
+	_, _ = fmt.Fprintf(writer, "\n📋 Podman Build Output:\n%s\n", string(output))
+	
 	if err != nil {
 		return "", fmt.Errorf("failed to build Mock LLM image: %w\nOutput: %s", err, string(output))
 	}
