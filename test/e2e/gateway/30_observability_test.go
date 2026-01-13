@@ -185,7 +185,7 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can monitor deduplication effectiveness for all signal types
 			// ✅ Prometheus query: rate(gateway_signals_deduplicated_total[5m]) / rate(gateway_signals_received_total[5m])
-			// ✅ Deduplication rate tracking enables TTL tuning
+			// ✅ Deduplication rate tracking enables CRD lifecycle optimization
 		})
 	})
 
