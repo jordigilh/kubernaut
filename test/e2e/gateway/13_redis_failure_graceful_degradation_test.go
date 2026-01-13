@@ -61,7 +61,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testNamespace = GenerateUniqueNamespace("redis-fail")
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
 		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
 
@@ -313,7 +313,7 @@ var _ = Describe("Test 13: Redis Failure Graceful Degradation (BR-GATEWAY-073, B
 		testLogger.Info("Step 7: Verify CRD creation")
 		var crdList remediationv1alpha1.RemediationRequestList
 		Eventually(func() int {
-			k8sClient := getKubernetesClientSafe()
+			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
 			if k8sClient == nil {
 				if err := GetLastK8sClientError(); err != nil {
 					testLogger.V(1).Info("Failed to get K8s client", "error", err)

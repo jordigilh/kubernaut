@@ -57,7 +57,7 @@ var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", fun
 			testCounter)
 
 		// Setup test clients
-		// TODO (GW Team): k8sClient = getKubernetesClient()
+		// TODO (GW Team): // k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 
 		// Ensure unique test namespace exists
 

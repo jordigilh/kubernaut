@@ -206,6 +206,12 @@ func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse {
 
 // getKubernetesClient creates a Kubernetes client for CRD verification
 // This function may panic on error - use getKubernetesClientSafe for Eventually calls
+//
+// DEPRECATED (DD-E2E-K8S-CLIENT-001): Use suite-level k8sClient instead
+// This function creates a new K8s client on every call, leading to rate limiter contention
+// when 100+ tests run in parallel (1200 clients total). Suite-level client creates 1 client
+// per process (12 total), eliminating rate limiting issues.
+// See docs/handoff/E2E_RATE_LIMITER_ROOT_CAUSE_JAN13_2026.md for details.
 func getKubernetesClient() client.Client {
 	// Load kubeconfig from standard Kind location
 	homeDir, err := os.UserHomeDir()

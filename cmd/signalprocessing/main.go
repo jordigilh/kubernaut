@@ -255,6 +255,41 @@ func main() {
 	setupLog.Info("business classifier configured successfully")
 
 	// ========================================
+	// SEVERITY CLASSIFIER (MANDATORY)
+	// ========================================
+	// BR-SP-105: Severity determination via Rego policy
+	// DD-SEVERITY-001: Strategy B - Policy-defined fallback (operator control)
+	severityClassifier := classifier.NewSeverityClassifier(
+		mgr.GetClient(),
+		ctrl.Log.WithName("classifier.severity"),
+	)
+	severityClassifier.SetPolicyPath("/etc/signalprocessing/policies/severity.rego")
+	
+	// Load policy from file
+	severityPolicyContent, err := os.ReadFile("/etc/signalprocessing/policies/severity.rego")
+	if err != nil {
+		setupLog.Error(err, "FATAL: severity policy is mandatory but failed to load",
+			"policyPath", "/etc/signalprocessing/policies/severity.rego",
+			"hint", "Ensure the policy file is mounted via ConfigMap/Secret")
+		os.Exit(1)
+	}
+	if err := severityClassifier.LoadRegoPolicy(string(severityPolicyContent)); err != nil {
+		setupLog.Error(err, "FATAL: severity policy validation failed",
+			"policyPath", "/etc/signalprocessing/policies/severity.rego",
+			"hint", "Check Rego policy syntax and ensure it returns critical/warning/info")
+		os.Exit(1)
+	}
+	setupLog.Info("severity classifier configured successfully")
+	
+	// BR-SP-072: Start hot-reload for severity policy
+	if err := severityClassifier.StartHotReload(ctx); err != nil {
+		setupLog.Error(err, "FATAL: severity policy hot-reload failed",
+			"policyPath", "/etc/signalprocessing/policies/severity.rego")
+		os.Exit(1)
+	}
+	setupLog.Info("severity policy hot-reload started", "policyHash", severityClassifier.GetPolicyHash())
+
+	// ========================================
 	// ENRICHMENT COMPONENTS SETUP
 	// ========================================
 	// BR-SP-001: Kubernetes context enrichment
@@ -323,6 +358,7 @@ func main() {
 		EnvClassifier:      envClassifier,
 		PriorityAssigner:   priorityEngine,  // PriorityEngine implements PriorityAssigner interface
 		BusinessClassifier: businessClassifier,
+		SeverityClassifier: severityClassifier, // BR-SP-105: Severity determination (DD-SEVERITY-001)
 		RegoEngine:         regoEngine,
 		OwnerChainBuilder:  ownerChainBuilder,
 		LabelDetector:      labelDetector,

@@ -52,7 +52,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		ctx = context.Background()
 
 		// Setup test clients
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for error handling tests")
 
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)

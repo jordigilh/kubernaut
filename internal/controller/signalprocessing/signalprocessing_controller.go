@@ -101,9 +101,10 @@ type SignalProcessingReconciler struct {
 
 	// Day 4-6 Classifiers (Rego-based, per IMPLEMENTATION_PLAN_V1.31.md)
 	// These are MANDATORY - fail loudly if nil or on error
-	EnvClassifier      EnvironmentClassifier          // BR-SP-051: Environment classification (interface for testability)
-	PriorityAssigner   PriorityAssigner               // BR-SP-070: Priority assignment (interface for testability)
-	BusinessClassifier *classifier.BusinessClassifier // BR-SP-002, BR-SP-080, BR-SP-081
+	EnvClassifier       EnvironmentClassifier          // BR-SP-051: Environment classification (interface for testability)
+	PriorityAssigner    PriorityAssigner               // BR-SP-070: Priority assignment (interface for testability)
+	BusinessClassifier  *classifier.BusinessClassifier // BR-SP-002, BR-SP-080, BR-SP-081
+	SeverityClassifier  *classifier.SeverityClassifier // BR-SP-105: Severity determination (DD-SEVERITY-001)
 
 	// Day 7 Owner Chain Builder (per IMPLEMENTATION_PLAN_V1.31.md)
 	// This is OPTIONAL - controller falls back to inline implementation if nil
@@ -509,14 +510,37 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		return ctrl.Result{}, err
 	}
 
+	// 3. Severity Determination (BR-SP-105, DD-SEVERITY-001) - MANDATORY
+	var severityResult *classifier.SeverityResult
+	if r.SeverityClassifier != nil {
+		severityResult, err = r.SeverityClassifier.ClassifySeverity(ctx, sp)
+		if err != nil {
+			// DD-005: Track phase processing failure
+			r.Metrics.IncrementProcessingTotal("classifying", "failure")
+			r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
+			logger.Error(err, "Severity determination failed",
+				"externalSeverity", signal.Severity,
+				"hint", "Check Rego policy has else clause for unmapped values")
+			return ctrl.Result{}, err
+		}
+	}
+
 	// BR-SP-110: Prepare classification condition message (will be set inside atomic update)
 	classificationMessage := fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s)",
 		envClass.Environment, envClass.Source,
 		priorityAssignment.Priority, priorityAssignment.Source)
+	
+	// Add severity to classification message if determined
+	if severityResult != nil {
+		classificationMessage = fmt.Sprintf("Classified: environment=%s (source=%s), priority=%s (source=%s), severity=%s (source=%s)",
+			envClass.Environment, envClass.Source,
+			priorityAssignment.Priority, priorityAssignment.Source,
+			severityResult.Severity, severityResult.Source)
+	}
 
 	// ========================================
 	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidate: EnvironmentClassification + PriorityAssignment + Phase + Conditions → 1 API call
+	// Consolidate: EnvironmentClassification + PriorityAssignment + Severity + Phase + Conditions → 1 API call
 	// ========================================
 	oldPhase := sp.Status.Phase
 	updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
@@ -524,6 +548,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		// Apply classification updates after refetch
 		sp.Status.EnvironmentClassification = envClass
 		sp.Status.PriorityAssignment = priorityAssignment
+		// DD-SEVERITY-001: Set normalized severity
+		if severityResult != nil {
+			sp.Status.Severity = severityResult.Severity
+		}
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
 		// BR-SP-110: Set condition AFTER refetch to prevent wipe
 		spconditions.SetClassificationComplete(sp, true, "", classificationMessage)

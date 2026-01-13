@@ -25,7 +25,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithCancel(context.Background())
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 
 		// Generate unique namespace for test isolation
 		testCounter++

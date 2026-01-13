@@ -46,7 +46,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = getKubernetesClient()
+		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
 		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
 		// This eliminates flakiness caused by tests interfering with each other's data

@@ -206,8 +206,9 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 // BR-ORCH-027/028, BR-AUDIT-005 Gap #8
 // ========================================
 
-// initializeTimeoutDefaults initializes status.timeoutConfig with controller defaults.
-// Only runs on first reconcile when status.timeoutConfig is nil.
+// populateTimeoutDefaults populates status.timeoutConfig with controller defaults.
+// This is a pure function that modifies the RR in-place without performing status updates.
+// Designed to be called from within AtomicStatusUpdate callbacks (DD-PERF-001).
 //
 // Per Gap #8 (BR-AUDIT-005): RO owns timeout initialization, operators can override later.
 // This ensures:
@@ -215,18 +216,24 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 // - Operator modifications are preserved across reconciles
 // - Audit trail can track initial configuration (Gap #8: orchestrator.lifecycle.created)
 //
+// Validation (REFACTOR enhancement):
+// - Ensures all timeouts are positive (>0)
+// - Logs warnings for unusual timeout values
+// - Per-phase timeouts should not exceed global timeout
+//
 // Reference:
 // - BR-ORCH-027 (Global timeout)
 // - BR-ORCH-028 (Per-phase timeouts)
 // - Gap #8: TimeoutConfig moved to status for operator mutability
+// - DD-PERF-001: No status updates in helper methods
 //
 // Parameters:
-// - ctx: Context for K8s API calls
-// - rr: RemediationRequest to initialize (modified in-place)
+// - ctx: Context for logging
+// - rr: RemediationRequest to populate (modified in-place)
 //
 // Returns:
-// - error: Non-nil if status update fails
-func (r *Reconciler) initializeTimeoutDefaults(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+// - bool: true if TimeoutConfig was populated, false if already initialized
+func (r *Reconciler) populateTimeoutDefaults(ctx context.Context, rr *remediationv1.RemediationRequest) bool {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name, "namespace", rr.Namespace)
 
 	// Only initialize if status.timeoutConfig is nil (first reconcile)
@@ -236,7 +243,16 @@ func (r *Reconciler) initializeTimeoutDefaults(ctx context.Context, rr *remediat
 			"processing", rr.Status.TimeoutConfig.Processing,
 			"analyzing", rr.Status.TimeoutConfig.Analyzing,
 			"executing", rr.Status.TimeoutConfig.Executing)
-		return nil // Already initialized, preserve existing values
+		return false // Already initialized, preserve existing values
+	}
+
+	// REFACTOR: Validate controller timeouts before applying
+	// This prevents configuration errors from propagating to RRs
+	if err := r.validateControllerTimeouts(); err != nil {
+		logger.Error(err, "Controller timeout configuration invalid, using safe defaults")
+		// Fallback to safe defaults if controller config is invalid
+		rr.Status.TimeoutConfig = r.getSafeDefaultTimeouts()
+		return true
 	}
 
 	// Set defaults from controller config
@@ -247,19 +263,69 @@ func (r *Reconciler) initializeTimeoutDefaults(ctx context.Context, rr *remediat
 		Executing:  &metav1.Duration{Duration: r.timeouts.Executing},
 	}
 
-	// Update status (single API call)
-	if err := r.client.Status().Update(ctx, rr); err != nil {
-		logger.Error(err, "Failed to initialize timeout defaults in status")
-		return fmt.Errorf("failed to initialize timeout defaults: %w", err)
-	}
-
-	logger.Info("Initialized timeout defaults in status.timeoutConfig",
+	logger.Info("Populated timeout defaults in status.timeoutConfig",
 		"global", r.timeouts.Global,
 		"processing", r.timeouts.Processing,
 		"analyzing", r.timeouts.Analyzing,
 		"executing", r.timeouts.Executing)
 
+	return true
+}
+
+// validateControllerTimeouts validates that controller-level timeout configuration is sane.
+// REFACTOR enhancement: Prevents invalid configuration from affecting RRs.
+//
+// Validation rules:
+// - All timeouts must be positive (>0)
+// - Per-phase timeouts should not exceed global timeout
+// - Global timeout should be at least 1 minute
+//
+// Returns:
+// - error: Non-nil if validation fails
+func (r *Reconciler) validateControllerTimeouts() error {
+	if r.timeouts.Global <= 0 {
+		return fmt.Errorf("global timeout must be positive, got %v", r.timeouts.Global)
+	}
+	if r.timeouts.Global < 1*time.Minute {
+		return fmt.Errorf("global timeout too short (%v), must be at least 1 minute", r.timeouts.Global)
+	}
+	if r.timeouts.Processing <= 0 {
+		return fmt.Errorf("processing timeout must be positive, got %v", r.timeouts.Processing)
+	}
+	if r.timeouts.Analyzing <= 0 {
+		return fmt.Errorf("analyzing timeout must be positive, got %v", r.timeouts.Analyzing)
+	}
+	if r.timeouts.Executing <= 0 {
+		return fmt.Errorf("executing timeout must be positive, got %v", r.timeouts.Executing)
+	}
+
+	// Warn if per-phase timeouts exceed global (not fatal, but suspicious)
+	if r.timeouts.Processing > r.timeouts.Global {
+		return fmt.Errorf("processing timeout (%v) exceeds global timeout (%v)", r.timeouts.Processing, r.timeouts.Global)
+	}
+	if r.timeouts.Analyzing > r.timeouts.Global {
+		return fmt.Errorf("analyzing timeout (%v) exceeds global timeout (%v)", r.timeouts.Analyzing, r.timeouts.Global)
+	}
+	if r.timeouts.Executing > r.timeouts.Global {
+		return fmt.Errorf("executing timeout (%v) exceeds global timeout (%v)", r.timeouts.Executing, r.timeouts.Global)
+	}
+
 	return nil
+}
+
+// getSafeDefaultTimeouts returns safe fallback timeout values.
+// Used when controller configuration is invalid.
+// REFACTOR enhancement: Ensures system never operates with zero timeouts.
+//
+// Returns:
+// - *remediationv1.TimeoutConfig: Safe default configuration
+func (r *Reconciler) getSafeDefaultTimeouts() *remediationv1.TimeoutConfig {
+	return &remediationv1.TimeoutConfig{
+		Global:     &metav1.Duration{Duration: 1 * time.Hour},
+		Processing: &metav1.Duration{Duration: 5 * time.Minute},
+		Analyzing:  &metav1.Duration{Duration: 10 * time.Minute},
+		Executing:  &metav1.Duration{Duration: 30 * time.Minute},
+	}
 }
 
 // Reconcile implements the reconciliation loop for RemediationRequest.
@@ -353,25 +419,15 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// Initialize phase + StartTime + TimeoutConfig in single API call
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
 		// Gap #8: Initialize TimeoutConfig defaults on first reconcile
+		// REFACTOR: Use extracted helper method for timeout initialization
 		// ========================================
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
 
 			// Gap #8: Initialize TimeoutConfig with controller defaults
-			if rr.Status.TimeoutConfig == nil {
-				rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
-					Global:     &metav1.Duration{Duration: r.timeouts.Global},
-					Processing: &metav1.Duration{Duration: r.timeouts.Processing},
-					Analyzing:  &metav1.Duration{Duration: r.timeouts.Analyzing},
-					Executing:  &metav1.Duration{Duration: r.timeouts.Executing},
-				}
-				logger.Info("Initialized timeout defaults in status.timeoutConfig",
-					"global", r.timeouts.Global,
-					"processing", r.timeouts.Processing,
-					"analyzing", r.timeouts.Analyzing,
-					"executing", r.timeouts.Executing)
-			}
+			// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
+			r.populateTimeoutDefaults(ctx, rr)
 
 			return nil
 		}); err != nil {

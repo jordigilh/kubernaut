@@ -114,7 +114,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testClient = getKubernetesClient()
+		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 		_ = testClient // TODO (GW Team): Use for K8s operations
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure

@@ -64,7 +64,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 	BeforeEach(func() {
 		// Per-spec setup for parallel execution
 		ctx = context.Background()
-		testClient = getKubernetesClient()
+		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
 		// Ensure shared namespace exists (idempotent, thread-safe)
 		CreateNamespaceAndWait(ctx, testClient, sharedNamespace)

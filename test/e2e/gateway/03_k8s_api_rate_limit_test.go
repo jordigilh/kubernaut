@@ -65,7 +65,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testNamespace = fmt.Sprintf("rate-limit-%s", uuid.New().String()[:8])
 
 		// Get K8s client and create namespace
-		k8sClient = getKubernetesClient()
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
 		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
 			"Failed to create test namespace")
@@ -232,15 +232,16 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		var crdCount int
 		Eventually(func() error {
 			// Get fresh client to handle API server reconnection
-			freshClient := getKubernetesClientSafe()
-			if freshClient == nil {
+			// Use suite k8sClient (DD-E2E-K8S-CLIENT-001)
+			// freshClient removed - using suite k8sClient
+			if false { // SKIP: freshClient error check no longer needed
 				if err := GetLastK8sClientError(); err != nil {
 					return fmt.Errorf("failed to create K8s client: %w", err)
 				}
 				return fmt.Errorf("failed to create K8s client (unknown error)")
 			}
 			crdList := &remediationv1alpha1.RemediationRequestList{}
-			if err := freshClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
+			if err := k8sClient.List(testCtx, crdList, client.InNamespace(testNamespace)); err != nil {
 				testLogger.V(1).Info("  Retrying CRD list...", "error", err)
 				return err
 			}
