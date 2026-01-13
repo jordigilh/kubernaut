@@ -164,13 +164,18 @@ var _ = Describe("Observability E2E Tests", func() {
 				},
 			})
 
-			// First request (creates CRD)
-			resp1 := SendWebhook(gatewayURL, payload)
-			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
+		// First request (creates CRD)
+		resp1 := SendWebhook(gatewayURL, payload)
+		Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
-			// Second request (deduplicated)
-			resp2 := SendWebhook(gatewayURL, payload)
-			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
+		// Wait for Gateway cache to sync CRD (E2E-specific delay)
+		// Gateway uses controller-runtime cache which has eventual consistency
+		// Integration tests don't need this because they use shared K8s client
+		time.Sleep(2 * time.Second)
+
+		// Second request (deduplicated)
+		resp2 := SendWebhook(gatewayURL, payload)
+		Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {

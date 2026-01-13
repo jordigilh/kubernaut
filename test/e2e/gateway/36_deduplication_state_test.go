@@ -158,17 +158,22 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			crd.Status.OverallPhase = "Pending"
 			err = testClient.Status().Update(ctx, crd)
 
-			// Wait for status update to propagate
-			Eventually(func() string {
-				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-				if updatedCRD == nil {
-					return ""
-				}
-				return string(updatedCRD.Status.OverallPhase)
-			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
+		// Wait for status update to propagate
+		Eventually(func() string {
+			updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			if updatedCRD == nil {
+				return ""
+			}
+			return string(updatedCRD.Status.OverallPhase)
+		}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
-			By("4. Send duplicate alert")
-			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+		// Wait for Gateway cache to sync CRD status (E2E-specific delay)
+		// Gateway uses controller-runtime cache which has eventual consistency
+		// Integration tests don't need this because they use shared K8s client
+		time.Sleep(2 * time.Second)
+
+		By("4. Send duplicate alert")
+		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 Accepted")
 
 			var response2 gateway.ProcessingResponse
@@ -259,17 +264,22 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			crd.Status.OverallPhase = "Processing"
 			err = testClient.Status().Update(ctx, crd)
 
-			// Wait for status update to propagate
-			Eventually(func() string {
-				updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
-				if updatedCRD == nil {
-					return ""
-				}
-				return string(updatedCRD.Status.OverallPhase)
-			}, 3*time.Second, 500*time.Millisecond).Should(Equal("Processing"))
+		// Wait for status update to propagate
+		Eventually(func() string {
+			updatedCRD := getCRDByName(ctx, testClient, sharedNamespace, crdName)
+			if updatedCRD == nil {
+				return ""
+			}
+			return string(updatedCRD.Status.OverallPhase)
+		}, 3*time.Second, 500*time.Millisecond).Should(Equal("Processing"))
 
-			By("3. Send duplicate alert")
-			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+		// Wait for Gateway cache to sync CRD status (E2E-specific delay)
+		// Gateway uses controller-runtime cache which has eventual consistency
+		// Integration tests don't need this because they use shared K8s client
+		time.Sleep(2 * time.Second)
+
+		By("3. Send duplicate alert")
+		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Duplicate alert should return 202 Accepted")
 
 			By("4. Verify occurrence count was incremented")
@@ -571,10 +581,15 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 					return ""
 				}
 				return string(updatedCRD.Status.OverallPhase)
-			}, 3*time.Second, 500*time.Millisecond).Should(Equal(string(remediationv1alpha1.PhaseBlocked)))
+		}, 3*time.Second, 500*time.Millisecond).Should(Equal(string(remediationv1alpha1.PhaseBlocked)))
 
-			By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
-			resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
+		// Wait for Gateway cache to sync CRD status (E2E-specific delay)
+		// Gateway uses controller-runtime cache which has eventual consistency
+		// Integration tests don't need this because they use shared K8s client
+		time.Sleep(2 * time.Second)
+
+		By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
+		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
 			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted),
 				"Non-terminal state (Blocked) should trigger duplicate (conservative: assume in-progress)")
 
