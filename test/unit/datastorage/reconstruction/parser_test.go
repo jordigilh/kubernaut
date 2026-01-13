@@ -102,28 +102,22 @@ var _ = Describe("Audit Event Parser", func() {
 	// NOTE: Additional event type tests will be added during GREEN phase implementation
 })
 
-// Test fixture factories
+// Test fixture factories - MINIMAL approach
+// NOTE: These fixtures test OUR parser logic, not ogen's type system.
+// Complex ogen structure validation belongs in integration tests with real DataStorage queries.
 func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+	// Minimal: only fields OUR parser logic needs
 	labels := ogenclient.GatewayAuditPayloadSignalLabels{"alertname": "HighCPU"}
 	annotations := ogenclient.GatewayAuditPayloadSignalAnnotations{"summary": "CPU usage is high"}
 
 	return ogenclient.AuditEvent{
-		Version:        "1.0",
 		EventType:      "gateway.signal.received",
 		EventTimestamp: timestamp,
-		EventCategory:  ogenclient.AuditEventEventCategoryGateway,
-		EventAction:    "signal.received",
-		EventOutcome:   ogenclient.AuditEventEventOutcomeSuccess,
 		CorrelationID:  "test-correlation-id",
-		EventID:        ogenclient.NewOptUUID(id),
 		EventData: ogenclient.AuditEventEventData{
-			Type: ogenclient.AuditEventEventDataGatewaySignalReceivedAuditEventEventData,
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
-				EventType:         ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:        ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
 				AlertName:         "HighCPU",
-				Fingerprint:       "test-fingerprint-123",
-				Namespace:         "default",
 				SignalLabels:      ogenclient.NewOptGatewayAuditPayloadSignalLabels(labels),
 				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(annotations),
 			},
@@ -132,49 +126,32 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 }
 
 func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+	// Minimal invalid: missing alert_name to test error handling
 	return ogenclient.AuditEvent{
-		Version:        "1.0",
 		EventType:      "gateway.signal.received",
 		EventTimestamp: timestamp,
-		EventCategory:  ogenclient.AuditEventEventCategoryGateway,
-		EventAction:    "signal.received",
-		EventOutcome:   ogenclient.AuditEventEventOutcomeFailure,
-		CorrelationID:  "test-correlation-id",
-		EventID:        ogenclient.NewOptUUID(id),
 		EventData: ogenclient.AuditEventEventData{
-			Type: ogenclient.AuditEventEventDataGatewaySignalReceivedAuditEventEventData,
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
-				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
-				AlertName:   "", // Missing alert_name - should cause error
-				Fingerprint: "test-fingerprint-456",
-				Namespace:   "default",
+				SignalType: ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:  "", // Missing - should cause error in our parser
 			},
 		},
 	}
 }
 
 func createOrchestratorLifecycleCreatedEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+	// Minimal: only TimeoutConfig fields our parser needs
 	tc := ogenclient.TimeoutConfig{
 		Global:     ogenclient.NewOptString("1h0m0s"),
 		Processing: ogenclient.NewOptString("10m0s"),
 		Analyzing:  ogenclient.NewOptString("15m0s"),
-		Executing:  ogenclient.NewOptString("30m0s"),
 	}
 
 	return ogenclient.AuditEvent{
-		Version:        "1.0",
 		EventType:      "orchestrator.lifecycle.created",
 		EventTimestamp: timestamp,
-		EventCategory:  ogenclient.AuditEventEventCategoryOrchestration,
-		EventAction:    "lifecycle.created",
-		EventOutcome:   ogenclient.AuditEventEventOutcomeSuccess,
-		CorrelationID:  "test-correlation-id",
-		EventID:        ogenclient.NewOptUUID(id),
 		EventData: ogenclient.AuditEventEventData{
-			Type: ogenclient.AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData,
 			RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
-				EventType:     ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
 				TimeoutConfig: ogenclient.OptTimeoutConfig{Value: tc, Set: true},
 			},
 		},
@@ -182,24 +159,17 @@ func createOrchestratorLifecycleCreatedEvent(timestamp time.Time, id uuid.UUID) 
 }
 
 func createOrchestratorEventWithPartialTimeout(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+	// Minimal: partial TimeoutConfig to test optional field handling
 	tc := ogenclient.TimeoutConfig{
 		Global: ogenclient.NewOptString("1h0m0s"),
-		// Other fields not set (testing partial TimeoutConfig)
+		// Other fields intentionally omitted to test parser's optional handling
 	}
 
 	return ogenclient.AuditEvent{
-		Version:        "1.0",
 		EventType:      "orchestrator.lifecycle.created",
 		EventTimestamp: timestamp,
-		EventCategory:  ogenclient.AuditEventEventCategoryOrchestration,
-		EventAction:    "lifecycle.created",
-		EventOutcome:   ogenclient.AuditEventEventOutcomeSuccess,
-		CorrelationID:  "test-correlation-id",
-		EventID:        ogenclient.NewOptUUID(id),
 		EventData: ogenclient.AuditEventEventData{
-			Type: ogenclient.AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData,
 			RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
-				EventType:     ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
 				TimeoutConfig: ogenclient.OptTimeoutConfig{Value: tc, Set: true},
 			},
 		},
