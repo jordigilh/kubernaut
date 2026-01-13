@@ -167,10 +167,21 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			return string(updatedCRD.Status.OverallPhase)
 		}, 3*time.Second, 500*time.Millisecond).Should(Equal("Pending"))
 
-		// Wait for Gateway cache to sync CRD status (E2E-specific delay)
-		// Gateway uses controller-runtime cache which has eventual consistency
-		// Integration tests don't need this because they use shared K8s client
-		time.Sleep(2 * time.Second)
+		// Verify Gateway can query this CRD by fingerprint (direct API server check)
+		// Query using the same field selector Gateway uses for deduplication
+		// This ensures the CRD is indexed and queryable before testing duplicate detection
+		Eventually(func() int {
+			var rrList remediationv1alpha1.RemediationRequestList
+			err := testClient.List(ctx, &rrList,
+				client.InNamespace(sharedNamespace),
+				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+			)
+			if err != nil {
+				return 0
+			}
+			return len(rrList.Items)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"CRD should be queryable by fingerprint before testing deduplication")
 
 		By("4. Send duplicate alert")
 		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
@@ -273,10 +284,21 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 			return string(updatedCRD.Status.OverallPhase)
 		}, 3*time.Second, 500*time.Millisecond).Should(Equal("Processing"))
 
-		// Wait for Gateway cache to sync CRD status (E2E-specific delay)
-		// Gateway uses controller-runtime cache which has eventual consistency
-		// Integration tests don't need this because they use shared K8s client
-		time.Sleep(2 * time.Second)
+		// Verify Gateway can query this CRD by fingerprint (direct API server check)
+		// Query using the same field selector Gateway uses for deduplication
+		// This ensures the CRD is indexed and queryable before testing duplicate detection
+		Eventually(func() int {
+			var rrList remediationv1alpha1.RemediationRequestList
+			err := testClient.List(ctx, &rrList,
+				client.InNamespace(sharedNamespace),
+				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+			)
+			if err != nil {
+				return 0
+			}
+			return len(rrList.Items)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"CRD should be queryable by fingerprint before testing deduplication")
 
 		By("3. Send duplicate alert")
 		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)
@@ -583,10 +605,21 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 				return string(updatedCRD.Status.OverallPhase)
 		}, 3*time.Second, 500*time.Millisecond).Should(Equal(string(remediationv1alpha1.PhaseBlocked)))
 
-		// Wait for Gateway cache to sync CRD status (E2E-specific delay)
-		// Gateway uses controller-runtime cache which has eventual consistency
-		// Integration tests don't need this because they use shared K8s client
-		time.Sleep(2 * time.Second)
+		// Verify Gateway can query this CRD by fingerprint (direct API server check)
+		// Query using the same field selector Gateway uses for deduplication
+		// This ensures the CRD is indexed and queryable before testing duplicate detection
+		Eventually(func() int {
+			var rrList remediationv1alpha1.RemediationRequestList
+			err := testClient.List(ctx, &rrList,
+				client.InNamespace(sharedNamespace),
+				client.MatchingFields{"spec.signalFingerprint": crd.Spec.SignalFingerprint},
+			)
+			if err != nil {
+				return 0
+			}
+			return len(rrList.Items)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"CRD should be queryable by fingerprint before testing deduplication")
 
 		By("3. Send alert again (should treat as DUPLICATE due to conservative fail-safe)")
 		resp2 := sendWebhook(gatewayURL, "/api/v1/signals/prometheus", prometheusPayload)

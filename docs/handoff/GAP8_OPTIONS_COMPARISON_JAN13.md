@@ -56,7 +56,7 @@
 
 #### 1. **Violates Separation of Concerns** 🚨
 - **Problem**: AuthWebhook suite now depends on RemediationOrchestrator controller
-- **Impact**: 
+- **Impact**:
   - AuthWebhook suite is for webhook server testing
   - Adding RO controller couples two independent concerns
   - Future RO changes may break AuthWebhook tests
@@ -203,7 +203,7 @@
    // test/infrastructure/authwebhook_e2e.go
    // Add RO image building (Phase 1)
    roImageName, err := buildROImageWithTag(...)
-   
+
    // Add RO deployment (Phase 5)
    if err := deployROToKind(kubeconfigPath, namespace, roImageName, writer); err != nil {
        return "", "", fmt.Errorf("failed to deploy RO: %w", err)
@@ -244,7 +244,7 @@
    var (
        auditClient *ogenclient.Client
    )
-   
+
    // In SynchronizedBeforeSuite (all processes):
    dataStorageURL := "http://localhost:28090" // RO E2E port
    auditClient, err = ogenclient.NewClient(dataStorageURL)
@@ -254,10 +254,10 @@
 3. **Update Test Context** (10 min):
    ```go
    // Change BeforeEach to use unique namespace per parallel process
-   testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s", 
-       GinkgoParallelProcess(), 
+   testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s",
+       GinkgoParallelProcess(),
        time.Now().Format("150405"))
-   
+
    // Remove manual TimeoutConfig init - let controller do it
    Eventually(func() bool {
        err := k8sClient.Get(ctx, ..., rr)
@@ -380,7 +380,7 @@ GinkgoWriter.Printf("✅ DataStorage audit client configured: %s\n", dataStorage
 package remediationorchestrator // Changed from authwebhook
 
 // Update testNamespace generation for parallel execution:
-testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s", 
+testNamespace = fmt.Sprintf("gap8-webhook-test-%d-%s",
     GinkgoParallelProcess(), // Support parallel execution
     time.Now().Format("150405"))
 
@@ -398,7 +398,7 @@ Eventually(func() bool {
     if err != nil {
         return false
     }
-    return rr.Status.TimeoutConfig != nil && 
+    return rr.Status.TimeoutConfig != nil &&
            rr.Status.TimeoutConfig.Global != nil
 }, 30*time.Second, 1*time.Second).Should(BeTrue(),
     "RO controller should initialize default TimeoutConfig")
@@ -473,7 +473,7 @@ make test-e2e-remediationorchestrator FOCUS="E2E-GAP8-01"
 | RemediationApprovalRequest approval | Manual approval | RemediationApprovalRequest | RAR E2E or AuthWebhook |
 | NotificationRequest deletion | Manual deletion | NotificationRequest | NR E2E or AuthWebhook |
 
-**Pattern**: If webhook tests CONTROLLER behavior → Controller's E2E suite  
+**Pattern**: If webhook tests CONTROLLER behavior → Controller's E2E suite
 **Pattern**: If webhook tests WEBHOOK SERVER → AuthWebhook E2E suite
 
 ---
@@ -497,8 +497,8 @@ make test-e2e-remediationorchestrator FOCUS="E2E-GAP8-01"
 
 ---
 
-**Document Version**: 1.0  
-**Created**: January 13, 2026  
-**Status**: ✅ **Analysis Complete - Option 2 Recommended**  
-**Next Step**: Implement Option 2 (30 minutes)  
+**Document Version**: 1.0
+**Created**: January 13, 2026
+**Status**: ✅ **Analysis Complete - Option 2 Recommended**
+**Next Step**: Implement Option 2 (30 minutes)
 **BR-AUDIT-005 v2.0**: Gap #8 - TimeoutConfig mutation audit capture

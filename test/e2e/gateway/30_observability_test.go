@@ -9,18 +9,23 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 var _ = Describe("Observability E2E Tests", func() {
 	var (
 		// TODO (GW Team): ctx           context.Context
 		cancel        context.CancelFunc
+		k8sClient     client.Client
 		testNamespace string
 		testCounter   int
 	)
 
 	BeforeEach(func() {
 		ctx, cancel = context.WithCancel(context.Background())
+		k8sClient = getKubernetesClient()
 
 		// Generate unique namespace for test isolation
 		testCounter++
@@ -168,10 +173,22 @@ var _ = Describe("Observability E2E Tests", func() {
 		resp1 := SendWebhook(gatewayURL, payload)
 		Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
-		// Wait for Gateway cache to sync CRD (E2E-specific delay)
-		// Gateway uses controller-runtime cache which has eventual consistency
-		// Integration tests don't need this because they use shared K8s client
-		time.Sleep(2 * time.Second)
+		// Verify CRD actually exists in K8s before sending duplicate
+		// Query API server directly (not Gateway's cache) to ensure CRD is queryable
+		// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
+		var fingerprint string
+		Eventually(func() int {
+			var rrList remediationv1alpha1.RemediationRequestList
+			err := k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
+			if err != nil {
+				return 0
+			}
+			if len(rrList.Items) > 0 {
+				fingerprint = rrList.Items[0].Spec.SignalFingerprint
+			}
+			return len(rrList.Items)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"CRD should exist in K8s before testing deduplication")
 
 		// Second request (deduplicated)
 		resp2 := SendWebhook(gatewayURL, payload)
