@@ -160,24 +160,31 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			GinkgoWriter.Printf("✅ TimeoutConfig initialized by RO controller: Global=%s\n",
 				rr.Status.TimeoutConfig.Global.Duration)
 
-			// ========================================
-			// WHEN: Operator modifies TimeoutConfig (simulates kubectl edit)
-			// ========================================
-			rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
-				Global:     &metav1.Duration{Duration: 45 * time.Minute},
-				Processing: &metav1.Duration{Duration: 12 * time.Minute},
-				Analyzing:  &metav1.Duration{Duration: 8 * time.Minute},
-				Executing:  &metav1.Duration{Duration: 20 * time.Minute},
-			}
+		// ========================================
+		// WHEN: Operator modifies TimeoutConfig (simulates kubectl edit)
+		// ========================================
+		// Re-fetch the latest RR to avoid conflicts with controller updates
+		err = k8sClient.Get(ctx, client.ObjectKey{
+			Namespace: testNamespace,
+			Name:      "rr-gap8-webhook",
+		}, rr)
+		Expect(err).ToNot(HaveOccurred())
 
-			GinkgoWriter.Printf("📝 Operator modifying TimeoutConfig: Global=%s, Processing=%s, Analyzing=%s, Executing=%s\n",
-				rr.Status.TimeoutConfig.Global.Duration,
-				rr.Status.TimeoutConfig.Processing.Duration,
-				rr.Status.TimeoutConfig.Analyzing.Duration,
-				rr.Status.TimeoutConfig.Executing.Duration)
+		rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
+			Global:     &metav1.Duration{Duration: 45 * time.Minute},
+			Processing: &metav1.Duration{Duration: 12 * time.Minute},
+			Analyzing:  &metav1.Duration{Duration: 8 * time.Minute},
+			Executing:  &metav1.Duration{Duration: 20 * time.Minute},
+		}
 
-			err = k8sClient.Status().Update(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
+		GinkgoWriter.Printf("📝 Operator modifying TimeoutConfig: Global=%s, Processing=%s, Analyzing=%s, Executing=%s\n",
+			rr.Status.TimeoutConfig.Global.Duration,
+			rr.Status.TimeoutConfig.Processing.Duration,
+			rr.Status.TimeoutConfig.Analyzing.Duration,
+			rr.Status.TimeoutConfig.Executing.Duration)
+
+		err = k8sClient.Status().Update(ctx, rr)
+		Expect(err).ToNot(HaveOccurred())
 
 			GinkgoWriter.Printf("✅ Status update submitted (webhook should intercept)\n")
 
