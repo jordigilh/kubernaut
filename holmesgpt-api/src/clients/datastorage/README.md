@@ -123,16 +123,16 @@ configuration = datastorage.Configuration(
 # Enter a context with an instance of the API client
 with datastorage.ApiClient(configuration) as api_client:
     # Create an instance of the API class
-    api_instance = datastorage.AuditWriteAPIApi(api_client)
-    audit_event_request = datastorage.AuditEventRequest() # AuditEventRequest | 
+    api_instance = datastorage.AuditReconstructionAPIApi(api_client)
+    correlation_id = 'rr-prometheus-alert-highcpu-abc123' # str | Unique correlation ID for the remediation lifecycle
 
     try:
-        # Create unified audit event
-        api_response = api_instance.create_audit_event(audit_event_request)
-        print("The response of AuditWriteAPIApi->create_audit_event:\n")
+        # Reconstruct RemediationRequest from audit trail
+        api_response = api_instance.reconstruct_remediation_request(correlation_id)
+        print("The response of AuditReconstructionAPIApi->reconstruct_remediation_request:\n")
         pprint(api_response)
     except ApiException as e:
-        print("Exception when calling AuditWriteAPIApi->create_audit_event: %s\n" % e)
+        print("Exception when calling AuditReconstructionAPIApi->reconstruct_remediation_request: %s\n" % e)
 
 ```
 
@@ -142,6 +142,7 @@ All URIs are relative to *http://localhost:8080*
 
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
+*AuditReconstructionAPIApi* | [**reconstruct_remediation_request**](docs/AuditReconstructionAPIApi.md#reconstruct_remediation_request) | **POST** /api/v1/audit/remediation-requests/{correlation_id}/reconstruct | Reconstruct RemediationRequest from audit trail
 *AuditWriteAPIApi* | [**create_audit_event**](docs/AuditWriteAPIApi.md#create_audit_event) | **POST** /api/v1/audit/events | Create unified audit event
 *AuditWriteAPIApi* | [**create_audit_events_batch**](docs/AuditWriteAPIApi.md#create_audit_events_batch) | **POST** /api/v1/audit/events/batch | Create audit events batch
 *AuditWriteAPIApi* | [**create_notification_audit**](docs/AuditWriteAPIApi.md#create_notification_audit) | **POST** /api/v1/audit/notifications | Create notification audit record
@@ -211,6 +212,7 @@ Class | Method | HTTP request | Description
  - [ProviderResponseSummary](docs/ProviderResponseSummary.md)
  - [QueryMetadata](docs/QueryMetadata.md)
  - [RFC7807Problem](docs/RFC7807Problem.md)
+ - [ReconstructionResponse](docs/ReconstructionResponse.md)
  - [ReleaseLegalHold200Response](docs/ReleaseLegalHold200Response.md)
  - [ReleaseLegalHoldRequest](docs/ReleaseLegalHoldRequest.md)
  - [RemediationApprovalAuditPayload](docs/RemediationApprovalAuditPayload.md)
@@ -222,6 +224,7 @@ Class | Method | HTTP request | Description
  - [SearchExecutionMetadata](docs/SearchExecutionMetadata.md)
  - [SignalProcessingAuditPayload](docs/SignalProcessingAuditPayload.md)
  - [TimeoutConfig](docs/TimeoutConfig.md)
+ - [ValidationResult](docs/ValidationResult.md)
  - [WorkflowCatalogCreatedPayload](docs/WorkflowCatalogCreatedPayload.md)
  - [WorkflowCatalogUpdatedFields](docs/WorkflowCatalogUpdatedFields.md)
  - [WorkflowCatalogUpdatedPayload](docs/WorkflowCatalogUpdatedPayload.md)

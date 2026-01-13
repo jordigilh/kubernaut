@@ -164,21 +164,21 @@ Kubernaut implements **defense-in-depth** testing with **EXPANDED unit test foun
 - **BDD Framework**: Ginkgo/Gomega for behavior-driven development (MANDATORY per [00-project-guidelines.mdc](mdc:.cursor/rules/00-project-guidelines.mdc))
 - **TDD Workflow**: Test-Driven Development is REQUIRED - write tests first, then implementation
 - **Business Requirements**: ALL tests must map to specific business requirements (BR-[CATEGORY]-[NUMBER] format)
-- **Test Organization**: 
+- **Test Organization**:
   - Test files use `_test.go` suffix
   - Package name matches the test directory (NO `_test` suffix): `package reconstruction` for tests in `test/unit/datastorage/reconstruction/`
   - **Import Pattern**: Import implementation package with alias to avoid naming conflicts
     ```go
     package reconstruction  // Same as test directory name
-    
+
     import (
         . "github.com/onsi/ginkgo/v2"
         . "github.com/onsi/gomega"
-        
+
         // Import implementation package with alias
         reconstructionpkg "github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
     )
-    
+
     var _ = Describe("Feature", func() {
         It("should work", func() {
             // Call implementation using alias

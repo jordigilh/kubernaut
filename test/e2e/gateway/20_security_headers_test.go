@@ -33,7 +33,6 @@ import (
 
 var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
@@ -42,7 +41,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "security-headers")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 

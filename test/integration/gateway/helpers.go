@@ -4,6 +4,7 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -32,8 +34,9 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
-	gatewayconfig "github.com/jordigilh/kubernaut/pkg/gateway/config"
+	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
+	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 // Suite-level namespace tracking for batch cleanup
@@ -263,8 +266,8 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 	// Create ServerConfig for tests (nested structure)
 	// Uses fast TTLs and low thresholds for rapid test execution
 	// DD-GATEWAY-012: NO Redis configuration - Gateway is Redis-free
-	cfg := &gatewayconfig.ServerConfig{
-		Server: gatewayconfig.ServerSettings{
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
 			ListenAddr:   ":8080",
 			ReadTimeout:  opts.ReadTimeout,
 			WriteTimeout: opts.WriteTimeout,
@@ -275,15 +278,15 @@ func StartTestGatewayWithOptions(ctx context.Context, k8sClient *K8sTestClient, 
 
 		// DD-GATEWAY-012: Redis REMOVED
 		// DD-AUDIT-003: Data Storage URL for audit event emission
-		Infrastructure: gatewayconfig.InfrastructureSettings{
+		Infrastructure: config.InfrastructureSettings{
 			DataStorageURL: dataStorageURL,
 		},
 
-		Processing: gatewayconfig.ProcessingSettings{
+		Processing: config.ProcessingSettings{
 			// DD-GATEWAY-011: Status-based deduplication
 			// Note: Environment and Priority settings removed (2025-12-06)
 			// Classification now owned by Signal Processing per DD-CATEGORIZATION-001
-			Retry: gatewayconfig.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
+			Retry: config.DefaultRetrySettings(), // BR-GATEWAY-111: K8s API retry configuration
 		},
 	}
 
@@ -1296,4 +1299,120 @@ func DecodeJSONResponse(resp *http.Response) (map[string]interface{}, error) {
 	var response map[string]interface{}
 	err := json.NewDecoder(resp.Body).Decode(&response)
 	return response, err
+}
+
+// ========================================
+// INTEGRATION TEST HELPERS (Added Jan 2026)
+// ========================================
+
+// createGatewayConfig creates a Gateway config for integration tests
+func createGatewayConfig(dataStorageURL string) *config.ServerConfig {
+	// Integration tests use real DataStorage from TEST_DATA_STORAGE_URL env var
+	if dataStorageURL == "" {
+		dataStorageURL = getDataStorageURL()
+	}
+
+	return &config.ServerConfig{
+		Server: config.ServerSettings{
+			ListenAddr: ":0", // Random port (we don't use HTTP in integration tests)
+		},
+		Infrastructure: config.InfrastructureSettings{
+			DataStorageURL: dataStorageURL,
+		},
+		Processing: config.ProcessingSettings{
+			Retry: config.DefaultRetrySettings(), // Enable K8s API retry (3 attempts)
+		},
+		// Middleware uses defaults
+	}
+}
+
+// createGatewayServer creates a Gateway server with shared K8s client for integration tests
+func createGatewayServer(cfg *config.ServerConfig, testLogger logr.Logger, k8sClient client.Client) (*gateway.Server, error) {
+	return gateway.NewServerWithK8sClient(cfg, testLogger, nil, k8sClient)
+}
+
+// SignalBuilder provides optional fields for creating test signals
+type SignalBuilder struct {
+	AlertName    string
+	Namespace    string
+	Kind         string // Alias for ResourceKind
+	ResourceKind string
+	Name         string // Alias for ResourceName
+	ResourceName string
+	Severity     string
+	Source       string // Source adapter name
+	Labels       map[string]string
+	Annotations  map[string]string
+}
+
+// createNormalizedSignal creates a NormalizedSignal for integration tests
+func createNormalizedSignal(builder SignalBuilder) *types.NormalizedSignal {
+	// Handle field aliases
+	if builder.Kind != "" {
+		builder.ResourceKind = builder.Kind
+	}
+	if builder.Name != "" {
+		builder.ResourceName = builder.Name
+	}
+
+	// Defaults
+	if builder.AlertName == "" {
+		builder.AlertName = "TestAlert"
+	}
+	if builder.Namespace == "" {
+		builder.Namespace = "default"
+	}
+	if builder.ResourceKind == "" {
+		builder.ResourceKind = "Pod"
+	}
+	if builder.ResourceName == "" {
+		builder.ResourceName = "test-pod"
+	}
+	if builder.Severity == "" {
+		builder.Severity = "critical"
+	}
+	if builder.Source == "" {
+		builder.Source = "prometheus-adapter"
+	}
+
+	// Generate fingerprint
+	fingerprint := generateFingerprint(builder.AlertName, builder.Namespace, builder.ResourceKind, builder.ResourceName)
+
+	now := time.Now()
+
+	// Default empty maps if nil
+	if builder.Labels == nil {
+		builder.Labels = map[string]string{}
+	}
+	if builder.Annotations == nil {
+		builder.Annotations = map[string]string{}
+	}
+
+	signal := &types.NormalizedSignal{
+		Fingerprint: fingerprint,
+		AlertName:   builder.AlertName,
+		Severity:    builder.Severity,
+		Namespace:   builder.Namespace,
+		Resource: types.ResourceIdentifier{
+			Kind:      builder.ResourceKind,
+			Name:      builder.ResourceName,
+			Namespace: builder.Namespace, // Set resource namespace
+		},
+		Labels:       builder.Labels,
+		Annotations:  builder.Annotations,
+		FiringTime:   now,
+		ReceivedTime: now,
+		SourceType:   "prometheus-alert",
+		Source:       builder.Source,
+		RawPayload:   json.RawMessage("{}"),
+	}
+
+	return signal
+}
+
+// generateFingerprint generates a deterministic fingerprint for a signal (integration test helper)
+func generateFingerprint(alertName, namespace, kind, name string) string {
+	input := fmt.Sprintf("%s|%s|%s|%s", alertName, namespace, kind, name)
+	hash := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("%x", hash)
 }

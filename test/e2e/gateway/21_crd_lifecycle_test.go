@@ -167,9 +167,12 @@ var _ = Describe("Test 21: CRD Lifecycle Operations", Ordered, Label("crd-lifecy
 				return 0
 			}
 			crdCount = len(crdList.Items)
+			if crdCount == 0 {
+				GinkgoWriter.Printf("⚠️  No CRDs yet (K8s cache sync delay), retrying...\n")
+			}
 			return crdCount
-		}, 60*time.Second, 2*time.Second).Should(BeNumerically("==", 1),
-			"Exactly 1 CRD should be created for valid alert")
+		}, 240*time.Second, 3*time.Second).Should(BeNumerically("==", 1),
+			"Exactly 1 CRD should be created for valid alert (increased timeout for K8s client cache synchronization)")
 
 		testLogger.Info("Step 3: Validate CRD spec fields")
 		crdList := &remediationv1alpha1.RemediationRequestList{}

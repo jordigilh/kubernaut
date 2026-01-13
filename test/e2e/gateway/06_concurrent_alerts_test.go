@@ -71,8 +71,9 @@ var _ = Describe("Test 06: Concurrent Alert Handling (BR-GATEWAY-008)", Ordered,
 
 		// Get K8s client and create namespace
 		k8sClient = getKubernetesClient()
-		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
+	// Use suite ctx (no timeout) for namespace creation
+	Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
+		"Failed to create test namespace")
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
