@@ -133,20 +133,30 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			correlationID = string(rr.UID)
 			GinkgoWriter.Printf("✅ Created RemediationRequest: %s (correlation_id=%s)\n", rr.Name, correlationID)
 
-			// Wait for RemediationOrchestrator controller to initialize TimeoutConfig
-			Eventually(func() bool {
+			// Manually initialize TimeoutConfig (simulating controller behavior)
+			// NOTE: RemediationOrchestrator controller is not deployed in AuthWebhook E2E suite
+			// This test focuses on webhook behavior, not controller behavior
+			Eventually(func() error {
 				err := k8sClient.Get(ctx, client.ObjectKey{
 					Namespace: testNamespace,
 					Name:      "rr-gap8-webhook",
 				}, rr)
 				if err != nil {
-					return false
+					return err
 				}
-				return rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Global != nil
-			}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-				"RemediationOrchestrator controller should initialize default TimeoutConfig")
 
-			GinkgoWriter.Printf("✅ TimeoutConfig initialized by controller: Global=%s\n",
+				// Initialize TimeoutConfig with default values (simulates controller)
+				rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
+					Global:     &metav1.Duration{Duration: 1 * time.Hour},
+					Processing: &metav1.Duration{Duration: 5 * time.Minute},
+					Analyzing:  &metav1.Duration{Duration: 10 * time.Minute},
+					Executing:  &metav1.Duration{Duration: 30 * time.Minute},
+				}
+				return k8sClient.Status().Update(ctx, rr)
+			}, 10*time.Second, 1*time.Second).Should(Succeed(),
+				"Should manually initialize TimeoutConfig")
+
+			GinkgoWriter.Printf("✅ TimeoutConfig initialized: Global=%s\n",
 				rr.Status.TimeoutConfig.Global.Duration)
 
 			// ========================================
