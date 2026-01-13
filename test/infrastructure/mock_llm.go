@@ -115,19 +115,6 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	return fullImageName, nil
 }
 
-// getProjectRoot returns the absolute path to the project root
-func getProjectRoot() string {
-	// This assumes the test is running from the project root or a subdirectory
-	// In CI/CD, this should be set via environment variable or working directory
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-	output, err := cmd.Output()
-	if err != nil {
-		// Fallback to current directory if git is not available
-		return "."
-	}
-	return string(output[:len(output)-1]) // Remove trailing newline
-}
-
 // GetMockLLMConfigForHAPI returns the Mock LLM configuration for HAPI integration tests
 // Uses GenerateInfraImageName per DD-TEST-004 for unique image tags
 func GetMockLLMConfigForHAPI() MockLLMConfig {
