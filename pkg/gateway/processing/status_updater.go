@@ -42,17 +42,25 @@ import (
 // CONFLICT HANDLING:
 // - Uses retry.RetryOnConflict pattern for optimistic concurrency
 // - Refetches RR before each update attempt to get latest resourceVersion
+//
+// DD-STATUS-001: Cache-Bypassed Reads (Adopted from RO)
+// - Uses apiReader for refetches to bypass controller-runtime cache
+// - Prevents "not found" errors when reading immediately after CRD creation
+// - Ensures fresh reads directly from K8s API server for optimistic locking
 // ========================================
 
 // StatusUpdater handles status updates to RemediationRequest CRDs
 type StatusUpdater struct {
-	client client.Client
+	client    client.Client
+	apiReader client.Reader // DD-STATUS-001: Cache-bypassed reads for fresh status
 }
 
 // NewStatusUpdater creates a new status updater
-func NewStatusUpdater(k8sClient client.Client) *StatusUpdater {
+// apiReader bypasses controller-runtime cache for optimistic locking refetches (DD-STATUS-001)
+func NewStatusUpdater(k8sClient client.Client, apiReader client.Reader) *StatusUpdater {
 	return &StatusUpdater{
-		client: k8sClient,
+		client:    k8sClient,
+		apiReader: apiReader,
 	}
 }
 
@@ -64,10 +72,14 @@ var GatewayRetryBackoff = retry.DefaultBackoff
 //
 // DD-GATEWAY-011: Status-Based Deduplication
 // This method:
-// 1. Refetches RR to get latest resourceVersion
+// 1. Refetches RR to get latest resourceVersion (using apiReader for cache-bypassed read)
 // 2. Updates ONLY status.deduplication (Gateway-owned)
 // 3. Uses Status().Update() to update status subresource
 // 4. Retries on conflict (optimistic concurrency)
+//
+// DD-STATUS-001: Uses apiReader to bypass controller-runtime cache
+// This prevents "not found" errors when Gateway reads immediately after CRD creation,
+// as the cached client may not have synced yet. Direct API server reads are always fresh.
 //
 // Business Requirements:
 // - BR-GATEWAY-181: Move deduplication tracking from spec to status
@@ -81,8 +93,9 @@ var GatewayRetryBackoff = retry.DefaultBackoff
 // - error: K8s API errors (not found, timeout, etc.)
 func (u *StatusUpdater) UpdateDeduplicationStatus(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
 	return retry.RetryOnConflict(GatewayRetryBackoff, func() error {
-		// Refetch to get latest resourceVersion
-		if err := u.client.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
+		// DD-STATUS-001: Use apiReader to bypass controller-runtime cache for fresh read
+		// This prevents "not found" errors immediately after CRD creation
+		if err := u.apiReader.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 			return err
 		}
 

@@ -245,7 +245,12 @@ func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) er
 	caBundleB64 := string(caBundleOutput)
 
 	// Patch each webhook in MutatingWebhookConfiguration
-	webhookNames := []string{"workflowexecution.mutate.kubernaut.ai", "remediationapprovalrequest.mutate.kubernaut.ai"}
+	// Per Gap #8 (BR-AUDIT-005): Added remediationrequest.mutate.kubernaut.ai for TimeoutConfig mutation audit
+	webhookNames := []string{
+		"workflowexecution.mutate.kubernaut.ai",
+		"remediationapprovalrequest.mutate.kubernaut.ai",
+		"remediationrequest.mutate.kubernaut.ai", // Gap #8: TimeoutConfig mutation tracking
+	}
 	for i, webhookName := range webhookNames {
 		patchCmd := exec.Command("kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
 			"--kubeconfig", kubeconfigPath,
