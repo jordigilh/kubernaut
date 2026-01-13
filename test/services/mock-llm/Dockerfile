@@ -17,8 +17,8 @@ USER 1001
 
 WORKDIR /opt/app-root/src
 
-# Copy source code
-COPY --chown=1001:0 test/services/mock-llm/src ./src
+# Copy source code (build context is test/services/mock-llm/)
+COPY --chown=1001:0 src ./src
 
 # Expose port 8080
 EXPOSE 8080
