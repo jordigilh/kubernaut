@@ -6,9 +6,9 @@ logging:
   level: "DEBUG"
 
 llm:
-  provider: "mock"
-  model: "mock/test-model"
-  endpoint: "http://localhost:11434"
+  provider: "openai"
+  model: "mock-model"
+  endpoint: "http://127.0.0.1:18140"
   secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
 
 data_storage:

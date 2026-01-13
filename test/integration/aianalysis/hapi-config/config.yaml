@@ -2,9 +2,9 @@ logging:
   level: "INFO"
 
 llm:
-  provider: "mock"
-  model: "mock/test-model"
-  endpoint: "http://localhost:11434"
+  provider: "openai"
+  model: "mock-model"
+  endpoint: "http://127.0.0.1:18141"
   secrets_file: "/etc/holmesgpt/secrets/llm-credentials.yaml"
 
 data_storage:
