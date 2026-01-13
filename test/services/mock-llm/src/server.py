@@ -137,6 +137,32 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="test-pod",
         parameters={"TEST_MODE": "true", "ACTION": "validate"}
     ),
+    "no_workflow_found": MockScenario(
+        name="no_workflow_found",
+        signal_type="MOCK_NO_WORKFLOW_FOUND",
+        severity="critical",
+        workflow_id="",  # Empty workflow_id indicates no workflow found
+        workflow_title="",
+        confidence=0.0,  # Zero confidence triggers human review
+        root_cause="No suitable workflow found in catalog for this signal type",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="failing-pod",
+        parameters={}
+    ),
+    "low_confidence": MockScenario(
+        name="low_confidence",
+        signal_type="MOCK_LOW_CONFIDENCE",
+        severity="critical",
+        workflow_id="generic-restart-v1",  # Return a workflow but with low confidence
+        workflow_title="Generic Pod Restart",
+        confidence=0.35,  # Low confidence (<0.5) triggers human review
+        root_cause="Multiple possible root causes identified, requires human judgment",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="ambiguous-pod",
+        parameters={"ACTION": "restart"}
+    ),
 }
 
 # Default scenario if none matches
@@ -289,7 +315,13 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             if m.get("content")
         ).lower()
 
-        # Check for test signal first (graceful shutdown tests)
+        # Check for test-specific signal types first (human review tests)
+        if "mock_no_workflow_found" in content or "mock no workflow found" in content:
+            return MOCK_SCENARIOS.get("no_workflow_found", DEFAULT_SCENARIO)
+        if "mock_low_confidence" in content or "mock low confidence" in content:
+            return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
+
+        # Check for test signal (graceful shutdown tests)
         if "testsignal" in content or "test signal" in content:
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
@@ -377,9 +409,29 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "summary": scenario.root_cause,
                 "severity": scenario.severity,
                 "signal_type": scenario.signal_type,
-                "contributing_factors": ["identified_by_mock_llm"]
-            },
-            "selected_workflow": {
+                "contributing_factors": ["identified_by_mock_llm"] if scenario.workflow_id else []
+            }
+        }
+        
+        # Handle no workflow found case
+        if not scenario.workflow_id:
+            analysis_json["selected_workflow"] = None
+            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+
+## Root Cause Analysis
+
+{scenario.root_cause}
+
+## Workflow Search Result
+
+No suitable workflow found in the catalog for this scenario. Human review required.
+
+```json
+{json.dumps(analysis_json, indent=2)}
+```
+"""
+        else:
+            analysis_json["selected_workflow"] = {
                 "workflow_id": scenario.workflow_id,
                 "title": scenario.workflow_title,
                 "version": "1.0.0",
@@ -387,10 +439,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "rationale": f"Selected based on {scenario.signal_type} signal analysis",
                 "parameters": scenario.parameters
             }
-        }
-
-        # Format as markdown with JSON block (like real LLM would)
-        content = f"""Based on my investigation of the {scenario.signal_type} signal:
+            # Format as markdown with JSON block (like real LLM would)
+            content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 ## Root Cause Analysis
 
@@ -462,6 +512,29 @@ I've identified a suitable remediation workflow from the catalog.
 
     def _recovery_text_response(self, scenario: MockScenario) -> str:
         """Generate recovery analysis text response."""
+        # Handle no workflow found case
+        if not scenario.workflow_id:
+            return f"""Based on my investigation of the recovery scenario:
+
+## Analysis
+
+The previous remediation attempt failed. I've analyzed the current cluster state but found no suitable workflow.
+
+```json
+{{
+  "recovery_analysis": {{
+    "previous_attempt_assessment": {{
+      "failure_understood": true,
+      "failure_reason_analysis": "{scenario.root_cause}",
+      "state_changed": false,
+      "current_signal_type": "{scenario.signal_type}"
+    }}
+  }},
+  "selected_workflow": null
+}}
+```
+"""
+        
         return f"""Based on my investigation of the recovery scenario:
 
 ## Analysis
@@ -490,6 +563,26 @@ The previous remediation attempt failed. I've analyzed the current cluster state
 
     def _incident_text_response(self, scenario: MockScenario) -> str:
         """Generate incident analysis text response."""
+        # Handle no workflow found case
+        if not scenario.workflow_id:
+            return f"""Based on my investigation of the incident:
+
+## Root Cause Analysis
+
+{scenario.root_cause}
+
+```json
+{{
+  "root_cause_analysis": {{
+    "summary": "{scenario.root_cause}",
+    "severity": "{scenario.severity}",
+    "contributing_factors": []
+  }},
+  "selected_workflow": null
+}}
+```
+"""
+        
         return f"""Based on my investigation of the incident:
 
 ## Root Cause Analysis
