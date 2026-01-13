@@ -244,18 +244,23 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 				GinkgoWriter.Printf("✅ Found %d webhook events after %v\n", len(webhookEvents), time.Since(now.Time))
 			}
 			return len(webhookEvents)
-		}, 20*time.Second, 2*time.Second).Should(Equal(1),
-			"Should have exactly 1 webhook.remediationrequest.timeout_modified event")
+		}, 20*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
+			"Should have at least 1 webhook.remediationrequest.timeout_modified event (controller init + operator modification)")
 
-			// Validate webhook event structure (ADR-034 compliance)
-			webhookEvent := webhookEvents[0]
-			Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
-			Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWebhook))
-			Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
-			Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
-			Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
+		// Validate webhook event structure (ADR-034 compliance)
+		// NOTE: There may be 2 webhook events:
+		//   1. Controller initializes TimeoutConfig (nil → defaults)
+		//   2. Operator modifies TimeoutConfig (defaults → custom)
+		// We validate the LAST event (operator modification)
+		webhookEvent := webhookEvents[len(webhookEvents)-1]
+		Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
+		Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWebhook))
+		Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
+		Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
+		Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
 
-			GinkgoWriter.Printf("✅ Found webhook audit event (event_id=%s)\n", webhookEvent.EventID)
+		GinkgoWriter.Printf("✅ Found %d webhook audit event(s), validating operator modification (event_id=%s)\n", 
+			len(webhookEvents), webhookEvent.EventID)
 
 			// ========================================
 			// THEN: LastModifiedBy/LastModifiedAt populated by webhook

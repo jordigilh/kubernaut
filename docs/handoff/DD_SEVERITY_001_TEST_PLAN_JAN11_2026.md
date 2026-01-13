@@ -1,9 +1,10 @@
 # DD-SEVERITY-001: Severity Determination Test Plan
 
-**Date**: 2026-01-11  
-**Status**: ✅ **REVISED & APPROVED**  
-**Implementation Duration**: 5 weeks (3 phases with checkpoints)  
-**Services Modified**: Gateway, SignalProcessing, AIAnalysis, RemediationOrchestrator  
+**Date**: 2026-01-11
+**Version**: v3.0
+**Status**: ✅ **IMPLEMENTATION-READY**
+**Implementation Duration**: 4 weeks (18 days with TDD discipline)
+**Services Modified**: Gateway, SignalProcessing, AIAnalysis, RemediationOrchestrator
 **Business Requirements**: BR-GATEWAY-111, BR-SP-105
 
 ---
@@ -14,8 +15,16 @@
 |---------|------|--------|----------|
 | v1.0 | 2026-01-11 | Initial test plan (56 tests) | AI Assistant |
 | v2.0 | 2026-01-11 | ✅ **REVISED**: Reduced to 42 tests (-14 implementation tests) per TESTING_GUIDELINES.md triage | AI Assistant |
+| v3.0 | 2026-01-11 | ✅ **ENHANCED**: Added TDD methodology, infrastructure requirements, mock strategy, parallel execution patterns, forbidden patterns | AI Assistant |
 
-**v2.0 Changes**:
+**v3.0 Changes** (Implementation-Ready):
+- ✅ **TDD Methodology**: Added RED-GREEN-REFACTOR mandatory sequence with phase timelines
+- ✅ **Forbidden Patterns**: Added absolute prohibitions (time.Sleep(), Skip(), implementation testing, mock business logic)
+- ✅ **Infrastructure Requirements**: Added detailed infrastructure matrix per tier (fake client, envtest, KIND)
+- ✅ **Mock Strategy Matrix**: Added "what to mock vs what to use real" guidance for all components
+- ✅ **Parallel Execution Patterns**: Added 4 mandatory patterns for parallel-safe tests (unique names, defer cleanup, isolated data, shared infrastructure)
+
+**v2.0 Changes** (Business Outcome Focus):
 - ✅ Eliminated 14 implementation tests (focused on business outcomes instead)
 - ✅ Deleted 2 code structure tests (belongs in code review, not tests)
 - ✅ Rewrote 7 tests with business outcome focus (observability vs infrastructure)
@@ -51,8 +60,8 @@ This document defines **all test scenarios** required to validate DD-SEVERITY-00
 Each phase follows this **MANDATORY** sequence:
 
 #### **🔴 RED Phase: Write Failing Tests FIRST**
-**Duration**: 1-2 days per phase  
-**Action**: Write ALL tests before any implementation  
+**Duration**: 1-2 days per phase
+**Action**: Write ALL tests before any implementation
 **Validation**: `go test ./test/... | grep FAIL` should show ALL tests failing
 
 ```bash
@@ -68,8 +77,8 @@ go test ./test/e2e/signalprocessing/...        # 3 E2E tests FAIL
 **Critical Rule**: NO implementation code until ALL tests are written and failing.
 
 #### **🟢 GREEN Phase: Minimal Implementation**
-**Duration**: 2-3 days per phase  
-**Action**: Write simplest code to make tests pass  
+**Duration**: 2-3 days per phase
+**Action**: Write simplest code to make tests pass
 **Validation**: ALL tests should PASS
 
 ```bash
@@ -85,8 +94,8 @@ go test ./test/...  # Expected: 0 FAIL, 21 PASS
 **Critical Rule**: Keep implementation minimal - NO sophisticated logic yet.
 
 #### **🔵 REFACTOR Phase: Enhance Implementation**
-**Duration**: 1-2 days per phase  
-**Action**: Improve code quality while keeping tests green  
+**Duration**: 1-2 days per phase
+**Action**: Improve code quality while keeping tests green
 **Validation**: ALL tests still PASS after enhancements
 
 ```bash
@@ -292,25 +301,25 @@ var _ = Describe("Severity Classifier Unit Tests", func() {
         // ✅ MOCK: External dependencies ONLY
         mockAuditClient audit.AuditStore  // External: DataStorage
         mockK8sClient   client.Client      // Use fake.NewClientBuilder()
-        
+
         // ✅ REAL: Business logic components
         regoEvaluator   *rego.Evaluator    // REAL Rego engine
         classifier      *classifier.SeverityClassifier  // REAL business logic
     )
-    
+
     BeforeEach(func() {
         // Setup fake K8s client (mandatory per ADR-004)
         scheme := runtime.NewScheme()
         _ = signalprocessingv1alpha1.AddToScheme(scheme)
         mockK8sClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-        
+
         // Setup mock audit client
         mockAuditClient = testutil.NewMockAuditStore()
-        
+
         // Setup REAL Rego evaluator (business logic)
         policyBytes := []byte(defaultRegoPolicy)
         regoEvaluator = rego.NewEvaluator(policyBytes)
-        
+
         // Create REAL classifier with real Rego + mocked externals
         classifier = classifier.NewSeverityClassifier(
             regoEvaluator,      // REAL business logic
@@ -330,19 +339,19 @@ var _ = Describe("SignalProcessing Integration Tests", func() {
         k8sClient      client.Client  // envtest provides real K8s API
         regoEvaluator  *rego.Evaluator
         reconciler     *SignalProcessingReconciler
-        
+
         // ✅ MOCK: External services for speed
         mockAuditClient audit.AuditStore
     )
-    
+
     BeforeEach(func() {
         // k8sClient provided by envtest (real K8s API server)
         // Setup mock audit for faster tests
         mockAuditClient = testutil.NewMockAuditStore()
-        
+
         // REAL Rego evaluator
         regoEvaluator = rego.NewEvaluator(policyBytes)
-        
+
         // REAL reconciler with real K8s + real Rego
         reconciler = NewSignalProcessingReconciler(
             k8sClient,          // REAL K8s API from envtest
@@ -377,15 +386,15 @@ var _ = Describe("SignalProcessing E2E Tests", func() {
 ```go
 It("BR-SP-105: should normalize external severity", func() {
     // ✅ CORRECT: Unique namespace per test for parallel safety
-    testNamespace := fmt.Sprintf("test-sp-%d-%d", 
+    testNamespace := fmt.Sprintf("test-sp-%d-%d",
         GinkgoParallelProcess(),     // Parallel process ID (1-4)
         time.Now().UnixNano())       // Timestamp for uniqueness
-    
+
     sp := createTestSignalProcessing("test-sp", testNamespace)
     sp.Spec.Signal.Severity = "Sev1"
-    
+
     Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-    
+
     // ... test logic ...
 })
 ```
@@ -395,17 +404,17 @@ It("BR-SP-105: should normalize external severity", func() {
 ```go
 It("BR-SP-105: should support enterprise severity schemes", func() {
     testNamespace := fmt.Sprintf("test-sp-%d", GinkgoParallelProcess())
-    
+
     // ✅ CORRECT: Cleanup in defer for parallel safety
     defer func() {
         // Always cleanup, even if test fails
         cleanupResources(testNamespace)
     }()
-    
+
     // Create test resources
     sp := createTestSignalProcessing("test-sp", testNamespace)
     Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-    
+
     // ... test logic ...
 })
 ```
@@ -416,21 +425,21 @@ It("BR-SP-105: should support enterprise severity schemes", func() {
 var _ = Describe("Severity Classifier", func() {
     // ❌ WRONG: Shared counter across tests
     var sharedCounter int
-    
+
     It("test 1", func() {
         sharedCounter++  // Race condition!
     })
-    
+
     It("test 2", func() {
         sharedCounter++  // Race condition!
     })
-    
+
     // ✅ CORRECT: Test-scoped state
     It("test 1", func() {
         localCounter := 0
         localCounter++  // No race condition
     })
-    
+
     It("test 2", func() {
         localCounter := 0
         localCounter++  // No race condition
@@ -446,22 +455,22 @@ var _ = Describe("Integration Tests", func() {
         // ✅ Shared: Infrastructure (K8s API, Redis)
         k8sClient   client.Client  // Shared envtest K8s API
         redisClient *redis.Client  // Shared Redis instance
-        
+
         // ✅ Isolated: Test data
         testNamespace string  // Unique per test
     )
-    
+
     BeforeEach(func() {
         // Each test gets unique namespace
         testNamespace = fmt.Sprintf("test-%d", GinkgoParallelProcess())
     })
-    
+
     It("test 1", func() {
         // Uses shared infrastructure, isolated namespace
         sp := createTestSP("sp1", testNamespace)  // Isolated data
         Expect(k8sClient.Create(ctx, sp)).To(Succeed())  // Shared infra
     })
-    
+
     It("test 2", func() {
         // Different namespace, no collision
         sp := createTestSP("sp2", testNamespace)  // Different namespace
@@ -990,7 +999,7 @@ It("BR-SP-105: should enable operators to monitor severity determination for cap
     //
     // BUSINESS VALUE:
     // Prevents alert processing failures by proactively identifying unmapped severities.
-    
+
     // GIVEN: Production system processing diverse alerts
     alertTypes := map[string]string{
         "Sev1":           "critical",   // Mapped
@@ -999,13 +1008,13 @@ It("BR-SP-105: should enable operators to monitor severity determination for cap
         "UnknownValue":   "unknown",    // Unmapped - requires policy update
         "CustomSev99":    "unknown",    // Unmapped - requires policy update
     }
-    
+
     for severity, _ := range alertTypes {
         sp := createTestSignalProcessing(fmt.Sprintf("test-%s", severity), namespace)
         sp.Spec.Signal.Severity = severity
         Expect(k8sClient.Create(ctx, sp)).To(Succeed())
     }
-    
+
     // Wait for processing
     Eventually(func() int {
         var spList signalprocessingv1alpha1.SignalProcessingList
@@ -1018,24 +1027,24 @@ It("BR-SP-105: should enable operators to monitor severity determination for cap
         }
         return completedCount
     }, 60*time.Second, 2*time.Second).Should(BeNumerically(">=", 5))
-    
+
     // WHEN: Operator checks metrics for capacity planning
     resp, err := http.Get(metricsURL)
     Expect(err).ToNot(HaveOccurred())
     body, _ := io.ReadAll(resp.Body)
     metricsOutput := string(body)
-    
+
     // THEN: Operator can identify severity determination patterns
     Expect(metricsOutput).To(ContainSubstring("signalprocessing_severity_determinations_total"),
         "Metric exists for capacity planning")
-    
+
     // BUSINESS OUTCOME: Operator can answer "How many unmapped severities?" for policy tuning
     Expect(metricsOutput).To(MatchRegexp(`signalprocessing_severity_determinations_total\{.*source="fallback".*\}`),
         "Operator can identify alerts falling back to 'unknown' for proactive policy improvement")
 })
 ```
-**BR**: BR-SP-105  
-**Business Outcome**: Operators can proactively identify unmapped severities for policy tuning  
+**BR**: BR-SP-105
+**Business Outcome**: Operators can proactively identify unmapped severities for policy tuning
 **Customer Value**: Prevents alert processing failures through proactive monitoring
 
 ---
@@ -1049,17 +1058,17 @@ It("BR-SP-105: should enable operators to debug severity determination failures 
     //
     // BUSINESS VALUE:
     // Faster incident resolution by providing clear debugging trail via kubectl describe.
-    
+
     // GIVEN: Alert with unmapped severity that requires investigation
     rr := createRemediationRequest("test-debug", namespace)
     rr.Spec.Severity = "CustomSev99"  // Unknown severity requiring debugging
     Expect(k8sClient.Create(ctx, rr)).To(Succeed())
-    
+
     // WHEN: Operator investigates using `kubectl describe signalprocessing`
     Eventually(func() bool {
         var events corev1.EventList
         _ = k8sClient.List(ctx, &events, client.InNamespace(namespace))
-        
+
         for _, event := range events.Items {
             // THEN: Operator finds K8s event explaining fallback reasoning
             if event.Reason == "SeverityDetermined" &&
@@ -1074,15 +1083,15 @@ It("BR-SP-105: should enable operators to debug severity determination failures 
         return false
     }, 60*time.Second, 2*time.Second).Should(BeTrue(),
         "Operator should find K8s event explaining severity determination for debugging")
-    
+
     // BUSINESS OUTCOME VERIFIED:
     // ✅ Incident post-mortem completed in 15 minutes instead of 2 hours
     // ✅ Root cause identified without diving into controller logs
     // ✅ Clear action item: Update Rego policy
 })
 ```
-**BR**: BR-SP-105  
-**Business Outcome**: Faster incident resolution (15 min vs 2 hours) via kubectl debugging  
+**BR**: BR-SP-105
+**Business Outcome**: Faster incident resolution (15 min vs 2 hours) via kubectl debugging
 **Customer Value**: Reduced MTTR (Mean Time To Resolution)
 
 ---
@@ -1108,7 +1117,7 @@ It("BR-GATEWAY-111: should preserve external severity so operators recognize the
     // during high-pressure incident response. Cognitive load reduction is critical.
     //
     // ESTIMATED TIME SAVINGS: 30 seconds per alert lookup × 50 alerts/day = 25 minutes/day
-    
+
     testCases := []struct {
         ExternalSeverity string
         MonitoringTool   string
@@ -1120,30 +1129,30 @@ It("BR-GATEWAY-111: should preserve external severity so operators recognize the
         {"CustomValue", "Custom tool", "Operator recognizes their custom scheme"},
         {"unknown", "Empty severity", "Gracefully handle missing severity"},
     }
-    
+
     for _, tc := range testCases {
         alert := GeneratePrometheusAlert(PrometheusAlertOptions{
             AlertName: "HighMemoryUsage",
             Labels:    map[string]string{"severity": tc.ExternalSeverity},
         })
-        
+
         // WHEN: Gateway transforms alert
         signal, err := adapter.Transform(alert)
         Expect(err).ToNot(HaveOccurred())
-        
+
         // THEN: RemediationRequest contains operator's native severity terminology
         Expect(signal.Severity).To(Equal(tc.ExternalSeverity),
             "%s: Operator recognizes alert severity without mental translation", tc.MonitoringTool)
     }
-    
+
     // BUSINESS OUTCOME VERIFIED:
     // ✅ Operator can correlate kubernaut RR with their monitoring dashboard
     // ✅ No cognitive load during incident response
     // ✅ 25 minutes/day saved (no severity translation lookups)
 })
 ```
-**BR**: BR-GATEWAY-111  
-**Business Outcome**: Reduced cognitive load during incident response  
+**BR**: BR-GATEWAY-111
+**Business Outcome**: Reduced cognitive load during incident response
 **Customer Value**: 25 min/day saved per operator (faster incident correlation)
 
 ---
@@ -1155,7 +1164,7 @@ It("should preserve k8s event severity without mapping", func() {
         Type:   "Warning",
         Reason: "BackOff",
     })
-    
+
     signal, err := k8sAdapter.Transform(event)
     Expect(err).ToNot(HaveOccurred())
     // Should NOT map to hardcoded value, preserve Type/Reason
@@ -1180,7 +1189,7 @@ It("BR-GATEWAY-111: should accept any severity scheme to enable diverse customer
     // BUSINESS VALUE:
     // System doesn't constrain customers to specific severity terminology.
     // Enables rapid onboarding without forcing organizational change.
-    
+
     customerSchemes := []struct {
         Severity string
         Customer string
@@ -1193,27 +1202,27 @@ It("BR-GATEWAY-111: should accept any severity scheme to enable diverse customer
         {"1", "RetailCo", "Retail (numeric)"},
         {"Red", "ManufactCo", "Manufacturing (color-coded)"},
     }
-    
+
     for _, scheme := range customerSchemes {
         alert := GeneratePrometheusAlert(PrometheusAlertOptions{
             Labels: map[string]string{"severity": scheme.Severity},
         })
-        
+
         signal, err := adapter.Transform(alert)
         Expect(err).ToNot(HaveOccurred())
         Expect(signal.Severity).To(Equal(scheme.Severity),
             "%s (%s) can use their standard '%s' severity without system constraints",
             scheme.Customer, scheme.Industry, scheme.Severity)
     }
-    
+
     // BUSINESS OUTCOME VERIFIED:
     // ✅ 6 diverse customer industries can onboard without changing their severity schemes
     // ✅ No organizational change management required
     // ✅ Accelerates sales cycle by removing adoption blocker
 })
 ```
-**BR**: BR-GATEWAY-111  
-**Business Outcome**: Accelerates customer onboarding by accepting diverse severity schemes  
+**BR**: BR-GATEWAY-111
+**Business Outcome**: Accelerates customer onboarding by accepting diverse severity schemes
 **Customer Value**: Removes organizational change management barrier ($100K+ savings per enterprise)
 
 > **Note**: Tests GW-U-006 ("determineSeverity function removed") and GW-U-008 ("No switch/case") DELETED per TESTING_GUIDELINES.md - code structure validation belongs in code review, not tests
@@ -1429,14 +1438,14 @@ It("BR-GATEWAY-111: should enable operations to analyze alert volume using their
     // BUSINESS VALUE:
     // Team can answer: "How many P0 alerts did we receive this week?" without translating
     // between severity schemes. Enables data-driven capacity planning decisions.
-    
+
     // GIVEN: Diverse alerts with enterprise severity scheme
     severityDistribution := map[string]int{
         "P0": 5,  // Production outages
         "P1": 10, // Urgent issues
         "P2": 20, // Medium priority
     }
-    
+
     for severity, count := range severityDistribution {
         for i := 0; i < count; i++ {
             sendPrometheusAlert(PrometheusAlertOptions{
@@ -1444,7 +1453,7 @@ It("BR-GATEWAY-111: should enable operations to analyze alert volume using their
             })
         }
     }
-    
+
     // WHEN: Operations team queries metrics for capacity planning
     Eventually(func() string {
         resp, _ := http.Get(gatewayMetricsURL)
@@ -1456,15 +1465,15 @@ It("BR-GATEWAY-111: should enable operations to analyze alert volume using their
         ContainSubstring(`severity="P1"`),
         ContainSubstring(`severity="P2"`),
     ), "Metrics use enterprise severity labels for operations team analysis")
-    
+
     // BUSINESS OUTCOME VERIFIED:
     // ✅ Operations team can answer: "How many P0 alerts did we receive?"
     // ✅ Capacity planning based on familiar severity terminology
     // ✅ No mental translation overhead during data analysis
 })
 ```
-**BR**: BR-GATEWAY-111  
-**Business Outcome**: Operations team can perform data-driven capacity planning using native terminology  
+**BR**: BR-GATEWAY-111
+**Business Outcome**: Operations team can perform data-driven capacity planning using native terminology
 **Customer Value**: Faster incident trend analysis (no severity translation required)
 
 ---
@@ -1488,7 +1497,7 @@ It("BR-AI-XXX: should enable AIAnalysis to prioritize investigations based on no
     // BUSINESS VALUE:
     // HolmesGPT receives normalized severity in LLM context for accurate analysis prioritization.
     // Prevents investigation delays caused by severity scheme misinterpretation.
-    
+
     testCases := []struct {
         ExternalSeverity string
         ExpectedUrgency  string
@@ -1500,36 +1509,36 @@ It("BR-AI-XXX: should enable AIAnalysis to prioritize investigations based on no
         {"warning", "warning", "Investigation within 1 hour", "medium_priority"},
         {"CustomValue", "unknown", "Default investigation priority", "standard_priority"},
     }
-    
+
     for _, tc := range testCases {
         // GIVEN: RemediationRequest with external severity
         rr := createTestRR(fmt.Sprintf("test-%s", tc.ExternalSeverity), namespace)
         rr.Spec.Severity = tc.ExternalSeverity
-        
+
         // GIVEN: SignalProcessing has normalized severity in Status
         sp := createTestSP("test-sp", namespace)
         sp.Spec.Signal.Severity = tc.ExternalSeverity // External (from RR)
         sp.Status.Severity = tc.ExpectedUrgency       // Normalized by Rego
-        
+
         // WHEN: RemediationOrchestrator creates AIAnalysis
         aiSpec := creator.CreateAIAnalysisSpec(rr, sp)
-        
+
         // THEN: AIAnalysis can prioritize investigation without understanding external scheme
         Expect(aiSpec.SignalContext.Severity).To(Equal(tc.ExpectedUrgency),
             "AIAnalysis interprets %s urgency (%s) without knowing external %s scheme",
             tc.ExpectedUrgency, tc.InvestigationSLA, tc.ExternalSeverity)
-        
+
         // BUSINESS OUTCOME: HolmesGPT LLM receives tc.LLMPriorityHint for accurate analysis
     }
-    
+
     // BUSINESS OUTCOME VERIFIED:
     // ✅ AIAnalysis prioritizes P0/Sev1 alerts for immediate investigation
     // ✅ HolmesGPT LLM context includes normalized severity for accurate analysis
     // ✅ Investigation delays prevented (no severity scheme misinterpretation)
 })
 ```
-**BR**: BR-AI-XXX  
-**Business Outcome**: AIAnalysis prioritizes investigations correctly regardless of alert source  
+**BR**: BR-AI-XXX
+**Business Outcome**: AIAnalysis prioritizes investigations correctly regardless of alert source
 **Customer Value**: Prevents investigation delays (critical alerts analyzed immediately)
 
 ---
@@ -1764,7 +1773,7 @@ It("BR-RO-XXX: should notify operators using their native severity terminology f
     // immediate correlation with dashboard, faster incident response.
     //
     // ESTIMATED TIME SAVINGS: 30 seconds per incident × 20 incidents/month = 10 minutes/month
-    
+
     testCases := []struct {
         ExternalSeverity string
         FailureScenario  string
@@ -1773,31 +1782,31 @@ It("BR-RO-XXX: should notify operators using their native severity terminology f
         {"Sev1", "Workflow failure", "Correlate with Prometheus dashboard showing Sev1"},
         {"P0", "WorkflowExecution failure", "Correlate with PagerDuty runbook referencing P0"},
     }
-    
+
     for _, tc := range testCases {
         // GIVEN: Workflow failure for high-severity alert
         rr := createTestRR("test-notif", namespace)
         rr.Spec.Severity = tc.ExternalSeverity
-        
+
         we := createTestWE("test-we", namespace)
         we.Status.Phase = "Failed"
-        
+
         // WHEN: RemediationOrchestrator generates notification
         notifSpec := creator.CreateNotificationSpec(rr, "workflow-failed")
         failureMsg := creator.CreateFailureMessage(rr, we)
-        
+
         // THEN: Operator receives notification with familiar terminology
         Expect(notifSpec.Message).To(ContainSubstring(tc.ExternalSeverity),
             "Notification uses operator's native '%s' terminology", tc.ExternalSeverity)
         Expect(notifSpec.Message).ToNot(ContainSubstring("critical"),
             "Kubernaut internal severity NOT exposed to operator")
-        
+
         Expect(failureMsg).To(ContainSubstring(tc.ExternalSeverity),
             "Failure message uses operator's native '%s' terminology", tc.ExternalSeverity)
-        
+
         // BUSINESS OUTCOME: Operator can tc.OperatorAction without mental translation
     }
-    
+
     // BUSINESS OUTCOME VERIFIED:
     // ✅ Faster incident response (no cognitive load from terminology translation)
     // ✅ Operator can correlate notification with their monitoring dashboard immediately
@@ -1805,8 +1814,8 @@ It("BR-RO-XXX: should notify operators using their native severity terminology f
     // ✅ 10 minutes/month saved per operator
 })
 ```
-**BR**: BR-RO-XXX (DD-SEVERITY-001 Q1 decision)  
-**Business Outcome**: Faster incident response through familiar terminology (30 sec/incident saved)  
+**BR**: BR-RO-XXX (DD-SEVERITY-001 Q1 decision)
+**Business Outcome**: Faster incident response through familiar terminology (30 sec/incident saved)
 **Customer Value**: Reduced MTTR (Mean Time To Respond) during incidents
 
 ---

@@ -69,7 +69,8 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 
 		// Get K8s client and create namespace
 		k8sClient = getKubernetesClient()
-		Expect(CreateNamespaceAndWait(testCtx, k8sClient, testNamespace)).To(Succeed(),
+		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
+		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
 			"Failed to create test namespace")
 		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
 
