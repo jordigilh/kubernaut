@@ -223,11 +223,37 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Use a specific fingerprint for this test
 			fingerprint := "d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2f3a4b5c6d1e2"
 
-			GinkgoWriter.Println("📋 Creating first RemediationRequest (RR1)...")
-			rr1 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-1", fingerprint)
+		GinkgoWriter.Println("📋 Creating first RemediationRequest (RR1)...")
+		rr1 := createRemediationRequestWithFingerprint(ns, "rr-signal-complete-1", fingerprint)
 
-		// Simulate RR1 reaching terminal phase (Completed)
-		GinkgoWriter.Println("✅ Simulating RR1 completion...")
+		// Wait for RR1 to transition to Processing (RO creates child SP)
+		GinkgoWriter.Println("⏳ Waiting for RR1 to reach Processing phase...")
+		Eventually(func() string {
+			rr := &remediationv1.RemediationRequest{}
+			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			if err != nil {
+				return ""
+			}
+			return string(rr.Status.OverallPhase)
+		}, timeout, interval).Should(Equal("Processing"), "RR1 should reach Processing phase")
+
+		// Phase 1 Pattern: Manually force RR to Completed by deleting child CRDs
+		// This simulates terminal phase without needing to complete full orchestration pipeline
+		// (no child controllers running - SP, AI, WE)
+		
+		GinkgoWriter.Println("✅ Simulating RR1 completion by deleting child CRDs (Phase 1: manual control)...")
+		
+		// Delete SignalProcessing CRD if it exists
+		spName := "sp-rr-signal-complete-1"
+		sp := &signalprocessingv1.SignalProcessing{}
+		err := k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		if err == nil {
+			GinkgoWriter.Println("🗑️  Deleting SP CRD to unblock RR1...")
+			Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
+		}
+
+		// Manually set RR1 to Completed (without child CRDs, RO won't override)
+		GinkgoWriter.Println("✅ Manually setting RR1 to Completed...")
 		Eventually(func() error {
 			rr := &remediationv1.RemediationRequest{}
 			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
@@ -236,7 +262,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			}
 			rr.Status.OverallPhase = "Completed"
 			return k8sClient.Status().Update(ctx, rr)
-		}, timeout, interval).Should(Succeed())
+		}, timeout, interval).Should(Succeed(), "RR1 should be manually marked as Completed")
 
 		// FIX: Explicitly wait for RR1 to be fully completed with ObservedGeneration
 		// This ensures the controller has observed the completion before we create RR2
