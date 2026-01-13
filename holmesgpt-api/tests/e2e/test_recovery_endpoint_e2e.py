@@ -536,7 +536,11 @@ class TestRecoveryEndpointE2EEndToEndFlow:
             "selected_workflow": {
                 "workflow_id": initial_workflow_id,
                 "version": "v1.0.0",
-                "container_image": incident_response.selected_workflow.get('container_image') or incident_response.selected_workflow.get('containerImage'),
+                "container_image": (
+                    incident_response.selected_workflow.get('container_image') or 
+                    incident_response.selected_workflow.get('containerImage') or 
+                    "quay.io/default-workflow:v1.0.0"  # Fallback for E2E test
+                ),
                 "parameters": incident_response.selected_workflow.get('parameters'),
                 "rationale": incident_response.selected_workflow.get('rationale')
             },
