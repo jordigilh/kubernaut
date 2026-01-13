@@ -124,6 +124,19 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="api-server-abc123",
         parameters={"OPTIMIZATION_LEVEL": "aggressive", "MEMORY_TARGET": "512Mi"}
     ),
+    "test_signal": MockScenario(
+        name="test_signal",
+        signal_type="TestSignal",
+        severity="critical",
+        workflow_id="test-signal-handler-v1",
+        workflow_title="Test Signal Handler",
+        confidence=0.90,
+        root_cause="Test signal for graceful shutdown validation",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="test",
+        rca_resource_name="test-pod",
+        parameters={"TEST_MODE": "true", "ACTION": "validate"}
+    ),
 }
 
 # Default scenario if none matches
@@ -276,7 +289,11 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             if m.get("content")
         ).lower()
 
-        # Check for recovery scenario first (has priority)
+        # Check for test signal first (graceful shutdown tests)
+        if "testsignal" in content or "test signal" in content:
+            return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
+
+        # Check for recovery scenario (has priority over regular signals)
         # Be more specific: require "recovery" or "previous remediation" or "workflow execution failed"
         # Don't just check for "failed" alone as that's too broad
         if "recovery" in content or "previous remediation" in content or "workflow execution failed" in content or "previous execution" in content:
