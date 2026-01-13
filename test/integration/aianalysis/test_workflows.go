@@ -47,8 +47,10 @@ type TestWorkflow struct {
 // - Mock LLM returns workflow IDs (e.g., "oomkill-increase-memory-v1")
 // - HAPI validates workflows via DataStorage API
 // - Tests fail if workflows don't exist in catalog
+// - Workflows created for BOTH staging and production environments
+//   (tests use staging by default, but some use production)
 func GetAIAnalysisTestWorkflows() []TestWorkflow {
-	return []TestWorkflow{
+	baseWorkflows := []TestWorkflow{
 		{
 			WorkflowID:   "oomkill-increase-memory-v1",
 			Name:         "OOMKill Recovery - Increase Memory Limits",
@@ -56,7 +58,6 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			SignalType:   "OOMKilled",
 			Severity:     "critical",
 			Component:    "deployment",
-			Environment:  "production",
 			Priority:     "P0",
 		},
 		{
@@ -66,7 +67,6 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			SignalType:   "CrashLoopBackOff",
 			Severity:     "high",
 			Component:    "deployment",
-			Environment:  "production",
 			Priority:     "P1",
 		},
 		{
@@ -76,7 +76,6 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			SignalType:   "NodeNotReady",
 			Severity:     "critical",
 			Component:    "node",
-			Environment:  "production",
 			Priority:     "P0",
 		},
 		{
@@ -86,7 +85,6 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			SignalType:   "OOMKilled",
 			Severity:     "critical",
 			Component:    "deployment",
-			Environment:  "production",
 			Priority:     "P0",
 		},
 		{
@@ -96,10 +94,29 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 			SignalType:   "Unknown",
 			Severity:     "medium",
 			Component:    "deployment",
-			Environment:  "staging",
 			Priority:     "P2",
 		},
 	}
+
+	// Create workflows for BOTH staging and production
+	// Pattern: Environment-specific workflow instances
+	// - Most tests use staging (metrics_integration_test.go)
+	// - Some tests use production (approval decision tests)
+	// - DataStorage filters by environment, so we need both
+	var allWorkflows []TestWorkflow
+	for _, wf := range baseWorkflows {
+		// Staging version
+		stagingWf := wf
+		stagingWf.Environment = "staging"
+		allWorkflows = append(allWorkflows, stagingWf)
+
+		// Production version
+		prodWf := wf
+		prodWf.Environment = "production"
+		allWorkflows = append(allWorkflows, prodWf)
+	}
+
+	return allWorkflows
 }
 
 // SeedTestWorkflowsInDataStorage registers test workflows in DataStorage
@@ -115,7 +132,7 @@ func SeedTestWorkflowsInDataStorage(dataStorageURL string, output io.Writer) err
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
 	workflows := GetAIAnalysisTestWorkflows()
-	_, _ = fmt.Fprintf(output, "📋 Registering %d test workflows...\n", len(workflows))
+	_, _ = fmt.Fprintf(output, "📋 Registering %d test workflows (staging + production)...\n", len(workflows))
 
 	for _, wf := range workflows {
 		if err := registerWorkflowInDataStorage(dataStorageURL, wf, output); err != nil {
