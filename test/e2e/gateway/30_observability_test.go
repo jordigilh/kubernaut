@@ -169,30 +169,26 @@ var _ = Describe("Observability E2E Tests", func() {
 				},
 			})
 
-		// First request (creates CRD)
-		resp1 := SendWebhook(gatewayURL, payload)
-		Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
+			// First request (creates CRD)
+			resp1 := SendWebhook(gatewayURL, payload)
+			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
-		// Verify CRD actually exists in K8s before sending duplicate
-		// Query API server directly (not Gateway's cache) to ensure CRD is queryable
-		// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
-		var fingerprint string
-		Eventually(func() int {
-			var rrList remediationv1alpha1.RemediationRequestList
-			err := k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
-			if err != nil {
-				return 0
-			}
-			if len(rrList.Items) > 0 {
-				fingerprint = rrList.Items[0].Spec.SignalFingerprint
-			}
-			return len(rrList.Items)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
-			"CRD should exist in K8s before testing deduplication")
+			// Verify CRD actually exists in K8s before sending duplicate
+			// Query API server directly (not Gateway's cache) to ensure CRD is queryable
+			// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
+			Eventually(func() int {
+				var rrList remediationv1alpha1.RemediationRequestList
+				err := k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
+				if err != nil {
+					return 0
+				}
+				return len(rrList.Items)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(1),
+				"CRD should exist in K8s before testing deduplication")
 
-		// Second request (deduplicated)
-		resp2 := SendWebhook(gatewayURL, payload)
-		Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
+			// Second request (deduplicated)
+			resp2 := SendWebhook(gatewayURL, payload)
+			Expect(resp2.StatusCode).To(Equal(http.StatusAccepted), "Second alert should be deduplicated")
 
 			// Wait for metrics to update using Eventually
 			Eventually(func() float64 {
