@@ -188,12 +188,14 @@ func NewServer(cfg *config.ServerConfig, logger logr.Logger) (*Server, error) {
 // NewServerWithK8sClient creates a Gateway server with an existing K8s client (for testing)
 // This ensures the Gateway uses the same K8s client as the test, avoiding cache synchronization issues
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
+// DD-STATUS-001: For tests, ctrlClient serves as both client and apiReader (direct API access)
 func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client) (*Server, error) {
 	// Use provided Kubernetes client (shared with test)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// Initialize processing pipeline components (no Redis)
-	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	// DD-STATUS-001: Use ctrlClient as apiReader for cache-bypassed reads
+	// In test environments, this provides direct K8s API access
+	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient)
 }
 
 func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
@@ -271,7 +273,9 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, k8sClient)
+	// DD-STATUS-001: Use ctrlClient as apiReader for cache-bypassed reads
+	// In production, this provides direct K8s API access bypassing controller-runtime cache
+	server, err := createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -288,7 +292,8 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 // DD-005: Uses logr.Logger for unified logging interface
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 // DD-AUDIT-003: Audit store initialization for P0 service compliance
-func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, k8sClient *k8s.Client) (*Server, error) {
+// DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch (adopted from RO)
+func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Reader, k8sClient *k8s.Client) (*Server, error) {
 	// Metrics are mandatory for observability
 	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {
@@ -334,7 +339,8 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 
 	// DD-GATEWAY-011: Status-based deduplication
 	// All state in K8s RR status - Redis fully deprecated
-	statusUpdater := processing.NewStatusUpdater(ctrlClient)
+	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
+	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
 	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance
