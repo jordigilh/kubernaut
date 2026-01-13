@@ -72,11 +72,11 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 
 	BeforeAll(func() {
 		testCtx = context.Background()
-		
+
 		// Initialize audit repository for test data seeding
 		// E2E tests seed audit events in database, then use REST API to reconstruct
 		auditRepo = repository.NewAuditEventsRepository(testDB, logger)
-		
+
 		GinkgoWriter.Println("========================================")
 		GinkgoWriter.Println("E2E: Reconstruction REST API Tests")
 		GinkgoWriter.Println("========================================")
@@ -92,7 +92,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 		BeforeEach(func() {
 			// Generate unique correlation ID for this test
 			correlationID = fmt.Sprintf("e2e-full-reconstruction-%s", uuid.New().String())
-			
+
 			// Seed complete audit trail in database
 			// Gateway signal event
 			gatewayEvent := &repository.AuditEvent{
@@ -133,10 +133,10 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 					},
 				},
 			}
-			
+
 			_, err := auditRepo.Create(testCtx, gatewayEvent)
 			Expect(err).ToNot(HaveOccurred(), "Failed to seed gateway audit event")
-			
+
 			// Orchestrator lifecycle event
 			orchestratorEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
@@ -163,42 +163,42 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 					},
 				},
 			}
-			
+
 			_, err = auditRepo.Create(testCtx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred(), "Failed to seed orchestrator audit event")
-			
+
 			GinkgoWriter.Printf("✅ Seeded audit events for correlation ID: %s\n", correlationID)
 		})
 
 		It("should reconstruct RR via OpenAPI client with complete fields", func() {
 			// ACT: Call reconstruction endpoint via OpenAPI client
 			GinkgoWriter.Printf("🔄 Calling reconstruction API for correlation ID: %s\n", correlationID)
-			
+
 			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: correlationID,
 			})
-			
+
 			// ASSERT: HTTP request succeeded
 			Expect(err).ToNot(HaveOccurred(), "OpenAPI client request should succeed")
 			Expect(response).ToNot(BeNil(), "Response should not be nil")
-			
+
 			// ASSERT: Response is successful reconstruction
 			reconstructionResp, ok := response.(*ogenclient.ReconstructionResponse)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructionResponse type")
 			Expect(reconstructionResp).ToNot(BeNil())
-			
+
 			// ASSERT: Reconstructed YAML is not empty
 			Expect(reconstructionResp.RemediationRequestYaml).ToNot(BeEmpty(),
 				"Reconstructed YAML should not be empty")
-			
+
 			// ASSERT: Validation passed
 			Expect(reconstructionResp.Validation.IsValid).To(BeTrue(),
 				"Reconstruction should be valid")
-			
+
 			// ASSERT: Completeness is high (>80% for complete audit trail)
 			Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 80),
 				"Completeness should be >= 80% for complete audit trail")
-			
+
 			// ASSERT: Core fields reconstructed correctly
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
 				"YAML should contain signal name")
@@ -206,7 +206,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 				"YAML should contain signal type")
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
 				"YAML should contain timeout config")
-			
+
 			GinkgoWriter.Printf("✅ Reconstruction succeeded: completeness=%d%%, warnings=%d\n",
 				reconstructionResp.Validation.Completeness,
 				len(reconstructionResp.Validation.Warnings))
@@ -219,7 +219,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 	Context("E2E-PARTIAL-01: Partial reconstruction with missing optional fields", func() {
 		BeforeEach(func() {
 			correlationID = fmt.Sprintf("e2e-partial-reconstruction-%s", uuid.New().String())
-			
+
 			// Seed minimal audit trail (only gateway event, no orchestrator)
 			gatewayEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
@@ -241,10 +241,10 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 					// Note: Missing signal_labels, signal_annotations, original_payload
 				},
 			}
-			
+
 			_, err := auditRepo.Create(testCtx, gatewayEvent)
 			Expect(err).ToNot(HaveOccurred(), "Failed to seed minimal audit event")
-			
+
 			GinkgoWriter.Printf("✅ Seeded minimal audit event for correlation ID: %s\n", correlationID)
 		})
 
@@ -253,11 +253,11 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: correlationID,
 			})
-			
+
 			// ASSERT: Request succeeded (partial reconstruction is valid)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response).ToNot(BeNil())
-			
+
 			// Check response type - could be success OR bad request for partial data
 			switch resp := response.(type) {
 			case *ogenclient.ReconstructionResponse:
@@ -265,28 +265,28 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 				Expect(resp.RemediationRequestYaml).ToNot(BeEmpty())
 				Expect(resp.Validation.IsValid).To(BeTrue(),
 					"Partial reconstruction should still be valid")
-				
+
 				// Completeness is lower (50-80% for partial data)
 				Expect(resp.Validation.Completeness).To(BeNumerically(">=", 50),
 					"Completeness should be at least 50%")
 				Expect(resp.Validation.Completeness).To(BeNumerically("<", 80),
 					"Completeness should be less than 80% for partial data")
-				
+
 				// Warnings present for missing fields
 				Expect(resp.Validation.Warnings).ToNot(BeEmpty(),
 					"Should have warnings for missing optional fields")
-				
+
 				GinkgoWriter.Printf("✅ Partial reconstruction succeeded: completeness=%d%%, warnings=%d\n",
 					resp.Validation.Completeness,
 					len(resp.Validation.Warnings))
-				
+
 			case *ogenclient.ReconstructRemediationRequestBadRequest:
 				// Bad request case: Missing required data (e.g., no orchestrator event)
 				// This is also valid behavior for truly incomplete data
 				GinkgoWriter.Printf("✅ Partial reconstruction returned 400 Bad Request (expected for minimal data)\n")
 				GinkgoWriter.Printf("   This indicates the reconstruction requires more complete audit trail\n")
 				// Test passes - both 200 (with warnings) and 400 (too incomplete) are valid
-				
+
 			default:
 				Fail(fmt.Sprintf("Unexpected response type: %T", resp))
 			}
@@ -299,27 +299,27 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 	Context("E2E-ERROR-01: Error scenarios via HTTP", func() {
 		It("should return 404 for non-existent correlation ID", func() {
 			nonExistentID := "nonexistent-correlation-id-12345"
-			
+
 			// ACT: Call with non-existent correlation ID
 			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: nonExistentID,
 			})
-			
+
 			// ASSERT: Should receive 404 Not Found response (ogen doesn't return error for 4xx)
 			Expect(err).ToNot(HaveOccurred(), "OpenAPI client should not return error for 404")
 			Expect(response).ToNot(BeNil())
-			
+
 			// Check response type is NotFound
 			notFoundResp, ok := response.(*ogenclient.ReconstructRemediationRequestNotFound)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructRemediationRequestNotFound type")
 			Expect(notFoundResp).ToNot(BeNil())
-			
+
 			GinkgoWriter.Printf("✅ Correctly returned 404 NotFound for non-existent correlation ID\n")
 		})
 
 		It("should return 400 for missing gateway event (required)", func() {
 			correlationID = fmt.Sprintf("e2e-missing-gateway-%s", uuid.New().String())
-			
+
 			// Seed ONLY orchestrator event (missing required gateway event)
 			orchestratorOnlyEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
@@ -338,24 +338,24 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 					"namespace":  "test",
 				},
 			}
-			
+
 			_, err := auditRepo.Create(testCtx, orchestratorOnlyEvent)
 			Expect(err).ToNot(HaveOccurred())
-			
+
 			// ACT: Call reconstruction (should fail - gateway event required)
 			response, err := dsClient.ReconstructRemediationRequest(testCtx, ogenclient.ReconstructRemediationRequestParams{
 				CorrelationID: correlationID,
 			})
-			
+
 			// ASSERT: Should receive 400 Bad Request response (ogen doesn't return error for 4xx)
 			Expect(err).ToNot(HaveOccurred(), "OpenAPI client should not return error for 400")
 			Expect(response).ToNot(BeNil())
-			
+
 			// Check response type is BadRequest
 			badRequestResp, ok := response.(*ogenclient.ReconstructRemediationRequestBadRequest)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructRemediationRequestBadRequest type")
 			Expect(badRequestResp).ToNot(BeNil())
-			
+
 			GinkgoWriter.Printf("✅ Correctly returned 400 BadRequest for missing required gateway event\n")
 		})
 	})

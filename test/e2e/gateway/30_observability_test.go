@@ -149,7 +149,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 		It("should track deduplicated signals via gateway_signals_deduplicated_total", func() {
 			// BUSINESS OUTCOME: Operators can monitor deduplication effectiveness for ALL signal types
-			// BUSINESS SCENARIO: Operator tracks deduplication rate to tune TTL settings
+			// BUSINESS SCENARIO: Operator tracks deduplication rate to optimize CRD lifecycle management
 
 			// Send same alert twice (should be deduplicated)
 			// Use unique alert name to avoid CRD collisions from previous tests

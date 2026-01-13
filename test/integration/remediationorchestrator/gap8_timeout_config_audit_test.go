@@ -169,110 +169,16 @@ var _ = Describe("Gap #8: TimeoutConfig Audit Capture", func() {
 	})
 
 	// ========================================
-	// SCENARIO 2: Custom TimeoutConfig (Operator Mutation via Webhook)
+	// SCENARIO 2: Operator Mutation via Webhook - MOVED TO E2E
 	// Business Outcome: Operator-modified TimeoutConfig triggers webhook audit
-	// STATUS: ⏸️ DEFERRED - Requires webhook server infrastructure (production feature)
-	// Phase 3 implementation requires: webhook handler + MutatingWebhookConfiguration
+	// Location: test/e2e/authwebhook/02_gap8_remediationrequest_timeout_mutation_test.go
+	// Reason: Webhooks require full Kubernetes API server with admission controller
+	//         (not available in envtest used by integration tests)
+	// Event: webhook.remediationrequest.timeout_modified
 	// ========================================
-	Context("Scenario 2: Operator Modifies TimeoutConfig", func() {
-		It("should emit webhook.remediationrequest.timeout_modified on operator mutation", func() {
-			// Given: RemediationRequest CRD created with defaults
-			testNamespace := createTestNamespace("gap8-webhook")
-			defer func() {
-				go func() {
-					deleteTestNamespace(testNamespace)
-				}()
-			}()
-
-			fingerprint := GenerateTestFingerprint(testNamespace, "gap8-webhook")
-			now := metav1.Now()
-			rr := &remediationv1.RemediationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "rr-gap8-webhook",
-					Namespace: testNamespace,
-				},
-				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: fingerprint,
-					SignalName:        "Gap8WebhookSignal",
-					Severity:          "critical",
-					SignalType:        "prometheus",
-					TargetType:        "kubernetes",
-					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "test-deployment",
-						Namespace: "production",
-					},
-					FiringTime:   now,
-					ReceivedTime: now,
-				},
-			}
-
-			// When: Create RR (gets default TimeoutConfig from controller)
-			err := k8sClient.Create(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
-
-			correlationID := string(rr.UID)
-
-			// Wait for controller to initialize TimeoutConfig
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
-					Namespace: testNamespace,
-					Name:      "rr-gap8-webhook",
-				}, rr)
-				if err != nil {
-					return false
-				}
-				return rr.Status.TimeoutConfig != nil &&
-					rr.Status.TimeoutConfig.Global != nil
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should initialize default TimeoutConfig")
-
-			// When: Operator modifies TimeoutConfig (simulates kubectl edit)
-			// This triggers the webhook which should emit audit event
-			rr.Status.TimeoutConfig = &remediationv1.TimeoutConfig{
-				Global:     &metav1.Duration{Duration: 45 * time.Minute},
-				Processing: &metav1.Duration{Duration: 12 * time.Minute},
-				Analyzing:  &metav1.Duration{Duration: 8 * time.Minute},
-				Executing:  &metav1.Duration{Duration: 20 * time.Minute},
-			}
-			// TODO: Populate LastModifiedBy/At (webhook responsibility)
-			// For now, update directly to simulate operator action
-			err = k8sClient.Status().Update(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
-
-			// Then: webhook.remediationrequest.timeout_modified event should be emitted
-			var webhookEvents []ogenclient.AuditEvent
-			webhookEventType := "webhook.remediationrequest.timeout_modified"
-			Eventually(func() []ogenclient.AuditEvent {
-				var err error
-				webhookEvents, _, err = helpers.QueryAuditEvents(
-					ctx,
-					dsClient,
-					&correlationID,
-					&webhookEventType,
-					nil,
-				)
-				if err != nil {
-					return nil
-				}
-				return webhookEvents
-			}, 10*time.Second, 500*time.Millisecond).Should(HaveLen(1),
-				"webhook.remediationrequest.timeout_modified event should be emitted on mutation")
-
-			webhookEvent := webhookEvents[0]
-
-			// Validate webhook event structure (ADR-034 compliance)
-			Expect(webhookEvent.EventType).To(Equal("webhook.remediationrequest.timeout_modified"))
-			Expect(webhookEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryWebhook))
-			Expect(webhookEvent.EventAction).To(Equal("timeout_modified"))
-			Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
-			Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
-
-			// Validate webhook captured new TimeoutConfig values
-			// TODO: Validate webhook audit payload structure
-			// (depends on OpenAPI schema definition)
-		})
-	})
+	// NOTE: Scenario 2 removed from integration tests (January 13, 2026)
+	// Webhook tests belong in E2E tier where full webhook infrastructure is available.
+	// Integration tests validate business logic only (controller initialization).
 
 	// ========================================
 	// SCENARIO 3: Event Ordering Validation
