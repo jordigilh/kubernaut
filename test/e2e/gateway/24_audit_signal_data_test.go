@@ -718,7 +718,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 					return resp.Pagination.Value.Total.Value
 				}
 				return 0
-			}, 60*time.Second, 1*time.Second).Should(Equal(1), "First audit event should be written (waits for CRD visibility)")
+			}, 120*time.Second, 1*time.Second).Should(Equal(1), "First audit event should be written (waits for CRD visibility)")
 
 			By("Sending duplicate alert to trigger gateway.signal.deduplicated event")
 

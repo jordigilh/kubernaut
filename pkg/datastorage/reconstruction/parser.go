@@ -77,6 +77,8 @@ func ParseAuditEvent(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 		return parseGatewaySignalReceived(event)
 	case "orchestrator.lifecycle.created":
 		return parseOrchestratorLifecycleCreated(event)
+	case "aianalysis.analysis.completed":
+		return parseAIAnalysisCompleted(event)
 	case "workflowexecution.selection.completed":
 		return parseWorkflowSelectionCompleted(event)
 	case "workflowexecution.execution.started":
@@ -153,6 +155,28 @@ func getOptString(opt ogenclient.OptString) string {
 		return opt.Value
 	}
 	return ""
+}
+
+// parseAIAnalysisCompleted extracts provider data from aianalysis.analysis.completed event (Gap #4).
+func parseAIAnalysisCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	payload := event.EventData.AIAnalysisAuditPayload
+
+	data := &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+	}
+
+	// Extract provider data (Gap #4)
+	// ProviderData is stored as JSON in the Spec field of RemediationRequest
+	if payload.ProviderData.IsSet() {
+		// Marshal the provider data map to JSON string for storage
+		providerJSON, err := json.Marshal(payload.ProviderData.Value)
+		if err == nil {
+			data.ProviderData = string(providerJSON)
+		}
+	}
+
+	return data, nil
 }
 
 // parseWorkflowSelectionCompleted extracts workflow reference from workflowexecution.selection.completed event (Gap #5).

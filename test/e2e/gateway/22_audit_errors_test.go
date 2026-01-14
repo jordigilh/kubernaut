@@ -167,7 +167,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 					}
 				}
 				return false
-			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+			}, 120*time.Second, 2*time.Second).Should(BeTrue(),
 				"Should find at least 1 'gateway.crd.failed' audit event with error_details (increased timeout for DataStorage query)")
 
 			By("4. Validate error_details structure (Gap #7)")

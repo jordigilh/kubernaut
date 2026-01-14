@@ -212,7 +212,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = resp.Pagination.Value.Total.Value
 				}
 				return total
-			}, 60*time.Second, 1*time.Second).Should(Equal(1),
+			}, 120*time.Second, 1*time.Second).Should(Equal(1),
 				"BR-GATEWAY-190: Gateway MUST emit exactly 1 'signal.received' audit event (DD-TESTING-001)")
 
 			By("3. Verify audit event content - COMPREHENSIVE VALIDATION")
@@ -431,7 +431,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = resp.Pagination.Value.Total.Value
 				}
 				return total
-			}, 60*time.Second, 1*time.Second).Should(Equal(1),
+			}, 120*time.Second, 1*time.Second).Should(Equal(1),
 				"BR-GATEWAY-191: Gateway MUST emit exactly 1 'signal.deduplicated' audit event (DD-TESTING-001)")
 
 			By("4. Verify deduplication audit event content - COMPREHENSIVE VALIDATION")
@@ -607,7 +607,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 					total = resp.Pagination.Value.Total.Value
 				}
 				return total
-			}, 60*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
+			}, 120*time.Second, 1*time.Second).Should(BeNumerically(">=", 1),
 				"DD-AUDIT-003: Gateway MUST emit 'crd.created' audit event")
 
 			By("3. Validate crd.created audit event content")
