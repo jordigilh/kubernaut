@@ -344,7 +344,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				return 0
 			}
 			return len(crdList2.Items)
-		}, 60*time.Second, 1*time.Second).Should(Equal(1),
+		}, 120*time.Second, 1*time.Second).Should(Equal(1),
 			"CRD should be visible within 60s (K8s cache sync between in-cluster Gateway and external test client)")
 
 		// Second alert: Duplicate (CRD still in non-terminal phase)

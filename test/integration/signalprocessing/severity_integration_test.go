@@ -223,15 +223,29 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			sp.Spec.Signal.Severity = "Sev2"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			// WHEN: Controller determines severity
+			// WHEN: Controller determines severity (wait for Categorizing phase = Classifying complete)
+			Eventually(func(g Gomega) {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Name:      sp.Name,
+					Namespace: sp.Namespace,
+				}, &updated)).To(Succeed())
+				// Debug: Print current phase to understand where controller is stuck
+				if updated.Status.Phase != signalprocessingv1alpha1.PhaseCategorizing {
+					GinkgoWriter.Printf("DEBUG: Current phase=%s, waiting for Categorizing, severity=%s\n", 
+						updated.Status.Phase, updated.Status.Severity)
+				}
+				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCategorizing),
+					"Controller should complete Classifying phase before we check audit events")
+			}, "60s", "2s").Should(Succeed())
+
+			// THEN: Audit event contains both severities
 			Eventually(func(g Gomega) {
 				// Flush audit store to ensure events are persisted
 				flushAuditStoreAndWait()
 
 				// Query for classification.decision audit event (full event type)
 				events := queryAuditEvents(ctx, namespace, "signalprocessing.classification.decision")
-
-				// THEN: Audit event contains both severities
 				g.Expect(events).ToNot(BeEmpty(), "classification.decision audit event should exist")
 
 			latestEvent := events[len(events)-1]
@@ -282,13 +296,23 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			sp.Spec.Signal.Severity = "UNMAPPED_VALUE_999"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-			// WHEN: Controller determines severity using policy-defined fallback
+			// WHEN: Controller determines severity using policy-defined fallback (wait for completion)
+			Eventually(func(g Gomega) {
+				var updated signalprocessingv1alpha1.SignalProcessing
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Name:      sp.Name,
+					Namespace: sp.Namespace,
+				}, &updated)).To(Succeed())
+				g.Expect(updated.Status.Phase).To(Equal(signalprocessingv1alpha1.PhaseCategorizing),
+					"Controller should complete Classifying phase before we check audit events")
+			}, "30s", "1s").Should(Succeed())
+
+			// THEN: Audit event shows policy-defined fallback (not system "unknown")
 			Eventually(func(g Gomega) {
 				flushAuditStoreAndWait()
 
 				events := queryAuditEvents(ctx, namespace, "signalprocessing.classification.decision")
-
-			g.Expect(events).ToNot(BeEmpty())
+				g.Expect(events).ToNot(BeEmpty())
 
 			latestEvent := events[len(events)-1]
 			eventData, err := eventDataToMap(latestEvent.EventData)

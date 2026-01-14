@@ -172,6 +172,10 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 					"event_type":         "aianalysis.analysis.completed",
 					"analysis_name":      "aianalysis-full-001",
 					"namespace":          "test-namespace",
+					"phase":              "Analyzing",           // Required field
+					"approval_required":  false,                 // Required field
+					"degraded_mode":      false,                 // Required field
+					"warnings_count":     0,                     // Required field
 					"analysis_status":    "Completed",
 					"provider_data":      map[string]interface{}{"provider": "holmesgpt", "model": "gpt-4"},
 					"analysis_result":    "Memory leak detected",
@@ -196,12 +200,14 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 				ResourceType:   "WorkflowExecution",
 				ResourceID:     "wfe-full-001",
 				EventData: map[string]interface{}{
-					"event_type":      "workflowexecution.selection.completed",
-					"execution_name":  "wfe-full-001",
-					"namespace":       "test-namespace",
-					"workflow_id":     "restart-pod-workflow",
-					"version":         "v1.2.0",
-					"container_image": "ghcr.io/kubernaut/workflows:restart-pod-v1.2.0",
+					"event_type":       "workflowexecution.selection.completed",
+					"execution_name":   "wfe-full-001",
+					"namespace":        "test-namespace",
+					"phase":            "SelectingWorkflow", // Required field
+					"workflow_id":      "restart-pod-workflow",
+					"workflow_version": "v1.2.0",                           // Required field
+					"target_resource":  "Pod/frontend-pod-xyz",            // Required field (string format)
+					"container_image":  "ghcr.io/kubernaut/workflows:restart-pod-v1.2.0",
 					"selection_reason": "Best match for memory remediation",
 				},
 			}
@@ -224,6 +230,10 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 					"event_type":       "workflowexecution.execution.started",
 					"execution_name":   "wfe-full-001",
 					"namespace":        "test-namespace",
+					"phase":            "ExecutingWorkflow",       // Required field
+					"workflow_version": "v1.2.0",                  // Required field
+					"target_resource":  "Pod/frontend-pod-xyz",   // Required field (string format)
+					"container_image":  "ghcr.io/kubernaut/workflows:restart-pod-v1.2.0", // Required field
 					"pipelinerun_name": "restart-pod-run-12345",
 					"workflow_id":      "restart-pod-workflow",
 					"started_at":       baseTimestamp.Add(25 * time.Second).Format(time.RFC3339),
