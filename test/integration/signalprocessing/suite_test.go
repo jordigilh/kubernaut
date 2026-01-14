@@ -473,21 +473,21 @@ else := {"business_unit": "unknown", "criticality": "medium", "confidence": 0.5,
 	_, err = severityPolicyFile.WriteString(`package signalprocessing.severity
 import rego.v1
 # BR-SP-105: Severity Determination via Rego Policy
-# DD-SEVERITY-001: Strategy B - Policy-Defined Fallback
+# DD-SEVERITY-001: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
 determine_severity := "critical" if {
-	input.signal.severity == "Sev1"
+	input.signal.severity == "sev1"
 } else := "critical" if {
-	input.signal.severity == "P0"
+	input.signal.severity == "p0"
 } else := "critical" if {
-	input.signal.severity == "P1"
+	input.signal.severity == "p1"
 } else := "warning" if {
-	input.signal.severity == "Sev2"
+	input.signal.severity == "sev2"
 } else := "warning" if {
-	input.signal.severity == "P2"
+	input.signal.severity == "p2"
 } else := "info" if {
-	input.signal.severity == "Sev3"
+	input.signal.severity == "sev3"
 } else := "info" if {
-	input.signal.severity == "P3"
+	input.signal.severity == "p3"
 } else := "critical" if {
 	# Fallback: unmapped → critical (conservative, operator-defined)
 	true
