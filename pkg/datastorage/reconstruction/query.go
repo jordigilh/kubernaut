@@ -174,26 +174,65 @@ func QueryAuditEventsForReconstruction(
 					payload,
 				)
 
-			case "orchestrator.lifecycle.created":
-				var payload ogenclient.RemediationOrchestratorAuditPayload
-				if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
-					logger.Error(err, "Failed to unmarshal orchestrator event_data",
-						"correlationID", correlationID,
-						"eventID", eventID)
-					return nil, fmt.Errorf("failed to unmarshal orchestrator event_data: %w", err)
-				}
-				event.EventData.SetRemediationOrchestratorAuditPayload(
-					ogenclient.AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData,
-					payload,
-				)
-
-			default:
-				logger.V(1).Info("Skipping unsupported event type for reconstruction",
-					"eventType", event.EventType,
-					"correlationID", correlationID)
-				// Skip unsupported event types - they're filtered by query but defense-in-depth
-				continue
+		case "orchestrator.lifecycle.created":
+			var payload ogenclient.RemediationOrchestratorAuditPayload
+			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+				logger.Error(err, "Failed to unmarshal orchestrator event_data",
+					"correlationID", correlationID,
+					"eventID", eventID)
+				return nil, fmt.Errorf("failed to unmarshal orchestrator event_data: %w", err)
 			}
+			event.EventData.SetRemediationOrchestratorAuditPayload(
+				ogenclient.AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData,
+				payload,
+			)
+
+		case "aianalysis.analysis.completed":
+			var payload ogenclient.AIAnalysisAuditPayload
+			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+				logger.Error(err, "Failed to unmarshal aianalysis event_data",
+					"correlationID", correlationID,
+					"eventID", eventID)
+				return nil, fmt.Errorf("failed to unmarshal aianalysis event_data: %w", err)
+			}
+			event.EventData.SetAIAnalysisAuditPayload(
+				ogenclient.AuditEventEventDataAianalysisAnalysisCompletedAuditEventEventData,
+				payload,
+			)
+
+		case "workflowexecution.selection.completed":
+			var payload ogenclient.WorkflowExecutionAuditPayload
+			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+				logger.Error(err, "Failed to unmarshal workflowexecution selection event_data",
+					"correlationID", correlationID,
+					"eventID", eventID)
+				return nil, fmt.Errorf("failed to unmarshal workflowexecution selection event_data: %w", err)
+			}
+			event.EventData.SetWorkflowExecutionAuditPayload(
+				ogenclient.AuditEventEventDataWorkflowexecutionSelectionCompletedAuditEventEventData,
+				payload,
+			)
+
+		case "workflowexecution.execution.started":
+			var payload ogenclient.WorkflowExecutionAuditPayload
+			if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+				logger.Error(err, "Failed to unmarshal workflowexecution execution event_data",
+					"correlationID", correlationID,
+					"eventID", eventID)
+				return nil, fmt.Errorf("failed to unmarshal workflowexecution execution event_data: %w", err)
+			}
+			event.EventData.SetWorkflowExecutionAuditPayload(
+				ogenclient.AuditEventEventDataWorkflowexecutionExecutionStartedAuditEventEventData,
+				payload,
+			)
+
+		default:
+			logger.V(1).Info("Skipping unsupported event type for reconstruction",
+				"eventType", event.EventType,
+				"correlationID", correlationID)
+			// Skip unsupported event types - they're filtered by query but defense-in-depth
+			continue
+		}
 		}
 
 		events = append(events, event)

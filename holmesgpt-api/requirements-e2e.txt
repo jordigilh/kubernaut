@@ -34,8 +34,8 @@ urllib3>=1.26.0,<2.0.0  # Required for prometrix compatibility
 ../dependencies/holmesgpt/
 
 # DataStorage OpenAPI Client (SOC2 audit events) - Required for audit emission
-# Path relative to holmesgpt-api/ directory (works for both unit tests and Docker builds)
-src/clients/datastorage/
+# NOTE: Installed explicitly in Dockerfile before requirements.txt
+# DO NOT add here - causes "Invalid requirement" pip error
 
 # Additional service-specific dependencies (NOT in HolmesGPT SDK)
 # These are only for holmesgpt-api service functionality
