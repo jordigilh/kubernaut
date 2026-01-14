@@ -216,6 +216,7 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 
 // RecordClassificationDecision records classification decision event.
 // BR-SP-090: Logs environment, priority, and business classification decisions
+// DD-SEVERITY-001: Includes external and normalized severity for audit trail
 func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
@@ -225,6 +226,18 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
 	payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity))
+
+	// DD-SEVERITY-001: Record external and normalized severity for compliance audit trail
+	if sp.Spec.Signal.Severity != "" {
+		payload.ExternalSeverity.SetTo(sp.Spec.Signal.Severity)
+	}
+	if sp.Status.Severity != "" {
+		if normalizedSev := toSignalProcessingAuditPayloadNormalizedSeverity(sp.Status.Severity); normalizedSev != "" {
+			payload.NormalizedSeverity.SetTo(normalizedSev)
+		}
+		// Always set determination_source to "rego-policy" when normalized severity exists
+		payload.DeterminationSource.SetTo(api.SignalProcessingAuditPayloadDeterminationSourceRegoPolicy)
+	}
 
 	// Add all classification results
 	// Note: Confidence fields removed per DD-SP-001 V1.1

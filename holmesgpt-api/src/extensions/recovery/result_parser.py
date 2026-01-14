@@ -219,6 +219,19 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
         can_recover = selected_workflow is not None
         confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
 
+        # BR-HAPI-197: Determine human review requirement based on confidence threshold
+        # Authority: .cursor/rules/04-ai-ml-guidelines.mdc
+        CONFIDENCE_THRESHOLD = 0.5
+        needs_human_review = False
+        human_review_reason = None
+
+        if not selected_workflow:
+            needs_human_review = True
+            human_review_reason = "no_matching_workflows"
+        elif confidence < CONFIDENCE_THRESHOLD:
+            needs_human_review = True
+            human_review_reason = "low_confidence"
+
         # Convert to standard RecoveryResponse format
         strategies = []
         if selected_workflow:
@@ -250,6 +263,9 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
             "recovery_strategy": recovery_strategy,
             "selected_workflow": selected_workflow,
             "raw_analysis": analysis_text,
+            # BR-HAPI-197: Human review fields for recovery
+            "needs_human_review": needs_human_review,
+            "human_review_reason": human_review_reason,
         }
 
         logger.info(f"Successfully parsed recovery-specific response for incident {incident_id}")

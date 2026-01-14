@@ -1902,6 +1902,24 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.ExternalSeverity.Set {
+					e.FieldStart("external_severity")
+					s.ExternalSeverity.Encode(e)
+				}
+			}
+			{
+				if s.NormalizedSeverity.Set {
+					e.FieldStart("normalized_severity")
+					s.NormalizedSeverity.Encode(e)
+				}
+			}
+			{
+				if s.DeterminationSource.Set {
+					e.FieldStart("determination_source")
+					s.DeterminationSource.Encode(e)
+				}
+			}
+			{
 				if s.Environment.Set {
 					e.FieldStart("environment")
 					s.Environment.Encode(e)
@@ -3961,6 +3979,24 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.Severity.Set {
 					e.FieldStart("severity")
 					s.Severity.Encode(e)
+				}
+			}
+			{
+				if s.ExternalSeverity.Set {
+					e.FieldStart("external_severity")
+					s.ExternalSeverity.Encode(e)
+				}
+			}
+			{
+				if s.NormalizedSeverity.Set {
+					e.FieldStart("normalized_severity")
+					s.NormalizedSeverity.Encode(e)
+				}
+			}
+			{
+				if s.DeterminationSource.Set {
+					e.FieldStart("determination_source")
+					s.DeterminationSource.Encode(e)
 				}
 			}
 			{
@@ -15229,6 +15265,39 @@ func (s *OptSignalProcessingAuditPayloadCriticality) UnmarshalJSON(data []byte) 
 	return s.Decode(d)
 }
 
+// Encode encodes SignalProcessingAuditPayloadDeterminationSource as json.
+func (o OptSignalProcessingAuditPayloadDeterminationSource) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SignalProcessingAuditPayloadDeterminationSource from json.
+func (o *OptSignalProcessingAuditPayloadDeterminationSource) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSignalProcessingAuditPayloadDeterminationSource to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSignalProcessingAuditPayloadDeterminationSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSignalProcessingAuditPayloadDeterminationSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SignalProcessingAuditPayloadEnvironment as json.
 func (o OptSignalProcessingAuditPayloadEnvironment) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -15291,6 +15360,39 @@ func (s OptSignalProcessingAuditPayloadEnvironmentSource) MarshalJSON() ([]byte,
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSignalProcessingAuditPayloadEnvironmentSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalProcessingAuditPayloadNormalizedSeverity as json.
+func (o OptSignalProcessingAuditPayloadNormalizedSeverity) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes SignalProcessingAuditPayloadNormalizedSeverity from json.
+func (o *OptSignalProcessingAuditPayloadNormalizedSeverity) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSignalProcessingAuditPayloadNormalizedSeverity to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSignalProcessingAuditPayloadNormalizedSeverity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSignalProcessingAuditPayloadNormalizedSeverity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -19657,6 +19759,24 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ExternalSeverity.Set {
+			e.FieldStart("external_severity")
+			s.ExternalSeverity.Encode(e)
+		}
+	}
+	{
+		if s.NormalizedSeverity.Set {
+			e.FieldStart("normalized_severity")
+			s.NormalizedSeverity.Encode(e)
+		}
+	}
+	{
+		if s.DeterminationSource.Set {
+			e.FieldStart("determination_source")
+			s.DeterminationSource.Encode(e)
+		}
+	}
+	{
 		if s.Environment.Set {
 			e.FieldStart("environment")
 			s.Environment.Encode(e)
@@ -19772,30 +19892,33 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSignalProcessingAuditPayload = [23]string{
+var jsonFieldsNameOfSignalProcessingAuditPayload = [26]string{
 	0:  "event_type",
 	1:  "phase",
 	2:  "signal",
 	3:  "severity",
-	4:  "environment",
-	5:  "environment_source",
-	6:  "priority",
-	7:  "priority_source",
-	8:  "criticality",
-	9:  "sla_requirement",
-	10: "has_owner_chain",
-	11: "owner_chain_length",
-	12: "degraded_mode",
-	13: "has_pdb",
-	14: "has_hpa",
-	15: "duration_ms",
-	16: "has_namespace",
-	17: "has_pod",
-	18: "has_deployment",
-	19: "business_unit",
-	20: "from_phase",
-	21: "to_phase",
-	22: "error",
+	4:  "external_severity",
+	5:  "normalized_severity",
+	6:  "determination_source",
+	7:  "environment",
+	8:  "environment_source",
+	9:  "priority",
+	10: "priority_source",
+	11: "criticality",
+	12: "sla_requirement",
+	13: "has_owner_chain",
+	14: "owner_chain_length",
+	15: "degraded_mode",
+	16: "has_pdb",
+	17: "has_hpa",
+	18: "duration_ms",
+	19: "has_namespace",
+	20: "has_pod",
+	21: "has_deployment",
+	22: "business_unit",
+	23: "from_phase",
+	24: "to_phase",
+	25: "error",
 }
 
 // Decode decodes SignalProcessingAuditPayload from json.
@@ -19803,7 +19926,7 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SignalProcessingAuditPayload to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -19848,6 +19971,36 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"severity\"")
+			}
+		case "external_severity":
+			if err := func() error {
+				s.ExternalSeverity.Reset()
+				if err := s.ExternalSeverity.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"external_severity\"")
+			}
+		case "normalized_severity":
+			if err := func() error {
+				s.NormalizedSeverity.Reset()
+				if err := s.NormalizedSeverity.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"normalized_severity\"")
+			}
+		case "determination_source":
+			if err := func() error {
+				s.DeterminationSource.Reset()
+				if err := s.DeterminationSource.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"determination_source\"")
 			}
 		case "environment":
 			if err := func() error {
@@ -20048,8 +20201,9 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
+	for i, mask := range [4]uint8{
 		0b00000111,
+		0b00000000,
 		0b00000000,
 		0b00000000,
 	} {
@@ -20137,6 +20291,48 @@ func (s SignalProcessingAuditPayloadCriticality) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SignalProcessingAuditPayloadCriticality) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalProcessingAuditPayloadDeterminationSource as json.
+func (s SignalProcessingAuditPayloadDeterminationSource) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SignalProcessingAuditPayloadDeterminationSource from json.
+func (s *SignalProcessingAuditPayloadDeterminationSource) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingAuditPayloadDeterminationSource to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SignalProcessingAuditPayloadDeterminationSource(v) {
+	case SignalProcessingAuditPayloadDeterminationSourceRegoPolicy:
+		*s = SignalProcessingAuditPayloadDeterminationSourceRegoPolicy
+	case SignalProcessingAuditPayloadDeterminationSourceFallback:
+		*s = SignalProcessingAuditPayloadDeterminationSourceFallback
+	case SignalProcessingAuditPayloadDeterminationSourceDefault:
+		*s = SignalProcessingAuditPayloadDeterminationSourceDefault
+	default:
+		*s = SignalProcessingAuditPayloadDeterminationSource(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SignalProcessingAuditPayloadDeterminationSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingAuditPayloadDeterminationSource) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -20269,6 +20465,48 @@ func (s SignalProcessingAuditPayloadEventType) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SignalProcessingAuditPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SignalProcessingAuditPayloadNormalizedSeverity as json.
+func (s SignalProcessingAuditPayloadNormalizedSeverity) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SignalProcessingAuditPayloadNormalizedSeverity from json.
+func (s *SignalProcessingAuditPayloadNormalizedSeverity) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SignalProcessingAuditPayloadNormalizedSeverity to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SignalProcessingAuditPayloadNormalizedSeverity(v) {
+	case SignalProcessingAuditPayloadNormalizedSeverityCritical:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityCritical
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
+	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityInfo
+	default:
+		*s = SignalProcessingAuditPayloadNormalizedSeverity(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SignalProcessingAuditPayloadNormalizedSeverity) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SignalProcessingAuditPayloadNormalizedSeverity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

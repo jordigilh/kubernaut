@@ -9882,6 +9882,52 @@ func (o OptSignalProcessingAuditPayloadCriticality) Or(d SignalProcessingAuditPa
 	return d
 }
 
+// NewOptSignalProcessingAuditPayloadDeterminationSource returns new OptSignalProcessingAuditPayloadDeterminationSource with value set to v.
+func NewOptSignalProcessingAuditPayloadDeterminationSource(v SignalProcessingAuditPayloadDeterminationSource) OptSignalProcessingAuditPayloadDeterminationSource {
+	return OptSignalProcessingAuditPayloadDeterminationSource{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSignalProcessingAuditPayloadDeterminationSource is optional SignalProcessingAuditPayloadDeterminationSource.
+type OptSignalProcessingAuditPayloadDeterminationSource struct {
+	Value SignalProcessingAuditPayloadDeterminationSource
+	Set   bool
+}
+
+// IsSet returns true if OptSignalProcessingAuditPayloadDeterminationSource was set.
+func (o OptSignalProcessingAuditPayloadDeterminationSource) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSignalProcessingAuditPayloadDeterminationSource) Reset() {
+	var v SignalProcessingAuditPayloadDeterminationSource
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSignalProcessingAuditPayloadDeterminationSource) SetTo(v SignalProcessingAuditPayloadDeterminationSource) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSignalProcessingAuditPayloadDeterminationSource) Get() (v SignalProcessingAuditPayloadDeterminationSource, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSignalProcessingAuditPayloadDeterminationSource) Or(d SignalProcessingAuditPayloadDeterminationSource) SignalProcessingAuditPayloadDeterminationSource {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSignalProcessingAuditPayloadEnvironment returns new OptSignalProcessingAuditPayloadEnvironment with value set to v.
 func NewOptSignalProcessingAuditPayloadEnvironment(v SignalProcessingAuditPayloadEnvironment) OptSignalProcessingAuditPayloadEnvironment {
 	return OptSignalProcessingAuditPayloadEnvironment{
@@ -9968,6 +10014,52 @@ func (o OptSignalProcessingAuditPayloadEnvironmentSource) Get() (v SignalProcess
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSignalProcessingAuditPayloadEnvironmentSource) Or(d SignalProcessingAuditPayloadEnvironmentSource) SignalProcessingAuditPayloadEnvironmentSource {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSignalProcessingAuditPayloadNormalizedSeverity returns new OptSignalProcessingAuditPayloadNormalizedSeverity with value set to v.
+func NewOptSignalProcessingAuditPayloadNormalizedSeverity(v SignalProcessingAuditPayloadNormalizedSeverity) OptSignalProcessingAuditPayloadNormalizedSeverity {
+	return OptSignalProcessingAuditPayloadNormalizedSeverity{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSignalProcessingAuditPayloadNormalizedSeverity is optional SignalProcessingAuditPayloadNormalizedSeverity.
+type OptSignalProcessingAuditPayloadNormalizedSeverity struct {
+	Value SignalProcessingAuditPayloadNormalizedSeverity
+	Set   bool
+}
+
+// IsSet returns true if OptSignalProcessingAuditPayloadNormalizedSeverity was set.
+func (o OptSignalProcessingAuditPayloadNormalizedSeverity) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSignalProcessingAuditPayloadNormalizedSeverity) Reset() {
+	var v SignalProcessingAuditPayloadNormalizedSeverity
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSignalProcessingAuditPayloadNormalizedSeverity) SetTo(v SignalProcessingAuditPayloadNormalizedSeverity) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSignalProcessingAuditPayloadNormalizedSeverity) Get() (v SignalProcessingAuditPayloadNormalizedSeverity, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSignalProcessingAuditPayloadNormalizedSeverity) Or(d SignalProcessingAuditPayloadNormalizedSeverity) SignalProcessingAuditPayloadNormalizedSeverity {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -12562,6 +12654,12 @@ type SignalProcessingAuditPayload struct {
 	Signal string `json:"signal"`
 	// Severity level of the signal.
 	Severity OptSignalProcessingAuditPayloadSeverity `json:"severity"`
+	// Original severity from external monitoring system (e.g., Sev1, P0, critical).
+	ExternalSeverity OptString `json:"external_severity"`
+	// Normalized severity determined by Rego policy.
+	NormalizedSeverity OptSignalProcessingAuditPayloadNormalizedSeverity `json:"normalized_severity"`
+	// Source of severity determination for audit trail.
+	DeterminationSource OptSignalProcessingAuditPayloadDeterminationSource `json:"determination_source"`
 	// Classified environment.
 	Environment OptSignalProcessingAuditPayloadEnvironment `json:"environment"`
 	// Source of the environment classification.
@@ -12620,6 +12718,21 @@ func (s *SignalProcessingAuditPayload) GetSignal() string {
 // GetSeverity returns the value of Severity.
 func (s *SignalProcessingAuditPayload) GetSeverity() OptSignalProcessingAuditPayloadSeverity {
 	return s.Severity
+}
+
+// GetExternalSeverity returns the value of ExternalSeverity.
+func (s *SignalProcessingAuditPayload) GetExternalSeverity() OptString {
+	return s.ExternalSeverity
+}
+
+// GetNormalizedSeverity returns the value of NormalizedSeverity.
+func (s *SignalProcessingAuditPayload) GetNormalizedSeverity() OptSignalProcessingAuditPayloadNormalizedSeverity {
+	return s.NormalizedSeverity
+}
+
+// GetDeterminationSource returns the value of DeterminationSource.
+func (s *SignalProcessingAuditPayload) GetDeterminationSource() OptSignalProcessingAuditPayloadDeterminationSource {
+	return s.DeterminationSource
 }
 
 // GetEnvironment returns the value of Environment.
@@ -12735,6 +12848,21 @@ func (s *SignalProcessingAuditPayload) SetSignal(val string) {
 // SetSeverity sets the value of Severity.
 func (s *SignalProcessingAuditPayload) SetSeverity(val OptSignalProcessingAuditPayloadSeverity) {
 	s.Severity = val
+}
+
+// SetExternalSeverity sets the value of ExternalSeverity.
+func (s *SignalProcessingAuditPayload) SetExternalSeverity(val OptString) {
+	s.ExternalSeverity = val
+}
+
+// SetNormalizedSeverity sets the value of NormalizedSeverity.
+func (s *SignalProcessingAuditPayload) SetNormalizedSeverity(val OptSignalProcessingAuditPayloadNormalizedSeverity) {
+	s.NormalizedSeverity = val
+}
+
+// SetDeterminationSource sets the value of DeterminationSource.
+func (s *SignalProcessingAuditPayload) SetDeterminationSource(val OptSignalProcessingAuditPayloadDeterminationSource) {
+	s.DeterminationSource = val
 }
 
 // SetEnvironment sets the value of Environment.
@@ -12882,6 +13010,55 @@ func (s *SignalProcessingAuditPayloadCriticality) UnmarshalText(data []byte) err
 		return nil
 	case SignalProcessingAuditPayloadCriticalityLow:
 		*s = SignalProcessingAuditPayloadCriticalityLow
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Source of severity determination for audit trail.
+type SignalProcessingAuditPayloadDeterminationSource string
+
+const (
+	SignalProcessingAuditPayloadDeterminationSourceRegoPolicy SignalProcessingAuditPayloadDeterminationSource = "rego-policy"
+	SignalProcessingAuditPayloadDeterminationSourceFallback   SignalProcessingAuditPayloadDeterminationSource = "fallback"
+	SignalProcessingAuditPayloadDeterminationSourceDefault    SignalProcessingAuditPayloadDeterminationSource = "default"
+)
+
+// AllValues returns all SignalProcessingAuditPayloadDeterminationSource values.
+func (SignalProcessingAuditPayloadDeterminationSource) AllValues() []SignalProcessingAuditPayloadDeterminationSource {
+	return []SignalProcessingAuditPayloadDeterminationSource{
+		SignalProcessingAuditPayloadDeterminationSourceRegoPolicy,
+		SignalProcessingAuditPayloadDeterminationSourceFallback,
+		SignalProcessingAuditPayloadDeterminationSourceDefault,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalProcessingAuditPayloadDeterminationSource) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalProcessingAuditPayloadDeterminationSourceRegoPolicy:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadDeterminationSourceFallback:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadDeterminationSourceDefault:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalProcessingAuditPayloadDeterminationSource) UnmarshalText(data []byte) error {
+	switch SignalProcessingAuditPayloadDeterminationSource(data) {
+	case SignalProcessingAuditPayloadDeterminationSourceRegoPolicy:
+		*s = SignalProcessingAuditPayloadDeterminationSourceRegoPolicy
+		return nil
+	case SignalProcessingAuditPayloadDeterminationSourceFallback:
+		*s = SignalProcessingAuditPayloadDeterminationSourceFallback
+		return nil
+	case SignalProcessingAuditPayloadDeterminationSourceDefault:
+		*s = SignalProcessingAuditPayloadDeterminationSourceDefault
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -13050,6 +13227,55 @@ func (s *SignalProcessingAuditPayloadEventType) UnmarshalText(data []byte) error
 		return nil
 	case SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred:
 		*s = SignalProcessingAuditPayloadEventTypeSignalprocessingErrorOccurred
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Normalized severity determined by Rego policy.
+type SignalProcessingAuditPayloadNormalizedSeverity string
+
+const (
+	SignalProcessingAuditPayloadNormalizedSeverityCritical SignalProcessingAuditPayloadNormalizedSeverity = "critical"
+	SignalProcessingAuditPayloadNormalizedSeverityWarning  SignalProcessingAuditPayloadNormalizedSeverity = "warning"
+	SignalProcessingAuditPayloadNormalizedSeverityInfo     SignalProcessingAuditPayloadNormalizedSeverity = "info"
+)
+
+// AllValues returns all SignalProcessingAuditPayloadNormalizedSeverity values.
+func (SignalProcessingAuditPayloadNormalizedSeverity) AllValues() []SignalProcessingAuditPayloadNormalizedSeverity {
+	return []SignalProcessingAuditPayloadNormalizedSeverity{
+		SignalProcessingAuditPayloadNormalizedSeverityCritical,
+		SignalProcessingAuditPayloadNormalizedSeverityWarning,
+		SignalProcessingAuditPayloadNormalizedSeverityInfo,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SignalProcessingAuditPayloadNormalizedSeverity) MarshalText() ([]byte, error) {
+	switch s {
+	case SignalProcessingAuditPayloadNormalizedSeverityCritical:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SignalProcessingAuditPayloadNormalizedSeverity) UnmarshalText(data []byte) error {
+	switch SignalProcessingAuditPayloadNormalizedSeverity(data) {
+	case SignalProcessingAuditPayloadNormalizedSeverityCritical:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityCritical
+		return nil
+	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
+		return nil
+	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityInfo
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

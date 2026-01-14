@@ -54,6 +54,20 @@ func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAu
 	}
 }
 
+// DD-SEVERITY-001: Converter for normalized severity from Rego policy
+func toSignalProcessingAuditPayloadNormalizedSeverity(value string) api.SignalProcessingAuditPayloadNormalizedSeverity {
+	switch value {
+	case "critical":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityCritical
+	case "warning":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityWarning
+	case "info":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityInfo
+	default:
+		return ""
+	}
+}
+
 func toSignalProcessingAuditPayloadEnvironment(value string) api.SignalProcessingAuditPayloadEnvironment {
 	switch value {
 	case "production":

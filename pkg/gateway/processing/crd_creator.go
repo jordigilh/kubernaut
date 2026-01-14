@@ -169,24 +169,63 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 					"actual_fingerprint", existing.Spec.SignalFingerprint)
 			}
 
-			// Return success - CRD exists (idempotent operation)
+		// Return success - CRD exists (idempotent operation)
+		return nil
+	}
+
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Handle namespace not found by falling back to kubernaut-system
+	// Business Outcome: Invalid namespace doesn't block remediation
+	// Example scenarios: Namespace deleted after alert fired, cluster-scoped signals (NodeNotReady)
+	// Test: test/e2e/gateway/27_error_handling_test.go:224
+	if k8serrors.IsNotFound(err) && isNamespaceNotFoundError(err) {
+		originalNamespace := rr.Namespace
+
+		c.logger.Info("Namespace not found, falling back to kubernaut-system",
+			"original_namespace", originalNamespace,
+			"fallback_namespace", "kubernaut-system",
+			"crd_name", rr.Name)
+
+		// Update CRD to use kubernaut-system namespace
+		rr.Namespace = "kubernaut-system"
+
+		// Add labels to track the fallback
+		if rr.Labels == nil {
+			rr.Labels = make(map[string]string)
+		}
+		rr.Labels["kubernaut.ai/cluster-scoped"] = "true"
+		rr.Labels["kubernaut.ai/origin-namespace"] = originalNamespace
+
+		// Retry creation in kubernaut-system namespace
+		err = c.k8sClient.CreateRemediationRequest(ctx, rr)
+		if err == nil {
+			c.logger.Info("CRD created successfully in kubernaut-system namespace after fallback",
+				"original_namespace", originalNamespace,
+				"crd_name", rr.Name)
 			return nil
 		}
 
-		// Get error classification info for metrics
-		errorType := getErrorTypeString(err)
-		// GAP-10: Simplified error type detection (no external dependencies)
-		isRetryable := errorType == "rate_limited" || errorType == "service_unavailable" ||
-			errorType == "gateway_timeout" || errorType == "timeout" || errorType == "network_error"
+		// If fallback also failed, log and continue to error handling below
+		c.logger.Error(err, "CRD creation failed even after kubernaut-system fallback",
+			"original_namespace", originalNamespace,
+			"fallback_namespace", "kubernaut-system",
+			"crd_name", rr.Name)
+		// Fall through to normal error handling
+	}
 
-		// Non-retryable error (validation, RBAC, etc.)
-		if !isRetryable {
-			c.logger.Error(err, "CRD creation failed with non-retryable error",
-				"name", rr.Name,
-				"namespace", rr.Namespace,
-				"error_type", errorType)
-			return err
-		}
+	// Get error classification info for metrics
+	errorType := getErrorTypeString(err)
+	// GAP-10: Simplified error type detection (no external dependencies)
+	isRetryable := errorType == "rate_limited" || errorType == "service_unavailable" ||
+		errorType == "gateway_timeout" || errorType == "timeout" || errorType == "network_error"
+
+	// Non-retryable error (validation, RBAC, etc.)
+	if !isRetryable {
+		c.logger.Error(err, "CRD creation failed with non-retryable error",
+			"name", rr.Name,
+			"namespace", rr.Namespace,
+			"error_type", errorType)
+		return err
+	}
 
 		// Check if this was the last attempt
 		if attempt == c.retryConfig.MaxAttempts-1 {
@@ -721,4 +760,21 @@ func (c *CRDCreator) truncateAnnotationValues(annotations map[string]string) map
 		}
 	}
 	return truncated
+}
+
+// isNamespaceNotFoundError checks if an error is specifically about a namespace not being found
+// (as opposed to a CRD not being found)
+//
+// Example error message: "namespaces \"does-not-exist-123\" not found"
+//
+// BR-GATEWAY-NAMESPACE-FALLBACK: Used to detect when to fallback to kubernaut-system namespace
+// Test: test/e2e/gateway/27_error_handling_test.go:224
+func isNamespaceNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	// Check if error message contains "namespaces" and "not found"
+	// This distinguishes namespace errors from RemediationRequest not found errors
+	return strings.Contains(errMsg, "namespaces") && strings.Contains(errMsg, "not found")
 }
