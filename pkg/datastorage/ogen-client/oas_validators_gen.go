@@ -3525,6 +3525,42 @@ func (s *SignalProcessingAuditPayload) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.NormalizedSeverity.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "normalized_severity",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.DeterminationSource.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "determination_source",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Environment.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -3635,6 +3671,19 @@ func (s SignalProcessingAuditPayloadCriticality) Validate() error {
 	}
 }
 
+func (s SignalProcessingAuditPayloadDeterminationSource) Validate() error {
+	switch s {
+	case "rego-policy":
+		return nil
+	case "fallback":
+		return nil
+	case "default":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s SignalProcessingAuditPayloadEnvironment) Validate() error {
 	switch s {
 	case "production":
@@ -3674,6 +3723,19 @@ func (s SignalProcessingAuditPayloadEventType) Validate() error {
 	case "signalprocessing.enrichment.completed":
 		return nil
 	case "signalprocessing.error.occurred":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SignalProcessingAuditPayloadNormalizedSeverity) Validate() error {
+	switch s {
+	case "critical":
+		return nil
+	case "warning":
+		return nil
+	case "info":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
