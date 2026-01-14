@@ -157,26 +157,26 @@ determine_severity := "critical" {
 			//
 			// ESTIMATED COST SAVINGS: $50K (avoiding infrastructure reconfiguration)
 
-			// Load enterprise-aware policy
+			// Load enterprise-aware policy (DD-SEVERITY-001 REFACTOR: lowercase after case normalization)
 			enterprisePolicy := `
 package signalprocessing.severity
 
 determine_severity := "critical" {
-	input.signal.severity == "Sev1"
+	input.signal.severity == "sev1"
 } else := "critical" {
-	input.signal.severity == "P0"
+	input.signal.severity == "p0"
 } else := "critical" {
-	input.signal.severity == "P1"
+	input.signal.severity == "p1"
 } else := "warning" {
-	input.signal.severity == "Sev2"
+	input.signal.severity == "sev2"
 } else := "warning" {
-	input.signal.severity == "Sev3"
+	input.signal.severity == "sev3"
 } else := "warning" {
-	input.signal.severity == "P2"
+	input.signal.severity == "p2"
 } else := "info" {
-	input.signal.severity == "Sev4"
+	input.signal.severity == "sev4"
 } else := "info" {
-	input.signal.severity == "P3"
+	input.signal.severity == "p3"
 } else := "critical" {
 	# Fallback: unmapped → critical (conservative)
 	true
@@ -260,19 +260,19 @@ determine_severity := "critical" {
 				{"MINOR", "info", "Legacy monitoring uses 'MINOR' for tracking"},
 			}
 
-			// GIVEN: Operator has loaded custom Rego policy with their mappings
+			// GIVEN: Operator has loaded custom Rego policy with their mappings (DD-SEVERITY-001 REFACTOR: lowercase keys)
 			customPolicy := `
 package signalprocessing.severity
 
 severity_map := {
-	"SEVERE": "critical",
-	"MODERATE": "warning",
-	"MINOR": "info"
+	"severe": "critical",
+	"moderate": "warning",
+	"minor": "info"
 }
 
 determine_severity := result {
 	input_severity := input.signal.severity
-	result := object.get(severity_map, input_severity, "unknown")
+	result := object.get(severity_map, input_severity, "info")
 }
 `
 			err := severityClassifier.LoadRegoPolicy(customPolicy)
@@ -479,13 +479,15 @@ determine_severity := {
 			//
 			// ESTIMATED MTTR REDUCTION: 2 hours (no emergency rollback needed)
 
-			// GIVEN: Valid policy is loaded
+			// GIVEN: Valid policy is loaded (DD-SEVERITY-001: Strategy B - valid fallback)
 			validPolicy := `
 package signalprocessing.severity
 
 determine_severity := "critical" {
-	input.signal.severity == "Sev1"
-} else := "unknown"
+	input.signal.severity == "sev1"
+} else := "info" {
+	true
+}
 `
 			err := severityClassifier.LoadRegoPolicy(validPolicy)
 			Expect(err).ToNot(HaveOccurred(), "Valid policy should load successfully")
@@ -495,9 +497,9 @@ determine_severity := "critical" {
 			err = severityClassifier.LoadRegoPolicy(invalidPolicy)
 			Expect(err).To(HaveOccurred(), "Invalid policy should be rejected")
 
-			// THEN: System continues using previous valid policy
+			// THEN: System continues using previous valid policy (case-insensitive after REFACTOR)
 			sp := createTestSignalProcessing("test-recovery", "default")
-			sp.Spec.Signal.Severity = "Sev1"
+			sp.Spec.Signal.Severity = "Sev1" // Normalized to "sev1" by classifier
 
 			result, err := severityClassifier.ClassifySeverity(ctx, sp)
 			Expect(err).ToNot(HaveOccurred(), "Classification should still work with previous policy")

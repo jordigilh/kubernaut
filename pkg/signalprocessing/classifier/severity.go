@@ -45,6 +45,7 @@ package classifier
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/go-logr/logr"
@@ -125,10 +126,15 @@ func (c *SeverityClassifier) ClassifySeverity(ctx context.Context, sp *signalpro
 		return nil, fmt.Errorf("no policy loaded - severity determination requires Rego policy")
 	}
 
-	// Build Rego input
+	// DD-SEVERITY-001 REFACTOR (Gap 4): Normalize external severity to lowercase
+	// Rationale: Prevents duplicate policy entries for "SEV1", "Sev1", "sev1"
+	// Benefit: Operators write simpler Rego policies with lowercase equality checks
+	normalizedSeverity := strings.ToLower(sp.Spec.Signal.Severity)
+
+	// Build Rego input with normalized severity
 	input := map[string]interface{}{
 		"signal": map[string]interface{}{
-			"severity": sp.Spec.Signal.Severity,
+			"severity": normalizedSeverity,
 			"type":     sp.Spec.Signal.Type,
 			"source":   sp.Spec.Signal.Source,
 		},
