@@ -117,8 +117,8 @@ type SignalContextInput struct {
 	// +kubebuilder:validation:MaxLength=64
 	Fingerprint string `json:"fingerprint"`
 
-	// Signal severity: critical, warning, info
-	// +kubebuilder:validation:Enum=critical;warning;info
+	// Signal severity: critical, warning, info, unknown (normalized by SignalProcessing Rego - DD-SEVERITY-001)
+	// +kubebuilder:validation:Enum=critical;warning;info;unknown
 	Severity string `json:"severity"`
 
 	// Signal type (e.g., OOMKilled, CrashLoopBackOff)
@@ -480,8 +480,9 @@ type AIAnalysisStatus struct {
 type RootCauseAnalysis struct {
 	// Brief summary of root cause
 	Summary string `json:"summary"`
-	// Severity determined by RCA
-	// +kubebuilder:validation:Enum=critical;high;medium;low
+	// Severity determined by RCA (normalized per DD-SEVERITY-001)
+	// DD-SEVERITY-001: Must match SignalProcessing normalized severity values
+	// +kubebuilder:validation:Enum=critical;warning;info;unknown
 	Severity string `json:"severity"`
 	// Signal type determined by RCA (may differ from input)
 	SignalType string `json:"signalType"`

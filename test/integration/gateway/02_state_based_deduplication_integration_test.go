@@ -23,7 +23,7 @@ limitations under the License.
 //   - Removed all HTTP client code
 //   - Uses gateway.NewServerWithK8sClient for shared K8s client
 //   - Calls ProcessSignal() directly instead of HTTP POST
-//   - Tracks response status at business logic level (StatusAccepted, StatusDuplicate)
+//   - Tracks response status at business logic level (StatusAccepted, StatusDeduplicated)
 //   - No Eventually() needed - shared client gives immediate CRD visibility
 //   - Removed health check (HTTP-specific)
 // ========================================
@@ -50,7 +50,7 @@ import (
 
 // Test 02: State-Based Deduplication (DD-GATEWAY-009)
 // Validates that duplicate signals are handled based on CRD lifecycle state:
-// - Same signal while CRD is processing → deduplicated (StatusAccepted/StatusDuplicate)
+// - Same signal while CRD is processing → deduplicated (StatusAccepted/StatusDeduplicated)
 // - Different signals → create new CRDs
 //
 // Business Requirements:
@@ -173,7 +173,7 @@ var _ = Describe("Test 02: State-Based Deduplication (Integration)", Ordered, La
 		// Duplicate should be accepted or marked as duplicate
 		Expect(dupResponse.Status).To(Or(
 			Equal(gateway.StatusAccepted),
-			Equal(gateway.StatusDuplicate),
+			Equal(gateway.StatusDeduplicated),
 			Equal(gateway.StatusCreated)), // May also be created if within storm window
 			"Duplicate signal should be handled correctly")
 

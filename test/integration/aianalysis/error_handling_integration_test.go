@@ -284,9 +284,9 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// Use Mock LLM's problem_resolved scenario
 							// This triggers HAPI to return investigation_outcome="resolved"
 							// with confidence >= 0.7 and selected_workflow=null
-							SignalType:       "MOCK_PROBLEM_RESOLVED",
-							Severity:         "info",
-							Environment:      "production",
+						SignalType:       "MOCK_PROBLEM_RESOLVED",
+						Severity:         "info", // DD-SEVERITY-001: Use normalized severity (critical, warning, info, unknown)
+						Environment:      "production",
 							BusinessPriority: "P2",
 							Fingerprint:      "test-fingerprint-" + testID,
 							TargetResource: aianalysisv1.TargetResource{
