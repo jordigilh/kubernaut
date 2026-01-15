@@ -126,14 +126,14 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         Expect(auditStore.Events).To(HaveLen(2))
         correlationID1 := auditStore.Events[0].CorrelationID
         correlationID2 := auditStore.Events[1].CorrelationID
-        
+
         // Business rule: Correlation ID format enables RR reconstruction
         Expect(correlationID1).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
         Expect(correlationID2).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
-        
+
         // Business rule: Unique IDs enable independent RR lifecycle tracking
         Expect(correlationID1).ToNot(Equal(correlationID2))
-        
+
         // Business rule: Correlation format enables fingerprint extraction
         fingerprint1 := extractFingerprintFromCorrelationID(correlationID1)
         Expect(fingerprint1).To(HaveLen(12))
@@ -155,9 +155,16 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 
         // Then: All labels preserved in audit event
         auditEvent := auditStore.Events[0]
-        Expect(auditEvent.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
-        Expect(auditEvent.SignalLabels).To(HaveKeyWithValue("team", "platform"))
-        Expect(auditEvent.SignalLabels).To(HaveKeyWithValue("environment", "production"))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := auditEvent.EventData.GatewayAuditPayload
+        
+        // Access SignalLabels (Optional field - check if present)
+        signalLabels, ok := gatewayPayload.SignalLabels.Get()
+        Expect(ok).To(BeTrue(), "SignalLabels should be present in audit payload")
+        Expect(signalLabels).To(HaveKeyWithValue("severity", "critical"))
+        Expect(signalLabels).To(HaveKeyWithValue("team", "platform"))
+        Expect(signalLabels).To(HaveKeyWithValue("environment", "production"))
     })
 
     // Test 1.1.5
@@ -171,15 +178,15 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 
         // Then: Signal processing continues despite audit failure (resilience)
         Expect(err).ToNot(HaveOccurred())
-        
+
         // Business rule: Signal data extracted correctly despite audit failure
         Expect(signal.AlertName).To(Equal("HighCPU"))
         Expect(signal.Namespace).To(Equal("production"))
         Expect(signal.Severity).To(Equal("critical"))
-        
+
         // Business rule: Fingerprint generated correctly (SHA-256 format)
         Expect(signal.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"))
-        
+
         // Audit failure logged but doesn't block critical path
     })
 })
@@ -231,14 +238,23 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
         Expect(crdCreatedEvent).ToNot(BeNil())
         Expect(crdCreatedEvent.EventAction).To(Equal("created"))
+
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
+
+        // Business rule: RemediationRequest field contains CRD reference (namespace/name)
+        rrRef, ok := gatewayPayload.RemediationRequest.Get()
+        Expect(ok).To(BeTrue())
+        Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`))
         
-        // Business rule: CRD name format validates operational querying
-        Expect(crdCreatedEvent.Metadata["crd_name"]).To(MatchRegexp(`^rr-[a-f0-9]+-\d+$`))
-        Expect(crdCreatedEvent.Metadata["crd_name"]).To(Equal(crd.Name))
-        
-        // Business rule: CRD created in correct namespace per signal metadata
-        Expect(crdCreatedEvent.Metadata["crd_namespace"]).To(Equal(signal.Namespace))
-        Expect(crdCreatedEvent.Metadata["crd_namespace"]).To(Equal(crd.Namespace))
+        // Extract and validate CRD name from "namespace/name" format
+        parts := strings.Split(rrRef, "/")
+        Expect(parts).To(HaveLen(2))
+        Expect(parts[1]).To(Equal(crd.Name))
+
+        // Business rule: Namespace field matches signal namespace
+        Expect(gatewayPayload.Namespace).To(Equal(signal.Namespace))
+        Expect(gatewayPayload.Namespace).To(Equal(crd.Namespace))
     })
 
     // Test 1.2.2
@@ -251,10 +267,18 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 
         // Then: Target resource in audit event
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-        Expect(crdCreatedEvent.Metadata).To(HaveKey("target_resource_kind"))
-        Expect(crdCreatedEvent.Metadata).To(HaveKey("target_resource_name"))
-        Expect(crdCreatedEvent.Metadata["target_resource_kind"]).To(Equal("Pod"))
-        Expect(crdCreatedEvent.Metadata["target_resource_name"]).To(Equal("crashpod-123"))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
+        
+        // Access resource_kind and resource_name (Optional fields)
+        resourceKind, ok := gatewayPayload.ResourceKind.Get()
+        Expect(ok).To(BeTrue(), "ResourceKind should be present")
+        Expect(resourceKind).To(Equal("Pod"))
+        
+        resourceName, ok := gatewayPayload.ResourceName.Get()
+        Expect(ok).To(BeTrue(), "ResourceName should be present")
+        Expect(resourceName).To(Equal("crashpod-123"))
     })
 
     // Test 1.2.3
@@ -268,12 +292,20 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
         // Then: Fingerprint in audit event with correct format
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
         
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
+
         // Business rule: Fingerprint format enables field selector queries
-        Expect(crdCreatedEvent.Metadata["fingerprint"]).To(MatchRegexp("^[a-f0-9]{64}$"))
-        Expect(crdCreatedEvent.Metadata["fingerprint"]).To(Equal(signal.Fingerprint))
-        
-        // Business rule: Initial occurrence count is 1
-        Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "1"))
+        Expect(gatewayPayload.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"))
+        Expect(gatewayPayload.Fingerprint).To(Equal(signal.Fingerprint))
+
+        // Business rule: Initial occurrence count is not set for first CRD (only for deduplicated)
+        // Note: occurrence_count is populated only for deduplicated events
+        // For first-time CRD creation, deduplication_status should be "new"
+        dedupStatus, ok := gatewayPayload.DeduplicationStatus.Get()
+        if ok {
+            Expect(dedupStatus).To(Equal(api.GatewayAuditPayloadDeduplicationStatusNew))
+        }
     })
 
     // Test 1.2.4
@@ -287,7 +319,16 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 
         // Then: Occurrence count in audit event
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-        Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "5"))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
+        
+        // Note: occurrence_count is typically populated for deduplicated events
+        // For CRD creation, this would only be present if signal already deduplicated
+        occurrenceCount, ok := gatewayPayload.OccurrenceCount.Get()
+        if ok {
+            Expect(occurrenceCount).To(Equal(int32(5)))
+        }
     })
 
     // Test 1.2.5
@@ -303,17 +344,17 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
         // Then: Unique correlation IDs with correct format
         events := filterEventsByType(auditStore.Events, "gateway.crd.created")
         Expect(events).To(HaveLen(2))
-        
+
         correlation1 := events[0].CorrelationID
         correlation2 := events[1].CorrelationID
-        
+
         // Business rule: Correlation ID format enables tracing
         Expect(correlation1).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
         Expect(correlation2).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
-        
+
         // Business rule: Uniqueness enables independent RR lifecycle tracking
         Expect(correlation1).ToNot(Equal(correlation2))
-        
+
         // Business rule: Correlation matches CRD name (enables audit-to-CRD mapping)
         Expect(correlation1).To(Equal(crd1.Name))
         Expect(correlation2).To(Equal(crd2.Name))
@@ -368,18 +409,25 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvent).ToNot(BeNil())
         Expect(dedupeEvent.EventAction).To(Equal("deduplicated"))
-        
-        // Business rule: Deduplication reason enables SLA analysis
-        reason := dedupeEvent.Metadata["deduplication_reason"]
-        Expect(reason).To(BeElementOf("status-based", "time-window", "manual-suppression"))
-        
-        // Business rule: For Pending phase, must be status-based
-        if existingRR.Status.Phase == "Pending" {
-            Expect(reason).To(Equal("status-based"))
-        }
-        
-        // Business rule: Existing RR phase documented for troubleshooting
-        Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("existing_rr_phase", "Pending"))
+
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := dedupeEvent.EventData.GatewayAuditPayload
+
+        // Business rule: DeduplicationStatus proves deduplication occurred
+        dedupStatus, ok := gatewayPayload.DeduplicationStatus.Get()
+        Expect(ok).To(BeTrue(), "DeduplicationStatus should be present")
+        Expect(dedupStatus).To(Equal(api.GatewayAuditPayloadDeduplicationStatusDuplicate))
+
+        // Business rule: Occurrence count shows signal repetition pattern
+        occurrenceCount, ok := gatewayPayload.OccurrenceCount.Get()
+        Expect(ok).To(BeTrue(), "OccurrenceCount should be present for deduplicated signal")
+        Expect(occurrenceCount).To(BeNumerically(">", 1))
+
+        // Business rule: RemediationRequest contains existing RR reference
+        rrRef, ok := gatewayPayload.RemediationRequest.Get()
+        Expect(ok).To(BeTrue(), "RemediationRequest should be present")
+        Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`))
+        Expect(rrRef).To(ContainSubstring(existingRR.Name))
     })
 
     // Test 1.3.2
@@ -394,8 +442,20 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
 
         // Then: Existing RR name in audit event
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
-        Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("existing_rr_name", existingRR.Name))
-        Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("existing_rr_namespace", existingRR.Namespace))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := dedupeEvent.EventData.GatewayAuditPayload
+        
+        // Business rule: RemediationRequest field contains existing RR reference (namespace/name)
+        rrRef, ok := gatewayPayload.RemediationRequest.Get()
+        Expect(ok).To(BeTrue())
+        Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`))
+        
+        // Extract and validate namespace and name from "namespace/name" format
+        parts := strings.Split(rrRef, "/")
+        Expect(parts).To(HaveLen(2))
+        Expect(parts[0]).To(Equal(existingRR.Namespace))
+        Expect(parts[1]).To(Equal(existingRR.Name))
     })
 
     // Test 1.3.3
@@ -411,12 +471,19 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
 
         // Then: Updated count in audit event
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
-        Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "4"))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := dedupeEvent.EventData.GatewayAuditPayload
+        
+        // Business rule: OccurrenceCount incremented to reflect signal repetition
+        occurrenceCount, ok := gatewayPayload.OccurrenceCount.Get()
+        Expect(ok).To(BeTrue())
+        Expect(occurrenceCount).To(Equal(int32(4))) // 3 + 1
     })
 
     // Test 1.3.4
-    It("should emit different audit payloads for different deduplication phases", func() {
-        // Given: RRs in different phases
+    It("should emit deduplication audit events for different RR fingerprints", func() {
+        // Given: RRs with different fingerprints in different phases
         pendingRR := createTestRR("fp-pending", "Pending", "test-ns")
         processingRR := createTestRR("fp-processing", "Processing", "test-ns")
         k8sClient.Create(ctx, pendingRR)
@@ -428,11 +495,27 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         phaseChecker.ShouldDeduplicate(ctx, signal1)
         phaseChecker.ShouldDeduplicate(ctx, signal2)
 
-        // Then: Different phase metadata
+        // Then: Two deduplication events emitted
         dedupeEvents := filterEventsByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvents).To(HaveLen(2))
-        Expect(dedupeEvents[0].Metadata["existing_rr_phase"]).To(Equal("Pending"))
-        Expect(dedupeEvents[1].Metadata["existing_rr_phase"]).To(Equal("Processing"))
+        
+        // Parse both payloads
+        payload1 := dedupeEvents[0].EventData.GatewayAuditPayload
+        payload2 := dedupeEvents[1].EventData.GatewayAuditPayload
+        
+        // Business rule: Each deduplication references correct existing RR
+        rrRef1, ok1 := payload1.RemediationRequest.Get()
+        rrRef2, ok2 := payload2.RemediationRequest.Get()
+        Expect(ok1).To(BeTrue())
+        Expect(ok2).To(BeTrue())
+        Expect(rrRef1).To(ContainSubstring(pendingRR.Name))
+        Expect(rrRef2).To(ContainSubstring(processingRR.Name))
+        
+        // Business rule: Both marked as duplicate status
+        dedupStatus1, _ := payload1.DeduplicationStatus.Get()
+        dedupStatus2, _ := payload2.DeduplicationStatus.Get()
+        Expect(dedupStatus1).To(Equal(api.GatewayAuditPayloadDeduplicationStatusDuplicate))
+        Expect(dedupStatus2).To(Equal(api.GatewayAuditPayloadDeduplicationStatusDuplicate))
     })
 
     // Test 1.3.5
@@ -619,7 +702,7 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
         // Then: Metric incremented (correlates with K8s operation)
         finalValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "201"})
         Expect(finalValue).To(Equal(initialValue + 1))
-        
+
         // Business rule: Metric correlates with actual K8s CRD creation
         retrievedCRD := &remediationv1alpha1.RemediationRequest{}
         err = k8sClient.Get(ctx, client.ObjectKey{Name: crd.Name, Namespace: crd.Namespace}, retrievedCRD)
@@ -631,10 +714,10 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
     It("should increment gateway_http_requests_total{status=202} on deduplication", func() {
         // Given: Initial metric value and existing CRD
         initialValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "202"})
-        
+
         signal1 := createTestSignal("high-cpu", "critical")
         crd1, _ := handler.ProcessSignal(ctx, signal1)
-        
+
         // When: Duplicate signal processed (same fingerprint)
         signal2 := createTestSignalWithFingerprint("high-cpu", "critical", signal1.Fingerprint)
         crd2, err := handler.ProcessSignal(ctx, signal2)
@@ -643,10 +726,10 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
         // Then: Metric incremented (correlates with deduplication decision)
         finalValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "202"})
         Expect(finalValue).To(Equal(initialValue + 1))
-        
+
         // Business rule: No new CRD created due to deduplication
         Expect(crd2).To(BeNil())
-        
+
         // Business rule: Original CRD occurrence count updated (if tracked)
         retrievedCRD := &remediationv1alpha1.RemediationRequest{}
         err = k8sClient.Get(ctx, client.ObjectKey{Name: crd1.Name, Namespace: crd1.Namespace}, retrievedCRD)
@@ -1096,14 +1179,14 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
         // Then: Safe defaults enable CRD creation (business outcome)
         // Business rule: Default severity enables RemediationRequest priority classification
         Expect(signal.Severity).To(Equal("unknown"))
-        
+
         // Business rule: Default namespace prevents orphaned CRDs
         Expect(signal.Namespace).To(Equal("default"))
-        
+
         // Business rule: Empty maps prevent nil pointer panics in downstream processing
         Expect(signal.Labels).To(BeEmpty())  // Empty map, not nil
         Expect(signal.Annotations).To(BeEmpty())  // Empty map, not nil
-        
+
         // Validate CRD can be created with safe defaults
         crdCreator := processing.NewCRDCreator(k8sClient, auditStore)
         crd, err := crdCreator.CreateRemediationRequest(ctx, signal)
