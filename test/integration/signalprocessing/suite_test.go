@@ -145,8 +145,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	By("Starting SignalProcessing integration infrastructure (DD-TEST-002)")
-	// This starts: PostgreSQL, Redis, Immudb, DataStorage (with migrations)
-	// Per DD-TEST-001 v2.2: PostgreSQL=15436, Redis=16382, Immudb=13324, DS=18094
+	// This starts: PostgreSQL, Redis, DataStorage (with migrations)
+	// Per DD-TEST-001 v2.6: PostgreSQL=15436, Redis=16382, DS=18094
 	dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "signalprocessing",
 		PostgresPort:    15436, // DD-TEST-001 v2.2
@@ -156,7 +156,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ConfigDir:       "test/integration/signalprocessing/config",
 	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, Immudb, DataStorage)")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {

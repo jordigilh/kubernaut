@@ -29,14 +29,6 @@ redis:
   dlq_consumer_group: dlq-group
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
-immudb:
-  host: remediationorchestrator_immudb_test
-  port: 3322
-  database: kubernaut_audit
-  username: immudb
-  tls_enabled: false
-  secretsFile: /etc/datastorage/secrets/immudb-secrets.yaml
-  passwordKey: password
 logging:
   level: debug
   format: json
