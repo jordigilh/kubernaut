@@ -535,9 +535,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 				return ctrl.Result{}, updateErr
 			}
 
-			// Emit Kubernetes Event for operator visibility
-			r.Recorder.Event(sp, corev1.EventTypeWarning, "PolicyEvaluationFailed",
-				fmt.Sprintf("Rego policy evaluation failed: %v", err))
+		// Emit Kubernetes Event for operator visibility
+		// Include external severity value for debugging policy configuration issues
+		r.Recorder.Event(sp, corev1.EventTypeWarning, "PolicyEvaluationFailed",
+			fmt.Sprintf("Rego policy evaluation failed for external severity %q: %v", signal.Severity, err))
 
 			// Do not requeue - requires manual policy fix by operator
 			return ctrl.Result{Requeue: false}, nil

@@ -46,6 +46,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
+			rrName := helpers.UniqueTestName("test-remediation")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      helpers.UniqueTestName("integration-test"),
@@ -53,10 +54,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-remediation",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					},
-					RemediationID: "test-rem-001",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-001",
@@ -171,6 +172,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 		var analysis *aianalysisv1alpha1.AIAnalysis
 
 		BeforeEach(func() {
+			rrName := helpers.UniqueTestName("test-remediation")
 			analysis = &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      helpers.UniqueTestName("error-recovery"),
@@ -178,10 +180,10 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-remediation",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					},
-					RemediationID: "test-rem-002",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fingerprint-002",

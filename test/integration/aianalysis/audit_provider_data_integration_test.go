@@ -349,17 +349,18 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// ========================================
 
 			By("Creating AIAnalysis resource for RR reconstruction validation")
+			testID := uuid.New().String()[:8]
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-rr-recon-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("test-rr-recon-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-recon-%s", uuid.New().String()[:8]),
+					RemediationID: fmt.Sprintf("rr-recon-%s", testID),
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediation.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
-						Name:       "test-rr-recon",
+						Name:       fmt.Sprintf("test-rr-recon-%s", testID), // ✅ UNIQUE per test run
 						Namespace:  namespace,
 					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
