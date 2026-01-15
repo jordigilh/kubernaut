@@ -20,16 +20,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -1066,6 +1066,113 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				GinkgoWriter.Printf("✅ Phase-based dedup rejection validated: Old RR=%s (Completed), New RR=%s\n",
 					existingRRName, response2.RemediationRequestName)
 			})
+		})
+	})
+
+	// Test ID: GW-INT-AUD-020
+	// Scenario: Audit ID Uniqueness
+	// BR: BR-GATEWAY-055
+	// Section: 1.4.5
+	Context("when processing multiple signals (GW-INT-AUD-020, BR-GATEWAY-055)", func() {
+		var testNamespace string
+
+		BeforeEach(func() {
+			// Create unique test namespace for K8s resource isolation
+			processID := GinkgoParallelProcess()
+			testNamespace = fmt.Sprintf("gw-aud-unique-%d-%s", processID, uuid.New().String()[:8])
+
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
+		})
+
+		AfterEach(func() {
+			// Cleanup namespace
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		It("[GW-INT-AUD-020] should assign globally unique audit IDs to all events", func() {
+			By("1. Create and process 3 unique signals")
+			prometheusAdapter := adapters.NewPrometheusAdapter()
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			var correlationIDs []string
+			for i := 0; i < 3; i++ {
+				fingerprint := fmt.Sprintf("%064x", uuid.New().ID()+uint32(i))
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix()+int64(i))
+				correlationIDs = append(correlationIDs, correlationID)
+
+				alert := createPrometheusAlert(testNamespace, fmt.Sprintf("TestAlert%d", i), "critical", fingerprint, correlationID)
+				signal, err := prometheusAdapter.Parse(ctx, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+
+				time.Sleep(100 * time.Millisecond) // Small delay between signals
+			}
+
+			By("2. Query all audit events for the 3 correlation IDs")
+			client, err := createOgenClient()
+			Expect(err).ToNot(HaveOccurred())
+
+			var allAuditIDs []string
+			eventCount := 0
+
+			// Wait for all events to be flushed (3 signals * 2 events = 6 total)
+			Eventually(func() int {
+				allAuditIDs = []string{} // Reset
+				eventCount = 0
+				for _, corrID := range correlationIDs {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &corrID, nil, nil)
+					if err != nil {
+						continue
+					}
+					for _, event := range events {
+						// EventID is OptUUID - extract if present
+						if eventID, ok := event.EventID.Get(); ok {
+							allAuditIDs = append(allAuditIDs, eventID.String())
+							eventCount++
+						}
+					}
+				}
+				return eventCount
+			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 6),
+				"Should have at least 6 audit events (3 signals * 2 events each)")
+
+			By("3. Validate all audit IDs are unique")
+			uniqueIDs := make(map[string]bool)
+			duplicates := []string{}
+
+			for _, id := range allAuditIDs {
+				if uniqueIDs[id] {
+					duplicates = append(duplicates, id)
+				}
+				uniqueIDs[id] = true
+			}
+
+			Expect(duplicates).To(BeEmpty(),
+				"BR-GATEWAY-055: All audit event IDs must be globally unique (found duplicates: %v)", duplicates)
+			Expect(len(uniqueIDs)).To(Equal(len(allAuditIDs)),
+				"BR-GATEWAY-055: Number of unique IDs must match total audit events")
+
+			By("4. Validate audit ID format (ULID or UUID)")
+			for _, id := range allAuditIDs {
+				Expect(id).ToNot(BeEmpty(), "BR-GATEWAY-055: Audit ID must not be empty")
+				Expect(len(id)).To(BeNumerically(">=", 20),
+					"BR-GATEWAY-055: Audit ID must be at least 20 characters (ULID or UUID format)")
+			}
+
+			GinkgoWriter.Printf("✅ Audit ID uniqueness validated: %d events with %d unique IDs\n",
+				eventCount, len(uniqueIDs))
 		})
 	})
 })
