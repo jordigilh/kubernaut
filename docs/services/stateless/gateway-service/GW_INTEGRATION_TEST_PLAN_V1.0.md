@@ -180,13 +180,13 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Connect to real DataStorage (Podman container)
         dsClient = suite.GetDataStorageClient()
-        
+
         // Initialize real Gateway service with real dependencies
         gateway = gateway.NewService(dsClient, suite.GetK8sClient(), suite.GetLogger())
-        
+
         // Initialize real adapter with DataStorage
         adapter = prometheus.NewAdapter(dsClient, suite.GetLogger())
     })
@@ -324,15 +324,15 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
     // RECOMMENDATION: Move to unit tests for better isolation
     It("[GW-INT-AUD-005] should not block signal processing if audit emission fails", func() {
         Skip("TODO: Move to unit tests - audit failure testing requires mocks for isolation")
-        
+
         // Alternative for integration: Test DB constraint violation
         // Given: Signal that causes audit DB constraint violation
         signal := createTestPrometheusAlert()
         signal.CorrelationID = "" // Invalid - causes DB constraint failure
-        
+
         // When: Gateway processes signal
         _, err := gateway.ProcessSignal(ctx, signal)
-        
+
         // Then: Signal processing fails gracefully (expected behavior)
         // Note: In real system, audit failures should cause operation failure (data integrity)
         Expect(err).To(HaveOccurred())
@@ -372,13 +372,13 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Connect to real DataStorage (Podman container)
         dsClient = suite.GetDataStorageClient()
-        
+
         // Get real K8s client (envtest or Kind)
         k8sClient = suite.GetK8sClient()
-        
+
         // Initialize real CRD creator with real dependencies
         crdCreator = processing.NewCRDCreator(k8sClient, dsClient, suite.GetLogger())
     })
@@ -547,13 +547,13 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Connect to real DataStorage (Podman container)
         dsClient = suite.GetDataStorageClient()
-        
+
         // Get real K8s client (envtest or Kind)
         k8sClient = suite.GetK8sClient()
-        
+
         // Initialize real phase checker with real dependencies
         phaseChecker = processing.NewPhaseChecker(k8sClient, dsClient, suite.GetLogger())
     })
@@ -737,16 +737,16 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Connect to real DataStorage (Podman container)
         dsClient = suite.GetDataStorageClient()
-        
+
         // Get real K8s client (envtest or Kind)
         k8sClient = suite.GetK8sClient()
-        
+
         // Initialize real CRD creator with real dependencies
         crdCreator = processing.NewCRDCreator(k8sClient, dsClient, suite.GetLogger())
-        
+
         // NOTE: Error injection for integration tests uses real infrastructure:
         // - Create invalid CRD (missing required fields)
         // - Use non-existent namespace
@@ -1040,16 +1040,16 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Initialize real Prometheus registry
         metricsRegistry = prometheus.NewRegistry()
-        
+
         // Connect to real DataStorage (Podman container)
         dsClient = suite.GetDataStorageClient()
-        
+
         // Get real K8s client (envtest or Kind)
         k8sClient = suite.GetK8sClient()
-        
+
         // Initialize real CRD creator with metrics
         crdCreator = processing.NewCRDCreatorWithMetrics(k8sClient, dsClient, metricsRegistry, suite.GetLogger())
     })
@@ -1073,7 +1073,7 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
     It("[GW-INT-MET-007] should increment gateway_crd_creations_total{status=failure} on failure", func() {
         // Given: Signal with invalid namespace (causes K8s API failure)
         initialValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "failure"})
-        
+
         signal := createTestSignal("test-alert", "critical")
         signal.Namespace = "invalid-namespace-!!!" // Invalid K8s namespace format
 
@@ -1083,7 +1083,7 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
         // Then: Failure metric incremented
         Expect(err).To(HaveOccurred(), "CRD creation should fail with invalid namespace")
         Expect(crd).To(BeNil())
-        
+
         finalValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "failure"})
         Expect(finalValue).To(Equal(initialValue + 1), "Failure metric should increment")
     })
@@ -1175,16 +1175,16 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
 
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Initialize real Prometheus registry
         metricsRegistry = prometheus.NewRegistry()
-        
+
         // Connect to real DataStorage (Podman container)
         dsClient = suite.GetDataStorageClient()
-        
+
         // Get real K8s client (envtest or Kind)
         k8sClient = suite.GetK8sClient()
-        
+
         // Initialize real phase checker with metrics
         phaseChecker = processing.NewPhaseCheckerWithMetrics(k8sClient, dsClient, metricsRegistry, suite.GetLogger())
     })

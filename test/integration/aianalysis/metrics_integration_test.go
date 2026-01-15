@@ -100,17 +100,19 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 			// DD-TEST-010: Access metrics via reconciler instance (WorkflowExecution pattern)
 			// Each process's reconciler only reconciles resources in its own envtest
 			// 1. Create AIAnalysis CRD (triggers business logic)
+			testID := uuid.New().String()[:8]
+			rrName := fmt.Sprintf("test-rr-%s", testID)
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("metrics-test-success-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("metrics-test-success-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-rr",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
-					RemediationID: "test-rem-001",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-001",
