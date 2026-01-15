@@ -1,8 +1,8 @@
 # Gateway Audit Test Implementation Patterns
 
-**Date**: 2026-01-15  
-**Status**: ✅ API Triaged, Patterns Documented  
-**Tests Implemented**: 2/20 (10%)  
+**Date**: 2026-01-15
+**Status**: ✅ API Triaged, Patterns Documented
+**Tests Implemented**: 2/20 (10%)
 **Test Plan**: [`GW_INTEGRATION_TEST_PLAN_V1.0.md`](./GW_INTEGRATION_TEST_PLAN_V1.0.md)
 
 ---
@@ -65,30 +65,40 @@ type AuditEvent struct {
 
 ## 🛠️ **Available Helper Functions**
 
-All helpers are in `test/integration/gateway/audit_test_helpers.go`:
+### **Shared Query Helpers** (`test/shared/helpers/audit.go`)
 
-### **Query Helpers**
+**IMPORTANT**: Use shared helpers for ALL audit queries (DRY principle):
 
 ```go
-// Query events by type
-events, err := queryAuditEventsByType(ctx, "gateway.crd.created", correlationID)
+import sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 
-// Count events
-count := countAuditEventsByType(ctx, "gateway.signal.received", correlationID)
+// Create ogen client
+client, err := createOgenClient() // Gateway-specific port 18091
 
-// Get latest event
-event, err := getLatestAuditEvent(ctx, "gateway.crd.created", correlationID)
+// Query with correlation ID + event type
+events, total, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
 
-// Get all events for correlation ID
-allEvents, err := queryAllAuditEvents(ctx, correlationID)
+// Query by correlation ID only (most common)
+events, total, err := sharedhelpers.QueryAuditEventsByCorrelationID(ctx, client, correlationID)
 
-// Wait for event with timeout
-event, err := waitForAuditEvent(ctx, "gateway.crd.created", correlationID, 10*time.Second)
+// Query by event type only
+events, total, err := sharedhelpers.QueryAuditEventsByType(ctx, client, "gateway.crd.created")
+
+// Query by category
+events, total, err := sharedhelpers.QueryAuditEventsByCategory(ctx, client, "gateway")
 ```
 
-### **Validation Helpers**
+### **Gateway-Specific Helpers** (`test/integration/gateway/audit_test_helpers.go`)
+
+**Use these for Gateway-specific logic only:**
 
 ```go
+// Create ogen client (Gateway port 18091)
+client, err := createOgenClient()
+
+// Wait for event with timeout (async validation)
+event, err := waitForAuditEvent(ctx, client, "gateway.crd.created", correlationID, 10*time.Second)
+
 // Extract Gateway payload from event
 payload, ok := extractGatewayPayload(event)
 
@@ -102,14 +112,34 @@ err := validateCRDCreatedPayload(event, expectedNamespace)
 err := validateDeduplicatedPayload(event, expectedRRName)
 ```
 
+### **Shared Validators** (`test/shared/validators/audit.go`)
+
+```go
+import sharedvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
+
+// Validate event matches expected values
+sharedvalidators.ValidateAuditEvent(event, sharedvalidators.ExpectedAuditEvent{
+    EventType:     "gateway.crd.created",
+    EventCategory: ogenclient.AuditEventEventCategoryGateway,
+    EventAction:   "created",
+    CorrelationID: correlationID,
+})
+
+// Quick validation of required fields
+sharedvalidators.ValidateAuditEventHasRequiredFields(event)
+
+// Gomega matcher
+Expect(event).To(sharedvalidators.MatchAuditEvent(expected))
+```
+
 ---
 
 ## 📝 **Test Implementation Patterns**
 
 ### **Pattern 1: Basic Signal Processing Validation**
 
-**Use Case**: Validate that a signal is received and processed  
-**Tests**: GW-INT-AUD-001, GW-INT-AUD-003  
+**Use Case**: Validate that a signal is received and processed
+**Tests**: GW-INT-AUD-001, GW-INT-AUD-003
 **Example**: Signal received → CRD created
 
 ```go
@@ -147,8 +177,8 @@ It("[GW-INT-AUD-001] should create RemediationRequest CRD for new signal", func(
 
 ### **Pattern 2: Audit Event Query and Validation**
 
-**Use Case**: Query DataStorage and validate audit event payload  
-**Tests**: GW-INT-AUD-004, GW-INT-AUD-006, GW-INT-AUD-007  
+**Use Case**: Query DataStorage and validate audit event payload
+**Tests**: GW-INT-AUD-004, GW-INT-AUD-006, GW-INT-AUD-007
 **Example**: CRD created → Audit event emitted
 
 ```go
@@ -156,14 +186,18 @@ It("[GW-INT-AUD-006] should emit gateway.crd.created audit event", func() {
     By("1. Process signal to create CRD")
     // ... (process signal as in Pattern 1)
 
-    By("2. Query audit event from DataStorage")
+    By("2. Query audit event from DataStorage using shared helper")
+    client, err := createOgenClient()
+    Expect(err).ToNot(HaveOccurred())
+
     var crdCreatedEvent *ogenclient.AuditEvent
+    eventType := "gateway.crd.created"
     Eventually(func() bool {
-        event, err := getLatestAuditEvent(ctx, "gateway.crd.created", correlationID)
-        if err != nil || event == nil {
+        events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+        if err != nil || len(events) == 0 {
             return false
         }
-        crdCreatedEvent = event
+        crdCreatedEvent = &events[0]
         return true
     }, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), 
         "gateway.crd.created event should exist in DataStorage")
@@ -184,8 +218,8 @@ It("[GW-INT-AUD-006] should emit gateway.crd.created audit event", func() {
 
 ### **Pattern 3: Deduplication Validation**
 
-**Use Case**: Validate deduplication logic and audit events  
-**Tests**: GW-INT-AUD-002, GW-INT-AUD-011, GW-INT-AUD-012  
+**Use Case**: Validate deduplication logic and audit events
+**Tests**: GW-INT-AUD-002, GW-INT-AUD-011, GW-INT-AUD-012
 **Example**: Duplicate signal → Deduplicated event
 
 ```go
@@ -224,8 +258,8 @@ It("[GW-INT-AUD-002] should deduplicate based on fingerprint", func() {
 
 ### **Pattern 4: Signal Labels/Annotations Preservation**
 
-**Use Case**: Validate signal metadata is preserved in audit events  
-**Tests**: GW-INT-AUD-004  
+**Use Case**: Validate signal metadata is preserved in audit events
+**Tests**: GW-INT-AUD-004
 **Example**: Custom labels → Audit event payload
 
 ```go
@@ -247,7 +281,7 @@ It("[GW-INT-AUD-004] should preserve signal_labels in audit payload", func() {
                 "namespace": "%s"
             }
         }]
-    }`, customLabels["team"], customLabels["environment"], 
+    }`, customLabels["team"], customLabels["environment"],
         customLabels["component"], testNamespace))
 
     By("2. Process signal")
@@ -255,9 +289,13 @@ It("[GW-INT-AUD-004] should preserve signal_labels in audit payload", func() {
     response, err := gwServer.ProcessSignal(ctx, signal)
     Expect(err).ToNot(HaveOccurred())
 
-    By("3. Query and validate audit event")
+    By("3. Query and validate audit event using shared helper")
+    client, err := createOgenClient()
+    Expect(err).ToNot(HaveOccurred())
+
+    eventType := "gateway.crd.created"
     Eventually(func() bool {
-        events, _ := queryAuditEventsByType(ctx, "gateway.crd.created", correlationID)
+        events, _, _ := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
         if len(events) == 0 {
             return false
         }
@@ -285,8 +323,8 @@ It("[GW-INT-AUD-004] should preserve signal_labels in audit payload", func() {
 
 ### **Pattern 5: Error Scenario Validation**
 
-**Use Case**: Validate error audit events  
-**Tests**: GW-INT-AUD-016, GW-INT-AUD-017  
+**Use Case**: Validate error audit events
+**Tests**: GW-INT-AUD-016, GW-INT-AUD-017
 **Example**: K8s API failure → Error audit event
 
 ```go
@@ -476,7 +514,7 @@ Update this table as tests are implemented:
 
 ---
 
-**Document Status**: ✅ Active  
-**Last Updated**: 2026-01-15  
-**Maintainer**: Development Team  
+**Document Status**: ✅ Active
+**Last Updated**: 2026-01-15
+**Maintainer**: Development Team
 **Related Documents**: [`GW_INTEGRATION_TEST_PLAN_V1.0.md`](./GW_INTEGRATION_TEST_PLAN_V1.0.md)
