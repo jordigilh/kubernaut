@@ -42,11 +42,13 @@ Chaos tests validate that the Gateway service remains resilient and maintains da
 
 #### **Business Requirement**
 
-BR-GATEWAY-008: Redis operations must handle partial failures without corrupting state
+~~BR-GATEWAY-008: Redis operations~~ ❌ **OBSOLETE** (Redis removed from Gateway December 13, 2025)
+- **Original**: BR-GATEWAY-103 (Redis Retry Logic)
+- **Status**: Redis deprecated per DD-GATEWAY-011, storm detection removed per DD-GATEWAY-015
 
 #### **Failure Scenario**
 
-Redis pipeline commands fail mid-batch due to network issues, causing some commands to succeed and others to fail.
+~~Redis pipeline commands fail mid-batch~~ **SCENARIO OBSOLETE** - Gateway no longer uses Redis.
 
 #### **Test Steps**
 
@@ -80,18 +82,27 @@ Redis pipeline commands fail mid-batch due to network issues, causing some comma
 
 ---
 
-### **Scenario 2: Redis Connection Failure During Processing** ⏳ **PENDING**
+### **Scenario 2: Redis Connection Failure During Processing** ❌ **OBSOLETE**
 
-**Status**: New scenario (identified 2025-10-27)
-**Location**: `test/e2e/gateway/chaos/redis_failure_test.go`
+**Status**: ❌ **OBSOLETE** (Redis removed December 13, 2025)
+**Original Location**: `test/e2e/gateway/chaos/redis_failure_test.go`
 
 #### **Business Requirement**
 
-BR-GATEWAY-008: Gateway must fail fast when Redis is unavailable
+~~BR-GATEWAY-008: Gateway must fail fast when Redis is unavailable~~ **REMOVED**
+- **Replacement**: BR-GATEWAY-093 (Circuit Breaker for K8s API)
+- **Status**: Redis deprecated per DD-GATEWAY-011
 
 #### **Failure Scenario**
 
-Redis connection drops mid-request while Gateway is processing a webhook.
+~~Redis connection drops~~ **SCENARIO OBSOLETE** - Gateway no longer uses Redis.
+
+#### **Replacement Scenario Recommended**
+
+**Scenario 2B: Kubernetes API Failure During CRD Creation**
+- **Business Requirement**: BR-GATEWAY-093 (Circuit Breaker for K8s API)
+- **Failure**: K8s API unavailable during RemediationRequest CRD creation
+- **Expected**: Circuit breaker opens, Gateway returns 503, prevents cascade failures
 
 #### **Test Steps**
 
@@ -131,7 +142,7 @@ Redis connection drops mid-request while Gateway is processing a webhook.
 
 #### **Business Requirement**
 
-BR-GATEWAY-010: Gateway must handle K8s API failures gracefully
+BR-GATEWAY-093: Circuit Breaker for K8s API - Gateway must handle K8s API failures gracefully
 
 #### **Failure Scenario**
 
@@ -175,7 +186,7 @@ K8s API becomes unavailable while Gateway is creating a RemediationRequest CRD.
 
 #### **Business Requirement**
 
-BR-GATEWAY-008, BR-GATEWAY-010: Gateway must handle multiple simultaneous failures
+BR-GATEWAY-093: Circuit Breaker for K8s API - Gateway must handle multiple simultaneous failures
 
 #### **Failure Scenario**
 

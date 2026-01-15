@@ -24,9 +24,6 @@ import (
 	"net/http"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -56,40 +53,27 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 		testLogger = logger.WithValues("test", "k8s-event-ingestion")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
-		// Unique namespace for parallel execution
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("k8s-event-%d-%s", processID, uuid.New().String()[:8])
-
-
-		// Get K8s client and create namespace
-		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
-
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		testLogger.Info("Test 08: Kubernetes Event Ingestion - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-
+		testNamespace = createTestNamespace("k8s-event")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
 		if CurrentSpecReport().Failed() {
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			// Clean up test namespace (Pattern: RO E2E)
+			deleteTestNamespace(testNamespace)
+			testLogger.Info("✅ Test cleanup complete")
 		}
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: testNamespace}}
-		_ = k8sClient.Delete(testCtx, ns)
 		if testCancel != nil {
 			testCancel()
 		}
-		testLogger.Info("✅ Test cleanup complete")
 	})
 
 	It("should process K8s Events and create CRDs with correct resource information", func() {

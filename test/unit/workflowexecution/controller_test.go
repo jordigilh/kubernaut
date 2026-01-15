@@ -2857,7 +2857,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Event Classification
 				Expect(event.EventType).To(Equal(audit.EventTypeStarted))
-				Expect(string(event.EventCategory)).To(Equal("execution")) // Remediation Execution Service per OpenAPI spec
+				Expect(string(event.EventCategory)).To(Equal("workflowexecution")) // Service name per naming convention (updated Jan 14, 2026)
 				Expect(event.EventAction).To(Equal(audit.ActionStarted))
 				Expect(string(event.EventOutcome)).To(Equal(string(sharedaudit.OutcomeSuccess)))
 

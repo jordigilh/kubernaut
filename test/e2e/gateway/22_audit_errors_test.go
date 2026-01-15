@@ -19,9 +19,10 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,7 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
 // =============================================================================
@@ -62,61 +63,40 @@ import (
 //
 // =============================================================================
 
-var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", func() {
+var _ = Describe("BR-GATEWAY-NAMESPACE-FALLBACK: Gateway Namespace Fallback E2E Validation", func() {
 	var (
-		ctx            context.Context
-		testClient     client.Client
-		httpClient     *http.Client
-		dataStorageURL string
-		testNamespace  string
-		dsClient       *ogenclient.Client
+		testCtx       context.Context // ← Test-local context
+		httpClient    *http.Client
+		testNamespace string
+		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
+		testCtx = context.Background() // ← Uses local variable
 		httpClient = &http.Client{Timeout: 10 * time.Second}
-		testNamespace = fmt.Sprintf("test-error-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
 
-		// Create namespace in Kubernetes
-		Expect(CreateNamespaceAndWait(ctx, testClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		testNamespace = createTestNamespace("test-error-audit")
 
-		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
-		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
-		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18091" // Fallback for manual testing - Use 127.0.0.1 for CI/CD IPv4 compatibility
-		}
-
-		// Verify Data Storage is available
-		healthResp, err := http.Get(dataStorageURL + "/health")
-		if err != nil {
-			Fail(fmt.Sprintf("Data Storage not available at %s: %v", dataStorageURL, err))
-		}
-		defer func() { _ = healthResp.Body.Close() }()
-		if healthResp.StatusCode != http.StatusOK {
-			Fail(fmt.Sprintf("Data Storage health check failed at %s: status %d", dataStorageURL, healthResp.StatusCode))
-		}
-
-		// Create OpenAPI client for Data Storage queries
-		dsClient, err = ogenclient.NewClient(dataStorageURL)
-		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 	})
 
 	AfterEach(func() {
+		// Clean up test namespace (Pattern: RO E2E)
+		deleteTestNamespace(testNamespace)
 	})
 
-	Context("Gap #7 Scenario 1: K8s CRD Creation Failure", func() {
-		It("should emit standardized error_details on CRD creation failure", func() {
+	Context("BR-GATEWAY-NAMESPACE-FALLBACK: Namespace Fallback Validation", func() {
+		It("should successfully create CRD in fallback namespace when original namespace doesn't exist", func() {
 			By("1. Create Prometheus alert with non-existent namespace")
 			// Use a namespace that definitely doesn't exist
-			invalidNamespace := "non-existent-ns-" + uuid.New().String()
-			alertName := "CRDCreationFailureTest-" + uuid.New().String()[:8]
+			nonExistentNamespace := "non-existent-ns-" + uuid.New().String()
+			alertName := "NamespaceFallbackTest-" + uuid.New().String()[:8]
 
 			// Create Prometheus webhook payload
 			payload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 				AlertName: alertName,
-				Namespace: invalidNamespace, // Non-existent namespace causes K8s API error
+				Namespace: nonExistentNamespace, // Non-existent namespace triggers fallback
 				Severity:  "warning",
 				Resource: ResourceIdentifier{
 					Kind: "Pod",
@@ -124,7 +104,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 				},
 			})
 
-			By("2. Send HTTP request to Gateway - expect error (but Gateway still accepts)")
+			By("2. Send HTTP request to Gateway - expect success with fallback")
 			// E2E Pattern: Use HTTP POST to Gateway endpoint
 			req, err := http.NewRequest("POST", gatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(payload))
 			Expect(err).ToNot(HaveOccurred(), "HTTP request creation should succeed")
@@ -135,82 +115,49 @@ var _ = Describe("BR-AUDIT-005 Gap #7: Gateway Error Audit Standardization", fun
 			Expect(err).ToNot(HaveOccurred(), "HTTP request should succeed")
 			defer func() { _ = resp.Body.Close() }()
 
-			// Gateway accepts the request but CRD creation will fail internally
-			// Gateway may return 202 (Accepted) or 500 (Internal Error) depending on timing
-			// What matters is that it emits a "gateway.crd.failed" audit event
-			GinkgoWriter.Printf("Gateway response: HTTP %d\n", resp.StatusCode)
+			// BR-GATEWAY-NAMESPACE-FALLBACK: Gateway should succeed with namespace fallback
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated),
+				"Gateway should return 201 Created when CRD is created successfully via namespace fallback")
+			GinkgoWriter.Printf("✅ Gateway response: HTTP %d (namespace fallback succeeded)\n", resp.StatusCode)
 
-			By("3. Query Data Storage for 'gateway.crd.failed' audit event")
-			eventType := "gateway.crd.failed" // ✅ FIX: Gateway emits EventTypeCRDFailed = "gateway.crd.failed"
-			params := ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString("gateway"),
-				// Note: We can't predict the exact fingerprint, so we query by event type
-				// and verify the namespace matches
-			}
+			// Parse response to get CRD details
+			var gwResp GatewayResponse
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).ToNot(HaveOccurred(), "Should read response body")
+			err = json.Unmarshal(bodyBytes, &gwResp)
+			Expect(err).ToNot(HaveOccurred(), "Should parse Gateway response JSON")
 
-			var auditEvents []ogenclient.AuditEvent
-			Eventually(func() bool {
-				resp, err := dsClient.QueryAuditEvents(ctx, params)
-				if err != nil {
-					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
-					return false
-				}
-				auditEvents = resp.Data
-				// Find events matching our invalid namespace
-				for _, event := range auditEvents {
-					if event.EventData.GatewayAuditPayload.ErrorDetails.IsSet() {
-						errorDetails := event.EventData.GatewayAuditPayload.ErrorDetails.Value
-						if errorDetails.Message != "" {
-							return true
-						}
-					}
-				}
-				return false
-			}, 120*time.Second, 2*time.Second).Should(BeTrue(),
-				"Should find at least 1 'gateway.crd.failed' audit event with error_details (increased timeout for DataStorage query)")
+			By("3. Verify CRD was created in fallback namespace (kubernaut-system)")
+			crdName := gwResp.RemediationRequestName
+			Expect(crdName).ToNot(BeEmpty(), "Gateway should return CRD name")
 
-			By("4. Validate error_details structure (Gap #7)")
-			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least 1 audit event")
+			// BR-GATEWAY-NAMESPACE-FALLBACK: CRD should be in fallback namespace
+			fallbackNamespace := "kubernaut-system"
+			var createdRR remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx,
+					client.ObjectKey{Namespace: fallbackNamespace, Name: crdName},
+					&createdRR)
+			}, 30*time.Second, 1*time.Second).Should(Succeed(),
+				"CRD should be created in fallback namespace (kubernaut-system)")
 
-			// Find the most recent event with error_details
-			var event ogenclient.AuditEvent
-			for _, e := range auditEvents {
-				if e.EventData.GatewayAuditPayload.ErrorDetails.IsSet() {
-					event = e
-					break
-				}
-			}
+			By("4. Verify CRD has namespace fallback labels")
+			// BR-GATEWAY-NAMESPACE-FALLBACK: Labels preserve origin namespace information
+			Expect(createdRR.Labels).To(HaveKeyWithValue("kubernaut.ai/origin-namespace", nonExistentNamespace),
+				"CRD should have origin-namespace label with original (non-existent) namespace")
+			Expect(createdRR.Labels).To(HaveKeyWithValue("kubernaut.ai/cluster-scoped", "true"),
+				"CRD should have cluster-scoped=true label when namespace fallback is used")
 
-			// Validate standard ADR-034 fields
-			Expect(event.Version).To(Equal("1.0"))
-			Expect(event.EventType).To(Equal("gateway.crd.failed")) // ✅ FIX: Correct event type
-			Expect(string(event.EventCategory)).To(Equal("gateway"))
-			Expect(event.EventAction).To(Equal("created"))
-			Expect(string(event.EventOutcome)).To(Equal("failure"))
+			By("5. Verify CRD namespace is fallback namespace")
+			Expect(createdRR.Namespace).To(Equal(fallbackNamespace),
+				"CRD should be in fallback namespace (kubernaut-system), not original namespace")
 
-			// Validate error_details structure (Gap #7) - ✅ DD-API-001: Direct OpenAPI access
-			gatewayPayload := event.EventData.GatewayAuditPayload
-
-			// Access error_details from OpenAPI structure
-			errorDetails := gatewayPayload.ErrorDetails
-			Expect(errorDetails.IsSet()).To(BeTrue(), "error_details should exist in event_data (Gap #7)")
-
-			errorDetailsValue := errorDetails.Value
-
-			// Gap #7: Standardized error_details fields (direct access, no IsSet() needed for required fields)
-			Expect(errorDetailsValue.Message).ToNot(BeEmpty(), "error_details.message required")
-			Expect(errorDetailsValue.Code).ToNot(BeEmpty(), "error_details.code required")
-			Expect(string(errorDetailsValue.Component)).To(Equal("gateway"), "error_details.component should be 'gateway'")
-			// retry_possible is a bool, so just verify it exists (has a value)
-			_ = errorDetailsValue.RetryPossible // Validates field exists
-
-			// Validate error message contains meaningful context (Gap #7)
-			Expect(errorDetailsValue.Message).To(Or(
-				ContainSubstring("namespace"),
-				ContainSubstring("not found"),
-				ContainSubstring("failed"),
-			), "error_details.message should contain error context")
+			GinkgoWriter.Printf("✅ Namespace fallback validation complete:\n")
+			GinkgoWriter.Printf("   - Original namespace: %s (non-existent)\n", nonExistentNamespace)
+			GinkgoWriter.Printf("   - Fallback namespace: %s\n", fallbackNamespace)
+			GinkgoWriter.Printf("   - CRD name: %s\n", crdName)
+			GinkgoWriter.Printf("   - Labels: origin-namespace=%s, cluster-scoped=true\n",
+				createdRR.Labels["kubernaut.ai/origin-namespace"])
 		})
 	})
 

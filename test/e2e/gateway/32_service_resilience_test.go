@@ -21,11 +21,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,16 +40,18 @@ import (
 var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", func() {
 	var (
 		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
-		ctx           context.Context
+		testCtx       context.Context      // ← Test-local context
+		testCancel    context.CancelFunc
 		testClient    client.Client
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
-		testNamespace = fmt.Sprintf("gw-resilience-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace to prevent circuit breaker degradation
+		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
+		testNamespace = createTestNamespace("gw-resilience")
 
 		// Get DataStorage URL from environment (for reference, though not used in all tests)
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -62,7 +64,13 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	})
 
 	AfterEach(func() {
-		// No manual cleanup needed - each parallel process has its own isolated namespace
+	if testCancel != nil {
+		testCancel()  // ← Only cancels test-local context
+	}
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace
+		if testNamespace != "" {
+			deleteTestNamespace(testNamespace)
+		}
 	})
 
 	Context("GW-RES-001: K8s API Unreachable Scenarios (P0)", func() {
@@ -217,20 +225,24 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// BR-GATEWAY-187: Graceful degradation - audit events dropped, not blocking
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated), "Gateway should process alerts even if audit fails (graceful degradation)")
 
-			// And: RemediationRequest CRD should be created
-			// Use Eventually with better error reporting to diagnose cache sync issues
-			Eventually(func() int {
-				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
-				if err != nil {
-					GinkgoWriter.Printf("⚠️  List query failed: %v\n", err)
-					return -1 // Distinct from 0 to show error vs empty list
-				}
-				if len(rrList.Items) == 0 {
-					GinkgoWriter.Printf("📋 List query succeeded but found 0 items (waiting...)\n")
-				}
-				return len(rrList.Items)
-			}, 120*time.Second, 1*time.Second).Should(BeNumerically(">", 0), "RemediationRequest should be created despite DataStorage unavailability (60s for K8s cache sync - DD-E2E-K8S-CLIENT-001 Phase 1)")
+			// Parse Gateway response to get CRD name (DD-E2E-DIRECT-API-001)
+			bodyBytes, err := io.ReadAll(resp.Body)
+			Expect(err).ToNot(HaveOccurred())
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
+
+			// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
+			// Direct Get() is 4x faster (30s vs 120s) and bypasses cache/index issues
+			// BR-GATEWAY-NAMESPACE-FALLBACK: Use namespace from Gateway response (may be kubernaut-system if fallback occurred)
+			var createdRR remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: gwResp.RemediationRequestNamespace,
+					Name:      gwResp.RemediationRequestName,
+				}, &createdRR)
+			}, 30*time.Second, 1*time.Second).Should(Succeed(),
+				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 		})
 
 		It("should log DataStorage failures without blocking alert processing", FlakeAttempts(3), func() {
@@ -260,10 +272,15 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Then: Request should succeed with CRD creation (graceful degradation)
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
+			// Parse response to get actual namespace (BR-GATEWAY-NAMESPACE-FALLBACK)
+			var gwResp GatewayResponse
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			json.Unmarshal(bodyBytes, &gwResp)
+
 			// And: CRD should be created (audit is best-effort)
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
+				err := testClient.List(testCtx, rrList, client.InNamespace(gwResp.RemediationRequestNamespace))
 				if err != nil {
 					GinkgoWriter.Printf("⚠️  List query failed: %v\n", err)
 					return false
@@ -305,10 +322,15 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Then: Processing succeeds with CRD creation
 			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
+			// Parse response to get actual namespace (BR-GATEWAY-NAMESPACE-FALLBACK)
+			var gwResp GatewayResponse
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			json.Unmarshal(bodyBytes, &gwResp)
+
 			// And: CRD created
 			Eventually(func() bool {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
+				err := testClient.List(testCtx, rrList, client.InNamespace(gwResp.RemediationRequestNamespace))
 				return err == nil && len(rrList.Items) > 0
 			}, 120*time.Second, 1*time.Second).Should(BeTrue(), "CRD should be created after DataStorage recovery (60s for K8s cache sync - DD-E2E-K8S-CLIENT-001 Phase 1)")
 

@@ -26,9 +26,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -53,8 +56,8 @@ func TestGatewayE2E(t *testing.T) {
 var (
 	ctx       context.Context
 	cancel    context.CancelFunc
-	logger    logr.Logger       // DD-005: logr.Logger for unified logging
-	k8sClient client.Client     // DD-E2E-K8S-CLIENT-001: Suite-level K8s client (1 per process)
+	logger    logr.Logger   // DD-005: logr.Logger for unified logging
+	k8sClient client.Client // DD-E2E-K8S-CLIENT-001: Suite-level K8s client (1 per process)
 
 	// Cluster configuration (shared across all tests)
 	clusterName      string
@@ -72,9 +75,9 @@ var (
 	coverageMode bool
 )
 
-var _ = SynchronizedBeforeSuite(
+var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 	// This runs on process 1 only - create cluster once
-	func() []byte {
+	func(specCtx SpecContext) []byte {
 		// Initialize logger for process 1
 		tempLogger := kubelog.NewLogger(kubelog.Options{
 			Development: true,
@@ -107,7 +110,9 @@ var _ = SynchronizedBeforeSuite(
 		tempKubeconfigPath := fmt.Sprintf("%s/.kube/gateway-e2e-config", homeDir)
 
 		// Initialize context for infrastructure setup
-		tempCtx, _ := context.WithCancel(context.Background())
+		// Per DD-E2E-PARALLEL: Use Background context directly (no cancel needed)
+		// Other services (SignalProcessing, RO) use this pattern successfully
+		tempCtx := context.Background()
 
 		// Create KIND cluster with appropriate infrastructure setup
 		// Using HYBRID PARALLEL setup (Dec 25, 2025)
@@ -153,14 +158,15 @@ var _ = SynchronizedBeforeSuite(
 		return []byte(tempKubeconfigPath)
 	},
 	// This runs on ALL processes - connect to the cluster created by process 1
-	func(data []byte) {
+	func(specCtx SpecContext, data []byte) {
 		kubeconfigPath = string(data)
 
 		// DD-TEST-007: Set coverage mode for all processes
 		coverageMode = os.Getenv("COVERAGE_MODE") == "true"
 
-		// Initialize context
-		ctx, cancel = context.WithCancel(context.Background())
+		// Initialize context (use simple WithCancel, will be managed by Ginkgo lifecycle)
+		// Per DD-E2E-PARALLEL: Context managed through entire suite execution
+		ctx, cancel = context.WithCancel(context.TODO())
 
 		// Initialize logger for this process
 		logger = kubelog.NewLogger(kubelog.Options{
@@ -234,10 +240,9 @@ var _ = SynchronizedAfterSuite(
 		logger.Info(fmt.Sprintf("Process %d - Cleaning up", GinkgoParallelProcess()))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Cancel context for this process
-		if cancel != nil {
-			cancel()
-		}
+		// NOTE: Do NOT cancel suite-level context here - it's needed for namespace operations
+		// throughout the entire test suite execution. Context will be canceled after all
+		// tests complete (in the second SynchronizedAfterSuite function).
 	},
 	// This runs on process 1 only - delete cluster
 	func() {
@@ -335,3 +340,52 @@ var _ = SynchronizedAfterSuite(
 )
 
 // Helper functions for tests
+
+// ============================================================================
+// Test Namespace Helpers (Pattern: RemediationOrchestrator E2E)
+// ============================================================================
+
+// createTestNamespace creates a unique namespace for test isolation
+// This prevents "namespace not found" errors that degrade the circuit breaker
+// Pattern: Similar to RO E2E (test/e2e/remediationorchestrator/suite_test.go)
+func createTestNamespace(prefix string) string {
+	// Generate unique name with UUID component (Pattern: RO E2E)
+	// UUID guarantees uniqueness even for parallel tests in same second
+	name := fmt.Sprintf("%s-%d-%s",
+		prefix,
+		GinkgoParallelProcess(),
+		uuid.New().String()[:8])
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+			Labels: map[string]string{
+				"kubernaut.io/test": "e2e-gateway",
+			},
+		},
+	}
+	// Use fresh context for namespace operations to avoid cancellation issues
+	// Per DD-E2E-PARALLEL: Namespace operations should not be affected by test-level timeouts
+	nsCtx := context.Background()
+	err := k8sClient.Create(nsCtx, ns)
+	Expect(err).ToNot(HaveOccurred())
+	return name
+}
+
+// deleteTestNamespace cleans up test namespace after test completion
+func deleteTestNamespace(name string) {
+	// Guard against empty namespace names (can happen if BeforeEach fails/cancels)
+	if name == "" {
+		return
+	}
+
+	ns := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+	}
+	err := k8sClient.Delete(ctx, ns)
+	if err != nil && !apierrors.IsNotFound(err) {
+		GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v\n", name, err)
+	}
+}

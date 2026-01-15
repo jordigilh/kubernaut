@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,21 +39,17 @@ import (
 var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	var (
 		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
-		ctx           context.Context
+		testCtx       context.Context      // ← Test-local context
+		testCancel    context.CancelFunc
 		testClient    client.Client
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
-		// This eliminates flakiness caused by tests interfering with each other's data
-		testNamespace = fmt.Sprintf("gw-dedup-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-
-		// Create namespace in Kubernetes
-		Expect(CreateNamespaceAndWait(ctx, testClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+		testNamespace = createTestNamespace("gw-dedup-test")
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -66,8 +61,11 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 	})
 
 	AfterEach(func() {
-
-		// No manual cleanup needed - each parallel process has its own isolated namespace
+		if testCancel != nil {
+			testCancel()  // ← Only cancels test-local context
+		}
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+		deleteTestNamespace(testNamespace)
 	})
 
 	Context("GW-DEDUP-001: K8s API Failure During Deduplication Check (P0)", func() {
@@ -244,7 +242,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.List(ctx, rrList,
+				err := testClient.List(testCtx, rrList,
 					client.InNamespace(testNamespace))
 				if err != nil {
 					return -1
@@ -295,7 +293,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// Note: Query by SignalName (alertname) not fingerprint, since Gateway generates fingerprints
 			Eventually(func() int {
 				rrList := &remediationv1alpha1.RemediationRequestList{}
-				err := testClient.List(ctx, rrList,
+				err := testClient.List(testCtx, rrList,
 					client.InNamespace(testNamespace))
 				if err != nil {
 					return 0
@@ -340,7 +338,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 			// Note: Increased timeout to 20s to allow for K8s optimistic concurrency retries under CI load
 			Eventually(func() int32 {
 				var rrList remediationv1alpha1.RemediationRequestList
-				_ = testClient.List(ctx, &rrList, client.InNamespace(testNamespace))
+				_ = testClient.List(testCtx, &rrList, client.InNamespace(testNamespace))
 
 				for _, rr := range rrList.Items {
 					if rr.Spec.SignalName == "TestAtomicHitCount" && rr.Status.Deduplication != nil {

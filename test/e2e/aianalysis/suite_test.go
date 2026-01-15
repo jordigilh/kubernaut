@@ -130,6 +130,9 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info(fmt.Sprintf("  • Kubeconfig: %s", kubeconfigPath))
 		logger.Info("  • Infrastructure: kubernaut-system")
 		logger.Info("  • Tests will create dynamic namespaces per test")
+		logger.Info("  • DD-TEST-011: Workflows seeded and ConfigMap created in infrastructure setup")
+		logger.Info("  • Mock LLM will mount ConfigMap with workflow UUIDs at startup")
+
 		logger.Info("  • Process 1 will now share kubeconfig with other processes")
 
 		// Return kubeconfig path to all processes

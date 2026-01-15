@@ -18,12 +18,14 @@ package datastorage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-faster/jx"
 	"github.com/google/uuid"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -63,7 +65,7 @@ import (
 //
 // ========================================
 
-var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() {
+var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "reconstruction-api", "p0"), Ordered, func() {
 	var (
 		testCtx       context.Context
 		correlationID string
@@ -93,8 +95,45 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 			// Generate unique correlation ID for this test
 			correlationID = fmt.Sprintf("e2e-full-reconstruction-%s", uuid.New().String())
 
-			// Seed complete audit trail in database
-			// Gateway signal event
+			// Seed complete audit trail in database using type-safe ogenclient structs
+			// Gateway signal event (Gap #1-3) - TYPE SAFE
+			originalPayload := ogenclient.GatewayAuditPayloadOriginalPayload{}
+			// Manually encode nested map to jx.Raw
+			originalPayloadJSON, _ := json.Marshal(map[string]interface{}{
+				"alert":  "HighCPUUsage",
+				"status": "firing",
+				"labels": map[string]string{
+					"alertname": "HighCPUUsage",
+					"severity":  "critical",
+				},
+			})
+			_ = originalPayload.UnmarshalJSON(originalPayloadJSON)
+
+			gatewayPayload := ogenclient.GatewayAuditPayload{
+				EventType:   "gateway.signal.received",
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:   "HighCPUUsage",        // string, not OptString
+				Namespace:   "production",          // string, not OptString
+				Fingerprint: "e2e-fingerprint-123", // string, not OptString
+				SignalLabels: ogenclient.NewOptGatewayAuditPayloadSignalLabels(ogenclient.GatewayAuditPayloadSignalLabels{
+					"alertname": "HighCPUUsage",
+					"severity":  "critical",
+					"pod":       "app-pod-123",
+				}),
+				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(ogenclient.GatewayAuditPayloadSignalAnnotations{
+					"summary":     "CPU usage exceeded 80%",
+					"description": "Pod app-pod-123 CPU usage is at 92%",
+				}),
+				OriginalPayload: ogenclient.NewOptGatewayAuditPayloadOriginalPayload(originalPayload),
+			}
+
+			// Marshal using ogen's jx.Encoder for proper handling of Opt types
+			var gatewayEncoder jx.Encoder
+			gatewayPayload.Encode(&gatewayEncoder)
+			var gatewayEventData map[string]interface{}
+			err := json.Unmarshal(gatewayEncoder.Bytes(), &gatewayEventData)
+			Expect(err).ToNot(HaveOccurred(), "Failed to marshal gateway payload")
+
 			gatewayEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
 				Version:        "1.0",
@@ -108,36 +147,31 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 				ResourceID:     "signal-e2e-123",
 				ActorType:      "ServiceAccount",
 				ActorID:        "system:serviceaccount:gateway:gateway-sa",
-				EventData: map[string]interface{}{
-					"event_type":  "gateway.signal.received",
-					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPUUsage",
-					"namespace":   "production",
-					"fingerprint": "e2e-fingerprint-123",
-					"signal_labels": map[string]interface{}{
-						"alertname": "HighCPUUsage",
-						"severity":  "critical",
-						"pod":       "app-pod-123",
-					},
-					"signal_annotations": map[string]interface{}{
-						"summary":     "CPU usage exceeded 80%",
-						"description": "Pod app-pod-123 CPU usage is at 92%",
-					},
-					"original_payload": map[string]interface{}{
-						"alert":  "HighCPUUsage",
-						"status": "firing",
-						"labels": map[string]interface{}{
-							"alertname": "HighCPUUsage",
-							"severity":  "critical",
-						},
-					},
-				},
+				EventData:      gatewayEventData,
 			}
 
-			_, err := auditRepo.Create(testCtx, gatewayEvent)
+			_, err = auditRepo.Create(testCtx, gatewayEvent)
 			Expect(err).ToNot(HaveOccurred(), "Failed to seed gateway audit event")
 
-			// Orchestrator lifecycle event
+			// Orchestrator lifecycle event (Gap #8) - TYPE SAFE
+			orchestratorPayload := ogenclient.RemediationOrchestratorAuditPayload{
+				EventType: "orchestrator.lifecycle.created",
+				RrName:    "rr-e2e-123",
+				Namespace: "production",
+				TimeoutConfig: ogenclient.NewOptTimeoutConfig(ogenclient.TimeoutConfig{
+					Global:     ogenclient.NewOptString("1h"),
+					Processing: ogenclient.NewOptString("10m"),
+					Analyzing:  ogenclient.NewOptString("15m"),
+					Executing:  ogenclient.NewOptString("30m"),
+				}),
+			}
+
+			var orchestratorEncoder jx.Encoder
+			orchestratorPayload.Encode(&orchestratorEncoder)
+			var orchestratorEventData map[string]interface{}
+			err = json.Unmarshal(orchestratorEncoder.Bytes(), &orchestratorEventData)
+			Expect(err).ToNot(HaveOccurred(), "Failed to marshal orchestrator payload")
+
 			orchestratorEvent := &repository.AuditEvent{
 				EventID:        uuid.New(),
 				Version:        "1.0",
@@ -151,23 +185,129 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 				ResourceID:     "rr-e2e-123",
 				ActorType:      "ServiceAccount",
 				ActorID:        "system:serviceaccount:orchestrator:orchestrator-sa",
-				EventData: map[string]interface{}{
-					"event_type": "orchestrator.lifecycle.created",
-					"rr_name":    "rr-e2e-123",
-					"namespace":  "production",
-					"timeout_config": map[string]interface{}{
-						"global":     "1h",
-						"processing": "10m",
-						"analyzing":  "15m",
-						"executing":  "30m",
-					},
-				},
+				EventData:      orchestratorEventData,
 			}
 
 			_, err = auditRepo.Create(testCtx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred(), "Failed to seed orchestrator audit event")
 
-			GinkgoWriter.Printf("✅ Seeded audit events for correlation ID: %s\n", correlationID)
+			// AIAnalysis completed event (Gap #4) - TYPE SAFE
+			aiPayload := ogenclient.AIAnalysisAuditPayload{
+				EventType:        "aianalysis.analysis.completed",
+				AnalysisName:     "analysis-e2e-123",
+				Namespace:        "production",
+				Phase:            "completed",
+				ApprovalRequired: false,
+				DegradedMode:     false,
+				WarningsCount:    0,
+				ProviderResponseSummary: ogenclient.NewOptProviderResponseSummary(ogenclient.ProviderResponseSummary{
+					IncidentID:       "e2e-incident-123",
+					AnalysisPreview:  "High CPU usage detected in production pods",
+					NeedsHumanReview: false,
+					WarningsCount:    0,
+				}),
+			}
+
+			var aiEncoder jx.Encoder
+			aiPayload.Encode(&aiEncoder)
+			var aiEventData map[string]interface{}
+			err = json.Unmarshal(aiEncoder.Bytes(), &aiEventData)
+			Expect(err).ToNot(HaveOccurred(), "Failed to marshal AI analysis payload")
+
+			aiEvent := &repository.AuditEvent{
+				EventID:        uuid.New(),
+				Version:        "1.0",
+				EventTimestamp: time.Now().Add(-4 * time.Second).UTC(),
+				EventType:      "aianalysis.analysis.completed",
+				EventCategory:  "aianalysis",
+				EventAction:    "completed",
+				EventOutcome:   "success",
+				CorrelationID:  correlationID,
+				ResourceType:   "AIAnalysis",
+				ResourceID:     "analysis-e2e-123",
+				ActorType:      "ServiceAccount",
+				ActorID:        "system:serviceaccount:aianalysis:aianalysis-sa",
+				EventData:      aiEventData,
+			}
+
+			_, err = auditRepo.Create(testCtx, aiEvent)
+			Expect(err).ToNot(HaveOccurred(), "Failed to seed AI analysis audit event")
+
+			// WorkflowExecution selection completed event (Gap #5) - TYPE SAFE + SHA256
+			workflowSelectionPayload := ogenclient.WorkflowExecutionAuditPayload{
+				EventType:       "workflowexecution.selection.completed",
+				ExecutionName:   "we-e2e-123",
+				WorkflowID:      "cpu-remediation-workflow",
+				WorkflowVersion: "v1.2.0",
+				// ✅ SHA256 digest (not tag) for reproducibility
+				ContainerImage: "registry.io/workflows/cpu-remediation@sha256:abc123def456789012345678901234567890123456789012345678901234",
+				TargetResource: "deployment/app-deployment",
+				Phase:          "selecting",
+			}
+
+			var workflowSelectionEncoder jx.Encoder
+			workflowSelectionPayload.Encode(&workflowSelectionEncoder)
+			var workflowSelectionEventData map[string]interface{}
+			err = json.Unmarshal(workflowSelectionEncoder.Bytes(), &workflowSelectionEventData)
+			Expect(err).ToNot(HaveOccurred(), "Failed to marshal workflow selection payload")
+
+			workflowSelectionEvent := &repository.AuditEvent{
+				EventID:        uuid.New(),
+				Version:        "1.0",
+				EventTimestamp: time.Now().Add(-3 * time.Second).UTC(),
+				EventType:      "workflowexecution.selection.completed",
+				EventCategory:  "workflowexecution",
+				EventAction:    "completed",
+				EventOutcome:   "success",
+				CorrelationID:  correlationID,
+				ResourceType:   "WorkflowExecution",
+				ResourceID:     "we-e2e-123",
+				ActorType:      "ServiceAccount",
+				ActorID:        "system:serviceaccount:workflowexecution:workflowexecution-sa",
+				EventData:      workflowSelectionEventData,
+			}
+
+			_, err = auditRepo.Create(testCtx, workflowSelectionEvent)
+			Expect(err).ToNot(HaveOccurred(), "Failed to seed workflow selection audit event")
+
+			// WorkflowExecution execution started event (Gap #6) - TYPE SAFE + SHA256
+			workflowExecutionPayload := ogenclient.WorkflowExecutionAuditPayload{
+				EventType:     "workflowexecution.execution.started",
+				ExecutionName: "we-e2e-123",
+				WorkflowID:    "cpu-remediation-workflow",
+				// ✅ SHA256 digest (not tag) for reproducibility
+				ContainerImage:  "registry.io/workflows/cpu-remediation@sha256:abc123def456789012345678901234567890123456789012345678901234",
+				TargetResource:  "deployment/app-deployment",
+				WorkflowVersion: "v1.2.0",
+				Phase:           "executing",
+			}
+
+			var workflowExecutionEncoder jx.Encoder
+			workflowExecutionPayload.Encode(&workflowExecutionEncoder)
+			var workflowExecutionEventData map[string]interface{}
+			err = json.Unmarshal(workflowExecutionEncoder.Bytes(), &workflowExecutionEventData)
+			Expect(err).ToNot(HaveOccurred(), "Failed to marshal workflow execution payload")
+
+			workflowExecutionEvent := &repository.AuditEvent{
+				EventID:        uuid.New(),
+				Version:        "1.0",
+				EventTimestamp: time.Now().Add(-2 * time.Second).UTC(),
+				EventType:      "workflowexecution.execution.started",
+				EventCategory:  "workflowexecution",
+				EventAction:    "started",
+				EventOutcome:   "success",
+				CorrelationID:  correlationID,
+				ResourceType:   "WorkflowExecution",
+				ResourceID:     "we-e2e-123",
+				ActorType:      "ServiceAccount",
+				ActorID:        "system:serviceaccount:workflowexecution:workflowexecution-sa",
+				EventData:      workflowExecutionEventData,
+			}
+
+			_, err = auditRepo.Create(testCtx, workflowExecutionEvent)
+			Expect(err).ToNot(HaveOccurred(), "Failed to seed workflow execution audit event")
+
+			GinkgoWriter.Printf("✅ Seeded 5 audit events (all gaps covered) for correlation ID: %s\n", correlationID)
 		})
 
 		It("should reconstruct RR via OpenAPI client with complete fields", func() {
@@ -182,6 +322,33 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 			Expect(err).ToNot(HaveOccurred(), "OpenAPI client request should succeed")
 			Expect(response).ToNot(BeNil(), "Response should not be nil")
 
+			// DEBUG: Check what response type we got
+			GinkgoWriter.Printf("📊 Response type: %T\n", response)
+			switch resp := response.(type) {
+			case *ogenclient.ReconstructRemediationRequestBadRequest:
+				GinkgoWriter.Printf("❌ Got 400 Bad Request:\n")
+				GinkgoWriter.Printf("   Type: %s\n", resp.Type.String())
+				GinkgoWriter.Printf("   Title: %s\n", resp.Title)
+				GinkgoWriter.Printf("   Detail: %s\n", resp.Detail.Value)
+				Fail("Reconstruction returned 400 Bad Request - check server logs")
+			case *ogenclient.ReconstructRemediationRequestNotFound:
+				GinkgoWriter.Printf("❌ Got 404 Not Found:\n")
+				GinkgoWriter.Printf("   Type: %s\n", resp.Type.String())
+				GinkgoWriter.Printf("   Title: %s\n", resp.Title)
+				GinkgoWriter.Printf("   Detail: %s\n", resp.Detail.Value)
+				Fail("Reconstruction returned 404 Not Found - events not found in database")
+			case *ogenclient.ReconstructRemediationRequestInternalServerError:
+				GinkgoWriter.Printf("❌ Got 500 Internal Server Error:\n")
+				GinkgoWriter.Printf("   Type: %s\n", resp.Type.String())
+				GinkgoWriter.Printf("   Title: %s\n", resp.Title)
+				GinkgoWriter.Printf("   Detail: %s\n", resp.Detail.Value)
+				Fail("Reconstruction returned 500 Internal Server Error - check server logs")
+			case *ogenclient.ReconstructionResponse:
+				GinkgoWriter.Printf("✅ Got successful ReconstructionResponse\n")
+			default:
+				GinkgoWriter.Printf("❌ Got unexpected response type: %T\n", resp)
+			}
+
 			// ASSERT: Response is successful reconstruction
 			reconstructionResp, ok := response.(*ogenclient.ReconstructionResponse)
 			Expect(ok).To(BeTrue(), "Response should be ReconstructionResponse type")
@@ -195,34 +362,40 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Ordered, func() 
 			Expect(reconstructionResp.Validation.IsValid).To(BeTrue(),
 				"Reconstruction should be valid")
 
-			// ASSERT: Completeness is high (>80% for complete audit trail)
-			Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 80),
-				"Completeness should be >= 80% for complete audit trail")
+			// ASSERT: Completeness is very high (>= 88% for complete audit trail with all 5 event types)
+			// Updated Jan 14, 2026: Seeding all 5 event types (gateway + orchestrator + AI + 2x workflow)
+			// 8/9 fields populated (TimeoutConfig populated, but only basic fields - counts as complete)
+			Expect(reconstructionResp.Validation.Completeness).To(BeNumerically(">=", 88),
+				"Completeness should be >= 88% for complete audit trail (8/9 fields)")
 
-		// ASSERT: Core fields reconstructed correctly
-		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
-			"YAML should contain signal name")
-		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("prometheus-alert"),
-			"YAML should contain signal type")
-		Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
-			"YAML should contain timeout config")
+			// ASSERT: Core fields reconstructed correctly (Gaps #1-3)
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("HighCPUUsage"),
+				"YAML should contain signal name")
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("prometheus-alert"),
+				"YAML should contain signal type")
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("1h"),
+				"YAML should contain timeout config (Gap #8)")
 
-		// ASSERT: Gap #5-6 fields present (Workflow References)
-		// These fields validate that the reconstruction API correctly processes
-		// workflowexecution.selection.completed and workflowexecution.execution.started events
-		// Note: This E2E test doesn't seed these events yet, so we validate field presence, not values
-		// TODO: Add workflow events to test data seeding for complete Gap #5-6 E2E validation
-		if reconstructionResp.Validation.Completeness >= 90 {
-			// Only validate if we expect complete reconstruction
+			// ASSERT: Gap #4 field present (AI Provider Data)
+			// Note: providerData is base64-encoded bytes in CRD (correct behavior)
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("providerData"),
+				"YAML should contain Gap #4 field (AI provider data - base64 encoded)")
+
+			// ASSERT: Gap #5 field present (Workflow Selection Reference)
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("selectedWorkflowRef"),
 				"YAML should contain Gap #5 field (workflow selection)")
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("cpu-remediation-workflow"),
+				"YAML should contain workflow ID from selection event")
+
+			// ASSERT: Gap #6 field present (Workflow Execution Reference)
 			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("executionRef"),
 				"YAML should contain Gap #6 field (execution reference)")
-		}
+			Expect(reconstructionResp.RemediationRequestYaml).To(ContainSubstring("we-e2e-123"),
+				"YAML should contain execution name from execution started event")
 
-		GinkgoWriter.Printf("✅ Reconstruction succeeded: completeness=%d%%, warnings=%d\n",
-			reconstructionResp.Validation.Completeness,
-			len(reconstructionResp.Validation.Warnings))
+			GinkgoWriter.Printf("✅ Reconstruction succeeded: completeness=%d%%, warnings=%d\n",
+				reconstructionResp.Validation.Completeness,
+				len(reconstructionResp.Validation.Warnings))
 		})
 	})
 

@@ -48,15 +48,15 @@ import (
 
 var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests", func() {
 	var (
-		ctx           context.Context
+		testCtx       context.Context      // ← Test-local context
+		testCancel    context.CancelFunc
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		logger        logr.Logger // DD-005: Use logr.Logger
 		testNamespace string      // Unique namespace per test
-		testCounter   int         // Counter to ensure unique namespaces
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		logger = logr.Discard() // DD-005: Use logr.Discard() for silent test logging
 		_ = logger              // Suppress unused variable warning
 
@@ -65,16 +65,10 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		Expect(k8sClient).ToNot(BeNil(), "K8s client required for E2E tests")
 
-		// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
+	// DD-GATEWAY-012: Redis setup REMOVED - Gateway is now Redis-free
 
-		// Create unique production namespace for this test (prevents collisions)
-		// Use counter to ensure uniqueness even when tests run in same second
-		testCounter++
-		testNamespace = fmt.Sprintf("test-prod-p%d-%d-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano(), GinkgoRandomSeed(), testCounter)
-
-		// Create namespace in Kubernetes
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	testNamespace = createTestNamespace("test-prod")
 
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed
@@ -85,14 +79,15 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 		)
 	})
 
-	AfterEach(func() {
-		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
+AfterEach(func() {
+	if testCancel != nil {
+		testCancel()  // ← Only cancels test-local context
+	}
+	// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
-		// NOTE: Namespace cleanup handled by suite-level AfterSuite (batch cleanup)
-		// This prevents "namespace is being terminated" errors from parallel test execution
-
-		// E2E tests use deployed Gateway - no cleanup needed
-	})
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	deleteTestNamespace(testNamespace)
+})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// BR-GATEWAY-001: Prometheus Alert → CRD Creation
@@ -149,7 +144,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred(), "Should list CRDs in test namespace")
 			Expect(crdList.Items).To(HaveLen(1), "One CRD should be created")
 
@@ -224,7 +219,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			var crdList1 remediationv1alpha1.RemediationRequestList
 			var firstCRDName string
 			Eventually(func() int {
-				err = k8sClient.List(ctx, &crdList1, client.InNamespace(testNamespace))
+				err = k8sClient.List(testCtx, &crdList1, client.InNamespace(testNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList1.Items)
 			}, "5s", "100ms").Should(Equal(1), "First alert creates CRD")
@@ -248,7 +243,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 2: NO new CRD created
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList2, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList2, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList2.Items).To(HaveLen(1),
 				"Duplicate alert must NOT create new CRD")
@@ -272,7 +267,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 3: Still only 1 CRD
 			var crdList3 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList3, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList3, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList3.Items).To(HaveLen(1),
 				"Third duplicate must NOT create new CRD (still only 1 CRD)")
@@ -345,7 +340,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// Verify duplicate count via K8s CRD status
 			Eventually(func() int32 {
 				// Get the first (and only) CRD
-				crds := ListRemediationRequests(ctx, k8sClient, testNamespace)
+				crds := ListRemediationRequests(testCtx, k8sClient, testNamespace)
 				if len(crds) == 0 || crds[0].Status.Deduplication == nil {
 					return 0
 				}
@@ -354,7 +349,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 				"Count shows alert fired 5 times (1 original + 4 duplicates)")
 
 			// Verify timestamps in status.deduplication
-			crds := ListRemediationRequests(ctx, k8sClient, testNamespace)
+			crds := ListRemediationRequests(testCtx, k8sClient, testNamespace)
 			Expect(crds).To(HaveLen(1))
 			Expect(crds[0].Status.Deduplication).ToNot(BeNil())
 			Expect(crds[0].Status.Deduplication.FirstSeenAt).ToNot(BeNil(),
@@ -411,7 +406,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 
 			// BUSINESS OUTCOME 2: CRD created in Kubernetes
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
+			err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(crdList.Items).To(HaveLen(1), "K8s event should create CRD")
 
@@ -475,7 +470,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// BUSINESS OUTCOME: CRD has spec.targetResource populated
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
+				err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(Equal(1), "CRD should be created")
@@ -548,7 +543,7 @@ var _ = Describe("BR-GATEWAY-001-015: End-to-End Webhook Processing - E2E Tests"
 			// Verify CRD was created with TargetResource
 			var crdList remediationv1alpha1.RemediationRequestList
 			Eventually(func() int {
-				err = k8sClient.List(ctx, &crdList, client.InNamespace(testNamespace))
+				err = k8sClient.List(testCtx, &crdList, client.InNamespace(testNamespace))
 				Expect(err).NotTo(HaveOccurred())
 				return len(crdList.Items)
 			}, "5s", "100ms").Should(BeNumerically(">=", 1), "CRD should be created")

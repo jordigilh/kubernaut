@@ -48,14 +48,9 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testLogger.Info("Test 20: Security Headers & Observability - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("security-headers")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
-		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use suite ctx (no timeout) for namespace creation
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
-
-		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	testNamespace = createTestNamespace("security-headers")
+	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
@@ -79,13 +74,14 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 			return
 		}
 
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
+	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	deleteTestNamespace(testNamespace)
 
-		if testCancel != nil {
-			testCancel()
-		}
-		testLogger.Info("✅ Test cleanup complete")
+	if testCancel != nil {
+		testCancel()
+	}
+	testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 

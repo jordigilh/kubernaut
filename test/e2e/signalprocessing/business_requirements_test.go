@@ -39,7 +39,7 @@ limitations under the License.
 // NOTE: These tests duplicate some integration test scenarios intentionally
 // for defense-in-depth coverage. E2E tests run against real Kind cluster
 // while integration tests use ENVTEST.
-package signalprocessing_e2e
+package signalprocessing
 
 import (
 	"context"

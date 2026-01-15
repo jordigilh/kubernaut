@@ -20,10 +20,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/go-faster/jx"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 )
@@ -88,50 +89,31 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 	Context("INTEGRATION-QUERY-01: Query audit events from real database", func() {
 		It("should retrieve audit events by correlation ID", func() {
 			// ARRANGE: Seed audit events in real PostgreSQL
-			gatewayEvent := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				Version:        "1.0",
-				EventTimestamp: time.Now().Add(-10 * time.Second).UTC(),
-				EventType:      "gateway.signal.received",
-				EventCategory:  "gateway",
-				EventAction:    "received",
-				EventOutcome:   "success",
-				CorrelationID:  correlationID,
-				ResourceType:   "Signal",
-				ResourceID:     "signal-123",
-				EventData: map[string]interface{}{
-					"event_type":  "gateway.signal.received", // Required for discriminator
-					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPU",     // Required field
-					"namespace":   "default",     // Required field
-					"fingerprint": "test-fp-123", // Required field
-				},
+			// ✅ Using typed ogenclient payloads for compile-time validation
+			gatewayPayload := ogenclient.GatewayAuditPayload{
+				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:   "HighCPU",
+				Namespace:   "default",
+				Fingerprint: "test-fp-123",
 			}
-
-			_, err := auditRepo.Create(ctx, gatewayEvent)
+			gatewayEvent, err := CreateGatewaySignalReceivedEvent(correlationID, gatewayPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, gatewayEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			orchestratorEvent := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				Version:        "1.0",
-				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
-				EventType:      "orchestrator.lifecycle.created",
-				EventCategory:  "orchestrator",
-				EventAction:    "created",
-				EventOutcome:   "success",
-				CorrelationID:  correlationID,
-				ResourceType:   "RemediationRequest",
-				ResourceID:     "rr-123",
-				EventData: map[string]interface{}{
-					"event_type": "orchestrator.lifecycle.created", // Required for discriminator
-					"rr_name":    "test-rr",                        // Required field
-					"namespace":  "default",                        // Required field
-					"timeout_config": map[string]interface{}{
-						"global": "1h",
+			orchestratorPayload := ogenclient.RemediationOrchestratorAuditPayload{
+				EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
+				RrName:    "test-rr",
+				Namespace: "default",
+				TimeoutConfig: ogenclient.NewOptTimeoutConfig(
+					ogenclient.TimeoutConfig{
+						Global: ogenclient.NewOptString("1h"),
 					},
-				},
+				),
 			}
-
+			orchestratorEvent, err := CreateOrchestratorLifecycleCreatedEvent(correlationID, orchestratorPayload)
+			Expect(err).ToNot(HaveOccurred())
 			_, err = auditRepo.Create(ctx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -164,62 +146,44 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 	Context("INTEGRATION-COMPONENTS-01: Full reconstruction pipeline with real database", func() {
 		It("should reconstruct RR from gateway and orchestrator events", func() {
 			// ARRANGE: Seed audit events in real PostgreSQL
-			gatewayEvent := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				Version:        "1.0",
-				EventTimestamp: time.Now().Add(-10 * time.Second).UTC(),
-				EventType:      "gateway.signal.received",
-				EventCategory:  "gateway",
-				EventAction:    "received",
-				EventOutcome:   "success",
-				CorrelationID:  correlationID,
-				ResourceType:   "Signal",
-				ResourceID:     "signal-123",
-				EventData: map[string]interface{}{
-					"event_type":  "gateway.signal.received", // Required for discriminator
-					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPU",     // Required field
-					"namespace":   "default",     // Required field
-					"fingerprint": "test-fp-456", // Required field
-					"signal_labels": map[string]interface{}{
-						"alertname": "HighCPU",
-						"severity":  "critical",
-					},
-					"signal_annotations": map[string]interface{}{
-						"summary": "CPU usage is high",
-					},
-					"original_payload": map[string]interface{}{
-						"alert": "data",
-					},
-				},
+			// ✅ Using typed ogenclient payloads for compile-time validation
+			originalPayloadMap := map[string]jx.Raw{
+				"alert": jx.Raw(`"data"`),
 			}
-
-			_, err := auditRepo.Create(ctx, gatewayEvent)
+			gatewayPayload := ogenclient.GatewayAuditPayload{
+				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:   "HighCPU",
+				Namespace:   "default",
+				Fingerprint: "test-fp-456",
+				OriginalPayload: ogenclient.NewOptGatewayAuditPayloadOriginalPayload(originalPayloadMap),
+				SignalLabels: ogenclient.NewOptGatewayAuditPayloadSignalLabels(map[string]string{
+					"alertname": "HighCPU",
+					"severity":  "critical",
+				}),
+				SignalAnnotations: ogenclient.NewOptGatewayAuditPayloadSignalAnnotations(map[string]string{
+					"summary": "CPU usage is high",
+				}),
+			}
+			gatewayEvent, err := CreateGatewaySignalReceivedEvent(correlationID, gatewayPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, gatewayEvent)
 			Expect(err).ToNot(HaveOccurred())
 
-			orchestratorEvent := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				Version:        "1.0",
-				EventTimestamp: time.Now().Add(-5 * time.Second).UTC(),
-				EventType:      "orchestrator.lifecycle.created",
-				EventCategory:  "orchestrator",
-				EventAction:    "created",
-				EventOutcome:   "success",
-				CorrelationID:  correlationID,
-				ResourceType:   "RemediationRequest",
-				ResourceID:     "rr-123",
-				EventData: map[string]interface{}{
-					"event_type": "orchestrator.lifecycle.created", // Required for discriminator
-					"rr_name":    "test-rr",                        // Required field
-					"namespace":  "default",                        // Required field
-					"timeout_config": map[string]interface{}{
-						"global":     "1h",
-						"processing": "10m",
-						"analyzing":  "15m",
+			orchestratorPayload := ogenclient.RemediationOrchestratorAuditPayload{
+				EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
+				RrName:    "test-rr",
+				Namespace: "default",
+				TimeoutConfig: ogenclient.NewOptTimeoutConfig(
+					ogenclient.TimeoutConfig{
+						Global:     ogenclient.NewOptString("1h"),
+						Processing: ogenclient.NewOptString("10m"),
+						Analyzing:  ogenclient.NewOptString("15m"),
 					},
-				},
+				),
 			}
-
+			orchestratorEvent, err := CreateOrchestratorLifecycleCreatedEvent(correlationID, orchestratorPayload)
+			Expect(err).ToNot(HaveOccurred())
 			_, err = auditRepo.Create(ctx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -274,28 +238,20 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 	Context("INTEGRATION-ERROR-01: Missing gateway event", func() {
 		It("should return error when only orchestrator event exists", func() {
 			// ARRANGE: Seed only orchestrator event (no gateway event)
-			orchestratorEvent := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				Version:        "1.0",
-				EventTimestamp: time.Now().UTC(),
-				EventType:      "orchestrator.lifecycle.created",
-				EventCategory:  "orchestrator",
-				EventAction:    "created",
-				EventOutcome:   "success",
-				CorrelationID:  correlationID,
-				ResourceType:   "RemediationRequest",
-				ResourceID:     "rr-123",
-				EventData: map[string]interface{}{
-					"event_type": "orchestrator.lifecycle.created", // Required for discriminator
-					"rr_name":    "test-rr",                        // Required field
-					"namespace":  "default",                        // Required field
-					"timeout_config": map[string]interface{}{
-						"global": "1h",
+			// ✅ Using typed ogenclient payload for compile-time validation
+			orchestratorPayload := ogenclient.RemediationOrchestratorAuditPayload{
+				EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
+				RrName:    "test-rr",
+				Namespace: "default",
+				TimeoutConfig: ogenclient.NewOptTimeoutConfig(
+					ogenclient.TimeoutConfig{
+						Global: ogenclient.NewOptString("1h"),
 					},
-				},
+				),
 			}
-
-			_, err := auditRepo.Create(ctx, orchestratorEvent)
+			orchestratorEvent, err := CreateOrchestratorLifecycleCreatedEvent(correlationID, orchestratorPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, orchestratorEvent)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT: Call business logic components directly
@@ -325,28 +281,18 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 	Context("INTEGRATION-VALIDATION-01: Incomplete reconstruction", func() {
 		It("should report low completeness when fields are missing", func() {
 			// ARRANGE: Seed minimal gateway event (missing optional fields)
-			gatewayEvent := &repository.AuditEvent{
-				EventID:        uuid.New(),
-				Version:        "1.0",
-				EventTimestamp: time.Now().UTC(),
-				EventType:      "gateway.signal.received",
-				EventCategory:  "gateway",
-				EventAction:    "received",
-				EventOutcome:   "success",
-				CorrelationID:  correlationID,
-				ResourceType:   "Signal",
-				ResourceID:     "signal-123",
-				EventData: map[string]interface{}{
-					"event_type":  "gateway.signal.received", // Required for discriminator
-					"signal_type": "prometheus-alert",
-					"alert_name":  "HighCPU",     // Required field
-					"namespace":   "default",     // Required field
-					"fingerprint": "test-fp-789", // Required field
-					// Missing: signal_labels, signal_annotations, original_payload (intentional for incomplete validation test)
-				},
+			// ✅ Using typed ogenclient payload with only required fields
+			gatewayPayload := ogenclient.GatewayAuditPayload{
+				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
+				SignalType:  ogenclient.GatewayAuditPayloadSignalTypePrometheusAlert,
+				AlertName:   "HighCPU",
+				Namespace:   "default",
+				Fingerprint: "test-fp-789",
+				// Missing: signal_labels, signal_annotations, original_payload (intentional for incomplete validation test)
 			}
-
-			_, err := auditRepo.Create(ctx, gatewayEvent)
+			gatewayEvent, err := CreateGatewaySignalReceivedEvent(correlationID, gatewayPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, gatewayEvent)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ACT: Full reconstruction pipeline

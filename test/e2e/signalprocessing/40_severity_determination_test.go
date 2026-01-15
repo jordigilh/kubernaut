@@ -29,14 +29,14 @@ limitations under the License.
 //
 // # Test Infrastructure
 //
-// Uses KIND cluster with full kubernaut deployment per test plan requirements
+// # Uses KIND cluster with full kubernaut deployment per test plan requirements
 //
 // # TDD Phase
 //
 // 🔴 RED Phase (Day 1-2): These tests are EXPECTED TO FAIL
 // Tests are written FIRST to define business contract
 // Implementation will follow in GREEN phase (Day 3-4)
-package signalprocessing_test
+package signalprocessing
 
 import (
 	"context"
@@ -48,10 +48,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
+	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	remediationrequestv1alpha1 "github.com/jordigilh/kubernaut/api/remediationrequest/v1alpha1"
 )
 
 var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "workflow", "signalprocessing"), func() {
@@ -271,14 +270,14 @@ determine_severity := "warning" {
 
 // createTestRemediationRequest creates a test RemediationRequest CRD.
 // Uses unique naming per test for parallel execution safety.
-func createTestRemediationRequest(namespace, name string) *remediationrequestv1alpha1.RemediationRequest {
-	return &remediationrequestv1alpha1.RemediationRequest{
+func createTestRemediationRequest(namespace, name string) *remediationv1alpha1.RemediationRequest {
+	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: remediationrequestv1alpha1.RemediationRequestSpec{
-			Signal: remediationrequestv1alpha1.SignalData{
+		Spec: remediationv1alpha1.RemediationRequestSpec{
+			Signal: remediationv1alpha1.SignalData{
 				Fingerprint:  "test-fingerprint-e2e-abc123",
 				Name:         "TestE2EAlert",
 				Severity:     "critical", // Default, overridden by tests
@@ -286,7 +285,7 @@ func createTestRemediationRequest(namespace, name string) *remediationrequestv1a
 				Source:       "test-e2e-source",
 				TargetType:   "kubernetes",
 				ReceivedTime: metav1.Now(),
-				TargetResource: remediationrequestv1alpha1.ResourceIdentifier{
+				TargetResource: remediationv1alpha1.ResourceIdentifier{
 					Kind:      "Pod",
 					Name:      "test-e2e-pod",
 					Namespace: namespace,

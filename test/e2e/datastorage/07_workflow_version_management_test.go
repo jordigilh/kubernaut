@@ -171,14 +171,16 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			_, err := dsClient.CreateWorkflow(ctx, &createReq)
-			Expect(err).ToNot(HaveOccurred())
-			testLogger.Info("Create v1.0.0 response", "status", 201)
+		createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
+		Expect(err).ToNot(HaveOccurred())
+		testLogger.Info("Create v1.0.0 response", "status", 201)
 
-			// DD-WORKFLOW-002 v3.0: workflow_id is UUID
-			// TODO: Fix workflow ID access after type assertion
-			Expect(workflowV1UUID).ToNot(BeEmpty())
-			testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
+		// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+		workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+		Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+		workflowV1UUID = workflowResp.WorkflowID.Value.String()
+		Expect(workflowV1UUID).ToNot(BeEmpty())
+		testLogger.Info("✅ Workflow v1.0.0 created", "uuid", workflowV1UUID)
 
 			// Verify UUID format (8-4-4-4-12)
 			Expect(workflowV1UUID).To(MatchRegexp(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`))
@@ -220,11 +222,14 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			_, err := dsClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 			testLogger.Info("Create v1.1.0 response", "status", 201)
 
-			// TODO: Fix workflow ID access after type assertion
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			workflowV2UUID = workflowResp.WorkflowID.Value.String()
 			Expect(workflowV2UUID).ToNot(BeEmpty())
 			Expect(workflowV2UUID).ToNot(Equal(workflowV1UUID), "v1.1.0 should have different UUID than v1.0.0")
 			testLogger.Info("✅ Workflow v1.1.0 created", "uuid", workflowV2UUID)
@@ -276,10 +281,13 @@ var _ = Describe("Scenario 7: Workflow Version Management (DD-WORKFLOW-002 v3.0)
 				ContainerImage: dsgen.NewOptString(containerImage),
 			}
 
-			_, err := dsClient.CreateWorkflow(ctx, &createReq)
+			createResp, err := dsClient.CreateWorkflow(ctx, &createReq)
 			Expect(err).ToNot(HaveOccurred())
 
-			// TODO: Fix workflow ID access after type assertion
+			// DD-WORKFLOW-002 v3.0: workflow_id is UUID - extract from response
+			workflowResp, ok := createResp.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Response should be *RemediationWorkflow")
+			workflowV3UUID = workflowResp.WorkflowID.Value.String()
 			testLogger.Info("✅ Workflow v2.0.0 created", "uuid", workflowV3UUID)
 
 			// Verify only v2.0.0 is latest

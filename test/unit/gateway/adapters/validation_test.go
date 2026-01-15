@@ -130,7 +130,7 @@ var _ = Describe("BR-GATEWAY-003: Payload Validation", func() {
 			false), // Should reject
 
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// PHASE 3: MALICIOUS INPUT EDGE CASES (BR-GATEWAY-010)
+		// PHASE 3: MALICIOUS INPUT EDGE CASES (BR-GATEWAY-005: Signal Validation)
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		// Production Risk: Malformed payloads can cause crashes
 		// Business Impact: Gateway stability and availability

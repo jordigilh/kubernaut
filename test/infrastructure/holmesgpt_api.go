@@ -180,7 +180,8 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
 	go func() {
-		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, writer)
+		// HAPI E2E: No workflow seeding, Mock LLM uses default UUIDs
+		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, nil, writer)
 		deployResults <- deployResult{"Mock LLM", err}
 	}()
 
@@ -422,7 +423,7 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 // deployMockLLMInNamespace deploys the standalone Mock LLM service to a namespace
 // This is the V2.0 Mock LLM service extracted from HAPI business code
 // Uses ClusterIP for internal access only (no NodePort needed for E2E)
-func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, writer io.Writer) error {
+func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, workflowUUIDs map[string]string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   📦 Deploying Mock LLM service (image: %s)...\n", imageTag)
 
 	// Use the manifests from deploy/mock-llm/ with the provided image tag
@@ -460,6 +461,12 @@ spec:
           value: "8080"
         - name: MOCK_LLM_FORCE_TEXT
           value: "false"
+        - name: MOCK_LLM_CONFIG_PATH
+          value: "/config/scenarios.yaml"
+        volumeMounts:
+        - name: scenarios-config
+          mountPath: /config
+          readOnly: true
         livenessProbe:
           httpGet:
             path: /health
@@ -494,6 +501,10 @@ spec:
           capabilities:
             drop:
             - ALL
+      volumes:
+      - name: scenarios-config
+        configMap:
+          name: mock-llm-scenarios
       securityContext:
         fsGroup: 1001
       restartPolicy: Always

@@ -70,11 +70,12 @@ const (
 
 // MockLLMConfig specifies configuration for starting a Mock LLM container
 type MockLLMConfig struct {
-	ServiceName   string // "hapi" or "aianalysis" (for container naming)
-	Port          int    // Host port to expose (per DD-TEST-001 v1.8)
-	ContainerName string // Unique container name per service
-	ImageTag      string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
-	Network       string // Podman network for container-to-container communication (e.g., "aianalysis_test_network")
+	ServiceName    string // "hapi" or "aianalysis" (for container naming)
+	Port           int    // Host port to expose (per DD-TEST-001 v1.8)
+	ContainerName  string // Unique container name per service
+	ImageTag       string // Unique image tag per DD-TEST-004 (use GenerateInfraImageName)
+	Network        string // Podman network for container-to-container communication (e.g., "aianalysis_test_network")
+	ConfigFilePath string // Optional: Host path to scenarios.yaml file (DD-TEST-011 v2.0)
 }
 
 // BuildMockLLMImage builds the Mock LLM container image for integration tests
@@ -195,6 +196,13 @@ func StartMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.
 		"-e", "MOCK_LLM_HOST=0.0.0.0",
 		"-e", "MOCK_LLM_PORT=8080",
 		"-e", "MOCK_LLM_FORCE_TEXT=false",
+	}
+
+	// Mount config file if specified (DD-TEST-011 v2.0)
+	if config.ConfigFilePath != "" {
+		args = append(args, "-v", fmt.Sprintf("%s:/config/scenarios.yaml:ro", config.ConfigFilePath))
+		args = append(args, "-e", "MOCK_LLM_CONFIG_PATH=/config/scenarios.yaml")
+		_, _ = fmt.Fprintf(writer, "📋 Mounting config file: %s → /config/scenarios.yaml\n", config.ConfigFilePath)
 	}
 
 	// Add network if specified (for container-to-container communication)

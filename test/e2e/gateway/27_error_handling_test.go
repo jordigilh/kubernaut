@@ -45,11 +45,9 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		testNamespace string
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		// testServer removed - using deployed Gateway
-		ctx context.Context
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 
 		// Setup test clients
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
@@ -58,22 +56,18 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// E2E tests use deployed Gateway at gatewayURL (http://127.0.0.1:8080)
 		// No local test server needed
 
-		// Create unique namespace for test isolation
-		testNamespace = fmt.Sprintf("test-err-%d", time.Now().UnixNano())
-		CreateNamespaceAndWait(ctx, k8sClient, testNamespace)
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	testNamespace = createTestNamespace("test-err")
 
 		// Clear Redis
 	})
 
-	AfterEach(func() {
-		// Reset Redis config to prevent OOM cascade failures
+AfterEach(func() {
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+	deleteTestNamespace(testNamespace)
 
-		// E2E tests use deployed Gateway - no cleanup needed
-
-		// CRITICAL FIX: Don't delete namespaces during parallel test execution
-		// Let Kind cluster deletion handle cleanup at the end of the test suite
-		// Previous code (REMOVED):
-		// ns := &corev1.Namespace{
+	// Previous code (REMOVED - namespace cleanup now handled properly):
+	// ns := &corev1.Namespace{
 		//     ObjectMeta: metav1.ObjectMeta{
 		//         Name: testNamespace,
 		//     },
@@ -138,10 +132,10 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 			"alerts": [{
 				"labels": {
 					"alertname": "LargePayloadTest",
-					"namespace": "%s")
+					"namespace": "%s"
 				},
 				"annotations": {
-					"description": "%s")
+					"description": "%s"
 				}
 			}]
 		}`, testNamespace, largeAnnotation)
@@ -241,7 +235,7 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 					"alertname": "NamespaceTest",
 					"severity": "warning",
 					"namespace": "%s",
-					"pod": "orphan-pod")
+					"pod": "orphan-pod"
 				}
 			}]
 		}`, nonExistentNamespace)

@@ -27,7 +27,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-faster/jx"
 	"github.com/google/uuid"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // ========================================
@@ -92,26 +94,39 @@ var _ = Describe("BR-DS-006: Connection Pool Efficiency - Handle Traffic Bursts 
 						defer wg.Done()
 						defer GinkgoRecover()
 
-						requestStart := time.Now()
+					requestStart := time.Now()
 
-						// Create audit event payload as map for proper JSON serialization
-						auditEvent := map[string]interface{}{
-							"version":         "1.0",
-							"event_type":      "workflow.completed",
-							"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-							"event_category":  "workflow",
-							"event_action":    "completed",
-							"event_outcome":   "success",
-							"actor_type":      "service",
-							"actor_id":        "workflow-service",
-							"resource_type":   "Workflow",
-							"resource_id":     fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
-							"correlation_id":  fmt.Sprintf("remediation-pool-test-%s-%d", testID, index),
-							"event_data": map[string]interface{}{
-								"pool_test": true,
-								"index":     index,
-							},
-						}
+						// Create type-safe workflow execution payload
+					workflowPayload := ogenclient.WorkflowExecutionAuditPayload{
+						EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted,
+						ExecutionName:   fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
+						WorkflowID:      "pool-exhaustion-test-workflow",
+						WorkflowVersion: "v1.0.0",
+						ContainerImage:  "registry.io/test/pool-workflow@sha256:abc123def",
+						TargetResource:  "deployment/test-app",
+						Phase:           ogenclient.WorkflowExecutionAuditPayloadPhaseCompleted,
+					}
+
+					// Marshal event_data using ogen's jx.Encoder
+					var e jx.Encoder
+					workflowPayload.Encode(&e)
+					eventDataJSON := e.Bytes()
+
+					// Create audit event payload as map for proper JSON serialization
+					auditEvent := map[string]interface{}{
+						"version":         "1.0",
+						"event_type":      "workflowexecution.workflow.completed",
+						"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
+						"event_category":  "workflowexecution",
+						"event_action":    "completed",
+						"event_outcome":   "success",
+						"actor_type":      "ServiceAccount",
+						"actor_id":        "system:serviceaccount:workflowexecution:workflowexecution-sa",
+						"resource_type":   "WorkflowExecution",
+						"resource_id":     fmt.Sprintf("wf-pool-test-%s-%d", testID, index),
+						"correlation_id":  fmt.Sprintf("remediation-pool-test-%s-%d", testID, index),
+						"event_data":      json.RawMessage(eventDataJSON), // ✅ Required field added
+					}
 
 						// Marshal to JSON
 						payloadBytes, err := json.Marshal(auditEvent)

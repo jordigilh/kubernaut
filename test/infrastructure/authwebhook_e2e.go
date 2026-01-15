@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -600,7 +601,14 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO slm_user;`,
 	}
 
 	if _, err := clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
-		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+		// Handle case where secret already exists (from previous test run)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+		}
+		// Secret exists, update it to ensure it has correct values
+		if _, err := clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{}); err != nil {
+			return fmt.Errorf("failed to update existing PostgreSQL secret: %w", err)
+		}
 	}
 
 	// Create Service with custom NodePort

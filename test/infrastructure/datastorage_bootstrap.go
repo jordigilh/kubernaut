@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -83,6 +84,55 @@ type DSBootstrapInfra struct {
 	Config DSBootstrapConfig // Original configuration (for reference)
 }
 
+// BuildDataStorageImage builds the DataStorage Docker image for integration tests.
+// This function is extracted to enable parallel image builds (build can happen in parallel,
+// while deployment must remain sequential due to workflow seeding dependencies).
+//
+// Returns:
+// - string: Full image name with tag (e.g., "kubernaut/datastorage:aianalysis-a1b2c3d4")
+// - error: Any errors during image build
+//
+// Per DD-TEST-004: Generates unique image tag per service to prevent collisions
+func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+	projectRoot := getProjectRoot()
+
+	// Generate DD-TEST-001 v1.3 compliant image tag
+	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
+	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
+
+	// Check if image already exists (cache hit)
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
+	if checkCmd.Run() == nil {
+		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image already exists: %s\n", imageName)
+		return imageName, nil
+	}
+
+	// Build the image
+	_, _ = fmt.Fprintf(writer, "   🔨 Building DataStorage image (tag: %s)...\n", imageTag)
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
+		"-t", imageName,
+		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
+		"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
+		projectRoot,
+	)
+	buildCmd.Stdout = writer
+	buildCmd.Stderr = writer
+
+	if err := buildCmd.Run(); err != nil {
+		// Check if image was actually built despite error (podman cleanup issue)
+		checkAgain := exec.Command("podman", "image", "exists", imageName)
+		if checkAgain.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
+			return imageName, nil
+		}
+		return "", fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", imageName)
+	return imageName, nil
+}
+
 // StartDSBootstrap starts DataStorage infrastructure using DD-TEST-002 sequential pattern
 //
 // Sequential Startup Order (eliminates race conditions):
@@ -121,6 +171,15 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	_, _ = fmt.Fprintf(writer, "  Redis:          localhost:%d\n", cfg.RedisPort)
 	_, _ = fmt.Fprintf(writer, "  DataStorage:    %s\n", infra.ServiceURL)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+	// Step 0: Build DataStorage image (can be parallelized in test suites)
+	_, _ = fmt.Fprintf(writer, "🔨 Building DataStorage image...\n")
+	imageName, err := BuildDataStorageImage(context.Background(), cfg.ServiceName, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build DataStorage image: %w", err)
+	}
+	infra.DataStorageImageName = imageName
+	_, _ = fmt.Fprintf(writer, "\n")
 
 	// Step 1: Cleanup
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
@@ -171,11 +230,9 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	// Step 6: DataStorage
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	imageName, err := startDSBootstrapService(infra, projectRoot, writer)
-	if err != nil {
+	if err := startDSBootstrapService(infra, imageName, projectRoot, writer); err != nil {
 		return nil, fmt.Errorf("failed to start DataStorage: %w", err)
 	}
-	infra.DataStorageImageName = imageName
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
 	if err := waitForDSBootstrapHTTPHealth(infra, 30*time.Second, writer); err != nil {
@@ -399,44 +456,11 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 	return nil
 }
 
-// startDSBootstrapService starts the DataStorage container
-// Returns the full image name for cleanup purposes
-func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) (string, error) {
+// startDSBootstrapService starts the DataStorage container using a pre-built image
+// The image should be built using BuildDataStorageImage() before calling this function
+func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)
-
-	// Generate DD-TEST-001 v1.3 compliant image tag
-	// Format: datastorage-{consumer}-{timestamp}
-	// Example: datastorage-gateway-1734278400
-	imageTag := generateInfrastructureImageTag("datastorage", cfg.ServiceName)
-	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
-
-	// Check if DataStorage image exists, build if not
-	checkCmd := exec.Command("podman", "image", "exists", imageName)
-	if checkCmd.Run() != nil {
-		_, _ = fmt.Fprintf(writer, "   Building DataStorage image (tag: %s)...\n", imageTag)
-		buildCmd := exec.Command("podman", "build",
-			"--no-cache", // DD-TEST-002: Force fresh build to include latest code changes
-
-			"-t", imageName,
-			"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
-			"-f", filepath.Join(projectRoot, "docker", "data-storage.Dockerfile"),
-			projectRoot,
-		)
-		buildCmd.Stdout = writer
-		buildCmd.Stderr = writer
-		if err := buildCmd.Run(); err != nil {
-			// Check if image was actually built despite error (podman cleanup issue)
-			checkAgain := exec.Command("podman", "image", "exists", imageName)
-			if checkAgain.Run() == nil {
-				_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
-			} else {
-				return "", fmt.Errorf("failed to build DataStorage image: %w", err)
-			}
-		} else {
-			_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", imageName)
-		}
-	}
 
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.DataStorageContainer,
@@ -457,9 +481,9 @@ func startDSBootstrapService(infra *DSBootstrapInfra, projectRoot string, writer
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
-		return "", err
+		return err
 	}
-	return imageName, nil
+	return nil
 }
 
 // waitForDSBootstrapHTTPHealth waits for DataStorage /health endpoint to respond with 200 OK
@@ -830,12 +854,27 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 
 	buildArgs = append(buildArgs, "-f", filepath.Join(projectRoot, cfg.DockerfilePath), cfg.BuildContextPath)
 
-	buildCmd := exec.Command("podman", buildArgs...)
+	// DD-TEST-009: Add 15-minute timeout to prevent infinite hangs
+	// Context: E2E tests were hanging indefinitely when Podman build processes stalled
+	// during dependency downloads (especially Python packages in HAPI)
+	buildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+
+	buildCmd := exec.CommandContext(buildCtx, "podman", buildArgs...)
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
+	buildStartTime := time.Now()
+	_, _ = fmt.Fprintf(writer, "   ⏱️  Build started: %s (15min timeout)\n", buildStartTime.Format("15:04:05"))
+
 	if err := buildCmd.Run(); err != nil {
+		if buildCtx.Err() == context.DeadlineExceeded {
+			return "", fmt.Errorf("build timed out after 15 minutes for %s", cfg.ServiceName)
+		}
 		return "", fmt.Errorf("failed to build E2E image: %w", err)
 	}
+
+	buildDuration := time.Since(buildStartTime)
+	_, _ = fmt.Fprintf(writer, "   ✅ Image built in %s: %s\n", buildDuration.Round(time.Second), localImageName)
 	_, _ = fmt.Fprintf(writer, "   ✅ Image built: %s\n", localImageName)
 
 	return localImageName, nil

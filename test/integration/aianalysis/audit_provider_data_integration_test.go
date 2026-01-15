@@ -214,7 +214,9 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis within 90 seconds")
 
-			correlationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation_id
+		// This matches the correlation_id that AIAnalysis audit client records
+		correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("📋 Testing hybrid audit for correlation_id: %s\n", correlationID)
 
 			By("Flushing audit buffers to ensure all events are persisted")
@@ -386,7 +388,9 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				return analysis.Status.Phase
 			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"))
 
-			correlationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation_id
+		// This matches the correlation_id that AIAnalysis audit client records
+		correlationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Flushing audit buffers")
 			flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -476,17 +480,20 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// ========================================
 
 			By("Creating AIAnalysis resource for correlation validation")
+			// DD-AUDIT-CORRELATION-001: RemediationID must match RemediationRequestRef.Name
+			// for HAPI and AA audit events to use same correlation_id
+			rrName := fmt.Sprintf("test-rr-corr-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-correlation-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-corr-%s", uuid.New().String()[:8]),
+					RemediationID: rrName, // Must match RemediationRequestRef.Name
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediation.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
-						Name:       "test-rr-corr",
+						Name:       rrName, // Same value as RemediationID
 						Namespace:  namespace,
 					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
@@ -521,7 +528,9 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				return analysis.Status.Phase
 			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"))
 
-			correlationID := analysis.Spec.RemediationID
+			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation_id
+		// This matches the correlation_id that AIAnalysis audit client records
+		correlationID := analysis.Spec.RemediationRequestRef.Name
 
 			By("Flushing audit buffers")
 			flushCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

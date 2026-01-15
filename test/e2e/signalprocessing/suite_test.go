@@ -37,7 +37,7 @@ limitations under the License.
 // - BR-SP-100: Owner chain traversal
 // - BR-SP-101: Detected labels
 // - BR-SP-102: CustomLabels from Rego
-package signalprocessing_e2e
+package signalprocessing
 
 import (
 	"context"

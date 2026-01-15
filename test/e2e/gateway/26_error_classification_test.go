@@ -25,7 +25,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,20 +39,17 @@ import (
 var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR-GATEWAY-189)", func() {
 	var (
 		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
-		ctx           context.Context
+		testCtx       context.Context      // ← Test-local context
+		testCancel    context.CancelFunc
 		testClient    client.Client
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
-		// ✅ FIX: Create unique namespace per parallel process to prevent data pollution
-		testNamespace = fmt.Sprintf("gw-error-test-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-
-		// Create namespace in Kubernetes
-		Expect(CreateNamespaceAndWait(ctx, testClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+		testNamespace = createTestNamespace("gw-error-test")
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -65,9 +61,11 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 	})
 
 	AfterEach(func() {
-		// Cleanup server
-
-		// No manual cleanup needed - each parallel process has its own isolated namespace
+	if testCancel != nil {
+		testCancel()  // ← Only cancels test-local context
+	}
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
+		deleteTestNamespace(testNamespace)
 	})
 
 	Context("GW-ERR-001: Transient Error Retry with Exponential Backoff (P0)", func() {
@@ -105,7 +103,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 				// Validate CRD created
 				Eventually(func() bool {
 					rrList := &remediationv1alpha1.RemediationRequestList{}
-					err := testClient.List(ctx, rrList, client.InNamespace(testNamespace))
+					err := testClient.List(testCtx, rrList, client.InNamespace(testNamespace))
 					_ = err
 					return err == nil && len(rrList.Items) > 0
 				}, 10*time.Second, 1*time.Second).Should(BeTrue())
@@ -208,7 +206,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 			// This will cause Gateway to return HTTP 400 Bad Request
 			invalidPayload := []byte(`{
 				"status": "firing",
-				"alerts": "this should be an array not a string")
+				"alerts": "this should be an array not a string"
 			}`)
 
 			req, err := http.NewRequest("POST",

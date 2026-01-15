@@ -352,6 +352,100 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 	return fmt.Errorf("health check failed for %s after %v (attempts: %d)", healthURL, timeout, attempt)
 }
 
+// MustGatherContainerLogs extracts logs from containers before cleanup (diagnostic collection)
+//
+// Pattern: DD-TEST-DIAGNOSTICS - Must-gather style log collection for debugging test failures
+//
+// Behavior:
+// - Creates must-gather directory: /tmp/kubernaut-must-gather/{service}-integration-YYYYMMDD-HHMMSS/
+// - Extracts logs for each container: <service>_<container>.log
+// - Includes container inspect JSON: <service>_<container>_inspect.json
+// - Non-blocking: Failures are logged but don't prevent cleanup
+// - Only collects from running/stopped containers (skips if container doesn't exist)
+// - Prints absolute path for easy access during debugging
+//
+// Usage:
+//
+//	// In test suite teardown (SynchronizedAfterSuite):
+//	if CurrentSpecReport().Failed() {
+//	    MustGatherContainerLogs("signalprocessing", []string{
+//	        "sp_postgres_test",
+//	        "sp_redis_test",
+//	        "sp_datastorage_test",
+//	    }, writer)
+//	}
+//
+// Output Structure:
+//
+//	/tmp/kubernaut-must-gather/signalprocessing-integration-20260114-083045/
+//	├── signalprocessing_sp_postgres_test.log
+//	├── signalprocessing_sp_postgres_test_inspect.json
+//	├── signalprocessing_sp_redis_test.log
+//	├── signalprocessing_sp_redis_test_inspect.json
+//	├── signalprocessing_sp_datastorage_test.log
+//	└── signalprocessing_sp_datastorage_test_inspect.json
+//
+// Example Output:
+//
+//	📦 Collecting container logs to /tmp/kubernaut-must-gather/signalprocessing-integration-20260114-083045/...
+//	   ✅ sp_postgres_test → /tmp/kubernaut-must-gather/signalprocessing-integration-20260114-083045/signalprocessing_sp_postgres_test.log
+//	   ✅ sp_postgres_test inspect → /tmp/kubernaut-must-gather/signalprocessing-integration-20260114-083045/signalprocessing_sp_postgres_test_inspect.json
+//	✅ Must-gather collection complete: /tmp/kubernaut-must-gather/signalprocessing-integration-20260114-083045/
+func MustGatherContainerLogs(serviceName string, containerNames []string, writer io.Writer) {
+	// Create must-gather directory with service name and timestamp in /tmp
+	// Format: {service}-integration-YYYYMMDD-HHMMSS
+	timestamp := time.Now().Format("20060102-150405")
+	dirName := fmt.Sprintf("%s-integration-%s", serviceName, timestamp)
+	mustGatherDir := filepath.Join("/tmp", "kubernaut-must-gather", dirName)
+
+	if err := os.MkdirAll(mustGatherDir, 0o755); err != nil {
+		_, _ = fmt.Fprintf(writer, "⚠️  Failed to create must-gather directory: %v\n", err)
+		return
+	}
+
+	_, _ = fmt.Fprintf(writer, "📦 Collecting container logs to %s/...\n", mustGatherDir)
+
+	for _, container := range containerNames {
+		// Check if container exists
+		checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+		output, err := checkCmd.Output()
+		if err != nil || len(output) == 0 || string(output) == "\n" {
+			_, _ = fmt.Fprintf(writer, "   ⏭️  Skipping %s (container not found)\n", container)
+			continue
+		}
+
+		// Extract container logs
+		logFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s.log", serviceName, container))
+		logCmd := exec.Command("podman", "logs", container)
+		logOutput, err := logCmd.CombinedOutput()
+		if err != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to get logs for %s: %v\n", container, err)
+		} else {
+			if err := os.WriteFile(logFile, logOutput, 0o644); err != nil {
+				_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to write log file for %s: %v\n", container, err)
+			} else {
+				_, _ = fmt.Fprintf(writer, "   ✅ %s → %s\n", container, logFile)
+			}
+		}
+
+		// Extract container inspect JSON (configuration and state)
+		inspectFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s_inspect.json", serviceName, container))
+		inspectCmd := exec.Command("podman", "inspect", container)
+		inspectOutput, err := inspectCmd.Output()
+		if err != nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to inspect %s: %v\n", container, err)
+		} else {
+			if err := os.WriteFile(inspectFile, inspectOutput, 0o644); err != nil {
+				_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to write inspect file for %s: %v\n", container, err)
+			} else {
+				_, _ = fmt.Fprintf(writer, "   ✅ %s inspect → %s\n", container, inspectFile)
+			}
+		}
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Must-gather collection complete: %s/\n", mustGatherDir)
+}
+
 // CleanupContainers stops and removes containers
 // Safe to call even if containers don't exist (errors are ignored)
 //
