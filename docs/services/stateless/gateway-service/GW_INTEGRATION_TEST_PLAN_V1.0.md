@@ -2094,6 +2094,199 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
 
 ---
 
+## 🛠️ **Test Helper Functions**
+
+### **Purpose**
+Provide reusable helpers to enforce consistent audit event access patterns across all integration tests.
+
+### **Helper File Location**
+Create: `test/integration/gateway/audit_test_helpers.go`
+
+### **Helper Functions**
+
+```go
+package gateway_test
+
+import (
+	"fmt"
+	"strings"
+	
+	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	. "github.com/onsi/gomega"
+)
+
+// ParseGatewayPayload extracts GatewayAuditPayload from AuditEvent
+// Enforces: DD-AUDIT-004 (zero unstructured data)
+func ParseGatewayPayload(event *api.AuditEvent) api.GatewayAuditPayload {
+	Expect(event).ToNot(BeNil(), "Audit event should not be nil")
+	
+	// Access EventData union type
+	gatewayPayload := event.EventData.GatewayAuditPayload
+	Expect(gatewayPayload.EventType).ToNot(BeEmpty(), "GatewayAuditPayload should be present")
+	
+	return gatewayPayload
+}
+
+// ExpectSignalLabels validates signal_labels field (Optional field)
+// Use: Test RR reconstruction fields (BR-GATEWAY-055)
+func ExpectSignalLabels(payload api.GatewayAuditPayload, expectedLabels map[string]string) {
+	signalLabels, ok := payload.SignalLabels.Get()
+	Expect(ok).To(BeTrue(), "SignalLabels should be present")
+	
+	for key, expectedValue := range expectedLabels {
+		actualValue, exists := signalLabels[key]
+		Expect(exists).To(BeTrue(), fmt.Sprintf("Label '%s' should exist", key))
+		Expect(actualValue).To(Equal(expectedValue), fmt.Sprintf("Label '%s' should have value '%s'", key, expectedValue))
+	}
+}
+
+// ExpectSignalAnnotations validates signal_annotations field (Optional field)
+// Use: Test RR reconstruction fields (BR-GATEWAY-055)
+func ExpectSignalAnnotations(payload api.GatewayAuditPayload, expectedAnnotations map[string]string) {
+	signalAnnotations, ok := payload.SignalAnnotations.Get()
+	Expect(ok).To(BeTrue(), "SignalAnnotations should be present")
+	
+	for key, expectedValue := range expectedAnnotations {
+		actualValue, exists := signalAnnotations[key]
+		Expect(exists).To(BeTrue(), fmt.Sprintf("Annotation '%s' should exist", key))
+		Expect(actualValue).To(Equal(expectedValue), fmt.Sprintf("Annotation '%s' should have value '%s'", key, expectedValue))
+	}
+}
+
+// ExpectOriginalPayload validates original_payload field (Optional field)
+// Use: Test RR reconstruction fields (BR-GATEWAY-055)
+func ExpectOriginalPayload(payload api.GatewayAuditPayload, expectedSubstring string) {
+	originalPayload, ok := payload.OriginalPayload.Get()
+	Expect(ok).To(BeTrue(), "OriginalPayload should be present")
+	
+	// Convert jx.Raw map to searchable string
+	payloadStr := fmt.Sprintf("%v", originalPayload)
+	Expect(payloadStr).To(ContainSubstring(expectedSubstring), fmt.Sprintf("OriginalPayload should contain '%s'", expectedSubstring))
+}
+
+// ExpectRemediationRequest validates remediation_request field (Optional field)
+// Format: "namespace/name" (e.g., "prod-ns/rr-abc123def456-1737054321")
+// Use: Test CRD creation tracking (BR-GATEWAY-056)
+func ExpectRemediationRequest(payload api.GatewayAuditPayload, expectedNamespace, expectedNamePrefix string) {
+	remediationRequest, ok := payload.RemediationRequest.Get()
+	Expect(ok).To(BeTrue(), "RemediationRequest should be present")
+	
+	// Business rule: Format is "namespace/name"
+	parts := strings.Split(remediationRequest, "/")
+	Expect(parts).To(HaveLen(2), "RemediationRequest should be in 'namespace/name' format")
+	
+	actualNamespace := parts[0]
+	actualName := parts[1]
+	
+	Expect(actualNamespace).To(Equal(expectedNamespace), fmt.Sprintf("Namespace should be '%s'", expectedNamespace))
+	Expect(actualName).To(HavePrefix(expectedNamePrefix), fmt.Sprintf("Name should start with '%s'", expectedNamePrefix))
+}
+
+// ExpectFingerprint validates fingerprint field (Direct field - no .Get())
+// Format: SHA-256 hash (64 hex characters)
+// Use: Test deduplication tracking (BR-GATEWAY-004, BR-GATEWAY-057)
+func ExpectFingerprint(payload api.GatewayAuditPayload, expectedPattern string) {
+	Expect(payload.Fingerprint).ToNot(BeEmpty(), "Fingerprint should be present")
+	
+	// Business rule: SHA-256 format (64 hex characters)
+	Expect(payload.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"), "Fingerprint should be valid SHA-256 hash")
+	
+	if expectedPattern != "" {
+		Expect(payload.Fingerprint).To(MatchRegexp(expectedPattern), fmt.Sprintf("Fingerprint should match pattern '%s'", expectedPattern))
+	}
+}
+
+// ExpectDeduplicationStatus validates deduplication_status field (Optional field)
+// Values: "new", "duplicate"
+// Use: Test deduplication logic (BR-GATEWAY-057)
+func ExpectDeduplicationStatus(payload api.GatewayAuditPayload, expectedStatus api.GatewayAuditPayloadDeduplicationStatus) {
+	dedupStatus, ok := payload.DeduplicationStatus.Get()
+	Expect(ok).To(BeTrue(), "DeduplicationStatus should be present")
+	Expect(dedupStatus).To(Equal(expectedStatus), fmt.Sprintf("DeduplicationStatus should be '%s'", expectedStatus))
+}
+
+// ExpectOccurrenceCount validates occurrence_count field (Optional field)
+// Use: Test storm detection tracking (BR-GATEWAY-057)
+func ExpectOccurrenceCount(payload api.GatewayAuditPayload, expectedCount int32) {
+	occurrenceCount, ok := payload.OccurrenceCount.Get()
+	Expect(ok).To(BeTrue(), "OccurrenceCount should be present")
+	Expect(occurrenceCount).To(Equal(expectedCount), fmt.Sprintf("OccurrenceCount should be %d", expectedCount))
+}
+
+// ExpectErrorDetails validates error_details field (Optional field)
+// Use: Test failure audit events (BR-GATEWAY-058)
+func ExpectErrorDetails(payload api.GatewayAuditPayload, expectedCode string, expectedMessageSubstring string, expectedRetryPossible bool) {
+	errorDetails, ok := payload.ErrorDetails.Get()
+	Expect(ok).To(BeTrue(), "ErrorDetails should be present for failed events")
+	
+	// Business rule: Error code identifies failure category
+	Expect(errorDetails.Code).To(ContainSubstring(expectedCode), fmt.Sprintf("Error code should contain '%s'", expectedCode))
+	
+	// Business rule: Error message provides troubleshooting context
+	Expect(errorDetails.Message).To(ContainSubstring(expectedMessageSubstring), fmt.Sprintf("Error message should contain '%s'", expectedMessageSubstring))
+	
+	// Business rule: RetryPossible indicates transient vs permanent error
+	Expect(errorDetails.RetryPossible).To(Equal(expectedRetryPossible), fmt.Sprintf("RetryPossible should be %v", expectedRetryPossible))
+	
+	// Business rule: Component identifies error source
+	Expect(errorDetails.Component).To(Equal(api.ErrorDetailsComponentGateway), "Error component should be 'gateway'")
+}
+
+// ExpectCorrelationIDFormat validates correlation_id format
+// Format: "rr-{12-hex}-{10-digit-timestamp}"
+// Use: Test RR reconstruction (BR-GATEWAY-055)
+func ExpectCorrelationIDFormat(correlationID string) {
+	Expect(correlationID).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`), "CorrelationID should match RR format")
+	
+	// Business rule: Fingerprint extraction enabled
+	parts := strings.Split(correlationID, "-")
+	Expect(parts).To(HaveLen(3), "CorrelationID should have 3 parts")
+	
+	fingerprint := parts[1]
+	Expect(fingerprint).To(HaveLen(12), "Fingerprint prefix should be 12 characters")
+	Expect(fingerprint).To(MatchRegexp("^[a-f0-9]{12}$"), "Fingerprint prefix should be hex")
+}
+```
+
+### **Usage Example**
+
+```go
+// Scenario 1.1: Signal Received Audit Event
+It("should emit gateway.signal.received audit event for Prometheus signal", func() {
+    // Given: Prometheus alert payload
+    prometheusAlert := createTestPrometheusAlert()
+    adapter = prometheus.NewAdapter(auditStore)
+    
+    // When: Adapter parses signal
+    signal, err := adapter.Parse(ctx, prometheusAlert)
+    
+    // Then: Audit event emitted
+    Expect(err).ToNot(HaveOccurred())
+    Expect(auditStore.Events).To(HaveLen(1))
+    
+    auditEvent := auditStore.Events[0]
+    Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
+    
+    // Use helper to parse payload
+    gatewayPayload := ParseGatewayPayload(&auditEvent)
+    
+    // Use helpers to validate fields
+    ExpectSignalLabels(gatewayPayload, map[string]string{"severity": "critical"})
+    ExpectSignalAnnotations(gatewayPayload, map[string]string{"summary": "High CPU usage"})
+    ExpectOriginalPayload(gatewayPayload, "alertname")
+    ExpectCorrelationIDFormat(auditEvent.CorrelationID)
+})
+```
+
+### **Benefits**
+1. **Consistency**: All tests use same access patterns
+2. **Type Safety**: Enforces OpenAPI struct usage (DD-AUDIT-004)
+3. **Readability**: Clear, semantic helper names
+4. **Maintainability**: Changes to schema only require helper updates
+5. **Business Focus**: Helpers validate business rules, not just fields
+
+---
+
 ## 📋 **Test File Organization**
 
 ```
