@@ -240,3 +240,30 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		})
 	})
 })
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HELPER FUNCTIONS FOR AUDIT EMISSION TESTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// createPrometheusAlert creates a Prometheus AlertManager webhook payload
+// Used by audit emission tests to create test signals
+func createPrometheusAlert(namespace, alertName, severity, fingerprint, correlationID string) []byte {
+	payload := fmt.Sprintf(`{
+		"alerts": [{
+			"labels": {
+				"alertname": "%s",
+				"severity": "%s",
+				"namespace": "%s",
+				"pod": "test-pod-123"
+			},
+			"annotations": {
+				"summary": "Test alert",
+				"description": "Test description",
+				"correlation_id": "%s"
+			},
+			"startsAt": "2025-01-15T10:00:00Z"
+		}]
+	}`, alertName, severity, namespace, correlationID)
+
+	return []byte(payload)
+}
