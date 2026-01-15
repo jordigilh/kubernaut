@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
@@ -39,8 +38,8 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	testauth "github.com/jordigilh/kubernaut/pkg/testutil/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // ========================================
@@ -73,31 +72,25 @@ import (
 // ========================================
 
 const (
-	// PostgreSQL configuration (DataStorage dependency)
-	gatewayPostgresPort      = 15437 // Per DD-TEST-001 (was 15439 - HAPI conflict)
-	gatewayPostgresUser      = "gateway_test"
-	gatewayPostgresPassword  = "gateway_test_password"
-	gatewayPostgresDB        = "gateway_test"
-	gatewayPostgresContainer = "gateway-integration-postgres"
-
-	// Redis configuration (DataStorage DLQ) - Per DD-TEST-001
-	gatewayRedisPort      = 16380
-	gatewayRedisContainer = "gateway-integration-redis"
-
-	// DataStorage configuration - Per DD-TEST-001
-	gatewayDataStoragePort      = 18091 // Per DD-TEST-001 (was 15440 - wrong range)
-	gatewayDataStorageContainer = "gateway-integration-datastorage"
+	// Port Configuration - Per DD-TEST-001: Port Allocation Strategy
+	gatewayPostgresPort     = 15437 // PostgreSQL port
+	gatewayRedisPort        = 16380 // Redis port
+	gatewayDataStoragePort  = 18091 // DataStorage HTTP API port
+	gatewayMetricsPort      = 19091 // DataStorage metrics port
 )
 
 var (
-	// Per-process resources (Phase 2)
+	// Shared infrastructure (Phase 1 - Process 1 only)
+	dsInfra *infrastructure.DSBootstrapInfra
+
+	// Per-process resources (Phase 2 - All processes)
 	ctx       context.Context
 	cancel    context.CancelFunc
 	k8sClient client.Client
 	logger    logr.Logger
 	testEnv   *envtest.Environment
 	k8sConfig *rest.Config
-	dsClient  *audit.OpenAPIClientAdapter // ← NEW: Per-process DataStorage client
+	dsClient  audit.DataStorageClient // Per-process DataStorage client
 )
 
 func TestGatewayIntegration(t *testing.T) {
@@ -115,82 +108,23 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("[Process 1] Starting shared Podman infrastructure...")
+		logger.Info("[Process 1] Starting DataStorage infrastructure (PostgreSQL, Redis, DataStorage)...")
 
-		// Step 1: Cleanup existing containers (shared helper)
-		logger.Info("[Process 1] Step 1: Cleanup existing containers")
-		infrastructure.CleanupContainers([]string{
-			gatewayDataStorageContainer,
-			gatewayRedisContainer,
-			gatewayPostgresContainer,
+		// Use unified infrastructure bootstrap (per DD-TEST-002)
+		// This handles: PostgreSQL, Redis, Migrations, DataStorage
+		// Same pattern as AIAnalysis and SignalProcessing integration tests
+		var err error
+		dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+			ServiceName:     "gateway",
+			PostgresPort:    gatewayPostgresPort,    // 15437 per DD-TEST-001
+			RedisPort:       gatewayRedisPort,       // 16380 per DD-TEST-001
+			DataStoragePort: gatewayDataStoragePort, // 18091 per DD-TEST-001
+			MetricsPort:     gatewayMetricsPort,     // 19091 per DD-TEST-001
+			ConfigDir:       "test/integration/gateway/config",
 		}, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 
-		// Step 2: Create Podman network (idempotent)
-		logger.Info("[Process 1] Step 2: Create Podman network")
-		_ = exec.Command("podman", "network", "create", "gateway-integration-net").Run()
-
-		// Step 3: Start PostgreSQL (shared helper)
-		logger.Info("[Process 1] Step 3: Start PostgreSQL container")
-		err := infrastructure.StartPostgreSQL(infrastructure.PostgreSQLConfig{
-			ContainerName: gatewayPostgresContainer,
-			Port:          gatewayPostgresPort,
-			DBName:        gatewayPostgresDB,
-			DBUser:        gatewayPostgresUser,
-			DBPassword:    gatewayPostgresPassword,
-			Network:       "gateway-integration-net",
-		}, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "PostgreSQL start must succeed")
-
-		err = infrastructure.WaitForPostgreSQLReady(gatewayPostgresContainer, gatewayPostgresUser, gatewayPostgresDB, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "PostgreSQL must become ready")
-
-		// Step 4: Start Redis (shared helper)
-		logger.Info("[Process 1] Step 4: Start Redis container")
-		err = infrastructure.StartRedis(infrastructure.RedisConfig{
-			ContainerName: gatewayRedisContainer,
-			Port:          gatewayRedisPort,
-			Network:       "gateway-integration-net",
-		}, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Redis start must succeed")
-
-		err = infrastructure.WaitForRedisReady(gatewayRedisContainer, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Redis must become ready")
-
-		// Step 5: Apply migrations to PUBLIC schema
-		logger.Info("[Process 1] Step 5: Apply database migrations")
-		db, err := connectPostgreSQL()
-		Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection must succeed")
-
-		err = infrastructure.ApplyMigrationsWithPropagationTo(db)
-		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
-		db.Close()
-
-		// Step 6: Start DataStorage (shared helper)
-		logger.Info("[Process 1] Step 6: Start DataStorage service")
-		imageTag := infrastructure.GenerateInfraImageName("datastorage", "gateway")
-		err = infrastructure.StartDataStorage(infrastructure.IntegrationDataStorageConfig{
-			ContainerName: gatewayDataStorageContainer,
-			Port:          gatewayDataStoragePort,
-			Network:       "gateway-integration-net",
-			PostgresHost:  gatewayPostgresContainer,
-			PostgresPort:  5432,  // Internal container port
-			DBName:        gatewayPostgresDB,
-			DBUser:        gatewayPostgresUser,
-			DBPassword:    gatewayPostgresPassword,
-			RedisHost:     gatewayRedisContainer,
-			RedisPort:     6379,  // Internal container port
-			ImageTag:      imageTag,
-		}, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "DataStorage start must succeed")
-
-		err = infrastructure.WaitForHTTPHealth(
-			fmt.Sprintf("http://127.0.0.1:%d/health", gatewayDataStoragePort),
-			60*time.Second,
-			GinkgoWriter,
-		)
-		Expect(err).ToNot(HaveOccurred(), "DataStorage must become healthy")
-
-		logger.Info("✅ Phase 1 complete - Infrastructure ready for all processes")
+		logger.Info("✅ Phase 1 complete - DataStorage infrastructure ready for all processes")
 		return []byte("ready")
 	},
 
@@ -303,49 +237,18 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("Gateway Integration Suite - Infrastructure Cleanup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Collect must-gather logs if tests failed (DD-TEST-DIAGNOSTICS)
-		if CurrentSpecReport().Failed() {
-			infrastructure.MustGatherContainerLogs("gateway", []string{
-				gatewayPostgresContainer,
-				gatewayRedisContainer,
-				gatewayDataStorageContainer,
-			}, GinkgoWriter)
+		// Use unified cleanup (same pattern as AIAnalysis/SignalProcessing)
+		if dsInfra != nil {
+			infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 		}
-
-		cleanupInfrastructure()
 
 		logger.Info("✅ Suite complete - All infrastructure cleaned up")
 	},
 )
 
 // ============================================================================
-// INFRASTRUCTURE FUNCTIONS (using shared helpers from test/infrastructure)
+// TEST HELPER FUNCTIONS
 // ============================================================================
-// Per DD-TEST-002: Sequential Startup Pattern
-// Most infrastructure functions are provided by test/infrastructure/shared_integration_utils.go
-// Only Gateway-specific functions are defined below
-
-// connectPostgreSQL creates a database connection
-// Used by migrations step in SynchronizedBeforeSuite
-func connectPostgreSQL() (*sql.DB, error) {
-	connStr := fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable",
-		gatewayPostgresPort, gatewayPostgresUser, gatewayPostgresPassword, gatewayPostgresDB)
-
-	return sql.Open("postgres", connStr)
-}
-
-// cleanupInfrastructure removes all Podman containers and networks
-// Uses shared helper for standardized cleanup with retries
-func cleanupInfrastructure() {
-	infrastructure.CleanupContainers([]string{
-		gatewayDataStorageContainer,
-		gatewayRedisContainer,
-		gatewayPostgresContainer,
-	}, GinkgoWriter)
-
-	// Remove network
-	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
-}
 
 // getKubernetesClient returns the shared K8s client
 // This is used by test helpers and Gateway initialization
@@ -358,7 +261,7 @@ func getKubernetesClient() client.Client {
 }
 
 // getDataStorageClient returns the per-process DataStorage client
-func getDataStorageClient() *audit.OpenAPIClientAdapter {
+func getDataStorageClient() audit.DataStorageClient {
 	if dsClient == nil {
 		fmt.Fprintf(os.Stderr, "ERROR: DataStorage client not initialized\n")
 		return nil

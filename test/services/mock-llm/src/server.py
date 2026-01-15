@@ -173,6 +173,20 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_name="ambiguous-pod",
         parameters={"ACTION": "restart"}
     ),
+    "problem_resolved": MockScenario(
+        name="problem_resolved",
+        workflow_name="",  # No workflow needed - problem self-resolved
+        signal_type="MOCK_PROBLEM_RESOLVED",
+        severity="info",
+        workflow_id="",  # Empty workflow_id indicates no workflow needed
+        workflow_title="",
+        confidence=0.85,  # High confidence (>= 0.7) that problem is resolved
+        root_cause="Problem self-resolved through auto-scaling or transient condition cleared",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="recovered-pod",
+        parameters={}
+    ),
 }
 
 # Default scenario if none matches
@@ -427,6 +441,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             return MOCK_SCENARIOS.get("no_workflow_found", DEFAULT_SCENARIO)
         if "mock_low_confidence" in content or "mock low confidence" in content:
             return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
+        if "mock_problem_resolved" in content or "mock problem resolved" in content:
+            return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)
 
         # Check for test signal (graceful shutdown tests)
         if "testsignal" in content or "test signal" in content:
@@ -523,8 +539,26 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             }
         }
 
+        # BR-HAPI-200: Handle problem resolved case (investigation_outcome: "resolved")
+        if scenario.name == "problem_resolved":
+            analysis_json["selected_workflow"] = None
+            analysis_json["investigation_outcome"] = "resolved"  # BR-HAPI-200: Signal problem self-resolved
+            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+
+## Root Cause Analysis
+
+{scenario.root_cause}
+
+## Investigation Outcome
+
+The problem has self-resolved. No remediation workflow is needed.
+
+```json
+{json.dumps(analysis_json, indent=2)}
+```
+"""
         # Handle no workflow found case
-        if not scenario.workflow_id:
+        elif not scenario.workflow_id:
             analysis_json["selected_workflow"] = None
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 

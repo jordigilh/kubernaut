@@ -226,8 +226,11 @@ type RemediationRequestSpec struct {
 	SignalName string `json:"signalName"`
 
 	// Signal Classification
-	// Severity level: "critical", "warning", "info"
-	// +kubebuilder:validation:Enum=critical;warning;info
+	// Severity level (external value from signal provider)
+	// Examples: "Sev1", "P0", "critical", "HIGH", "warning"
+	// SignalProcessing will normalize via Rego policy (DD-SEVERITY-001)
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=50
 	Severity string `json:"severity"`
 
 	// NOTE: Environment and Priority fields REMOVED per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
