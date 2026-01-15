@@ -376,7 +376,7 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				Expect(validationErr).To(HaveOccurred(),
 					"BR-GATEWAY-005: Missing alertname should fail validation")
 			}
-			
+
 			// Either parsing or validation should catch the error
 			hasError := (err != nil) || (signal != nil && adapter.Validate(signal) != nil)
 			Expect(hasError).To(BeTrue(),

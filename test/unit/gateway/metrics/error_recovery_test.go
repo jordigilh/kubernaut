@@ -29,7 +29,7 @@ import (
 var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 	var (
 		registry *prometheus.Registry
-		
+
 		// Error recovery metrics
 		errorRecoveryCounter *prometheus.CounterVec
 		errorRetryCounter    *prometheus.CounterVec
@@ -161,7 +161,7 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 
 			recoveries := testutil.ToFloat64(errorRecoveryCounter.WithLabelValues(errorType, operation))
 			failures := testutil.ToFloat64(errorFailureCounter.WithLabelValues(errorType, operation))
-			
+
 			recoveryRate := recoveries / (recoveries + failures)
 
 			// BUSINESS RULE: Recovery rate should be 75% (3 recoveries / 4 total)
@@ -187,7 +187,7 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 
 			retries := testutil.ToFloat64(errorRetryCounter.WithLabelValues(errorType, operation))
 			recoveries := testutil.ToFloat64(errorRecoveryCounter.WithLabelValues(errorType, operation))
-			
+
 			retriesPerRecovery := retries / recoveries
 
 			// BUSINESS RULE: 5 retries per recovery (efficiency metric)

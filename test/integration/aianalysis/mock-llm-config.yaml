@@ -1,0 +1,19 @@
+scenarios:
+  oomkill-increase-memory-v1:staging: fb1d4ae9-0deb-443e-8440-43d471b0b02c
+  crashloop-config-fix-v1:staging: 5a976095-a7e3-4460-8e8a-ab5f4208c510
+  node-drain-reboot-v1:staging: d5242ca9-258e-424a-b556-7ce57c4a5ff7
+  node-drain-reboot-v1:production: d5242ca9-258e-424a-b556-7ce57c4a5ff7
+  memory-optimize-v1:staging: 14159258-6733-4a71-8a0d-f17d0ac0ff04
+  oomkill-increase-memory-v1:production: fb1d4ae9-0deb-443e-8440-43d471b0b02c
+  oomkill-increase-memory-v1:test: fb1d4ae9-0deb-443e-8440-43d471b0b02c
+  memory-optimize-v1:test: 14159258-6733-4a71-8a0d-f17d0ac0ff04
+  generic-restart-v1:production: 4befcb9f-a31c-404f-a243-44eb6fe6de8b
+  generic-restart-v1:test: 4befcb9f-a31c-404f-a243-44eb6fe6de8b
+  test-signal-handler-v1:staging: b2a52a4d-9eea-49ac-b9f8-0ef2a68013f7
+  test-signal-handler-v1:production: b2a52a4d-9eea-49ac-b9f8-0ef2a68013f7
+  memory-optimize-v1:production: 14159258-6733-4a71-8a0d-f17d0ac0ff04
+  crashloop-config-fix-v1:production: 5a976095-a7e3-4460-8e8a-ab5f4208c510
+  crashloop-config-fix-v1:test: 5a976095-a7e3-4460-8e8a-ab5f4208c510
+  node-drain-reboot-v1:test: d5242ca9-258e-424a-b556-7ce57c4a5ff7
+  generic-restart-v1:staging: 4befcb9f-a31c-404f-a243-44eb6fe6de8b
+  test-signal-handler-v1:test: b2a52a4d-9eea-49ac-b9f8-0ef2a68013f7

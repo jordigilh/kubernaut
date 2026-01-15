@@ -155,7 +155,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 					DataStorageURL: "http://datastorage:8080",
 				},
 			}
-			
+
 			previousTTL := validCfg.Processing.Deduplication.TTL
 
 			// Attempt to create invalid config (would fail validation)
