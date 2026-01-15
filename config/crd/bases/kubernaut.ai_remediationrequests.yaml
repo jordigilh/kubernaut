@@ -124,11 +124,11 @@ spec:
               severity:
                 description: |-
                   Signal Classification
-                  Severity level: "critical", "warning", "info"
-                enum:
-                - critical
-                - warning
-                - info
+                  Severity level (external value from signal provider)
+                  Examples: "Sev1", "P0", "critical", "HIGH", "warning"
+                  SignalProcessing will normalize via Rego policy (DD-SEVERITY-001)
+                maxLength: 50
+                minLength: 1
                 type: string
               signalAnnotations:
                 additionalProperties:

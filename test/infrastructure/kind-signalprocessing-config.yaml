@@ -54,3 +54,22 @@ nodes:
         # Increase controller manager QPS for CRD operations
         kube-api-qps: "100"
         kube-api-burst: "200"
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        # BR-SP-106: Reduce ConfigMap sync frequency for E2E tests
+        # Default: 1m (60s) → E2E: 10s
+        # Reduces hot-reload test duration from 60-90s to 15-20s
+        # Still tests real ConfigMap propagation mechanism (not mocked)
+        # Production clusters often tune this for faster config updates
+        sync-frequency: "10s"
+  - |
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        # BR-SP-106: Reduce ConfigMap sync frequency for E2E tests
+        # Default: 1m (60s) → E2E: 10s
+        # Reduces hot-reload test duration from 60-90s to 15-20s
+        # Production clusters often tune this for faster ConfigMap propagation
+        sync-frequency: "10s"

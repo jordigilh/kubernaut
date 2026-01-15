@@ -547,18 +547,9 @@ var _ = SynchronizedAfterSuite(func() {
 		GinkgoWriter.Println("   podman network rm aianalysis_test_network")
 	} else {
 		// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
-
-		By("Cleaning up infrastructure images to prevent disk space issues")
-		// Prune ONLY infrastructure images for this service
-		// Per DD-TEST-001 v1.1: Use label-based filtering for AIAnalysis integration compose project
-		pruneCmd := exec.Command("podman", "image", "prune", "-f",
-			"--filter", "label=io.podman.compose.project=aianalysis-integration")
-		pruneOutput, pruneErr := pruneCmd.CombinedOutput()
-		if pruneErr != nil {
-			GinkgoWriter.Printf("⚠️  Failed to prune images: %v\n%s\n", pruneErr, pruneOutput)
-		} else {
-			GinkgoWriter.Println("✅ Infrastructure images pruned")
-		}
+		// Per DD-TEST-001 v1.3: Image cleanup done automatically by shared functions
+		// - StopDSBootstrap removes DataStorage image by name (line 299 in datastorage_bootstrap.go)
+		// - No label-based pruning needed (programmatic builds don't have podman-compose labels)
 	}
 
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
