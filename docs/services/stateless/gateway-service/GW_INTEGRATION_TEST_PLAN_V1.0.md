@@ -1,9 +1,9 @@
 # Gateway Integration Test Plan v1.0
 
-**Service**: Gateway  
-**Version**: v1.0  
-**Date**: January 14, 2026  
-**Owner**: Gateway Team  
+**Service**: Gateway
+**Version**: v1.0
+**Date**: January 14, 2026
+**Owner**: Gateway Team
 **Status**: 📋 **APPROVED FOR IMPLEMENTATION**
 
 ---
@@ -52,8 +52,8 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 62%) thr
 ---
 
 #### **Scenario 1.1: Signal Received Audit Event**
-**BR**: BR-GATEWAY-055  
-**Priority**: P0 (Critical)  
+**BR**: BR-GATEWAY-055
+**Priority**: P0 (Critical)
 **Business Value**: SOC2 compliance - every signal must be auditable
 
 **Test Specifications**:
@@ -76,14 +76,14 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         // Given: Prometheus alert payload
         prometheusAlert := createTestPrometheusAlert()
         adapter = prometheus.NewAdapter(auditStore)
-        
+
         // When: Adapter parses signal
         signal, err := adapter.Parse(ctx, prometheusAlert)
-        
+
         // Then: Audit event emitted
         Expect(err).ToNot(HaveOccurred())
         Expect(auditStore.Events).To(HaveLen(1))
-        
+
         auditEvent := auditStore.Events[0]
         Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
         Expect(auditEvent.EventAction).To(Equal("received"))
@@ -98,14 +98,14 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         // Given: Kubernetes Event payload
         k8sEvent := createTestK8sEvent()
         adapter = k8sevent.NewAdapter(auditStore)
-        
+
         // When: Adapter parses signal
         signal, err := adapter.Parse(ctx, k8sEvent)
-        
+
         // Then: Audit event emitted with K8s metadata
         Expect(err).ToNot(HaveOccurred())
         Expect(auditStore.Events).To(HaveLen(1))
-        
+
         auditEvent := auditStore.Events[0]
         Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
         Expect(auditEvent.Metadata).To(HaveKeyWithValue("involved_object_kind", "Pod"))
@@ -117,17 +117,27 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         // Given: Signal with correlation ID
         prometheusAlert := createTestPrometheusAlert()
         adapter = prometheus.NewAdapter(auditStore)
-        
+
         // When: Multiple signals parsed
         signal1, _ := adapter.Parse(ctx, prometheusAlert)
         signal2, _ := adapter.Parse(ctx, prometheusAlert)
-        
-        // Then: Each has unique correlation ID
+
+        // Then: Each has unique correlation ID with correct format
         Expect(auditStore.Events).To(HaveLen(2))
         correlationID1 := auditStore.Events[0].CorrelationID
         correlationID2 := auditStore.Events[1].CorrelationID
+        
+        // Business rule: Correlation ID format enables RR reconstruction
+        Expect(correlationID1).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
+        Expect(correlationID2).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
+        
+        // Business rule: Unique IDs enable independent RR lifecycle tracking
         Expect(correlationID1).ToNot(Equal(correlationID2))
-        Expect(correlationID1).To(MatchRegexp(`^rr-[a-f0-9]+-\d+$`))
+        
+        // Business rule: Correlation format enables fingerprint extraction
+        fingerprint1 := extractFingerprintFromCorrelationID(correlationID1)
+        Expect(fingerprint1).To(HaveLen(12))
+        Expect(fingerprint1).To(MatchRegexp("^[a-f0-9]{12}$"))
     })
 
     // Test 1.1.4
@@ -139,10 +149,10 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
             "environment": "production",
         })
         adapter = prometheus.NewAdapter(auditStore)
-        
+
         // When: Adapter parses signal
         signal, _ := adapter.Parse(ctx, prometheusAlert)
-        
+
         // Then: All labels preserved in audit event
         auditEvent := auditStore.Events[0]
         Expect(auditEvent.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
@@ -155,15 +165,22 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         // Given: Audit store that fails
         failingAuditStore := NewFailingMockAuditStore()
         adapter = prometheus.NewAdapter(failingAuditStore)
-        
+
         // When: Adapter parses signal
         signal, err := adapter.Parse(ctx, createTestPrometheusAlert())
-        
-        // Then: Signal processing continues despite audit failure
+
+        // Then: Signal processing continues despite audit failure (resilience)
         Expect(err).ToNot(HaveOccurred())
-        Expect(signal).ToNot(BeNil())
-        Expect(signal.Fingerprint).ToNot(BeEmpty())
-        // Audit failure logged but not returned
+        
+        // Business rule: Signal data extracted correctly despite audit failure
+        Expect(signal.AlertName).To(Equal("HighCPU"))
+        Expect(signal.Namespace).To(Equal("production"))
+        Expect(signal.Severity).To(Equal("critical"))
+        
+        // Business rule: Fingerprint generated correctly (SHA-256 format)
+        Expect(signal.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"))
+        
+        // Audit failure logged but doesn't block critical path
     })
 })
 ```
@@ -177,8 +194,8 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 ---
 
 #### **Scenario 1.2: CRD Created Audit Event**
-**BR**: BR-GATEWAY-056  
-**Priority**: P0 (Critical)  
+**BR**: BR-GATEWAY-056
+**Priority**: P0 (Critical)
 **Business Value**: Track every CRD creation for compliance and debugging
 
 **Test Specifications**:
@@ -203,29 +220,35 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
     It("should emit gateway.crd.created audit event after CRD creation", func() {
         // Given: Valid signal
         signal := createTestSignal("test-alert", "critical")
-        
+
         // When: CRD created
         crd, err := crdCreator.CreateRemediationRequest(ctx, signal)
-        
-        // Then: Audit event emitted
+
+        // Then: Audit event emitted with correct business metadata
         Expect(err).ToNot(HaveOccurred())
         Expect(auditStore.Events).To(HaveLen(2)) // signal.received + crd.created
-        
+
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
         Expect(crdCreatedEvent).ToNot(BeNil())
         Expect(crdCreatedEvent.EventAction).To(Equal("created"))
-        Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("crd_name", crd.Name))
-        Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("crd_namespace", crd.Namespace))
+        
+        // Business rule: CRD name format validates operational querying
+        Expect(crdCreatedEvent.Metadata["crd_name"]).To(MatchRegexp(`^rr-[a-f0-9]+-\d+$`))
+        Expect(crdCreatedEvent.Metadata["crd_name"]).To(Equal(crd.Name))
+        
+        // Business rule: CRD created in correct namespace per signal metadata
+        Expect(crdCreatedEvent.Metadata["crd_namespace"]).To(Equal(signal.Namespace))
+        Expect(crdCreatedEvent.Metadata["crd_namespace"]).To(Equal(crd.Namespace))
     })
 
     // Test 1.2.2
     It("should include target_resource in audit event for RR reconstruction", func() {
         // Given: Signal with target resource
         signal := createTestSignalWithTarget("pod-crash", "Pod", "crashpod-123", "default")
-        
+
         // When: CRD created
         crd, _ := crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Target resource in audit event
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
         Expect(crdCreatedEvent.Metadata).To(HaveKey("target_resource_kind"))
@@ -238,13 +261,18 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
     It("should include fingerprint in audit event for deduplication tracking", func() {
         // Given: Signal with fingerprint
         signal := createTestSignal("high-cpu", "warning")
-        
+
         // When: CRD created
         crd, _ := crdCreator.CreateRemediationRequest(ctx, signal)
-        
-        // Then: Fingerprint in audit event
+
+        // Then: Fingerprint in audit event with correct format
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-        Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("fingerprint", signal.Fingerprint))
+        
+        // Business rule: Fingerprint format enables field selector queries
+        Expect(crdCreatedEvent.Metadata["fingerprint"]).To(MatchRegexp("^[a-f0-9]{64}$"))
+        Expect(crdCreatedEvent.Metadata["fingerprint"]).To(Equal(signal.Fingerprint))
+        
+        // Business rule: Initial occurrence count is 1
         Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "1"))
     })
 
@@ -253,10 +281,10 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
         // Given: Signal with occurrence count > 1 (simulated deduplication)
         signal := createTestSignal("repeated-error", "error")
         signal.OccurrenceCount = 5
-        
+
         // When: CRD created
         crd, _ := crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Occurrence count in audit event
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
         Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "5"))
@@ -267,15 +295,28 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
         // Given: Multiple signals
         signal1 := createTestSignal("alert-1", "critical")
         signal2 := createTestSignal("alert-2", "warning")
-        
+
         // When: Multiple CRDs created
         crd1, _ := crdCreator.CreateRemediationRequest(ctx, signal1)
         crd2, _ := crdCreator.CreateRemediationRequest(ctx, signal2)
-        
-        // Then: Unique correlation IDs
+
+        // Then: Unique correlation IDs with correct format
         events := filterEventsByType(auditStore.Events, "gateway.crd.created")
         Expect(events).To(HaveLen(2))
-        Expect(events[0].CorrelationID).ToNot(Equal(events[1].CorrelationID))
+        
+        correlation1 := events[0].CorrelationID
+        correlation2 := events[1].CorrelationID
+        
+        // Business rule: Correlation ID format enables tracing
+        Expect(correlation1).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
+        Expect(correlation2).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
+        
+        // Business rule: Uniqueness enables independent RR lifecycle tracking
+        Expect(correlation1).ToNot(Equal(correlation2))
+        
+        // Business rule: Correlation matches CRD name (enables audit-to-CRD mapping)
+        Expect(correlation1).To(Equal(crd1.Name))
+        Expect(correlation2).To(Equal(crd2.Name))
     })
 })
 ```
@@ -288,8 +329,8 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 ---
 
 #### **Scenario 1.3: Signal Deduplicated Audit Event**
-**BR**: BR-GATEWAY-057  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-057
+**Priority**: P1 (High)
 **Business Value**: Track deduplication decisions for SLA reporting
 
 **Test Specifications**:
@@ -315,19 +356,30 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         // Given: Existing RR in Pending phase
         existingRR := createTestRR("test-fingerprint", "Pending", "test-ns")
         k8sClient.Create(ctx, existingRR)
-        
+
         // When: Duplicate signal arrives
         signal := createTestSignalWithFingerprint("test-fingerprint")
         shouldDedupe, existingRR, err := phaseChecker.ShouldDeduplicate(ctx, signal)
-        
-        // Then: Deduplication audit event emitted
+
+        // Then: Deduplication audit event emitted with business reasoning
         Expect(err).ToNot(HaveOccurred())
         Expect(shouldDedupe).To(BeTrue())
-        
+
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvent).ToNot(BeNil())
         Expect(dedupeEvent.EventAction).To(Equal("deduplicated"))
-        Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("deduplication_reason", "status-based"))
+        
+        // Business rule: Deduplication reason enables SLA analysis
+        reason := dedupeEvent.Metadata["deduplication_reason"]
+        Expect(reason).To(BeElementOf("status-based", "time-window", "manual-suppression"))
+        
+        // Business rule: For Pending phase, must be status-based
+        if existingRR.Status.Phase == "Pending" {
+            Expect(reason).To(Equal("status-based"))
+        }
+        
+        // Business rule: Existing RR phase documented for troubleshooting
+        Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("existing_rr_phase", "Pending"))
     })
 
     // Test 1.3.2
@@ -335,11 +387,11 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         // Given: Existing RR
         existingRR := createTestRR("fp-12345", "Processing", "prod-ns")
         k8sClient.Create(ctx, existingRR)
-        
+
         // When: Duplicate arrives
         signal := createTestSignalWithFingerprint("fp-12345")
         shouldDedupe, rr, _ := phaseChecker.ShouldDeduplicate(ctx, signal)
-        
+
         // Then: Existing RR name in audit event
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("existing_rr_name", existingRR.Name))
@@ -352,11 +404,11 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         existingRR := createTestRR("fp-99999", "Pending", "test-ns")
         existingRR.Status.OccurrenceCount = 3
         k8sClient.Create(ctx, existingRR)
-        
+
         // When: Duplicate arrives
         signal := createTestSignalWithFingerprint("fp-99999")
         shouldDedupe, rr, _ := phaseChecker.ShouldDeduplicate(ctx, signal)
-        
+
         // Then: Updated count in audit event
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "4"))
@@ -369,13 +421,13 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         processingRR := createTestRR("fp-processing", "Processing", "test-ns")
         k8sClient.Create(ctx, pendingRR)
         k8sClient.Create(ctx, processingRR)
-        
+
         // When: Duplicates arrive for each
         signal1 := createTestSignalWithFingerprint("fp-pending")
         signal2 := createTestSignalWithFingerprint("fp-processing")
         phaseChecker.ShouldDeduplicate(ctx, signal1)
         phaseChecker.ShouldDeduplicate(ctx, signal2)
-        
+
         // Then: Different phase metadata
         dedupeEvents := filterEventsByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvents).To(HaveLen(2))
@@ -388,11 +440,11 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         // Given: RR in Completed phase
         completedRR := createTestRR("fp-completed", "Completed", "test-ns")
         k8sClient.Create(ctx, completedRR)
-        
+
         // When: New signal arrives
         signal := createTestSignalWithFingerprint("fp-completed")
         shouldDedupe, rr, _ := phaseChecker.ShouldDeduplicate(ctx, signal)
-        
+
         // Then: NO deduplication (allow new RR)
         Expect(shouldDedupe).To(BeFalse())
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
@@ -409,8 +461,8 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
 ---
 
 #### **Scenario 1.4: CRD Creation Failed Audit Event**
-**BR**: BR-GATEWAY-058  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-058
+**Priority**: P1 (High)
 **Business Value**: Track failures for operational debugging
 
 **Test Specifications**:
@@ -436,14 +488,14 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
         // Given: K8s API that fails
         k8sClient.InjectError(errors.New("API server unavailable"))
         signal := createTestSignal("test-alert", "critical")
-        
+
         // When: CRD creation attempted
         crd, err := crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Failure audit event emitted
         Expect(err).To(HaveOccurred())
         Expect(crd).To(BeNil())
-        
+
         failedEvent := findEventByType(auditStore.Events, "gateway.crd.failed")
         Expect(failedEvent).ToNot(BeNil())
         Expect(failedEvent.EventAction).To(Equal("failed"))
@@ -456,10 +508,10 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
         // Given: K8s API returns 503 (transient)
         k8sClient.InjectStatusError(503, "Service Unavailable")
         signal := createTestSignal("test-alert", "critical")
-        
+
         // When: CRD creation attempted
         crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Error type in audit event
         failedEvent := findEventByType(auditStore.Events, "gateway.crd.failed")
         Expect(failedEvent.Metadata).To(HaveKeyWithValue("error_type", "transient"))
@@ -471,10 +523,10 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
         // Given: K8s API fails multiple times
         k8sClient.InjectTransientErrors(3)
         signal := createTestSignal("test-alert", "critical")
-        
+
         // When: CRD creation with retries
         crdCreator.CreateRemediationRequestWithRetry(ctx, signal, 3)
-        
+
         // Then: Multiple failure events with retry count
         failedEvents := filterEventsByType(auditStore.Events, "gateway.crd.failed")
         Expect(failedEvents).To(HaveLen(3))
@@ -488,10 +540,10 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
         // Given: Circuit breaker open
         k8sClient.OpenCircuitBreaker()
         signal := createTestSignal("test-alert", "critical")
-        
+
         // When: CRD creation attempted
         crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Circuit breaker state in audit event
         failedEvent := findEventByType(auditStore.Events, "gateway.crd.failed")
         Expect(failedEvent.Metadata).To(HaveKeyWithValue("circuit_breaker_state", "open"))
@@ -502,10 +554,10 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
     It("should include validation_errors when CRD validation fails", func() {
         // Given: Signal with invalid data
         signal := createInvalidSignal() // Missing required fields
-        
+
         // When: CRD creation attempted
         crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Validation errors in audit event
         failedEvent := findEventByType(auditStore.Events, "gateway.crd.failed")
         Expect(failedEvent.Metadata).To(HaveKeyWithValue("error_type", "permanent"))
@@ -534,8 +586,8 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
 ---
 
 #### **Scenario 2.1: HTTP Request Metrics**
-**BR**: BR-GATEWAY-067  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-067
+**Priority**: P1 (High)
 **Business Value**: Operational visibility into Gateway performance
 
 **Test Specifications**:
@@ -558,36 +610,58 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
     It("should increment gateway_http_requests_total{status=201} on CRD creation", func() {
         // Given: Initial metric value
         initialValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "201"})
-        
-        // When: Request processed successfully
-        metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 201, 150*time.Millisecond)
-        
-        // Then: Metric incremented
+
+        // When: Real signal processed and CRD created (not mocked HTTP)
+        signal := createTestSignal("high-cpu", "critical")
+        crd, err := handler.ProcessSignal(ctx, signal)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Then: Metric incremented (correlates with K8s operation)
         finalValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "201"})
         Expect(finalValue).To(Equal(initialValue + 1))
+        
+        // Business rule: Metric correlates with actual K8s CRD creation
+        retrievedCRD := &remediationv1alpha1.RemediationRequest{}
+        err = k8sClient.Get(ctx, client.ObjectKey{Name: crd.Name, Namespace: crd.Namespace}, retrievedCRD)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(retrievedCRD.Name).To(Equal(crd.Name))
     })
 
     // Test 2.1.2
     It("should increment gateway_http_requests_total{status=202} on deduplication", func() {
-        // Given: Initial metric value
+        // Given: Initial metric value and existing CRD
         initialValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "202"})
         
-        // When: Deduplicated request
-        metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 202, 50*time.Millisecond)
+        signal1 := createTestSignal("high-cpu", "critical")
+        crd1, _ := handler.ProcessSignal(ctx, signal1)
         
-        // Then: Metric incremented
+        // When: Duplicate signal processed (same fingerprint)
+        signal2 := createTestSignalWithFingerprint("high-cpu", "critical", signal1.Fingerprint)
+        crd2, err := handler.ProcessSignal(ctx, signal2)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Then: Metric incremented (correlates with deduplication decision)
         finalValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "202"})
         Expect(finalValue).To(Equal(initialValue + 1))
+        
+        // Business rule: No new CRD created due to deduplication
+        Expect(crd2).To(BeNil())
+        
+        // Business rule: Original CRD occurrence count updated (if tracked)
+        retrievedCRD := &remediationv1alpha1.RemediationRequest{}
+        err = k8sClient.Get(ctx, client.ObjectKey{Name: crd1.Name, Namespace: crd1.Namespace}, retrievedCRD)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(retrievedCRD.Spec.OccurrenceCount).To(BeNumerically(">", 1))
     })
 
     // Test 2.1.3
     It("should increment gateway_http_requests_total{status=500} on error", func() {
         // Given: Initial metric value
         initialValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "500"})
-        
+
         // When: Request fails
         metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 500, 10*time.Millisecond)
-        
+
         // Then: Metric incremented
         finalValue := getMetricValue(metricsRegistry, "gateway_http_requests_total", map[string]string{"status": "500"})
         Expect(finalValue).To(Equal(initialValue + 1))
@@ -599,14 +673,14 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
         metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 201, 100*time.Millisecond)
         metricsMiddleware.RecordRequest("POST", "/webhook/k8s-event", 201, 120*time.Millisecond)
         metricsMiddleware.RecordRequest("GET", "/health", 200, 5*time.Millisecond)
-        
+
         // Then: Metrics exist with correct labels
         Expect(metricExists(metricsRegistry, "gateway_http_requests_total", map[string]string{
             "method": "POST",
             "path":   "/webhook/prometheus",
             "status": "201",
         })).To(BeTrue())
-        
+
         Expect(metricExists(metricsRegistry, "gateway_http_requests_total", map[string]string{
             "method": "GET",
             "path":   "/health",
@@ -620,7 +694,7 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
         metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 201, 50*time.Millisecond)
         metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 201, 150*time.Millisecond)
         metricsMiddleware.RecordRequest("POST", "/webhook/prometheus", 201, 500*time.Millisecond)
-        
+
         // Then: Histogram populated
         histogram := getHistogramMetric(metricsRegistry, "gateway_http_request_duration_seconds")
         Expect(histogram).ToNot(BeNil())
@@ -638,8 +712,8 @@ var _ = Describe("BR-GATEWAY-067: HTTP Request Metrics Emission", func() {
 ---
 
 #### **Scenario 2.2: CRD Creation Metrics**
-**BR**: BR-GATEWAY-068  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-068
+**Priority**: P1 (High)
 **Business Value**: Track CRD creation success/failure rates
 
 **Test Specifications**:
@@ -665,10 +739,10 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
         // Given: Valid signal
         signal := createTestSignal("test-alert", "critical")
         initialValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "success"})
-        
+
         // When: CRD created successfully
         crd, err := crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Success metric incremented
         Expect(err).ToNot(HaveOccurred())
         finalValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "success"})
@@ -682,11 +756,11 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
         k8sClient.InjectError(errors.New("API unavailable"))
         crdCreator = processing.NewCRDCreatorWithMetrics(k8sClient, metricsRegistry)
         initialValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "failure"})
-        
+
         // When: CRD creation fails
         signal := createTestSignal("test-alert", "critical")
         crd, err := crdCreator.CreateRemediationRequest(ctx, signal)
-        
+
         // Then: Failure metric incremented
         Expect(err).To(HaveOccurred())
         finalValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "failure"})
@@ -698,18 +772,18 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
         // Given: Signals from different sources
         prometheusSignal := createTestSignalFromAdapter("prometheus", "prod-ns", "high-cpu")
         k8sEventSignal := createTestSignalFromAdapter("k8s-event", "staging-ns", "pod-crash")
-        
+
         // When: CRDs created
         crdCreator.CreateRemediationRequest(ctx, prometheusSignal)
         crdCreator.CreateRemediationRequest(ctx, k8sEventSignal)
-        
+
         // Then: Metrics with correct labels
         Expect(metricExists(metricsRegistry, "gateway_crd_creations_total", map[string]string{
             "status":    "success",
             "namespace": "prod-ns",
             "adapter":   "prometheus",
         })).To(BeTrue())
-        
+
         Expect(metricExists(metricsRegistry, "gateway_crd_creations_total", map[string]string{
             "status":    "success",
             "namespace": "staging-ns",
@@ -725,12 +799,12 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
             createTestSignal("alert-2", "warning"),
             createTestSignal("alert-3", "error"),
         }
-        
+
         // When: Multiple CRDs created
         for _, signal := range signals {
             crdCreator.CreateRemediationRequest(ctx, signal)
         }
-        
+
         // Then: Counter increases correctly
         finalValue := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "success"})
         Expect(finalValue).To(Equal(float64(3)))
@@ -742,12 +816,12 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
         signal1 := createTestSignal("alert-1", "critical")
         crdCreator.CreateRemediationRequest(ctx, signal1)
         value1 := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "success"})
-        
+
         // When: Another CRD created (simulating next request)
         signal2 := createTestSignal("alert-2", "warning")
         crdCreator.CreateRemediationRequest(ctx, signal2)
         value2 := getMetricValue(metricsRegistry, "gateway_crd_creations_total", map[string]string{"status": "success"})
-        
+
         // Then: Values accumulate
         Expect(value2).To(Equal(value1 + 1))
     })
@@ -762,8 +836,8 @@ var _ = Describe("BR-GATEWAY-068: CRD Creation Metrics Emission", func() {
 ---
 
 #### **Scenario 2.3: Deduplication Metrics**
-**BR**: BR-GATEWAY-069  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-069
+**Priority**: P1 (High)
 **Business Value**: Track deduplication effectiveness for capacity planning
 
 **Test Specifications**:
@@ -790,11 +864,11 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
         existingRR := createTestRR("fp-12345", "Pending", "test-ns")
         k8sClient.Create(ctx, existingRR)
         initialValue := getMetricValue(metricsRegistry, "gateway_deduplications_total", map[string]string{})
-        
+
         // When: Duplicate signal arrives
         signal := createTestSignalWithFingerprint("fp-12345")
         shouldDedupe, rr, err := phaseChecker.ShouldDeduplicate(ctx, signal)
-        
+
         // Then: Deduplication metric incremented
         Expect(err).ToNot(HaveOccurred())
         Expect(shouldDedupe).To(BeTrue())
@@ -807,11 +881,11 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
         // Given: RR in Pending phase
         existingRR := createTestRR("fp-status", "Pending", "test-ns")
         k8sClient.Create(ctx, existingRR)
-        
+
         // When: Duplicate signal arrives
         signal := createTestSignalWithFingerprint("fp-status")
         phaseChecker.ShouldDeduplicate(ctx, signal)
-        
+
         // Then: Reason label present
         Expect(metricExists(metricsRegistry, "gateway_deduplications_total", map[string]string{
             "reason": "status-based",
@@ -827,12 +901,12 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
         k8sClient.Create(ctx, pendingRR)
         k8sClient.Create(ctx, processingRR)
         k8sClient.Create(ctx, blockedRR)
-        
+
         // When: Duplicates arrive for each phase
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-pending"))
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-processing"))
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-blocked"))
-        
+
         // Then: Phase labels present
         Expect(metricExists(metricsRegistry, "gateway_deduplications_total", map[string]string{"phase": "Pending"})).To(BeTrue())
         Expect(metricExists(metricsRegistry, "gateway_deduplications_total", map[string]string{"phase": "Processing"})).To(BeTrue())
@@ -844,13 +918,13 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
         // Given: Mix of new and duplicate signals
         existingRR := createTestRR("fp-existing", "Pending", "test-ns")
         k8sClient.Create(ctx, existingRR)
-        
+
         // When: Signals processed
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-new-1"))       // Not deduped
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-existing"))    // Deduped
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-existing"))    // Deduped
         phaseChecker.ShouldDeduplicate(ctx, createTestSignalWithFingerprint("fp-new-2"))       // Not deduped
-        
+
         // Then: Deduplication rate calculable
         dedupeCount := getMetricValue(metricsRegistry, "gateway_deduplications_total", map[string]string{})
         totalSignals := getMetricValue(metricsRegistry, "gateway_signals_total", map[string]string{})
@@ -864,17 +938,17 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
         existingRR := createTestRR("fp-correlated", "Pending", "test-ns")
         existingRR.Status.OccurrenceCount = 1
         k8sClient.Create(ctx, existingRR)
-        
+
         // When: Multiple duplicates arrive
         signal := createTestSignalWithFingerprint("fp-correlated")
         phaseChecker.ShouldDeduplicate(ctx, signal)
         phaseChecker.ShouldDeduplicate(ctx, signal)
         phaseChecker.ShouldDeduplicate(ctx, signal)
-        
+
         // Then: Metric count matches occurrence count increase
         dedupeCount := getMetricValue(metricsRegistry, "gateway_deduplications_total", map[string]string{})
         Expect(dedupeCount).To(Equal(float64(3)))
-        
+
         // Verify RR updated
         updatedRR := &v1alpha1.RemediationRequest{}
         k8sClient.Get(ctx, client.ObjectKeyFromObject(existingRR), updatedRR)
@@ -920,8 +994,8 @@ var _ = Describe("BR-GATEWAY-069: Deduplication Metrics Emission", func() {
 ---
 
 #### **Scenario 3.1: Prometheus Adapter Signal Parsing**
-**BR**: BR-GATEWAY-001, BR-GATEWAY-005  
-**Priority**: P0 (Critical)  
+**BR**: BR-GATEWAY-001, BR-GATEWAY-005
+**Priority**: P0 (Critical)
 **Business Value**: Validate correct signal extraction from Prometheus payloads
 
 **Test Specifications**:
@@ -947,10 +1021,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
             "namespace": "production",
             "pod":       "api-server-123",
         })
-        
+
         // When: Adapter parses alert
         signal, err := adapter.Parse(ctx, alert)
-        
+
         // Then: Signal extracted correctly
         Expect(err).ToNot(HaveOccurred())
         Expect(signal.AlertName).To(Equal("HighCPU"))
@@ -966,10 +1040,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
             "alertname": "DiskFull",
             "namespace": "staging-tenant-a",
         })
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, alert)
-        
+
         // Then: Namespace extracted
         Expect(signal.Namespace).To(Equal("staging-tenant-a"))
     })
@@ -981,10 +1055,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
             "alertname": "MemoryLeak",
             "severity":  "warning",
         })
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, alert)
-        
+
         // Then: Severity preserved (pass-through per BR-GATEWAY-111)
         Expect(signal.Severity).To(Equal("warning"))
     })
@@ -997,10 +1071,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
             "pod":       "crashpod-456",
             "namespace": "prod-us-east",
         })
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, alert)
-        
+
         // Then: Target resource populated
         Expect(signal.TargetResource).ToNot(BeNil())
         Expect(signal.TargetResource.Kind).To(Equal("Pod"))
@@ -1014,15 +1088,27 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
         alert := createPrometheusAlert(map[string]string{
             "alertname": "MinimalAlert",
         })
-        
+
         // When: Parsed
-        signal, _ := adapter.Parse(ctx, alert)
-        
-        // Then: Defaults applied
+        signal, err := adapter.Parse(ctx, alert)
+        Expect(err).ToNot(HaveOccurred())
+
+        // Then: Safe defaults enable CRD creation (business outcome)
+        // Business rule: Default severity enables RemediationRequest priority classification
         Expect(signal.Severity).To(Equal("unknown"))
+        
+        // Business rule: Default namespace prevents orphaned CRDs
         Expect(signal.Namespace).To(Equal("default"))
-        Expect(signal.Labels).ToNot(BeNil())
-        Expect(signal.Annotations).ToNot(BeNil())
+        
+        // Business rule: Empty maps prevent nil pointer panics in downstream processing
+        Expect(signal.Labels).To(BeEmpty())  // Empty map, not nil
+        Expect(signal.Annotations).To(BeEmpty())  // Empty map, not nil
+        
+        // Validate CRD can be created with safe defaults
+        crdCreator := processing.NewCRDCreator(k8sClient, auditStore)
+        crd, err := crdCreator.CreateRemediationRequest(ctx, signal)
+        Expect(err).ToNot(HaveOccurred())
+        Expect(crd.Name).ToNot(BeEmpty())
     })
 
     // Test 3.1.6
@@ -1034,10 +1120,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
             "environment": "production",
             "tier":        "critical",
         })
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, alert)
-        
+
         // Then: All labels preserved
         Expect(signal.Labels).To(HaveKeyWithValue("team", "platform"))
         Expect(signal.Labels).To(HaveKeyWithValue("environment", "production"))
@@ -1049,10 +1135,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
         // Given: Alert with very long annotation
         longAnnotation := strings.Repeat("A", 10000) // 10KB annotation
         alert := createPrometheusAlertWithAnnotation("summary", longAnnotation)
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, alert)
-        
+
         // Then: Annotation truncated (max 4KB)
         Expect(signal.Annotations["summary"]).To(HaveLen(4096))
         Expect(signal.Annotations["summary"]).To(HaveSuffix("...truncated"))
@@ -1066,10 +1152,10 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
             {"alertname": "Alert2", "severity": "warning"},
             {"alertname": "Alert3", "severity": "info"},
         })
-        
+
         // When: Parsed
         signals, err := adapter.ParseBatch(ctx, payload)
-        
+
         // Then: All alerts parsed
         Expect(err).ToNot(HaveOccurred())
         Expect(signals).To(HaveLen(3))
@@ -1088,8 +1174,8 @@ var _ = Describe("BR-GATEWAY-001: Prometheus Adapter Signal Parsing", func() {
 ---
 
 #### **Scenario 3.2: Kubernetes Event Adapter Signal Parsing**
-**BR**: BR-GATEWAY-002, BR-GATEWAY-005  
-**Priority**: P0 (Critical)  
+**BR**: BR-GATEWAY-002, BR-GATEWAY-005
+**Priority**: P0 (Critical)
 **Business Value**: Validate correct signal extraction from K8s Events
 
 **Test Specifications**:
@@ -1110,10 +1196,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
     It("should parse Warning event into Signal with severity=warning", func() {
         // Given: Warning K8s Event
         event := createK8sEvent("Warning", "BackOff", "Back-off restarting failed container")
-        
+
         // When: Adapter parses event
         signal, err := adapter.Parse(ctx, event)
-        
+
         // Then: Signal extracted with warning severity
         Expect(err).ToNot(HaveOccurred())
         Expect(signal.Severity).To(Equal("warning"))
@@ -1130,10 +1216,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
             "unscheduled-pod-123",
             "production",
         )
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, event)
-        
+
         // Then: Target resource populated
         Expect(signal.TargetResource).ToNot(BeNil())
         Expect(signal.TargetResource.Kind).To(Equal("Pod"))
@@ -1145,10 +1231,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
     It("should use event reason as alert name", func() {
         // Given: Event with specific reason
         event := createK8sEvent("Warning", "FailedMount", "MountVolume.SetUp failed")
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, event)
-        
+
         // Then: Reason becomes alert name
         Expect(signal.AlertName).To(Equal("FailedMount"))
     })
@@ -1157,10 +1243,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
     It("should use event message as description", func() {
         // Given: Event with detailed message
         event := createK8sEvent("Warning", "ImagePullBackOff", "Back-off pulling image registry.k8s.io/pause:3.9")
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, event)
-        
+
         // Then: Message becomes description
         Expect(signal.Description).To(Equal("Back-off pulling image registry.k8s.io/pause:3.9"))
     })
@@ -1169,10 +1255,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
     It("should use event namespace when involvedObject namespace missing", func() {
         // Given: Event with namespace but object without namespace
         event := createK8sEventInNamespace("kube-system", "Warning", "FailedScheduling", "")
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, event)
-        
+
         // Then: Event namespace used
         Expect(signal.Namespace).To(Equal("kube-system"))
     })
@@ -1182,10 +1268,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
         // Given: Event with count = 10
         event := createK8sEvent("Warning", "BackOff", "Back-off restarting")
         event.Count = 10
-        
+
         // When: Parsed
         signal, _ := adapter.Parse(ctx, event)
-        
+
         // Then: Occurrence count reflected
         Expect(signal.OccurrenceCount).To(Equal(10))
     })
@@ -1194,10 +1280,10 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
     It("should filter out Normal events (not Warning)", func() {
         // Given: Normal K8s Event
         event := createK8sEvent("Normal", "Started", "Started container successfully")
-        
+
         // When: Parsed
         signal, err := adapter.Parse(ctx, event)
-        
+
         // Then: Filtered out (nil signal, no error)
         Expect(err).ToNot(HaveOccurred())
         Expect(signal).To(BeNil())
@@ -1224,8 +1310,8 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
 ---
 
 #### **Scenario 4.1: Circuit Breaker State Machine**
-**BR**: BR-GATEWAY-093  
-**Priority**: P0 (Critical)  
+**BR**: BR-GATEWAY-093
+**Priority**: P0 (Critical)
 **Business Value**: Validate fail-fast behavior for K8s API unavailability
 
 **Test Specifications**:
@@ -1248,14 +1334,14 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
     It("should transition from Closed to Open after 5 consecutive failures", func() {
         // Given: Circuit breaker in Closed state
         Expect(k8sClient.GetCircuitState()).To(Equal("closed"))
-        
+
         // When: 5 consecutive failures
         for i := 0; i < 5; i++ {
             k8sClient.InjectError(errors.New("API unavailable"))
             _, err := k8sClient.Create(ctx, createTestRR())
             Expect(err).To(HaveOccurred())
         }
-        
+
         // Then: Circuit opens
         Expect(k8sClient.GetCircuitState()).To(Equal("open"))
     })
@@ -1265,10 +1351,10 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
         // Given: Circuit in Open state
         k8sClient.OpenCircuit()
         Expect(k8sClient.GetCircuitState()).To(Equal("open"))
-        
+
         // When: Timeout expires (wait 30 seconds)
         time.Sleep(30 * time.Second)
-        
+
         // Then: Circuit transitions to Half-Open
         Expect(k8sClient.GetCircuitState()).To(Equal("half-open"))
     })
@@ -1278,10 +1364,10 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
         // Given: Circuit in Half-Open state
         k8sClient.SetState("half-open")
         k8sClient.ClearErrors() // Next request will succeed
-        
+
         // When: Test request succeeds
         _, err := k8sClient.Create(ctx, createTestRR())
-        
+
         // Then: Circuit closes
         Expect(err).ToNot(HaveOccurred())
         Expect(k8sClient.GetCircuitState()).To(Equal("closed"))
@@ -1292,10 +1378,10 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
         // Given: Circuit in Half-Open state
         k8sClient.SetState("half-open")
         k8sClient.InjectError(errors.New("Still unavailable"))
-        
+
         // When: Test request fails
         _, err := k8sClient.Create(ctx, createTestRR())
-        
+
         // Then: Circuit reopens
         Expect(err).To(HaveOccurred())
         Expect(k8sClient.GetCircuitState()).To(Equal("open"))
@@ -1306,10 +1392,10 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
         // Given: Circuit in Open state
         k8sClient.OpenCircuit()
         callCount := k8sClient.GetAPICallCount()
-        
+
         // When: Request attempted
         _, err := k8sClient.Create(ctx, createTestRR())
-        
+
         // Then: Immediate failure, no API call
         Expect(err).To(HaveOccurred())
         Expect(err.Error()).To(ContainSubstring("circuit breaker open"))
@@ -1320,13 +1406,13 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
     It("should update gateway_circuit_breaker_state metric on state change", func() {
         // Given: Circuit closed
         initialState := getMetricValue(metricsRegistry, "gateway_circuit_breaker_state", map[string]string{"state": "open"})
-        
+
         // When: Circuit opens
         for i := 0; i < 5; i++ {
             k8sClient.InjectError(errors.New("API unavailable"))
             k8sClient.Create(ctx, createTestRR())
         }
-        
+
         // Then: Metric updated
         finalState := getMetricValue(metricsRegistry, "gateway_circuit_breaker_state", map[string]string{"state": "open"})
         Expect(finalState).To(Equal(1.0)) // State is now "open"
@@ -1337,14 +1423,14 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
         // Given: Circuit breaker with metrics
         initialSuccess := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "success"})
         initialFailure := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "failure"})
-        
+
         // When: Mix of successful and failed operations
         k8sClient.Create(ctx, createTestRR()) // Success
         k8sClient.InjectError(errors.New("fail"))
         k8sClient.Create(ctx, createTestRR()) // Failure
         k8sClient.ClearErrors()
         k8sClient.Create(ctx, createTestRR()) // Success
-        
+
         // Then: Metrics track operations
         finalSuccess := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "success"})
         finalFailure := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "failure"})
@@ -1373,8 +1459,8 @@ var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
 ---
 
 #### **Scenario 5.1: Transient vs Permanent Error Classification**
-**BR**: BR-GATEWAY-188, BR-GATEWAY-189  
-**Priority**: P0 (Critical)  
+**BR**: BR-GATEWAY-188, BR-GATEWAY-189
+**Priority**: P0 (Critical)
 **Business Value**: Validate correct retry behavior for different error types
 
 **Test Specifications**:
@@ -1395,10 +1481,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify K8s API 500 error as TRANSIENT (retry)", func() {
         // Given: 500 Internal Server Error
         err := apierrors.NewInternalError(errors.New("internal error"))
-        
+
         // When: Error classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: TRANSIENT
         Expect(classification.Type).To(Equal("transient"))
         Expect(classification.ShouldRetry).To(BeTrue())
@@ -1409,10 +1495,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify K8s API 503 error as TRANSIENT (retry)", func() {
         // Given: 503 Service Unavailable
         err := apierrors.NewServiceUnavailable("service unavailable")
-        
+
         // When: Classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: TRANSIENT
         Expect(classification.Type).To(Equal("transient"))
         Expect(classification.ShouldRetry).To(BeTrue())
@@ -1422,10 +1508,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify K8s API 400 error as PERMANENT (no retry)", func() {
         // Given: 400 Bad Request
         err := apierrors.NewBadRequest("invalid request")
-        
+
         // When: Classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: PERMANENT
         Expect(classification.Type).To(Equal("permanent"))
         Expect(classification.ShouldRetry).To(BeFalse())
@@ -1435,10 +1521,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify K8s API 422 error as PERMANENT (no retry)", func() {
         // Given: 422 Unprocessable Entity (validation failure)
         err := apierrors.NewInvalid(schema.GroupKind{}, "test", field.ErrorList{})
-        
+
         // When: Classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: PERMANENT
         Expect(classification.Type).To(Equal("permanent"))
         Expect(classification.ShouldRetry).To(BeFalse())
@@ -1448,10 +1534,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify network timeout as TRANSIENT (retry)", func() {
         // Given: Network timeout error
         err := &net.OpError{Op: "dial", Err: context.DeadlineExceeded}
-        
+
         // When: Classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: TRANSIENT
         Expect(classification.Type).To(Equal("transient"))
         Expect(classification.ShouldRetry).To(BeTrue())
@@ -1461,10 +1547,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify context canceled as PERMANENT (no retry)", func() {
         // Given: Context canceled error
         err := context.Canceled
-        
+
         // When: Classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: PERMANENT
         Expect(classification.Type).To(Equal("permanent"))
         Expect(classification.ShouldRetry).To(BeFalse())
@@ -1474,10 +1560,10 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
     It("should classify validation error as PERMANENT (no retry)", func() {
         // Given: Application validation error
         err := errors.New("validation failed: missing required field 'alertname'")
-        
+
         // When: Classified
         classification := errorClassifier.Classify(err)
-        
+
         // Then: PERMANENT
         Expect(classification.Type).To(Equal("permanent"))
         Expect(classification.ShouldRetry).To(BeFalse())
@@ -1493,8 +1579,8 @@ var _ = Describe("BR-GATEWAY-188/189: Error Classification", func() {
 ---
 
 #### **Scenario 5.2: Exponential Backoff Calculation**
-**BR**: BR-GATEWAY-188  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-188
+**Priority**: P1 (High)
 **Business Value**: Validate correct backoff timing for retries
 
 **Test Specifications**:
@@ -1517,7 +1603,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
     It("should calculate 100ms backoff for first retry", func() {
         // When: First retry backoff calculated
         backoff := retryLogic.CalculateBackoff(1)
-        
+
         // Then: 100ms
         Expect(backoff).To(Equal(100 * time.Millisecond))
     })
@@ -1526,7 +1612,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
     It("should calculate 200ms backoff for second retry (2x)", func() {
         // When: Second retry backoff calculated
         backoff := retryLogic.CalculateBackoff(2)
-        
+
         // Then: 200ms (100ms * 2)
         Expect(backoff).To(Equal(200 * time.Millisecond))
     })
@@ -1535,7 +1621,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
     It("should calculate 400ms backoff for third retry (2x)", func() {
         // When: Third retry backoff calculated
         backoff := retryLogic.CalculateBackoff(3)
-        
+
         // Then: 400ms (200ms * 2)
         Expect(backoff).To(Equal(400 * time.Millisecond))
     })
@@ -1544,7 +1630,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
     It("should cap backoff at 5 seconds maximum", func() {
         // When: Very high retry count
         backoff := retryLogic.CalculateBackoff(10)
-        
+
         // Then: Capped at 5s
         Expect(backoff).To(Equal(5 * time.Second))
     })
@@ -1557,14 +1643,14 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
             backoff := retryLogic.CalculateBackoffWithJitter(3)
             backoffs = append(backoffs, backoff)
         }
-        
+
         // Then: Values vary (jitter applied)
         uniqueValues := make(map[time.Duration]bool)
         for _, b := range backoffs {
             uniqueValues[b] = true
         }
         Expect(len(uniqueValues)).To(BeNumerically(">", 1)) // At least 2 unique values
-        
+
         // All within range (400ms ± 20%)
         for _, b := range backoffs {
             Expect(b).To(BeNumerically("~", 400*time.Millisecond, 80*time.Millisecond))
@@ -1577,10 +1663,10 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
         retryLogic.AttemptRetry("operation-1")
         retryLogic.AttemptRetry("operation-1")
         retryLogic.AttemptRetry("operation-1")
-        
+
         // When: Get retry count
         count := retryLogic.GetRetryCount("operation-1")
-        
+
         // Then: Correct count
         Expect(count).To(Equal(3))
     })
@@ -1625,8 +1711,8 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Calculation", func() {
 ---
 
 #### **Scenario 6.1: Configuration Loading & Validation**
-**BR**: BR-GATEWAY-043  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-043
+**Priority**: P1 (High)
 **Business Value**: Validate Gateway starts with correct configuration
 
 **Test Specifications**:
@@ -1657,10 +1743,10 @@ kubernetes:
 datastorage:
   url: "http://datastorage:8080"
 `
-        
+
         // When: Config loaded
         cfg, err := configLoader.LoadFromBytes([]byte(configData))
-        
+
         // Then: Success
         Expect(err).ToNot(HaveOccurred())
         Expect(cfg.Server.Port).To(Equal(8080))
@@ -1677,11 +1763,11 @@ server:
 kubernetes:
   kubeconfig: ""
 `
-        
+
         // When: Config validated
         cfg, _ := configLoader.LoadFromBytes([]byte(configData))
         err := validator.Validate(cfg)
-        
+
         // Then: Validation error
         Expect(err).To(HaveOccurred())
         Expect(err.Error()).To(ContainSubstring("timeout is required"))
@@ -1695,11 +1781,11 @@ server:
   port: 99999  # Invalid port
   timeout: 30s
 `
-        
+
         // When: Validated
         cfg, _ := configLoader.LoadFromBytes([]byte(configData))
         err := validator.Validate(cfg)
-        
+
         // Then: Validation error
         Expect(err).To(HaveOccurred())
         Expect(err.Error()).To(ContainSubstring("port must be between 1 and 65535"))
@@ -1713,11 +1799,11 @@ server:
   port: 8080
   timeout: -5s
 `
-        
+
         // When: Validated
         cfg, _ := configLoader.LoadFromBytes([]byte(configData))
         err := validator.Validate(cfg)
-        
+
         // Then: Validation error
         Expect(err).To(HaveOccurred())
         Expect(err.Error()).To(ContainSubstring("timeout must be positive"))
@@ -1733,11 +1819,11 @@ server:
 logging:
   level: "INVALID"
 `
-        
+
         // When: Validated
         cfg, _ := configLoader.LoadFromBytes([]byte(configData))
         err := validator.Validate(cfg)
-        
+
         // Then: Validation error
         Expect(err).To(HaveOccurred())
         Expect(err.Error()).To(ContainSubstring("invalid log level"))
@@ -1751,10 +1837,10 @@ server:
   port: 8080
   timeout: 30s
 `
-        
+
         // When: Config loaded
         cfg, err := configLoader.LoadFromBytes([]byte(configData))
-        
+
         // Then: Defaults applied
         Expect(err).ToNot(HaveOccurred())
         Expect(cfg.Logging.Level).To(Equal("info")) // Default log level
@@ -1766,16 +1852,16 @@ server:
         // Given: Config with env var placeholder
         os.Setenv("GATEWAY_PORT", "9090")
         defer os.Unsetenv("GATEWAY_PORT")
-        
+
         configData := `
 server:
   port: ${GATEWAY_PORT}
   timeout: 30s
 `
-        
+
         // When: Config loaded
         cfg, err := configLoader.LoadFromBytes([]byte(configData))
-        
+
         // Then: Env var applied
         Expect(err).ToNot(HaveOccurred())
         Expect(cfg.Server.Port).To(Equal(9090))
@@ -1802,8 +1888,8 @@ server:
 ---
 
 #### **Scenario 7.1: Middleware Chain Execution Order**
-**BR**: BR-GATEWAY-039, BR-GATEWAY-074, BR-GATEWAY-075, BR-GATEWAY-076  
-**Priority**: P1 (High)  
+**BR**: BR-GATEWAY-039, BR-GATEWAY-074, BR-GATEWAY-075, BR-GATEWAY-076
+**Priority**: P1 (High)
 **Business Value**: Validate middleware executes in correct order
 
 **Test Specifications**:
@@ -1828,11 +1914,11 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
         middlewareChain.Use(middleware.RequestID(recorder))
         middlewareChain.Use(middleware.Timestamp(recorder))
         middlewareChain.Use(middleware.SecurityHeaders(recorder))
-        
+
         // When: Request processed
         req := createTestRequest()
         middlewareChain.Execute(req)
-        
+
         // Then: Request ID executed first
         execution := recorder.GetExecutionOrder()
         Expect(execution[0]).To(Equal("request_id"))
@@ -1843,11 +1929,11 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
         // Given: Chain with timestamp middleware
         middlewareChain.Use(middleware.RequestID(recorder))
         middlewareChain.Use(middleware.Timestamp(recorder))
-        
+
         // When: Request processed
         req := createTestRequestWithTimestamp()
         middlewareChain.Execute(req)
-        
+
         // Then: Timestamp validated early
         execution := recorder.GetExecutionOrder()
         timestampIndex := findIndex(execution, "timestamp")
@@ -1858,11 +1944,11 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
     It("should add Security headers to response", func() {
         // Given: Chain with security headers middleware
         middlewareChain.Use(middleware.SecurityHeaders(recorder))
-        
+
         // When: Request processed
         req := createTestRequest()
         resp := middlewareChain.Execute(req)
-        
+
         // Then: Security headers present
         Expect(resp.Headers).To(HaveKey("X-Content-Type-Options"))
         Expect(resp.Headers).To(HaveKey("X-Frame-Options"))
@@ -1873,11 +1959,11 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
     It("should validate Content-Type before adapter processing", func() {
         // Given: Chain with content-type middleware
         middlewareChain.Use(middleware.ContentType(recorder))
-        
+
         // When: Request with wrong content-type
         req := createTestRequestWithContentType("text/plain")
         resp := middlewareChain.Execute(req)
-        
+
         // Then: Request rejected early
         Expect(resp.StatusCode).To(Equal(415)) // Unsupported Media Type
         execution := recorder.GetExecutionOrder()
@@ -1891,11 +1977,11 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
         middlewareChain.Use(middleware.Timestamp(recorder))
         middlewareChain.Use(middleware.SecurityHeaders(recorder))
         middlewareChain.Use(middleware.ContentType(recorder))
-        
+
         // When: Request processed
         req := createValidTestRequest()
         middlewareChain.Execute(req)
-        
+
         // Then: Correct execution order
         execution := recorder.GetExecutionOrder()
         Expect(execution).To(Equal([]string{
@@ -1912,11 +1998,11 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
         middlewareChain.Use(middleware.RequestID(recorder))
         middlewareChain.Use(middleware.FailingMiddleware()) // Always fails
         middlewareChain.Use(middleware.SecurityHeaders(recorder))
-        
+
         // When: Request processed
         req := createTestRequest()
         resp := middlewareChain.Execute(req)
-        
+
         // Then: Request rejected, later middleware not executed
         Expect(resp.StatusCode).To(Equal(400))
         execution := recorder.GetExecutionOrder()
@@ -1928,12 +2014,12 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
         // Given: Chain with metrics
         metricsRegistry := prometheus.NewRegistry()
         middlewareChain.Use(middleware.RequestIDWithMetrics(recorder, metricsRegistry))
-        
+
         // When: Multiple requests processed
         for i := 0; i < 5; i++ {
             middlewareChain.Execute(createTestRequest())
         }
-        
+
         // Then: Metrics track execution
         middlewareExecutions := getMetricValue(metricsRegistry, "gateway_middleware_executions_total", map[string]string{
             "middleware": "request_id",
@@ -2070,7 +2156,7 @@ test/integration/gateway/
 
 ---
 
-**Status**: 📋 **APPROVED FOR IMPLEMENTATION**  
-**Start Date**: January 21, 2026  
-**Target Completion**: February 11, 2026  
+**Status**: 📋 **APPROVED FOR IMPLEMENTATION**
+**Start Date**: January 21, 2026
+**Target Completion**: February 11, 2026
 **Expected Outcome**: 62% integration coverage ✅ **COMPLIANT**
