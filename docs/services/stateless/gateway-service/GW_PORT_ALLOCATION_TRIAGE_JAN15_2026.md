@@ -1,8 +1,8 @@
 # Gateway Integration Test Port Allocation Triage
 
-**Date**: January 15, 2026  
-**Issue**: Port allocations in recently upgraded Gateway integration suite do NOT match DD-TEST-001  
-**Authority**: `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md` (v2.5)  
+**Date**: January 15, 2026
+**Issue**: Port allocations in recently upgraded Gateway integration suite do NOT match DD-TEST-001
+**Authority**: `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md` (v2.5)
 **Status**: 🚨 VIOLATIONS FOUND - IMMEDIATE FIX REQUIRED
 
 ---
@@ -20,7 +20,7 @@ const (
 	gatewayPostgresPassword = "gateway_test_password"
 	gatewayPostgresDB       = "gateway_test"
 	gatewayPostgresContainer = "gateway-integration-postgres"
-	
+
 	// DataStorage configuration
 	gatewayDataStoragePort      = 15440  // ❌ WRONG
 	gatewayDataStorageContainer = "gateway-integration-datastorage"
@@ -153,15 +153,15 @@ const (
 	gatewayPostgresPassword = "gateway_test_password"
 	gatewayPostgresDB       = "gateway_test"
 	gatewayPostgresContainer = "gateway-integration-postgres"
-	
+
 	// Redis configuration (DataStorage DLQ)
 	gatewayRedisPort      = 16380  // NEW: Required for DataStorage DLQ
 	gatewayRedisContainer = "gateway-integration-redis"
-	
+
 	// Immudb configuration (SOC2 immutable audit)
 	gatewayImmudbPort      = 13323  // NEW: Required for SOC2 compliance
 	gatewayImmudbContainer = "gateway-integration-immudb"
-	
+
 	// DataStorage configuration
 	gatewayDataStoragePort      = 18091  // FIXED: Was 15440 (wrong range)
 	gatewayDataStorageContainer = "gateway-integration-datastorage"
@@ -176,19 +176,19 @@ const (
 func startRedis() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayRedisContainer,
 		"--network", "gateway-integration-net",
 		"-p", fmt.Sprintf("%d:6379", gatewayRedisPort),
 		"redis:7-alpine",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Redis: %w: %s", err, output)
 	}
-	
+
 	// Wait for Redis to be ready
 	time.Sleep(2 * time.Second)
 	return nil
@@ -203,7 +203,7 @@ func startRedis() error {
 func startImmudb() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayImmudbContainer,
 		"--network", "gateway-integration-net",
@@ -211,12 +211,12 @@ func startImmudb() error {
 		"-e", "IMMUDB_ADMIN_PASSWORD=immudb",
 		"codenotary/immudb:latest",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Immudb: %w: %s", err, output)
 	}
-	
+
 	// Wait for Immudb to be ready
 	time.Sleep(3 * time.Second)
 	return nil
@@ -284,7 +284,7 @@ func cleanupInfrastructure() {
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()  // NEW
 	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()   // NEW
 	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-	
+
 	// Remove network
 	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
 }
@@ -331,15 +331,15 @@ Gateway now matches the pattern used by all other services:
 
 ## 📖 **Authority Reference**
 
-**Document**: `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md`  
-**Version**: 2.5 (2026-01-11)  
-**Section**: Lines 363-392 (Gateway Integration Tests)  
-**Port Collision Matrix**: Lines 819-833  
+**Document**: `docs/architecture/decisions/DD-TEST-001-port-allocation-strategy.md`
+**Version**: 2.5 (2026-01-11)
+**Section**: Lines 363-392 (Gateway Integration Tests)
+**Port Collision Matrix**: Lines 819-833
 **Status**: ✅ AUTHORITATIVE - MUST COMPLY
 
 ---
 
-**Document Status**: 🚨 Active - Violations Found  
-**Created**: 2026-01-15  
-**Purpose**: Triage and fix Gateway integration test port allocation violations  
+**Document Status**: 🚨 Active - Violations Found
+**Created**: 2026-01-15
+**Purpose**: Triage and fix Gateway integration test port allocation violations
 **Next**: Apply all fixes to `test/integration/gateway/suite_test.go`

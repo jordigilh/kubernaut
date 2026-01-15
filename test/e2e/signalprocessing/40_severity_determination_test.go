@@ -97,10 +97,10 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			// CUSTOMER VALUE:
 			// Critical alerts receive immediate AI investigation, warnings within 1 hour
 
-			// GIVEN: RemediationRequest with external severity "Sev1"
-			rr := createTestRemediationRequest(namespace, "test-workflow-severity")
-			rr.Spec.Signal.Severity = "Sev1" // External severity from PagerDuty
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		// GIVEN: RemediationRequest with external severity "Sev1"
+		rr := createTestRemediationRequest(namespace, "test-workflow-severity")
+		rr.Spec.Severity = "Sev1" // External severity from PagerDuty
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// WHEN: Workflow progresses through all stages
 			var sp signalprocessingv1alpha1.SignalProcessing
@@ -145,9 +145,9 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			// PREVENTS: Mid-workflow policy changes breaking consistency
 
 			// GIVEN: SignalProcessing in progress with initial policy
-			rr := createTestRemediationRequest(namespace, "test-policy-change")
-			rr.Spec.Signal.Severity = "CUSTOM_VALUE"
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		rr := createTestRemediationRequest(namespace, "test-policy-change")
+		rr.Spec.Severity = "CUSTOM_VALUE"
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// WHEN: Workflow starts with initial policy
 			var initialSeverity string
@@ -184,9 +184,9 @@ determine_severity := "warning" {
 			Expect(k8sClient.Update(ctx, policyConfigMap)).To(Succeed())
 
 			// THEN: New SignalProcessing uses updated policy
-			rr2 := createTestRemediationRequest(namespace, "test-policy-change-new")
-			rr2.Spec.Signal.Severity = "CUSTOM_VALUE"
-			Expect(k8sClient.Create(ctx, rr2)).To(Succeed())
+		rr2 := createTestRemediationRequest(namespace, "test-policy-change-new")
+		rr2.Spec.Severity = "CUSTOM_VALUE"
+		Expect(k8sClient.Create(ctx, rr2)).To(Succeed())
 
 			Eventually(func(g Gomega) {
 				spList := &signalprocessingv1alpha1.SignalProcessingList{}
@@ -219,9 +219,9 @@ determine_severity := "warning" {
 			// COMPLIANCE: SOC 2, ISO 27001 require end-to-end traceability
 
 			// GIVEN: RemediationRequest with external severity
-			rr := createTestRemediationRequest(namespace, "test-audit-flow")
-			rr.Spec.Signal.Severity = "P0" // External severity from Splunk
-			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+		rr := createTestRemediationRequest(namespace, "test-audit-flow")
+		rr.Spec.Severity = "P0" // External severity from Splunk
+		Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// WHEN: Workflow progresses through all stages
 			var correlationID string
@@ -270,6 +270,7 @@ determine_severity := "warning" {
 
 // createTestRemediationRequest creates a test RemediationRequest CRD.
 // Uses unique naming per test for parallel execution safety.
+// Updated to match current RemediationRequestSpec schema (fields flattened, no nested Signal)
 func createTestRemediationRequest(namespace, name string) *remediationv1alpha1.RemediationRequest {
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -277,19 +278,17 @@ func createTestRemediationRequest(namespace, name string) *remediationv1alpha1.R
 			Namespace: namespace,
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
-			Signal: remediationv1alpha1.SignalData{
-				Fingerprint:  "test-fingerprint-e2e-abc123",
-				Name:         "TestE2EAlert",
-				Severity:     "critical", // Default, overridden by tests
-				Type:         "prometheus",
-				Source:       "test-e2e-source",
-				TargetType:   "kubernetes",
-				ReceivedTime: metav1.Now(),
-				TargetResource: remediationv1alpha1.ResourceIdentifier{
-					Kind:      "Pod",
-					Name:      "test-e2e-pod",
-					Namespace: namespace,
-				},
+			SignalFingerprint: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256 hash
+			SignalName:        "TestE2EAlert",
+			Severity:          "critical", // Default, overridden by tests
+			SignalType:        "prometheus",
+			SignalSource:      "test-e2e-source",
+			TargetType:        "kubernetes",
+			ReceivedTime:      metav1.Now(),
+			TargetResource: remediationv1alpha1.ResourceIdentifier{
+				Kind:      "Pod",
+				Name:      "test-e2e-pod",
+				Namespace: namespace,
 			},
 		},
 	}
