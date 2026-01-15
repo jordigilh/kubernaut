@@ -249,19 +249,19 @@ determine_severity := "warning" if {
 					Namespace:  namespace,
 					UID:        string(rr.UID),
 				},
-				Signal: signalprocessingv1alpha1.SignalData{
-					Fingerprint:  "validation-fingerprint",
-					Name:         "validation-signal",
-					Severity:     "CUSTOM_VALUE", // Test case-insensitive matching
-					Type:         "test",
-					TargetType:   "pod",
-					ReceivedTime: metav1.Now(),
-					TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
-						Kind:      "Pod",
-						Name:      "test-pod",
-						Namespace: namespace,
-					},
+			Signal: signalprocessingv1alpha1.SignalData{
+				Fingerprint:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", // Valid SHA256
+				Name:         "validation-signal",
+				Severity:     "CUSTOM_VALUE", // Test case-insensitive matching
+				Type:         "test",
+				TargetType:   "kubernetes", // Valid enum value
+				ReceivedTime: metav1.Now(),
+				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
+					Kind:      "Pod",
+					Name:      "test-pod",
+					Namespace: namespace,
 				},
+			},
 			},
 		}
 		g.Expect(k8sClient.Create(ctx, validationSP)).To(Succeed())
