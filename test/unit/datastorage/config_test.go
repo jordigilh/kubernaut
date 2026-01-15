@@ -126,7 +126,6 @@ server:
 			configPath := filepath.Join(tempDir, "config.yaml")
 			dbSecretsFile := filepath.Join(tempDir, "db-secrets.yaml")
 			redisSecretsFile := filepath.Join(tempDir, "redis-secrets.yaml")
-			immudbSecretsFile := filepath.Join(tempDir, "immudb-secrets.yaml")
 
 			configYAML := `
 server:
@@ -151,13 +150,6 @@ redis:
   db: 0
   secretsFile: "` + redisSecretsFile + `"
   passwordKey: "password"
-immudb:
-  host: localhost
-  port: 3322
-  database: defaultdb
-  username: immudb
-  secretsFile: "` + immudbSecretsFile + `"
-  passwordKey: "password"
 logging:
   level: info
   format: json
@@ -178,12 +170,6 @@ password: secretredispass456
 			err = os.WriteFile(redisSecretsFile, []byte(redisSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			immudbSecretYAML := `
-password: secretimmudbpass789
-`
-			err = os.WriteFile(immudbSecretsFile, []byte(immudbSecretYAML), 0644)
-			Expect(err).ToNot(HaveOccurred())
-
 			cfg, err := config.LoadFromFile(configPath)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(cfg.Database.Password).To(BeEmpty())
@@ -200,7 +186,6 @@ password: secretimmudbpass789
 			configPath := filepath.Join(tempDir, "config.yaml")
 			dbSecretsFile := filepath.Join(tempDir, "db-secrets.json")
 			redisSecretsFile := filepath.Join(tempDir, "redis-secrets.json")
-			immudbSecretsFile := filepath.Join(tempDir, "immudb-secrets.json")
 
 			configYAML := `
 server:
@@ -224,13 +209,6 @@ redis:
   db: 0
   secretsFile: "` + redisSecretsFile + `"
   passwordKey: "redis_password"
-immudb:
-  host: localhost
-  port: 3322
-  database: defaultdb
-  username: immudb
-  secretsFile: "` + immudbSecretsFile + `"
-  passwordKey: "immudb_password"
 logging:
   level: info
   format: json
@@ -244,10 +222,6 @@ logging:
 
 			redisSecretJSON := `{"redis_password": "json-redis-secret"}`
 			err = os.WriteFile(redisSecretsFile, []byte(redisSecretJSON), 0644)
-			Expect(err).ToNot(HaveOccurred())
-
-			immudbSecretJSON := `{"immudb_password": "json-immudb-secret"}`
-			err = os.WriteFile(immudbSecretsFile, []byte(immudbSecretJSON), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
 			cfg, err := config.LoadFromFile(configPath)
@@ -368,11 +342,6 @@ database:
 redis:
   addr: localhost:6379
   db: 0
-immudb:
-  host: localhost
-  port: 3322
-  database: defaultdb
-  username: immudb
 logging:
   level: info
   format: json
