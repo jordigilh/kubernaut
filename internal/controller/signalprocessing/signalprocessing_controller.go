@@ -316,6 +316,21 @@ func (r *SignalProcessingReconciler) reconcilePending(ctx context.Context, sp *s
 func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
 	logger.V(1).Info("Processing Enriching phase")
 
+	// SP-BUG-PHASE-TRANSITION-001: Idempotency guard to prevent duplicate phase transitions
+	// Use non-cached APIReader to get FRESH phase data (cached client may be stale)
+	currentPhase, err := r.StatusManager.GetCurrentPhase(ctx, sp)
+	if err != nil {
+		logger.Error(err, "Failed to fetch current phase for idempotency check, proceeding with caution")
+		// Fail-safe: continue processing, but log the error
+	} else if currentPhase == signalprocessingv1alpha1.PhaseClassifying ||
+		currentPhase == signalprocessingv1alpha1.PhaseCategorizing ||
+		currentPhase == signalprocessingv1alpha1.PhaseCompleted ||
+		currentPhase == signalprocessingv1alpha1.PhaseFailed {
+		logger.V(1).Info("Skipping Enriching phase - already transitioned (non-cached check)",
+			"current_phase", currentPhase)
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	// DD-005: Track phase processing attempt
 	r.Metrics.IncrementProcessingTotal("enriching", "attempt")
 
