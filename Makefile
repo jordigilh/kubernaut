@@ -141,11 +141,30 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 .PHONY: test-integration-%
 test-integration-%: ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 $* - Integration Tests with Coverage ($(TEST_PROCS) procs)"
+	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@echo "📊 Coverage: Capturing controller + handler code coverage (per WE pattern)"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast --cover --coverprofile=coverage_integration_$*.out ./test/integration/$*/... -- -coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*
+	@echo "💡 For coverage: make test-integration-$*-coverage"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast ./test/integration/$*/...
+
+# Integration Tests with Coverage (WorkflowExecution pattern)
+.PHONY: test-integration-%-coverage
+test-integration-%-coverage: ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📊 $* - Integration Tests with Production Code Coverage"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "📋 Pattern: go test with -coverpkg (captures goroutine controller code)"
+	@echo "⏱️  Note: Sequential execution (no parallel) for accurate coverage"
+	@go test -v -timeout=$(TEST_TIMEOUT_INTEGRATION) \
+		-coverprofile=coverage_integration_$*.out \
+		-coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$* \
+		./test/integration/$*/...
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "✅ Coverage report: coverage_integration_$*.out"
+	@echo "📊 View details: go tool cover -func=coverage_integration_$*.out"
+	@echo "🌐 HTML report: go tool cover -html=coverage_integration_$*.out"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # E2E Tests
 .PHONY: ensure-coverdata
