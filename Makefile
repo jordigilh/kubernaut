@@ -141,10 +141,11 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 .PHONY: test-integration-%
 test-integration-%: ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
+	@echo "🧪 $* - Integration Tests with Coverage ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast ./test/integration/$*/...
+	@echo "📊 Coverage: Capturing controller + handler code coverage"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast --cover --coverprofile=coverage_integration_$*.out ./test/integration/$*/...
 
 # E2E Tests
 .PHONY: ensure-coverdata

@@ -337,7 +337,7 @@ A test **SHOULD** be in unit tier if it:
 
 ---
 
-**Document Status**: ✅ Active  
-**Created**: 2026-01-15  
-**Purpose**: Triage test plan for Option A implementation  
+**Document Status**: ✅ Active
+**Created**: 2026-01-15
+**Purpose**: Triage test plan for Option A implementation
 **Next Step**: Update test plan with triage results
