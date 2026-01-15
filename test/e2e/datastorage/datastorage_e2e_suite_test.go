@@ -44,7 +44,6 @@ import (
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
 // - PostgreSQL 16 (V1.0 label-only, for workflow catalog)
 // - Redis (for DLQ fallback)
-// - Immudb (for SOC2-compliant immutable audit trails)
 // - Data Storage service (deployed to Kind cluster)
 //
 // ARCHITECTURE: Uses SHARED deployment pattern (like Gateway E2E tests)
@@ -153,7 +152,7 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath = fmt.Sprintf("%s/.kube/datastorage-e2e-config", homeDir)
 
 		// Create infrastructure with parallel setup (ONCE for all tests)
-		// This uses parallel optimization: Build image | PostgreSQL | Redis | Immudb run concurrently
+		// This uses parallel optimization: Build image | PostgreSQL | Redis run concurrently
 		// Saves ~1 minute per E2E run (~23% faster)
 		logger.Info("🚀 Setting up DataStorage E2E infrastructure (PARALLEL MODE)...")
 		logger.Info("   Expected: ~3.6 min (vs ~4.7 min sequential)")

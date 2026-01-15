@@ -46,7 +46,6 @@ import (
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
 // - PostgreSQL 16 (for workflow catalog)
 // - Redis (for DLQ fallback)
-// - Immudb (for SOC2-compliant immutable audit trails)
 // - Data Storage service (deployed to Kind cluster)
 // - AuthWebhook service (deployed to Kind cluster as admission webhook)
 //
@@ -129,7 +128,6 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("  • NodePort exposure: Data Storage (30099→8080), PostgreSQL (30442→5432), Webhook (30443→9443)")
 		logger.Info("  • PostgreSQL 16 (workflow catalog)")
 		logger.Info("  • Redis (DLQ fallback)")
-		logger.Info("  • Immudb (SOC2 immutable audit trails)")
 		logger.Info("  • Data Storage Docker image (build + load)")
 		logger.Info("  • AuthWebhook Docker image (build + load)")
 		logger.Info("  • Kubeconfig: ~/.kube/authwebhook-e2e-config")
