@@ -541,12 +541,13 @@ metadata:
 }
 
 func deploySignalProcessingPolicies(kubeconfigPath string, writer io.Writer) error {
-	// OPTIMIZATION #1: Batch all 4 Rego ConfigMaps into single kubectl apply
-	// Eliminates 3 kubectl invocations + API server round trips (15-30s savings)
+	// OPTIMIZATION #1: Batch all 5 Rego ConfigMaps into single kubectl apply
+	// Eliminates 4 kubectl invocations + API server round trips (20-40s savings)
 	// Per SP_E2E_OPTIMIZATION_TRIAGE_DEC_25_2025.md
 
-	// Combine all 4 policy ConfigMaps into a single YAML manifest
+	// Combine all 5 policy ConfigMaps into a single YAML manifest
 	// NOTE: Using OPA v1.0 syntax with 'if' keyword before rule bodies
+	// Includes severity policy (BR-SP-105) for SignalProcessing controller startup
 	combinedPolicies := `---
 # 1. Environment Classification Policy (BR-SP-051)
 # Input: {"namespace": {"name": string, "labels": map}, "signal": {"labels": map}}
@@ -654,7 +655,41 @@ data:
       input.namespace.labels["kubernaut.io/business-unit"]
     }
 ---
-# 4. Custom Labels Extraction Policy (BR-SP-071)
+# 4. Severity Determination Policy (BR-SP-105, DD-SEVERITY-001)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: signalprocessing-severity-policy
+  namespace: kubernaut-system
+data:
+  severity.rego: |
+    package signalprocessing.severity
+    import rego.v1
+
+    # BR-SP-105: Severity Determination via Rego Policy
+    # DD-SEVERITY-001: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
+    # Maps external severity values to normalized values: critical/warning/info
+    determine_severity := "critical" if {
+      input.signal.severity == "sev1"
+    } else := "critical" if {
+      input.signal.severity == "p0"
+    } else := "critical" if {
+      input.signal.severity == "p1"
+    } else := "warning" if {
+      input.signal.severity == "sev2"
+    } else := "warning" if {
+      input.signal.severity == "p2"
+    } else := "info" if {
+      input.signal.severity == "sev3"
+    } else := "info" if {
+      input.signal.severity == "p3"
+    } else := "critical" if {
+      # Default fallback for unknown severity values
+      # Per DD-SEVERITY-001: Conservative approach - unknown = critical
+      true
+    }
+---
+# 5. Custom Labels Extraction Policy (BR-SP-071)
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -678,7 +713,7 @@ data:
     }
 `
 
-	// Single kubectl apply for all 4 ConfigMaps
+	// Single kubectl apply for all 5 ConfigMaps (includes severity policy for BR-SP-105)
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(combinedPolicies)
 	cmd.Stdout = writer
@@ -926,7 +961,7 @@ spec:
         - name: coverdata
           mountPath: /coverdata
       volumes:
-      # Projected volume for all policies (same as standard manifest)
+      # Projected volume for all policies (includes severity policy for BR-SP-105)
       - name: policies
         projected:
           sources:
@@ -936,6 +971,8 @@ spec:
               name: signalprocessing-priority-policy
           - configMap:
               name: signalprocessing-business-policy
+          - configMap:
+              name: signalprocessing-severity-policy
           - configMap:
               name: signalprocessing-customlabels-policy
       # E2E Coverage: hostPath volume for coverage data
