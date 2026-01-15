@@ -83,11 +83,7 @@ const (
 	// Redis configuration (DataStorage DLQ) - Per DD-TEST-001
 	gatewayRedisPort      = 16380
 	gatewayRedisContainer = "gateway-integration-redis"
-
-	// Immudb configuration (SOC2 immutable audit) - Per DD-TEST-001
-	gatewayImmudbPort      = 13323
-	gatewayImmudbContainer = "gateway-integration-immudb"
-
+	
 	// DataStorage configuration - Per DD-TEST-001
 	gatewayDataStoragePort      = 18091 // Per DD-TEST-001 (was 15440 - wrong range)
 	gatewayDataStorageContainer = "gateway-integration-datastorage"
@@ -120,20 +116,19 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("[Process 1] Starting shared Podman infrastructure...")
-		
+
 		// Step 1: Cleanup existing containers (shared helper)
 		logger.Info("[Process 1] Step 1: Cleanup existing containers")
 		infrastructure.CleanupContainers([]string{
 			gatewayDataStorageContainer,
-			gatewayImmudbContainer,
 			gatewayRedisContainer,
 			gatewayPostgresContainer,
 		}, GinkgoWriter)
-		
+
 		// Step 2: Create Podman network (idempotent)
 		logger.Info("[Process 1] Step 2: Create Podman network")
 		_ = exec.Command("podman", "network", "create", "gateway-integration-net").Run()
-		
+
 		// Step 3: Start PostgreSQL (shared helper)
 		logger.Info("[Process 1] Step 3: Start PostgreSQL container")
 		err := infrastructure.StartPostgreSQL(infrastructure.PostgreSQLConfig{
@@ -145,10 +140,10 @@ var _ = SynchronizedBeforeSuite(
 			Network:       "gateway-integration-net",
 		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL start must succeed")
-		
+
 		err = infrastructure.WaitForPostgreSQLReady(gatewayPostgresContainer, gatewayPostgresUser, gatewayPostgresDB, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL must become ready")
-		
+
 		// Step 4: Start Redis (shared helper)
 		logger.Info("[Process 1] Step 4: Start Redis container")
 		err = infrastructure.StartRedis(infrastructure.RedisConfig{
@@ -157,26 +152,21 @@ var _ = SynchronizedBeforeSuite(
 			Network:       "gateway-integration-net",
 		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Redis start must succeed")
-		
+
 		err = infrastructure.WaitForRedisReady(gatewayRedisContainer, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Redis must become ready")
 		
-		// Step 5: Start Immudb (custom function - no shared helper yet)
-		logger.Info("[Process 1] Step 5: Start Immudb container")
-		err = startImmudb()
-		Expect(err).ToNot(HaveOccurred(), "Immudb start must succeed")
-		
-		// Step 6: Apply migrations to PUBLIC schema
-		logger.Info("[Process 1] Step 6: Apply database migrations")
+		// Step 5: Apply migrations to PUBLIC schema
+		logger.Info("[Process 1] Step 5: Apply database migrations")
 		db, err := connectPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection must succeed")
-		
+
 		err = infrastructure.ApplyMigrationsWithPropagationTo(db)
 		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
 		db.Close()
 		
-		// Step 7: Start DataStorage (shared helper)
-		logger.Info("[Process 1] Step 7: Start DataStorage service")
+		// Step 6: Start DataStorage (shared helper)
+		logger.Info("[Process 1] Step 6: Start DataStorage service")
 		imageTag := infrastructure.GenerateInfraImageName("datastorage", "gateway")
 		err = infrastructure.StartDataStorage(infrastructure.IntegrationDataStorageConfig{
 			ContainerName: gatewayDataStorageContainer,
@@ -190,16 +180,9 @@ var _ = SynchronizedBeforeSuite(
 			RedisHost:     gatewayRedisContainer,
 			RedisPort:     6379,  // Internal container port
 			ImageTag:      imageTag,
-			ExtraEnvVars: map[string]string{
-				"IMMUDB_HOST":     gatewayImmudbContainer,
-				"IMMUDB_PORT":     "3322",
-				"IMMUDB_USERNAME": "immudb",
-				"IMMUDB_PASSWORD": "immudb",
-				"IMMUDB_DATABASE": "defaultdb",
-			},
 		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DataStorage start must succeed")
-		
+
 		err = infrastructure.WaitForHTTPHealth(
 			fmt.Sprintf("http://127.0.0.1:%d/health", gatewayDataStoragePort),
 			60*time.Second,
@@ -319,19 +302,18 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - Infrastructure Cleanup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		
+
 		// Collect must-gather logs if tests failed (DD-TEST-DIAGNOSTICS)
 		if CurrentSpecReport().Failed() {
 			infrastructure.MustGatherContainerLogs("gateway", []string{
 				gatewayPostgresContainer,
 				gatewayRedisContainer,
-				gatewayImmudbContainer,
 				gatewayDataStorageContainer,
 			}, GinkgoWriter)
 		}
-		
+
 		cleanupInfrastructure()
-		
+
 		logger.Info("✅ Suite complete - All infrastructure cleaned up")
 	},
 )
@@ -352,37 +334,11 @@ func connectPostgreSQL() (*sql.DB, error) {
 	return sql.Open("postgres", connStr)
 }
 
-// startImmudb starts Immudb container for SOC2-compliant immutable audit
-// Custom function - no shared helper exists yet (Immudb is SOC2-specific)
-// TODO: Consider moving to shared_integration_utils.go if more services adopt Immudb
-func startImmudb() error {
-	// Remove existing container if any
-	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
-	
-	cmd := exec.Command("podman", "run", "-d",
-		"--name", gatewayImmudbContainer,
-		"--network", "gateway-integration-net",
-		"-p", fmt.Sprintf("%d:3322", gatewayImmudbPort),
-		"-e", "IMMUDB_ADMIN_PASSWORD=immudb",
-		"codenotary/immudb:latest",
-	)
-	
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start Immudb: %w: %s", err, output)
-	}
-	
-	// Wait for Immudb to be ready
-	time.Sleep(3 * time.Second)
-	return nil
-}
-
 // cleanupInfrastructure removes all Podman containers and networks
 // Uses shared helper for standardized cleanup with retries
 func cleanupInfrastructure() {
 	infrastructure.CleanupContainers([]string{
 		gatewayDataStorageContainer,
-		gatewayImmudbContainer,
 		gatewayRedisContainer,
 		gatewayPostgresContainer,
 	}, GinkgoWriter)
