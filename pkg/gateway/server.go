@@ -721,7 +721,7 @@ func (s *Server) sendSuccessResponse(
 ) {
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
-	if response.Status == StatusAccepted || response.Status == StatusDuplicate || response.Duplicate {
+	if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
 		statusCode = http.StatusAccepted  // HTTP 202 for storm aggregation and deduplication
 	}
 
@@ -1059,9 +1059,9 @@ type ProcessingResponse struct {
 
 // Processing status constants
 const (
-	StatusCreated   = "created"   // RemediationRequest CRD created
-	StatusDuplicate = "duplicate" // Duplicate alert (deduplicated)
-	StatusAccepted  = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
+	StatusCreated      = "created"      // RemediationRequest CRD created
+	StatusDeduplicated = "deduplicated" // Signal deduplicated to existing RR (past participle for consistency)
+	StatusAccepted     = "accepted"     // Alert accepted for storm aggregation (CRD will be created later)
 )
 
 // NewDuplicateResponse creates a ProcessingResponse for duplicate signals
@@ -1073,7 +1073,7 @@ const (
 // Kept for backward compatibility with any external code that might use it
 func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
 	return &ProcessingResponse{
-		Status:      StatusDuplicate,
+		Status:      StatusDeduplicated,
 		Message:     "Duplicate signal (deduplication successful)",
 		Fingerprint: fingerprint,
 		Duplicate:   true,
@@ -1100,7 +1100,7 @@ func NewDuplicateResponseFromRR(fingerprint string, rr *remediationv1alpha1.Reme
 	}
 
 	return &ProcessingResponse{
-		Status:                      StatusDuplicate,
+		Status:                      StatusDeduplicated,
 		Message:                     "Duplicate signal (K8s status-based deduplication)",
 		Fingerprint:                 fingerprint,
 		Duplicate:                   true,

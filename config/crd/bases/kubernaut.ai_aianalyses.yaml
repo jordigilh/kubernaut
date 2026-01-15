@@ -459,11 +459,13 @@ spec:
                         maxLength: 64
                         type: string
                       severity:
-                        description: 'Signal severity: critical, warning, info'
+                        description: 'Signal severity: critical, warning, info, unknown
+                          (normalized by SignalProcessing Rego - DD-SEVERITY-001)'
                         enum:
                         - critical
                         - warning
                         - info
+                        - unknown
                         type: string
                       signalType:
                         description: Signal type (e.g., OOMKilled, CrashLoopBackOff)
@@ -1005,12 +1007,14 @@ spec:
                       type: string
                     type: array
                   severity:
-                    description: Severity determined by RCA
+                    description: |-
+                      Severity determined by RCA (normalized per DD-SEVERITY-001)
+                      DD-SEVERITY-001: Must match SignalProcessing normalized severity values
                     enum:
                     - critical
-                    - high
-                    - medium
-                    - low
+                    - warning
+                    - info
+                    - unknown
                     type: string
                   signalType:
                     description: Signal type determined by RCA (may differ from input)

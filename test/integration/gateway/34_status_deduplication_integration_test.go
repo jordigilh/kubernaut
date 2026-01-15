@@ -155,7 +155,7 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		testLogger.Info("Step 4: Send duplicate signal")
 		response2, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response2.Status).To(Equal(gateway.StatusDuplicate), "Duplicate signal should return StatusDuplicate")
+		Expect(response2.Status).To(Equal(gateway.StatusDeduplicated), "Duplicate signal should return StatusDeduplicated")
 		Expect(response2.Duplicate).To(BeTrue(), "Response should indicate duplicate")
 
 			testLogger.Info("Step 5: BUSINESS OUTCOME - RO can see duplicate count in RR status")
@@ -222,14 +222,14 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 		testLogger.Info("Step 3: Same alert fires again (pod still crash-looping)")
 		response2, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response2.Status).To(Equal(gateway.StatusDuplicate),
-			"Duplicate alert should return StatusDuplicate, not create new incident")
+		Expect(response2.Status).To(Equal(gateway.StatusDeduplicated),
+			"Duplicate alert should return StatusDeduplicated, not create new incident")
 
 		testLogger.Info("Step 4: Alert fires a third time (escalating situation)")
 		response3, err := gwServer.ProcessSignal(ctx, signal)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(response3.Status).To(Equal(gateway.StatusDuplicate),
-			"Third duplicate should also return StatusDuplicate")
+		Expect(response3.Status).To(Equal(gateway.StatusDeduplicated),
+			"Third duplicate should also return StatusDeduplicated")
 
 			testLogger.Info("Step 5: BUSINESS OUTCOME - Accurate occurrence count for SLA reporting")
 			err = k8sClient.Get(ctx, client.ObjectKey{Namespace: testNamespace, Name: crdName}, crd)
@@ -297,8 +297,8 @@ var _ = Describe("Test 34: DD-GATEWAY-011 Status-Based Tracking (Integration)", 
 			for i := 2; i <= 10; i++ {
 			resp, err := gwServer.ProcessSignal(ctx, signal)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Status).To(Equal(gateway.StatusDuplicate),
-				fmt.Sprintf("Alert %d should be deduplicated (StatusDuplicate)", i))
+			Expect(resp.Status).To(Equal(gateway.StatusDeduplicated),
+				fmt.Sprintf("Alert %d should be deduplicated (StatusDeduplicated)", i))
 				time.Sleep(10 * time.Millisecond) // Small delay between signals
 			}
 

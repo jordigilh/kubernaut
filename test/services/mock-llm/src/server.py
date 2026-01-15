@@ -177,7 +177,7 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         name="problem_resolved",
         workflow_name="",  # No workflow needed - problem self-resolved
         signal_type="MOCK_PROBLEM_RESOLVED",
-        severity="info",
+        severity="warning",  # DD-SEVERITY-001: Use normalized severity (critical/warning/info)
         workflow_id="",  # Empty workflow_id indicates no workflow needed
         workflow_title="",
         confidence=0.85,  # High confidence (>= 0.7) that problem is resolved

@@ -175,7 +175,7 @@ var _ = Describe("Test 06: Concurrent Signal Handling (Integration)", Ordered, L
 
 					// Track response status
 					switch response.Status {
-					case gateway.StatusAccepted, gateway.StatusDuplicate:
+					case gateway.StatusAccepted, gateway.StatusDeduplicated:
 						atomic.AddInt64(&acceptedCount, 1)
 						atomic.AddInt64(&successCount, 1)
 					case gateway.StatusCreated:
