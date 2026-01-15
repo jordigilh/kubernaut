@@ -28,7 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 )
 
@@ -54,15 +53,7 @@ import (
 //   ginkgo -p -procs=4 ./test/integration/gateway/... --focus="Audit Event Emission"
 //
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// Helper function to create ogen client for audit queries
-// Gateway integration tests need to query DataStorage HTTP API directly
-func createOgenClientForAuditQueries() (*ogenclient.Client, error) {
-	return ogenclient.NewClient(
-		fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort),
-	)
-}
-
+// NOTE: Audit query helpers moved to audit_test_helpers.go for reusability
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TEST SUITE: AUDIT EVENT EMISSION (GW-INT-AUD-001 to GW-INT-AUD-010)
 // Phase 1: Signal Received + CRD Created Events
