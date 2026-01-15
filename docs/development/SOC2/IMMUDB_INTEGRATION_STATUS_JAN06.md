@@ -2,7 +2,35 @@
 
 **Date**: 2026-01-06
 **Project**: SOC2 Gap #9 - Tamper-Evident Audit Trails
-**Status**: ✅ **4/6 Phases Complete** (67% Done)
+**Status**: ❌ **DEPRECATED** (2026-01-15) - Work Halted at 67% Completion
+
+---
+
+## 🚨 **DEPRECATION NOTICE - 2026-01-15**
+
+**THIS DOCUMENT IS OBSOLETE AND RETAINED FOR HISTORICAL REFERENCE ONLY**
+
+**User Mandate**: "Immudb is deprecated, we don't use this DB anymore by authoritative mandate"
+
+**Changes Applied**:
+- ✅ All Immudb infrastructure removed from Gateway integration tests
+- ✅ DD-TEST-001 v2.6 updated (removed all Immudb port allocations)
+- ✅ Port range 13322-13331 reclaimed for future use
+- ❌ Phases 5-6 (Repository Implementation + Legacy Cleanup) CANCELLED
+
+**Impact**:
+- ✅ Completed infrastructure work (Phases 1-4) rolled back
+- ✅ Simpler test infrastructure across all services
+- ✅ Faster integration test startup (one less container)
+- ❌ SOC2 Gap #9 (Tamper Detection) will require alternative approach
+
+**Authoritative References**:
+- [DD-TEST-001 v2.6](../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md#revision-history)
+- [Gateway Integration Suite](../../../test/integration/gateway/suite_test.go)
+
+---
+
+## 📜 **HISTORICAL CONTENT BELOW** (Pre-Deprecation Status)
 
 ---
 
