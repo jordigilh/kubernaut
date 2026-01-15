@@ -196,6 +196,45 @@ var _ = Describe("AIAnalysisCreator", func() {
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext.NamespaceLabels).To(
 					HaveKeyWithValue("environment", "production"))
 			})
+
+			It("should use normalized severity from SignalProcessing.Status.Severity (DD-SEVERITY-001)", func() {
+				// DD-SEVERITY-001: AIAnalysis uses normalized severity from SignalProcessing Rego policy
+				// BR-SP-105: Severity Determination via Rego Policy
+				// Arrange - RR has external severity "Sev1", SP has normalized severity "critical"
+				completedSP := helpers.NewSignalProcessing("sp-test-remediation", "default", helpers.SignalProcessingOpts{
+					Phase: signalprocessingv1.PhaseCompleted,
+				})
+				// Set normalized severity in SP status (determined by SignalProcessing Rego policy)
+				completedSP.Status.Severity = "critical"
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+
+				// RR has external (customer-specific) severity "Sev1"
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+					Severity: "Sev1", // External severity (customer scheme: Sev1-4)
+				})
+
+				// Act
+				name, err := aiCreator.Create(ctx, rr, completedSP)
+
+				// Assert
+				Expect(err).ToNot(HaveOccurred())
+
+				// Fetch created AIAnalysis and verify it uses normalized severity
+				createdAI := &aianalysisv1.AIAnalysis{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+				Expect(err).ToNot(HaveOccurred())
+
+				// DD-SEVERITY-001: AIAnalysis MUST use normalized severity from SP.Status.Severity
+				// (not external severity from RR.Spec.Severity)
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("critical"),
+					"AIAnalysis should use normalized severity from SP.Status.Severity (DD-SEVERITY-001)")
+
+				// Verify RR still has external severity (for notifications/operator messages)
+				Expect(rr.Spec.Severity).To(Equal("Sev1"),
+					"RemediationRequest should preserve external severity for operator-facing messages")
+			})
 		})
 
 		Context("BR-ORCH-031: Cascade deletion via owner references", func() {

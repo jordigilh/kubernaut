@@ -507,7 +507,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				// BR-GATEWAY-056: CRD created event includes ResourceKind and ResourceName
 				// Note: SignalLabels are in gateway.signal.received, not gateway.crd.created
 				// The CRD created event focuses on the created resource metadata
-				
+
 				// Validate namespace is preserved
 				Expect(payload.Namespace).To(Equal(testNamespace),
 					"BR-GATEWAY-056: Namespace must match signal namespace")
@@ -526,6 +526,269 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				GinkgoWriter.Printf("✅ Target resource metadata preserved: alert=%s, namespace=%s\n",
 					payload.AlertName, payload.Namespace)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-008
+		// Scenario: CRD fingerprint in audit event
+		// BR: BR-GATEWAY-056
+		// Section: 1.2.3
+		Context("when validating fingerprint in CRD audit (GW-INT-AUD-008, BR-GATEWAY-056)", func() {
+			It("[GW-INT-AUD-008] should include fingerprint in gateway.crd.created audit event for dedup tracking", func() {
+				By("1. Process Prometheus signal to create CRD")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				signalPayload := createPrometheusAlert(testNamespace, "high-cpu-usage", "warning", "", "")
+
+				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
+				Expect(err).ToNot(HaveOccurred())
+				
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID := response.RemediationRequestName
+
+				By("2. Query gateway.crd.created audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				By("3. Validate fingerprint format")
+				payload, ok := extractGatewayPayload(crdCreatedEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-056: Fingerprint must be SHA-256 format (64 hex chars)
+				Expect(payload.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"),
+					"BR-GATEWAY-056: Fingerprint must be 64-character hex (SHA-256)")
+				Expect(payload.Fingerprint).To(Equal(signal.Fingerprint),
+					"BR-GATEWAY-056: Audit fingerprint must match signal fingerprint")
+
+				GinkgoWriter.Printf("✅ Fingerprint validated: %s\n", payload.Fingerprint)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-010
+		// Scenario: Unique correlation IDs for multiple CRDs
+		// BR: BR-GATEWAY-056
+		// Section: 1.2.5
+		Context("when creating multiple CRDs (GW-INT-AUD-010, BR-GATEWAY-056)", func() {
+			It("[GW-INT-AUD-010] should emit unique correlation IDs for each CRD creation", func() {
+				By("1. Process multiple Prometheus signals")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				signal1Payload := createPrometheusAlert(testNamespace, "alert-multi-1", "critical", "", "")
+				signal2Payload := createPrometheusAlert(testNamespace, "alert-multi-2", "warning", "", "")
+
+				signal1, err := prometheusAdapter.Parse(ctx, signal1Payload)
+				Expect(err).ToNot(HaveOccurred())
+				signal2, err := prometheusAdapter.Parse(ctx, signal2Payload)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID1 := response1.RemediationRequestName
+
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID2 := response2.RemediationRequestName
+
+				By("2. Validate correlation IDs are unique and properly formatted")
+				Expect(correlationID1).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`),
+					"BR-GATEWAY-056: Correlation ID must follow standard format")
+				Expect(correlationID2).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
+				Expect(correlationID1).ToNot(Equal(correlationID2),
+					"BR-GATEWAY-056: Each CRD must have unique correlation ID")
+
+				By("3. Validate correlation IDs match CRD names")
+				var rr1 remediationv1alpha1.RemediationRequest
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      correlationID1,
+						Namespace: testNamespace,
+					}, &rr1)
+				}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
+					"BR-GATEWAY-056: Correlation ID must match CRD name for audit-to-CRD mapping")
+
+				GinkgoWriter.Printf("✅ Unique correlation IDs validated: %s, %s\n", correlationID1, correlationID2)
+			})
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// SCENARIO 1.3: SIGNAL DEDUPLICATED AUDIT EVENTS (BR-GATEWAY-057)
+	// Tests GW-INT-AUD-011, GW-INT-AUD-012
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
+		var (
+			testNamespace string
+		)
+
+		BeforeEach(func() {
+			processID := GinkgoParallelProcess()
+			testNamespace = fmt.Sprintf("gw-aud-dedup-%d-%s", processID, uuid.New().String()[:8])
+
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
+		})
+
+		AfterEach(func() {
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		// Test ID: GW-INT-AUD-011
+		// Scenario: Deduplication audit event emission
+		// BR: BR-GATEWAY-057
+		// Section: 1.3.1
+		Context("when duplicate signal arrives (GW-INT-AUD-011, BR-GATEWAY-057)", func() {
+			It("[GW-INT-AUD-011] should emit gateway.signal.deduplicated audit event for duplicate signal", func() {
+				By("1. Create first RemediationRequest CRD")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				// Use identical fingerprint to trigger deduplication
+				firstSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", "", "")
+
+				signal1, err := prometheusAdapter.Parse(ctx, firstSignalPayload)
+				Expect(err).ToNot(HaveOccurred())
+				firstFingerprint := signal1.Fingerprint
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				firstCRDName := response1.RemediationRequestName
+
+				// Wait for CRD to be created
+				time.Sleep(1 * time.Second)
+
+				By("2. Send duplicate signal with same fingerprint")
+				secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", firstFingerprint, "")
+				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
+				Expect(err).ToNot(HaveOccurred())
+				
+				// Override fingerprint to match first signal (to trigger deduplication)
+				signal2.Fingerprint = firstFingerprint
+
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+
+				// BR-GATEWAY-057: Deduplication should return existing CRD name
+				Expect(response2.RemediationRequestName).To(Equal(firstCRDName),
+					"BR-GATEWAY-057: Dedup should return existing CRD, not create new one")
+
+				By("3. Query gateway.signal.deduplicated audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				// Note: The deduplicated event uses the FIRST CRD's correlation ID (existing RR)
+				eventType := "gateway.signal.deduplicated"
+				var dedupEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &firstCRDName, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					dedupEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+					"gateway.signal.deduplicated audit event should exist")
+
+				By("4. Validate deduplication audit metadata")
+				Expect(dedupEvent.EventType).To(Equal("gateway.signal.deduplicated"))
+				Expect(dedupEvent.EventAction).To(Equal("deduplicated"))
+				Expect(dedupEvent.CorrelationID).To(Equal(firstCRDName))
+
+				GinkgoWriter.Printf("✅ Dedup audit event validated for CRD: %s\n", firstCRDName)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-012
+		// Scenario: Existing RR reference in dedup audit
+		// BR: BR-GATEWAY-057
+		// Section: 1.3.2
+		Context("when tracking existing RR (GW-INT-AUD-012, BR-GATEWAY-057)", func() {
+			It("[GW-INT-AUD-012] should include existing RR reference in deduplicated audit event", func() {
+				By("1. Create first RemediationRequest CRD")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				firstSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", "", "")
+
+				signal1, err := prometheusAdapter.Parse(ctx, firstSignalPayload)
+				Expect(err).ToNot(HaveOccurred())
+				firstFingerprint := signal1.Fingerprint
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				existingRRName := response1.RemediationRequestName
+
+				time.Sleep(1 * time.Second)
+
+				By("2. Send duplicate signal")
+				secondSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", firstFingerprint, "")
+				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
+				Expect(err).ToNot(HaveOccurred())
+				signal2.Fingerprint = firstFingerprint
+
+				_, err = gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("3. Query gateway.signal.deduplicated audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.signal.deduplicated"
+				var dedupEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &existingRRName, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					dedupEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				By("4. Validate existing RR reference in audit payload")
+				payload, ok := extractGatewayPayload(dedupEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-057: RemediationRequest field contains existing RR reference
+				rrRef, hasRR := payload.RemediationRequest.Get()
+				Expect(hasRR).To(BeTrue(), "BR-GATEWAY-057: RemediationRequest field must be present")
+				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`),
+					"BR-GATEWAY-057: RR reference must be in namespace/name format")
+				Expect(rrRef).To(ContainSubstring(existingRRName),
+					"BR-GATEWAY-057: RR reference must contain existing RR name")
+
+				// Validate namespace is included
+				Expect(rrRef).To(ContainSubstring(testNamespace))
+
+				GinkgoWriter.Printf("✅ Existing RR reference validated: %s\n", rrRef)
 			})
 		})
 	})
