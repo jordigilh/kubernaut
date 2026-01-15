@@ -87,19 +87,21 @@ import (
 
 var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", func() {
 	var (
-		ctx               context.Context
+		testCtx           context.Context
 		testClient        client.Client
 		dsClient          *ogenclient.Client
 		dataStorageURL    string
 		prometheusPayload []byte
+		sharedNamespace   string // Created in BeforeEach using createTestNamespace()
 	)
 
-	// Shared test namespace
-	sharedNamespace := fmt.Sprintf("test-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx = context.Background()
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
+
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		sharedNamespace = createTestNamespace("test-audit")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		// Per DD-TEST-001: All parallel processes share same Data Storage instance
@@ -158,6 +160,8 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 	})
 
 	AfterEach(func() {
+		// Clean up test namespace (Pattern: RO E2E)
+		deleteTestNamespace(sharedNamespace)
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -199,7 +203,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// Wait for audit event to appear (async write may have small delay)
 			var auditEvents []ogenclient.AuditEvent
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, params)
+				resp, err := dsClient.QueryAuditEvents(testCtx, params)
 				if err != nil {
 					GinkgoWriter.Printf("Failed to query audit events: %v\n", err)
 					return 0
@@ -388,14 +392,14 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			correlationID := resp1Data.RemediationRequestName
 
 			// Set RR to Pending (required for duplicate detection)
-			crd := getCRDByName(ctx, testClient, sharedNamespace, correlationID)
+			crd := getCRDByName(testCtx, testClient, sharedNamespace, correlationID)
 			Expect(crd).ToNot(BeNil())
 			crd.Status.OverallPhase = "Pending"
-			err = testClient.Status().Update(ctx, crd)
+			err = testClient.Status().Update(testCtx, crd)
 			Expect(err).ToNot(HaveOccurred())
 
 			Eventually(func() string {
-				c := getCRDByName(ctx, testClient, sharedNamespace, correlationID)
+				c := getCRDByName(testCtx, testClient, sharedNamespace, correlationID)
 				if c == nil {
 					return ""
 				}

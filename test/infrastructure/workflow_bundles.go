@@ -127,7 +127,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL s
 
 	// Register workflows in DataStorage (fast HTTP POST)
 	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage...\n")
-	if err := registerWorkflowInDataStorage(
+	if err := registerWorkflowInDataStorageRaw(
 		dataStorageURL,
 		"test-hello-world",
 		"v1.0.0",
@@ -138,7 +138,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL s
 		return nil, fmt.Errorf("failed to register hello-world workflow: %w", err)
 	}
 
-	if err := registerWorkflowInDataStorage(
+	if err := registerWorkflowInDataStorageRaw(
 		dataStorageURL,
 		"test-intentional-failure",
 		"v1.0.0",
@@ -255,10 +255,11 @@ func loadBundleIntoKind(clusterName, bundleRef string, output io.Writer) error {
 	return nil
 }
 
-// registerWorkflowInDataStorage registers a workflow in DataStorage via REST API
+// registerWorkflowInDataStorageRaw registers a workflow in DataStorage via REST API (raw HTTP)
 // POST /api/v1/workflows per DD-WORKFLOW-005 v1.0
 // Uses map[string]interface{} pattern matching working E2E tests
-func registerWorkflowInDataStorage(dataStorageURL, workflowName, version, containerImage, description string, output io.Writer) error {
+// NOTE: Legacy function - AIAnalysis E2E tests use OpenAPI client version
+func registerWorkflowInDataStorageRaw(dataStorageURL, workflowName, version, containerImage, description string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s)\n", workflowName, version)
 
 	// Generate ADR-043 compliant content

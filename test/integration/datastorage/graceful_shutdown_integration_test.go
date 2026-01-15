@@ -32,6 +32,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
@@ -973,7 +974,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 // This allows tests to access internal server state (e.g., DLQ client) for validation
 func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	// Create server config
-	cfg := &server.Config{
+	serverCfg := &server.Config{
 		Port:         18090, // DD-TEST-001
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
@@ -1004,10 +1005,20 @@ func createTestServerWithAccess() (*httptest.Server, *server.Server) {
 	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 	redisPassword := "" // No password in test environment
 
+	// Create application config with database pool settings
+	appCfg := &config.Config{
+		Database: config.DatabaseConfig{
+			MaxOpenConns:    25,
+			MaxIdleConns:    5,
+			ConnMaxLifetime: "5m",
+			ConnMaxIdleTime: "10m",
+		},
+	}
+
 	// Create server instance (this will create its own DB connection pool)
 	// dlqMaxLen: 1000 events (default from DD-009)
 	// SOC2 Gap #9: PostgreSQL with custom hash chains for tamper detection
-	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, cfg, 1000)
+	srv, err := server.NewServer(dbConnStr, redisAddr, redisPassword, logger, appCfg, serverCfg, 1000)
 	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
 
 	// Wrap in httptest.Server for HTTP testing

@@ -54,6 +54,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -161,6 +162,44 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("  • Handlers, metrics, audit store")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// OPTIMIZATION: Build images in parallel (saves ~40 seconds)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	By("Building DataStorage and Mock LLM images in parallel")
+	var (
+		dsImageName      string
+		mockLLMImageName string
+		dsErr            error
+		mockErr          error
+		wg               sync.WaitGroup
+	)
+
+	wg.Add(2)
+
+	// Goroutine 1: Build DataStorage image (~60s)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		dsImageName, dsErr = infrastructure.BuildDataStorageImage(specCtx, "aianalysis", GinkgoWriter)
+	}()
+
+	// Goroutine 2: Build Mock LLM image (~40s)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		mockLLMImageName, mockErr = infrastructure.BuildMockLLMImage(specCtx, "aianalysis", GinkgoWriter)
+	}()
+
+	wg.Wait() // Wait for both builds to complete
+
+	// Check for errors after parallel builds
+	Expect(dsErr).ToNot(HaveOccurred(), "DataStorage image must build successfully")
+	Expect(mockErr).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
+	GinkgoWriter.Printf("✅ Both images built in parallel: DS=%s, MockLLM=%s\n", dsImageName, mockLLMImageName)
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// SEQUENTIAL DEPLOYMENT: Start DataStorage, seed workflows, start Mock LLM
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	By("Starting AIAnalysis integration infrastructure (PostgreSQL, Redis, DataStorage)")
 	// Per DD-TEST-001 v2.2: PostgreSQL=15438, Redis=16384, DS=18095
 	var err error
@@ -180,23 +219,40 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
-	By("Building Mock LLM image (DD-TEST-004 unique tag)")
-	// Per DD-TEST-004: Generate unique image tag to prevent collisions
-	mockLLMImageName, err := infrastructure.BuildMockLLMImage(specCtx, "aianalysis", GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
-	Expect(mockLLMImageName).ToNot(BeEmpty(), "Mock LLM image name must be returned")
-	GinkgoWriter.Printf("✅ Mock LLM image built: %s\n", mockLLMImageName)
+	// Seed test workflows into DataStorage BEFORE starting Mock LLM
+	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
+	// Must seed workflows first so Mock LLM can load UUIDs at startup
+	By("Seeding test workflows into DataStorage")
+	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
-	By("Starting Mock LLM service (replaces HAPI embedded mock logic)")
+	// Write Mock LLM config file with workflow UUIDs
+	// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
+	// Mock LLM will read this file at startup (no HTTP calls required)
+	By("Writing Mock LLM configuration file with workflow UUIDs")
+	// Use absolute path in test directory (not /tmp which may be cleared)
+	mockLLMConfigPath, err := filepath.Abs("mock-llm-config.yaml")
+	Expect(err).ToNot(HaveOccurred(), "Must get absolute path for config file")
+	err = WriteMockLLMConfigFile(mockLLMConfigPath, workflowUUIDs, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "Mock LLM config file must be written successfully")
+
+	// Clean up config file on exit
+	DeferCleanup(func() {
+		os.Remove(mockLLMConfigPath)
+	})
+
+	By("Starting Mock LLM service with configuration file (DD-TEST-011 v2.0)")
 	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from HAPI's 18140)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
 	mockLLMConfig.ImageTag = mockLLMImageName         // Use the built image tag
 	mockLLMConfig.Network = "aianalysis_test_network" // Join same network as HAPI for container-to-container DNS
+	mockLLMConfig.ConfigFilePath = mockLLMConfigPath  // DD-TEST-011 v2.0: Mount config file
 	mockLLMContainerID, err := infrastructure.StartMockLLMContainer(specCtx, mockLLMConfig, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Mock LLM container must start successfully")
 	Expect(mockLLMContainerID).ToNot(BeEmpty(), "Mock LLM container ID must be returned")
-	GinkgoWriter.Printf("✅ Mock LLM service started and healthy (port %d)\n", mockLLMConfig.Port)
+	GinkgoWriter.Printf("✅ Mock LLM service started with config file (port %d)\n", mockLLMConfig.Port)
 
 	// Clean up Mock LLM on exit
 	DeferCleanup(func() {
@@ -243,21 +299,6 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Printf("✅ HolmesGPT-API started at http://127.0.0.1:18120 (container: %s)\n", hapiContainer.ID)
 	GinkgoWriter.Printf("   Using Mock LLM at %s\n", infrastructure.GetMockLLMEndpoint(mockLLMConfig))
 
-	// Seed test workflows into DataStorage for Mock LLM integration
-	// Pattern: Test data alignment - Mock LLM returns these workflow IDs
-	// Must exist in DataStorage catalog for HAPI validation to succeed
-	// DD-WORKFLOW-002 v3.0: DataStorage auto-generates UUIDs (cannot be specified)
-	By("Seeding test workflows into DataStorage")
-	dataStorageURL := "http://127.0.0.1:18095" // AIAnalysis integration test DS port
-	workflowUUIDs, err = SeedTestWorkflowsInDataStorage(dataStorageURL, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
-
-	// Update Mock LLM scenarios with actual DataStorage UUIDs
-	// Pattern: Test data synchronization - Mock LLM scenarios use real UUIDs
-	// This ensures HAPI validation succeeds (UUID from LLM matches DataStorage)
-	By("Updating Mock LLM with actual workflow UUIDs")
-	err = UpdateMockLLMWithUUIDs(mockLLMConfig, workflowUUIDs, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "Mock LLM UUID update must succeed")
 
 	// Clean up HAPI container on exit
 	DeferCleanup(func() {

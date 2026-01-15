@@ -402,12 +402,13 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 				// ✅ OpenAPI type validation (no conversion needed)
 				validators.ValidateAuditEventHasRequiredFields(event)
 
-				// Additional E2E-specific validation
-				Expect(event.EventCategory).To(Equal(dsgen.AuditEventEventCategoryAnalysis),
-					"AIAnalysis events should have category 'analysis'")
-
-				Expect(event.CorrelationID).To(Equal(remediationID),
-					"correlation_id should match remediation_id")
+				// Additional E2E-specific validation (only for AIAnalysis events)
+				// Note: correlation_id may include events from other services (workflow, llm_request, etc.)
+				// Only check category for AIAnalysis-specific events
+				if event.EventCategory == dsgen.AuditEventEventCategoryAnalysis {
+					Expect(event.CorrelationID).To(Equal(remediationID),
+						"AIAnalysis events should have correlation_id matching remediation_id")
+				}
 			}
 
 			GinkgoWriter.Printf("✅ All %d audit events have complete metadata\n", len(events))

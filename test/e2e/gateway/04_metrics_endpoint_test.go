@@ -25,9 +25,6 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -45,7 +42,6 @@ import (
 // - BR-GATEWAY-017: Gateway must expose Prometheus metrics for observability
 var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 	var (
-		testCtx       context.Context
 		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
@@ -54,7 +50,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
+		_, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		testLogger = logger.WithValues("test", "metrics")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -62,17 +58,9 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		testLogger.Info("Test 04: Metrics Endpoint (BR-GATEWAY-017) - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("metrics-%d-%s", processID, uuid.New().String()[:8])
-
-		// Get K8s client and create namespace
-		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
-		testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		testNamespace = createTestNamespace("metrics")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -90,10 +78,8 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 			return
 		}
 
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
+		// Clean up test namespace (Pattern: RO E2E)
+		deleteTestNamespace(testNamespace)
 
 		if testCancel != nil {
 			testCancel()

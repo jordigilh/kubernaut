@@ -44,12 +44,9 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 		testLogger.Info("Test 19: Replay Attack Prevention - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("replay-attack")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
+		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
+		testNamespace = createTestNamespace("replay")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

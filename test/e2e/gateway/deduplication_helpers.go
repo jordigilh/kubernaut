@@ -296,6 +296,10 @@ func GenerateUniqueNamespace(prefix string) string {
 
 // CreateNamespaceAndWait creates a namespace and waits for it to be ready
 // This prevents race conditions where Gateway tries to create CRDs in non-existent namespaces
+//
+// DEPRECATED: Use createTestNamespace() and deleteTestNamespace() from gateway_e2e_suite_test.go instead.
+// This function uses the suite-level context which can be canceled, causing race conditions.
+// The new helpers use proper test-local contexts and follow the RO E2E pattern.
 func CreateNamespaceAndWait(ctx context.Context, k8sClient client.Client, namespaceName string) error {
 	// Create namespace with aggressive retry logic for K8s API rate limiting
 	ns := &corev1.Namespace{

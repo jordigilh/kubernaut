@@ -61,6 +61,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── Data Storage (1-2 min)")
 	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API (2-3 min)")
+	_, _ = fmt.Fprintln(writer, "  ├── Mock LLM (1-2 min)")
 	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller (3-4 min)")
 
 	type imageBuildResult struct {
@@ -69,7 +70,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		err   error
 	}
 
-	buildResults := make(chan imageBuildResult, 3)
+	buildResults := make(chan imageBuildResult, 4)
 
 	go func() {
 		cfg := E2EImageConfig{
@@ -107,8 +108,21 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		buildResults <- imageBuildResult{"aianalysis", imageName, err}
 	}()
 
+	go func() {
+		projectRoot := getProjectRoot()
+		cfg := E2EImageConfig{
+			ServiceName:      "mock-llm",
+			ImageName:        "kubernaut/mock-llm",
+			DockerfilePath:   "test/services/mock-llm/Dockerfile",
+			BuildContextPath: filepath.Join(projectRoot, "test/services/mock-llm"),
+			EnableCoverage:   false,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{"mock-llm", imageName, err}
+	}()
+
 	builtImages := make(map[string]string)
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		result := <-buildResults
 		if result.err != nil {
 			return fmt.Errorf("failed to build %s image: %w", result.name, result.err)
@@ -162,10 +176,61 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 7: Deploy services IN PARALLEL (let Kubernetes reconcile)
+	// PHASE 7a: Deploy DataStorage infrastructure FIRST (required for workflow seeding)
 	// ═══════════════════════════════════════════════════════════════════════
-	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7: Deploying services in parallel...")
-	_, _ = fmt.Fprintln(writer, "  ├── Data Storage infrastructure (PostgreSQL + Redis + DataStorage + Migrations)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7a: Deploying DataStorage infrastructure...")
+	_, _ = fmt.Fprintln(writer, "  └── PostgreSQL + Redis + DataStorage + Migrations")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Must complete before workflow seeding")
+
+	// Deploy Data Storage infrastructure using shared function (DD-TEST-001 v1.3)
+	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, builtImages["datastorage"], writer); err != nil {
+		return fmt.Errorf("DataStorage infrastructure deployment failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ DataStorage infrastructure deployed successfully")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 7b: Seed workflows and create ConfigMap (DD-TEST-011 Alt 2)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7b: Seeding test workflows and creating ConfigMap...")
+	_, _ = fmt.Fprintln(writer, "  └── DD-TEST-011 Alt 2: ConfigMap Pattern")
+
+	// Wait for DataStorage to be ready (use port-forward)
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
+	dataStorageURL := fmt.Sprintf("http://localhost:%d", 38080)
+
+	// Start port-forward to DataStorage
+	portForwardCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "port-forward", "svc/datastorage", "38080:8080")
+	if err := portForwardCmd.Start(); err != nil {
+		return fmt.Errorf("failed to start DataStorage port-forward: %w", err)
+	}
+	defer func() {
+		if portForwardCmd.Process != nil {
+			_ = portForwardCmd.Process.Kill()
+		}
+	}()
+
+	// Wait for port-forward to be ready
+	time.Sleep(3 * time.Second)
+
+	// Seed workflows and capture UUIDs
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(dataStorageURL, writer)
+	if err != nil {
+		return fmt.Errorf("failed to seed test workflows: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows in DataStorage\n", len(workflowUUIDs))
+
+	// Create ConfigMap with workflow UUIDs for Mock LLM
+	if err := createMockLLMConfigMap(ctx, namespace, kubeconfigPath, workflowUUIDs, writer); err != nil {
+		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ ConfigMap created for Mock LLM")
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 7c: Deploy remaining services IN PARALLEL (ConfigMap ready)
+	// ═══════════════════════════════════════════════════════════════════════
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 7c: Deploying remaining services in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Mock LLM service (with ConfigMap)")
 	_, _ = fmt.Fprintln(writer, "  ├── HolmesGPT-API")
 	_, _ = fmt.Fprintln(writer, "  └── AIAnalysis controller")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Kubernetes will handle dependencies via readiness probes")
@@ -177,10 +242,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	deployResults := make(chan deployResult, 3)
 
-	// Deploy Data Storage infrastructure using shared function (DD-TEST-001 v1.3)
+	// Deploy Mock LLM service (HAPI dependency)
+	// NOTE: Images already loaded in Phase 5-6, skip image loading in deployment
 	go func() {
-		err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, builtImages["datastorage"], writer)
-		deployResults <- deployResult{"DataStorage Infrastructure", err}
+		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, builtImages["mock-llm"], workflowUUIDs, writer)
+		deployResults <- deployResult{"Mock LLM", err}
 	}()
 
 	// Deploy HAPI (AIAnalysis dependency)
@@ -290,6 +356,48 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 	return fmt.Errorf("timeout waiting for CRD")
 }
 
+// createMockLLMConfigMap creates a Kubernetes ConfigMap with workflow UUIDs for Mock LLM
+// DD-TEST-011 Alt 2: ConfigMap Pattern
+// - Test suite seeds workflows in DataStorage FIRST (captures actual UUIDs)
+// - Creates ConfigMap with workflow_name → UUID mapping
+// - Mock LLM reads ConfigMap at startup (no HTTP self-discovery needed)
+// - Deterministic ordering, no timing issues
+func createMockLLMConfigMap(ctx context.Context, namespace, kubeconfigPath string, workflowUUIDs map[string]string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  Creating Mock LLM ConfigMap with workflow UUIDs...")
+
+	// Build YAML content for scenarios (properly indented for ConfigMap data field)
+	yamlContent := "    scenarios:\n"
+	for key, uuid := range workflowUUIDs {
+		// key format: "workflow_name:environment"
+		// We'll simplify the key for the Mock LLM (just use workflow_name without environment for now)
+		yamlContent += fmt.Sprintf("      %s: %s\n", key, uuid)
+	}
+
+	manifest := fmt.Sprintf(`
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+%s`, namespace, yamlContent)
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(manifest)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
+	}
+
+	return nil
+}
+
 func deployHolmesGPTAPIManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Applying HolmesGPT-API manifest (image already in Kind)...")
 	// ADR-030: Deploy manifest with ConfigMap
@@ -302,9 +410,9 @@ metadata:
 data:
   config.yaml: |
     llm:
-      provider: "mock"
-      model: "mock/test-model"
-      endpoint: "http://localhost:11434"
+      provider: "openai"
+      model: "mock-model"
+      endpoint: "http://mock-llm:8080"
     data_storage:
       url: "http://datastorage:8080"
     logging:
@@ -341,6 +449,16 @@ spec:
         env:
         - name: MOCK_LLM_MODE
           value: "true"
+        - name: LLM_ENDPOINT
+          value: "http://mock-llm:8080"
+        - name: LLM_MODEL
+          value: "mock-model"
+        - name: LLM_PROVIDER
+          value: "openai"
+        - name: OPENAI_API_KEY
+          value: "mock-api-key-for-e2e"
+        - name: DATA_STORAGE_URL
+          value: "http://datastorage:8080"
         volumeMounts:
         - name: config
           mountPath: /etc/holmesgpt

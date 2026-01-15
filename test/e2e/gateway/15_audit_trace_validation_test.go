@@ -24,9 +24,6 @@ import (
 	"net/http"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,8 +31,6 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
-
-	"github.com/google/uuid"
 )
 
 // Test 15: Audit Trace Validation (DD-AUDIT-003)
@@ -59,7 +54,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		testNamespace string
 		httpClient    *http.Client
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		auditClient   *dsgen.Client
+		auditClient *dsgen.Client
 	)
 
 	BeforeAll(func() {
@@ -78,17 +73,9 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 
 		testLogger.Info("OpenAPI audit client initialized", "dataStorageURL", dataStorageURL)
 
-		// Generate unique namespace
-		processID := GinkgoParallelProcess()
-		testNamespace = fmt.Sprintf("audit-%d-%s", processID, uuid.New().String()[:8])
-	testLogger.Info("Creating test namespace...", "namespace", testNamespace)
-
-	// Create namespace
-	// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-	// Use suite ctx (no timeout) for namespace creation
-	Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
-
-	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+		// Create unique test namespace (Pattern: RO E2E)
+		testNamespace = createTestNamespace("audit-trace")
+		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
 	AfterAll(func() {
@@ -99,22 +86,15 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		if CurrentSpecReport().Failed() {
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace for debugging",
 				"namespace", testNamespace)
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			// Clean up test namespace (Pattern: RO E2E)
+			deleteTestNamespace(testNamespace)
+			testLogger.Info("✅ Cleanup complete")
 		}
-
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
 
 		if testCancel != nil {
 			testCancel()
 		}
-
-		testLogger.Info("✅ Cleanup complete")
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

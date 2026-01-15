@@ -51,7 +51,8 @@ import (
 
 var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", func() {
 	var (
-		ctx       context.Context
+		testCtx       context.Context      // ← Test-local context
+		testCancel    context.CancelFunc
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 		logger    *zap.Logger
 		// Unique namespace names per test run (avoids parallel test interference)
@@ -61,7 +62,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		logger = zap.NewNop()
 
 		// Generate unique namespace names to avoid parallel test interference
@@ -95,7 +96,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		for _, ns := range testNamespaces {
 			// Check if namespace exists first
 			existingNs := &corev1.Namespace{}
-			err := k8sClient.Get(ctx, client.ObjectKey{Name: ns.name}, existingNs)
+			err := k8sClient.Get(testCtx, client.ObjectKey{Name: ns.name}, existingNs)
 			namespaceExists := err == nil
 
 			if namespaceExists {
@@ -105,13 +106,13 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				}
 
 				// Delete namespace to recreate with correct labels
-				_ = k8sClient.Delete(ctx, existingNs)
+				_ = k8sClient.Delete(testCtx, existingNs)
 
 				// Wait for deletion to complete (namespace deletion is asynchronous)
 				// Use longer timeout for envtest which can be slower
 				Eventually(func() error {
 					checkNs := &corev1.Namespace{}
-					return k8sClient.Get(ctx, client.ObjectKey{Name: ns.name}, checkNs)
+					return k8sClient.Get(testCtx, client.ObjectKey{Name: ns.name}, checkNs)
 				}, "60s", "500ms").Should(HaveOccurred(), fmt.Sprintf("%s namespace should be deleted", ns.name))
 			}
 
@@ -121,7 +122,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			namespace.Labels = map[string]string{
 				"environment": ns.label, // Required for EnvironmentClassifier
 			}
-			err = k8sClient.Create(ctx, namespace)
+			err = k8sClient.Create(testCtx, namespace)
 		}
 
 		logger.Info("Test setup complete",
@@ -131,6 +132,9 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 	})
 
 	AfterEach(func() {
+	if testCancel != nil {
+		testCancel()  // ← Only cancels test-local context
+	}
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
 
 		// Cleanup all test namespaces
@@ -138,7 +142,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		for _, nsName := range testNamespaces {
 			ns := &corev1.Namespace{}
 			ns.Name = nsName
-			_ = k8sClient.Delete(ctx, ns) // Ignore error if namespace doesn't exist
+			_ = k8sClient.Delete(testCtx, ns) // Ignore error if namespace doesn't exist
 		}
 
 		// DD-GATEWAY-012: Redis cleanup REMOVED - Gateway is now Redis-free
@@ -197,7 +201,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME 3: CRD created in Kubernetes with correct business metadata
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList, client.InNamespace(prodNamespace))
+			err = k8sClient.List(testCtx, &crdList, client.InNamespace(prodNamespace))
 			Expect(crdList.Items).To(HaveLen(1), "Exactly one CRD should be created")
 
 			crd := crdList.Items[0]
@@ -232,17 +236,17 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
-					"labels": {
-						"alertname": "DiskSpaceWarning",
-						"severity": "warning",
-						"namespace": "%s",
-						"pod": "database-replica-2",
-						"node": "worker-node-05")
-					},
-					"annotations": {
-						"summary": "Disk usage at 85%%",
-						"runbook_url": "https://runbooks.example.com/disk-space")
-					},
+				"labels": {
+					"alertname": "DiskSpaceWarning",
+					"severity": "warning",
+					"namespace": "%s",
+					"pod": "database-replica-2",
+					"node": "worker-node-05"
+				},
+				"annotations": {
+					"summary": "Disk usage at 85%%",
+					"runbook_url": "https://runbooks.example.com/disk-space"
+				},
 					"startsAt": "2025-10-22T11:30:00Z"
 				}]
 			}`, stagingNamespace))
@@ -260,7 +264,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME: CRD contains resource information for AI targeting
 			var crdList remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList, client.InNamespace(stagingNamespace))
+			err = k8sClient.List(testCtx, &crdList, client.InNamespace(stagingNamespace))
 			Expect(crdList.Items).To(HaveLen(1))
 
 			crd := crdList.Items[0]
@@ -289,15 +293,15 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			payload := []byte(fmt.Sprintf(`{
 				"alerts": [{
 					"status": "firing",
-					"labels": {
-						"alertname": "CPUThrottling",
-						"severity": "warning",
-						"namespace": "%s",
-						"pod": "api-gateway-7"
-					},
-					"annotations": {
-						"summary": "CPU throttling detected")
-					},
+			"labels": {
+				"alertname": "CPUThrottling",
+				"severity": "warning",
+				"namespace": "%s",
+				"pod": "api-gateway-7"
+			},
+			"annotations": {
+				"summary": "CPU throttling detected"
+			},
 					"startsAt": "2025-10-22T12:00:00Z"
 				}]
 			}`, prodNamespace))
@@ -323,7 +327,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME 1: First CRD created in K8s
 			var crdList1 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList1, client.InNamespace(prodNamespace))
+			err = k8sClient.List(testCtx, &crdList1, client.InNamespace(prodNamespace))
 			Expect(crdList1.Items).To(HaveLen(1), "First alert creates exactly one CRD")
 
 			firstCRDName := crdList1.Items[0].Name
@@ -331,21 +335,16 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 		// DD-GATEWAY-012: Redis check REMOVED - Gateway is now Redis-free
 		// DD-GATEWAY-011: Deduplication validated via RR status.deduplication (tested elsewhere)
 
-		// Verify CRD actually exists in K8s before sending duplicate
-		// Query API server directly (not Gateway's cache) to ensure CRD is queryable
-		// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
-		// K8s Cache Synchronization: Gateway (in-cluster) and E2E tests (external client)
-		// use separate K8s clients with different cache states. Allow 60s for cache sync.
-		// Authority: DD-E2E-K8S-CLIENT-001 (Phase 1 - eventual consistency acknowledgment)
-		Eventually(func() int {
-			var crdList2 remediationv1alpha1.RemediationRequestList
-			err := k8sClient.List(ctx, &crdList2, client.InNamespace(prodNamespace))
-			if err != nil {
-				return 0
-			}
-			return len(crdList2.Items)
-		}, 120*time.Second, 1*time.Second).Should(Equal(1),
-			"CRD should be visible within 60s (K8s cache sync between in-cluster Gateway and external test client)")
+		// DD-E2E-DIRECT-API-001: Query CRD by known name (RO E2E pattern)
+		// Direct Get() bypasses cache/index issues and is 4x faster (30s vs 120s)
+		var confirmedCRD remediationv1alpha1.RemediationRequest
+		Eventually(func() error {
+			return k8sClient.Get(testCtx, client.ObjectKey{
+				Namespace: prodNamespace,
+				Name:      firstCRDName,
+			}, &confirmedCRD)
+		}, 30*time.Second, 1*time.Second).Should(Succeed(),
+			"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 
 		// Second alert: Duplicate (CRD still in non-terminal phase)
 		req2, err := http.NewRequest("POST", url, bytes.NewReader(payload))
@@ -359,7 +358,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			// BUSINESS OUTCOME 2: NO new CRD created (deduplication works)
 			var crdList2 remediationv1alpha1.RemediationRequestList
-			err = k8sClient.List(ctx, &crdList2, client.InNamespace(prodNamespace))
+			err = k8sClient.List(testCtx, &crdList2, client.InNamespace(prodNamespace))
 			Expect(crdList2.Items).To(HaveLen(1), "Duplicate alert must NOT create new CRD (still only 1 CRD)")
 			Expect(crdList2.Items[0].Name).To(Equal(firstCRDName), "Same CRD name confirms no duplicate CRD created")
 
@@ -367,7 +366,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 			// DD-GATEWAY-011: BUSINESS OUTCOME 3: Deduplication count tracked in RR status
 			Eventually(func() int32 {
 				var updatedCRD remediationv1alpha1.RemediationRequest
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sClient.Get(testCtx, client.ObjectKey{
 					Name:      firstCRDName,
 					Namespace: prodNamespace,
 				}, &updatedCRD)
@@ -431,7 +430,7 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 
 			for _, tc := range testCases {
 				// Clean K8s namespace before each test case
-				_ = k8sClient.DeleteAllOf(ctx, &remediationv1alpha1.RemediationRequest{},
+				_ = k8sClient.DeleteAllOf(testCtx, &remediationv1alpha1.RemediationRequest{},
 					client.InNamespace(tc.namespace))
 
 				payload := []byte(fmt.Sprintf(`{
@@ -456,29 +455,30 @@ var _ = Describe("BR-GATEWAY-001-003: Prometheus Alert Processing - E2E Tests", 
 				_ = err
 				defer func() { _ = resp.Body.Close() }()
 
-				// Read response body for debugging
-				bodyBytes, _ := io.ReadAll(resp.Body)
-				GinkgoWriter.Printf("🔍 %s: HTTP %d - %s\n", tc.namespace, resp.StatusCode, string(bodyBytes))
+			// Read response body and parse CRD name (DD-E2E-DIRECT-API-001)
+			bodyBytes, _ := io.ReadAll(resp.Body)
+			GinkgoWriter.Printf("🔍 %s: HTTP %d - %s\n", tc.namespace, resp.StatusCode, string(bodyBytes))
 
-				// Check HTTP status - should be 201 for new CRD or 202 for duplicate
-				Expect(resp.StatusCode).To(BeNumerically(">=", 200))
-				Expect(resp.StatusCode).To(BeNumerically("<", 300),
-					"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
+			// Check HTTP status - should be 201 for new CRD or 202 for duplicate
+			Expect(resp.StatusCode).To(BeNumerically(">=", 200))
+			Expect(resp.StatusCode).To(BeNumerically("<", 300),
+				"Alert for %s should succeed (got HTTP %d): %s", tc.namespace, resp.StatusCode, string(bodyBytes))
 
-				// BUSINESS OUTCOME: CRD created in correct namespace
-				// Use Eventually to handle async CRD creation
-				var crd remediationv1alpha1.RemediationRequest
-				// K8s Cache Synchronization: Allow 60s for cache sync (DD-E2E-K8S-CLIENT-001 Phase 1)
-				Eventually(func() bool {
-					var crdList remediationv1alpha1.RemediationRequestList
-					err = k8sClient.List(ctx, &crdList, client.InNamespace(tc.namespace))
-					if err != nil || len(crdList.Items) == 0 {
-						return false
-					}
-					crd = crdList.Items[0]
-					return true
-				}, "60s", "1s").Should(BeTrue(),
-					"Alert in %s namespace should create CRD (visible within 60s)", tc.namespace)
+			// Parse Gateway response to get CRD name
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(bodyBytes, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name")
+
+			// DD-E2E-DIRECT-API-001: Query CRD by exact name (RO E2E pattern)
+			// Direct Get() is 2x faster (30s vs 60s) and more reliable
+			var crd remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(testCtx, client.ObjectKey{
+					Namespace: tc.namespace,
+					Name:      gwResp.RemediationRequestName,
+				}, &crd)
+			}, 30*time.Second, 1*time.Second).Should(Succeed(),
+				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 				// Note: Environment/Priority assertions removed (2025-12-06)
 				// Classification moved to Signal Processing per DD-CATEGORIZATION-001
 				// Gateway only creates CRD, SP enriches with classification

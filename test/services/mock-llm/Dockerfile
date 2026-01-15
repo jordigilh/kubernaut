@@ -17,6 +17,10 @@ USER 1001
 
 WORKDIR /opt/app-root/src
 
+# Copy and install Python dependencies (DD-TEST-011: requires requests)
+COPY --chown=1001:0 requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Copy source code (build context is test/services/mock-llm/)
 COPY --chown=1001:0 src ./src
 

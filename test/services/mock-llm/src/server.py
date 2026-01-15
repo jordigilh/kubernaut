@@ -40,11 +40,14 @@ Architecture:
 """
 
 import json
+import os
 import threading
+import time
 import uuid
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, field
+from urllib.parse import urlparse, parse_qs
 import logging
 
 logger = logging.getLogger(__name__)
@@ -184,6 +187,99 @@ DEFAULT_SCENARIO = MockScenario(
     parameters={"ACTION": "restart"}
 )
 
+# ========================================
+# FILE-BASED CONFIGURATION (DD-TEST-011 v2.0)
+# ========================================
+# 📋 Design Decision: DD-TEST-011 v2.0 | ✅ Approved Pattern | Confidence: 95%
+# See: docs/architecture/decisions/DD-TEST-011-mock-llm-self-discovery-pattern.md
+#
+# Mock LLM reads workflow UUIDs from YAML configuration file at startup.
+# File can be:
+#   - Direct path (integration tests, local dev)
+#   - ConfigMap mount (E2E tests in Kubernetes)
+# This eliminates timing issues and network dependencies.
+# ========================================
+
+def load_scenarios_from_file(config_path: str):
+    """
+    Load workflow UUIDs from YAML configuration file at startup.
+
+    DD-TEST-011 v2.0: File-Based Configuration Pattern
+    - Test suite writes configuration file with workflow UUIDs
+    - Mock LLM reads file at startup (no HTTP calls, no network)
+    - Deterministic ordering, environment-agnostic
+    - In E2E: File is mounted via Kubernetes ConfigMap
+    - In Integration: File is written directly to filesystem
+
+    Args:
+        config_path: Path to configuration file (e.g., /config/scenarios.yaml)
+
+    Returns:
+        bool: True if loaded successfully, False otherwise
+
+    File Format (YAML):
+        scenarios:
+          oomkill-increase-memory-v1:production: "uuid1"
+          crashloop-config-fix-v1:test: "uuid2"
+    """
+    try:
+        import yaml
+
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        if not config or 'scenarios' not in config:
+            print(f"⚠️  Configuration file exists but has no 'scenarios' key")
+            return False
+
+        scenarios_config = config['scenarios']
+        synced_count = 0
+
+        # Update MOCK_SCENARIOS with UUIDs from configuration file
+        # Format: "workflow_name:environment" → "uuid"
+        # Example: {"oomkill-increase-memory-v1:production": "uuid1", "test-signal-handler-v1:test": "uuid2"}
+        for workflow_key, workflow_uuid in scenarios_config.items():
+            # workflow_key format: "workflow_name:environment"
+            parts = workflow_key.split(':')
+            if len(parts) != 2:
+                print(f"  ⚠️  Invalid workflow key format: {workflow_key} (expected workflow_name:environment)")
+                continue
+
+            workflow_name_from_config = parts[0]
+            env_from_config = parts[1]
+
+            # Match against MOCK_SCENARIOS by workflow_name + environment
+            for scenario_name, scenario in MOCK_SCENARIOS.items():
+                if not scenario.workflow_name:
+                    continue  # Skip scenarios without workflow_name
+
+                # Determine expected environment for this scenario
+                # Default to production, except test_signal uses test
+                expected_env = "test" if scenario_name == "test_signal" else "production"
+
+                # Match if workflow names match AND environments match
+                if scenario.workflow_name == workflow_name_from_config and expected_env == env_from_config:
+                    scenario.workflow_id = workflow_uuid
+                    synced_count += 1
+                    print(f"  ✅ Loaded {scenario_name} ({workflow_name_from_config}:{env_from_config}) → {workflow_uuid}")
+                    break  # Found match, move to next config entry
+            else:
+                # No match found for this config entry
+                print(f"  ⚠️  No matching scenario for config entry: {workflow_key}")
+
+        print(f"✅ Mock LLM loaded {synced_count}/{len(MOCK_SCENARIOS)} scenarios from file")
+        return True
+
+    except FileNotFoundError:
+        print(f"❌ Configuration file not found: {config_path}")
+        return False
+    except yaml.YAMLError as e:
+        print(f"❌ Error parsing YAML configuration: {e}")
+        return False
+    except Exception as e:
+        print(f"❌ Error loading configuration file: {e}")
+        return False
+
 
 # ========================================
 # TOOL CALL TRACKING
@@ -287,49 +383,13 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
         """Handle GET requests (health checks, model list)."""
         if self.path == "/api/tags" or self.path == "/v1/models":
             response = {"models": [{"name": "mock-model", "size": 1000000}]}
+        elif self.path == "/health" or self.path.startswith("/health"):
+            # Health check always returns OK (file-based config loads at startup)
+            response = {"status": "ok"}
         else:
             response = {"status": "ok"}
         self._send_json_response(response)
 
-    def do_PUT(self):
-        """Handle PUT requests (scenario UUID updates)."""
-        if self.path == "/api/test/update-uuids":
-            content_length = int(self.headers.get('Content-Length', 0))
-            body = self.rfile.read(content_length).decode('utf-8')
-            
-            try:
-                uuid_mapping = json.loads(body) if body else {}
-                # Update Mock LLM scenarios with actual UUIDs from DataStorage
-                # Input format: {"workflow_name:environment": "actual-uuid-from-datastorage"}
-                # Example: {"oomkill-increase-memory-v1:production": "uuid1", "test-signal-handler-v1:test": "uuid2"}
-                updated_count = 0
-                for scenario_key, scenario in MOCK_SCENARIOS.items():
-                    if not scenario.workflow_name:
-                        continue  # Skip scenarios without workflow_name
-                    
-                    # Match by workflow_name + environment
-                    # Default to production for most scenarios, test for test_signal
-                    environment = "test" if scenario_key == "test_signal" else "production"
-                    workflow_key = f"{scenario.workflow_name}:{environment}"
-                    
-                    if workflow_key in uuid_mapping:
-                        scenario.workflow_id = uuid_mapping[workflow_key]
-                        updated_count += 1
-                        print(f"  Updated {scenario_key}: {scenario.workflow_name} → {scenario.workflow_id}")
-                
-                response = {
-                    "status": "ok",
-                    "updated_scenarios": updated_count,
-                    "message": f"Updated {updated_count} Mock LLM scenarios with actual DataStorage UUIDs"
-                }
-                self._send_json_response(response)
-            except Exception as e:
-                print(f"Error updating UUIDs: {e}")
-                response = {"status": "error", "message": str(e)}
-                self._send_json_response(response, status_code=500)
-        else:
-            response = {"status": "error", "message": "Unknown endpoint"}
-            self._send_json_response(response, status_code=404)
 
     def _handle_openai_request(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate OpenAI-compatible response with tool call support."""
@@ -845,4 +905,24 @@ def start_server(host="0.0.0.0", port=8080):
 
 
 if __name__ == "__main__":
-    start_server(port=8080)
+    # NOTE: When running via Dockerfile (python -m src), __main__.py is the entrypoint
+    # This block only executes when running server.py directly: python src/server.py
+    print("🚀 Mock LLM v2.0 - Self-Discovery Pattern (DD-TEST-011)")
+    print("   Running via direct server.py execution")
+    print("=" * 70)
+
+    # DD-TEST-011: Sync workflows from DataStorage BEFORE serving traffic
+    sync_enabled = os.getenv("SYNC_ON_STARTUP", "true").lower() == "true"
+
+    if sync_enabled:
+        sync_workflows_from_datastorage()
+    else:
+        print("ℹ️  Self-discovery disabled (SYNC_ON_STARTUP=false)")
+        print("   Using default scenario UUIDs")
+
+    print("=" * 70)
+
+    # Start HTTP server
+    host = os.getenv("MOCK_LLM_HOST", "0.0.0.0")
+    port = int(os.getenv("MOCK_LLM_PORT", "8080"))
+    start_server(host=host, port=port)

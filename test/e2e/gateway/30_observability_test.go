@@ -16,30 +16,30 @@ import (
 
 var _ = Describe("Observability E2E Tests", func() {
 	var (
-		// TODO (GW Team): ctx           context.Context
-		cancel context.CancelFunc
-		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
+		testCtx       context.Context
+		testCancel    context.CancelFunc
 		testNamespace string
-		testCounter   int
 	)
 
 	BeforeEach(func() {
-		ctx, cancel = context.WithCancel(context.Background())
+		testCtx, testCancel = context.WithCancel(context.Background())
+		_ = testCtx // Suppress unused variable warning (context used implicitly)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
 
-		// Generate unique namespace for test isolation
-		testCounter++
-		testNamespace = fmt.Sprintf("test-obs-%d-%d-%d",
-			time.Now().UnixNano(),
-			GinkgoRandomSeed(),
-			testCounter)
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace to prevent circuit breaker degradation
+		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
+		testNamespace = createTestNamespace("gw-obs")
 
 		// Note: gatewayURL is provided by E2E suite (deployed Gateway service)
 	})
 
 	AfterEach(func() {
-		if cancel != nil {
-			cancel()
+		if testCancel != nil {
+			testCancel()
+		}
+		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace
+		if testNamespace != "" {
+			deleteTestNamespace(testNamespace)
 		}
 	})
 
@@ -173,22 +173,23 @@ var _ = Describe("Observability E2E Tests", func() {
 			resp1 := SendWebhook(gatewayURL, payload)
 			Expect(resp1.StatusCode).To(Equal(http.StatusCreated), "First alert should create CRD")
 
-			// Verify CRD actually exists in K8s before sending duplicate
-			// Query API server directly (not Gateway's cache) to ensure CRD is queryable
-			// This is the proper E2E testing pattern - don't rely on Gateway's internal cache state
-		// K8s API Server Field Indexing: Gateway creates CRDs instantly, but K8s API server
-		// field index updates (spec.signalFingerprint) can lag 60-120s under load.
-		// Use 120s timeout (matches RO E2E pattern) to account for indexing lag.
-		// Authority: DD-E2E-TIMEOUT-001 (120s standard for field-indexed queries)
-		Eventually(func() int {
-			var rrList remediationv1alpha1.RemediationRequestList
-			err := k8sClient.List(ctx, &rrList, client.InNamespace(testNamespace))
-			if err != nil {
-				return 0
-			}
-			return len(rrList.Items)
-		}, 120*time.Second, 1*time.Second).Should(Equal(1),
-			"CRD should be visible within 120s (K8s API server field indexing lag)")
+			// DD-E2E-DIRECT-API-001: Query by exact CRD name (RO E2E pattern)
+			// Parse Gateway response to get CRD name - this is the "source of truth"
+			var gwResp GatewayResponse
+			Expect(json.Unmarshal(resp1.Body, &gwResp)).To(Succeed())
+			Expect(gwResp.RemediationRequestName).NotTo(BeEmpty(), "Gateway should return CRD name in response")
+
+			// Query CRD by name like RO does (direct API Get, no cache/index dependency)
+			// This is 4x faster (30s vs 120s) and more reliable than List() queries
+			// BR-GATEWAY-NAMESPACE-FALLBACK: Use namespace from Gateway response (may be kubernaut-system if fallback occurred)
+			var createdRR remediationv1alpha1.RemediationRequest
+			Eventually(func() error {
+				return k8sClient.Get(ctx, client.ObjectKey{
+					Namespace: gwResp.RemediationRequestNamespace,
+					Name:      gwResp.RemediationRequestName,
+				}, &createdRR)
+			}, 30*time.Second, 1*time.Second).Should(Succeed(),
+				"CRD should be queryable by name within 30s (matches RO E2E pattern)")
 
 			// Second request (deduplicated)
 			resp2 := SendWebhook(gatewayURL, payload)
@@ -341,7 +342,44 @@ var _ = Describe("Observability E2E Tests", func() {
 			// BUSINESS SCENARIO: SLO requires p95 latency < 500ms
 			// BR-GATEWAY-079: Performance Metrics (P50/P95/P99)
 
-			// Send multiple requests to generate latency data (use unique names)
+			// Step 1: Send warm-up request to initialize histogram metrics
+			// Rationale: Prometheus histograms only appear after first observation
+			By("Sending initial request to initialize metrics")
+			warmupPayload := GeneratePrometheusAlert(PrometheusAlertPayload{
+				AlertName: fmt.Sprintf("MetricsWarmup-%d", time.Now().UnixNano()),
+				Namespace: testNamespace,
+				Severity:  "info",
+				Resource: ResourceIdentifier{
+					Kind: "Pod",
+					Name: "warmup-pod",
+				},
+			})
+			warmupResp := SendWebhook(gatewayURL, warmupPayload)
+			Expect(warmupResp.StatusCode).To(Or(Equal(http.StatusCreated), Equal(http.StatusAccepted)),
+				"Warm-up request should succeed")
+
+			// Step 2: Wait for histogram metric to be published (with debugging)
+			// Note: Prometheus histograms expose _count, _sum, and _bucket metrics (not base name)
+			By("Waiting for histogram metrics to be published")
+			var metrics PrometheusMetrics
+			Eventually(func() bool {
+				var err error
+				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
+				if err != nil {
+					GinkgoWriter.Printf("⚠️ Metrics endpoint error: %v\n", err)
+					return false
+				}
+
+				// Check for histogram count metric (most reliable indicator)
+				_, exists := metrics["gateway_http_request_duration_seconds_count"]
+				if !exists {
+					GinkgoWriter.Printf("⏳ Histogram metric not yet available (%d total metrics published)\n", len(metrics))
+				}
+				return exists
+			}, "60s", "1s").Should(BeTrue(), "HTTP duration histogram should exist after warm-up request")
+
+			// Step 3: Send multiple requests to generate latency data
+			By("Sending additional requests for latency distribution")
 			uniqueID := time.Now().UnixNano()
 			for i := 0; i < 10; i++ {
 				payload := GeneratePrometheusAlert(PrometheusAlertPayload{
@@ -358,25 +396,13 @@ var _ = Describe("Observability E2E Tests", func() {
 					fmt.Sprintf("Request %d should succeed", i))
 			}
 
-			// Wait for metrics to update using Eventually
-			var metrics PrometheusMetrics
-			Eventually(func() bool {
-				var err error
-				metrics, err = GetPrometheusMetrics(gatewayURL + "/metrics")
-				if err != nil {
-					return false
-				}
-				_, exists := metrics["gateway_http_request_duration_seconds"]
-				return exists
-			}, "10s", "100ms").Should(BeTrue(), "HTTP duration metric should exist")
-
-			// Verify latency histogram exists
-			var err error
-			Expect(err).ToNot(HaveOccurred())
+			// Step 4: Verify histogram structure
+			metrics, err := GetPrometheusMetrics(gatewayURL + "/metrics")
+			Expect(err).ToNot(HaveOccurred(), "Should fetch metrics after latency tests")
 
 			// Histograms expose _count, _sum, and _bucket metrics
-			_, exists := metrics["gateway_http_request_duration_seconds_count"]
-			Expect(exists).To(BeTrue(), "HTTP duration histogram should exist")
+			_, countExists := metrics["gateway_http_request_duration_seconds_count"]
+			Expect(countExists).To(BeTrue(), "HTTP duration histogram _count metric should exist")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can track p95 latency

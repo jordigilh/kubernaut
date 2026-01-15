@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -103,19 +102,22 @@ func extractCorrelationID(resp *http.Response) (string, error) {
 
 var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func() {
 	var (
-		ctx            context.Context
-		testClient     client.Client
-		dsClient       *ogenclient.Client
-		dataStorageURL string
+		testCtx       context.Context      // ← Test-local context
+		testCancel    context.CancelFunc
+		testClient      client.Client
+		dsClient        *ogenclient.Client
+		dataStorageURL  string
+		sharedNamespace string // Created in BeforeEach using createTestNamespace()
 	)
 
-	// Shared test namespace for parallel execution safety
-	sharedNamespace := fmt.Sprintf("test-rr-audit-%d-%s", GinkgoParallelProcess(), uuid.New().String()[:8])
-
 	BeforeEach(func() {
-		ctx = context.Background()
+		testCtx, testCancel = context.WithCancel(context.Background())  // ← Uses local variable
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
-		_ = testClient // TODO (GW Team): Use for K8s operations
+		_ = testClient          // TODO (GW Team): Use for K8s operations
+
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		sharedNamespace = createTestNamespace("test-rr-audit")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
@@ -154,6 +156,11 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 	})
 
 	AfterEach(func() {
+	if testCancel != nil {
+		testCancel()  // ← Only cancels test-local context
+	}
+		// Clean up test namespace (Pattern: RO E2E)
+		deleteTestNamespace(sharedNamespace)
 	})
 
 	Context("Gap #1-3: Complete Signal Data Capture", func() {
@@ -234,7 +241,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
 			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventType),
 					EventCategory: ogenclient.NewOptString(eventCategory),
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -250,7 +257,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"Should find exactly 1 gateway.signal.received audit event within 30 seconds")
 
 			// Query final audit events for validation
-			resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
@@ -446,7 +453,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventType),
 					EventCategory: ogenclient.NewOptString(eventCategory),
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -462,7 +469,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"Should find exactly 1 audit event for empty labels test")
 
 			// Query final audit events
-			resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
@@ -571,7 +578,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventType),
 					EventCategory: ogenclient.NewOptString(eventCategory),
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -587,7 +594,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"Should find exactly 1 audit event for nil payload test")
 
 			// Query final audit events
-			resp2, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
@@ -707,7 +714,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// K8s Cache Synchronization: Audit events depend on CRD visibility. Allow 60s for cache sync.
 			// Authority: DD-E2E-K8S-CLIENT-001 (Phase 1 - eventual consistency acknowledgment)
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventTypeReceived),
 					CorrelationID: ogenclient.NewOptString(correlationID1),
 				})
@@ -738,7 +745,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventType),
 					EventCategory: ogenclient.NewOptString(eventCategory),
 					CorrelationID: ogenclient.NewOptString(correlationID2),
@@ -754,7 +761,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				"Should find exactly 1 gateway.signal.deduplicated event")
 
 			// Query final audit events
-			resp3, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			resp3, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID2),
@@ -905,7 +912,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventCategory := "gateway"
 
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventType),
 					EventCategory: ogenclient.NewOptString(eventCategory),
 					CorrelationID: ogenclient.NewOptString(correlationIDProm),
@@ -919,7 +926,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				return 0
 			}, 30*time.Second, 1*time.Second).Should(Equal(1))
 
-			respPromAudit, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			respPromAudit, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationIDProm),
@@ -939,7 +946,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			By("Verifying K8s Event audit event has all 3 RR reconstruction fields")
 
 			Eventually(func() int {
-				resp, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					EventType:     ogenclient.NewOptString(eventType),
 					EventCategory: ogenclient.NewOptString(eventCategory),
 					CorrelationID: ogenclient.NewOptString(correlationIDK8s),
@@ -953,7 +960,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 				return 0
 			}, 30*time.Second, 1*time.Second).Should(Equal(1))
 
-			respK8sAudit, err := dsClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+			respK8sAudit, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationIDK8s),

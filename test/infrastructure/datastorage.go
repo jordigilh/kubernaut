@@ -33,6 +33,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -568,7 +569,15 @@ func deployPostgreSQLInNamespace(ctx context.Context, namespace, kubeconfigPath 
 
 	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+		// Handle case where secret already exists (from previous test run)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create PostgreSQL secret: %w", err)
+		}
+		// Secret exists, update it to ensure it has correct values
+		_, err = clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update existing PostgreSQL secret: %w", err)
+		}
 	}
 
 	// 2. Create Service (NodePort for direct access from host - eliminates port-forward instability)
@@ -938,7 +947,15 @@ password: test_password`,
 
 	_, err = clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to create Data Storage Secret: %w", err)
+		// Handle case where secret already exists (from previous test run)
+		if !errors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create Data Storage Secret: %w", err)
+		}
+		// Secret exists, update it to ensure it has correct values
+		_, err = clientset.CoreV1().Secrets(namespace).Update(ctx, secret, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to update existing Data Storage Secret: %w", err)
+		}
 	}
 
 	// 3. Create Service (NodePort for direct access from host - eliminates port-forward instability)

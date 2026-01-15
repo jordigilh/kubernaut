@@ -247,11 +247,9 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			By("Validating event_data payloads are valid JSON")
 			for _, event := range events {
 				// ✅ OpenAPI types guarantee event_data is valid JSON
+				// Note: EventData is an ogen discriminated union - cannot use BeEmpty() matcher
+				// Specific payload validation is done per event type below
 				Expect(event.EventData).NotTo(BeNil(), "event_data should not be null")
-
-				// event_data should be a non-empty JSON object
-				// OpenAPI generates this as map[string]interface{} automatically
-				Expect(event.EventData).NotTo(BeEmpty(), "event_data should not be an empty object")
 			}
 
 			By("Validating event timestamps are set")

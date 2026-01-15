@@ -592,7 +592,8 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 // BUSINESS OUTCOME TESTS: CRDCreator Initialization with Defaults
 // ============================================================================
 //
-// BR-GATEWAY-010: Safe defaults for CRDCreator
+// BR-GATEWAY-019: CRD Name Generation - Safe Defaults
+// Sub-requirement: CRDCreator must work with minimal configuration
 //
 // BUSINESS VALUE:
 // - CRDCreator works even without all configuration
@@ -600,7 +601,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 // - Operator doesn't need to specify every config option
 // ============================================================================
 
-var _ = Describe("BR-GATEWAY-010: CRDCreator Safe Defaults", func() {
+var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 	Context("when initialized with empty fallback namespace", func() {
 		It("uses safe default namespace", func() {
 			// BUSINESS OUTCOME: Empty namespace doesn't cause failures

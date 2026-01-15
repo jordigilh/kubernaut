@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -34,12 +35,29 @@ var _ = Describe("Reconstruction Validator", func() {
 	Context("VALIDATOR-01: Validate required fields", func() {
 		It("should pass validation for complete RR with all required fields", func() {
 			// Validates validator accepts RR with all required fields
+			// Updated Jan 14, 2026: Added Gaps #4, #5, #6 fields for comprehensive validation
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalName:      "HighCPU",
-					SignalType:      "prometheus-alert",
-					SignalLabels:    map[string]string{"alertname": "HighCPU"},
-					OriginalPayload: []byte(`{"alert":"data"}`),
+					SignalName:        "HighCPU",
+					SignalType:        "prometheus-alert",
+					SignalLabels:      map[string]string{"alertname": "HighCPU"},
+					SignalAnnotations: map[string]string{"summary": "High CPU"},
+					OriginalPayload:   []byte(`{"alert":"data"}`),
+					ProviderData:      []byte(`{"incident_id":"test-123"}`), // Gap #4
+				},
+				Status: remediationv1.RemediationRequestStatus{
+					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
+						WorkflowID:     "test-workflow-001",
+						Version:        "v1.0.0",
+						ContainerImage: "test/workflow:latest",
+					},
+					ExecutionRef: &corev1.ObjectReference{ // Gap #6
+						Name:      "test-execution-001",
+						Namespace: "default",
+					},
+					TimeoutConfig: &remediationv1.TimeoutConfig{
+						Global: &metav1.Duration{Duration: 3600000000000},
+					},
 				},
 			}
 
@@ -49,7 +67,7 @@ var _ = Describe("Reconstruction Validator", func() {
 			Expect(result).ToNot(BeNil())
 			Expect(result.IsValid).To(BeTrue())
 			Expect(result.Errors).To(BeEmpty())
-			Expect(result.Completeness).To(BeNumerically(">=", 50)) // At least 50% complete
+			Expect(result.Completeness).To(Equal(100)) // All 9 fields present = 100% complete
 		})
 
 		It("should fail validation when SignalName is missing", func() {
@@ -90,6 +108,7 @@ var _ = Describe("Reconstruction Validator", func() {
 	Context("VALIDATOR-02: Calculate completeness percentage", func() {
 		It("should calculate 100% completeness for fully populated RR", func() {
 			// Validates completeness calculation for RR with all fields
+			// Updated Jan 14, 2026: Added all 9 fields for true 100% completeness
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
@@ -97,8 +116,20 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
 					OriginalPayload:   []byte(`{"alert":"data"}`),
+					ProviderData:      []byte(`{"incident_id":"test-456","analysis":"complete"}`), // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
+					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
+						WorkflowID:      "workflow-002",
+						Version:         "v2.1.0",
+						ContainerImage:  "registry/workflow:v2.1.0",
+						ContainerDigest: "sha256:abcdef123456",
+					},
+					ExecutionRef: &corev1.ObjectReference{ // Gap #6
+						Name:      "execution-002",
+						Namespace: "production",
+						Kind:      "WorkflowExecution",
+					},
 					TimeoutConfig: &remediationv1.TimeoutConfig{
 						Global: &metav1.Duration{Duration: 3600000000000},
 					},
@@ -109,16 +140,17 @@ var _ = Describe("Reconstruction Validator", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.IsValid).To(BeTrue())
-			Expect(result.Completeness).To(BeNumerically(">=", 80)) // High completeness
+			Expect(result.Completeness).To(Equal(100)) // All 9 fields = 100% completeness
 		})
 
 		It("should calculate lower completeness for minimal RR", func() {
 			// Validates completeness calculation for RR with only required fields
+			// Updated Jan 14, 2026: Adjusted expectations for 9 total validation fields
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName: "HighCPU",
 					SignalType: "prometheus-alert",
-					// Optional fields missing
+					// All 7 optional fields missing (Gaps #1-6, #8)
 				},
 			}
 
@@ -126,8 +158,8 @@ var _ = Describe("Reconstruction Validator", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.IsValid).To(BeTrue())
-			Expect(result.Completeness).To(BeNumerically("<", 80))  // Lower completeness
-			Expect(result.Completeness).To(BeNumerically(">=", 30)) // But still reasonable
+			Expect(result.Completeness).To(Equal(22)) // 2 required fields / 9 total = 22%
+			Expect(result.Warnings).To(HaveLen(7))    // All 7 optional fields missing
 		})
 	})
 
@@ -168,6 +200,7 @@ var _ = Describe("Reconstruction Validator", func() {
 
 		It("should not warn when optional fields are present", func() {
 			// Validates no warnings for complete RR
+			// Updated Jan 14, 2026: Added all 9 fields (Gaps #1-8) for zero warnings
 			rr := &remediationv1.RemediationRequest{
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "HighCPU",
@@ -175,9 +208,19 @@ var _ = Describe("Reconstruction Validator", func() {
 					SignalLabels:      map[string]string{"alertname": "HighCPU"},
 					SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
 					OriginalPayload:   []byte(`{"alert":"data"}`),
+					ProviderData:      []byte(`{"incident_id":"test-789"}`), // Gap #4
 				},
 				Status: remediationv1.RemediationRequestStatus{
-					TimeoutConfig: &remediationv1.TimeoutConfig{
+					SelectedWorkflowRef: &remediationv1.WorkflowReference{ // Gap #5
+						WorkflowID:     "workflow-003",
+						Version:        "v1.2.0",
+						ContainerImage: "registry/workflow:v1.2.0",
+					},
+					ExecutionRef: &corev1.ObjectReference{ // Gap #6
+						Name:      "execution-003",
+						Namespace: "default",
+					},
+					TimeoutConfig: &remediationv1.TimeoutConfig{ // Gap #8
 						Global: &metav1.Duration{Duration: 3600000000000},
 					},
 				},
@@ -187,7 +230,8 @@ var _ = Describe("Reconstruction Validator", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.IsValid).To(BeTrue())
-			Expect(result.Warnings).To(BeEmpty())
+			Expect(result.Warnings).To(BeEmpty()) // All 9 fields present = no warnings
+			Expect(result.Completeness).To(Equal(100))
 		})
 	})
 

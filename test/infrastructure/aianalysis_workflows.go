@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package aianalysis
+package infrastructure
 
 import (
 	"bytes"
@@ -24,12 +24,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"strings"
 	"time"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // TestWorkflow represents a workflow for AIAnalysis integration tests
@@ -297,36 +294,11 @@ func registerWorkflowInDataStorage(dataStorageURL string, wf TestWorkflow, outpu
 	}
 }
 
-// WriteMockLLMConfigFile writes a YAML configuration file for Mock LLM
-// Pattern: DD-TEST-011 v2.0 - File-Based Configuration
-// Mock LLM reads workflow UUIDs from YAML file at startup (no HTTP calls)
-// Input: Map of "workflow_name:environment" → "actual-uuid-from-datastorage"
-func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, output io.Writer) error {
-	_, _ = fmt.Fprintf(output, "\n📝 Writing Mock LLM configuration file: %s\n", configPath)
-
-	// Build YAML content
-	var yamlContent strings.Builder
-	yamlContent.WriteString("scenarios:\n")
-	for key, uuid := range workflowUUIDs {
-		yamlContent.WriteString(fmt.Sprintf("  %s: %s\n", key, uuid))
-	}
-
-	// Write to file
-	if err := os.WriteFile(configPath, []byte(yamlContent.String()), 0644); err != nil {
-		return fmt.Errorf("failed to write Mock LLM config file: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(output, "✅ Mock LLM config file written (%d scenarios)\n\n", len(workflowUUIDs))
-	return nil
-}
-
 // UpdateMockLLMWithUUIDs sends the actual workflow UUIDs to Mock LLM
-// DEPRECATED: Use WriteMockLLMConfigFile for DD-TEST-011 v2.0 file-based pattern
 // Pattern: DD-WORKFLOW-002 v3.0 UUID synchronization
 // DataStorage auto-generates UUIDs, so Mock LLM must be updated with actual values
 // This ensures LLM responses contain UUIDs that exist in DataStorage catalog
-func UpdateMockLLMWithUUIDs(mockLLMConfig infrastructure.MockLLMConfig, workflowUUIDs map[string]string, output io.Writer) error {
-	_, _ = fmt.Fprintf(output, "\n⚠️  DEPRECATED: UpdateMockLLMWithUUIDs() - Use WriteMockLLMConfigFile() instead\n")
+func UpdateMockLLMWithUUIDs(mockLLMConfig MockLLMConfig, workflowUUIDs map[string]string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n🔄 Updating Mock LLM scenarios with actual DataStorage UUIDs...\n")
 
 	// Convert workflowUUIDs map to format Mock LLM expects
@@ -340,7 +312,7 @@ func UpdateMockLLMWithUUIDs(mockLLMConfig infrastructure.MockLLMConfig, workflow
 	}
 
 	// HTTP PUT to Mock LLM's update endpoint
-	mockLLMURL := infrastructure.GetMockLLMEndpoint(mockLLMConfig)
+	mockLLMURL := GetMockLLMEndpoint(mockLLMConfig)
 	updateEndpoint := fmt.Sprintf("%s/api/test/update-uuids", mockLLMURL)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -94,6 +94,7 @@ var (
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore   // Audit store for BR-SP-090 (write operations)
 	dsClient   *ogenclient.Client // DataStorage HTTP API client (query operations - correct service boundary)
+	dsInfra    *infrastructure.DSBootstrapInfra // DataStorage infrastructure (for must-gather diagnostics)
 	// metricsAddr removed - not needed since metrics server uses dynamic port (BindAddress: "0")
 
 	// BR-SP-072: Policy file paths for hot-reload testing
@@ -146,7 +147,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	By("Starting SignalProcessing integration infrastructure (DD-TEST-002)")
 	// This starts: PostgreSQL, Redis, Immudb, DataStorage (with migrations)
 	// Per DD-TEST-001 v2.2: PostgreSQL=15436, Redis=16382, Immudb=13324, DS=18094
-	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+	dsInfra, err = infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "signalprocessing",
 		PostgresPort:    15436, // DD-TEST-001 v2.2
 		RedisPort:       16382, // DD-TEST-001 v2.2
@@ -653,6 +654,16 @@ var _ = SynchronizedAfterSuite(
 		// PROCESS 1 ONLY: Shared infrastructure cleanup
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 		By("Tearing down shared infrastructure (Process 1 only)")
+
+		// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+		// ALWAYS collect logs - failures may have occurred on other parallel processes
+		// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+		GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+		infrastructure.MustGatherContainerLogs("signalprocessing", []string{
+			dsInfra.DataStorageContainer,
+			dsInfra.PostgresContainer,
+			dsInfra.RedisContainer,
+		}, GinkgoWriter)
 
 		// Clean up audit infrastructure (BR-SP-090)
 		// SP-SHUTDOWN-001: Flush audit store BEFORE stopping DataStorage

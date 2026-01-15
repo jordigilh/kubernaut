@@ -43,18 +43,13 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 		testLogger = logger.WithValues("test", "error-responses")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
-		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		testLogger.Info("Test 17: Error Response Codes - Setup")
-		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+	testLogger.Info("Test 17: Error Response Codes - Setup")
+	testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("error-codes")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
-		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use suite ctx (no timeout) for namespace creation
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
-
-		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
+	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
+	testNamespace = createTestNamespace("error-codes")
+	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
@@ -72,19 +67,16 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
 			testLogger.Info(fmt.Sprintf("  kubectl logs -n %s deployment/gateway -f", testNamespace))
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+			// Clean up test namespace (Pattern: RO E2E)
+			deleteTestNamespace(testNamespace)
+			testLogger.Info("✅ Test cleanup complete")
 		}
-
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
 
 		if testCancel != nil {
 			testCancel()
 		}
-		testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 

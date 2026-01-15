@@ -24,17 +24,12 @@ import (
 	"net/http"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-
-	"github.com/google/uuid"
 )
 
 // Parallel Execution: ✅ ENABLED
@@ -61,14 +56,9 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		testLogger.Info("Test 3: K8s API Rate Limiting - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		// Generate unique namespace for this test
-		testNamespace = fmt.Sprintf("rate-limit-%s", uuid.New().String()[:8])
-
-		// Get K8s client and create namespace
-		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use suite ctx (no timeout) for infrastructure setup to allow retries to complete
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(),
-			"Failed to create test namespace")
+		// Create unique test namespace (Pattern: RO E2E)
+		// This prevents circuit breaker degradation from "namespace not found" errors
+		testNamespace = createTestNamespace("rate-limit")
 
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
@@ -103,14 +93,11 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 			return
 		}
 
-		// ✅ Cleanup test namespace (CRDs only)
+		// ✅ Cleanup test namespace (Pattern: RO E2E)
 		// Note: Gateway uses status-based deduplication (DD-GATEWAY-011)
 		// Deduplication state stored in RemediationRequest CRD status, not Redis
 		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		ns := &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
-		}
-		_ = k8sClient.Delete(testCtx, ns)
+		deleteTestNamespace(testNamespace)
 
 		if testCancel != nil {
 			testCancel()

@@ -35,8 +35,6 @@ import (
 
 var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-GATEWAY-075)", Ordered, func() {
 	var (
-		testCtx       context.Context
-		testCancel    context.CancelFunc
 		testLogger    logr.Logger
 		testNamespace string
 		httpClient    *http.Client
@@ -44,7 +42,6 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 	)
 
 	BeforeAll(func() {
-		testCtx, testCancel = context.WithTimeout(ctx, 10*time.Minute) // Increased from 5min - test runs late in suite
 		testLogger = logger.WithValues("test", "structured-logging")
 		httpClient = &http.Client{Timeout: 10 * time.Second}
 
@@ -52,13 +49,9 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		testLogger.Info("Test 16: Structured Logging Verification - Setup")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-		testNamespace = GenerateUniqueNamespace("logging")
-		testLogger.Info("Deploying test services...", "namespace", testNamespace)
-
+		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		// Use ctx (suite context) instead of testCtx to avoid timeout issues
-		Expect(CreateNamespaceAndWait(ctx, k8sClient, testNamespace)).To(Succeed(), "Failed to create and wait for namespace")
-
+		testNamespace = createTestNamespace("logging")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -77,19 +70,12 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 			testLogger.Info(fmt.Sprintf("  kubectl get pods -n %s", testNamespace))
 			testLogger.Info(fmt.Sprintf("  kubectl logs -n %s deployment/gateway -f", testNamespace))
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			if testCancel != nil {
-				testCancel()
-			}
-			return
+		} else {
+			testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
+			// Clean up test namespace (Pattern: RO E2E)
+			deleteTestNamespace(testNamespace)
+			testLogger.Info("✅ Test cleanup complete")
 		}
-
-		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		// Namespace cleanup handled by suite-level AfterSuite (Kind cluster deletion)
-
-		if testCancel != nil {
-			testCancel()
-		}
-		testLogger.Info("✅ Test cleanup complete")
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	})
 
@@ -145,24 +131,28 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 
 		testLogger.Info("✅ Alert sent with unique marker", "marker", uniqueMarker)
 
-		testLogger.Info("Step 2: Retrieve Gateway logs")
-		// Wait for logs to be written using Eventually
-		var logs string
-		Eventually(func() bool {
-			cmd := exec.CommandContext(testCtx, "kubectl", "logs",
-				"-n", gatewayNamespace,
-				"-l", "app=gateway",
-				"--tail=100",
-				"--kubeconfig", kubeconfigPath)
-			output, err := cmd.Output()
-			if err != nil {
-				testLogger.Info("Could not retrieve Gateway logs", "error", err)
-				return false
-			}
-			logs = string(output)
-			// Check if logs contain our unique marker
-			return len(logs) > 0
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
+	testLogger.Info("Step 2: Retrieve Gateway logs")
+	// Wait for logs to be written using Eventually
+	var logs string
+	Eventually(func() bool {
+		// Use fresh context for kubectl (not testCtx which may be expired in parallel execution)
+		cmdCtx, cmdCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cmdCancel()
+
+		cmd := exec.CommandContext(cmdCtx, "kubectl", "logs",
+			"-n", gatewayNamespace,
+			"-l", "app=gateway",
+			"--tail=100",
+			"--kubeconfig", kubeconfigPath)
+		output, err := cmd.Output()
+		if err != nil {
+			testLogger.Info("Could not retrieve Gateway logs", "error", err)
+			return false
+		}
+		logs = string(output)
+		// Check if logs contain our unique marker
+		return len(logs) > 0
+	}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Gateway logs should be available")
 
 		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))
 		testLogger.Info("Retrieved Gateway logs", "bytes", len(logs))
