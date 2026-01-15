@@ -83,7 +83,7 @@ const (
 	// Redis configuration (DataStorage DLQ) - Per DD-TEST-001
 	gatewayRedisPort      = 16380
 	gatewayRedisContainer = "gateway-integration-redis"
-	
+
 	// DataStorage configuration - Per DD-TEST-001
 	gatewayDataStoragePort      = 18091 // Per DD-TEST-001 (was 15440 - wrong range)
 	gatewayDataStorageContainer = "gateway-integration-datastorage"
@@ -155,7 +155,7 @@ var _ = SynchronizedBeforeSuite(
 
 		err = infrastructure.WaitForRedisReady(gatewayRedisContainer, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Redis must become ready")
-		
+
 		// Step 5: Apply migrations to PUBLIC schema
 		logger.Info("[Process 1] Step 5: Apply database migrations")
 		db, err := connectPostgreSQL()
@@ -164,7 +164,7 @@ var _ = SynchronizedBeforeSuite(
 		err = infrastructure.ApplyMigrationsWithPropagationTo(db)
 		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
 		db.Close()
-		
+
 		// Step 6: Start DataStorage (shared helper)
 		logger.Info("[Process 1] Step 6: Start DataStorage service")
 		imageTag := infrastructure.GenerateInfraImageName("datastorage", "gateway")
@@ -330,7 +330,7 @@ var _ = SynchronizedAfterSuite(
 func connectPostgreSQL() (*sql.DB, error) {
 	connStr := fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable",
 		gatewayPostgresPort, gatewayPostgresUser, gatewayPostgresPassword, gatewayPostgresDB)
-	
+
 	return sql.Open("postgres", connStr)
 }
 
@@ -342,7 +342,7 @@ func cleanupInfrastructure() {
 		gatewayRedisContainer,
 		gatewayPostgresContainer,
 	}, GinkgoWriter)
-	
+
 	// Remove network
 	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
 }

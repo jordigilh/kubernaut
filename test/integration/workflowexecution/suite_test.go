@@ -112,13 +112,13 @@ func TestWorkflowExecutionIntegration(t *testing.T) {
 
 var _ = SynchronizedBeforeSuite(func() []byte {
 	// Phase 1: Runs ONCE on parallel process #1
-	// Start integration infrastructure (PostgreSQL, Redis, Immudb, DataStorage)
+	// Start integration infrastructure (PostgreSQL, Redis, DataStorage)
 	// This runs once to avoid container name collisions when TEST_PROCS > 1
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("Starting WorkflowExecution integration infrastructure (Process #1 only, DD-TEST-002)")
 	// Use shared DSBootstrap infrastructure (replaces custom StartWEIntegrationInfrastructure)
-	// Per DD-TEST-001 v2.2: WE uses PostgreSQL=15441, Redis=16388, Immudb=13327, DS=18097
+	// Per DD-TEST-001 v2.6: WE uses PostgreSQL=15441, Redis=16388, DS=18097
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "workflowexecution",
 		PostgresPort:    15441, // DD-TEST-001 v2.2
@@ -128,7 +128,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ConfigDir:       "test/integration/workflowexecution/config",
 	}, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
-	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, Immudb, DataStorage - shared across all processes)")
+	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
