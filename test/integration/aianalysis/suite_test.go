@@ -273,16 +273,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		}
 	})
 
-	By("Starting HolmesGPT-API HTTP service (programmatically)")
+	By("Starting HolmesGPT-API HTTP service (using pre-built image)")
 	// AA integration tests use OpenAPI HAPI client (HTTP-based)
 	// DD-TEST-001 v2.3: HAPI port 18120, Mock LLM port 18141
-	// MOCK_LLM_MODE removed - now uses standalone Mock LLM service
-	projectRoot := filepath.Join("..", "..", "..") // test/integration/aianalysis -> project root
+	// OPTIMIZATION: Use pre-built image from parallel build (no BuildContext/BuildDockerfile)
 	hapiConfigDir, err := filepath.Abs("hapi-config")
 	Expect(err).ToNot(HaveOccurred(), "Failed to get absolute path for hapi-config")
 	hapiConfig := infrastructure.GenericContainerConfig{
 		Name:    "aianalysis_hapi_test",
-		Image:   infrastructure.GenerateInfraImageName("holmesgpt-api", "aianalysis"),
+		Image:   hapiImageName, // Use pre-built image from parallel build
 		Network: "aianalysis_test_network",
 		Ports:   map[int]int{8080: 18120}, // container:host
 		Env: map[string]string{
@@ -297,11 +296,10 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Volumes: map[string]string{
 			hapiConfigDir: "/etc/holmesgpt:ro", // Mount HAPI config directory
 		},
-		BuildContext:    projectRoot,
-		BuildDockerfile: "holmesgpt-api/Dockerfile.e2e", // E2E Dockerfile: minimal dependencies, no lib64 issues
+		// BuildContext and BuildDockerfile removed - image already built in parallel
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18120/health",
-			Timeout: 300 * time.Second, // HAPI build takes ~100s (Python wheels, dependencies)
+			Timeout: 120 * time.Second, // Reduced: only startup time (no build), ~20-30s expected
 		},
 	}
 	hapiContainer, err := infrastructure.StartGenericContainer(hapiConfig, GinkgoWriter)

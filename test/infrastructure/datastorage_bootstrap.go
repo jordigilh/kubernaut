@@ -717,7 +717,7 @@ func BuildHAPIImage(ctx context.Context, serviceName string, writer io.Writer) (
 
 	// Generate DD-TEST-001 v1.3 compliant image tag
 	imageTag := generateInfrastructureImageTag("holmesgpt-api", serviceName)
-	imageName := fmt.Sprintf("holmesgpt-api:%s", imageTag)
+	imageName := fmt.Sprintf("localhost/holmesgpt-api:%s", imageTag) // Podman auto-prefixes with localhost/
 
 	// Check if image already exists (cache hit)
 	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
