@@ -1459,146 +1459,26 @@ var _ = Describe("BR-GATEWAY-002: Kubernetes Event Adapter Signal Parsing", func
 
 ---
 
-#### **Scenario 4.1: Circuit Breaker State Machine**
-**BR**: BR-GATEWAY-093
-**Priority**: P0 (Critical)
-**Business Value**: Validate fail-fast behavior for K8s API unavailability
+#### **Scenario 4.1: Circuit Breaker State Machine** ❌ REMOVED
+**Rationale**: Circuit breaker state machine tests belong in **unit test tier**, not integration tests.
 
-**Test Specifications**:
+**Why This Doesn't Belong in Integration Tests**:
+1. **No External Dependencies**: Tests only mock K8s client behavior (no real infrastructure)
+2. **Pure State Machine Logic**: Tests validate state transitions (Closed → Open → Half-Open → Closed)
+3. **Deterministic Behavior**: No timing dependencies, network calls, or database interactions
+4. **Fast Execution**: All tests run in <100ms (except Test 4.1.2 with 30s sleep)
 
-```go
-var _ = Describe("BR-GATEWAY-093: Circuit Breaker State Machine", func() {
-    var (
-        k8sClient       *k8s.ClientWithCircuitBreaker
-        metricsRegistry *prometheus.Registry
-        ctx             context.Context
-    )
+**Where This Should Be Tested**:
+- **Unit Tests**: `test/unit/gateway/circuit_breaker_test.go`
+- **E2E Tests**: `test/e2e/gateway/32_service_resilience_test.go` (already exists, tests actual K8s API failures)
 
-    BeforeEach(func() {
-        metricsRegistry = prometheus.NewRegistry()
-        k8sClient = k8s.NewClientWithCircuitBreaker(metricsRegistry)
-        ctx = context.Background()
-    })
+**BR Coverage Status**:
+- **BR-GATEWAY-093**: Already covered by:
+  - Unit tests in `pkg/gateway/k8s/` (state machine logic)
+  - E2E Test 32 (actual infrastructure resilience)
+  - Integration Test 29 (K8s API failure handling)
 
-    // Test 4.1.1
-    It("should transition from Closed to Open after 5 consecutive failures", func() {
-        // Given: Circuit breaker in Closed state
-        Expect(k8sClient.GetCircuitState()).To(Equal("closed"))
-
-        // When: 5 consecutive failures
-        for i := 0; i < 5; i++ {
-            k8sClient.InjectError(errors.New("API unavailable"))
-            _, err := k8sClient.Create(ctx, createTestRR())
-            Expect(err).To(HaveOccurred())
-        }
-
-        // Then: Circuit opens
-        Expect(k8sClient.GetCircuitState()).To(Equal("open"))
-    })
-
-    // Test 4.1.2
-    It("should transition from Open to Half-Open after timeout", func() {
-        // Given: Circuit in Open state
-        k8sClient.OpenCircuit()
-        Expect(k8sClient.GetCircuitState()).To(Equal("open"))
-
-        // When: Timeout expires (wait 30 seconds)
-        time.Sleep(30 * time.Second)
-
-        // Then: Circuit transitions to Half-Open
-        Expect(k8sClient.GetCircuitState()).To(Equal("half-open"))
-    })
-
-    // Test 4.1.3
-    It("should transition from Half-Open to Closed on successful test request", func() {
-        // Given: Circuit in Half-Open state
-        k8sClient.SetState("half-open")
-        k8sClient.ClearErrors() // Next request will succeed
-
-        // When: Test request succeeds
-        _, err := k8sClient.Create(ctx, createTestRR())
-
-        // Then: Circuit closes
-        Expect(err).ToNot(HaveOccurred())
-        Expect(k8sClient.GetCircuitState()).To(Equal("closed"))
-    })
-
-    // Test 4.1.4
-    It("should transition from Half-Open to Open if test request fails", func() {
-        // Given: Circuit in Half-Open state
-        k8sClient.SetState("half-open")
-        k8sClient.InjectError(errors.New("Still unavailable"))
-
-        // When: Test request fails
-        _, err := k8sClient.Create(ctx, createTestRR())
-
-        // Then: Circuit reopens
-        Expect(err).To(HaveOccurred())
-        Expect(k8sClient.GetCircuitState()).To(Equal("open"))
-    })
-
-    // Test 4.1.5
-    It("should fail fast (no K8s API call) when circuit is open", func() {
-        // Given: Circuit in Open state
-        k8sClient.OpenCircuit()
-        callCount := k8sClient.GetAPICallCount()
-
-        // When: Request attempted
-        _, err := k8sClient.Create(ctx, createTestRR())
-
-        // Then: Immediate failure, no API call
-        Expect(err).To(HaveOccurred())
-        Expect(err.Error()).To(ContainSubstring("circuit breaker open"))
-        Expect(k8sClient.GetAPICallCount()).To(Equal(callCount)) // No new calls
-    })
-
-    // Test 4.1.6
-    It("should update gateway_circuit_breaker_state metric on state change", func() {
-        // Given: Circuit closed
-        initialState := getMetricValue(metricsRegistry, "gateway_circuit_breaker_state", map[string]string{"state": "open"})
-
-        // When: Circuit opens
-        for i := 0; i < 5; i++ {
-            k8sClient.InjectError(errors.New("API unavailable"))
-            k8sClient.Create(ctx, createTestRR())
-        }
-
-        // Then: Metric updated
-        finalState := getMetricValue(metricsRegistry, "gateway_circuit_breaker_state", map[string]string{"state": "open"})
-        Expect(finalState).To(Equal(1.0)) // State is now "open"
-    })
-
-    // Test 4.1.7
-    It("should track circuit breaker operations in metrics", func() {
-        // Given: Circuit breaker with metrics
-        initialSuccess := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "success"})
-        initialFailure := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "failure"})
-
-        // When: Mix of successful and failed operations
-        k8sClient.Create(ctx, createTestRR()) // Success
-        k8sClient.InjectError(errors.New("fail"))
-        k8sClient.Create(ctx, createTestRR()) // Failure
-        k8sClient.ClearErrors()
-        k8sClient.Create(ctx, createTestRR()) // Success
-
-        // Then: Metrics track operations
-        finalSuccess := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "success"})
-        finalFailure := getMetricValue(metricsRegistry, "gateway_circuit_breaker_operations_total", map[string]string{"operation": "failure"})
-        Expect(finalSuccess).To(Equal(initialSuccess + 2))
-        Expect(finalFailure).To(Equal(initialFailure + 1))
-    })
-})
-```
-
-**Acceptance Criteria**:
-- ✅ All 7 tests pass
-- ✅ Coverage for `pkg/gateway/k8s/client_with_circuit_breaker.go` increases from 36.9% to ≥60%
-- ✅ Tests validate state machine correctness
-
-**Phase 2 Circuit Breaker Category Totals**:
-- **Tests**: 7 tests across 1 scenario
-- **Coverage Gain**: +3%
-- **Files Covered**: `k8s/client_with_circuit_breaker.go`, `metrics/metrics.go`
+**Alternative**: If circuit breaker metrics need integration testing with real Prometheus,consider **Scenario 2.1** (Prometheus Metrics) instead.
 
 ---
 
