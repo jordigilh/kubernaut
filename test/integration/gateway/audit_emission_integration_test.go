@@ -125,7 +125,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(signal.Fingerprint).ToNot(BeEmpty(), "Signal must have fingerprint")
 
 				By("3. Process signal through Gateway")
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -189,7 +189,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal1.Fingerprint = fingerprint
 
 				By("2. Process first signal - should create CRD")
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -250,7 +250,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				// Create Gateway server
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -311,7 +311,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal, err := prometheusAdapter.Parse(ctx, customPayload)
 				Expect(err).ToNot(HaveOccurred())
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -400,7 +400,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
 				Expect(err).ToNot(HaveOccurred())
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -477,7 +477,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal, err := prometheusAdapter.Parse(ctx, payloadWithResource)
 				Expect(err).ToNot(HaveOccurred())
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -541,8 +541,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
 				Expect(err).ToNot(HaveOccurred())
-				
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -595,7 +595,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal2, err := prometheusAdapter.Parse(ctx, signal2Payload)
 				Expect(err).ToNot(HaveOccurred())
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -673,7 +673,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				firstFingerprint := signal1.Fingerprint
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -688,7 +688,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", firstFingerprint, "")
 				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
-				
+
 				// Override fingerprint to match first signal (to trigger deduplication)
 				signal2.Fingerprint = firstFingerprint
 
@@ -739,7 +739,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				firstFingerprint := signal1.Fingerprint
 
-				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -789,6 +789,282 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(rrRef).To(ContainSubstring(testNamespace))
 
 				GinkgoWriter.Printf("✅ Existing RR reference validated: %s\n", rrRef)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-009
+		// Scenario: CRD Occurrence Count
+		// BR: BR-GATEWAY-056
+		// Section: 1.2.3
+		Context("when creating CRD (GW-INT-AUD-009, BR-GATEWAY-056)", func() {
+			It("[GW-INT-AUD-009] should include occurrence_count=1 in CRD created audit event for new signal", func() {
+				By("1. Create unique Prometheus alert")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("aaa%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alertPayload := createPrometheusAlert(testNamespace, "TestAlert", "critical", fingerprint, correlationID)
+
+				By("2. Process signal through Gateway")
+				signal, err := prometheusAdapter.Parse(ctx, alertPayload)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.Status).To(Equal("created"))
+
+				By("3. Query gateway.crd.created audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				By("4. Validate occurrence_count field in audit payload")
+				payload, ok := extractGatewayPayload(crdCreatedEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-056: OccurrenceCount must be 1 for new CRD
+				occurrenceCount, hasCount := payload.OccurrenceCount.Get()
+				Expect(hasCount).To(BeTrue(), "BR-GATEWAY-056: OccurrenceCount field must be present")
+				Expect(occurrenceCount).To(Equal(int32(1)),
+					"BR-GATEWAY-056: OccurrenceCount must be 1 for new signal")
+
+				GinkgoWriter.Printf("✅ OccurrenceCount validated: %d\n", occurrenceCount)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-013
+		// Scenario: Deduplication Occurrence Count
+		// BR: BR-GATEWAY-057
+		// Section: 1.3.2
+		Context("when processing duplicate signals (GW-INT-AUD-013, BR-GATEWAY-057)", func() {
+			It("[GW-INT-AUD-013] should include incremented occurrence_count in deduplication audit events", func() {
+				By("1. Create initial signal and process")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("bbb%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
+				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert1 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID1)
+
+				signal1, err := prometheusAdapter.Parse(ctx, alert1)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				existingRRName := response1.RemediationRequestName
+
+				By("2. Process duplicate signal (same fingerprint)")
+				time.Sleep(1 * time.Second) // Ensure distinct timestamp
+				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert2 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID2)
+
+				signal2, err := prometheusAdapter.Parse(ctx, alert2)
+				Expect(err).ToNot(HaveOccurred())
+
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response2.Status).To(Equal("deduplicated"))
+
+				By("3. Query gateway.signal.deduplicated audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.signal.deduplicated"
+				var dedupEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &existingRRName, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					dedupEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				By("4. Validate occurrence_count is incremented")
+				payload, ok := extractGatewayPayload(dedupEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-057: OccurrenceCount should be incremented (>1)
+				occurrenceCount, hasCount := payload.OccurrenceCount.Get()
+				Expect(hasCount).To(BeTrue(), "BR-GATEWAY-057: OccurrenceCount field must be present")
+				Expect(occurrenceCount).To(BeNumerically(">", 1),
+					"BR-GATEWAY-057: OccurrenceCount must be incremented for duplicate")
+
+				GinkgoWriter.Printf("✅ OccurrenceCount incremented: %d\n", occurrenceCount)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-014
+		// Scenario: Multiple Fingerprints Independence
+		// BR: BR-GATEWAY-057
+		// Section: 1.3.2
+		Context("when processing multiple distinct fingerprints (GW-INT-AUD-014, BR-GATEWAY-057)", func() {
+			It("[GW-INT-AUD-014] should handle deduplication independently for different fingerprints", func() {
+				By("1. Create first signal with fingerprint A")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprintA := fmt.Sprintf("ccc%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
+				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert1 := createPrometheusAlert(testNamespace, "HighMemory", "warning", fingerprintA, correlationID1)
+
+				signal1, err := prometheusAdapter.Parse(ctx, alert1)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response1.Status).To(Equal("created"))
+				rrNameA := response1.RemediationRequestName
+
+				By("2. Create second signal with fingerprint B")
+				time.Sleep(1 * time.Second)
+				fingerprintB := fmt.Sprintf("ddd%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
+				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert2 := createPrometheusAlert(testNamespace, "DiskFull", "critical", fingerprintB, correlationID2)
+
+				signal2, err := prometheusAdapter.Parse(ctx, alert2)
+				Expect(err).ToNot(HaveOccurred())
+
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response2.Status).To(Equal("created"))
+				rrNameB := response2.RemediationRequestName
+
+				By("3. Process duplicate of fingerprint A")
+				time.Sleep(1 * time.Second)
+				correlationID3 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert3 := createPrometheusAlert(testNamespace, "HighMemory", "warning", fingerprintA, correlationID3)
+
+				signal3, err := prometheusAdapter.Parse(ctx, alert3)
+				Expect(err).ToNot(HaveOccurred())
+
+				response3, err := gwServer.ProcessSignal(ctx, signal3)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response3.Status).To(Equal("deduplicated"))
+
+				By("4. Verify deduplication audit references correct RR (fingerprint A)")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.signal.deduplicated"
+				var dedupEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &rrNameA, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					dedupEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				payload, ok := extractGatewayPayload(dedupEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-057: RemediationRequest must reference fingerprint A's RR
+				rrRef, hasRR := payload.RemediationRequest.Get()
+				Expect(hasRR).To(BeTrue())
+				Expect(rrRef).To(ContainSubstring(rrNameA),
+					"BR-GATEWAY-057: Dedup audit must reference correct RR for fingerprint A")
+				Expect(rrRef).ToNot(ContainSubstring(rrNameB),
+					"BR-GATEWAY-057: Dedup audit must NOT reference RR for fingerprint B")
+
+				GinkgoWriter.Printf("✅ Independent deduplication validated: RR A=%s, RR B=%s\n", rrNameA, rrNameB)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-015
+		// Scenario: Deduplication Phase-Based Rejection
+		// BR: BR-GATEWAY-057
+		// Section: 1.3.3
+		Context("when signal arrives for completed RR (GW-INT-AUD-015, BR-GATEWAY-057)", func() {
+			It("[GW-INT-AUD-015] should NOT deduplicate signals for RRs in terminal phases", func() {
+				By("1. Create initial signal and process")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("eee%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
+				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert1 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", fingerprint, correlationID1)
+
+				signal1, err := prometheusAdapter.Parse(ctx, alert1)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				existingRRName := response1.RemediationRequestName
+
+				By("2. Update existing RR to Completed phase (simulate terminal state)")
+				var rr remediationv1alpha1.RemediationRequest
+				Eventually(func() error {
+					return k8sClient.Get(ctx, client.ObjectKey{
+						Name:      existingRRName,
+						Namespace: testNamespace,
+					}, &rr)
+				}, 10*time.Second, 500*time.Millisecond).Should(Succeed())
+
+				// Update status to Completed (terminal phase)
+				rr.Status.OverallPhase = remediationv1alpha1.PhaseCompleted
+				Expect(k8sClient.Status().Update(ctx, &rr)).To(Succeed())
+
+				By("3. Process duplicate signal (same fingerprint)")
+				time.Sleep(1 * time.Second)
+				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", fingerprint, correlationID2)
+
+				signal2, err := prometheusAdapter.Parse(ctx, alert2)
+				Expect(err).ToNot(HaveOccurred())
+
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+
+				// BR-GATEWAY-057: Should create NEW RR (not deduplicate to Completed RR)
+				Expect(response2.Status).To(Equal("created"),
+					"BR-GATEWAY-057: Must create new RR for signals when existing RR is in terminal phase")
+				Expect(response2.RemediationRequestName).ToNot(Equal(existingRRName),
+					"BR-GATEWAY-057: New RR must have different name than terminal RR")
+
+				By("4. Verify NEW gateway.crd.created audit (not deduplication)")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID2, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				// Validate it's a creation event, not deduplication
+				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				payload, ok := extractGatewayPayload(crdCreatedEvent)
+				Expect(ok).To(BeTrue())
+				Expect(payload.Fingerprint).To(Equal(fingerprint))
+
+				GinkgoWriter.Printf("✅ Phase-based dedup rejection validated: Old RR=%s (Completed), New RR=%s\n",
+					existingRRName, response2.RemediationRequestName)
 			})
 		})
 	})
