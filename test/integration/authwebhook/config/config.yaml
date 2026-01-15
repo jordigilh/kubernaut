@@ -39,15 +39,6 @@ redis:
   secretsFile: "/etc/datastorage/redis-secrets.yaml"  # ADR-030 Section 6
   passwordKey: "password"
 
-immudb:
-  host: authwebhook_immudb_test
-  port: 3322
-  database: kubernaut_audit
-  username: immudb
-  tls_enabled: false
-  secretsFile: /etc/datastorage/secrets/immudb-secrets.yaml  # ADR-030 Section 6
-  passwordKey: password
-
 logging:
   level: debug
   format: json

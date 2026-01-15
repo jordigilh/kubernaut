@@ -13,15 +13,6 @@ redis:
   secretsFile: /etc/datastorage/redis-secrets.yaml
   passwordKey: password
 
-immudb:
-  host: notification_immudb_test
-  port: 3322
-  database: kubernaut_audit
-  username: immudb
-  tls_enabled: false
-  secretsFile: /etc/datastorage/secrets/immudb-secrets.yaml
-  passwordKey: password
-
 server:
   port: 8080
   metrics_port: 9090
