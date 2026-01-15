@@ -173,7 +173,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 					SLARequirement: "silver",
 				}
 
-				auditClient.RecordClassificationDecision(ctx, sp)
+				auditClient.RecordClassificationDecision(ctx, sp, 125) // 125ms duration
 
 				Expect(mockStore.StoredEvents).To(HaveLen(1))
 				event := mockStore.StoredEvents[0]
@@ -298,7 +298,7 @@ var _ = Describe("SignalProcessing AuditClient", func() {
 
 			// Third call succeeds
 			mockStore.StoreError = nil
-			auditClient.RecordClassificationDecision(ctx, sp)
+			auditClient.RecordClassificationDecision(ctx, sp, 100) // 100ms duration
 			Expect(mockStore.StoredEvents).To(HaveLen(2))
 		})
 	})

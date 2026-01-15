@@ -169,7 +169,7 @@ func (c *AIAnalysisCreator) buildSignalContext(
 
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
-		Severity:         rr.Spec.Severity,
+		Severity:         sp.Status.Severity, // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
 		SignalType:       rr.Spec.SignalType,
 		Environment:      environment,
 		BusinessPriority: priority,

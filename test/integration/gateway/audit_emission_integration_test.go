@@ -29,6 +29,8 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedhelpers "github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -227,6 +229,303 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					"BR-GATEWAY-057: Deduplication must prevent duplicate CRD creation")
 
 				GinkgoWriter.Printf("✅ Deduplication successful: 2 signals → 1 CRD (fingerprint=%s)\n", fingerprint)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-003
+		// Scenario: Correlation ID format validation
+		// BR: BR-GATEWAY-055
+		// Section: 1.1.3
+		Context("when validating correlation ID format (GW-INT-AUD-003, BR-GATEWAY-055)", func() {
+			It("[GW-INT-AUD-003] should generate correlation IDs with correct format for audit traceability", func() {
+				By("1. Process multiple Prometheus signals")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				signal1Payload := createPrometheusAlert(testNamespace, "test-alert-1", "critical", "", "")
+				signal2Payload := createPrometheusAlert(testNamespace, "test-alert-2", "warning", "", "")
+
+				// Parse signals
+				signal1, err := prometheusAdapter.Parse(ctx, signal1Payload)
+				Expect(err).ToNot(HaveOccurred())
+				signal2, err := prometheusAdapter.Parse(ctx, signal2Payload)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create Gateway server
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Process signals
+				response1, err := gwServer.ProcessSignal(ctx, signal1)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID1 := response1.RemediationRequestName // RR name = correlation ID
+
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID2 := response2.RemediationRequestName
+
+				By("2. Validate correlation ID format")
+				// BR-GATEWAY-055: Format: rr-{12-char-hex-fingerprint}-{10-digit-timestamp}
+				// This enables fingerprint extraction for deduplication
+				correlationIDPattern := `^rr-[a-f0-9]{12}-\d{10}$`
+				Expect(correlationID1).To(MatchRegexp(correlationIDPattern),
+					"BR-GATEWAY-055: Correlation ID must follow rr-{fingerprint}-{timestamp} format")
+				Expect(correlationID2).To(MatchRegexp(correlationIDPattern),
+					"BR-GATEWAY-055: Correlation ID must follow standard format")
+
+				By("3. Validate correlation IDs are unique")
+				Expect(correlationID1).ToNot(Equal(correlationID2),
+					"BR-GATEWAY-055: Each signal must have unique correlation ID for audit tracing")
+
+				GinkgoWriter.Printf("✅ Correlation IDs valid: %s, %s\n", correlationID1, correlationID2)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-004
+		// Scenario: Signal labels and annotations preservation
+		// BR: BR-GATEWAY-055
+		// Section: 1.1.4
+		Context("when processing signals with custom labels (GW-INT-AUD-004, BR-GATEWAY-055)", func() {
+			It("[GW-INT-AUD-004] should preserve all signal labels and annotations in audit events", func() {
+				By("1. Create Prometheus alert with custom labels")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				customPayload := []byte(fmt.Sprintf(`{
+					"alerts": [{
+						"labels": {
+							"alertname": "CustomLabelsTest",
+							"severity": "critical",
+							"namespace": "%s",
+							"team": "platform",
+							"environment": "production",
+							"component": "api-server"
+						},
+						"annotations": {
+							"summary": "Custom alert with metadata",
+							"description": "Testing label preservation",
+							"runbook_url": "https://wiki.example.com/runbook"
+						},
+						"startsAt": "2025-01-15T10:00:00Z"
+					}]
+				}`, testNamespace))
+
+				By("2. Parse and process signal through Gateway")
+				signal, err := prometheusAdapter.Parse(ctx, customPayload)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID := response.RemediationRequestName
+
+				By("3. Query audit event from DataStorage")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.signal.received"
+				var receivedEvents []ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					receivedEvents = events
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+					"gateway.signal.received audit event should exist")
+
+				By("4. Validate all custom labels are preserved")
+				event := receivedEvents[0]
+				payload, ok := extractGatewayPayload(&event)
+				Expect(ok).To(BeTrue())
+
+				signalLabels, hasLabels := payload.SignalLabels.Get()
+				Expect(hasLabels).To(BeTrue(), "BR-GATEWAY-055: SignalLabels must be preserved")
+				Expect(signalLabels).To(HaveKeyWithValue("team", "platform"))
+				Expect(signalLabels).To(HaveKeyWithValue("environment", "production"))
+				Expect(signalLabels).To(HaveKeyWithValue("component", "api-server"))
+				Expect(signalLabels).To(HaveKeyWithValue("severity", "critical"))
+
+				By("5. Validate all annotations are preserved")
+				signalAnnotations, hasAnnotations := payload.SignalAnnotations.Get()
+				Expect(hasAnnotations).To(BeTrue(), "BR-GATEWAY-055: SignalAnnotations must be preserved")
+				Expect(signalAnnotations).To(HaveKeyWithValue("summary", "Custom alert with metadata"))
+				Expect(signalAnnotations).To(HaveKeyWithValue("runbook_url", "https://wiki.example.com/runbook"))
+
+				GinkgoWriter.Printf("✅ All custom labels and annotations preserved in audit event\n")
+			})
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// SCENARIO 1.2: CRD CREATED AUDIT EVENTS (BR-GATEWAY-056)
+	// Tests GW-INT-AUD-006, GW-INT-AUD-007
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
+		var (
+			testNamespace string
+		)
+
+		BeforeEach(func() {
+			processID := GinkgoParallelProcess()
+			testNamespace = fmt.Sprintf("gw-aud-crd-%d-%s", processID, uuid.New().String()[:8])
+
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
+		})
+
+		AfterEach(func() {
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		// Test ID: GW-INT-AUD-006
+		// Scenario: CRD created audit event emission
+		// BR: BR-GATEWAY-056
+		// Section: 1.2.1
+		Context("when CRD is created (GW-INT-AUD-006, BR-GATEWAY-056)", func() {
+			It("[GW-INT-AUD-006] should emit gateway.crd.created audit event after RemediationRequest creation", func() {
+				By("1. Process Prometheus signal to create CRD")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				signalPayload := createPrometheusAlert(testNamespace, "test-crd-audit", "critical", "", "")
+
+				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID := response.RemediationRequestName
+
+				By("2. Query gateway.crd.created audit event from DataStorage")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+					"gateway.crd.created audit event should exist in DataStorage")
+
+				By("3. Validate audit event metadata")
+				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				Expect(crdCreatedEvent.EventAction).To(Equal("created"))
+				Expect(crdCreatedEvent.EventCategory).To(Equal(ogenclient.AuditEventEventCategoryGateway))
+				Expect(crdCreatedEvent.CorrelationID).To(Equal(correlationID))
+
+				By("4. Validate Gateway payload contains CRD reference")
+				payload, ok := extractGatewayPayload(crdCreatedEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-056: RemediationRequest field must contain namespace/name format
+				rrRef, hasRR := payload.RemediationRequest.Get()
+				Expect(hasRR).To(BeTrue(), "BR-GATEWAY-056: RemediationRequest field must be present")
+				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`),
+					"BR-GATEWAY-056: RemediationRequest must be in namespace/name format")
+
+				// Validate namespace matches
+				Expect(payload.Namespace).To(Equal(testNamespace))
+
+				GinkgoWriter.Printf("✅ CRD created audit event validated: rr=%s\n", rrRef)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-007
+		// Scenario: CRD target resource in audit event
+		// BR: BR-GATEWAY-056
+		// Section: 1.2.2
+		Context("when CRD has target resource (GW-INT-AUD-007, BR-GATEWAY-056)", func() {
+			It("[GW-INT-AUD-007] should include target resource metadata in CRD created audit event", func() {
+				By("1. Create Prometheus alert with resource information")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				// Prometheus alerts include pod/namespace in labels
+				payloadWithResource := []byte(fmt.Sprintf(`{
+					"alerts": [{
+						"labels": {
+							"alertname": "PodCrashLoop",
+							"severity": "critical",
+							"namespace": "%s",
+							"pod": "failing-pod-xyz",
+							"container": "app"
+						},
+						"annotations": {
+							"summary": "Pod is crash looping",
+							"description": "Pod failing-pod-xyz in namespace %s is restarting"
+						},
+						"startsAt": "2025-01-15T10:00:00Z"
+					}]
+				}`, testNamespace, testNamespace))
+
+				By("2. Parse and process signal through Gateway")
+				signal, err := prometheusAdapter.Parse(ctx, payloadWithResource)
+				Expect(err).ToNot(HaveOccurred())
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				correlationID := response.RemediationRequestName
+
+				By("3. Query gateway.crd.created audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				By("4. Validate target resource metadata is preserved")
+				payload, ok := extractGatewayPayload(crdCreatedEvent)
+				Expect(ok).To(BeTrue())
+
+				// BR-GATEWAY-056: CRD created event includes ResourceKind and ResourceName
+				// Note: SignalLabels are in gateway.signal.received, not gateway.crd.created
+				// The CRD created event focuses on the created resource metadata
+				
+				// Validate namespace is preserved
+				Expect(payload.Namespace).To(Equal(testNamespace),
+					"BR-GATEWAY-056: Namespace must match signal namespace")
+
+				// Validate alert name is preserved
+				Expect(payload.AlertName).To(Equal("PodCrashLoop"),
+					"BR-GATEWAY-056: Alert name must be preserved")
+
+				// Validate RemediationRequest reference
+				rrRef, hasRR := payload.RemediationRequest.Get()
+				Expect(hasRR).To(BeTrue())
+				Expect(rrRef).To(ContainSubstring(testNamespace),
+					"BR-GATEWAY-056: RR reference must contain namespace")
+				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`),
+					"BR-GATEWAY-056: RR reference must be in namespace/name format")
+
+				GinkgoWriter.Printf("✅ Target resource metadata preserved: alert=%s, namespace=%s\n",
+					payload.AlertName, payload.Namespace)
 			})
 		})
 	})
