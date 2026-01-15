@@ -207,7 +207,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				response2, err := gwServer.ProcessSignal(ctx, signal2)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(response2.Status).To(Equal("duplicate"), "BR-GATEWAY-057: Duplicate signal must be deduplicated")
+				Expect(response2.Status).To(Equal("deduplicated"), "BR-GATEWAY-057: Duplicate signal must be deduplicated")
 				Expect(response2.Duplicate).To(BeTrue())
 				Expect(response2.RemediationRequestName).To(Equal(firstCRDName),
 					"Duplicate should reference existing CRD")
