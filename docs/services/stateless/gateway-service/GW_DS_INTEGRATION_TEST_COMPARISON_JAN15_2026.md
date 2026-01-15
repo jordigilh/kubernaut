@@ -18,34 +18,34 @@ var _ = SynchronizedBeforeSuite(
     func() []byte {
         // 1. Create Podman network
         createNetwork()
-        
+
         // 2. Start REAL PostgreSQL container
         startPostgreSQL()  // Port 15433, postgres:16-alpine
-        
+
         // 3. Start REAL Redis container
         startRedis()  // Port 16379, redis:7-alpine
-        
+
         // 4. Apply migrations to PUBLIC schema
         tempDB := mustConnectPostgreSQL()
         applyMigrationsWithPropagationTo(tempDB.DB)
-        
+
         return []byte("ready")
     },
-    
+
     // Phase 2: Connect to shared infrastructure (ALL processes)
     func(data []byte) {
         processNum := GinkgoParallelProcess()
-        
+
         // Connect to REAL PostgreSQL
         connectPostgreSQL()
-        
+
         // Create process-specific schema for isolation
         schemaName, err = createProcessSchema(db, processNum)
         // Each process gets: test_process_1, test_process_2, etc.
-        
+
         // Connect to REAL Redis
         connectRedis()
-        
+
         // Create REAL business components
         repo = repository.NewNotificationAuditRepository(db.DB, logger)  // REAL repo
         dlqClient, err = dlq.NewClient(redisClient, logger, 10000)       // REAL DLQ
@@ -89,15 +89,15 @@ $ grep -r "Mock\|fake\.\|ErrorInjectable" test/integration/datastorage/
 ```go
 var _ = BeforeSuite(func() {
     ctx, cancel = context.WithCancel(context.Background())
-    
+
     // Only envtest (in-memory K8s API)
     testEnv = &envtest.Environment{
         CRDDirectoryPaths: []string{"../../../config/crd/bases"},
     }
-    
+
     k8sConfig, err = testEnv.Start()
     k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
-    
+
     // NO PostgreSQL
     // NO DataStorage
     // NO audit infrastructure
@@ -196,7 +196,7 @@ Gateway integration tests **DO violate project principles** because they:
 
 ---
 
-**Document Status**: ✅ Active  
-**Created**: 2026-01-15  
-**Purpose**: Clarify that DataStorage follows principles, Gateway does not  
+**Document Status**: ✅ Active
+**Created**: 2026-01-15
+**Purpose**: Clarify that DataStorage follows principles, Gateway does not
 **Blocks**: Gateway test plan implementation until infrastructure upgraded
