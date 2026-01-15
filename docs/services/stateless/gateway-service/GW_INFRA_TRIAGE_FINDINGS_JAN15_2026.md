@@ -28,13 +28,13 @@ User Request: "Triage test/infrastructure with programmatic go to ensure DS serv
 func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
     // 1. Create Kind cluster
     createKindCluster(clusterName, kubeconfigPath, writer)
-    
+
     // 2. Build Docker image
     buildDataStorageImage(writer)
-    
+
     // 3. Load image into Kind
     loadDataStorageImage(clusterName, writer)
-    
+
     return nil
 }
 ```
@@ -63,36 +63,36 @@ var _ = SynchronizedBeforeSuite(
     func() []byte {
         // 1. Preflight checks
         preflightCheck()
-        
+
         // 2. Create Podman network
         createNetwork()
-        
+
         // 3. Start PostgreSQL container
         startPostgreSQL()
-        
+
         // 4. Start Redis container
         startRedis()
-        
+
         // 5. Apply migrations
         tempDB := mustConnectPostgreSQL()
         applyMigrationsWithPropagationTo(tempDB.DB)
-        
+
         return []byte("ready")
     },
-    
+
     // Phase 2: Connect to shared infrastructure (ALL processes)
     func(data []byte) {
         processNum := GinkgoParallelProcess()
-        
+
         // Connect to PostgreSQL
         connectPostgreSQL()
-        
+
         // Create process-specific schema for isolation
         schemaName, err = createProcessSchema(db, processNum)
-        
+
         // Connect to Redis
         connectRedis()
-        
+
         // Create business components
         repo = repository.NewNotificationAuditRepository(db.DB, logger)
         dlqClient, err = dlq.NewClient(redisClient, logger, 10000)
@@ -107,6 +107,52 @@ var _ = SynchronizedBeforeSuite(
 4. ✅ **Parallel-safe**: Schema-level or namespace-level isolation
 5. ✅ **Real infrastructure**: PostgreSQL, Redis in Podman (not mocks)
 6. ✅ **Real business components**: Repository, DLQ client, etc.
+7. ✅ **CRITICAL**: **Each process creates its OWN DataStorage client**
+
+### **🔑 Per-Process DataStorage Client Pattern** (USER REQUIREMENT)
+
+**MANDATORY**: Each parallel process must create its **own** DataStorage client instance.
+
+**Pattern** (from AIAnalysis suite line 403-420):
+```go
+// Phase 2: ALL processes execute this
+func(data []byte) {
+    processNum := GinkgoParallelProcess()
+    
+    // CRITICAL: Each process gets unique mock user transport
+    auditMockTransport := testauth.NewMockUserTransport(
+        fmt.Sprintf("test-aianalysis@integration.test-p%d", processNum),
+    )
+    
+    // CRITICAL: Each process creates its OWN dsClient
+    dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
+        "http://127.0.0.1:18095", // Shared DataStorage service
+        5*time.Second,
+        auditMockTransport,       // Unique per process
+    )
+    Expect(err).ToNot(HaveOccurred())
+    
+    // CRITICAL: Each process creates its OWN BufferedStore
+    auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
+    Expect(err).ToNot(HaveOccurred())
+}
+```
+
+**Why Per-Process Clients?**
+- ✅ **Parallel execution safety**: No shared state between processes
+- ✅ **Independent buffers**: Each process has its own audit buffer
+- ✅ **User isolation**: Mock user transport includes process number for traceability
+- ✅ **Connection pooling**: HTTP client connection pool per process
+
+**Verified in Services**:
+- ✅ AIAnalysis: `test/integration/aianalysis/suite_test.go:406-420`
+- ✅ SignalProcessing: `test/integration/signalprocessing/suite_test.go:283-290`
+- ✅ RemediationOrchestrator: `test/integration/remediationorchestrator/suite_test.go:266-272`
+- ✅ WorkflowExecution: `test/integration/workflowexecution/suite_test.go:213-219`
+- ✅ AuthWebhook: `test/integration/authwebhook/suite_test.go:124-130`
+- ✅ Notification: `test/integration/notification/suite_test.go:312-318`
+
+**Gateway Must Follow This Pattern**: Create `dsClient` in Phase 2, NOT Phase 1.
 
 ---
 
@@ -119,15 +165,15 @@ var _ = SynchronizedBeforeSuite(
 ```go
 var _ = BeforeSuite(func() {
     ctx, cancel = context.WithCancel(context.Background())
-    
+
     // Only envtest (in-memory K8s API)
     testEnv = &envtest.Environment{
         CRDDirectoryPaths: []string{"../../../config/crd/bases"},
     }
-    
+
     k8sConfig, err = testEnv.Start()
     k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
-    
+
     // NO PostgreSQL
     // NO DataStorage
     // NO SynchronizedBeforeSuite
@@ -150,7 +196,7 @@ var _ = BeforeSuite(func() {
 var (
     // Shared infrastructure (Phase 1)
     postgresContainer = "gateway-postgres-test"
-    redisContainer    = "gateway-redis-test"  // If needed for Gateway
+    // NO redisContainer - Gateway doesn't use Redis anymore
     
     // Per-process resources (Phase 2)
     ctx            context.Context
@@ -158,13 +204,13 @@ var (
     k8sClient      client.Client
     testEnv        *envtest.Environment
     k8sConfig      *rest.Config
-    dsClient       *api.Client       // ← NEW: Real DataStorage client
+    dsClient       *audit.OpenAPIClientAdapter  // ← NEW: Per-process DS client
     logger         logr.Logger
-    gatewayService *gateway.Service  // ← NEW: Real Gateway service
+    gatewayServer  *gateway.Server              // ← NEW: Real Gateway server
 )
 
 var _ = SynchronizedBeforeSuite(
-    // Phase 1: Start shared Podman infrastructure (Process 1 only)
+    // Phase 1: Start shared Podman infrastructure (Process 1 ONLY)
     func() []byte {
         // 1. Preflight checks
         preflightCheck()
@@ -179,8 +225,10 @@ var _ = SynchronizedBeforeSuite(
         tempDB := mustConnectPostgreSQL()
         applyMigrationsWithPropagationTo(tempDB.DB)
         
-        // 5. Start DataStorage service (optional: can be in-process)
-        // startDataStorageService() // OR use direct DB connection
+        // 5. Start DataStorage service (in separate container)
+        startDataStorageService()
+        
+        // NO DS client creation here - that's per-process in Phase 2
         
         return []byte("ready")
     },
@@ -192,14 +240,15 @@ var _ = SynchronizedBeforeSuite(
         ctx, cancel = context.WithCancel(context.Background())
         logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
         
-        // Connect to PostgreSQL (create per-process schema if needed)
-        connectPostgreSQL()
+        // CRITICAL: Each process creates its OWN DataStorage client
+        mockTransport := testauth.NewMockUserTransport(
+            fmt.Sprintf("test-gateway@integration.test-p%d", processNum),
+        )
         
-        // Create DataStorage client
         dsClient, err = audit.NewOpenAPIClientAdapterWithTransport(
-            "http://127.0.0.1:15433",  // DataStorage URL
+            "http://127.0.0.1:15433",  // Shared DataStorage URL
             5*time.Second,
-            authTransport,
+            mockTransport,              // Unique per process
         )
         Expect(err).ToNot(HaveOccurred())
         
@@ -210,8 +259,8 @@ var _ = SynchronizedBeforeSuite(
         k8sConfig, err = testEnv.Start()
         k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
         
-        // Create Gateway service with real dependencies
-        gatewayService = gateway.NewService(dsClient, k8sClient, logger)
+        // Create Gateway server with real dependencies (per-process)
+        gatewayServer = gateway.NewServer(dsClient, k8sClient, logger)
     },
 )
 ```
@@ -332,7 +381,7 @@ func FindAuditEventByTypeAndCorrelationID(
 
 ---
 
-**Document Status**: ✅ Active  
-**Created**: 2026-01-15  
-**Purpose**: Triage infrastructure patterns for Gateway integration tests  
+**Document Status**: ✅ Active
+**Created**: 2026-01-15
+**Purpose**: Triage infrastructure patterns for Gateway integration tests
 **Next Step**: Apply DataStorage pattern to Gateway suite

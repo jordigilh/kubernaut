@@ -97,7 +97,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 			for _, tc := range testCases {
 				// Calculate uncapped backoff
 				uncappedBackoff := baseDelay * (1 << uint(tc.retryCount))
-				
+
 				// Apply cap
 				backoff := uncappedBackoff
 				if backoff > maxDelay {
@@ -188,7 +188,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 
 			// Simulate retry progression
 			retryCount := 0
-			
+
 			// First failure: increment retry count
 			retryCount++
 			Expect(retryCount).To(Equal(1), "First failure should increment to 1")

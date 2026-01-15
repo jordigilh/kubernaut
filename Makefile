@@ -144,8 +144,8 @@ test-integration-%: ginkgo ## Run integration tests for specified service (e.g.,
 	@echo "🧪 $* - Integration Tests with Coverage ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
-	@echo "📊 Coverage: Capturing controller + handler code coverage"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast --cover --coverprofile=coverage_integration_$*.out ./test/integration/$*/...
+	@echo "📊 Coverage: Capturing controller + handler code coverage (per WE pattern)"
+	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --fail-fast --cover --coverprofile=coverage_integration_$*.out ./test/integration/$*/... -- -coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*
 
 # E2E Tests
 .PHONY: ensure-coverdata
