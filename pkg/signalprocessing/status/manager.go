@@ -32,6 +32,17 @@ func NewManager(client client.Client, apiReader client.Reader) *Manager {
 	}
 }
 
+// GetCurrentPhase fetches the current phase using the non-cached APIReader
+// This is used for idempotency checks to prevent duplicate phase processing
+// SP-BUG-PHASE-TRANSITION-001: Bypass cache to get FRESH phase data
+func (m *Manager) GetCurrentPhase(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) (signalprocessingv1alpha1.SignalProcessingPhase, error) {
+	fresh := &signalprocessingv1alpha1.SignalProcessing{}
+	if err := m.apiReader.Get(ctx, client.ObjectKeyFromObject(sp), fresh); err != nil {
+		return "", fmt.Errorf("failed to fetch current phase: %w", err)
+	}
+	return fresh.Status.Phase, nil
+}
+
 // AtomicStatusUpdate atomically updates phase and status fields in a single API call
 // This prevents race conditions and reduces API server load (1 write instead of N writes)
 //

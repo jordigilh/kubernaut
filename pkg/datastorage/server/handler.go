@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -63,6 +64,7 @@ type DBInterface interface {
 // V1.0: Embedding service removed (label-only search per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
 type Handler struct {
 	db                    DBInterface
+	sqlDB                 *sql.DB                           // For reconstruction queries (BR-AUDIT-006)
 	logger                logr.Logger
 	actionTraceRepository *repository.ActionTraceRepository // ADR-033: Multi-dimensional success tracking
 	workflowRepo          *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
@@ -93,6 +95,14 @@ func WithActionTraceRepository(repo *repository.ActionTraceRepository) HandlerOp
 func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 	return func(h *Handler) {
 		h.workflowRepo = repo
+	}
+}
+
+// WithSQLDB sets the SQL database connection for reconstruction queries
+// BR-AUDIT-006: RemediationRequest reconstruction from audit trail
+func WithSQLDB(db *sql.DB) HandlerOption {
+	return func(h *Handler) {
+		h.sqlDB = db
 	}
 }
 

@@ -294,7 +294,8 @@ func (w *FileWatcher) handleFileChange() {
 }
 
 // computeHash calculates SHA256 hash of content.
+// Returns full 64-character hash for audit trail and policy version tracking (BR-SP-072).
 func computeHash(content []byte) string {
 	hash := sha256.Sum256(content)
-	return hex.EncodeToString(hash[:8]) // First 8 bytes for brevity
+	return hex.EncodeToString(hash[:]) // Full SHA256 hash for audit compliance
 }

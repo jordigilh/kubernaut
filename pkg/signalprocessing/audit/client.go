@@ -217,7 +217,8 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 // RecordClassificationDecision records classification decision event.
 // BR-SP-090: Logs environment, priority, and business classification decisions
 // DD-SEVERITY-001: Includes external and normalized severity for audit trail
-func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
+// durationMs: Classification duration in milliseconds (for performance metrics)
+func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, durationMs int) {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	payload := api.SignalProcessingAuditPayload{
@@ -225,7 +226,13 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 		Signal:    sp.Spec.Signal.Name,
 		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
-	payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity))
+	payload.DurationMs.SetTo(durationMs)
+
+	// DD-SEVERITY-001: Use normalized severity (sp.Status.Severity) for the main Severity field
+	// to ensure it always matches the required enum ["critical", "warning", "info"]
+	if sp.Status.Severity != "" {
+		payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Status.Severity))
+	}
 
 	// DD-SEVERITY-001: Record external and normalized severity for compliance audit trail
 	if sp.Spec.Signal.Severity != "" {
@@ -237,6 +244,11 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 		}
 		// Always set determination_source to "rego-policy" when normalized severity exists
 		payload.DeterminationSource.SetTo(api.SignalProcessingAuditPayloadDeterminationSourceRegoPolicy)
+	}
+
+	// Add policy hash for audit trail and policy version tracking
+	if sp.Status.PolicyHash != "" {
+		payload.PolicyHash.SetTo(sp.Status.PolicyHash)
 	}
 
 	// Add all classification results
@@ -275,6 +287,7 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
+	audit.SetDuration(event, durationMs)
 
 	// Graceful degradation: skip audit if no RemediationRequestRef (test edge cases)
 	if sp.Spec.RemediationRequestRef.Name == "" {

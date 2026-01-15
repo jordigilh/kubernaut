@@ -65,11 +65,18 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	spec := analysis.Spec.AnalysisRequest.SignalContext
 	enrichment := spec.EnrichmentResults
 
+	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for correlation consistency
+	// Priority: RemediationRequestRef.Name (human-readable) > RemediationID (fallback for backward compatibility)
+	correlationID := analysis.Spec.RemediationID // Fallback
+	if analysis.Spec.RemediationRequestRef.Name != "" {
+		correlationID = analysis.Spec.RemediationRequestRef.Name // Preferred
+	}
+
 	// BR-AI-080: Build request with all required HAPI fields using generated types
 	req := &client.IncidentRequest{
 		// REQUIRED fields per HAPI OpenAPI spec
-		IncidentID:        analysis.Name,               // Q1: Use CR name
-		RemediationID:     analysis.Spec.RemediationID, // Q2: Use spec field (MANDATORY per DD-WORKFLOW-002)
+		IncidentID:        analysis.Name,    // Q1: Use CR name
+		RemediationID:     correlationID,    // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
 		SignalType:        spec.SignalType,
 		Severity:          spec.Severity,
 		SignalSource:      "kubernaut",
@@ -120,10 +127,17 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 		)
 	}
 
+	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for correlation consistency
+	// Priority: RemediationRequestRef.Name (human-readable) > RemediationID (fallback for backward compatibility)
+	correlationID := analysis.Spec.RemediationID // Fallback
+	if analysis.Spec.RemediationRequestRef.Name != "" {
+		correlationID = analysis.Spec.RemediationRequestRef.Name // Preferred
+	}
+
 	req := &client.RecoveryRequest{
 		// REQUIRED fields
 		IncidentID:    analysis.Name,
-		RemediationID: analysis.Spec.RemediationID,
+		RemediationID: correlationID, // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
 	}
 
 	// Set recovery-specific fields using generated opt types
@@ -145,9 +159,9 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 		"isEmpty", spec.SignalType == "",
 		"req.SignalType.Set", req.SignalType.Set,
 	)
-	
+
 	req.SignalType.SetTo(spec.SignalType)
-	
+
 	// DEBUG: Log AFTER SetTo
 	b.log.Info("🔍 DEBUG: AFTER SetTo",
 		"crdName", analysis.Name,
@@ -155,7 +169,7 @@ func (b *RequestBuilder) BuildRecoveryRequest(analysis *aianalysisv1.AIAnalysis)
 		"req.SignalType.Value", req.SignalType.Value,
 		"requestPointer", fmt.Sprintf("%p", req),
 	)
-	
+
 	req.Severity.SetTo(spec.Severity)
 	req.ResourceNamespace.SetTo(spec.TargetResource.Namespace)
 	req.ResourceKind.SetTo(spec.TargetResource.Kind)

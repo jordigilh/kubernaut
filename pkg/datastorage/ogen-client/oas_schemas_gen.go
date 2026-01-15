@@ -12660,6 +12660,9 @@ type SignalProcessingAuditPayload struct {
 	NormalizedSeverity OptSignalProcessingAuditPayloadNormalizedSeverity `json:"normalized_severity"`
 	// Source of severity determination for audit trail.
 	DeterminationSource OptSignalProcessingAuditPayloadDeterminationSource `json:"determination_source"`
+	// SHA256 hash of Rego policy used for severity determination (for audit trail and policy version
+	// tracking).
+	PolicyHash OptString `json:"policy_hash"`
 	// Classified environment.
 	Environment OptSignalProcessingAuditPayloadEnvironment `json:"environment"`
 	// Source of the environment classification.
@@ -12733,6 +12736,11 @@ func (s *SignalProcessingAuditPayload) GetNormalizedSeverity() OptSignalProcessi
 // GetDeterminationSource returns the value of DeterminationSource.
 func (s *SignalProcessingAuditPayload) GetDeterminationSource() OptSignalProcessingAuditPayloadDeterminationSource {
 	return s.DeterminationSource
+}
+
+// GetPolicyHash returns the value of PolicyHash.
+func (s *SignalProcessingAuditPayload) GetPolicyHash() OptString {
+	return s.PolicyHash
 }
 
 // GetEnvironment returns the value of Environment.
@@ -12863,6 +12871,11 @@ func (s *SignalProcessingAuditPayload) SetNormalizedSeverity(val OptSignalProces
 // SetDeterminationSource sets the value of DeterminationSource.
 func (s *SignalProcessingAuditPayload) SetDeterminationSource(val OptSignalProcessingAuditPayloadDeterminationSource) {
 	s.DeterminationSource = val
+}
+
+// SetPolicyHash sets the value of PolicyHash.
+func (s *SignalProcessingAuditPayload) SetPolicyHash(val OptString) {
+	s.PolicyHash = val
 }
 
 // SetEnvironment sets the value of Environment.

@@ -69,8 +69,8 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 		metrics:         m,
 		auditClient:     auditClient,
 		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m), // P1.1: Initialize response processor (audit recorded by handler, not processor)
-		builder:         NewRequestBuilder(log),       // P1.2: Initialize request builder
+		processor:       NewResponseProcessor(log, m),   // P1.1: Initialize response processor (audit recorded by handler, not processor)
+		builder:         NewRequestBuilder(log),         // P1.2: Initialize request builder
 		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
 }
@@ -84,16 +84,15 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		"isRecoveryAttempt", analysis.Spec.IsRecoveryAttempt,
 	)
 
-	// AA-HAPI-001: Idempotency partially working via AtomicStatusUpdate InvestigationTime check
-	// Known issue: K8s cache lag can cause 1 duplicate call before check triggers
-	// Full fix requires addressing controller-runtime cache refresh timing
+	// AA-HAPI-001: Idempotency is handled at controller level (phase_handlers.go:125-130)
+	// via AtomicStatusUpdate callback with APIReader refetch. No handler-level check needed.
 
 	// Track duration (per crd-schema.md: InvestigationTime)
 	startTime := time.Now()
 
 	// BR-AI-083: Route based on IsRecoveryAttempt
 	if analysis.Spec.IsRecoveryAttempt {
-		h.log.Info("Using recovery endpoint",
+		h.log.Info("Calling HolmesGPT-API recovery endpoint",
 			"attemptNumber", analysis.Spec.RecoveryAttemptNumber,
 		)
 		recoveryReq := h.builder.BuildRecoveryRequest(analysis) // P1.2: Use request builder
@@ -248,7 +247,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		// Transition to permanent failure after max retries
 		now := metav1.Now()
 		analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
@@ -274,7 +273,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
-	analysis.Status.CompletedAt = &now // Per crd-schema.md: set on terminal state
+	analysis.Status.CompletedAt = &now                       // Per crd-schema.md: set on terminal state
 	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
 	analysis.Status.Reason = "APIError"
 	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
@@ -322,6 +321,7 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 	}
 	analysis.Annotations[RetryCountAnnotation] = strconv.Itoa(count)
 }
+
 // ========================================
 // BR-HAPI-197: WORKFLOW RESOLUTION FAILURE HANDLING
 // When HolmesGPT-API returns needs_human_review=true, we MUST:

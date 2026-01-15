@@ -104,6 +104,12 @@ func MapToRRFields(parsedData *ParsedAuditData) (*ReconstructedRRFields, error) 
 			result.Status.TimeoutConfig = tc
 		}
 
+	case "aianalysis.analysis.completed":
+		// Map AI Analysis audit data to RR Spec (Gap #4)
+		if len(parsedData.ProviderData) > 0 {
+			result.Spec.ProviderData = []byte(parsedData.ProviderData)
+		}
+
 	case "workflowexecution.selection.completed":
 		// Map Workflow Selection audit data to RR Status (Gap #5)
 		if parsedData.SelectedWorkflowRef != nil {
@@ -198,12 +204,24 @@ func MergeAuditData(events []ParsedAuditData) (*ReconstructedRRFields, error) {
 			if len(eventFields.Spec.OriginalPayload) > 0 {
 				result.Spec.OriginalPayload = eventFields.Spec.OriginalPayload
 			}
+			// Gap #4: Merge ProviderData from AI Analysis event
+			if len(eventFields.Spec.ProviderData) > 0 {
+				result.Spec.ProviderData = eventFields.Spec.ProviderData
+			}
 		}
 
 		// Merge status fields (orchestrator events populate status)
 		if eventFields.Status != nil {
 			if eventFields.Status.TimeoutConfig != nil {
 				result.Status.TimeoutConfig = eventFields.Status.TimeoutConfig
+			}
+			// Gap #5: Merge SelectedWorkflowRef from workflow selection event
+			if eventFields.Status.SelectedWorkflowRef != nil {
+				result.Status.SelectedWorkflowRef = eventFields.Status.SelectedWorkflowRef
+			}
+			// Gap #6: Merge ExecutionRef from workflow execution event
+			if eventFields.Status.ExecutionRef != nil {
+				result.Status.ExecutionRef = eventFields.Status.ExecutionRef
 			}
 		}
 	}

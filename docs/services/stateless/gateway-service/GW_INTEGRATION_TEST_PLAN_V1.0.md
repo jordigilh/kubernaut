@@ -545,12 +545,22 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         Expect(err).ToNot(HaveOccurred())
         Expect(shouldDedupe).To(BeTrue())
 
-        dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
-        Expect(dedupeEvent).ToNot(BeNil())
+        // CRITICAL: Query DataStorage by correlation ID for test isolation (parallel execution)
+        // Use OpenAPI constant for event type
+        dedupeEvent := FindAuditEventByTypeAndCorrelationID(
+            ctx,
+            dsClient,
+            api.GatewayAuditPayloadEventTypeGatewaySignalDeduplicated, // OpenAPI constant
+            signal.CorrelationID, // Test isolation
+            30*time.Second,
+        )
+        
+        Expect(dedupeEvent).ToNot(BeNil(), "Deduplication audit event should exist in DataStorage")
         Expect(dedupeEvent.EventAction).To(Equal("deduplicated"))
+        Expect(dedupeEvent.CorrelationID).To(Equal(signal.CorrelationID), "Correlation ID must match for test isolation")
 
         // Parse EventData to get GatewayAuditPayload
-        gatewayPayload := dedupeEvent.EventData.GatewayAuditPayload
+        gatewayPayload := ParseGatewayPayload(dedupeEvent)
 
         // Business rule: DeduplicationStatus proves deduplication occurred
         dedupStatus, ok := gatewayPayload.DeduplicationStatus.Get()
@@ -2208,7 +2218,13 @@ var _ = Describe("BR-GATEWAY-039/074-076: Middleware Chain Execution", func() {
 ## 🛠️ **Test Helper Functions**
 
 ### **Purpose**
-Provide reusable helpers to enforce consistent audit event access patterns across all integration tests.
+Provide reusable helpers to enforce consistent audit event access patterns across all integration tests with **parallel execution safety**.
+
+### **Critical Design Constraints**
+1. ✅ **Real DataStorage**: Tests use actual DataStorage service in Podman container (no mocks)
+2. ✅ **Parallel Execution**: Multiple tests run concurrently against same DataStorage instance
+3. ✅ **Test Isolation**: MUST filter by correlation ID to prevent cross-test contamination
+4. ✅ **OpenAPI Constants**: Use generated constants for type safety
 
 ### **Helper File Location**
 Create: `test/integration/gateway/audit_test_helpers.go`
@@ -2219,22 +2235,135 @@ Create: `test/integration/gateway/audit_test_helpers.go`
 package gateway_test
 
 import (
+	"context"
 	"fmt"
 	"strings"
-
+	"time"
+	
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/gomega"
 )
+
+// ========================================
+// PARALLEL-SAFE AUDIT QUERY FUNCTIONS
+// ========================================
+
+// FindAuditEventByCorrelationID queries DataStorage for audit event by correlation ID
+// CRITICAL: Ensures test isolation in parallel execution
+// Use: Primary method for finding audit events in integration tests
+func FindAuditEventByCorrelationID(ctx context.Context, dsClient *api.Client, correlationID string, timeout time.Duration) *api.AuditEvent {
+	var event *api.AuditEvent
+	
+	Eventually(func() bool {
+		// Query DataStorage API with correlation ID filter
+		resp, err := dsClient.ListAuditEvents(ctx, api.ListAuditEventsParams{
+			CorrelationID: api.NewOptString(correlationID),
+			Limit:         api.NewOptInt(1), // Only need first match
+		})
+		
+		if err != nil {
+			return false
+		}
+		
+		if len(resp.Events) == 0 {
+			return false
+		}
+		
+		event = &resp.Events[0]
+		return true
+	}, timeout, 500*time.Millisecond).Should(BeTrue(), 
+		fmt.Sprintf("Audit event with correlation_id '%s' should exist in DataStorage", correlationID))
+	
+	return event
+}
+
+// FindAuditEventByTypeAndCorrelationID queries DataStorage for audit event by type AND correlation ID
+// CRITICAL: Double isolation - ensures we get the right event type for this test's signal
+// Use: When test needs specific event type (e.g., signal.received vs signal.deduplicated)
+func FindAuditEventByTypeAndCorrelationID(ctx context.Context, dsClient *api.Client, eventType api.GatewayAuditPayloadEventType, correlationID string, timeout time.Duration) *api.AuditEvent {
+	var event *api.AuditEvent
+	
+	Eventually(func() bool {
+		// Query DataStorage API with both filters
+		resp, err := dsClient.ListAuditEvents(ctx, api.ListAuditEventsParams{
+			EventType:     api.NewOptString(string(eventType)), // Use OpenAPI constant
+			CorrelationID: api.NewOptString(correlationID),
+			Limit:         api.NewOptInt(1),
+		})
+		
+		if err != nil {
+			return false
+		}
+		
+		if len(resp.Events) == 0 {
+			return false
+		}
+		
+		event = &resp.Events[0]
+		return true
+	}, timeout, 500*time.Millisecond).Should(BeTrue(), 
+		fmt.Sprintf("Audit event with type '%s' and correlation_id '%s' should exist", eventType, correlationID))
+	
+	return event
+}
+
+// FindAllAuditEventsByCorrelationID queries DataStorage for ALL audit events for a signal
+// Use: When test needs to validate full audit trail (e.g., signal.received + crd.created)
+func FindAllAuditEventsByCorrelationID(ctx context.Context, dsClient *api.Client, correlationID string, timeout time.Duration) []api.AuditEvent {
+	var events []api.AuditEvent
+	
+	Eventually(func() bool {
+		// Query DataStorage API for all events with this correlation ID
+		resp, err := dsClient.ListAuditEvents(ctx, api.ListAuditEventsParams{
+			CorrelationID: api.NewOptString(correlationID),
+			Limit:         api.NewOptInt(100), // Max expected events per signal
+		})
+		
+		if err != nil {
+			return false
+		}
+		
+		if len(resp.Events) == 0 {
+			return false
+		}
+		
+		events = resp.Events
+		return true
+	}, timeout, 500*time.Millisecond).Should(BeTrue(), 
+		fmt.Sprintf("Audit events with correlation_id '%s' should exist", correlationID))
+	
+	return events
+}
+
+// CountAuditEventsByTypeAndCorrelationID counts audit events by type and correlation ID
+// Use: Validate expected number of events (e.g., exactly 1 signal.received, 3 retry attempts)
+func CountAuditEventsByTypeAndCorrelationID(ctx context.Context, dsClient *api.Client, eventType api.GatewayAuditPayloadEventType, correlationID string) int {
+	resp, err := dsClient.ListAuditEvents(ctx, api.ListAuditEventsParams{
+		EventType:     api.NewOptString(string(eventType)),
+		CorrelationID: api.NewOptString(correlationID),
+		Limit:         api.NewOptInt(100),
+	})
+	
+	if err != nil {
+		return 0
+	}
+	
+	return len(resp.Events)
+}
+
+// ========================================
+// AUDIT PAYLOAD PARSING FUNCTIONS
+// ========================================
 
 // ParseGatewayPayload extracts GatewayAuditPayload from AuditEvent
 // Enforces: DD-AUDIT-004 (zero unstructured data)
 func ParseGatewayPayload(event *api.AuditEvent) api.GatewayAuditPayload {
 	Expect(event).ToNot(BeNil(), "Audit event should not be nil")
-
+	
 	// Access EventData union type
 	gatewayPayload := event.EventData.GatewayAuditPayload
 	Expect(gatewayPayload.EventType).ToNot(BeEmpty(), "GatewayAuditPayload should be present")
-
+	
 	return gatewayPayload
 }
 

@@ -44,6 +44,10 @@ Name | Type | Description | Notes
 **timeout_config** | [**TimeoutConfig**](TimeoutConfig.md) |  | [optional] 
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
+**external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
+**normalized_severity** | **str** | Normalized severity determined by Rego policy | [optional] 
+**determination_source** | **str** | Source of severity determination for audit trail | [optional] 
+**policy_hash** | **str** | SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking) | [optional] 
 **environment** | **str** | Environment context | 
 **environment_source** | **str** | Source of the environment classification | [optional] 
 **priority** | **str** |  | 

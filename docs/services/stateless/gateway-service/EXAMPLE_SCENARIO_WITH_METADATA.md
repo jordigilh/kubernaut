@@ -27,11 +27,11 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 ```markdown
 #### **Test Case: GW-INT-AUD-001**
 
-**Test ID**: GW-INT-AUD-001  
-**Test Name**: Prometheus Signal Audit Event Emission  
-**BR**: BR-GATEWAY-055  
-**Priority**: P0 (Critical)  
-**Category**: Audit Event Emission  
+**Test ID**: GW-INT-AUD-001
+**Test Name**: Prometheus Signal Audit Event Emission
+**BR**: BR-GATEWAY-055
+**Priority**: P0 (Critical)
+**Category**: Audit Event Emission
 **Tags**: audit, prometheus, rr-reconstruction, soc2
 
 ---
@@ -97,21 +97,21 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
         Expect(auditEvent.EventAction).To(Equal("received"))
         Expect(auditEvent.CorrelationID).ToNot(BeEmpty())
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := auditEvent.EventData.GatewayAuditPayload
-        
+
         // Access OriginalPayload (Optional field)
         originalPayload, ok := gatewayPayload.OriginalPayload.Get()
         Expect(ok).To(BeTrue(), "OriginalPayload should be present")
         payloadStr := fmt.Sprintf("%v", originalPayload)
         Expect(payloadStr).To(ContainSubstring("alertname"))
-        
+
         // Access SignalLabels (Optional field)
         signalLabels, ok := gatewayPayload.SignalLabels.Get()
         Expect(ok).To(BeTrue(), "SignalLabels should be present")
         Expect(signalLabels).To(HaveKey("severity"))
-        
+
         // Access SignalAnnotations (Optional field)
         signalAnnotations, ok := gatewayPayload.SignalAnnotations.Get()
         Expect(ok).To(BeTrue(), "SignalAnnotations should be present")

@@ -1,7 +1,7 @@
 # Gateway Integration Test Plan - Audit Structure Reassessment
-**Date**: January 14, 2026  
-**Status**: CORRECTED - Based on Authoritative Sources  
-**Document**: GW_INTEGRATION_TEST_PLAN_V1.0.md  
+**Date**: January 14, 2026
+**Status**: CORRECTED - Based on Authoritative Sources
+**Document**: GW_INTEGRATION_TEST_PLAN_V1.0.md
 **Supersedes**: GW_TEST_PLAN_AUDIT_STRUCTURE_VIOLATIONS_JAN14_2026.md
 
 ---
@@ -10,11 +10,11 @@
 
 **REASSESSMENT COMPLETE**: Initial triage was **partially incorrect**. After examining authoritative sources:
 
-**✅ GOOD NEWS**: OpenAPI schema HAS most required fields (11 of 14 tested scenarios)  
-**⚠️ LIMITED ISSUES**: Only 3 scenarios need OpenAPI schema additions  
-**✅ MAIN FIX**: Test plan needs pattern corrections (not major schema changes)  
+**✅ GOOD NEWS**: OpenAPI schema HAS most required fields (11 of 14 tested scenarios)
+**⚠️ LIMITED ISSUES**: Only 3 scenarios need OpenAPI schema additions
+**✅ MAIN FIX**: Test plan needs pattern corrections (not major schema changes)
 
-**Actual Violations**: **30 instances** (not 68) across **3 scenarios** (not 14)  
+**Actual Violations**: **30 instances** (not 68) across **3 scenarios** (not 14)
 **Fix Effort**: **4-6 hours** (not 10-14 hours)
 
 ---
@@ -84,8 +84,8 @@ Expect(ok).To(BeTrue())
 Expect(signalLabels).To(HaveKeyWithValue("severity", "critical"))
 ```
 
-**Fix Required**: Change access pattern (NOT add OpenAPI fields)  
-**Scenarios Affected**: 1.1 (8 instances), 1.2 (5 instances), 3.1 (6 instances), 3.2 (4 instances)  
+**Fix Required**: Change access pattern (NOT add OpenAPI fields)
+**Scenarios Affected**: 1.1 (8 instances), 1.2 (5 instances), 3.1 (6 instances), 3.2 (4 instances)
 **Total**: 23 pattern corrections
 
 ---
@@ -132,7 +132,7 @@ Expect(ok).To(BeTrue())
 Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`))
 ```
 
-**Violations**: 4 instances in Scenario 1.3  
+**Violations**: 4 instances in Scenario 1.3
 **OpenAPI Changes Needed**: **NONE** (use existing fields)
 
 ---
@@ -183,7 +183,7 @@ Expect(errorDetails.Component).To(Equal(api.ErrorDetailsComponentGateway))
 Expect(errorDetails.RetryPossible).To(BeFalse())
 ```
 
-**Violations**: 3 instances in Scenario 1.4  
+**Violations**: 3 instances in Scenario 1.4
 **OpenAPI Changes Needed**: **NONE** (schema exists)
 
 ---
@@ -203,8 +203,8 @@ Expect(auditEvent.Metadata).To(HaveKeyWithValue("failure_count", "5"))
 - ❌ Not needed for RR reconstruction
 - ❌ Should be in metrics/observability (Prometheus), not audit
 
-**RECOMMENDED FIX**: **REMOVE Scenario 4.1 from Integration Tests**  
-**Alternative**: Move to **unit tests** for circuit breaker logic validation  
+**RECOMMENDED FIX**: **REMOVE Scenario 4.1 from Integration Tests**
+**Alternative**: Move to **unit tests** for circuit breaker logic validation
 **Rationale**: Circuit breaker testing doesn't require audit infrastructure
 
 **Violations**: 0 (test scenario should be removed)
@@ -275,7 +275,7 @@ To:
 
 **ErrorDetails fields available**:
 - `message` (string)
-- `code` (string)  
+- `code` (string)
 - `component` (enum)
 - `retry_possible` (boolean)
 - `stack_trace` (array of strings)
@@ -284,8 +284,8 @@ To:
 
 ### **Phase 4: Remove Scenario 4.1 (15 minutes)**
 
-**Rationale**: Circuit breaker is operational state, not audit data  
-**Action**: Delete Scenario 4.1 tests (8 instances)  
+**Rationale**: Circuit breaker is operational state, not audit data
+**Action**: Delete Scenario 4.1 tests (8 instances)
 **Alternative**: Move circuit breaker logic to unit tests
 
 ---
@@ -517,7 +517,7 @@ Expect(errorDetails.RetryPossible).To(BeFalse(), "Namespace errors are not trans
 
 ---
 
-**Status**: ✅ **READY FOR PATTERN FIXES - NO SCHEMA CHANGES NEEDED**  
-**Owner**: Gateway Team  
-**Reviewer**: N/A (no OpenAPI changes)  
+**Status**: ✅ **READY FOR PATTERN FIXES - NO SCHEMA CHANGES NEEDED**
+**Owner**: Gateway Team
+**Reviewer**: N/A (no OpenAPI changes)
 **Next Action**: Approve Option A → Fix test plan patterns (6-7 hours)

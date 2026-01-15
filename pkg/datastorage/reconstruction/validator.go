@@ -107,6 +107,30 @@ func ValidateReconstructedRR(rr *remediationv1.RemediationRequest) (*ValidationR
 		presentFields++
 	}
 
+	// Gap #4: Provider data validation
+	totalFields++
+	if len(rr.Spec.ProviderData) == 0 {
+		result.Warnings = append(result.Warnings, "providerData is missing (Gap #4) - AI analysis summary unavailable")
+	} else {
+		presentFields++
+	}
+
+	// Gap #5: Workflow selection reference validation
+	totalFields++
+	if rr.Status.SelectedWorkflowRef == nil {
+		result.Warnings = append(result.Warnings, "selectedWorkflowRef is missing (Gap #5) - workflow selection data unavailable")
+	} else {
+		presentFields++
+	}
+
+	// Gap #6: Workflow execution reference validation
+	totalFields++
+	if rr.Status.ExecutionRef == nil {
+		result.Warnings = append(result.Warnings, "executionRef is missing (Gap #6) - workflow execution reference unavailable")
+	} else {
+		presentFields++
+	}
+
 	// Calculate completeness percentage
 	if totalFields > 0 {
 		result.Completeness = (presentFields * 100) / totalFields

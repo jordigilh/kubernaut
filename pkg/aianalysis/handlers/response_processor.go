@@ -76,6 +76,9 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		"needsHumanReview", needsHumanReview,
 	)
 
+	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
+	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.Confidence)
+
 	// BR-HAPI-197: Check if workflow resolution failed
 	if needsHumanReview {
 		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
@@ -191,6 +194,9 @@ func (p *ResponseProcessor) ProcessRecoveryResponse(ctx context.Context, analysi
 		"hasSelectedWorkflow", hasSelectedWorkflow,
 		"needsHumanReview", needsHumanReview,
 	)
+
+	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
+	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalType, resp.AnalysisConfidence)
 
 	// BR-HAPI-197: Check if recovery requires human review
 	// This takes precedence over other checks as HAPI has determined it cannot provide reliable recommendations

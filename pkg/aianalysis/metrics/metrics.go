@@ -334,6 +334,25 @@ func NewMetrics() *Metrics {
 		// Initialize RecoveryStatusSkippedTotal
 		// Required for E2E metric existence tests (BR-AI-082)
 		registeredMetrics.RecoveryStatusSkippedTotal.Add(0)
+
+		// Initialize RegoEvaluationsTotal with known label combinations
+		// Required for E2E metric existence tests (BR-AI-030)
+		registeredMetrics.RegoEvaluationsTotal.WithLabelValues("auto_approved", "false").Add(0)
+		registeredMetrics.RegoEvaluationsTotal.WithLabelValues("requires_approval", "false").Add(0)
+		registeredMetrics.RegoEvaluationsTotal.WithLabelValues("error", "true").Add(0)
+
+		// Initialize ApprovalDecisionsTotal with known label combinations
+		// Required for E2E metric existence tests (BR-AI-059)
+		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues("requires_approval", "production").Add(0)
+		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues("auto_approved", "staging").Add(0)
+		registeredMetrics.ApprovalDecisionsTotal.WithLabelValues("auto_approved", "development").Add(0)
+
+		// Initialize ConfidenceScoreDistribution with common signal types
+		// Required for E2E metric existence tests (BR-AI-OBSERVABILITY-004)
+		// Histograms need at least one Observe() call to appear in metrics
+		registeredMetrics.ConfidenceScoreDistribution.WithLabelValues("OOMKilled").Observe(0)
+		registeredMetrics.ConfidenceScoreDistribution.WithLabelValues("CrashLoopBackOff").Observe(0)
+		registeredMetrics.ConfidenceScoreDistribution.WithLabelValues("NodeNotReady").Observe(0)
 	}) // End of sync.Once.Do()
 
 	// Return the singleton instance (safe for concurrent access)

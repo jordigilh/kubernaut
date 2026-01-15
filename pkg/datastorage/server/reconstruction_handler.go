@@ -25,6 +25,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"sigs.k8s.io/yaml"
 
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
@@ -68,6 +69,89 @@ type ValidationResult struct {
 	Completeness int      `json:"completeness"`
 	Errors       []string `json:"errors"`
 	Warnings     []string `json:"warnings"`
+}
+
+// handleReconstructRemediationRequestWrapper is a Chi router wrapper that delegates to the ogen handler
+// This bridges between Chi's http.HandlerFunc and our ogen Handler implementation
+func (s *Server) handleReconstructRemediationRequestWrapper(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	correlationID := chi.URLParam(r, "correlation_id")
+
+	// Call the ogen handler method
+	result, err := s.handler.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+		CorrelationID: correlationID,
+	})
+
+	if err != nil {
+		// Unexpected error (ogen handler should return errors as response types, not err)
+		s.logger.Error(err, "Unexpected error from reconstruction handler",
+			"correlation_id", correlationID)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.ai/problems/reconstruction/unexpected-error",
+			"Unexpected Error",
+			fmt.Sprintf("Unexpected error: %v", err),
+			s.logger,
+		)
+		return
+	}
+
+	// Handle response types
+	switch resp := result.(type) {
+	case *ogenclient.ReconstructionResponse:
+		// Success - write JSON response
+		responseData := ReconstructionResponse{
+			RemediationRequestYAML: resp.RemediationRequestYaml,
+			Validation: ValidationResult{
+				IsValid:      resp.Validation.IsValid,
+				Completeness: resp.Validation.Completeness,
+				Errors:       resp.Validation.Errors,
+				Warnings:     resp.Validation.Warnings,
+			},
+			ReconstructedAt: resp.ReconstructedAt.Value.Format(time.RFC3339),
+			CorrelationID:   resp.CorrelationID.Value,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if err := json.NewEncoder(w).Encode(responseData); err != nil {
+			s.logger.Error(err, "Failed to encode response")
+		}
+
+	case *ogenclient.ReconstructRemediationRequestBadRequest:
+		// 400 error
+		response.WriteRFC7807Error(w, int(resp.Status),
+			resp.Type.String(),
+			resp.Title,
+			resp.Detail.Value,
+			s.logger,
+		)
+
+	case *ogenclient.ReconstructRemediationRequestNotFound:
+		// 404 error
+		response.WriteRFC7807Error(w, int(resp.Status),
+			resp.Type.String(),
+			resp.Title,
+			resp.Detail.Value,
+			s.logger,
+		)
+
+	case *ogenclient.ReconstructRemediationRequestInternalServerError:
+		// 500 error
+		response.WriteRFC7807Error(w, int(resp.Status),
+			resp.Type.String(),
+			resp.Title,
+			resp.Detail.Value,
+			s.logger,
+		)
+
+	default:
+		s.logger.Error(fmt.Errorf("unknown response type: %T", resp), "Unknown response type from handler")
+		response.WriteRFC7807Error(w, http.StatusInternalServerError,
+			"https://kubernaut.ai/problems/reconstruction/unknown-response",
+			"Unknown Response Type",
+			fmt.Sprintf("Unexpected response type: %T", resp),
+			s.logger,
+		)
+	}
 }
 
 // handleReconstructRemediationRequest handles POST /api/v1/audit/remediation-requests/{correlation_id}/reconstruct

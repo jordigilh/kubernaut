@@ -2572,6 +2572,11 @@ components:
           enum: [rego-policy, fallback, default]
           description: Source of severity determination for audit trail
           example: "rego-policy"
+        policy_hash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking)
+          example: "a3b5c8d9e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8"
 
         # Classification Fields (conditional)
         environment:

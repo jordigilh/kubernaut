@@ -567,7 +567,8 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	// Record classification decision audit event (BR-SP-105, DD-SEVERITY-001)
 	// Must be called after atomic status update to include normalized severity
 	if r.AuditClient != nil && severityResult != nil {
-		r.AuditClient.RecordClassificationDecision(ctx, sp)
+		durationMs := int(time.Since(classifyingStart).Milliseconds())
+		r.AuditClient.RecordClassificationDecision(ctx, sp, durationMs)
 	}
 
 	// Record phase transition audit event (BR-SP-090)
@@ -1243,7 +1244,8 @@ func (r *SignalProcessingReconciler) recordCompletionAudit(ctx context.Context, 
 		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
 	}
 	r.AuditClient.RecordSignalProcessed(ctx, sp)
-	r.AuditClient.RecordClassificationDecision(ctx, sp)
+	// DD-SEVERITY-001: Classification decision emitted ONCE during Classifying phase (line ~570)
+	// Not duplicated here to maintain "one classification decision = one audit event" principle
 	// AUDIT-06: Emit dedicated business classification event (per integration-test-plan.md v1.1.0)
 	r.AuditClient.RecordBusinessClassification(ctx, sp)
 	return nil

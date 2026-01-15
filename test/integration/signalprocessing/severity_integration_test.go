@@ -369,7 +369,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 		// DD-SEVERITY-001 Note: policy_hash is a future enhancement (not in current schema)
 		// This test validates a valuable feature for policy version tracking
-		PIt("should include policy hash in audit event for policy version traceability", func() {
+		It("should include policy hash in audit event for policy version traceability", func() {
 			// BUSINESS CONTEXT:
 			// Operator needs to correlate severity decisions with specific Rego policy versions.
 			//
@@ -399,16 +399,15 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				g.Expect(event).ToNot(BeNil(), "Event should exist")
 
 				// Per TDD guidelines: Use structured types, not map-based access
-				// NOTE: This is a pending test - policy_hash field not yet in schema
 				payload := event.EventData.SignalProcessingAuditPayload
 
 				// THEN: Audit event includes policy hash for version tracking
-				// TODO: Add PolicyHash OptString field to SignalProcessingAuditPayload schema
-				// When implemented, this test should verify:
-				// g.Expect(payload.PolicyHash.IsSet()).To(BeTrue())
-				// g.Expect(payload.PolicyHash.Value).To(MatchRegexp(`^[a-f0-9]{64}$`))
+				g.Expect(payload.PolicyHash.IsSet()).To(BeTrue(),
+					"PolicyHash should be set for audit trail and compliance")
+				g.Expect(payload.PolicyHash.Value).To(MatchRegexp(`^[a-f0-9]{64}$`),
+					"PolicyHash should be valid SHA256 hash")
 
-				// For now, verify event has basic fields
+				// Verify event has other expected fields
 				g.Expect(payload.Phase).ToNot(BeEmpty(), "Event should have phase")
 				g.Expect(payload.Signal).ToNot(BeEmpty(), "Event should have signal")
 
@@ -424,12 +423,11 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 	// ========================================
 
 	Context("BR-SP-105: Error Handling Integration", func() {
-		// DD-SEVERITY-001 REFACTOR NOTE: This test is pending because Strategy B requires
-		// operators to define fallback behavior in policy. With the fallback clause,
-		// unmapped severities no longer cause policy evaluation failures.
-		// To test true policy errors, we'd need to test with malformed Rego syntax,
-		// which is already covered in unit tests.
-		PIt("should transition to Failed phase if Rego policy evaluation fails persistently", func() {
+		// DD-SEVERITY-001 REFACTOR NOTE: This test validates graceful degradation
+		// when Rego policy evaluation fails. While Strategy B includes fallback clauses,
+		// this test ensures the controller properly handles policy errors when they occur
+		// (e.g., malformed policy, evaluation timeout, runtime errors).
+		It("should transition to Failed phase if Rego policy evaluation fails persistently", func() {
 			// BUSINESS CONTEXT:
 			// Rego policy has bug causing evaluation failures.
 			//

@@ -78,6 +78,17 @@ func NewAuditClient(store audit.AuditStore, log logr.Logger) *AuditClient {
 	}
 }
 
+// getCorrelationID returns the correlation ID for an AIAnalysis resource
+// Per DD-AUDIT-CORRELATION-001: Primary source is RemediationRequestRef.Name
+// Falls back to RemediationID if RemediationRequestRef is not set (e.g., in tests)
+func getCorrelationID(analysis *aianalysisv1.AIAnalysis) string {
+	if analysis.Spec.RemediationRequestRef.Name != "" {
+		return analysis.Spec.RemediationRequestRef.Name
+	}
+	// Fallback for tests or edge cases where RemediationRequestRef is not populated
+	return analysis.Spec.RemediationID
+}
+
 // RecordAnalysisComplete records analysis completion event
 // This is the primary audit event for AIAnalysis (per DD-AUDIT-003)
 //
@@ -146,7 +157,9 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 	audit.SetEventOutcome(event, apiOutcome)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(*payload)
@@ -189,7 +202,9 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(*payload)
@@ -218,7 +233,9 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisErrorPayloadAuditEventRequestEventData(*payload)
@@ -259,7 +276,9 @@ func (c *AuditClient) RecordHolmesGPTCall(ctx context.Context, analysis *aianaly
 	audit.SetEventOutcome(event, apiOutcome)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 	audit.SetDuration(event, durationMs)
 	// Use ogen union constructor (OGEN-MIGRATION)
@@ -303,7 +322,9 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 	// Use ogen union constructor (OGEN-MIGRATION)
 	event.EventData = ogenclient.NewAIAnalysisApprovalDecisionPayloadAuditEventRequestEventData(*payload)
@@ -345,7 +366,9 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 	audit.SetEventOutcome(event, apiOutcome)
 	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, analysis.Spec.RemediationID)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 	audit.SetDuration(event, durationMs)
 	// Use ogen union constructor (OGEN-MIGRATION)

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-faster/jx"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -39,6 +40,9 @@ type ParsedAuditData struct {
 
 	// Orchestrator fields (from orchestrator.lifecycle.created)
 	TimeoutConfig *TimeoutConfigData
+
+	// AI Analysis fields (Gap #4)
+	ProviderData string // from aianalysis.analysis.completed (stored as JSON string)
 
 	// Workflow fields (Gap #5-6)
 	SelectedWorkflowRef *WorkflowRefData     // from workflowexecution.selection.completed
@@ -167,13 +171,13 @@ func parseAIAnalysisCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, er
 	}
 
 	// Extract provider data (Gap #4)
-	// ProviderData is stored as JSON in the Spec field of RemediationRequest
-	if payload.ProviderData.IsSet() {
-		// Marshal the provider data map to JSON string for storage
-		providerJSON, err := json.Marshal(payload.ProviderData.Value)
-		if err == nil {
-			data.ProviderData = string(providerJSON)
-		}
+	// ProviderResponseSummary is stored as JSON in the Spec field of RemediationRequest
+	// BR-AUDIT-005 v2.0: Field renamed from ProviderData to ProviderResponseSummary in ogenclient
+	if payload.ProviderResponseSummary.IsSet() {
+		// Use ogen's encoder to properly handle nested Opt types
+		encoder := &jx.Encoder{}
+		payload.ProviderResponseSummary.Value.Encode(encoder)
+		data.ProviderData = string(encoder.Bytes())
 	}
 
 	return data, nil
