@@ -192,6 +192,12 @@ type SignalProcessingStatus struct {
 	// +optional
 	Severity string `json:"severity,omitempty"`
 
+	// PolicyHash is the SHA256 hash of the Rego policy used for severity determination
+	// Provides audit trail and policy version tracking for compliance requirements
+	// Expected format: 64-character hexadecimal string (SHA256 hash)
+	// +optional
+	PolicyHash string `json:"policyHash,omitempty"`
+
 	// Conditions for detailed status
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

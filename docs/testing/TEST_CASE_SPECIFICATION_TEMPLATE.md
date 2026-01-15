@@ -1,7 +1,7 @@
 # Test Case Specification Template
-**Version**: 1.0.0  
-**Date**: January 14, 2026  
-**Purpose**: Industry-standard template for writing stable, maintainable test specifications  
+**Version**: 1.0.0
+**Date**: January 14, 2026
+**Purpose**: Industry-standard template for writing stable, maintainable test specifications
 **Based On**: IEEE 829, ISO/IEC/IEEE 29119
 
 ---
@@ -228,7 +228,7 @@ Fixture Reference: `Use PrometheusAlertBuilder().WithSeverity("critical").WithLa
 1. **Given**: Prometheus alert payload with custom labels and annotations
 2. **When**: Prometheus adapter parses the alert
 3. **Then**: Audit event is emitted
-4. **Verify**: 
+4. **Verify**:
    - Event type is `gateway.signal.received`
    - GatewayAuditPayload contains all RR reconstruction fields
    - Correlation ID follows format `rr-{12hex}-{10digit}`
@@ -408,7 +408,7 @@ Expect(ok).To(BeTrue(), "SignalLabels should be present")
 
 ---
 
-**Version**: 1.0.0  
-**Status**: ✅ READY FOR USE  
-**Created**: January 14, 2026  
+**Version**: 1.0.0
+**Status**: ✅ READY FOR USE
+**Created**: January 14, 2026
 **Use For**: Test case specifications (not infrastructure setup)

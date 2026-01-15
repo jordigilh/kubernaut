@@ -115,6 +115,11 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	result, err := h.evaluator.Evaluate(ctx, input)
 	regoDuration := metav1.Now().Sub(regoStartTime.Time).Milliseconds()
 
+	// Ensure minimum duration of 1ms for audit trail (evaluation time may round to 0)
+	if regoDuration == 0 {
+		regoDuration = 1
+	}
+
 	if err != nil {
 		// This shouldn't happen - evaluator should handle errors gracefully
 		// But if it does, use safe defaults

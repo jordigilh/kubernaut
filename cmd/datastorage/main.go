@@ -133,7 +133,7 @@ func main() {
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		var err error
-		srv, err = server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, serverCfg, dlqMaxLen)
+		srv, err = server.NewServer(dbConnStr, cfg.Redis.Addr, cfg.Redis.Password, logger, cfg, serverCfg, dlqMaxLen)
 		if err == nil {
 			logger.Info("Successfully connected to PostgreSQL and Redis",
 				"attempt", attempt)

@@ -1,7 +1,7 @@
 # Gateway Integration Test Plan - Audit Structure Violations Triage
-**Date**: January 14, 2026  
-**Status**: Critical Pre-Implementation Fix Required  
-**Document**: GW_INTEGRATION_TEST_PLAN_V1.0.md  
+**Date**: January 14, 2026
+**Status**: Critical Pre-Implementation Fix Required
+**Document**: GW_INTEGRATION_TEST_PLAN_V1.0.md
 **Severity**: 🚨 **BLOCKING - Cannot Begin Implementation**
 
 ---
@@ -10,7 +10,7 @@
 
 **CRITICAL FINDING**: The Gateway Integration Test Plan uses **unstructured audit data patterns** that violate the authoritative OpenAPI audit schema (DD-AUDIT-002 V2.0.1).
 
-**Impact**: 
+**Impact**:
 - ❌ All 84 test specifications use non-existent audit event fields
 - ❌ Tests assume `auditEvent.SignalLabels`, `auditEvent.Metadata` as direct maps
 - ❌ Reality: Audit events use structured `GatewayAuditPayload` within `EventData` JSONB field
@@ -32,43 +32,43 @@ type AuditEvent struct {
     EventID        uuid.UUID    `json:"event_id"`
     EventVersion   string       `json:"version"`
     EventTimestamp time.Time    `json:"event_timestamp"`
-    
+
     // EVENT CLASSIFICATION
     EventType     string `json:"event_type"`      // "gateway.signal.received"
     EventCategory string `json:"event_category"`  // "signal"
     EventAction   string `json:"event_action"`    // "received"
     EventOutcome  string `json:"event_outcome"`   // "success"
-    
+
     // ACTOR (WHO)
     ActorType string  `json:"actor_type"`  // "external"
     ActorID   string  `json:"actor_id"`    // "prometheus"
     ActorIP   *string `json:"actor_ip,omitempty"`
-    
+
     // RESOURCE (WHAT)
     ResourceType string  `json:"resource_type"`  // "Signal"
     ResourceID   string  `json:"resource_id"`    // fingerprint
     ResourceName *string `json:"resource_name,omitempty"`
-    
+
     // CONTEXT (WHY/WHERE)
     CorrelationID string     `json:"correlation_id"`  // RR name
     ParentEventID *uuid.UUID `json:"parent_event_id,omitempty"`
     TraceID       *string    `json:"trace_id,omitempty"`
     SpanID        *string    `json:"span_id,omitempty"`
-    
+
     // KUBERNETES CONTEXT
     Namespace   *string `json:"namespace,omitempty"`
     ClusterName *string `json:"cluster_name,omitempty"`
-    
+
     // 🚨 EVENT PAYLOAD (JSONB - THIS IS WHERE GATEWAY DATA LIVES)
     EventData     []byte `json:"event_data"`      // Contains GatewayAuditPayload
     EventMetadata []byte `json:"event_metadata,omitempty"`
-    
+
     // AUDIT METADATA
     Severity     *string `json:"severity,omitempty"`
     DurationMs   *int    `json:"duration_ms,omitempty"`
     ErrorCode    *string `json:"error_code,omitempty"`
     ErrorMessage *string `json:"error_message,omitempty"`
-    
+
     // COMPLIANCE
     RetentionDays int  `json:"retention_days"`
     IsSensitive   bool `json:"is_sensitive"`
@@ -83,18 +83,18 @@ From `api/openapi/data-storage-v1.yaml` and `pkg/datastorage/ogen-client/oas_sch
 // GatewayAuditPayload - stored in EventData JSONB field
 type GatewayAuditPayload struct {
     EventType GatewayAuditPayloadEventType `json:"event_type"`  // Discriminator
-    
+
     // RR Reconstruction Fields (BR-AUDIT-005 Gaps #1-3)
     OriginalPayload   OptGatewayAuditPayloadOriginalPayload   `json:"original_payload"`
     SignalLabels      OptGatewayAuditPayloadSignalLabels      `json:"signal_labels"`
     SignalAnnotations OptGatewayAuditPayloadSignalAnnotations `json:"signal_annotations"`
-    
+
     // Gateway-Specific Metadata
     SignalType   GatewayAuditPayloadSignalType `json:"signal_type"`   // "prometheus-alert"
     AlertName    string                         `json:"alert_name"`     // "HighCPU"
     Namespace    string                         `json:"namespace"`      // "production"
     Fingerprint  string                         `json:"fingerprint"`    // SHA-256 hash
-    
+
     // Optional Fields
     Severity            OptGatewayAuditPayloadSeverity            `json:"severity"`
     ResourceKind        OptString                                  `json:"resource_kind"`
@@ -395,7 +395,7 @@ func ExpectSignalLabels(payload *api.GatewayAuditPayload, expected map[string]st
 It("should preserve signal_labels in audit event", func() {
     // ... setup ...
     signal, _ := adapter.Parse(ctx, prometheusAlert)
-    
+
     auditEvent := auditStore.Events[0]
     Expect(auditEvent.SignalLabels).To(HaveKeyWithValue("severity", "critical"))
     Expect(auditEvent.SignalLabels).To(HaveKeyWithValue("team", "platform"))
@@ -407,14 +407,14 @@ It("should preserve signal_labels in audit event", func() {
 It("should preserve signal_labels in audit event", func() {
     // ... setup ...
     signal, _ := adapter.Parse(ctx, prometheusAlert)
-    
+
     auditEvent := auditStore.Events[0]
-    
+
     // Parse EventData JSONB field
     var payload api.GatewayAuditPayload
     err := json.Unmarshal(auditEvent.EventData, &payload)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Access structured SignalLabels field
     signalLabels, ok := payload.SignalLabels.Get()
     Expect(ok).To(BeTrue(), "SignalLabels should be present in audit payload")
@@ -431,7 +431,7 @@ It("should preserve signal_labels in audit event", func() {
 It("should include fingerprint in audit event", func() {
     // ... setup ...
     crd, _ := crdCreator.CreateRemediationRequest(ctx, signal)
-    
+
     crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
     Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("fingerprint", signal.Fingerprint))
     Expect(crdCreatedEvent.Metadata).To(HaveKeyWithValue("occurrence_count", "1"))
@@ -443,18 +443,18 @@ It("should include fingerprint in audit event", func() {
 It("should include fingerprint in audit event", func() {
     // ... setup ...
     crd, _ := crdCreator.CreateRemediationRequest(ctx, signal)
-    
+
     crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-    
+
     // Parse EventData
     var payload api.GatewayAuditPayload
     err := json.Unmarshal(crdCreatedEvent.EventData, &payload)
     Expect(err).ToNot(HaveOccurred())
-    
+
     // Business rule: Fingerprint format enables field selector queries
     Expect(payload.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"))
     Expect(payload.Fingerprint).To(Equal(signal.Fingerprint))
-    
+
     // Business rule: Initial occurrence count is 1
     occurrenceCount, ok := payload.OccurrenceCount.Get()
     Expect(ok).To(BeTrue())
@@ -556,7 +556,7 @@ Store Gateway-specific data in `EventMetadata` JSONB field instead of `EventData
 
 ---
 
-**Status**: ⏸️ **BLOCKED - AWAITING APPROVAL FOR OPTION A**  
-**Owner**: Gateway Team  
-**Reviewer**: Data Storage Team (OpenAPI schema changes)  
+**Status**: ⏸️ **BLOCKED - AWAITING APPROVAL FOR OPTION A**
+**Owner**: Gateway Team
+**Reviewer**: Data Storage Team (OpenAPI schema changes)
 **Next Action**: Approve Option A → Proceed with OpenAPI updates

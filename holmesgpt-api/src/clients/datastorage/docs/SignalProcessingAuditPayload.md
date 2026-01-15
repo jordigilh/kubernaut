@@ -10,6 +10,10 @@ Name | Type | Description | Notes
 **phase** | **str** | Current phase of the SignalProcessing | 
 **signal** | **str** | Name of the signal being processed | 
 **severity** | **str** | Severity level of the signal | [optional] 
+**external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
+**normalized_severity** | **str** | Normalized severity determined by Rego policy | [optional] 
+**determination_source** | **str** | Source of severity determination for audit trail | [optional] 
+**policy_hash** | **str** | SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking) | [optional] 
 **environment** | **str** | Classified environment | [optional] 
 **environment_source** | **str** | Source of the environment classification | [optional] 
 **priority** | **str** | Assigned priority | [optional] 

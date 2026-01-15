@@ -37,6 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/adapter"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
@@ -107,14 +108,16 @@ const (
 // - redisAddr: Redis address for DLQ (format: "localhost:6379")
 // - redisPassword: Redis password (from mounted secret)
 // - logger: Structured logger
-// - cfg: Server configuration
+// - appCfg: Full application configuration (includes database pool settings)
+// - serverCfg: Server-specific configuration (port, timeouts)
 // - dlqMaxLen: Maximum DLQ stream length for capacity monitoring (Gap 3.3)
 func NewServer(
 	dbConnStr string,
 	redisAddr string,
 	redisPassword string,
 	logger logr.Logger,
-	cfg *Config,
+	appCfg *config.Config,
+	serverCfg *Config,
 	dlqMaxLen int64,
 ) (*Server, error) {
 	// Connect to PostgreSQL using pgx driver (DD-010)
@@ -129,15 +132,33 @@ func NewServer(
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
-	// Configure connection pool for production
-	db.SetMaxOpenConns(25)                  // Maximum connections
-	db.SetMaxIdleConns(5)                   // Idle connections
-	db.SetConnMaxLifetime(5 * time.Minute)  // Connection lifetime
-	db.SetConnMaxIdleTime(10 * time.Minute) // Idle connection timeout
+	// Configure connection pool from config (not hardcoded)
+	// Bug fix: Use appCfg.Database values instead of hardcoded 25/5
+	// Issue discovered: 2026-01-14 - Integration tests with 12 parallel processes
+	// were bottlenecked by hardcoded max_open_conns=25
+	db.SetMaxOpenConns(appCfg.Database.MaxOpenConns)
+	db.SetMaxIdleConns(appCfg.Database.MaxIdleConns)
+
+	// Parse duration strings from config
+	connMaxLifetime, err := time.ParseDuration(appCfg.Database.ConnMaxLifetime)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("invalid conn_max_lifetime: %w", err)
+	}
+	db.SetConnMaxLifetime(connMaxLifetime)
+
+	connMaxIdleTime, err := time.ParseDuration(appCfg.Database.ConnMaxIdleTime)
+	if err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("invalid conn_max_idle_time: %w", err)
+	}
+	db.SetConnMaxIdleTime(connMaxIdleTime)
 
 	logger.Info("PostgreSQL connection established",
-		"max_open_conns", 25,
-		"max_idle_conns", 5,
+		"max_open_conns", appCfg.Database.MaxOpenConns,
+		"max_idle_conns", appCfg.Database.MaxIdleConns,
+		"conn_max_lifetime", appCfg.Database.ConnMaxLifetime,
+		"conn_max_idle_time", appCfg.Database.ConnMaxIdleTime,
 	)
 
 	// Connect to Redis for DLQ (DD-009)
@@ -194,8 +215,8 @@ func NewServer(
 	auditStore, err := audit.NewBufferedStore(
 		internalClient,
 		audit.RecommendedConfig("datastorage"), // DD-AUDIT-004: HIGH tier (50K buffer)
-		"datastorage", // service name
-		logger,        // Use logr.Logger directly (DD-005 v2.0)
+		"datastorage",                          // service name
+		logger,                                 // Use logr.Logger directly (DD-005 v2.0)
 	)
 	if err != nil {
 		_ = db.Close() // Clean up DB connection
@@ -235,11 +256,13 @@ func NewServer(
 
 	// Create READ API handler with logger, ADR-033 repository, workflow catalog, and audit store
 	// V1.0: Embedding service removed (label-only search)
+	// BR-AUDIT-006: Pass sqlDB for reconstruction queries
 	handler := NewHandler(dbAdapter,
 		WithLogger(logger),
 		WithActionTraceRepository(actionTraceRepo),
 		WithWorkflowRepository(workflowRepo),
-		WithAuditStore(auditStore))
+		WithAuditStore(auditStore),
+		WithSQLDB(db))
 
 	// SOC2 Day 9.1: Load signing certificate for audit exports
 	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
@@ -261,9 +284,9 @@ func NewServer(
 		db:      db,
 		logger:  logger,
 		httpServer: &http.Server{
-			Addr:         fmt.Sprintf(":%d", cfg.Port),
-			ReadTimeout:  cfg.ReadTimeout,
-			WriteTimeout: cfg.WriteTimeout,
+			Addr:         fmt.Sprintf(":%d", serverCfg.Port),
+			ReadTimeout:  serverCfg.ReadTimeout,
+			WriteTimeout: serverCfg.WriteTimeout,
 		},
 		repository:      repo,
 		dlqClient:       dlqClient,
@@ -393,7 +416,7 @@ func (s *Server) Handler() http.Handler {
 		// BR-AUDIT-006: RemediationRequest Reconstruction from Audit Traces
 		// SOC2 compliance: Reconstruct complete RR CRDs from audit trail
 		s.logger.V(1).Info("Registering /api/v1/audit/remediation-requests/{correlation_id}/reconstruct handler (BR-AUDIT-006)")
-		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequest)
+		r.Post("/audit/remediation-requests/{correlation_id}/reconstruct", s.handleReconstructRemediationRequestWrapper)
 
 		// BR-STORAGE-013: Semantic search for remediation workflows
 		// BR-STORAGE-014: Workflow catalog management
@@ -673,7 +696,7 @@ func generateFallbackCertificate(logger logr.Logger) (*cert.Signer, error) {
 		Organization:     "Kubernaut",
 		DNSNames:         []string{"data-storage-service", "data-storage-service.kubernaut-system.svc.cluster.local"},
 		ValidityDuration: 8760 * time.Hour, // 1 year (cert-manager default)
-		KeySize:          2048,              // cert-manager default
+		KeySize:          2048,             // cert-manager default
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate fallback certificate: %w", err)

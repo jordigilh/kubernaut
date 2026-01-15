@@ -21,6 +21,7 @@ import json
 from typing import Any, ClassVar, Dict, List, Optional
 from pydantic import BaseModel, StrictBool, StrictInt, StrictStr, field_validator
 from pydantic import Field
+from typing_extensions import Annotated
 try:
     from typing import Self
 except ImportError:
@@ -34,6 +35,10 @@ class SignalProcessingAuditPayload(BaseModel):
     phase: StrictStr = Field(description="Current phase of the SignalProcessing")
     signal: StrictStr = Field(description="Name of the signal being processed")
     severity: Optional[StrictStr] = Field(default=None, description="Severity level of the signal")
+    external_severity: Optional[StrictStr] = Field(default=None, description="Original severity from external monitoring system (e.g., Sev1, P0, critical)")
+    normalized_severity: Optional[StrictStr] = Field(default=None, description="Normalized severity determined by Rego policy")
+    determination_source: Optional[StrictStr] = Field(default=None, description="Source of severity determination for audit trail")
+    policy_hash: Optional[Annotated[str, Field(strict=True)]] = Field(default=None, description="SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking)")
     environment: Optional[StrictStr] = Field(default=None, description="Classified environment")
     environment_source: Optional[StrictStr] = Field(default=None, description="Source of the environment classification")
     priority: Optional[StrictStr] = Field(default=None, description="Assigned priority")
@@ -53,7 +58,7 @@ class SignalProcessingAuditPayload(BaseModel):
     from_phase: Optional[StrictStr] = Field(default=None, description="Phase being transitioned from")
     to_phase: Optional[StrictStr] = Field(default=None, description="Phase being transitioned to")
     error: Optional[StrictStr] = Field(default=None, description="Error message if processing failed")
-    __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "has_pdb", "has_hpa", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "error"]
+    __properties: ClassVar[List[str]] = ["event_type", "phase", "signal", "severity", "external_severity", "normalized_severity", "determination_source", "policy_hash", "environment", "environment_source", "priority", "priority_source", "criticality", "sla_requirement", "has_owner_chain", "owner_chain_length", "degraded_mode", "has_pdb", "has_hpa", "duration_ms", "has_namespace", "has_pod", "has_deployment", "business_unit", "from_phase", "to_phase", "error"]
 
     @field_validator('event_type')
     def event_type_validate_enum(cls, value):
@@ -77,6 +82,36 @@ class SignalProcessingAuditPayload(BaseModel):
 
         if value not in ('critical', 'warning', 'info'):
             raise ValueError("must be one of enum values ('critical', 'warning', 'info')")
+        return value
+
+    @field_validator('normalized_severity')
+    def normalized_severity_validate_enum(cls, value):
+        """Validates the enum"""
+        if value is None:
+            return value
+
+        if value not in ('critical', 'warning', 'info'):
+            raise ValueError("must be one of enum values ('critical', 'warning', 'info')")
+        return value
+
+    @field_validator('determination_source')
+    def determination_source_validate_enum(cls, value):
+        """Validates the enum"""
+        if value is None:
+            return value
+
+        if value not in ('rego-policy', 'fallback', 'default'):
+            raise ValueError("must be one of enum values ('rego-policy', 'fallback', 'default')")
+        return value
+
+    @field_validator('policy_hash')
+    def policy_hash_validate_regular_expression(cls, value):
+        """Validates the regular expression"""
+        if value is None:
+            return value
+
+        if not re.match(r"^[a-f0-9]{64}$", value):
+            raise ValueError(r"must validate the regular expression /^[a-f0-9]{64}$/")
         return value
 
     @field_validator('environment')
@@ -182,6 +217,10 @@ class SignalProcessingAuditPayload(BaseModel):
             "phase": obj.get("phase"),
             "signal": obj.get("signal"),
             "severity": obj.get("severity"),
+            "external_severity": obj.get("external_severity"),
+            "normalized_severity": obj.get("normalized_severity"),
+            "determination_source": obj.get("determination_source"),
+            "policy_hash": obj.get("policy_hash"),
             "environment": obj.get("environment"),
             "environment_source": obj.get("environment_source"),
             "priority": obj.get("priority"),

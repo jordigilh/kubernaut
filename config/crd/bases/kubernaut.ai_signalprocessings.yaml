@@ -646,6 +646,12 @@ spec:
                 - Completed
                 - Failed
                 type: string
+              policyHash:
+                description: |-
+                  PolicyHash is the SHA256 hash of the Rego policy used for severity determination
+                  Provides audit trail and policy version tracking for compliance requirements
+                  Expected format: 64-character hexadecimal string (SHA256 hash)
+                type: string
               priorityAssignment:
                 description: |-
                   PriorityAssignment from DD-CATEGORIZATION-001.

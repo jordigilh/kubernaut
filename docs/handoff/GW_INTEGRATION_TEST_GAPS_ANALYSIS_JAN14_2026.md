@@ -1,7 +1,7 @@
 # Gateway Integration Test Gaps - High-Value Scenarios Analysis
 
-**Date**: January 14, 2026  
-**Context**: Integration coverage at 30.1% (target: ≥50%)  
+**Date**: January 14, 2026
+**Context**: Integration coverage at 30.1% (target: ≥50%)
 **Goal**: Identify high-value integration test scenarios that complement E2E tests
 
 ---
@@ -24,39 +24,39 @@
 ## 📊 **Current Coverage Analysis**
 
 ### **What E2E Tests Cover** (96 tests):
-✅ Prometheus webhook end-to-end flow  
-✅ Kubernetes Event webhook end-to-end flow  
-✅ CORS enforcement  
-✅ Error response codes (400, 404, 405)  
-✅ Health/Readiness endpoints  
-✅ Replay attack prevention  
-✅ Graceful shutdown foundation  
-✅ K8s API rate limiting  
-✅ Metrics endpoint exposure  
-✅ Audit error scenarios  
-✅ Deduplication edge cases  
-✅ Error classification & retry  
-✅ Security headers  
+✅ Prometheus webhook end-to-end flow
+✅ Kubernetes Event webhook end-to-end flow
+✅ CORS enforcement
+✅ Error response codes (400, 404, 405)
+✅ Health/Readiness endpoints
+✅ Replay attack prevention
+✅ Graceful shutdown foundation
+✅ K8s API rate limiting
+✅ Metrics endpoint exposure
+✅ Audit error scenarios
+✅ Deduplication edge cases
+✅ Error classification & retry
+✅ Security headers
 
 ### **What Integration Tests Cover** (22 tests):
-✅ State-based deduplication (database-level)  
-✅ Multi-namespace isolation  
-✅ Concurrent alerts handling  
-✅ CRD creation lifecycle  
-✅ Fingerprint stability  
-✅ K8s API failure handling  
-✅ Status deduplication tracking  
-✅ Field selector precision  
+✅ State-based deduplication (database-level)
+✅ Multi-namespace isolation
+✅ Concurrent alerts handling
+✅ CRD creation lifecycle
+✅ Fingerprint stability
+✅ K8s API failure handling
+✅ Status deduplication tracking
+✅ Field selector precision
 
 ### **What's MISSING in Integration Tests** ❌:
-❌ Adapter business logic (Prometheus, K8s Event parsing)  
-❌ Metrics emission validation  
-❌ Audit event emission validation  
-❌ Middleware chain integration  
-❌ Configuration validation  
-❌ Circuit breaker state transitions  
-❌ Error classification logic  
-❌ Retry backoff calculations  
+❌ Adapter business logic (Prometheus, K8s Event parsing)
+❌ Metrics emission validation
+❌ Audit event emission validation
+❌ Middleware chain integration
+❌ Configuration validation
+❌ Circuit breaker state transitions
+❌ Error classification logic
+❌ Retry backoff calculations
 
 ---
 
@@ -65,13 +65,13 @@
 ### **Category 1: Audit Event Emission** (BR-GATEWAY-054, BR-GATEWAY-055-065)
 
 #### **Scenario 1.1: Signal Received Audit Event**
-**BR**: BR-GATEWAY-055  
-**Business Value**: SOC2 compliance - every signal must be auditable  
-**Test Focus**: Verify `gateway.signal.received` audit event emission  
-**Components**: Adapter → Audit Helper → DataStorage Client  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: Partial (Test 22, 23 cover some audit scenarios)  
-**Why Integration**: Can validate audit payload structure without full HTTP stack  
+**BR**: BR-GATEWAY-055
+**Business Value**: SOC2 compliance - every signal must be auditable
+**Test Focus**: Verify `gateway.signal.received` audit event emission
+**Components**: Adapter → Audit Helper → DataStorage Client
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: Partial (Test 22, 23 cover some audit scenarios)
+**Why Integration**: Can validate audit payload structure without full HTTP stack
 
 **Test Scenarios**:
 1. Prometheus signal → `gateway.signal.received` with correct `original_payload`
@@ -85,13 +85,13 @@
 ---
 
 #### **Scenario 1.2: CRD Created Audit Event**
-**BR**: BR-GATEWAY-056  
-**Business Value**: Track every CRD creation for compliance and debugging  
-**Test Focus**: Verify `gateway.crd.created` audit event emission  
-**Components**: CRD Creator → Audit Helper → DataStorage Client  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: Partial (Test 22 covers fallback scenario)  
-**Why Integration**: Validate audit payload without K8s cluster overhead  
+**BR**: BR-GATEWAY-056
+**Business Value**: Track every CRD creation for compliance and debugging
+**Test Focus**: Verify `gateway.crd.created` audit event emission
+**Components**: CRD Creator → Audit Helper → DataStorage Client
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: Partial (Test 22 covers fallback scenario)
+**Why Integration**: Validate audit payload without K8s cluster overhead
 
 **Test Scenarios**:
 1. CRD creation → `gateway.crd.created` with CRD name/namespace
@@ -105,13 +105,13 @@
 ---
 
 #### **Scenario 1.3: Signal Deduplicated Audit Event**
-**BR**: BR-GATEWAY-057  
-**Business Value**: Track deduplication decisions for SLA reporting  
-**Test Focus**: Verify `gateway.signal.deduplicated` audit event emission  
-**Components**: Phase Checker → Audit Helper → DataStorage Client  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: None  
-**Why Integration**: Validate deduplication audit logic independently  
+**BR**: BR-GATEWAY-057
+**Business Value**: Track deduplication decisions for SLA reporting
+**Test Focus**: Verify `gateway.signal.deduplicated` audit event emission
+**Components**: Phase Checker → Audit Helper → DataStorage Client
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: None
+**Why Integration**: Validate deduplication audit logic independently
 
 **Test Scenarios**:
 1. Duplicate signal → `gateway.signal.deduplicated` with existing RR reference
@@ -125,13 +125,13 @@
 ---
 
 #### **Scenario 1.4: CRD Creation Failed Audit Event**
-**BR**: BR-GATEWAY-058  
-**Business Value**: Track failures for operational debugging  
-**Test Focus**: Verify `gateway.crd.failed` audit event emission  
-**Components**: CRD Creator → Audit Helper → DataStorage Client  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: None  
-**Why Integration**: Simulate K8s API failures without full cluster  
+**BR**: BR-GATEWAY-058
+**Business Value**: Track failures for operational debugging
+**Test Focus**: Verify `gateway.crd.failed` audit event emission
+**Components**: CRD Creator → Audit Helper → DataStorage Client
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: None
+**Why Integration**: Simulate K8s API failures without full cluster
 
 **Test Scenarios**:
 1. K8s API failure → `gateway.crd.failed` with error details
@@ -147,13 +147,13 @@
 ### **Category 2: Metrics Emission** (BR-GATEWAY-066-069, BR-GATEWAY-079)
 
 #### **Scenario 2.1: HTTP Request Metrics**
-**BR**: BR-GATEWAY-067  
-**Business Value**: Operational visibility into Gateway performance  
-**Test Focus**: Verify `gateway_http_requests_total` metric emission  
-**Components**: HTTP Metrics Middleware → Prometheus Registry  
-**Current Coverage**: 10% (middleware has minimal coverage)  
-**E2E Coverage**: Test 04 validates metrics endpoint, not emission logic  
-**Why Integration**: Validate metric labels and values without HTTP overhead  
+**BR**: BR-GATEWAY-067
+**Business Value**: Operational visibility into Gateway performance
+**Test Focus**: Verify `gateway_http_requests_total` metric emission
+**Components**: HTTP Metrics Middleware → Prometheus Registry
+**Current Coverage**: 10% (middleware has minimal coverage)
+**E2E Coverage**: Test 04 validates metrics endpoint, not emission logic
+**Why Integration**: Validate metric labels and values without HTTP overhead
 
 **Test Scenarios**:
 1. Signal processing → `gateway_http_requests_total{status="201"}` increments
@@ -167,13 +167,13 @@
 ---
 
 #### **Scenario 2.2: CRD Creation Metrics**
-**BR**: BR-GATEWAY-068  
-**Business Value**: Track CRD creation success/failure rates  
-**Test Focus**: Verify `gateway_crd_creations_total` metric emission  
-**Components**: CRD Creator → Metrics Package  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: None  
-**Why Integration**: Validate metric emission logic independently  
+**BR**: BR-GATEWAY-068
+**Business Value**: Track CRD creation success/failure rates
+**Test Focus**: Verify `gateway_crd_creations_total` metric emission
+**Components**: CRD Creator → Metrics Package
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: None
+**Why Integration**: Validate metric emission logic independently
 
 **Test Scenarios**:
 1. Successful CRD creation → `gateway_crd_creations_total{status="success"}` increments
@@ -187,13 +187,13 @@
 ---
 
 #### **Scenario 2.3: Deduplication Metrics**
-**BR**: BR-GATEWAY-069  
-**Business Value**: Track deduplication effectiveness for capacity planning  
-**Test Focus**: Verify `gateway_deduplications_total` metric emission  
-**Components**: Phase Checker → Metrics Package  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: None  
-**Why Integration**: Validate deduplication metric logic  
+**BR**: BR-GATEWAY-069
+**Business Value**: Track deduplication effectiveness for capacity planning
+**Test Focus**: Verify `gateway_deduplications_total` metric emission
+**Components**: Phase Checker → Metrics Package
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: None
+**Why Integration**: Validate deduplication metric logic
 
 **Test Scenarios**:
 1. Duplicate signal → `gateway_deduplications_total` increments
@@ -209,13 +209,13 @@
 ### **Category 3: Adapter Business Logic** (BR-GATEWAY-001, BR-GATEWAY-002, BR-GATEWAY-005)
 
 #### **Scenario 3.1: Prometheus Adapter Signal Parsing**
-**BR**: BR-GATEWAY-001, BR-GATEWAY-005  
-**Business Value**: Validate correct signal extraction from Prometheus payloads  
-**Test Focus**: Adapter.Parse() business logic  
-**Components**: Prometheus Adapter → Signal struct  
-**Current Coverage**: 0% (adapter has 0% integration coverage)  
-**E2E Coverage**: Test 31, 33 cover end-to-end flow  
-**Why Integration**: Test parsing logic without HTTP/K8s overhead  
+**BR**: BR-GATEWAY-001, BR-GATEWAY-005
+**Business Value**: Validate correct signal extraction from Prometheus payloads
+**Test Focus**: Adapter.Parse() business logic
+**Components**: Prometheus Adapter → Signal struct
+**Current Coverage**: 0% (adapter has 0% integration coverage)
+**E2E Coverage**: Test 31, 33 cover end-to-end flow
+**Why Integration**: Test parsing logic without HTTP/K8s overhead
 
 **Test Scenarios**:
 1. Standard Prometheus alert → Signal with correct labels/annotations
@@ -232,13 +232,13 @@
 ---
 
 #### **Scenario 3.2: Kubernetes Event Adapter Signal Parsing**
-**BR**: BR-GATEWAY-002, BR-GATEWAY-005  
-**Business Value**: Validate correct signal extraction from K8s Events  
-**Test Focus**: K8s Event Adapter.Parse() business logic  
-**Components**: K8s Event Adapter → Signal struct  
-**Current Coverage**: 0% (adapter has 0% integration coverage)  
-**E2E Coverage**: Test 08, 33 cover end-to-end flow  
-**Why Integration**: Test parsing logic without HTTP/K8s overhead  
+**BR**: BR-GATEWAY-002, BR-GATEWAY-005
+**Business Value**: Validate correct signal extraction from K8s Events
+**Test Focus**: K8s Event Adapter.Parse() business logic
+**Components**: K8s Event Adapter → Signal struct
+**Current Coverage**: 0% (adapter has 0% integration coverage)
+**E2E Coverage**: Test 08, 33 cover end-to-end flow
+**Why Integration**: Test parsing logic without HTTP/K8s overhead
 
 **Test Scenarios**:
 1. Warning event → Signal with severity=warning
@@ -256,13 +256,13 @@
 ### **Category 4: Circuit Breaker State Transitions** (BR-GATEWAY-093)
 
 #### **Scenario 4.1: Circuit Breaker State Machine**
-**BR**: BR-GATEWAY-093  
-**Business Value**: Validate fail-fast behavior for K8s API unavailability  
-**Test Focus**: Circuit breaker state transitions (Closed → Open → Half-Open → Closed)  
-**Components**: K8s Client with Circuit Breaker → Metrics  
-**Current Coverage**: 36.9% (partial integration coverage)  
-**E2E Coverage**: Test 29 covers some scenarios  
-**Why Integration**: Validate state machine logic without full cluster  
+**BR**: BR-GATEWAY-093
+**Business Value**: Validate fail-fast behavior for K8s API unavailability
+**Test Focus**: Circuit breaker state transitions (Closed → Open → Half-Open → Closed)
+**Components**: K8s Client with Circuit Breaker → Metrics
+**Current Coverage**: 36.9% (partial integration coverage)
+**E2E Coverage**: Test 29 covers some scenarios
+**Why Integration**: Validate state machine logic without full cluster
 
 **Test Scenarios**:
 1. **Closed → Open**: 5 consecutive failures → circuit opens
@@ -280,13 +280,13 @@
 ### **Category 5: Error Classification & Retry Logic** (BR-GATEWAY-188, BR-GATEWAY-189)
 
 #### **Scenario 5.1: Transient vs Permanent Error Classification**
-**BR**: BR-GATEWAY-188, BR-GATEWAY-189  
-**Business Value**: Validate correct retry behavior for different error types  
-**Test Focus**: Error classification logic  
-**Components**: Error Classifier → Retry Logic  
-**Current Coverage**: 0% (no integration test)  
-**E2E Coverage**: Test 26 covers end-to-end retry behavior  
-**Why Integration**: Test classification logic without HTTP overhead  
+**BR**: BR-GATEWAY-188, BR-GATEWAY-189
+**Business Value**: Validate correct retry behavior for different error types
+**Test Focus**: Error classification logic
+**Components**: Error Classifier → Retry Logic
+**Current Coverage**: 0% (no integration test)
+**E2E Coverage**: Test 26 covers end-to-end retry behavior
+**Why Integration**: Test classification logic without HTTP overhead
 
 **Test Scenarios**:
 1. K8s API 500 error → classified as TRANSIENT → retry
@@ -302,13 +302,13 @@
 ---
 
 #### **Scenario 5.2: Exponential Backoff Calculation**
-**BR**: BR-GATEWAY-188  
-**Business Value**: Validate correct backoff timing for retries  
-**Test Focus**: Backoff calculation logic  
-**Components**: Retry Logic → Clock  
-**Current Coverage**: 33.3% (clock has minimal coverage)  
-**E2E Coverage**: Test 26 validates timing behavior  
-**Why Integration**: Test backoff math without time delays  
+**BR**: BR-GATEWAY-188
+**Business Value**: Validate correct backoff timing for retries
+**Test Focus**: Backoff calculation logic
+**Components**: Retry Logic → Clock
+**Current Coverage**: 33.3% (clock has minimal coverage)
+**E2E Coverage**: Test 26 validates timing behavior
+**Why Integration**: Test backoff math without time delays
 
 **Test Scenarios**:
 1. First retry → 100ms backoff
@@ -325,13 +325,13 @@
 ### **Category 6: Configuration Validation** (BR-GATEWAY-043, BR-GATEWAY-052)
 
 #### **Scenario 6.1: Configuration Loading & Validation**
-**BR**: BR-GATEWAY-043  
-**Business Value**: Validate Gateway starts with correct configuration  
-**Test Focus**: Config validation logic  
-**Components**: Config Loader → Validator  
-**Current Coverage**: 16.7% (config has minimal coverage)  
-**E2E Coverage**: None (E2E assumes valid config)  
-**Why Integration**: Test config validation without full server startup  
+**BR**: BR-GATEWAY-043
+**Business Value**: Validate Gateway starts with correct configuration
+**Test Focus**: Config validation logic
+**Components**: Config Loader → Validator
+**Current Coverage**: 16.7% (config has minimal coverage)
+**E2E Coverage**: None (E2E assumes valid config)
+**Why Integration**: Test config validation without full server startup
 
 **Test Scenarios**:
 1. Valid config → loads successfully
@@ -349,13 +349,13 @@
 ### **Category 7: Middleware Chain Integration** (BR-GATEWAY-039, BR-GATEWAY-074-076)
 
 #### **Scenario 7.1: Middleware Chain Execution Order**
-**BR**: BR-GATEWAY-039, BR-GATEWAY-074, BR-GATEWAY-075, BR-GATEWAY-076  
-**Business Value**: Validate middleware executes in correct order  
-**Test Focus**: Middleware chain integration  
-**Components**: Request ID → Timestamp → Security Headers → Content Type  
-**Current Coverage**: ~15% average across middleware  
-**E2E Coverage**: Test 19, 20 cover some middleware behavior  
-**Why Integration**: Test middleware chain without full HTTP stack  
+**BR**: BR-GATEWAY-039, BR-GATEWAY-074, BR-GATEWAY-075, BR-GATEWAY-076
+**Business Value**: Validate middleware executes in correct order
+**Test Focus**: Middleware chain integration
+**Components**: Request ID → Timestamp → Security Headers → Content Type
+**Current Coverage**: ~15% average across middleware
+**E2E Coverage**: Test 19, 20 cover some middleware behavior
+**Why Integration**: Test middleware chain without full HTTP stack
 
 **Test Scenarios**:
 1. Request → Request ID generated first
@@ -487,7 +487,7 @@
 
 ---
 
-**Status**: 📋 **READY FOR APPROVAL**  
-**Priority**: **P0 - COMPLIANCE REQUIREMENT**  
-**Estimated Effort**: 3 weeks (84 tests)  
+**Status**: 📋 **READY FOR APPROVAL**
+**Priority**: **P0 - COMPLIANCE REQUIREMENT**
+**Estimated Effort**: 3 weeks (84 tests)
 **Expected Outcome**: 62% integration coverage ✅

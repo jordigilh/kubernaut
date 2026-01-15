@@ -104,8 +104,9 @@ func (c *AIAnalysisCreator) Create(
 				Namespace:  rr.Namespace,
 				UID:        rr.UID,
 			},
-			// Remediation ID for audit correlation
-			RemediationID: string(rr.UID),
+		// DD-AUDIT-CORRELATION-001: Use RR name for consistency
+		// TODO(v2): Deprecate RemediationID field (use RemediationRequestRef.Name instead)
+		RemediationID: rr.Name,
 			// Analysis request with signal context
 			AnalysisRequest: aianalysisv1.AnalysisRequest{
 				SignalContext: c.buildSignalContext(rr, sp),

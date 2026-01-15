@@ -457,9 +457,35 @@ func (s *BufferedAuditStore) backgroundWriter() {
 
 		case done := <-s.flushChan:
 			// Explicit flush requested (typically from tests or graceful shutdown prep)
+			initialBatchSize := len(batch)
+			initialBufferSize := len(s.buffer)
+
 			s.logger.V(1).Info("🔄 Processing explicit flush request",
-				"batch_size", len(batch),
-				"buffer_size", len(s.buffer))
+				"batch_size_before_drain", initialBatchSize,
+				"buffer_size_before_drain", initialBufferSize)
+
+			// BUG FIX (SP-AUDIT-001): Drain s.buffer channel into batch BEFORE flushing
+			// The explicit flush was only writing the batch array, missing events in s.buffer channel
+			// This caused test failures where events were "buffered successfully" but never written
+			drainedCount := 0
+		drainLoop:
+			for {
+				select {
+				case event := <-s.buffer:
+					batch = append(batch, event)
+					drainedCount++
+				default:
+					// Buffer drained (no more events available without blocking)
+					break drainLoop
+				}
+			}
+
+			if drainedCount > 0 {
+				s.logger.V(1).Info("🔄 Drained buffer channel into batch",
+					"drained_count", drainedCount,
+					"batch_size_after_drain", len(batch),
+					"buffer_size_after_drain", len(s.buffer))
+			}
 
 			if len(batch) > 0 {
 				batchSizeBeforeFlush := len(batch)
@@ -468,10 +494,12 @@ func (s *BufferedAuditStore) backgroundWriter() {
 				batch = batch[:0] // Reset batch
 				s.logger.V(1).Info("✅ Explicit flush completed",
 					"flushed_count", batchSizeBeforeFlush,
+					"drained_from_buffer", drainedCount,
 					"buffer_size_after", len(s.buffer))
 				done <- nil // Signal success
 			} else {
-				s.logger.V(1).Info("✅ Explicit flush completed (no events to flush)")
+				s.logger.V(1).Info("✅ Explicit flush completed (no events to flush)",
+					"buffer_was_empty", initialBufferSize == 0)
 				done <- nil // Signal success (nothing to flush)
 			}
 		}

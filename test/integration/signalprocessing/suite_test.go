@@ -489,6 +489,10 @@ determine_severity := "critical" if {
 	input.signal.severity == "sev3"
 } else := "info" if {
 	input.signal.severity == "p3"
+} else := "invalid-severity-enum" if {
+	# Test case: Return invalid severity value to trigger validation error
+	# This simulates operator error in policy configuration
+	input.signal.severity == "trigger-error"
 } else := "critical" if {
 	# Fallback: unmapped → critical (conservative, operator-defined)
 	true

@@ -1920,6 +1920,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 			{
+				if s.PolicyHash.Set {
+					e.FieldStart("policy_hash")
+					s.PolicyHash.Encode(e)
+				}
+			}
+			{
 				if s.Environment.Set {
 					e.FieldStart("environment")
 					s.Environment.Encode(e)
@@ -3997,6 +4003,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.DeterminationSource.Set {
 					e.FieldStart("determination_source")
 					s.DeterminationSource.Encode(e)
+				}
+			}
+			{
+				if s.PolicyHash.Set {
+					e.FieldStart("policy_hash")
+					s.PolicyHash.Encode(e)
 				}
 			}
 			{
@@ -19777,6 +19789,12 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.PolicyHash.Set {
+			e.FieldStart("policy_hash")
+			s.PolicyHash.Encode(e)
+		}
+	}
+	{
 		if s.Environment.Set {
 			e.FieldStart("environment")
 			s.Environment.Encode(e)
@@ -19892,7 +19910,7 @@ func (s *SignalProcessingAuditPayload) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSignalProcessingAuditPayload = [26]string{
+var jsonFieldsNameOfSignalProcessingAuditPayload = [27]string{
 	0:  "event_type",
 	1:  "phase",
 	2:  "signal",
@@ -19900,25 +19918,26 @@ var jsonFieldsNameOfSignalProcessingAuditPayload = [26]string{
 	4:  "external_severity",
 	5:  "normalized_severity",
 	6:  "determination_source",
-	7:  "environment",
-	8:  "environment_source",
-	9:  "priority",
-	10: "priority_source",
-	11: "criticality",
-	12: "sla_requirement",
-	13: "has_owner_chain",
-	14: "owner_chain_length",
-	15: "degraded_mode",
-	16: "has_pdb",
-	17: "has_hpa",
-	18: "duration_ms",
-	19: "has_namespace",
-	20: "has_pod",
-	21: "has_deployment",
-	22: "business_unit",
-	23: "from_phase",
-	24: "to_phase",
-	25: "error",
+	7:  "policy_hash",
+	8:  "environment",
+	9:  "environment_source",
+	10: "priority",
+	11: "priority_source",
+	12: "criticality",
+	13: "sla_requirement",
+	14: "has_owner_chain",
+	15: "owner_chain_length",
+	16: "degraded_mode",
+	17: "has_pdb",
+	18: "has_hpa",
+	19: "duration_ms",
+	20: "has_namespace",
+	21: "has_pod",
+	22: "has_deployment",
+	23: "business_unit",
+	24: "from_phase",
+	25: "to_phase",
+	26: "error",
 }
 
 // Decode decodes SignalProcessingAuditPayload from json.
@@ -20001,6 +20020,16 @@ func (s *SignalProcessingAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"determination_source\"")
+			}
+		case "policy_hash":
+			if err := func() error {
+				s.PolicyHash.Reset()
+				if err := s.PolicyHash.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"policy_hash\"")
 			}
 		case "environment":
 			if err := func() error {

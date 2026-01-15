@@ -35,6 +35,7 @@ COPY --chown=1001:0 holmesgpt-api/requirements-e2e.txt ./requirements.txt
 # Upgrade pip and install Python dependencies
 # Remove unnecessary files after installation to reduce layer size
 RUN pip install --no-cache-dir --upgrade pip && \
+	pip install --no-cache-dir ./src/clients/datastorage && \
 	pip install --no-cache-dir -r requirements.txt && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
 	find /opt/app-root/lib/python3.12/site-packages -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
