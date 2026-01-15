@@ -155,10 +155,10 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 
         // Then: All labels preserved in audit event
         auditEvent := auditStore.Events[0]
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := auditEvent.EventData.GatewayAuditPayload
-        
+
         // Access SignalLabels (Optional field - check if present)
         signalLabels, ok := gatewayPayload.SignalLabels.Get()
         Expect(ok).To(BeTrue(), "SignalLabels should be present in audit payload")
@@ -246,7 +246,7 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
         rrRef, ok := gatewayPayload.RemediationRequest.Get()
         Expect(ok).To(BeTrue())
         Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`))
-        
+
         // Extract and validate CRD name from "namespace/name" format
         parts := strings.Split(rrRef, "/")
         Expect(parts).To(HaveLen(2))
@@ -267,15 +267,15 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 
         // Then: Target resource in audit event
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
-        
+
         // Access resource_kind and resource_name (Optional fields)
         resourceKind, ok := gatewayPayload.ResourceKind.Get()
         Expect(ok).To(BeTrue(), "ResourceKind should be present")
         Expect(resourceKind).To(Equal("Pod"))
-        
+
         resourceName, ok := gatewayPayload.ResourceName.Get()
         Expect(ok).To(BeTrue(), "ResourceName should be present")
         Expect(resourceName).To(Equal("crashpod-123"))
@@ -291,7 +291,7 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 
         // Then: Fingerprint in audit event with correct format
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
 
@@ -319,10 +319,10 @@ var _ = Describe("BR-GATEWAY-056: CRD Created Audit Events", func() {
 
         // Then: Occurrence count in audit event
         crdCreatedEvent := findEventByType(auditStore.Events, "gateway.crd.created")
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := crdCreatedEvent.EventData.GatewayAuditPayload
-        
+
         // Note: occurrence_count is typically populated for deduplicated events
         // For CRD creation, this would only be present if signal already deduplicated
         occurrenceCount, ok := gatewayPayload.OccurrenceCount.Get()
@@ -442,15 +442,15 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
 
         // Then: Existing RR name in audit event
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := dedupeEvent.EventData.GatewayAuditPayload
-        
+
         // Business rule: RemediationRequest field contains existing RR reference (namespace/name)
         rrRef, ok := gatewayPayload.RemediationRequest.Get()
         Expect(ok).To(BeTrue())
         Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`))
-        
+
         // Extract and validate namespace and name from "namespace/name" format
         parts := strings.Split(rrRef, "/")
         Expect(parts).To(HaveLen(2))
@@ -471,10 +471,10 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
 
         // Then: Updated count in audit event
         dedupeEvent := findEventByType(auditStore.Events, "gateway.signal.deduplicated")
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := dedupeEvent.EventData.GatewayAuditPayload
-        
+
         // Business rule: OccurrenceCount incremented to reflect signal repetition
         occurrenceCount, ok := gatewayPayload.OccurrenceCount.Get()
         Expect(ok).To(BeTrue())
@@ -498,11 +498,11 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         // Then: Two deduplication events emitted
         dedupeEvents := filterEventsByType(auditStore.Events, "gateway.signal.deduplicated")
         Expect(dedupeEvents).To(HaveLen(2))
-        
+
         // Parse both payloads
         payload1 := dedupeEvents[0].EventData.GatewayAuditPayload
         payload2 := dedupeEvents[1].EventData.GatewayAuditPayload
-        
+
         // Business rule: Each deduplication references correct existing RR
         rrRef1, ok1 := payload1.RemediationRequest.Get()
         rrRef2, ok2 := payload2.RemediationRequest.Get()
@@ -510,7 +510,7 @@ var _ = Describe("BR-GATEWAY-057: Signal Deduplicated Audit Events", func() {
         Expect(ok2).To(BeTrue())
         Expect(rrRef1).To(ContainSubstring(pendingRR.Name))
         Expect(rrRef2).To(ContainSubstring(processingRR.Name))
-        
+
         // Business rule: Both marked as duplicate status
         dedupStatus1, _ := payload1.DeduplicationStatus.Get()
         dedupStatus2, _ := payload2.DeduplicationStatus.Get()
@@ -581,9 +581,24 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
 
         failedEvent := findEventByType(auditStore.Events, "gateway.crd.failed")
         Expect(failedEvent).ToNot(BeNil())
-        Expect(failedEvent.EventAction).To(Equal("failed"))
-        Expect(failedEvent.Metadata).To(HaveKey("error"))
-        Expect(failedEvent.Metadata["error"]).To(ContainSubstring("API server unavailable"))
+        Expect(failedEvent.EventAction).To(Equal("created"))
+        Expect(failedEvent.EventOutcome).To(Equal("failure"))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := failedEvent.EventData.GatewayAuditPayload
+        
+        // Access ErrorDetails (existing schema)
+        errorDetails, ok := gatewayPayload.ErrorDetails.Get()
+        Expect(ok).To(BeTrue(), "ErrorDetails should be present for failed CRD creation")
+        
+        // Business rule: Error message provides troubleshooting context
+        Expect(errorDetails.Message).To(ContainSubstring("API server unavailable"))
+        
+        // Business rule: Error code identifies failure category
+        Expect(errorDetails.Code).ToNot(BeEmpty())
+        
+        // Business rule: Component identifies error source
+        Expect(errorDetails.Component).To(Equal(api.ErrorDetailsComponentGateway))
     })
 
     // Test 1.4.2
@@ -597,12 +612,26 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
 
         // Then: Error type in audit event
         failedEvent := findEventByType(auditStore.Events, "gateway.crd.failed")
-        Expect(failedEvent.Metadata).To(HaveKeyWithValue("error_type", "transient"))
-        Expect(failedEvent.Metadata).To(HaveKeyWithValue("http_status", "503"))
+        
+        // Parse EventData to get GatewayAuditPayload
+        gatewayPayload := failedEvent.EventData.GatewayAuditPayload
+        
+        // Access ErrorDetails
+        errorDetails, ok := gatewayPayload.ErrorDetails.Get()
+        Expect(ok).To(BeTrue())
+        
+        // Business rule: RetryPossible indicates transient vs permanent error
+        Expect(errorDetails.RetryPossible).To(BeTrue(), "503 errors are transient and retryable")
+        
+        // Business rule: Error code contains HTTP status for K8s API errors
+        Expect(errorDetails.Code).To(ContainSubstring("503"))
+        
+        // Business rule: Error message provides context
+        Expect(errorDetails.Message).To(ContainSubstring("Service Unavailable"))
     })
 
     // Test 1.4.3
-    It("should include retry_count in audit event for retry tracking", func() {
+    It("should emit separate audit events for each retry attempt", func() {
         // Given: K8s API fails multiple times
         k8sClient.InjectTransientErrors(3)
         signal := createTestSignal("test-alert", "critical")
@@ -610,12 +639,22 @@ var _ = Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
         // When: CRD creation with retries
         crdCreator.CreateRemediationRequestWithRetry(ctx, signal, 3)
 
-        // Then: Multiple failure events with retry count
+        // Then: Multiple failure events emitted (one per attempt)
         failedEvents := filterEventsByType(auditStore.Events, "gateway.crd.failed")
-        Expect(failedEvents).To(HaveLen(3))
-        Expect(failedEvents[0].Metadata["retry_count"]).To(Equal("1"))
-        Expect(failedEvents[1].Metadata["retry_count"]).To(Equal("2"))
-        Expect(failedEvents[2].Metadata["retry_count"]).To(Equal("3"))
+        Expect(failedEvents).To(HaveLen(3), "Each retry attempt should generate audit event")
+        
+        // Business rule: Each event has its own correlation ID for tracking
+        Expect(failedEvents[0].CorrelationID).ToNot(BeEmpty())
+        Expect(failedEvents[1].CorrelationID).ToNot(BeEmpty())
+        Expect(failedEvents[2].CorrelationID).ToNot(BeEmpty())
+        
+        // Verify all events contain ErrorDetails
+        for i, event := range failedEvents {
+            gatewayPayload := event.EventData.GatewayAuditPayload
+            errorDetails, ok := gatewayPayload.ErrorDetails.Get()
+            Expect(ok).To(BeTrue(), fmt.Sprintf("Event %d should have ErrorDetails", i+1))
+            Expect(errorDetails.RetryPossible).To(BeTrue(), "Transient errors are retryable")
+        }
     })
 
     // Test 1.4.4
