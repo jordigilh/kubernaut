@@ -64,7 +64,7 @@ Eventually(func() error {
 
 2. **`test/e2e/gateway/31_prometheus_adapter_test.go`**
    - **Tests**: BR-073 - Deduplication lifecycle, BR-075 - Multi-namespace
-   - **Changes**: 
+   - **Changes**:
      - Line ~334-348: Deduplication lifecycle CRD verification
      - Line ~454-476: Multi-namespace CRD verification
    - **Impact**: 2 test cases

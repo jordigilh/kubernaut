@@ -1,7 +1,7 @@
 # E2E Anti-Pattern Triage - JSONB Comprehensive Test
 
-**Date**: January 14, 2026  
-**File**: `test/e2e/datastorage/09_event_type_jsonb_comprehensive_test.go`  
+**Date**: January 14, 2026
+**File**: `test/e2e/datastorage/09_event_type_jsonb_comprehensive_test.go`
 **Issue**: Test uses `map[string]interface{}` despite availability of type-safe helpers
 
 ---
@@ -126,10 +126,10 @@ eventID := createAuditEventOpenAPI(ctx, client, auditEvent)
 ```
 
 ### **Benefits**
-✅ Compile-time type safety  
-✅ Schema compliance guaranteed  
-✅ Reuses existing `createAuditEventOpenAPI` helper  
-✅ Consistent with integration test patterns  
+✅ Compile-time type safety
+✅ Schema compliance guaranteed
+✅ Reuses existing `createAuditEventOpenAPI` helper
+✅ Consistent with integration test patterns
 ✅ Extends (not replaces) existing helpers
 
 ---
