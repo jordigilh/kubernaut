@@ -163,18 +163,20 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// OPTIMIZATION: Build images in parallel (saves ~40 seconds)
+	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	By("Building DataStorage and Mock LLM images in parallel")
+	By("Building DataStorage, Mock LLM, and HAPI images in parallel")
 	var (
 		dsImageName      string
 		mockLLMImageName string
+		hapiImageName    string
 		dsErr            error
 		mockErr          error
+		hapiErr          error
 		wg               sync.WaitGroup
 	)
 
-	wg.Add(2)
+	wg.Add(3)
 
 	// Goroutine 1: Build DataStorage image (~60s)
 	go func() {
@@ -190,12 +192,20 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		mockLLMImageName, mockErr = infrastructure.BuildMockLLMImage(specCtx, "aianalysis", GinkgoWriter)
 	}()
 
-	wg.Wait() // Wait for both builds to complete
+	// Goroutine 3: Build HAPI image (~100s)
+	go func() {
+		defer wg.Done()
+		defer GinkgoRecover() // Ensure Ginkgo failures are captured
+		hapiImageName, hapiErr = infrastructure.BuildHAPIImage(specCtx, "aianalysis", GinkgoWriter)
+	}()
+
+	wg.Wait() // Wait for all three builds to complete
 
 	// Check for errors after parallel builds
 	Expect(dsErr).ToNot(HaveOccurred(), "DataStorage image must build successfully")
 	Expect(mockErr).ToNot(HaveOccurred(), "Mock LLM image must build successfully")
-	GinkgoWriter.Printf("✅ Both images built in parallel: DS=%s, MockLLM=%s\n", dsImageName, mockLLMImageName)
+	Expect(hapiErr).ToNot(HaveOccurred(), "HAPI image must build successfully")
+	GinkgoWriter.Printf("✅ All three images built in parallel: DS=%s, MockLLM=%s, HAPI=%s\n", dsImageName, mockLLMImageName, hapiImageName)
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// SEQUENTIAL DEPLOYMENT: Start DataStorage, seed workflows, start Mock LLM
