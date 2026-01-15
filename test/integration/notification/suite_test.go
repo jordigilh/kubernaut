@@ -176,8 +176,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	By("Starting Notification integration infrastructure (Process #1 only, DD-TEST-002)")
-	// This starts: PostgreSQL, Redis, Immudb, DataStorage
-	// Per DD-TEST-001 v2.2: PostgreSQL=15440, Redis=16385, Immudb=13328, DS=18096
+	// This starts: PostgreSQL, Redis, DataStorage
+	// Per DD-TEST-001 v2.6: PostgreSQL=15440, Redis=16385, DS=18096
 	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
 		ServiceName:     "notification",
 		PostgresPort:    15440, // DD-TEST-001 v2.2
@@ -187,7 +187,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		ConfigDir:       "test/integration/notification/config",
 	}, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
-	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, Immudb, DataStorage - shared across all processes)")
+	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
