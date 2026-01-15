@@ -710,6 +710,47 @@ func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
 	return nil
 }
 
+// BuildHAPIImage builds the HolmesGPT-API image for integration tests
+// Returns the full image name with tag for use in StartGenericContainer
+func BuildHAPIImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+	projectRoot := getProjectRoot()
+
+	// Generate DD-TEST-001 v1.3 compliant image tag
+	imageTag := generateInfrastructureImageTag("holmesgpt-api", serviceName)
+	imageName := fmt.Sprintf("holmesgpt-api:%s", imageTag)
+
+	// Check if image already exists (cache hit)
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
+	if checkCmd.Run() == nil {
+		_, _ = fmt.Fprintf(writer, "   ✅ HAPI image already exists: %s\n", imageName)
+		return imageName, nil
+	}
+
+	// Build the image
+	_, _ = fmt.Fprintf(writer, "   🔨 Building HAPI image (tag: %s)...\n", imageTag)
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
+		"-t", imageName,
+		"--force-rm=false", // Disable auto-cleanup to avoid podman cleanup errors
+		"-f", filepath.Join(projectRoot, "holmesgpt-api", "Dockerfile.e2e"), // E2E Dockerfile: minimal dependencies, no lib64 issues
+		projectRoot,
+	)
+	buildCmd.Stdout = writer
+	buildCmd.Stderr = writer
+
+	if err := buildCmd.Run(); err != nil {
+		// Check if image was actually built despite error (podman cleanup issue)
+		checkAgain := exec.Command("podman", "image", "exists", imageName)
+		if checkAgain.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
+			return imageName, nil // Image exists, treat as success
+		}
+		return "", fmt.Errorf("failed to build HAPI image: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ HAPI image built: %s\n", imageName)
+	return imageName, nil
+}
+
 // buildContainerImage builds a container image using podman build
 func buildContainerImage(cfg GenericContainerConfig, writer io.Writer) error {
 	args := []string{"build", "-t", cfg.Image, "--force-rm=false"}
