@@ -249,20 +249,20 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Flush once before query loop (not inside Eventually to avoid repeated flushes)
 			flushAuditStoreAndWait()
 
-		// ✅ FIX: Query by unique correlation_id (server-side filter) instead of namespace (client-side filter)
-		// Per DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for unique correlation per test
-		// Per AIAnalysis proven pattern: 60s timeout, 2s polling for parallel execution stability
-		Eventually(func(g Gomega) {
-			// Query by unique correlation_id (avoids parallel test collisions)
-			count := countAuditEvents("signalprocessing.classification.decision", correlationID)
-			
-			// Enhanced logging to detect duplicate events (BR-SP-105)
-			// Per DD-SEVERITY-001: "One classification decision = one audit event"
-			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
-				time.Now().Format("15:04:05.000"), count, correlationID)
-			
-			g.Expect(count).To(Equal(1), "Should have exactly 1 classification.decision event for this correlation_id")
-		}, 60*time.Second, 2*time.Second).Should(Succeed())
+			// ✅ FIX: Query by unique correlation_id (server-side filter) instead of namespace (client-side filter)
+			// Per DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for unique correlation per test
+			// Per AIAnalysis proven pattern: 60s timeout, 2s polling for parallel execution stability
+			Eventually(func(g Gomega) {
+				// Query by unique correlation_id (avoids parallel test collisions)
+				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
+
+				// Enhanced logging to detect duplicate events (BR-SP-105)
+				// Per DD-SEVERITY-001: "One classification decision = one audit event"
+				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
+					time.Now().Format("15:04:05.000"), count, correlationID)
+
+				g.Expect(count).To(Equal(1), "Should have exactly 1 classification.decision event for this correlation_id")
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			// Get the event for detailed assertions
 			event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
@@ -335,17 +335,17 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Flush once before query loop (not inside Eventually to avoid repeated flushes)
 			flushAuditStoreAndWait()
 
-		// ✅ FIX: Query by unique correlation_id (server-side filter)
-		// Per AIAnalysis proven pattern: 60s timeout, 2s polling for parallel execution stability
-		Eventually(func(g Gomega) {
-			count := countAuditEvents("signalprocessing.classification.decision", correlationID)
-			
-			// Enhanced logging to detect duplicate events (BR-SP-105)
-			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
-				time.Now().Format("15:04:05.000"), count, correlationID)
-			
-			g.Expect(count).To(Equal(1), "Should have exactly 1 classification.decision event")
-		}, 60*time.Second, 2*time.Second).Should(Succeed())
+			// ✅ FIX: Query by unique correlation_id (server-side filter)
+			// Per AIAnalysis proven pattern: 60s timeout, 2s polling for parallel execution stability
+			Eventually(func(g Gomega) {
+				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
+
+				// Enhanced logging to detect duplicate events (BR-SP-105)
+				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
+					time.Now().Format("15:04:05.000"), count, correlationID)
+
+				g.Expect(count).To(Equal(1), "Should have exactly 1 classification.decision event")
+			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
 			Expect(err).ToNot(HaveOccurred())
@@ -397,18 +397,18 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Get unique correlation ID (per DD-AUDIT-CORRELATION-001)
 			correlationID := sp.Spec.RemediationRequestRef.Name
 
-		// WHEN: Controller determines severity
-		Eventually(func(g Gomega) {
-			flushAuditStoreAndWait()
+			// WHEN: Controller determines severity
+			Eventually(func(g Gomega) {
+				flushAuditStoreAndWait()
 
-			// ✅ FIX: Query by unique correlation_id
-			count := countAuditEvents("signalprocessing.classification.decision", correlationID)
-			
-			// Enhanced logging to detect duplicate events (BR-SP-105)
-			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: >0, correlation_id: %s)\n",
-				time.Now().Format("15:04:05.000"), count, correlationID)
-			
-			g.Expect(count).To(BeNumerically(">", 0))
+				// ✅ FIX: Query by unique correlation_id
+				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
+
+				// Enhanced logging to detect duplicate events (BR-SP-105)
+				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: >0, correlation_id: %s)\n",
+					time.Now().Format("15:04:05.000"), count, correlationID)
+
+				g.Expect(count).To(BeNumerically(">", 0))
 
 				event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
 				g.Expect(err).ToNot(HaveOccurred())

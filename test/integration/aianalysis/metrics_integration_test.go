@@ -180,17 +180,19 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 
 			// 2. Create AIAnalysis that will complete successfully
 			// Note: Mock HolmesGPT client returns success, so this tests the happy path
+			testID := uuid.New().String()[:8]
+			rrName := fmt.Sprintf("test-rr-success-%s", testID)
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("metrics-test-success-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("metrics-test-success-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-rr-success",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
-					RemediationID: "test-rem-002",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-002",
@@ -239,17 +241,19 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// Parallel execution causes timeout failures due to shared Prometheus registry
 		It("should emit approval decision metrics based on environment - BR-AI-022", func() {
 			// 1. Create AIAnalysis for production (should require approval)
+			testID := uuid.New().String()[:8]
+			rrName := fmt.Sprintf("test-rr-prod-%s", testID)
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("metrics-test-approval-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("metrics-test-approval-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-rr-prod",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
-					RemediationID: "test-rem-003",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-003",
@@ -306,17 +310,19 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// NOTE: Running serially due to metrics registry state interference
 		It("should emit confidence score histogram during workflow selection - BR-AI-022", FlakeAttempts(3), func() {
 			// 1. Create AIAnalysis that will select a workflow
+			testID := uuid.New().String()[:8]
+			rrName := fmt.Sprintf("test-rr-confidence-%s", testID)
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("metrics-test-confidence-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("metrics-test-confidence-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-rr-confidence",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
-					RemediationID: "test-rem-004",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-004",
@@ -361,17 +367,19 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		// NOTE: Running serially due to metrics registry state interference
 		It("should emit Rego evaluation metrics during analysis phase", func() {
 			// 1. Create AIAnalysis that will trigger policy evaluation
+			testID := uuid.New().String()[:8]
+			rrName := fmt.Sprintf("test-rr-rego-%s", testID)
 			aianalysis := &aianalysisv1alpha1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("metrics-test-rego-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("metrics-test-rego-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1alpha1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "test-rr-rego",
+						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: namespace,
 					},
-					RemediationID: "test-rem-005",
+					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "test-fp-005",
