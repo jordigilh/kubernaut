@@ -120,45 +120,92 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("[Process 1] Starting shared Podman infrastructure...")
-
-		// 1. Preflight checks
-		logger.Info("[Process 1] Step 1: Preflight checks")
-		err := preflightCheck()
-		Expect(err).ToNot(HaveOccurred(), "Preflight checks must pass")
-
-		// 2. Create Podman network
+		
+		// Step 1: Cleanup existing containers (shared helper)
+		logger.Info("[Process 1] Step 1: Cleanup existing containers")
+		infrastructure.CleanupContainers([]string{
+			gatewayDataStorageContainer,
+			gatewayImmudbContainer,
+			gatewayRedisContainer,
+			gatewayPostgresContainer,
+		}, GinkgoWriter)
+		
+		// Step 2: Create Podman network (idempotent)
 		logger.Info("[Process 1] Step 2: Create Podman network")
-		err = createPodmanNetwork()
-		Expect(err).ToNot(HaveOccurred(), "Podman network creation must succeed")
-
-		// 3. Start PostgreSQL
+		_ = exec.Command("podman", "network", "create", "gateway-integration-net").Run()
+		
+		// Step 3: Start PostgreSQL (shared helper)
 		logger.Info("[Process 1] Step 3: Start PostgreSQL container")
-		err = startPostgreSQL()
+		err := infrastructure.StartPostgreSQL(infrastructure.PostgreSQLConfig{
+			ContainerName: gatewayPostgresContainer,
+			Port:          gatewayPostgresPort,
+			DBName:        gatewayPostgresDB,
+			DBUser:        gatewayPostgresUser,
+			DBPassword:    gatewayPostgresPassword,
+			Network:       "gateway-integration-net",
+		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL start must succeed")
-
-		// 4. Start Redis (DataStorage DLQ)
+		
+		err = infrastructure.WaitForPostgreSQLReady(gatewayPostgresContainer, gatewayPostgresUser, gatewayPostgresDB, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "PostgreSQL must become ready")
+		
+		// Step 4: Start Redis (shared helper)
 		logger.Info("[Process 1] Step 4: Start Redis container")
-		err = startRedis()
+		err = infrastructure.StartRedis(infrastructure.RedisConfig{
+			ContainerName: gatewayRedisContainer,
+			Port:          gatewayRedisPort,
+			Network:       "gateway-integration-net",
+		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Redis start must succeed")
-
-		// 5. Start Immudb (SOC2 immutable audit)
+		
+		err = infrastructure.WaitForRedisReady(gatewayRedisContainer, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Redis must become ready")
+		
+		// Step 5: Start Immudb (custom function - no shared helper yet)
 		logger.Info("[Process 1] Step 5: Start Immudb container")
 		err = startImmudb()
 		Expect(err).ToNot(HaveOccurred(), "Immudb start must succeed")
-
-		// 6. Apply migrations to PUBLIC schema
+		
+		// Step 6: Apply migrations to PUBLIC schema
 		logger.Info("[Process 1] Step 6: Apply database migrations")
 		db, err := connectPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection must succeed")
-
+		
 		err = infrastructure.ApplyMigrationsWithPropagationTo(db)
 		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
 		db.Close()
-
-		// 7. Start DataStorage service
+		
+		// Step 7: Start DataStorage (shared helper)
 		logger.Info("[Process 1] Step 7: Start DataStorage service")
-		err = startDataStorageService()
-		Expect(err).ToNot(HaveOccurred(), "DataStorage service start must succeed")
+		imageTag := infrastructure.GenerateInfraImageName("datastorage", "gateway")
+		err = infrastructure.StartDataStorage(infrastructure.IntegrationDataStorageConfig{
+			ContainerName: gatewayDataStorageContainer,
+			Port:          gatewayDataStoragePort,
+			Network:       "gateway-integration-net",
+			PostgresHost:  gatewayPostgresContainer,
+			PostgresPort:  5432,  // Internal container port
+			DBName:        gatewayPostgresDB,
+			DBUser:        gatewayPostgresUser,
+			DBPassword:    gatewayPostgresPassword,
+			RedisHost:     gatewayRedisContainer,
+			RedisPort:     6379,  // Internal container port
+			ImageTag:      imageTag,
+			ExtraEnvVars: map[string]string{
+				"IMMUDB_HOST":     gatewayImmudbContainer,
+				"IMMUDB_PORT":     "3322",
+				"IMMUDB_USERNAME": "immudb",
+				"IMMUDB_PASSWORD": "immudb",
+				"IMMUDB_DATABASE": "defaultdb",
+			},
+		}, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "DataStorage start must succeed")
+		
+		err = infrastructure.WaitForHTTPHealth(
+			fmt.Sprintf("http://127.0.0.1:%d/health", gatewayDataStoragePort),
+			60*time.Second,
+			GinkgoWriter,
+		)
+		Expect(err).ToNot(HaveOccurred(), "DataStorage must become healthy")
 
 		logger.Info("✅ Phase 1 complete - Infrastructure ready for all processes")
 		return []byte("ready")
@@ -272,131 +319,46 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - Infrastructure Cleanup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
+		
+		// Collect must-gather logs if tests failed (DD-TEST-DIAGNOSTICS)
+		if CurrentSpecReport().Failed() {
+			infrastructure.MustGatherContainerLogs("gateway", []string{
+				gatewayPostgresContainer,
+				gatewayRedisContainer,
+				gatewayImmudbContainer,
+				gatewayDataStorageContainer,
+			}, GinkgoWriter)
+		}
+		
 		cleanupInfrastructure()
-
+		
 		logger.Info("✅ Suite complete - All infrastructure cleaned up")
 	},
 )
 
 // ============================================================================
-// INFRASTRUCTURE FUNCTIONS
+// INFRASTRUCTURE FUNCTIONS (using shared helpers from test/infrastructure)
 // ============================================================================
-
-// preflightCheck validates environment before running tests
-func preflightCheck() error {
-	// Check Podman availability
-	cmd := exec.Command("podman", "version")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("podman not available: %w", err)
-	}
-
-	// Check for port conflicts (all Gateway integration ports per DD-TEST-001)
-	ports := []int{
-		gatewayPostgresPort,     // 15437
-		gatewayRedisPort,        // 16380
-		gatewayImmudbPort,       // 13323
-		gatewayDataStoragePort,  // 18091
-	}
-	for _, port := range ports {
-		cmd := exec.Command("lsof", "-i", fmt.Sprintf(":%d", port))
-		if err := cmd.Run(); err == nil {
-			return fmt.Errorf("port %d is already in use", port)
-		}
-	}
-
-	return nil
-}
-
-// createPodmanNetwork creates a Podman network for containers
-func createPodmanNetwork() error {
-	// Check if network already exists
-	cmd := exec.Command("podman", "network", "exists", "gateway-integration-net")
-	if err := cmd.Run(); err == nil {
-		return nil // Network already exists
-	}
-
-	// Create network
-	cmd = exec.Command("podman", "network", "create", "gateway-integration-net")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to create Podman network: %w: %s", err, output)
-	}
-
-	return nil
-}
-
-// startPostgreSQL starts PostgreSQL container
-func startPostgreSQL() error {
-	// Remove existing container if any
-	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-
-	cmd := exec.Command("podman", "run", "-d",
-		"--name", gatewayPostgresContainer,
-		"--network", "gateway-integration-net",
-		"-p", fmt.Sprintf("%d:5432", gatewayPostgresPort),
-		"-e", fmt.Sprintf("POSTGRES_USER=%s", gatewayPostgresUser),
-		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", gatewayPostgresPassword),
-		"-e", fmt.Sprintf("POSTGRES_DB=%s", gatewayPostgresDB),
-		"postgres:16-alpine",
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start PostgreSQL: %w: %s", err, output)
-	}
-
-	// Wait for PostgreSQL to be ready
-	time.Sleep(5 * time.Second)
-
-	// Verify connection
-	for i := 0; i < 30; i++ {
-		db, err := connectPostgreSQL()
-		if err == nil {
-			db.Close()
-			return nil
-		}
-		time.Sleep(1 * time.Second)
-	}
-
-	return fmt.Errorf("PostgreSQL failed to become ready after 30s")
-}
+// Per DD-TEST-002: Sequential Startup Pattern
+// Most infrastructure functions are provided by test/infrastructure/shared_integration_utils.go
+// Only Gateway-specific functions are defined below
 
 // connectPostgreSQL creates a database connection
+// Used by migrations step in SynchronizedBeforeSuite
 func connectPostgreSQL() (*sql.DB, error) {
 	connStr := fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable",
 		gatewayPostgresPort, gatewayPostgresUser, gatewayPostgresPassword, gatewayPostgresDB)
-
+	
 	return sql.Open("postgres", connStr)
 }
 
-// startRedis starts Redis container for DataStorage DLQ
-func startRedis() error {
-	// Remove existing container if any
-	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
-
-	cmd := exec.Command("podman", "run", "-d",
-		"--name", gatewayRedisContainer,
-		"--network", "gateway-integration-net",
-		"-p", fmt.Sprintf("%d:6379", gatewayRedisPort),
-		"redis:7-alpine",
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start Redis: %w: %s", err, output)
-	}
-
-	// Wait for Redis to be ready
-	time.Sleep(2 * time.Second)
-	return nil
-}
-
 // startImmudb starts Immudb container for SOC2-compliant immutable audit
+// Custom function - no shared helper exists yet (Immudb is SOC2-specific)
+// TODO: Consider moving to shared_integration_utils.go if more services adopt Immudb
 func startImmudb() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
-
+	
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayImmudbContainer,
 		"--network", "gateway-integration-net",
@@ -404,75 +366,27 @@ func startImmudb() error {
 		"-e", "IMMUDB_ADMIN_PASSWORD=immudb",
 		"codenotary/immudb:latest",
 	)
-
+	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Immudb: %w: %s", err, output)
 	}
-
+	
 	// Wait for Immudb to be ready
 	time.Sleep(3 * time.Second)
 	return nil
 }
 
-// startDataStorageService starts DataStorage API container
-func startDataStorageService() error {
-	// Remove existing container if any
-	_ = exec.Command("podman", "rm", "-f", gatewayDataStorageContainer).Run()
-
-	// Build DataStorage image if not exists
-	cmd := exec.Command("make", "docker-build-datastorage")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to build DataStorage image: %w", err)
-	}
-
-	cmd = exec.Command("podman", "run", "-d",
-		"--name", gatewayDataStorageContainer,
-		"--network", "gateway-integration-net",
-		"-p", fmt.Sprintf("%d:8080", gatewayDataStoragePort),
-		"-e", fmt.Sprintf("POSTGRES_HOST=%s", gatewayPostgresContainer),
-		"-e", "POSTGRES_PORT=5432",
-		"-e", fmt.Sprintf("POSTGRES_USER=%s", gatewayPostgresUser),
-		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", gatewayPostgresPassword),
-		"-e", fmt.Sprintf("POSTGRES_DB=%s", gatewayPostgresDB),
-		"-e", fmt.Sprintf("REDIS_HOST=%s", gatewayRedisContainer),
-		"-e", "REDIS_PORT=6379",
-		"-e", fmt.Sprintf("IMMUDB_HOST=%s", gatewayImmudbContainer),
-		"-e", "IMMUDB_PORT=3322",
-		"-e", "IMMUDB_USERNAME=immudb",
-		"-e", "IMMUDB_PASSWORD=immudb",
-		"-e", "IMMUDB_DATABASE=defaultdb",
-		"kubernaut-datastorage:latest",
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start DataStorage: %w: %s", err, output)
-	}
-
-	// Wait for DataStorage to be ready
-	time.Sleep(5 * time.Second)
-
-	// Verify DataStorage is responding
-	for i := 0; i < 30; i++ {
-		cmd := exec.Command("curl", "-f", fmt.Sprintf("http://127.0.0.1:%d/health", gatewayDataStoragePort))
-		if err := cmd.Run(); err == nil {
-			return nil
-		}
-		time.Sleep(1 * time.Second)
-	}
-
-	return fmt.Errorf("DataStorage failed to become ready after 30s")
-}
-
 // cleanupInfrastructure removes all Podman containers and networks
+// Uses shared helper for standardized cleanup with retries
 func cleanupInfrastructure() {
-	// Stop containers (reverse order of startup)
-	_ = exec.Command("podman", "rm", "-f", gatewayDataStorageContainer).Run()
-	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
-	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
-	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-
+	infrastructure.CleanupContainers([]string{
+		gatewayDataStorageContainer,
+		gatewayImmudbContainer,
+		gatewayRedisContainer,
+		gatewayPostgresContainer,
+	}, GinkgoWriter)
+	
 	// Remove network
 	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
 }

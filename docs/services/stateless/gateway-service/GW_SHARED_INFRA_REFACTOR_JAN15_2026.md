@@ -1,8 +1,8 @@
 # Gateway Integration Suite - Shared Infrastructure Refactor
 
-**Date**: January 15, 2026  
-**Issue**: Gateway integration suite uses custom infrastructure functions instead of shared utilities  
-**Authority**: `test/infrastructure/shared_integration_utils.go` (DD-TEST-002 pattern)  
+**Date**: January 15, 2026
+**Issue**: Gateway integration suite uses custom infrastructure functions instead of shared utilities
+**Authority**: `test/infrastructure/shared_integration_utils.go` (DD-TEST-002 pattern)
 **Status**: ✅ REFACTORING TO SHARED HELPERS
 
 ---
@@ -81,7 +81,7 @@ infrastructure.MustGatherContainerLogs("gateway", []string{...}, writer)
 ```go
 func startPostgreSQL() error {
 	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayPostgresContainer,
 		"--network", "gateway-integration-net",
@@ -91,15 +91,15 @@ func startPostgreSQL() error {
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", gatewayPostgresDB),
 		"postgres:16-alpine",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start PostgreSQL: %w: %s", err, output)
 	}
-	
+
 	// Wait for PostgreSQL to be ready
 	time.Sleep(5 * time.Second)
-	
+
 	// Verify connection...
 	return nil
 }
@@ -136,19 +136,19 @@ Expect(err).ToNot(HaveOccurred(), "PostgreSQL must become ready")
 ```go
 func startRedis() error {
 	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayRedisContainer,
 		"--network", "gateway-integration-net",
 		"-p", fmt.Sprintf("%d:6379", gatewayRedisPort),
 		"redis:7-alpine",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Redis: %w: %s", err, output)
 	}
-	
+
 	time.Sleep(2 * time.Second)
 	return nil
 }
@@ -180,7 +180,7 @@ Expect(err).ToNot(HaveOccurred(), "Redis must become ready")
 ```go
 func startImmudb() error {
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayImmudbContainer,
 		"--network", "gateway-integration-net",
@@ -188,12 +188,12 @@ func startImmudb() error {
 		"-e", "IMMUDB_ADMIN_PASSWORD=immudb",
 		"codenotary/immudb:latest",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Immudb: %w: %s", err, output)
 	}
-	
+
 	time.Sleep(3 * time.Second)
 	return nil
 }
@@ -213,13 +213,13 @@ func startImmudb() error {
 ```go
 func startDataStorageService() error {
 	_ = exec.Command("podman", "rm", "-f", gatewayDataStorageContainer).Run()
-	
+
 	// Build DataStorage image
 	cmd := exec.Command("make", "docker-build-datastorage")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	
+
 	cmd = exec.Command("podman", "run", "-d",
 		"--name", gatewayDataStorageContainer,
 		"--network", "gateway-integration-net",
@@ -238,12 +238,12 @@ func startDataStorageService() error {
 		"-e", "IMMUDB_DATABASE=defaultdb",
 		"kubernaut-datastorage:latest",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w: %s", err, output)
 	}
-	
+
 	// Wait for DataStorage...
 	return nil
 }
@@ -304,7 +304,7 @@ func cleanupInfrastructure() {
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
 	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
 	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-	
+
 	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
 }
 ```
@@ -318,7 +318,7 @@ func cleanupInfrastructure() {
 		gatewayRedisContainer,
 		gatewayPostgresContainer,
 	}, GinkgoWriter)
-	
+
 	// Remove network
 	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
 }
@@ -350,7 +350,7 @@ func preflightCheck() error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("podman not available: %w", err)
 	}
-	
+
 	ports := []int{
 		gatewayPostgresPort,
 		gatewayRedisPort,
@@ -363,7 +363,7 @@ func preflightCheck() error {
 			return fmt.Errorf("port %d is already in use", port)
 		}
 	}
-	
+
 	return nil
 }
 ```
@@ -395,12 +395,12 @@ var _ = SynchronizedBeforeSuite(
 	// Phase 1: Start shared infrastructure (Process 1 ONLY)
 	func() []byte {
 		logger := zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
-		
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("[Process 1] Starting shared Podman infrastructure...")
-		
+
 		// Step 1: Cleanup existing containers
 		logger.Info("[Process 1] Step 1: Cleanup existing containers")
 		infrastructure.CleanupContainers([]string{
@@ -409,11 +409,11 @@ var _ = SynchronizedBeforeSuite(
 			gatewayRedisContainer,
 			gatewayPostgresContainer,
 		}, GinkgoWriter)
-		
+
 		// Step 2: Create Podman network (idempotent)
 		logger.Info("[Process 1] Step 2: Create Podman network")
 		_ = exec.Command("podman", "network", "create", "gateway-integration-net").Run()
-		
+
 		// Step 3: Start PostgreSQL (shared helper)
 		logger.Info("[Process 1] Step 3: Start PostgreSQL container")
 		err := infrastructure.StartPostgreSQL(infrastructure.PostgreSQLConfig{
@@ -425,10 +425,10 @@ var _ = SynchronizedBeforeSuite(
 			Network:       "gateway-integration-net",
 		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL start must succeed")
-		
+
 		err = infrastructure.WaitForPostgreSQLReady(gatewayPostgresContainer, gatewayPostgresUser, gatewayPostgresDB, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL must become ready")
-		
+
 		// Step 4: Start Redis (shared helper)
 		logger.Info("[Process 1] Step 4: Start Redis container")
 		err = infrastructure.StartRedis(infrastructure.RedisConfig{
@@ -437,24 +437,24 @@ var _ = SynchronizedBeforeSuite(
 			Network:       "gateway-integration-net",
 		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Redis start must succeed")
-		
+
 		err = infrastructure.WaitForRedisReady(gatewayRedisContainer, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Redis must become ready")
-		
+
 		// Step 5: Start Immudb (custom function - no shared helper yet)
 		logger.Info("[Process 1] Step 5: Start Immudb container")
 		err = startImmudb()
 		Expect(err).ToNot(HaveOccurred(), "Immudb start must succeed")
-		
+
 		// Step 6: Apply migrations
 		logger.Info("[Process 1] Step 6: Apply database migrations")
 		db, err := connectPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection must succeed")
-		
+
 		err = infrastructure.ApplyMigrationsWithPropagationTo(db)
 		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
 		db.Close()
-		
+
 		// Step 7: Start DataStorage (shared helper)
 		logger.Info("[Process 1] Step 7: Start DataStorage service")
 		imageTag := infrastructure.GenerateInfraImageName("datastorage", "gateway")
@@ -479,18 +479,18 @@ var _ = SynchronizedBeforeSuite(
 			},
 		}, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DataStorage start must succeed")
-		
+
 		err = infrastructure.WaitForHTTPHealth(
 			fmt.Sprintf("http://127.0.0.1:%d/health", gatewayDataStoragePort),
 			60*time.Second,
 			GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "DataStorage must become healthy")
-		
+
 		logger.Info("✅ Phase 1 complete - Infrastructure ready for all processes")
 		return []byte("ready")
 	},
-	
+
 	// Phase 2: Connect to infrastructure (ALL processes)
 	// ... (existing per-process setup remains unchanged)
 )
@@ -551,8 +551,8 @@ var _ = SynchronizedBeforeSuite(
 
 ---
 
-**Document Status**: ✅ Active - Ready for Implementation  
-**Created**: 2026-01-15  
-**Purpose**: Refactor Gateway to use shared infrastructure helpers  
-**Authority**: test/infrastructure/shared_integration_utils.go (DD-TEST-002)  
+**Document Status**: ✅ Active - Ready for Implementation
+**Created**: 2026-01-15
+**Purpose**: Refactor Gateway to use shared infrastructure helpers
+**Authority**: test/infrastructure/shared_integration_utils.go (DD-TEST-002)
 **Next**: Apply refactoring to test/integration/gateway/suite_test.go
