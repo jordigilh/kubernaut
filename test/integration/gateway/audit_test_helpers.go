@@ -51,7 +51,7 @@ import (
 func createOgenClient() (*ogenclient.Client, error) {
 	const gatewayDataStoragePort = 18091 // DD-TEST-001: Gateway DataStorage HTTP API port
 	return ogenclient.NewClient(
-		fmt.Sprintf("http://localhost:%d", gatewayDataStoragePort),
+		fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort),
 	)
 }
 
