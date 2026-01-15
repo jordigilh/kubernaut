@@ -118,12 +118,12 @@ var _ = SynchronizedBeforeSuite(
 // Phase 2: ALL processes execute this
 func(data []byte) {
     processNum := GinkgoParallelProcess()
-    
+
     // CRITICAL: Each process gets unique mock user transport
     auditMockTransport := testauth.NewMockUserTransport(
         fmt.Sprintf("test-aianalysis@integration.test-p%d", processNum),
     )
-    
+
     // CRITICAL: Each process creates its OWN dsClient
     dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(
         "http://127.0.0.1:18095", // Shared DataStorage service
@@ -131,7 +131,7 @@ func(data []byte) {
         auditMockTransport,       // Unique per process
     )
     Expect(err).ToNot(HaveOccurred())
-    
+
     // CRITICAL: Each process creates its OWN BufferedStore
     auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "aianalysis", auditLogger)
     Expect(err).ToNot(HaveOccurred())
@@ -197,7 +197,7 @@ var (
     // Shared infrastructure (Phase 1)
     postgresContainer = "gateway-postgres-test"
     // NO redisContainer - Gateway doesn't use Redis anymore
-    
+
     // Per-process resources (Phase 2)
     ctx            context.Context
     cancel         context.CancelFunc
@@ -214,51 +214,51 @@ var _ = SynchronizedBeforeSuite(
     func() []byte {
         // 1. Preflight checks
         preflightCheck()
-        
+
         // 2. Create Podman network
         createNetwork()
-        
+
         // 3. Start PostgreSQL container
         startPostgreSQL()
-        
+
         // 4. Apply migrations to PUBLIC schema
         tempDB := mustConnectPostgreSQL()
         applyMigrationsWithPropagationTo(tempDB.DB)
-        
+
         // 5. Start DataStorage service (in separate container)
         startDataStorageService()
-        
+
         // NO DS client creation here - that's per-process in Phase 2
-        
+
         return []byte("ready")
     },
-    
+
     // Phase 2: Connect to shared infrastructure (ALL processes)
     func(data []byte) {
         processNum := GinkgoParallelProcess()
-        
+
         ctx, cancel = context.WithCancel(context.Background())
         logger = kubelog.NewLogger(kubelog.DevelopmentOptions())
-        
+
         // CRITICAL: Each process creates its OWN DataStorage client
         mockTransport := testauth.NewMockUserTransport(
             fmt.Sprintf("test-gateway@integration.test-p%d", processNum),
         )
-        
+
         dsClient, err = audit.NewOpenAPIClientAdapterWithTransport(
             "http://127.0.0.1:15433",  // Shared DataStorage URL
             5*time.Second,
             mockTransport,              // Unique per process
         )
         Expect(err).ToNot(HaveOccurred())
-        
+
         // Create envtest (per-process)
         testEnv = &envtest.Environment{
             CRDDirectoryPaths: []string{"../../../config/crd/bases"},
         }
         k8sConfig, err = testEnv.Start()
         k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
-        
+
         // Create Gateway server with real dependencies (per-process)
         gatewayServer = gateway.NewServer(dsClient, k8sClient, logger)
     },

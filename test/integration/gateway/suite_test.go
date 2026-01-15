@@ -73,15 +73,23 @@ import (
 // ========================================
 
 const (
-	// PostgreSQL configuration
-	gatewayPostgresPort     = 15439
-	gatewayPostgresUser     = "gateway_test"
-	gatewayPostgresPassword = "gateway_test_password"
-	gatewayPostgresDB       = "gateway_test"
+	// PostgreSQL configuration (DataStorage dependency)
+	gatewayPostgresPort      = 15437 // Per DD-TEST-001 (was 15439 - HAPI conflict)
+	gatewayPostgresUser      = "gateway_test"
+	gatewayPostgresPassword  = "gateway_test_password"
+	gatewayPostgresDB        = "gateway_test"
 	gatewayPostgresContainer = "gateway-integration-postgres"
 	
-	// DataStorage configuration
-	gatewayDataStoragePort      = 15440
+	// Redis configuration (DataStorage DLQ) - Per DD-TEST-001
+	gatewayRedisPort      = 16380
+	gatewayRedisContainer = "gateway-integration-redis"
+	
+	// Immudb configuration (SOC2 immutable audit) - Per DD-TEST-001
+	gatewayImmudbPort      = 13323
+	gatewayImmudbContainer = "gateway-integration-immudb"
+	
+	// DataStorage configuration - Per DD-TEST-001
+	gatewayDataStoragePort      = 18091 // Per DD-TEST-001 (was 15440 - wrong range)
 	gatewayDataStorageContainer = "gateway-integration-datastorage"
 )
 
@@ -107,29 +115,39 @@ var _ = SynchronizedBeforeSuite(
 	// ============================================================================
 	func() []byte {
 		logger := zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
-		
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - PHASE 1: Infrastructure Setup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("[Process 1] Starting shared Podman infrastructure...")
-		
+
 		// 1. Preflight checks
 		logger.Info("[Process 1] Step 1: Preflight checks")
 		err := preflightCheck()
 		Expect(err).ToNot(HaveOccurred(), "Preflight checks must pass")
-		
+
 		// 2. Create Podman network
 		logger.Info("[Process 1] Step 2: Create Podman network")
 		err = createPodmanNetwork()
 		Expect(err).ToNot(HaveOccurred(), "Podman network creation must succeed")
-		
+
 		// 3. Start PostgreSQL
 		logger.Info("[Process 1] Step 3: Start PostgreSQL container")
 		err = startPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL start must succeed")
 		
-		// 4. Apply migrations to PUBLIC schema
-		logger.Info("[Process 1] Step 4: Apply database migrations")
+		// 4. Start Redis (DataStorage DLQ)
+		logger.Info("[Process 1] Step 4: Start Redis container")
+		err = startRedis()
+		Expect(err).ToNot(HaveOccurred(), "Redis start must succeed")
+		
+		// 5. Start Immudb (SOC2 immutable audit)
+		logger.Info("[Process 1] Step 5: Start Immudb container")
+		err = startImmudb()
+		Expect(err).ToNot(HaveOccurred(), "Immudb start must succeed")
+		
+		// 6. Apply migrations to PUBLIC schema
+		logger.Info("[Process 1] Step 6: Apply database migrations")
 		db, err := connectPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection must succeed")
 		
@@ -137,35 +155,35 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
 		db.Close()
 		
-		// 5. Start DataStorage service
-		logger.Info("[Process 1] Step 5: Start DataStorage service")
+		// 7. Start DataStorage service
+		logger.Info("[Process 1] Step 7: Start DataStorage service")
 		err = startDataStorageService()
 		Expect(err).ToNot(HaveOccurred(), "DataStorage service start must succeed")
-		
+
 		logger.Info("✅ Phase 1 complete - Infrastructure ready for all processes")
 		return []byte("ready")
 	},
-	
+
 	// ============================================================================
 	// PHASE 2: Connect to infrastructure (ALL processes)
 	// ============================================================================
 	func(data []byte) {
 		processNum := GinkgoParallelProcess()
 		logger = zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
-		
+
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info(fmt.Sprintf("Gateway Integration Suite - PHASE 2: Process %d Setup", processNum))
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		
+
 		// Create root context
 		ctx, cancel = context.WithCancel(context.Background())
-		
+
 		// CRITICAL: Create per-process DataStorage client
 		logger.Info(fmt.Sprintf("[Process %d] Creating per-process DataStorage client", processNum))
 		mockTransport := testauth.NewMockUserTransport(
 			fmt.Sprintf("test-gateway@integration.test-p%d", processNum),
 		)
-		
+
 		var err error
 		dsClient, err = audit.NewOpenAPIClientAdapterWithTransport(
 			fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort),
@@ -174,10 +192,10 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "DataStorage client creation must succeed")
 		logger.Info(fmt.Sprintf("[Process %d] ✅ DataStorage client created", processNum))
-		
+
 		// Create per-process envtest
 		logger.Info(fmt.Sprintf("[Process %d] Creating per-process envtest", processNum))
-		
+
 		// Set KUBEBUILDER_ASSETS if not already set
 		if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 			cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest", "use", "-p", "path")
@@ -189,7 +207,7 @@ var _ = SynchronizedBeforeSuite(
 			assetsPath := strings.TrimSpace(string(output))
 			_ = os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
 		}
-		
+
 		// Create envtest with CRD auto-installation
 		testEnv = &envtest.Environment{
 			CRDDirectoryPaths: []string{
@@ -197,27 +215,27 @@ var _ = SynchronizedBeforeSuite(
 			},
 			ErrorIfCRDPathMissing: true,
 		}
-		
+
 		k8sConfig, err = testEnv.Start()
 		Expect(err).ToNot(HaveOccurred(), "envtest should start successfully")
 		Expect(k8sConfig).ToNot(BeNil(), "K8s config should not be nil")
-		
+
 		// Disable rate limiting for in-memory K8s API
 		k8sConfig.RateLimiter = nil
 		k8sConfig.QPS = 1000
 		k8sConfig.Burst = 2000
-		
+
 		logger.Info(fmt.Sprintf("[Process %d] ✅ envtest started", processNum), "api", k8sConfig.Host)
-		
+
 		// Create scheme with RemediationRequest CRD
 		scheme := k8sruntime.NewScheme()
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
-		
+
 		// Create K8s client
 		k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "Failed to create K8s client")
-		
+
 		logger.Info(fmt.Sprintf("[Process %d] ✅ K8s client created", processNum))
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Suite setup complete", processNum))
 	},
@@ -230,11 +248,11 @@ var _ = SynchronizedAfterSuite(
 	func() {
 		processNum := GinkgoParallelProcess()
 		logger.Info(fmt.Sprintf("[Process %d] Cleaning up per-process resources...", processNum))
-		
+
 		if cancel != nil {
 			cancel()
 		}
-		
+
 		// Stop envtest
 		if testEnv != nil {
 			err := testEnv.Stop()
@@ -242,10 +260,10 @@ var _ = SynchronizedAfterSuite(
 				logger.Error(err, "Failed to stop envtest")
 			}
 		}
-		
+
 		logger.Info(fmt.Sprintf("[Process %d] ✅ Cleanup complete", processNum))
 	},
-	
+
 	// ============================================================================
 	// PHASE 2: Shared infrastructure cleanup (Process 1 ONLY)
 	// ============================================================================
@@ -254,9 +272,9 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Gateway Integration Suite - Infrastructure Cleanup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		
+
 		cleanupInfrastructure()
-		
+
 		logger.Info("✅ Suite complete - All infrastructure cleaned up")
 	},
 )
@@ -273,8 +291,13 @@ func preflightCheck() error {
 		return fmt.Errorf("podman not available: %w", err)
 	}
 	
-	// Check for port conflicts
-	ports := []int{gatewayPostgresPort, gatewayDataStoragePort}
+	// Check for port conflicts (all Gateway integration ports per DD-TEST-001)
+	ports := []int{
+		gatewayPostgresPort,     // 15437
+		gatewayRedisPort,        // 16380
+		gatewayImmudbPort,       // 13323
+		gatewayDataStoragePort,  // 18091
+	}
 	for _, port := range ports {
 		cmd := exec.Command("lsof", "-i", fmt.Sprintf(":%d", port))
 		if err := cmd.Run(); err == nil {
@@ -292,14 +315,14 @@ func createPodmanNetwork() error {
 	if err := cmd.Run(); err == nil {
 		return nil // Network already exists
 	}
-	
+
 	// Create network
 	cmd = exec.Command("podman", "network", "create", "gateway-integration-net")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to create Podman network: %w: %s", err, output)
 	}
-	
+
 	return nil
 }
 
@@ -307,7 +330,7 @@ func createPodmanNetwork() error {
 func startPostgreSQL() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayPostgresContainer,
 		"--network", "gateway-integration-net",
@@ -317,15 +340,15 @@ func startPostgreSQL() error {
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", gatewayPostgresDB),
 		"postgres:16-alpine",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start PostgreSQL: %w: %s", err, output)
 	}
-	
+
 	// Wait for PostgreSQL to be ready
 	time.Sleep(5 * time.Second)
-	
+
 	// Verify connection
 	for i := 0; i < 30; i++ {
 		db, err := connectPostgreSQL()
@@ -335,7 +358,7 @@ func startPostgreSQL() error {
 		}
 		time.Sleep(1 * time.Second)
 	}
-	
+
 	return fmt.Errorf("PostgreSQL failed to become ready after 30s")
 }
 
@@ -347,17 +370,62 @@ func connectPostgreSQL() (*sql.DB, error) {
 	return sql.Open("postgres", connStr)
 }
 
+// startRedis starts Redis container for DataStorage DLQ
+func startRedis() error {
+	// Remove existing container if any
+	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
+	
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", gatewayRedisContainer,
+		"--network", "gateway-integration-net",
+		"-p", fmt.Sprintf("%d:6379", gatewayRedisPort),
+		"redis:7-alpine",
+	)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to start Redis: %w: %s", err, output)
+	}
+	
+	// Wait for Redis to be ready
+	time.Sleep(2 * time.Second)
+	return nil
+}
+
+// startImmudb starts Immudb container for SOC2-compliant immutable audit
+func startImmudb() error {
+	// Remove existing container if any
+	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
+	
+	cmd := exec.Command("podman", "run", "-d",
+		"--name", gatewayImmudbContainer,
+		"--network", "gateway-integration-net",
+		"-p", fmt.Sprintf("%d:3322", gatewayImmudbPort),
+		"-e", "IMMUDB_ADMIN_PASSWORD=immudb",
+		"codenotary/immudb:latest",
+	)
+	
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to start Immudb: %w: %s", err, output)
+	}
+	
+	// Wait for Immudb to be ready
+	time.Sleep(3 * time.Second)
+	return nil
+}
+
 // startDataStorageService starts DataStorage API container
 func startDataStorageService() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayDataStorageContainer).Run()
-	
+
 	// Build DataStorage image if not exists
 	cmd := exec.Command("make", "docker-build-datastorage")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
-	
+
 	cmd = exec.Command("podman", "run", "-d",
 		"--name", gatewayDataStorageContainer,
 		"--network", "gateway-integration-net",
@@ -367,18 +435,24 @@ func startDataStorageService() error {
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", gatewayPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", gatewayPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", gatewayPostgresDB),
-		"-e", "REDIS_HOST=",  // Gateway doesn't use Redis
+		"-e", fmt.Sprintf("REDIS_HOST=%s", gatewayRedisContainer),
+		"-e", "REDIS_PORT=6379",
+		"-e", fmt.Sprintf("IMMUDB_HOST=%s", gatewayImmudbContainer),
+		"-e", "IMMUDB_PORT=3322",
+		"-e", "IMMUDB_USERNAME=immudb",
+		"-e", "IMMUDB_PASSWORD=immudb",
+		"-e", "IMMUDB_DATABASE=defaultdb",
 		"kubernaut-datastorage:latest",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w: %s", err, output)
 	}
-	
+
 	// Wait for DataStorage to be ready
 	time.Sleep(5 * time.Second)
-	
+
 	// Verify DataStorage is responding
 	for i := 0; i < 30; i++ {
 		cmd := exec.Command("curl", "-f", fmt.Sprintf("http://127.0.0.1:%d/health", gatewayDataStoragePort))
@@ -387,14 +461,16 @@ func startDataStorageService() error {
 		}
 		time.Sleep(1 * time.Second)
 	}
-	
+
 	return fmt.Errorf("DataStorage failed to become ready after 30s")
 }
 
 // cleanupInfrastructure removes all Podman containers and networks
 func cleanupInfrastructure() {
-	// Stop containers
+	// Stop containers (reverse order of startup)
 	_ = exec.Command("podman", "rm", "-f", gatewayDataStorageContainer).Run()
+	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
+	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
 	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
 	
 	// Remove network
