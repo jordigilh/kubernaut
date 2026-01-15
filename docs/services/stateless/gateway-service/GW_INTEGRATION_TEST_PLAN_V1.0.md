@@ -39,6 +39,117 @@ Restore Gateway integration test coverage from 30.1% to ≥50% (target: 62%) thr
 
 ---
 
+## 📋 **Test Case Registry**
+
+### Quick Reference Table
+
+| Test ID | Test Name | Category | BR | Priority | Status | Section |
+|---------|-----------|----------|-----|----------|--------|---------|
+| **Phase 1: Audit Event Emission** (20 tests) |
+| GW-INT-AUD-001 | Prometheus Signal Audit | Audit | 055 | P0 | 📝 Spec | 1.1.1 |
+| GW-INT-AUD-002 | K8s Event Signal Audit | Audit | 055 | P0 | 📝 Spec | 1.1.2 |
+| GW-INT-AUD-003 | Correlation ID Format | Audit | 055 | P0 | 📝 Spec | 1.1.3 |
+| GW-INT-AUD-004 | Signal Labels Preservation | Audit | 055 | P0 | 📝 Spec | 1.1.4 |
+| GW-INT-AUD-005 | Audit Failure Non-Blocking | Audit | 055 | P1 | 📝 Spec | 1.1.5 |
+| GW-INT-AUD-006 | CRD Created Audit | Audit | 056 | P0 | 📝 Spec | 1.2.1 |
+| GW-INT-AUD-007 | CRD Target Resource | Audit | 056 | P0 | 📝 Spec | 1.2.2 |
+| GW-INT-AUD-008 | CRD Fingerprint | Audit | 056 | P0 | 📝 Spec | 1.2.3 |
+| GW-INT-AUD-009 | CRD Occurrence Count | Audit | 056 | P1 | 📝 Spec | 1.2.4 |
+| GW-INT-AUD-010 | CRD Unique Correlation IDs | Audit | 056 | P0 | 📝 Spec | 1.2.5 |
+| GW-INT-AUD-011 | Signal Deduplicated Audit | Audit | 057 | P1 | 📝 Spec | 1.3.1 |
+| GW-INT-AUD-012 | Dedup Existing RR Name | Audit | 057 | P1 | 📝 Spec | 1.3.2 |
+| GW-INT-AUD-013 | Dedup Occurrence Count | Audit | 057 | P1 | 📝 Spec | 1.3.3 |
+| GW-INT-AUD-014 | Dedup Multiple Fingerprints | Audit | 057 | P1 | 📝 Spec | 1.3.4 |
+| GW-INT-AUD-015 | Dedup Phase Rejection | Audit | 057 | P1 | 📝 Spec | 1.3.5 |
+| GW-INT-AUD-016 | CRD Failed K8s API Error | Audit | 058 | P0 | 📝 Spec | 1.4.1 |
+| GW-INT-AUD-017 | CRD Failed Error Type | Audit | 058 | P0 | 📝 Spec | 1.4.2 |
+| GW-INT-AUD-018 | CRD Failed Retry Events | Audit | 058 | P1 | 📝 Spec | 1.4.3 |
+| GW-INT-AUD-019 | CRD Failed Circuit Breaker | Audit | 058 | P1 | 📝 Spec | 1.4.4 |
+| GW-INT-AUD-020 | Audit ID Uniqueness | Audit | 055 | P0 | 📝 Spec | 1.4.5 |
+| **Phase 1: Metrics Emission** (15 tests) |
+| GW-INT-MET-001 | Signals Received Counter | Metrics | 066 | P0 | 📝 Spec | 2.1.1 |
+| GW-INT-MET-002 | Signals By Type Counter | Metrics | 066 | P0 | 📝 Spec | 2.1.2 |
+| GW-INT-MET-003 | Signals By Severity Counter | Metrics | 067 | P0 | 📝 Spec | 2.1.3 |
+| GW-INT-MET-004 | Processing Duration Histogram | Metrics | 068 | P0 | 📝 Spec | 2.1.4 |
+| GW-INT-MET-005 | Metric Label Accuracy | Metrics | 066 | P0 | 📝 Spec | 2.1.5 |
+| GW-INT-MET-006 | CRDs Created Counter | Metrics | 069 | P0 | 📝 Spec | 2.2.1 |
+| GW-INT-MET-007 | CRDs By Phase Counter | Metrics | 069 | P0 | 📝 Spec | 2.2.2 |
+| GW-INT-MET-008 | CRDs By Namespace Counter | Metrics | 069 | P1 | 📝 Spec | 2.2.3 |
+| GW-INT-MET-009 | Creation Duration Histogram | Metrics | 070 | P0 | 📝 Spec | 2.2.4 |
+| GW-INT-MET-010 | CRD Metric Cleanup | Metrics | 069 | P1 | 📝 Spec | 2.2.5 |
+| GW-INT-MET-011 | Deduplicated Signals Counter | Metrics | 066 | P0 | 📝 Spec | 2.3.1 |
+| GW-INT-MET-012 | Dedup Rate Gauge | Metrics | 066 | P1 | 📝 Spec | 2.3.2 |
+| GW-INT-MET-013 | Dedup By Reason Counter | Metrics | 066 | P1 | 📝 Spec | 2.3.3 |
+| GW-INT-MET-014 | Dedup Savings Counter | Metrics | 066 | P1 | 📝 Spec | 2.3.4 |
+| GW-INT-MET-015 | Metric Correlation With Audit | Metrics | 066 | P0 | 📝 Spec | 2.3.5 |
+| **Phase 2: Adapter Logic** (15 tests) |
+| GW-INT-ADP-001 | Prometheus Alert Parsing | Adapters | 001 | P0 | 📝 Spec | 3.1.1 |
+| GW-INT-ADP-002 | Prometheus Alertname Extraction | Adapters | 001 | P0 | 📝 Spec | 3.1.2 |
+| GW-INT-ADP-003 | Prometheus Namespace Extraction | Adapters | 001 | P0 | 📝 Spec | 3.1.3 |
+| GW-INT-ADP-004 | Prometheus Severity Mapping | Adapters | 001 | P0 | 📝 Spec | 3.1.4 |
+| GW-INT-ADP-005 | Prometheus Fingerprint Generation | Adapters | 004 | P0 | 📝 Spec | 3.1.5 |
+| GW-INT-ADP-006 | Prometheus Custom Labels Preservation | Adapters | 001 | P0 | 📝 Spec | 3.1.6 |
+| GW-INT-ADP-007 | Prometheus Long Annotations Truncation | Adapters | 001 | P1 | 📝 Spec | 3.1.7 |
+| GW-INT-ADP-008 | K8s Event Parsing | Adapters | 002 | P0 | 📝 Spec | 3.2.1 |
+| GW-INT-ADP-009 | K8s Event Reason Extraction | Adapters | 002 | P0 | 📝 Spec | 3.2.2 |
+| GW-INT-ADP-010 | K8s Event InvolvedObject Mapping | Adapters | 002 | P0 | 📝 Spec | 3.2.3 |
+| GW-INT-ADP-011 | K8s Event Severity Inference | Adapters | 002 | P0 | 📝 Spec | 3.2.4 |
+| GW-INT-ADP-012 | K8s Event Fingerprint Generation | Adapters | 004 | P0 | 📝 Spec | 3.2.5 |
+| GW-INT-ADP-013 | K8s Event Malformed Handling | Adapters | 005 | P1 | 📝 Spec | 3.2.6 |
+| GW-INT-ADP-014 | K8s Event Empty Fields Handling | Adapters | 005 | P1 | 📝 Spec | 3.2.7 |
+| GW-INT-ADP-015 | Adapter Error Non-Fatal | Adapters | 005 | P1 | 📝 Spec | 3.2.8 |
+| **Phase 2: Error Handling** (13 tests) |
+| GW-INT-ERR-001 | Transient Error Classification | Error | 188 | P0 | 📝 Spec | 5.1.1 |
+| GW-INT-ERR-002 | Permanent Error Classification | Error | 189 | P0 | 📝 Spec | 5.1.2 |
+| GW-INT-ERR-003 | HTTP Status Error Classification | Error | 188 | P0 | 📝 Spec | 5.1.3 |
+| GW-INT-ERR-004 | K8s API Error Classification | Error | 188 | P0 | 📝 Spec | 5.1.4 |
+| GW-INT-ERR-005 | Error Classification Metrics | Error | 188 | P1 | 📝 Spec | 5.1.5 |
+| GW-INT-ERR-006 | Exponential Backoff Calculation | Error | 188 | P1 | 📝 Spec | 5.2.1 |
+| GW-INT-ERR-007 | Backoff Max Delay Cap | Error | 188 | P1 | 📝 Spec | 5.2.2 |
+| GW-INT-ERR-008 | Backoff Jitter Addition | Error | 188 | P1 | 📝 Spec | 5.2.3 |
+| GW-INT-ERR-009 | Retry Count Tracking | Error | 188 | P1 | 📝 Spec | 5.2.4 |
+| GW-INT-ERR-010 | Backoff Reset On Success | Error | 188 | P1 | 📝 Spec | 5.2.5 |
+| GW-INT-ERR-011 | Retry Context Deadline | Error | 188 | P0 | 📝 Spec | 5.2.6 |
+| GW-INT-ERR-012 | Circuit Breaker Retry Block | Error | 093 | P0 | 📝 Spec | 5.2.7 |
+| GW-INT-ERR-013 | Error Recovery Metrics | Error | 188 | P1 | 📝 Spec | 5.2.8 |
+| **Phase 3: Configuration** (7 tests) |
+| GW-INT-CFG-001 | Config Reload Trigger | Config | 082 | P0 | 📝 Spec | 6.1.1 |
+| GW-INT-CFG-002 | Safe Defaults Validation | Config | 019 | P0 | 📝 Spec | 6.1.2 |
+| GW-INT-CFG-003 | Invalid Config Rejection | Config | 082 | P0 | 📝 Spec | 6.1.3 |
+| GW-INT-CFG-004 | Config Change Audit | Config | 082 | P1 | 📝 Spec | 6.1.4 |
+| GW-INT-CFG-005 | Config Validation Metrics | Config | 082 | P1 | 📝 Spec | 6.1.5 |
+| GW-INT-CFG-006 | Config Rollback On Error | Config | 082 | P0 | 📝 Spec | 6.1.6 |
+| GW-INT-CFG-007 | Config Hot Reload No Restart | Config | 082 | P1 | 📝 Spec | 6.1.7 |
+| **Phase 3: Middleware Chain** (7 tests) |
+| GW-INT-MID-001 | Middleware Execution Order | Middleware | 005 | P0 | 📝 Spec | 7.1.1 |
+| GW-INT-MID-002 | Request ID Injection | Middleware | 005 | P0 | 📝 Spec | 7.1.2 |
+| GW-INT-MID-003 | Context Propagation | Middleware | 005 | P0 | 📝 Spec | 7.1.3 |
+| GW-INT-MID-004 | Error Middleware Short Circuit | Middleware | 005 | P0 | 📝 Spec | 7.1.4 |
+| GW-INT-MID-005 | Middleware Panic Recovery | Middleware | 005 | P0 | 📝 Spec | 7.1.5 |
+| GW-INT-MID-006 | Middleware Metrics Emission | Middleware | 068 | P1 | 📝 Spec | 7.1.6 |
+| GW-INT-MID-007 | Middleware Chain Composition | Middleware | 005 | P1 | 📝 Spec | 7.1.7 |
+
+### Category Summary
+
+| Category | Count | Test ID Range | Priority Distribution |
+|----------|-------|---------------|----------------------|
+| **AUD** (Audit Emission) | 20 | GW-INT-AUD-001 to 020 | P0: 12, P1: 8 |
+| **MET** (Metrics Emission) | 15 | GW-INT-MET-001 to 015 | P0: 10, P1: 5 |
+| **ADP** (Adapters) | 15 | GW-INT-ADP-001 to 015 | P0: 11, P1: 4 |
+| **ERR** (Error Handling) | 13 | GW-INT-ERR-001 to 013 | P0: 7, P1: 6 |
+| **CFG** (Configuration) | 7 | GW-INT-CFG-001 to 007 | P0: 4, P1: 3 |
+| **MID** (Middleware) | 7 | GW-INT-MID-001 to 007 | P0: 5, P1: 2 |
+| **TOTAL** | **77** | | **P0: 49, P1: 28** |
+
+### Status Legend
+- 📝 **Spec**: Specification complete, implementation pending
+- 🚧 **Dev**: Implementation in progress
+- ✅ **Pass**: Implemented and passing
+- ❌ **Fail**: Implemented but failing
+- ⏸️ **Hold**: Blocked or on hold
+
+---
+
 ## 🎯 **PHASE 1: Quick Wins (Week 1)** - Target: +15% → 45%
 
 ### **Objective**: Achieve near-compliance with high business value tests (SOC2 + Operations)
@@ -88,22 +199,22 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
         Expect(auditEvent.EventAction).To(Equal("received"))
         Expect(auditEvent.CorrelationID).ToNot(BeEmpty())
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := auditEvent.EventData.GatewayAuditPayload
-        
+
         // Access OriginalPayload (Optional field)
         originalPayload, ok := gatewayPayload.OriginalPayload.Get()
         Expect(ok).To(BeTrue(), "OriginalPayload should be present")
         // Convert jx.Raw map to searchable format
         payloadStr := fmt.Sprintf("%v", originalPayload)
         Expect(payloadStr).To(ContainSubstring("alertname"))
-        
+
         // Access SignalLabels (Optional field)
         signalLabels, ok := gatewayPayload.SignalLabels.Get()
         Expect(ok).To(BeTrue(), "SignalLabels should be present")
         Expect(signalLabels).To(HaveKey("severity"))
-        
+
         // Access SignalAnnotations (Optional field)
         signalAnnotations, ok := gatewayPayload.SignalAnnotations.Get()
         Expect(ok).To(BeTrue(), "SignalAnnotations should be present")
@@ -125,15 +236,15 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 
         auditEvent := auditStore.Events[0]
         Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
-        
+
         // Parse EventData to get GatewayAuditPayload
         gatewayPayload := auditEvent.EventData.GatewayAuditPayload
-        
+
         // Business rule: ResourceKind contains K8s involved object type
         resourceKind, ok := gatewayPayload.ResourceKind.Get()
         Expect(ok).To(BeTrue(), "ResourceKind should be present for K8s events")
         Expect(resourceKind).To(Equal("Pod"))
-        
+
         // Note: K8s event-specific fields like "reason" are not in current schema
         // These would need to be added if K8s event reason tracking is required
         // For now, validate that signal_type indicates K8s source
@@ -2110,7 +2221,7 @@ package gateway_test
 import (
 	"fmt"
 	"strings"
-	
+
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/gomega"
 )
@@ -2119,11 +2230,11 @@ import (
 // Enforces: DD-AUDIT-004 (zero unstructured data)
 func ParseGatewayPayload(event *api.AuditEvent) api.GatewayAuditPayload {
 	Expect(event).ToNot(BeNil(), "Audit event should not be nil")
-	
+
 	// Access EventData union type
 	gatewayPayload := event.EventData.GatewayAuditPayload
 	Expect(gatewayPayload.EventType).ToNot(BeEmpty(), "GatewayAuditPayload should be present")
-	
+
 	return gatewayPayload
 }
 
@@ -2132,7 +2243,7 @@ func ParseGatewayPayload(event *api.AuditEvent) api.GatewayAuditPayload {
 func ExpectSignalLabels(payload api.GatewayAuditPayload, expectedLabels map[string]string) {
 	signalLabels, ok := payload.SignalLabels.Get()
 	Expect(ok).To(BeTrue(), "SignalLabels should be present")
-	
+
 	for key, expectedValue := range expectedLabels {
 		actualValue, exists := signalLabels[key]
 		Expect(exists).To(BeTrue(), fmt.Sprintf("Label '%s' should exist", key))
@@ -2145,7 +2256,7 @@ func ExpectSignalLabels(payload api.GatewayAuditPayload, expectedLabels map[stri
 func ExpectSignalAnnotations(payload api.GatewayAuditPayload, expectedAnnotations map[string]string) {
 	signalAnnotations, ok := payload.SignalAnnotations.Get()
 	Expect(ok).To(BeTrue(), "SignalAnnotations should be present")
-	
+
 	for key, expectedValue := range expectedAnnotations {
 		actualValue, exists := signalAnnotations[key]
 		Expect(exists).To(BeTrue(), fmt.Sprintf("Annotation '%s' should exist", key))
@@ -2158,7 +2269,7 @@ func ExpectSignalAnnotations(payload api.GatewayAuditPayload, expectedAnnotation
 func ExpectOriginalPayload(payload api.GatewayAuditPayload, expectedSubstring string) {
 	originalPayload, ok := payload.OriginalPayload.Get()
 	Expect(ok).To(BeTrue(), "OriginalPayload should be present")
-	
+
 	// Convert jx.Raw map to searchable string
 	payloadStr := fmt.Sprintf("%v", originalPayload)
 	Expect(payloadStr).To(ContainSubstring(expectedSubstring), fmt.Sprintf("OriginalPayload should contain '%s'", expectedSubstring))
@@ -2170,14 +2281,14 @@ func ExpectOriginalPayload(payload api.GatewayAuditPayload, expectedSubstring st
 func ExpectRemediationRequest(payload api.GatewayAuditPayload, expectedNamespace, expectedNamePrefix string) {
 	remediationRequest, ok := payload.RemediationRequest.Get()
 	Expect(ok).To(BeTrue(), "RemediationRequest should be present")
-	
+
 	// Business rule: Format is "namespace/name"
 	parts := strings.Split(remediationRequest, "/")
 	Expect(parts).To(HaveLen(2), "RemediationRequest should be in 'namespace/name' format")
-	
+
 	actualNamespace := parts[0]
 	actualName := parts[1]
-	
+
 	Expect(actualNamespace).To(Equal(expectedNamespace), fmt.Sprintf("Namespace should be '%s'", expectedNamespace))
 	Expect(actualName).To(HavePrefix(expectedNamePrefix), fmt.Sprintf("Name should start with '%s'", expectedNamePrefix))
 }
@@ -2187,10 +2298,10 @@ func ExpectRemediationRequest(payload api.GatewayAuditPayload, expectedNamespace
 // Use: Test deduplication tracking (BR-GATEWAY-004, BR-GATEWAY-057)
 func ExpectFingerprint(payload api.GatewayAuditPayload, expectedPattern string) {
 	Expect(payload.Fingerprint).ToNot(BeEmpty(), "Fingerprint should be present")
-	
+
 	// Business rule: SHA-256 format (64 hex characters)
 	Expect(payload.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"), "Fingerprint should be valid SHA-256 hash")
-	
+
 	if expectedPattern != "" {
 		Expect(payload.Fingerprint).To(MatchRegexp(expectedPattern), fmt.Sprintf("Fingerprint should match pattern '%s'", expectedPattern))
 	}
@@ -2218,16 +2329,16 @@ func ExpectOccurrenceCount(payload api.GatewayAuditPayload, expectedCount int32)
 func ExpectErrorDetails(payload api.GatewayAuditPayload, expectedCode string, expectedMessageSubstring string, expectedRetryPossible bool) {
 	errorDetails, ok := payload.ErrorDetails.Get()
 	Expect(ok).To(BeTrue(), "ErrorDetails should be present for failed events")
-	
+
 	// Business rule: Error code identifies failure category
 	Expect(errorDetails.Code).To(ContainSubstring(expectedCode), fmt.Sprintf("Error code should contain '%s'", expectedCode))
-	
+
 	// Business rule: Error message provides troubleshooting context
 	Expect(errorDetails.Message).To(ContainSubstring(expectedMessageSubstring), fmt.Sprintf("Error message should contain '%s'", expectedMessageSubstring))
-	
+
 	// Business rule: RetryPossible indicates transient vs permanent error
 	Expect(errorDetails.RetryPossible).To(Equal(expectedRetryPossible), fmt.Sprintf("RetryPossible should be %v", expectedRetryPossible))
-	
+
 	// Business rule: Component identifies error source
 	Expect(errorDetails.Component).To(Equal(api.ErrorDetailsComponentGateway), "Error component should be 'gateway'")
 }
@@ -2237,11 +2348,11 @@ func ExpectErrorDetails(payload api.GatewayAuditPayload, expectedCode string, ex
 // Use: Test RR reconstruction (BR-GATEWAY-055)
 func ExpectCorrelationIDFormat(correlationID string) {
 	Expect(correlationID).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`), "CorrelationID should match RR format")
-	
+
 	// Business rule: Fingerprint extraction enabled
 	parts := strings.Split(correlationID, "-")
 	Expect(parts).To(HaveLen(3), "CorrelationID should have 3 parts")
-	
+
 	fingerprint := parts[1]
 	Expect(fingerprint).To(HaveLen(12), "Fingerprint prefix should be 12 characters")
 	Expect(fingerprint).To(MatchRegexp("^[a-f0-9]{12}$"), "Fingerprint prefix should be hex")
@@ -2256,20 +2367,20 @@ It("should emit gateway.signal.received audit event for Prometheus signal", func
     // Given: Prometheus alert payload
     prometheusAlert := createTestPrometheusAlert()
     adapter = prometheus.NewAdapter(auditStore)
-    
+
     // When: Adapter parses signal
     signal, err := adapter.Parse(ctx, prometheusAlert)
-    
+
     // Then: Audit event emitted
     Expect(err).ToNot(HaveOccurred())
     Expect(auditStore.Events).To(HaveLen(1))
-    
+
     auditEvent := auditStore.Events[0]
     Expect(auditEvent.EventType).To(Equal("gateway.signal.received"))
-    
+
     // Use helper to parse payload
     gatewayPayload := ParseGatewayPayload(&auditEvent)
-    
+
     // Use helpers to validate fields
     ExpectSignalLabels(gatewayPayload, map[string]string{"severity": "critical"})
     ExpectSignalAnnotations(gatewayPayload, map[string]string{"summary": "High CPU usage"})
