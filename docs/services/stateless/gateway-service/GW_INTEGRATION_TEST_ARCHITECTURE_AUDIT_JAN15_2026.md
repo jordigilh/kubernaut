@@ -31,7 +31,7 @@ BeforeEach(func() {
     ctx = context.Background()
     zapLogger := zap.NewNop()
     logger = zapr.NewLogger(zapLogger)
-    
+
     // Use mock K8s client for error injection
     failingK8sClient = &ErrorInjectableK8sClient{
         failCreate: true,
@@ -95,12 +95,12 @@ var (
 
 var _ = BeforeSuite(func() {
     ctx, cancel = context.WithCancel(context.Background())
-    
+
     // Only envtest (in-memory K8s API)
     testEnv = &envtest.Environment{
         CRDDirectoryPaths: []string{"../../../config/crd/bases"},
     }
-    
+
     k8sConfig, err = testEnv.Start()
     k8sClient, err = client.New(k8sConfig, client.Options{Scheme: scheme})
 })
@@ -305,7 +305,7 @@ suite_test.go
 
 ---
 
-**Document Status**: ✅ Active  
-**Created**: 2026-01-15  
-**Priority**: 🚨 CRITICAL (blocks test plan implementation)  
+**Document Status**: ✅ Active
+**Created**: 2026-01-15
+**Priority**: 🚨 CRITICAL (blocks test plan implementation)
 **Decision Required**: User must choose Option A, B, or C before proceeding
