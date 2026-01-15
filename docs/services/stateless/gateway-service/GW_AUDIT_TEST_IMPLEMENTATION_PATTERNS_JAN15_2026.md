@@ -199,7 +199,7 @@ It("[GW-INT-AUD-006] should emit gateway.crd.created audit event", func() {
         }
         crdCreatedEvent = &events[0]
         return true
-    }, 10*time.Second, 500*time.Millisecond).Should(BeTrue(), 
+    }, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
         "gateway.crd.created event should exist in DataStorage")
 
     By("3. Extract and validate Gateway payload")
