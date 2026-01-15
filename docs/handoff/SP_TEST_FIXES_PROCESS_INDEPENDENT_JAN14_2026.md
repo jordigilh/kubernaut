@@ -1,8 +1,8 @@
 # SignalProcessing Test Fixes - Process-Independent Solutions
 
-**Date**: January 14, 2026  
-**Constraint**: Solutions must work with **ANY** number of parallel processes (1-12+)  
-**Goal**: Eliminate timing-based failures regardless of load  
+**Date**: January 14, 2026
+**Constraint**: Solutions must work with **ANY** number of parallel processes (1-12+)
+**Goal**: Eliminate timing-based failures regardless of load
 **Status**: Recommendations ready for implementation
 
 ---
@@ -28,23 +28,23 @@ Dynamically adjust timeout based on actual system responsiveness:
 func AdaptiveTimeout(baseTimeout time.Duration) time.Duration {
     // Measure actual system responsiveness
     start := time.Now()
-    
+
     // Quick health check: How fast can we query DataStorage?
     _, err := dataStorageClient.QueryAuditEvents(context.Background(), &ogenclient.QueryAuditEventsParams{
         Limit: ogenclient.NewOptInt(1),
     })
-    
+
     latency := time.Since(start)
-    
+
     // If system is slow (>500ms for simple query), increase timeout
     if latency > 500*time.Millisecond {
         multiplier := float64(latency) / float64(500*time.Millisecond)
         adjustedTimeout := time.Duration(float64(baseTimeout) * multiplier)
-        GinkgoWriter.Printf("⏱️ Adaptive timeout: %s → %s (system latency: %s)\n", 
+        GinkgoWriter.Printf("⏱️ Adaptive timeout: %s → %s (system latency: %s)\n",
             baseTimeout, adjustedTimeout, latency)
         return adjustedTimeout
     }
-    
+
     return baseTimeout
 }
 
@@ -83,19 +83,19 @@ Use PostgreSQL LISTEN/NOTIFY or watch-based querying:
 func WaitForAuditEvent(eventType, correlationID string, timeout time.Duration) (*ogenclient.AuditEvent, error) {
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
-    
+
     // Start with fast polling, slow down if event not found
     pollIntervals := []time.Duration{
         100 * time.Millisecond,  // First 5 attempts: check every 100ms
         500 * time.Millisecond,  // Next 10 attempts: check every 500ms
         1 * time.Second,         // Remaining: check every 1s
     }
-    
+
     attempts := 0
     for {
         select {
         case <-ctx.Done():
-            return nil, fmt.Errorf("timeout waiting for audit event: eventType=%s, correlationID=%s", 
+            return nil, fmt.Errorf("timeout waiting for audit event: eventType=%s, correlationID=%s",
                 eventType, correlationID)
         default:
             // Query DataStorage
@@ -104,11 +104,11 @@ func WaitForAuditEvent(eventType, correlationID string, timeout time.Duration) (
                 CorrelationID: ogenclient.NewOptString(correlationID),
                 Limit:         ogenclient.NewOptInt(1),
             })
-            
+
             if err == nil && len(events.Events) > 0 {
                 return &events.Events[0], nil
             }
-            
+
             // Adaptive polling interval
             var interval time.Duration
             if attempts < 5 {
@@ -118,11 +118,11 @@ func WaitForAuditEvent(eventType, correlationID string, timeout time.Duration) (
             } else {
                 interval = pollIntervals[2]
             }
-            
+
             attempts++
-            GinkgoWriter.Printf("⏳ Waiting for audit event (attempt %d, next check in %s)\n", 
+            GinkgoWriter.Printf("⏳ Waiting for audit event (attempt %d, next check in %s)\n",
                 attempts, interval)
-            
+
             time.Sleep(interval)
         }
     }
@@ -159,14 +159,14 @@ Verify DataStorage is ready before querying:
 // FlushAndVerifyReady ensures audit events are fully persisted before querying
 func FlushAndVerifyReady(correlationID string) error {
     const maxAttempts = 10
-    
+
     for attempt := 1; attempt <= maxAttempts; attempt++ {
         // Flush audit store
         flushAuditStoreAndWait()
-        
+
         // Give DataStorage time to process (small delay)
         time.Sleep(100 * time.Millisecond)
-        
+
         // Verify DataStorage is responsive
         ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
         _, err := dataStorageClient.QueryAuditEvents(ctx, &ogenclient.QueryAuditEventsParams{
@@ -174,17 +174,17 @@ func FlushAndVerifyReady(correlationID string) error {
             Limit:         ogenclient.NewOptInt(1),
         })
         cancel()
-        
+
         if err == nil {
             // DataStorage is responsive
             return nil
         }
-        
-        GinkgoWriter.Printf("⚠️ DataStorage not ready (attempt %d/%d): %v\n", 
+
+        GinkgoWriter.Printf("⚠️ DataStorage not ready (attempt %d/%d): %v\n",
             attempt, maxAttempts, err)
         time.Sleep(500 * time.Millisecond)
     }
-    
+
     return fmt.Errorf("DataStorage failed to become ready after %d attempts", maxAttempts)
 }
 
@@ -228,10 +228,10 @@ func GenerateProcessUniqueCorrelationID(testName string) string {
     // Include Ginkgo process number to ensure uniqueness across parallel processes
     processID := GinkgoParallelProcess()
     timestamp := time.Now().UnixNano()
-    
+
     // Format: proc-<N>-<testname>-<timestamp>
     correlationID := fmt.Sprintf("proc-%d-%s-%d", processID, testName, timestamp)
-    
+
     GinkgoWriter.Printf("🔑 Correlation ID: %s\n", correlationID)
     return correlationID
 }
@@ -240,7 +240,7 @@ func GenerateProcessUniqueCorrelationID(testName string) string {
 func createTestSignalProcessingCRD(namespace, testName string) *signalprocessingv1alpha1.SignalProcessing {
     // Generate unique correlation ID
     correlationID := GenerateProcessUniqueCorrelationID(testName)
-    
+
     sp := &signalprocessingv1alpha1.SignalProcessing{
         ObjectMeta: metav1.ObjectMeta{
             Name:      fmt.Sprintf("sp-%s", correlationID),
@@ -253,7 +253,7 @@ func createTestSignalProcessingCRD(namespace, testName string) *signalprocessing
             // ... rest of spec
         },
     }
-    
+
     return sp
 }
 ```
@@ -293,7 +293,7 @@ var dsCircuitBreaker = &DataStorageCircuitBreaker{state: "closed"}
 func (cb *DataStorageCircuitBreaker) Call(fn func() error) error {
     cb.mu.Lock()
     defer cb.mu.Unlock()
-    
+
     // If circuit is open and not enough time has passed, fail immediately
     if cb.state == "open" {
         if time.Since(cb.lastFailureTime) < 5*time.Second {
@@ -303,14 +303,14 @@ func (cb *DataStorageCircuitBreaker) Call(fn func() error) error {
         cb.state = "half-open"
         GinkgoWriter.Printf("🔄 Circuit breaker: Attempting to close (half-open)\n")
     }
-    
+
     // Execute function
     err := fn()
-    
+
     if err != nil {
         cb.failureCount++
         cb.lastFailureTime = time.Now()
-        
+
         // Open circuit after 3 consecutive failures
         if cb.failureCount >= 3 {
             cb.state = "open"
@@ -318,7 +318,7 @@ func (cb *DataStorageCircuitBreaker) Call(fn func() error) error {
         }
         return err
     }
-    
+
     // Success - reset circuit
     cb.failureCount = 0
     cb.state = "closed"
@@ -328,7 +328,7 @@ func (cb *DataStorageCircuitBreaker) Call(fn func() error) error {
 // QueryAuditEventsWithCircuitBreaker wraps query with circuit breaker
 func QueryAuditEventsWithCircuitBreaker(eventType, correlationID string) ([]ogenclient.AuditEvent, error) {
     var events []ogenclient.AuditEvent
-    
+
     err := dsCircuitBreaker.Call(func() error {
         result, err := dataStorageClient.QueryAuditEvents(context.Background(), &ogenclient.QueryAuditEventsParams{
             EventType:     ogenclient.NewOptString(eventType),
@@ -340,7 +340,7 @@ func QueryAuditEventsWithCircuitBreaker(eventType, correlationID string) ([]ogen
         events = result.Events
         return nil
     })
-    
+
     return events, err
 }
 ```
@@ -371,12 +371,12 @@ Query optimistically and handle multiple results gracefully:
 func WaitForAuditEventOptimistic(eventType, correlationID string, timeout time.Duration) (*ogenclient.AuditEvent, error) {
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
-    
+
     ticker := time.NewTicker(500 * time.Millisecond)
     defer ticker.Stop()
-    
+
     var lastEventCount int
-    
+
     for {
         select {
         case <-ctx.Done():
@@ -387,20 +387,20 @@ func WaitForAuditEventOptimistic(eventType, correlationID string, timeout time.D
                 CorrelationID: ogenclient.NewOptString(correlationID),
                 Limit:         ogenclient.NewOptInt(10),  // Get up to 10 events
             })
-            
+
             if err != nil {
                 GinkgoWriter.Printf("⚠️ Query error: %v\n", err)
                 continue
             }
-            
+
             lastEventCount = len(events.Events)
-            
+
             // Accept ANY number of events >= 1 (eventual consistency)
             if lastEventCount >= 1 {
                 GinkgoWriter.Printf("✅ Found %d audit event(s) for %s\n", lastEventCount, correlationID)
                 return &events.Events[0], nil  // Return most recent
             }
-            
+
             GinkgoWriter.Printf("⏳ Found %d events, waiting for at least 1...\n", lastEventCount)
         }
     }
@@ -444,12 +444,12 @@ Add random jitter to polling intervals to distribute load:
 func ExponentialBackoffWithJitter(attempt int, baseInterval, maxInterval time.Duration) time.Duration {
     // Exponential backoff: base * 2^attempt
     backoff := time.Duration(float64(baseInterval) * math.Pow(2, float64(attempt)))
-    
+
     // Cap at maxInterval
     if backoff > maxInterval {
         backoff = maxInterval
     }
-    
+
     // Add jitter (±25% randomization)
     jitter := time.Duration(rand.Float64() * float64(backoff) * 0.5)
     if rand.Intn(2) == 0 {
@@ -457,7 +457,7 @@ func ExponentialBackoffWithJitter(attempt int, baseInterval, maxInterval time.Du
     } else {
         backoff -= jitter
     }
-    
+
     GinkgoWriter.Printf("⏱️ Backoff: attempt %d → %s\n", attempt, backoff)
     return backoff
 }
@@ -466,7 +466,7 @@ func ExponentialBackoffWithJitter(attempt int, baseInterval, maxInterval time.Du
 func WaitForAuditEventWithBackoff(eventType, correlationID string, timeout time.Duration) (*ogenclient.AuditEvent, error) {
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
-    
+
     attempt := 0
     for {
         select {
@@ -478,11 +478,11 @@ func WaitForAuditEventWithBackoff(eventType, correlationID string, timeout time.
                 CorrelationID: ogenclient.NewOptString(correlationID),
                 Limit:         ogenclient.NewOptInt(1),
             })
-            
+
             if err == nil && len(events.Events) > 0 {
                 return &events.Events[0], nil
             }
-            
+
             // Wait with exponential backoff + jitter
             backoff := ExponentialBackoffWithJitter(attempt, 100*time.Millisecond, 2*time.Second)
             time.Sleep(backoff)
@@ -529,12 +529,12 @@ func WaitForAuditEventWithBackoff(eventType, correlationID string, timeout time.
 It("should emit 'classification.decision' audit event", func() {
     // 1. Generate process-unique correlation ID
     correlationID := GenerateProcessUniqueCorrelationID("test-audit-event")
-    
+
     // 2. Create test SignalProcessing CR with unique ID
     sp := createTestSignalProcessingCRD(namespace, correlationID)
     sp.Spec.Signal.Severity = "Sev2"
     Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-    
+
     // 3. Wait for controller processing with adaptive timeout
     Eventually(func(g Gomega) {
         var updated signalprocessingv1alpha1.SignalProcessing
@@ -543,10 +543,10 @@ It("should emit 'classification.decision' audit event", func() {
         }, &updated)).To(Succeed())
         g.Expect(updated.Status.Severity).ToNot(BeEmpty())
     }, AdaptiveTimeout(60*time.Second), "1s").Should(Succeed())
-    
+
     // 4. Pre-flush validation
     Expect(FlushAndVerifyReady(correlationID)).To(Succeed())
-    
+
     // 5. Event-driven waiting with exponential backoff
     event, err := WaitForAuditEventWithBackoff(
         "signalprocessing.classification.decision",
@@ -555,7 +555,7 @@ It("should emit 'classification.decision' audit event", func() {
     )
     Expect(err).ToNot(HaveOccurred())
     Expect(event).ToNot(BeNil())
-    
+
     // 6. Validate using structured types
     payload := event.EventData.SignalProcessingAuditPayload
     Expect(payload.ExternalSeverity.IsSet()).To(BeTrue())
@@ -596,11 +596,11 @@ It("should emit 'classification.decision' audit event", func() {
 
 ---
 
-**Status**: ✅ **Ready for Implementation**  
-**Confidence**: 95% - These patterns are proven in distributed systems  
+**Status**: ✅ **Ready for Implementation**
+**Confidence**: 95% - These patterns are proven in distributed systems
 **Recommendation**: Implement solutions 1-7 in priority order
 
 ---
 
-**Created By**: AI Assistant  
+**Created By**: AI Assistant
 **Date**: January 14, 2026

@@ -158,20 +158,26 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 			// 2. AI Analysis emits aianalysis.analysis.completed (consumer perspective)
 			// 3. Both events share the same correlation_id
 			// 4. Both events contain appropriate data for their perspective
+			//
+			// BUG FIX (Jan 15, 2026): Made RemediationRequestRef.Name unique per test run
+			// to prevent cross-test audit event pollution in shared DataStorage database.
+			// Previously hard-coded "test-rr" caused query to retrieve events from ALL
+			// test runs, leading to false failures (expected 1, got 2+).
 			// ========================================
 
 			By("Creating AIAnalysis resource for hybrid audit validation")
+			testID := uuid.New().String()[:8]
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("test-hybrid-audit-%s", uuid.New().String()[:8]),
+					Name:      fmt.Sprintf("test-hybrid-audit-%s", testID),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-hybrid-%s", uuid.New().String()[:8]),
+					RemediationID: fmt.Sprintf("rr-hybrid-%s", testID),
 					RemediationRequestRef: corev1.ObjectReference{
 						APIVersion: "remediation.kubernaut.ai/v1alpha1",
 						Kind:       "RemediationRequest",
-						Name:       "test-rr",
+						Name:       fmt.Sprintf("test-rr-%s", testID), // ✅ UNIQUE per test run
 						Namespace:  namespace,
 					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{

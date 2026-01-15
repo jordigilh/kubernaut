@@ -64,7 +64,7 @@ if phaseActuallyChanged {
 ```go
 func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
     logger.V(1).Info("Processing Enriching phase")
-    
+
     // SP-BUG-PHASE-TRANSITION-001: Skip if already transitioned beyond Enriching
     // This prevents duplicate phase transition audits when controller reconciles multiple times
     // Use non-cached APIReader to get FRESH phase data (prevents stale cache reads)

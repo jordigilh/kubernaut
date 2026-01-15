@@ -1,6 +1,6 @@
 # Gateway Integration Test Architecture
-**Date**: January 15, 2026  
-**Status**: 🚨 **CRITICAL ARCHITECTURAL UPDATE**  
+**Date**: January 15, 2026
+**Status**: 🚨 **CRITICAL ARCHITECTURAL UPDATE**
 **Impact**: ALL 77 integration tests must use this pattern
 
 ---
@@ -28,15 +28,15 @@
 ```go
 var _ = Describe("Gateway Integration Tests", func() {
     var auditStore *MockAuditStore  // ❌ Mock not allowed in integration tests
-    
+
     BeforeEach(func() {
         auditStore = NewMockAuditStore()  // ❌ Wrong tier
     })
-    
+
     It("should emit audit event", func() {
         // Process signal
         gateway.ProcessSignal(ctx, signal)
-        
+
         // ❌ Query mock - NOT testing real DataStorage integration
         events := auditStore.Events
         Expect(events).To(HaveLen(1))
@@ -62,26 +62,26 @@ var _ = Describe("Gateway Integration Tests", func() {
         k8sClient client.Client       // ✅ Real Kubernetes client
         ctx       context.Context
     )
-    
+
     BeforeEach(func() {
         // Connect to real DataStorage in Podman
         dsClient = connectToDataStorage()
-        
+
         // Initialize Gateway with real dependencies
         gateway = gateway.NewService(dsClient, k8sClient, logger)
-        
+
         ctx = context.Background()
     })
-    
+
     // Test ID: GW-INT-AUD-001
     It("[GW-INT-AUD-001] should emit signal.received audit event", func() {
         // Given: Prometheus alert
         signal := createTestPrometheusAlert()
-        
+
         // When: Gateway processes signal
         correlationID, err := gateway.ProcessSignal(ctx, signal)
         Expect(err).ToNot(HaveOccurred())
-        
+
         // Then: Query REAL DataStorage by correlation ID for test isolation
         auditEvent := FindAuditEventByTypeAndCorrelationID(
             ctx,
@@ -90,10 +90,10 @@ var _ = Describe("Gateway Integration Tests", func() {
             correlationID, // ← CRITICAL for parallel execution
             30*time.Second,
         )
-        
+
         Expect(auditEvent).ToNot(BeNil())
         Expect(auditEvent.CorrelationID).To(Equal(correlationID))
-        
+
         // Validate audit payload
         gatewayPayload := ParseGatewayPayload(auditEvent)
         Expect(gatewayPayload.SignalType).To(Equal(api.GatewayAuditPayloadSignalTypePrometheusAlert))
@@ -163,22 +163,22 @@ func FindAuditEventByTypeAndCorrelationID(
     timeout time.Duration,
 ) *api.AuditEvent {
     var event *api.AuditEvent
-    
+
     Eventually(func() bool {
         resp, err := dsClient.ListAuditEvents(ctx, api.ListAuditEventsParams{
             EventType:     api.NewOptString(string(eventType)),
             CorrelationID: api.NewOptString(correlationID),  // ← CRITICAL
             Limit:         api.NewOptInt(1),
         })
-        
+
         if err != nil || len(resp.Events) == 0 {
             return false
         }
-        
+
         event = &resp.Events[0]
         return true
     }, timeout, 500*time.Millisecond).Should(BeTrue())
-    
+
     return event
 }
 ```
@@ -205,21 +205,21 @@ func FindAllAuditEventsByCorrelationID(
     timeout time.Duration,
 ) []api.AuditEvent {
     var events []api.AuditEvent
-    
+
     Eventually(func() bool {
         resp, err := dsClient.ListAuditEvents(ctx, api.ListAuditEventsParams{
             CorrelationID: api.NewOptString(correlationID),  // ← Test isolation
             Limit:         api.NewOptInt(100),
         })
-        
+
         if err != nil || len(resp.Events) == 0 {
             return false
         }
-        
+
         events = resp.Events
         return true
     }, timeout, 500*time.Millisecond).Should(BeTrue())
-    
+
     return events
 }
 ```
@@ -312,30 +312,30 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
         k8sClient client.Client
         ctx       context.Context
     )
-    
+
     BeforeEach(func() {
         ctx = context.Background()
-        
+
         // Real DataStorage client (Podman container)
         dsClient = testutil.NewDataStorageClient()
-        
+
         // Real Kubernetes client
         k8sClient = testutil.NewK8sClient()
-        
+
         // Real Gateway service
         gateway = gateway.NewService(dsClient, k8sClient, logger)
     })
-    
+
     // Test ID: GW-INT-AUD-001
     It("[GW-INT-AUD-001] should emit gateway.signal.received audit event for Prometheus signal", func() {
         // Given: Prometheus alert with unique fingerprint
         alert := createTestPrometheusAlert()
-        
+
         // When: Gateway processes signal
         correlationID, err := gateway.ProcessSignal(ctx, alert)
         Expect(err).ToNot(HaveOccurred())
         Expect(correlationID).ToNot(BeEmpty())
-        
+
         // Then: Query DataStorage by correlation ID (parallel-safe)
         auditEvent := FindAuditEventByTypeAndCorrelationID(
             ctx,
@@ -344,16 +344,16 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
             correlationID,                                           // Test isolation
             30*time.Second,
         )
-        
+
         // Verify audit event
         Expect(auditEvent).ToNot(BeNil())
         Expect(auditEvent.EventType).To(Equal(string(api.GatewayAuditPayloadEventTypeGatewaySignalReceived)))
         Expect(auditEvent.CorrelationID).To(Equal(correlationID), "Correlation ID must match")
-        
+
         // Parse typed payload
         gatewayPayload := ParseGatewayPayload(auditEvent)
         Expect(gatewayPayload.SignalType).To(Equal(api.GatewayAuditPayloadSignalTypePrometheusAlert))
-        
+
         // Validate RR reconstruction fields
         signalLabels, ok := gatewayPayload.SignalLabels.Get()
         Expect(ok).To(BeTrue())
@@ -372,7 +372,7 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
    ```go
    // ❌ Delete
    auditStore := NewMockAuditStore()
-   
+
    // ✅ Add
    dsClient := testutil.NewDataStorageClient()
    ```
@@ -388,7 +388,7 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
    // ❌ Old
    events := auditStore.Events
    auditEvent := findEventByType(events, "gateway.signal.received")
-   
+
    // ✅ New
    auditEvent := FindAuditEventByTypeAndCorrelationID(
        ctx,
@@ -428,6 +428,6 @@ var _ = Describe("BR-GATEWAY-055: Signal Received Audit Events", func() {
 
 ---
 
-**Status**: 🚨 **MANDATORY for all 77 Gateway integration tests**  
-**Priority**: P0 - Blocking implementation  
+**Status**: 🚨 **MANDATORY for all 77 Gateway integration tests**
+**Priority**: P0 - Blocking implementation
 **Authority**: INTEGRATION_E2E_NO_MOCKS_POLICY.md, 03-testing-strategy.mdc

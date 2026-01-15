@@ -40,6 +40,7 @@ import (
 	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -518,10 +519,28 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 			// DD-005: Track phase processing failure
 			r.Metrics.IncrementProcessingTotal("classifying", "failure")
 			r.Metrics.ObserveProcessingDuration("classifying", time.Since(classifyingStart).Seconds())
-			logger.Error(err, "Severity determination failed",
+			logger.Error(err, "Severity determination failed - transitioning to Failed phase",
 				"externalSeverity", signal.Severity,
 				"hint", "Check Rego policy has else clause for unmapped values")
-			return ctrl.Result{}, err
+
+			// Transition to Failed phase (Category C: Permanent error)
+			// Policy errors require manual intervention (operator must fix policy)
+			updateErr := r.StatusManager.AtomicStatusUpdate(ctx, sp, func() error {
+				sp.Status.Phase = signalprocessingv1alpha1.PhaseFailed
+				sp.Status.Error = fmt.Sprintf("policy evaluation failed: %v", err)
+				return nil
+			})
+			if updateErr != nil {
+				logger.Error(updateErr, "Failed to update status to Failed phase")
+				return ctrl.Result{}, updateErr
+			}
+
+			// Emit Kubernetes Event for operator visibility
+			r.Recorder.Event(sp, corev1.EventTypeWarning, "PolicyEvaluationFailed",
+				fmt.Sprintf("Rego policy evaluation failed: %v", err))
+
+			// Do not requeue - requires manual policy fix by operator
+			return ctrl.Result{Requeue: false}, nil
 		}
 	}
 
@@ -551,6 +570,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		// DD-SEVERITY-001: Set normalized severity
 		if severityResult != nil {
 			sp.Status.Severity = severityResult.Severity
+		}
+		// BR-SP-072: Set PolicyHash for audit trail (if classifier available)
+		if r.SeverityClassifier != nil {
+			sp.Status.PolicyHash = r.SeverityClassifier.GetPolicyHash()
 		}
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
 		// BR-SP-110: Set condition AFTER refetch to prevent wipe

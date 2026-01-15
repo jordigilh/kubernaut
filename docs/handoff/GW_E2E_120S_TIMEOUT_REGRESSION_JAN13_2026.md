@@ -109,7 +109,7 @@ git checkout test/e2e/gateway/27_error_handling_test.go
 
 **Rationale**: Don't make things worse. Return to baseline.
 
-**Effort**: 5 min  
+**Effort**: 5 min
 **Expected Result**: 84.4% pass rate (81/96 tests)
 
 ---
@@ -125,8 +125,8 @@ make test-e2e-gateway GINKGO_PROCS=6
 
 **Rationale**: Lower concurrency = less K8s API server load = more reliable
 
-**Effort**: 5 min + test runtime  
-**Expected Result**: 90-95% pass rate  
+**Effort**: 5 min + test runtime
+**Expected Result**: 90-95% pass rate
 **Trade-off**: 2x longer test execution time
 
 ---
@@ -160,7 +160,7 @@ Eventually(func() (int, string) {
 
 **Rationale**: Understand if issue is field indexing or something else
 
-**Effort**: 2-3 hours  
+**Effort**: 2-3 hours
 **Expected Result**: Clear diagnosis of actual problem
 
 ---
@@ -170,7 +170,7 @@ Eventually(func() (int, string) {
 
 ```go
 // BEFORE (relies on server-side field index)
-err := k8sClient.List(ctx, &rrList, 
+err := k8sClient.List(ctx, &rrList,
     client.InNamespace(testNamespace),
     client.MatchingFields{"spec.signalFingerprint": expectedFingerprint})
 
@@ -185,8 +185,8 @@ for _, rr := range rrList.Items {
 
 **Rationale**: Eliminates field indexing lag entirely
 
-**Effort**: 2-3 hours  
-**Expected Result**: 95-100% pass rate  
+**Effort**: 2-3 hours
+**Expected Result**: 95-100% pass rate
 **Trade-off**: Less "realistic" (Gateway uses field indexing in production)
 
 ---
@@ -228,6 +228,6 @@ for _, rr := range rrList.Items {
 
 ---
 
-**Document Status**: ⚠️ **URGENT - REGRESSION**  
-**Next Action**: Revert 120s changes immediately  
+**Document Status**: ⚠️ **URGENT - REGRESSION**
+**Next Action**: Revert 120s changes immediately
 **Confidence**: 95% that revert will restore 84.4% pass rate
