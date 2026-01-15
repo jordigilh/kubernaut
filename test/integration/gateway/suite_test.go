@@ -79,15 +79,15 @@ const (
 	gatewayPostgresPassword  = "gateway_test_password"
 	gatewayPostgresDB        = "gateway_test"
 	gatewayPostgresContainer = "gateway-integration-postgres"
-	
+
 	// Redis configuration (DataStorage DLQ) - Per DD-TEST-001
 	gatewayRedisPort      = 16380
 	gatewayRedisContainer = "gateway-integration-redis"
-	
+
 	// Immudb configuration (SOC2 immutable audit) - Per DD-TEST-001
 	gatewayImmudbPort      = 13323
 	gatewayImmudbContainer = "gateway-integration-immudb"
-	
+
 	// DataStorage configuration - Per DD-TEST-001
 	gatewayDataStoragePort      = 18091 // Per DD-TEST-001 (was 15440 - wrong range)
 	gatewayDataStorageContainer = "gateway-integration-datastorage"
@@ -135,26 +135,26 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("[Process 1] Step 3: Start PostgreSQL container")
 		err = startPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL start must succeed")
-		
+
 		// 4. Start Redis (DataStorage DLQ)
 		logger.Info("[Process 1] Step 4: Start Redis container")
 		err = startRedis()
 		Expect(err).ToNot(HaveOccurred(), "Redis start must succeed")
-		
+
 		// 5. Start Immudb (SOC2 immutable audit)
 		logger.Info("[Process 1] Step 5: Start Immudb container")
 		err = startImmudb()
 		Expect(err).ToNot(HaveOccurred(), "Immudb start must succeed")
-		
+
 		// 6. Apply migrations to PUBLIC schema
 		logger.Info("[Process 1] Step 6: Apply database migrations")
 		db, err := connectPostgreSQL()
 		Expect(err).ToNot(HaveOccurred(), "PostgreSQL connection must succeed")
-		
+
 		err = infrastructure.ApplyMigrationsWithPropagationTo(db)
 		Expect(err).ToNot(HaveOccurred(), "Migration application must succeed")
 		db.Close()
-		
+
 		// 7. Start DataStorage service
 		logger.Info("[Process 1] Step 7: Start DataStorage service")
 		err = startDataStorageService()
@@ -290,7 +290,7 @@ func preflightCheck() error {
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("podman not available: %w", err)
 	}
-	
+
 	// Check for port conflicts (all Gateway integration ports per DD-TEST-001)
 	ports := []int{
 		gatewayPostgresPort,     // 15437
@@ -304,7 +304,7 @@ func preflightCheck() error {
 			return fmt.Errorf("port %d is already in use", port)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -366,7 +366,7 @@ func startPostgreSQL() error {
 func connectPostgreSQL() (*sql.DB, error) {
 	connStr := fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable",
 		gatewayPostgresPort, gatewayPostgresUser, gatewayPostgresPassword, gatewayPostgresDB)
-	
+
 	return sql.Open("postgres", connStr)
 }
 
@@ -374,19 +374,19 @@ func connectPostgreSQL() (*sql.DB, error) {
 func startRedis() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayRedisContainer,
 		"--network", "gateway-integration-net",
 		"-p", fmt.Sprintf("%d:6379", gatewayRedisPort),
 		"redis:7-alpine",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Redis: %w: %s", err, output)
 	}
-	
+
 	// Wait for Redis to be ready
 	time.Sleep(2 * time.Second)
 	return nil
@@ -396,7 +396,7 @@ func startRedis() error {
 func startImmudb() error {
 	// Remove existing container if any
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
-	
+
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", gatewayImmudbContainer,
 		"--network", "gateway-integration-net",
@@ -404,12 +404,12 @@ func startImmudb() error {
 		"-e", "IMMUDB_ADMIN_PASSWORD=immudb",
 		"codenotary/immudb:latest",
 	)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to start Immudb: %w: %s", err, output)
 	}
-	
+
 	// Wait for Immudb to be ready
 	time.Sleep(3 * time.Second)
 	return nil
@@ -472,7 +472,7 @@ func cleanupInfrastructure() {
 	_ = exec.Command("podman", "rm", "-f", gatewayImmudbContainer).Run()
 	_ = exec.Command("podman", "rm", "-f", gatewayRedisContainer).Run()
 	_ = exec.Command("podman", "rm", "-f", gatewayPostgresContainer).Run()
-	
+
 	// Remove network
 	_ = exec.Command("podman", "network", "rm", "gateway-integration-net").Run()
 }
