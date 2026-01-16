@@ -589,7 +589,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			GinkgoWriter.Printf("✅ Label accuracy validated: correct %.0f→%.0f, wrong_source %.0f→%.0f, wrong_severity %.0f→%.0f\n",
 				initialCorrectValue, finalCorrectValue, initialWrongSourceValue, finalWrongSourceValue, initialWrongSeverityValue, finalWrongSeverityValue)
 		})
-})
+	})
 	// Test ID: GW-INT-MET-007, GW-INT-MET-009, GW-INT-MET-010
 	// Scenario: CRD Lifecycle Metrics
 	// BR: BR-GATEWAY-069, BR-GATEWAY-070

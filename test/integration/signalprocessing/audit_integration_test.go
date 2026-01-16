@@ -296,14 +296,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-02"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-002"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-002"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName
 
 			By("4. Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-02", ns, rr, ValidTestFingerprints["audit-002"], targetResource)
-			sp.Spec.Signal.Severity = "warning"
+			sp.Spec.Signal.Severity = "high"
 			sp.Spec.Signal.Name = "HighCPUUsage"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -498,14 +498,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-03"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-003"], "info", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-003"], "low", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName
 
 			By("4. Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-03", ns, rr, ValidTestFingerprints["audit-003"], targetResource)
-			sp.Spec.Signal.Severity = "info"
+			sp.Spec.Signal.Severity = "low"
 			sp.Spec.Signal.Name = "PodRestart"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -590,14 +590,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-04"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-004"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-004"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName
 
 			By("4. Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-04", ns, rr, ValidTestFingerprints["audit-004"], targetResource)
-			sp.Spec.Signal.Severity = "warning"
+			sp.Spec.Signal.Severity = "high"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			By("5. Wait for processing to complete")

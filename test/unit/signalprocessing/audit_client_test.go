@@ -319,7 +319,7 @@ func createTestSignalProcessing(name string) *signalprocessingv1alpha1.SignalPro
 			Signal: signalprocessingv1alpha1.SignalData{
 				Fingerprint: "test-fingerprint-abc123def456abc123def456abc123def456abc123d",
 				Name:        "TestSignal",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

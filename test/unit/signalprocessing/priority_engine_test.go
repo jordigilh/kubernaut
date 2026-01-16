@@ -87,21 +87,21 @@ result := {"priority": "P1", "confidence": 0.90, "policy_name": "critical-stagin
     lower(input.environment) == "staging"
 }
 
-# P1: Warning + production
-result := {"priority": "P1", "confidence": 0.90, "policy_name": "warning-production"} if {
-    lower(input.signal.severity) == "warning"
+# P1: High + production (DD-SEVERITY-001 v1.1)
+result := {"priority": "P1", "confidence": 0.90, "policy_name": "high-production"} if {
+    lower(input.signal.severity) == "high"
     lower(input.environment) == "production"
 }
 
-# P2: Info + production
-result := {"priority": "P2", "confidence": 0.85, "policy_name": "info-production"} if {
-    lower(input.signal.severity) == "info"
+# P2: Low + production (DD-SEVERITY-001 v1.1)
+result := {"priority": "P2", "confidence": 0.85, "policy_name": "low-production"} if {
+    lower(input.signal.severity) == "low"
     lower(input.environment) == "production"
 }
 
-# P2: Warning + staging
-result := {"priority": "P2", "confidence": 0.85, "policy_name": "warning-staging"} if {
-    lower(input.signal.severity) == "warning"
+# P2: High + staging (DD-SEVERITY-001 v1.1)
+result := {"priority": "P2", "confidence": 0.85, "policy_name": "high-staging"} if {
+    lower(input.signal.severity) == "high"
     lower(input.environment) == "staging"
 }
 
@@ -111,15 +111,15 @@ result := {"priority": "P2", "confidence": 0.85, "policy_name": "critical-develo
     lower(input.environment) == "development"
 }
 
-# P3: Info + development
-result := {"priority": "P3", "confidence": 0.80, "policy_name": "info-development"} if {
-    lower(input.signal.severity) == "info"
+# P3: Low + development (DD-SEVERITY-001 v1.1)
+result := {"priority": "P3", "confidence": 0.80, "policy_name": "low-development"} if {
+    lower(input.signal.severity) == "low"
     lower(input.environment) == "development"
 }
 
-# P3: Warning + development
-result := {"priority": "P3", "confidence": 0.80, "policy_name": "warning-development"} if {
-    lower(input.signal.severity) == "warning"
+# P3: High + development (DD-SEVERITY-001 v1.1)
+result := {"priority": "P3", "confidence": 0.80, "policy_name": "high-development"} if {
+    lower(input.signal.severity) == "high"
     lower(input.environment) == "development"
 }
 
@@ -163,7 +163,7 @@ default result := {"priority": "P2", "policy_name": "default-catch-all"}
 		})
 
 		// BR-SP-070: P1 - Warning production
-		It("BR-SP-070: should assign P1 for warning severity in production", func() {
+		It("BR-SP-070: should assign P1 for high severity in production (DD-SEVERITY-001 v1.1)", func() {
 			policyPath := createPolicy(standardPolicy)
 			var err error
 			priorityEngine, err = classifier.NewPriorityEngine(ctx, policyPath, logger)
@@ -178,7 +178,7 @@ default result := {"priority": "P2", "policy_name": "default-catch-all"}
 				Environment: "production",
 			}
 			signal := &signalprocessingv1alpha1.SignalData{
-				Severity: "warning",
+				Severity: "high",
 				Source:   "prometheus",
 			}
 
@@ -189,8 +189,8 @@ default result := {"priority": "P2", "policy_name": "default-catch-all"}
 			// Note: Confidence removed per DD-SP-001 V1.1
 		})
 
-		// BR-SP-070: P2 - Info production
-		It("BR-SP-070: should assign P2 for info severity in production", func() {
+		// BR-SP-070: P2 - Low severity production (DD-SEVERITY-001 v1.1)
+		It("BR-SP-070: should assign P2 for low severity in production (DD-SEVERITY-001 v1.1)", func() {
 			policyPath := createPolicy(standardPolicy)
 			var err error
 			priorityEngine, err = classifier.NewPriorityEngine(ctx, policyPath, logger)
@@ -205,7 +205,7 @@ default result := {"priority": "P2", "policy_name": "default-catch-all"}
 				Environment: "production",
 			}
 			signal := &signalprocessingv1alpha1.SignalData{
-				Severity: "info",
+				Severity: "low",
 				Source:   "prometheus",
 			}
 
@@ -259,7 +259,7 @@ default result := {"priority": "P2", "policy_name": "default-catch-all"}
 				Environment: "development",
 			}
 			signal := &signalprocessingv1alpha1.SignalData{
-				Severity: "info",
+				Severity: "low",
 				Source:   "prometheus",
 			}
 
@@ -305,7 +305,7 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 				Environment: "staging",
 			}
 			signal := &signalprocessingv1alpha1.SignalData{
-				Severity: "info", // Low severity but tier=critical → P0
+				Severity: "low", // Low severity but tier=critical → P0
 				Source:   "prometheus",
 			}
 
@@ -511,7 +511,7 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 				Environment: "staging",
 			}
 			signal := &signalprocessingv1alpha1.SignalData{
-				Severity: "warning", // Boundary between P1 and P2
+				Severity: "high", // Boundary between P1 and P2
 				Source:   "prometheus",
 			}
 
@@ -565,7 +565,7 @@ result := {"priority": "P2", "confidence": 0.60, "policy_name": "default"} if {
 				Environment: "production",
 			}
 			signal := &signalprocessingv1alpha1.SignalData{
-				Severity: "warning",
+				Severity: "high",
 				Source:   "prometheus",
 			}
 

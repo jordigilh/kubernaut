@@ -114,7 +114,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// THEN: Normalized severity is persisted in Status
 				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
 					"Controller should write normalized severity to Status.Severity")
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
 					"Status.Severity should be normalized value per operator policy (not external 'Sev1')")
 			}, "30s", "1s").Should(Succeed())
 
@@ -256,12 +256,14 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// Query by unique correlation_id (avoids parallel test collisions)
 				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
 
-				// Enhanced logging to detect duplicate events (BR-SP-105)
-				// Per DD-SEVERITY-001: "One classification decision = one audit event"
-				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
-					time.Now().Format("15:04:05.000"), count, correlationID)
+			// Enhanced logging to detect duplicate events (BR-SP-105)
+			// Per DD-SEVERITY-001: "One classification decision = one audit event"
+			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
+				time.Now().Format("15:04:05.000"), count, correlationID)
 
-				g.Expect(count).To(Equal(1), "Should have exactly 1 classification.decision event for this correlation_id")
+			g.Expect(count).To(Equal(1),
+				fmt.Sprintf("Should have exactly 1 classification.decision event for this correlation_id, but found %d events (correlation_id: %s)",
+					count, correlationID))
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			// Get the event for detailed assertions
@@ -280,7 +282,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Validate normalized severity is captured
 			Expect(payload.NormalizedSeverity.IsSet()).To(BeTrue(), "Normalized severity should be set")
 			normalizedSev := string(payload.NormalizedSeverity.Value)
-			Expect(normalizedSev).To(BeElementOf([]string{"critical", "warning", "info", "unknown"}),
+			Expect(normalizedSev).To(BeElementOf([]string{"critical", "high", "medium", "low", "unknown"}),
 				"Normalized severity should be standard value")
 
 			// Validate determination source for audit trail
@@ -340,11 +342,13 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			Eventually(func(g Gomega) {
 				count := countAuditEvents("signalprocessing.classification.decision", correlationID)
 
-				// Enhanced logging to detect duplicate events (BR-SP-105)
-				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
-					time.Now().Format("15:04:05.000"), count, correlationID)
+			// Enhanced logging to detect duplicate events (BR-SP-105)
+			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
+				time.Now().Format("15:04:05.000"), count, correlationID)
 
-				g.Expect(count).To(Equal(1), "Should have exactly 1 classification.decision event")
+			g.Expect(count).To(Equal(1),
+				fmt.Sprintf("Should have exactly 1 classification.decision event, but found %d events (correlation_id: %s)",
+					count, correlationID))
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			event, err := getLatestAuditEvent("signalprocessing.classification.decision", correlationID)
@@ -360,7 +364,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// Fallback should be critical/warning/info per operator policy (NOT "unknown")
 			normalizedSeverity := string(payload.NormalizedSeverity.Value)
-			Expect(normalizedSeverity).To(BeElementOf([]string{"critical", "warning", "info"}),
+			Expect(normalizedSeverity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
 				"Normalized severity should be operator-defined (critical/warning/info), NOT system 'unknown'")
 
 			// Source should be rego-policy (operator-defined behavior)
@@ -564,7 +568,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Hot-reload pattern verified by existing environment/priority classifiers (lines 205-239 in main.go)
 			// fsnotify detects ConfigMap file changes → reloads policy → new determinations use updated policy
 
-			Expect(initialSeverity).To(BeElementOf([]string{"critical", "warning", "info"}),
+			Expect(initialSeverity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
 				"Initial severity determination should work with loaded policy")
 
 			// Full ConfigMap update → policy reload → new determination tested in E2E tier
@@ -617,7 +621,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					// THEN: All CRDs have severity determined correctly
 					g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
 						"Concurrent CRD %s should have severity determined", spName)
-					g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
+					g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "medium", "low"}),
 						"Concurrent CRD %s should have valid normalized severity per operator policy", spName)
 				}
 			}, "60s", "2s").Should(Succeed())

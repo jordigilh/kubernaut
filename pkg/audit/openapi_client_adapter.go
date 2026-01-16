@@ -237,6 +237,9 @@ func (a *OpenAPIClientAdapter) StoreBatch(ctx context.Context, events []*ogencli
 func parseOgenError(err error) error {
 	errMsg := err.Error()
 
+	// DEBUG: Log full error message for HTTP 400 troubleshooting
+	fmt.Printf("[DEBUG parseOgenError] Full error: %s\n", errMsg)
+
 	// Check for HTTP status code in ogen error message
 	// Format: "decode response: unexpected status code: 400"
 	if strings.Contains(errMsg, "unexpected status code:") {
@@ -244,8 +247,8 @@ func parseOgenError(err error) error {
 		if len(parts) == 2 {
 			statusStr := strings.TrimSpace(parts[1])
 			if statusCode, parseErr := strconv.Atoi(statusStr); parseErr == nil {
-				// Create HTTPError with extracted status code
-				return NewHTTPError(statusCode, fmt.Sprintf("HTTP %d error from Data Storage API", statusCode))
+				// Create HTTPError with extracted status code (include full error)
+				return NewHTTPError(statusCode, fmt.Sprintf("HTTP %d error: %s", statusCode, errMsg))
 			}
 		}
 	}

@@ -128,7 +128,7 @@ labels := result if {
 			sp1 := createSignalProcessingCR(ns, "hr-file-watch-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-file-watch-01"],
 				Name:        "HRFileWatchTest1",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -165,7 +165,7 @@ labels := result if {
 			sp2 := createSignalProcessingCR(ns, "hr-file-watch-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-file-watch-02"],
 				Name:        "HRFileWatchTest2",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -215,7 +215,7 @@ labels := result if {
 			sp1 := createSignalProcessingCR(ns, "hr-reload-valid-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-01"],
 				Name:        "HRReloadValidTest1",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -252,7 +252,7 @@ labels := result if {
 			sp2 := createSignalProcessingCR(ns, "hr-reload-valid-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-02"],
 				Name:        "HRReloadValidTest2",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -302,7 +302,7 @@ labels := result if {
 			sp1 := createSignalProcessingCR(ns, "hr-graceful-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-graceful-01"],
 				Name:        "HRGracefulTest1",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -340,7 +340,7 @@ labels["broken" := ["syntax"  // Missing bracket
 			sp2 := createSignalProcessingCR(ns, "hr-graceful-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-graceful-02"],
 				Name:        "HRGracefulTest2",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

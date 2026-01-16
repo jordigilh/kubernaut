@@ -81,7 +81,8 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 		Signal:    sp.Spec.Signal.Name,
 	}
-	if sev := toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity); sev != "" {
+	// DD-SEVERITY-001: Use normalized severity from Status (not external Spec.Signal.Severity)
+	if sev := toSignalProcessingAuditPayloadSeverity(sp.Status.Severity); sev != "" {
 		payload.Severity.SetTo(sev)
 	}
 
@@ -322,7 +323,8 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 		Signal:    sp.Spec.Signal.Name,
 		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
 	}
-	if sev := toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity); sev != "" {
+	// DD-SEVERITY-001: Use normalized severity from Status (not external Spec.Signal.Severity)
+	if sev := toSignalProcessingAuditPayloadSeverity(sp.Status.Severity); sev != "" {
 		payload.Severity.SetTo(sev)
 	}
 

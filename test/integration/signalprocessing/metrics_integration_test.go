@@ -183,7 +183,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				Name:      "metrics-test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest(fmt.Sprintf("metrics-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["metrics-001"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(fmt.Sprintf("metrics-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["metrics-001"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// 3. Create SignalProcessing CR (triggers business logic)
@@ -245,7 +245,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				Name:      "enrichment-test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest(fmt.Sprintf("enrich-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["enrich-001"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(fmt.Sprintf("enrich-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["enrich-001"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			sp := CreateTestSignalProcessingWithParent(fmt.Sprintf("enrich-sp-%s", uuid.New().String()[:8]), ns, rr, ValidTestFingerprints["enrich-001"], targetResource)
@@ -297,7 +297,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				Name:      "nonexistent-pod", // Pod doesn't exist
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest(fmt.Sprintf("error-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["error-001"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(fmt.Sprintf("error-rr-%s", uuid.New().String()[:8]), ns, ValidTestFingerprints["error-001"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			sp := CreateTestSignalProcessingWithParent(fmt.Sprintf("error-sp-%s", uuid.New().String()[:8]), ns, rr, ValidTestFingerprints["error-001"], targetResource)

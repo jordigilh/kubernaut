@@ -223,7 +223,7 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(policyConfigMap), policyConfigMap)).To(Succeed())
 	policyConfigMap.Data["severity.rego"] = `package signalprocessing.severity
 import rego.v1
-determine_severity := "warning" if {
+determine_severity := "high" if {
 	lower(input.signal.severity) == "custom_value"
 } else := "critical" if {
 	true
@@ -274,9 +274,9 @@ determine_severity := "warning" if {
 			return processed.Status.Phase
 		}, "20s", "1s").Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 
-		// Verify policy was hot-reloaded (should return "warning" not "critical")
-		g.Expect(processed.Status.Severity).To(Equal("warning"),
-			"Hot-reload validation: CUSTOM_VALUE should map to warning (policy reloaded)")
+		// Verify policy was hot-reloaded (should return "high" not "critical")
+		g.Expect(processed.Status.Severity).To(Equal("high"),
+			"Hot-reload validation: CUSTOM_VALUE should map to high (policy reloaded, DD-SEVERITY-001 v1.1)")
 	}, "30s", "2s").Should(Succeed(), "ConfigMap hot-reload should complete within 30s (kubelet sync-frequency=10s)")
 
 	// THEN: New SignalProcessing uses updated policy after hot-reload
@@ -321,8 +321,8 @@ determine_severity := "warning" if {
 		var updated signalprocessingv1alpha1.SignalProcessing
 		g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(sp2), &updated)).To(Succeed())
 
-		g.Expect(updated.Status.Severity).To(Equal("warning"),
-			"New workflow should use updated policy mapping CUSTOM_VALUE → warning")
+		g.Expect(updated.Status.Severity).To(Equal("high"),
+			"New workflow should use updated policy mapping CUSTOM_VALUE → high (DD-SEVERITY-001 v1.1)")
 		g.Expect(updated.Status.Severity).ToNot(Equal(initialSeverity),
 			"New workflow severity should differ from old workflow (policy changed)")
 	}, "30s", "2s").Should(Succeed())

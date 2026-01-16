@@ -137,7 +137,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 	Describe("Event type filtering to reduce AI analysis costs", func() {
 		It("processes Warning events for remediation workflow", func() {
 			// Business scenario: Warning events indicate issues needing attention
-			// Expected: AI analyzes and remediates
+			// Expected: Gateway passes through event type → SignalProcessing normalizes
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			warningEvent := []byte(`{
 				"type": "Warning",
 				"reason": "BackOff",
@@ -151,13 +152,13 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 
 			signal, err := adapter.Parse(ctx, warningEvent)
 
-			// BUSINESS OUTCOME: Warning events trigger AI workflow
+			// BUSINESS OUTCOME: K8s event type passed through as-is
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("warning"),
-				"Severity determines remediation priority")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event type 'Warning' passed through (not normalized to 'warning')")
 
 			// Business capability verified:
-			// Warning event → Gateway → CRD → AI analyzes crash loop
+			// Warning event → Gateway (pass-through) → CRD → SignalProcessing (normalize) → AI analyzes
 		})
 
 		It("skips Normal events to avoid creating CRDs for routine operations", func() {
@@ -241,8 +242,9 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 	// Different sources (Prometheus, K8s Events) → Unified format → AI doesn't need source-specific logic
 	Describe("Signal normalization for uniform AI processing", func() {
 		It("converts K8s Event to NormalizedSignal format for downstream compatibility", func() {
-			// Business scenario: AI service expects NormalizedSignal format
-			// Expected: K8s Event adapter produces same format as Prometheus adapter
+			// Business scenario: Gateway passes through K8s event type
+			// SignalProcessing normalizes severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			k8sEvent := []byte(`{
 				"type": "Warning",
 				"reason": "OOMKilled",
@@ -256,7 +258,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 
 			signal, err := adapter.Parse(ctx, k8sEvent)
 
-			// BUSINESS OUTCOME: Normalized format means AI has consistent interface
+			// BUSINESS OUTCOME: Gateway extracts and preserves (not transforms)
 			Expect(err).NotTo(HaveOccurred())
 
 			// All adapters must populate these fields
@@ -264,13 +266,15 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"AlertName required for deduplication fingerprint")
 			Expect(signal.Fingerprint).NotTo(BeEmpty(),
 				"Fingerprint required for Redis deduplication")
-			Expect(signal.Severity).To(BeElementOf([]string{"critical", "warning", "info"}),
-				"Severity required for priority calculation")
+			Expect(signal.Severity).NotTo(BeEmpty(),
+				"BR-GATEWAY-181: Severity passed through (normalization happens in SignalProcessing)")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: K8s event type passed through as-is")
 			Expect(signal.SourceType).To(Equal("kubernetes-event"),
 				"Source type enables adapter-specific metrics")
 
 			// Business capability verified:
-			// K8s Event → Gateway normalizes → AI processes same as Prometheus alerts
+			// K8s Event → Gateway (pass-through) → SignalProcessing (normalize) → AI processes
 		})
 
 		It("preserves original event payload for audit trail", func() {

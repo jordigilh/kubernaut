@@ -585,6 +585,129 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Implementation**: `pkg/datastorage/server/aggregation_handlers.go`
 - **Related BRs**: BR-STORAGE-030 (aggregation API)
 
+---
+
+#### **ARCHITECTURAL CLARIFICATION: Workflow Severity vs Signal Severity**
+
+**📋 Design Decision**: [DD-SEVERITY-001 v1.1](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md) | ✅ **Separate Domains**
+
+**Context**: DataStorage maintains TWO distinct severity domains that are intentionally separate:
+
+1. **Workflow Severity** (`critical`, `high`, `medium`, `low`)
+   - **Domain**: Remediation procedures in workflow catalog
+   - **Meaning**: Urgency/criticality of executing the remediation workflow
+   - **Source**: Workflow catalog entries (manually curated by operators)
+   - **Usage**: Workflow search filtering, aggregation (BR-STORAGE-033), trending
+   - **Example**: "Scale deployment workflow" has `severity: high` because scaling operations require careful validation
+
+2. **Signal Severity** (`critical`, `high`, `medium`, `low`, `unknown`)
+   - **Domain**: Incoming alerts/signals from monitoring systems
+   - **Meaning**: Urgency/criticality of the alert itself
+   - **Source**: SignalProcessing Status.Severity (normalized by Rego policy per DD-SEVERITY-001)
+   - **Usage**: Incident aggregation, trend analysis
+   - **Example**: Prometheus alert has `severity: critical` indicating production outage
+
+**Why Separate?**
+- ✅ **Different semantics**: Workflow urgency ≠ Signal urgency
+- ✅ **Different sources**: Curated catalog ≠ Dynamic signals
+- ✅ **Different lifecycles**: Workflow severity is static, signal severity varies per incident
+- ✅ **No coupling needed**: Workflow search uses signal severity as **filter input**, not stored relationship
+
+**Current Usage** (v1.0):
+- ✅ **Search Filtering**: Operators filter workflows by severity in catalog search
+- ✅ **Aggregation/Analytics**: Severity distribution reporting (BR-STORAGE-033)
+- ✅ **Trending**: Track workflow usage by severity level over time
+
+**Future Possibilities** (Roadmap):
+
+1. **🎯 Workflow Prioritization Queue** (High Value)
+   - **Use Case**: When multiple workflows are pending for different resources, execute critical workflows first
+   - **Current Blocker**: Single-resource-at-a-time constraint prevents queue scenarios
+   - **Future Enabler**: If we support multi-resource execution or queuing, severity becomes primary sort key
+   - **Industry Practice**: Most platforms use severity for execution priority (PagerDuty, ServiceNow, etc.)
+   - **Example**: During incident storm, "Scale database (critical)" executes before "Restart cache (low)"
+
+2. **⏱️ SLO/SLA Time Targets** (Compliance Value)
+   - **Use Case**: Different time-to-execution and time-to-completion targets by severity
+   - **Industry Practice**:
+     - Critical: Start within 1 minute, complete within 5 minutes
+     - High: Start within 5 minutes, complete within 15 minutes
+     - Medium: Start within 15 minutes, complete within 1 hour
+     - Low: Best effort, may be deferred during high load
+   - **Metrics**: Track SLO compliance by severity level
+   - **Example**: Alert if critical workflow hasn't started within 1 minute
+
+3. **🔐 Approval Requirements** (Safety Value)
+   - **Use Case**: Critical workflows require human approval, low workflows auto-execute
+   - **Integration Point**: RemediationOrchestrator approval workflow
+   - **Industry Practice**: Risk-based automation (automate low-risk, gate high-risk)
+   - **Example**: "Delete PVC (critical)" → manual approval, "Clear cache (low)" → auto-approve
+
+4. **📢 Notification Routing** (Operational Value)
+   - **Use Case**: Route workflow execution notifications to different channels by severity
+   - **Current**: Notifications sent uniformly
+   - **Future**: Critical → PagerDuty + Slack, Medium → Slack only, Low → Log only
+   - **Integration Point**: Notification controller routing logic
+   - **Example**: Critical workflow failure pages on-call engineer immediately
+
+5. **🔄 Retry/Timeout Policies** (Resilience Value)
+   - **Use Case**: Higher severity workflows get more aggressive retry/timeout policies
+   - **Industry Practice**:
+     - Critical: 5 retries, 10-minute timeout per attempt
+     - Low: 2 retries, 2-minute timeout per attempt
+   - **Integration Point**: WorkflowExecution controller retry logic
+   - **Example**: Critical workflows retry more aggressively to maximize success rate
+
+6. **🚦 Rate Limiting/Throttling** (Stability Value)
+   - **Use Case**: During high load, throttle low-severity workflows to preserve capacity for critical ones
+   - **Industry Practice**: Kubernetes Priority Classes, AWS Service Quotas
+   - **Current**: No throttling implemented
+   - **Future**: Shed low-severity load when system is overloaded
+   - **Example**: During incident storm, defer "low" workflows until critical backlog clears
+
+7. **📊 Workflow Selection Scoring** (AI/ML Enhancement)
+   - **Use Case**: Use workflow severity as factor in hybrid weighted scoring (DD-WORKFLOW-003)
+   - **Current**: Severity not used in scoring
+   - **Future Enhancement**: Boost score for workflows matching or exceeding signal severity
+   - **Example**: Signal with severity="critical" → prefer workflows marked severity="critical" over "low"
+   - **Integration Point**: DataStorage workflow search scoring algorithm
+
+8. **📈 Cost/Resource Allocation** (Efficiency Value)
+   - **Use Case**: Allocate more resources (CPU, memory, parallelism) to critical workflows
+   - **Industry Practice**: Kubernetes QoS classes, AWS Fargate pricing tiers
+   - **Example**: Critical workflows get dedicated worker nodes, low workflows share capacity
+
+9. **🔍 Audit Detail Level** (Compliance Value)
+   - **Use Case**: More detailed audit logging for critical workflows (full parameter sets, step-by-step execution)
+   - **Current**: Uniform audit detail for all workflows
+   - **Future**: Critical workflows generate exhaustive audit trails for compliance
+   - **Example**: Critical workflow logs every parameter, low workflow logs summary only
+
+10. **🎨 UI/UX Differentiation** (User Experience)
+    - **Use Case**: Visual indicators in dashboards (red badges for critical, gray for low)
+    - **Future**: Workflow catalog UI shows severity-based color coding
+    - **Example**: Critical workflows highlighted in red in execution history
+
+**Decision** (2026-01-15):
+- **Current State**: Workflow severity is **underutilized** - only used for filtering/aggregation
+- **High-Value Next Step**: **Workflow prioritization queue** when multi-resource execution is enabled
+- **Recommendation**: Keep severity as separate domain - future use cases validate this decision
+- **No Action Required**: DataStorage implementation is future-ready for these enhancements
+
+**DD-SEVERITY-001 v1.1 Alignment**:
+- Workflow severity predates DD-SEVERITY-001 and uses `critical/high/medium/low`
+- Signal severity normalized by SignalProcessing uses same values: `critical/high/medium/low/unknown`
+- **Alignment is coincidental but beneficial** - same enum values reduce confusion
+- **No integration required** - domains remain independent
+
+**Triage Decision (2026-01-15)**:
+- **Decision**: Keep workflow severity and signal severity as separate domains
+- **Rationale**: Different semantics, different sources, no business need for coupling
+- **Status**: ✅ No changes required to DataStorage for DD-SEVERITY-001 v1.1
+- **Reference**: [DD-SEVERITY-001 Week 4 DataStorage Triage](../../../architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md#week-4-consumer-updates--datastorage-triage)
+
+---
+
 #### **BR-STORAGE-034: Incident Trend Aggregation**
 - **Priority**: P1
 - **Status**: ✅ Active

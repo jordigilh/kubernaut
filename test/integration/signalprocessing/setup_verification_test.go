@@ -53,7 +53,7 @@ var _ = Describe("SignalProcessing Integration Setup Verification", func() {
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
 						Name:        "TestSignal",
-						Severity:    "info",
+						Severity: "low",
 						Type:        "kubernetes-event",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

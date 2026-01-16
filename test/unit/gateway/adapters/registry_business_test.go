@@ -257,8 +257,9 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 	})
 
 	Context("Warning events trigger remediation workflows", func() {
-		It("parses Warning event and extracts resource targeting info", func() {
+		It("parses Warning event and passes through event type as severity", func() {
 			// BUSINESS OUTCOME: Warning event parsed → RO can select workflow
+			// Authority: BR-GATEWAY-181 - Event Type passed through as-is
 			payload := []byte(`{
 				"involvedObject": {"kind": "Pod", "name": "payment-api-789", "namespace": "production"},
 				"reason": "BackOff",
@@ -275,14 +276,16 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 				"Kind=Pod enables WE to target: kubectl delete pod")
 			Expect(signal.Resource.Name).To(Equal("payment-api-789"),
 				"Name enables WE to target specific pod")
-			Expect(signal.Severity).To(Equal("warning"),
-				"Warning severity for priority routing")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (no transformation)")
 		})
 	})
 
 	Context("Error events trigger high-priority remediation", func() {
-		It("parses Error event as critical severity", func() {
-			// BUSINESS OUTCOME: Error events are critical - immediate remediation
+		It("passes through Error event type as-is (BR-GATEWAY-181)", func() {
+			// BUSINESS OUTCOME: Gateway passes through raw K8s event type
+			// SignalProcessing Rego policies determine severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := []byte(`{
 				"involvedObject": {"kind": "Pod", "name": "api-server", "namespace": "prod"},
 				"reason": "OOMKilled",
@@ -293,8 +296,8 @@ var _ = Describe("BR-GATEWAY-002: K8s Event parsing extracts remediation targeti
 			signal, err := adapter.Parse(context.Background(), payload)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("critical"),
-				"Error events map to critical severity - immediate action required")
+			Expect(signal.Severity).To(Equal("Error"),
+				"BR-GATEWAY-181: Event Type 'Error' passed through (no reason-based mapping)")
 		})
 	})
 

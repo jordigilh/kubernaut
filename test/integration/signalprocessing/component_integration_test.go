@@ -106,7 +106,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-pod-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-pod"],
 				Name:        "PodEnrichTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -146,7 +146,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-deploy-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-deploy"],
 				Name:        "DeployEnrichTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -206,7 +206,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-sts-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-sts"],
 				Name:        "StsEnrichTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -259,7 +259,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-svc-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-svc"],
 				Name:        "SvcEnrichTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -297,7 +297,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-ns-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-ns"],
 				Name:        "NsContextTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -379,7 +379,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "env-configmap-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["env-configmap"],
 				Name:        "EnvConfigMapTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -416,7 +416,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "env-label-priority-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["env-label"],
 				Name:        "LabelPriorityTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -538,7 +538,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "priority-configmap-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["priority-cm"],
 				Name:        "PriorityConfigMapTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -581,7 +581,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "business-label-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["business-label"],
 				Name:        "BusinessLabelTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -615,7 +615,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "business-pattern-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["business-pattern"],
 				Name:        "BusinessPatternTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -696,7 +696,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "ownerchain-real-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["ownerchain"],
 				Name:        "OwnerChainRealTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -748,7 +748,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "detect-pdb-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["detect-pdb"],
 				Name:        "DetectPDBTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -790,7 +790,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "detect-hpa-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["detect-hpa"],
 				Name:        "DetectHPATest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -870,7 +870,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "detect-hpa-chain-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hpa-ownerchain"],
 				Name:        "DetectHPAChainTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -915,7 +915,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "detect-netpol-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["detect-netpol"],
 				Name:        "DetectNetPolTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -970,7 +970,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(nsName, "gitops-flux-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-flux-test"),
 				Name:        "FluxGitOpsTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1019,7 +1019,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(nsName, "gitops-argocd-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-argocd-test"),
 				Name:        "ArgoCDGitOpsTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1059,7 +1059,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(nsName, "gitops-none-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-nogitops-test"),
 				Name:        "NoGitOpsTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1105,7 +1105,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "pdb-nomatch-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-pdb-nomatch"),
 				Name:        "PDBNoMatchTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1149,7 +1149,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "pdb-multi-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-pdb-multi"),
 				Name:        "PDBMultiTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1197,7 +1197,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "hpa-nomatch-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-hpa-nomatch"),
 				Name:        "HPANoMatchTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1244,7 +1244,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "hpa-multi-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-hpa-multi"),
 				Name:        "HPAMultiTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1295,7 +1295,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "hpa-pod-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: GenerateTestFingerprint("priority3-hpa-pod"),
 				Name:        "HPAPodTest",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{

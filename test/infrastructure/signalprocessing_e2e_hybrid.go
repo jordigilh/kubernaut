@@ -607,6 +607,7 @@ data:
 
     # Priority assignment based on environment and severity
     # OPA v1.0 syntax: requires 'if' keyword before rule body
+    # DD-SEVERITY-001 v1.1: Uses critical/high/medium/low/unknown severity levels
     default result := {"priority": "P3", "confidence": 0.6}
 
     # Production + critical = P0 (highest urgency)
@@ -614,20 +615,20 @@ data:
       input.environment == "production"
       input.signal.severity == "critical"
     }
-    # Production + warning = P1 (high urgency)
+    # Production + high = P1 (high urgency) - DD-SEVERITY-001 v1.1
     result := {"priority": "P1", "confidence": 0.9} if {
       input.environment == "production"
-      input.signal.severity == "warning"
+      input.signal.severity == "high"
     }
     # Staging + critical = P2 (medium urgency per BR-SP-070)
     result := {"priority": "P2", "confidence": 0.9} if {
       input.environment == "staging"
       input.signal.severity == "critical"
     }
-    # Staging + warning = P2 (medium urgency)
+    # Staging + high = P2 (medium urgency) - DD-SEVERITY-001 v1.1
     result := {"priority": "P2", "confidence": 0.9} if {
       input.environment == "staging"
-      input.signal.severity == "warning"
+      input.signal.severity == "high"
     }
     # Development = P3 (lowest urgency, regardless of severity)
     result := {"priority": "P3", "confidence": 0.9} if {
@@ -667,25 +668,25 @@ data:
     import rego.v1
 
     # BR-SP-105: Severity Determination via Rego Policy
-    # DD-SEVERITY-001: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
-    # Maps external severity values to normalized values: critical/warning/info
+    # DD-SEVERITY-001 v1.1: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
+    # Maps external severity values to normalized values: critical/high/medium/low/unknown
     determine_severity := "critical" if {
       input.signal.severity == "sev1"
     } else := "critical" if {
       input.signal.severity == "p0"
     } else := "critical" if {
       input.signal.severity == "p1"
-    } else := "warning" if {
+    } else := "high" if {
       input.signal.severity == "sev2"
-    } else := "warning" if {
+    } else := "high" if {
       input.signal.severity == "p2"
-    } else := "info" if {
+    } else := "medium" if {
       input.signal.severity == "sev3"
-    } else := "info" if {
+    } else := "low" if {
       input.signal.severity == "p3"
-    } else := "critical" if {
+    } else := "unknown" if {
       # Default fallback for unknown severity values
-      # Per DD-SEVERITY-001: Conservative approach - unknown = critical
+      # Per DD-SEVERITY-001 v1.1: Unknown external values map to "unknown"
       true
     }
 ---

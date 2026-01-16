@@ -1,0 +1,40 @@
+{
+  "receiver": "kubernaut-gateway",
+  "status": "firing",
+  "alerts": [
+    {
+      "status": "firing",
+      "labels": {
+        "alertname": "DatabaseOutage",
+        "severity": "P0",
+        "namespace": "production",
+        "statefulset": "postgres-primary",
+        "pod": "postgres-primary-0",
+        "priority": "P0"
+      },
+      "annotations": {
+        "summary": "Production database is unreachable",
+        "description": "PostgreSQL primary instance postgres-primary-0 is unreachable. All database operations failing. Customer impact: complete service outage.",
+        "runbook_url": "https://runbooks.example.com/database-outage"
+      },
+      "startsAt": "2026-01-15T12:05:00Z",
+      "endsAt": "0001-01-01T00:00:00Z",
+      "generatorURL": "http://prometheus.example.com/graph?g0.expr=pg_up%7Binstance%3D%22postgres-primary%22%7D+%3D%3D+0&g0.tab=1",
+      "fingerprint": "pagerduty-p0-test-fingerprint-001"
+    }
+  ],
+  "groupLabels": {
+    "alertname": "DatabaseOutage"
+  },
+  "commonLabels": {
+    "alertname": "DatabaseOutage",
+    "severity": "P0"
+  },
+  "commonAnnotations": {
+    "summary": "Production database is unreachable"
+  },
+  "externalURL": "http://alertmanager.example.com",
+  "version": "4",
+  "groupKey": "{}/{severity=\"P0\"}:{alertname=\"DatabaseOutage\"}",
+  "truncatedAlerts": 0
+}

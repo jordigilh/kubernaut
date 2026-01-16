@@ -200,6 +200,59 @@ func NewServerWithK8sClient(cfg *config.ServerConfig, logger logr.Logger, metric
 	return createServerWithClients(cfg, logger, metricsInstance, ctrlClient, ctrlClient, k8sClient)
 }
 
+// NewServerForTesting creates a Gateway server with injected dependencies for testing.
+// This constructor allows injecting a mock audit store for unit tests.
+//
+// USAGE: Unit tests only - allows testing audit failure scenarios
+// PRODUCTION: Use NewServer() or NewServerWithK8sClient() instead
+func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, auditStore audit.AuditStore) (*Server, error) {
+	// Use provided Kubernetes client
+	k8sClient := k8s.NewClient(ctrlClient)
+
+	// Initialize adapter registry
+	adapterRegistry := adapters.NewAdapterRegistry(logger)
+
+	// Create phaseChecker (for deduplication)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+
+	// Create statusUpdater
+	statusUpdater := processing.NewStatusUpdater(ctrlClient, ctrlClient)
+
+	// Create CRD creator
+	fallbackNamespace := "default"
+	if cfg.Processing.CRD.FallbackNamespace != "" {
+		fallbackNamespace = cfg.Processing.CRD.FallbackNamespace
+	}
+	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
+
+	// Create server
+	server := &Server{
+		adapterRegistry: adapterRegistry,
+		statusUpdater:   statusUpdater,
+		phaseChecker:    phaseChecker,
+		crdCreator:      crdCreator,
+		k8sClient:       k8sClient,
+		ctrlClient:      ctrlClient,
+		auditStore:      auditStore, // Injected for testing
+		metricsInstance: metricsInstance,
+		logger:          logger,
+	}
+
+	// Setup HTTP server with routes
+	router := server.setupRoutes()
+	server.router = router
+	handler := server.wrapWithMiddleware(router)
+
+	server.httpServer = &http.Server{
+		Addr:         cfg.Server.ListenAddr,
+		Handler:      handler,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout:  cfg.Server.WriteTimeout,
+	}
+
+	return server, nil
+}
+
 func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 

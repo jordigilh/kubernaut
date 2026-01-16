@@ -459,12 +459,14 @@ spec:
                         maxLength: 64
                         type: string
                       severity:
-                        description: 'Signal severity: critical, warning, info, unknown
-                          (normalized by SignalProcessing Rego - DD-SEVERITY-001)'
+                        description: 'Signal severity: critical, high, medium, low,
+                          unknown (normalized by SignalProcessing Rego - DD-SEVERITY-001
+                          v1.1)'
                         enum:
                         - critical
-                        - warning
-                        - info
+                        - high
+                        - medium
+                        - low
                         - unknown
                         type: string
                       signalType:
@@ -1008,12 +1010,13 @@ spec:
                     type: array
                   severity:
                     description: |-
-                      Severity determined by RCA (normalized per DD-SEVERITY-001)
-                      DD-SEVERITY-001: Must match SignalProcessing normalized severity values
+                      Severity determined by RCA (normalized per DD-SEVERITY-001 v1.1)
+                      DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical, high, medium, low, unknown)
                     enum:
                     - critical
-                    - warning
-                    - info
+                    - high
+                    - medium
+                    - low
                     - unknown
                     type: string
                   signalType:
