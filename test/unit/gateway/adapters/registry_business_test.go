@@ -189,34 +189,50 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 		})
 	})
 
-	Context("Severity required for priority routing", func() {
-		It("rejects signals with invalid severity - priority routing fails", func() {
-			// BUSINESS OUTCOME: Signals must have valid severity for prioritization
-			// Valid: critical, warning, info
-			signal := &types.NormalizedSignal{
-				Fingerprint: "abc123",
-				AlertName:   "TestAlert",
-				Severity:    "high", // Invalid - not in {critical, warning, info}
+	Context("Severity pass-through for downstream policy (BR-GATEWAY-181)", func() {
+		It("accepts ANY non-empty severity - pass-through architecture", func() {
+			// BUSINESS OUTCOME: Gateway passes through external severity values
+			// SignalProcessing Rego policies determine normalized severity downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+			testCases := []struct {
+				severity string
+				scheme   string
+			}{
+				{"critical", "standard"},
+				{"warning", "standard"},
+				{"info", "standard"},
+				{"Sev1", "enterprise"},
+				{"P0", "PagerDuty"},
+				{"HIGH", "custom"},
 			}
 
-			err := adapter.Validate(signal)
+			for _, tc := range testCases {
+				signal := &types.NormalizedSignal{
+					Fingerprint: "abc123",
+					AlertName:   "TestAlert",
+					Severity:    tc.severity,
+				}
 
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("invalid severity"),
-				"Clear error: severity must be critical, warning, or info")
+				err := adapter.Validate(signal)
+
+				Expect(err).NotTo(HaveOccurred(),
+					"BR-GATEWAY-181: Must accept '%s' (%s scheme)", tc.severity, tc.scheme)
+			}
 		})
 
-		It("accepts valid critical severity for immediate remediation", func() {
+		It("rejects empty severity - required for downstream policy", func() {
 			signal := &types.NormalizedSignal{
 				Fingerprint: "abc123",
 				AlertName:   "OOMKilled",
-				Severity:    "critical",
+				Severity:    "", // Empty
 			}
 
 			err := adapter.Validate(signal)
 
-			Expect(err).NotTo(HaveOccurred(),
-				"Critical severity valid - signal proceeds to CRD creation")
+			Expect(err).To(HaveOccurred(),
+				"BR-GATEWAY-181: Empty severity rejected - downstream policy requires value")
+			Expect(err.Error()).To(ContainSubstring("severity"),
+				"Clear error: severity required")
 		})
 	})
 })
