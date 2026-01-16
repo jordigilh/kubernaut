@@ -668,6 +668,15 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// Note: Per-process servers already closed in Phase 1 cleanup
 
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("datastorage", []string{
+		postgresContainer, // datastorage-postgres-test
+		redisContainer,    // datastorage-redis-test
+	}, GinkgoWriter)
+
 	// Clean up shared containers (PostgreSQL, Redis)
 	cleanupContainers()
 

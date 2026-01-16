@@ -332,6 +332,16 @@ var _ = SynchronizedAfterSuite(func() {
 	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 	// WE-SHUTDOWN-001: Safe to stop now - all processes flushed audit events
 
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("workflowexecution", []string{
+		"workflowexecution_datastorage_test",
+		"workflowexecution_postgres_test",
+		"workflowexecution_redis_test",
+	}, GinkgoWriter)
+
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 

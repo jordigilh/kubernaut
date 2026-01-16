@@ -404,6 +404,18 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("   (Ginkgo guarantees all processes finished Phase 1 cleanup)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	if infra != nil && infra.DSBootstrapInfra != nil {
+		GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+		testinfra.MustGatherContainerLogs("authwebhook", []string{
+			infra.DataStorageContainer,
+			infra.PostgresContainer,
+			infra.RedisContainer,
+		}, GinkgoWriter)
+	}
+
 	By("Tearing down Data Storage infrastructure")
 	if infra != nil {
 		_ = infra.Teardown(GinkgoWriter) // Ignore errors during cleanup
