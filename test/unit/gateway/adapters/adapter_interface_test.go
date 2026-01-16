@@ -208,28 +208,28 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				"Error message must indicate deduplication requirement")
 		})
 
-		It("rejects signals with invalid severity (business classification)", func() {
-			// BUSINESS OUTCOME: Severity determines remediation priority
-			// Gateway rejects invalid severity to ensure correct prioritization
-			invalidSignal := &types.NormalizedSignal{
-				AlertName:   "PodCrashLooping",
-				Fingerprint: "fingerprint-123",
-				Severity:    "high", // INVALID (must be critical/warning/info)
-				Resource: types.ResourceIdentifier{
-					Kind: "Pod",
-					Name: "test-pod",
-				},
-			}
+	It("rejects signals with empty severity (BR-GATEWAY-181 pass-through)", func() {
+		// BUSINESS OUTCOME: Severity pass-through architecture
+		// Gateway accepts ANY non-empty severity string (Sev1, P0, critical, HIGH, etc.)
+		// SignalProcessing Rego policies determine normalized severity downstream
+		// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+		invalidSignal := &types.NormalizedSignal{
+			AlertName:   "PodCrashLooping",
+			Fingerprint: "fingerprint-123",
+			Severity:    "", // INVALID (empty string)
+			Resource: types.ResourceIdentifier{
+				Kind: "Pod",
+				Name: "test-pod",
+			},
+		}
 
-			err := adapter.Validate(invalidSignal)
+		err := adapter.Validate(invalidSignal)
 
-			Expect(err).To(HaveOccurred(),
-				"Must reject signals with invalid severity")
-			Expect(err.Error()).To(ContainSubstring("severity"),
-				"Error message must indicate severity validation failure")
-			Expect(err.Error()).To(ContainSubstring("critical/warning/info"),
-				"Error message must show valid severity options")
-		})
+		Expect(err).To(HaveOccurred(),
+			"BR-GATEWAY-181: Must reject empty severity")
+		Expect(err.Error()).To(ContainSubstring("severity"),
+			"Error message must indicate severity is required")
+	})
 
 		It("rejects signals missing resource kind (remediation target requirement)", func() {
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHAT to fix
@@ -273,30 +273,40 @@ var _ = Describe("Kubernetes Event Adapter - Signal Quality Validation", func() 
 				"Error message must indicate missing resource name")
 		})
 
-		It("accepts all valid severities (critical, warning, info)", func() {
-			// BUSINESS OUTCOME: All severity levels supported for different urgency
-			// Critical → immediate remediation
-			// Warning → scheduled remediation
-			// Info → monitoring only
-			validSeverities := []string{"critical", "warning", "info"}
-
-			for _, severity := range validSeverities {
-				signal := &types.NormalizedSignal{
-					AlertName:   "TestAlert",
-					Fingerprint: "fingerprint-123",
-					Severity:    severity,
-					Resource: types.ResourceIdentifier{
-						Kind: "Pod",
-						Name: "test-pod",
-					},
-				}
-
-				err := adapter.Validate(signal)
-
-			Expect(err).NotTo(HaveOccurred(),
-				"Severity '%s' must be accepted for business prioritization", severity)
+	It("accepts ANY non-empty severity string (BR-GATEWAY-181 pass-through)", func() {
+		// BUSINESS OUTCOME: Severity pass-through architecture
+		// Gateway accepts ANY severity scheme: standard, enterprise, PagerDuty, custom
+		// - Standard: "critical", "warning", "info"
+		// - Enterprise: "Sev1", "Sev2", "Sev3", "Sev4"
+		// - PagerDuty: "P0", "P1", "P2", "P3"
+		// - Custom: "HIGH", "MEDIUM", "LOW", "urgent", "normal"
+		// SignalProcessing Rego policies normalize downstream
+		// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+		validSeverities := []string{
+			"critical", "warning", "info",       // Standard
+			"Sev1", "Sev2", "Sev3", "Sev4",     // Enterprise
+			"P0", "P1", "P2", "P3",             // PagerDuty
+			"HIGH", "MEDIUM", "LOW",            // Custom uppercase
+			"urgent", "normal",                  // Custom lowercase
 		}
-	})
+
+		for _, severity := range validSeverities {
+			signal := &types.NormalizedSignal{
+				AlertName:   "TestAlert",
+				Fingerprint: "fingerprint-123",
+				Severity:    severity,
+				Resource: types.ResourceIdentifier{
+					Kind: "Pod",
+					Name: "test-pod",
+				},
+			}
+
+			err := adapter.Validate(signal)
+
+		Expect(err).NotTo(HaveOccurred(),
+			"BR-GATEWAY-181: Gateway must accept '%s' severity (pass-through)", severity)
+	}
+})
 
 	// GW-UNIT-ADP-015: BR-GATEWAY-005 Adapter Error Resilience
 	Context("BR-GATEWAY-005: Adapter Error Non-Fatal", func() {
