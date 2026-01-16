@@ -34,9 +34,9 @@ class SignalProcessingAuditPayload(BaseModel):
     event_type: StrictStr = Field(description="Event type for discriminator (matches parent event_type)")
     phase: StrictStr = Field(description="Current phase of the SignalProcessing")
     signal: StrictStr = Field(description="Name of the signal being processed")
-    severity: Optional[StrictStr] = Field(default=None, description="Severity level of the signal")
+    severity: Optional[StrictStr] = Field(default=None, description="Normalized severity level (DD-SEVERITY-001 v1.1)")
     external_severity: Optional[StrictStr] = Field(default=None, description="Original severity from external monitoring system (e.g., Sev1, P0, critical)")
-    normalized_severity: Optional[StrictStr] = Field(default=None, description="Normalized severity determined by Rego policy")
+    normalized_severity: Optional[StrictStr] = Field(default=None, description="Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1)")
     determination_source: Optional[StrictStr] = Field(default=None, description="Source of severity determination for audit trail")
     policy_hash: Optional[Annotated[str, Field(strict=True)]] = Field(default=None, description="SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking)")
     environment: Optional[StrictStr] = Field(default=None, description="Classified environment")
@@ -80,8 +80,8 @@ class SignalProcessingAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('critical', 'warning', 'info'):
-            raise ValueError("must be one of enum values ('critical', 'warning', 'info')")
+        if value not in ('critical', 'high', 'medium', 'low', 'unknown'):
+            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', 'unknown')")
         return value
 
     @field_validator('normalized_severity')
@@ -90,8 +90,8 @@ class SignalProcessingAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('critical', 'warning', 'info'):
-            raise ValueError("must be one of enum values ('critical', 'warning', 'info')")
+        if value not in ('critical', 'high', 'medium', 'low', 'unknown'):
+            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', 'unknown')")
         return value
 
     @field_validator('determination_source')

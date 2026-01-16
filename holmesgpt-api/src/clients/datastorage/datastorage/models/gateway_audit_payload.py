@@ -39,7 +39,7 @@ class GatewayAuditPayload(BaseModel):
     alert_name: StrictStr = Field(description="Name of the alert")
     namespace: StrictStr = Field(description="Kubernetes namespace of the affected resource")
     fingerprint: StrictStr = Field(description="Unique identifier for the signal (deduplication)")
-    severity: Optional[StrictStr] = Field(default=None, description="Severity level of the signal")
+    severity: Optional[StrictStr] = Field(default=None, description="Normalized severity level (DD-SEVERITY-001 v1.1)")
     resource_kind: Optional[StrictStr] = Field(default=None, description="Kubernetes resource kind")
     resource_name: Optional[StrictStr] = Field(default=None, description="Name of the affected Kubernetes resource")
     remediation_request: Optional[StrictStr] = Field(default=None, description="Created RemediationRequest reference (namespace/name)")
@@ -68,8 +68,8 @@ class GatewayAuditPayload(BaseModel):
         if value is None:
             return value
 
-        if value not in ('critical', 'warning', 'info'):
-            raise ValueError("must be one of enum values ('critical', 'warning', 'info')")
+        if value not in ('critical', 'high', 'medium', 'low', 'unknown'):
+            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', 'unknown')")
         return value
 
     @field_validator('deduplication_status')

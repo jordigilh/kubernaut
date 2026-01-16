@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 **alert_name** | **str** | Name of the alert | 
 **namespace** | **str** | Kubernetes namespace | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
-**severity** | **str** | Severity level of the signal | [optional] 
+**severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
 **resource_kind** | **str** | Kubernetes resource kind | [optional] 
 **resource_name** | **str** | Name of the affected Kubernetes resource | [optional] 
 **remediation_request** | **str** | Created RemediationRequest reference (namespace/name) | [optional] 
@@ -45,7 +45,7 @@ Name | Type | Description | Notes
 **phase** | **str** | Phase in which error occurred | 
 **signal** | **str** | Name of the signal being processed | 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
-**normalized_severity** | **str** | Normalized severity determined by Rego policy | [optional] 
+**normalized_severity** | **str** | Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1) | [optional] 
 **determination_source** | **str** | Source of severity determination for audit trail | [optional] 
 **policy_hash** | **str** | SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking) | [optional] 
 **environment** | **str** | Environment context | 
