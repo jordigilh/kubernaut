@@ -163,8 +163,14 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		return nil, fmt.Errorf("unsupported event type: %s (expected Warning or Error)", event.Type)
 	}
 
-	// 4. Map event severity
-	severity := a.mapSeverity(event.Type, event.Reason)
+	// 4. BR-GATEWAY-111: Pass through event type as severity (no transformation)
+	// Gateway acts as "dumb pipe" - extract and preserve, never transform
+	// Examples: "Warning" → "Warning", "Error" → "Error"
+	// SignalProcessing Rego will normalize via BR-SP-105 based on reason+type
+	severity := event.Type
+	if severity == "" {
+		severity = "unknown" // Only default if missing entirely
+	}
 
 	// 5. Extract resource information
 	resource := types.ResourceIdentifier{
@@ -234,38 +240,6 @@ func (a *KubernetesEventAdapter) GetMetadata() AdapterMetadata {
 		SupportedContentTypes: []string{"application/json"},
 		RequiredHeaders:       []string{"Authorization"}, // Bearer token required
 	}
-}
-
-// mapSeverity maps Kubernetes Event types to normalized severity levels
-//
-// Mapping rules:
-// - Error + critical reasons (OOMKilled, NodeNotReady) → "critical"
-// - Warning + high-impact reasons (FailedScheduling) → "critical"
-// - Warning + normal reasons (BackOff, Unhealthy) → "warning"
-// - All other warnings → "warning"
-func (a *KubernetesEventAdapter) mapSeverity(eventType, reason string) string {
-	// Critical event reasons (require immediate attention)
-	criticalReasons := map[string]bool{
-		"OOMKilled":        true, // Pod killed due to memory
-		"NodeNotReady":     true, // Node unavailable
-		"FailedScheduling": true, // Pod cannot be scheduled
-		"Evicted":          true, // Pod evicted from node
-		"FailedMount":      true, // Volume mount failed
-		"NetworkNotReady":  true, // Network plugin issue
-	}
-
-	// Check if reason is critical
-	if criticalReasons[reason] {
-		return "critical"
-	}
-
-	// Error events are critical by default
-	if eventType == "Error" {
-		return "critical"
-	}
-
-	// All other warnings
-	return "warning"
 }
 
 // generateFingerprint creates a unique identifier for deduplication
