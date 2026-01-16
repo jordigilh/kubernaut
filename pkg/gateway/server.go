@@ -19,6 +19,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sony/gobreaker" // BR-GATEWAY-093: Circuit breaker detection
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
@@ -1425,6 +1427,9 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 
 // emitCRDCreationFailedAudit emits 'gateway.crd.failed' audit event (DD-AUDIT-003)
 // This is called when RemediationRequest CRD creation fails
+//
+// GW-INT-AUD-019 Enhancement (BR-GATEWAY-093):
+// Detects circuit breaker state and includes it in error details for audit trail compliance
 func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.NormalizedSignal, err error) {
 	if s.auditStore == nil {
 		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
@@ -1445,8 +1450,24 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetNamespace(event, signal.Namespace)
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details
-	// Translate K8s CRD creation error to ErrorDetails
-	errorDetails := sharedaudit.NewErrorDetailsFromK8sError("gateway", err)
+	// GW-INT-AUD-019 (BR-GATEWAY-093): Detect circuit breaker errors for audit compliance
+	var errorDetails *sharedaudit.ErrorDetails
+	if errors.Is(err, gobreaker.ErrOpenState) {
+		// Circuit breaker is open - create specialized error details
+		// BR-GATEWAY-093: Circuit breaker for K8s API
+		errorDetails = sharedaudit.NewErrorDetails(
+			"gateway",
+			"ERR_CIRCUIT_BREAKER_OPEN",
+			"K8s API circuit breaker is open (fail-fast mode) - preventing cascade failure",
+			true, // Retry possible once circuit breaker closes
+		)
+		s.logger.Info("Circuit breaker prevented K8s API request",
+			"fingerprint", signal.Fingerprint,
+			"circuit_breaker_state", "open")
+	} else {
+		// Standard K8s error handling
+		errorDetails = sharedaudit.NewErrorDetailsFromK8sError("gateway", err)
+	}
 
 	// Convert shared ErrorDetails to api.ErrorDetails
 	apiErrorDetails := toAPIErrorDetails(errorDetails)

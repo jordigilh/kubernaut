@@ -1355,24 +1355,93 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 		// Test ID: GW-INT-AUD-019
 		// Scenario: Circuit Breaker State in Audit
-		// BR: BR-GATEWAY-058
+		// BR: BR-GATEWAY-058, BR-GATEWAY-093
 		// Section: 1.4.4
-		Context("when circuit breaker is open (GW-INT-AUD-019, BR-GATEWAY-058)", func() {
-			It("[GW-INT-AUD-019] should include circuit_breaker_state when circuit is open", func() {
-				Skip("Deferred: Circuit breaker exists (BR-GATEWAY-093) but state not integrated with audit events")
-				// Implementation Note:
-				// - BR-GATEWAY-093 implemented: pkg/gateway/k8s/client_with_circuit_breaker.go
-				// - Circuit breaker works and exposes metrics (gateway_circuit_breaker_state)
-				// - Missing: Audit integration in emitCRDCreationFailedAudit()
-				// - Required Enhancement:
-				//   1. Detect circuit state: cbClient.State() when emitting audit
-				//   2. Add circuit_breaker_state to ErrorDetails or Metadata
-				//   3. Include in gateway.crd.failed event payload
-				// - Once integrated, this test will validate:
-				//   1. gateway.crd.failed events include circuit breaker state when open
-				//   2. ErrorDetails contains circuit_breaker_state field
-				//   3. Error message indicates circuit breaker prevented the attempt
-				// - Reference: docs/services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md (BR-GATEWAY-093, lines 558-582)
+		Context("when circuit breaker is open (GW-INT-AUD-019, BR-GATEWAY-058, BR-GATEWAY-093)", func() {
+			It("[GW-INT-AUD-019] should emit gateway.crd.failed audit event with circuit breaker error details", func() {
+				By("1. Create circuit breaker that starts in OPEN state (immediate fail-fast)")
+				// Simulate circuit breaker being open by making it trip immediately
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				failingK8sClient := &ErrorInjectableK8sClient{
+					Client:     k8sClient,
+					failCreate: true,
+					errorMsg:   "simulated K8s API unavailable for circuit breaker test",
+				}
+
+				By("2. Trip circuit breaker by making 10+ failed requests")
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Make 10 failing requests to trip circuit breaker (50% failure rate threshold)
+				for i := 0; i < 10; i++ {
+					fingerprint := fmt.Sprintf("cb-trip-%d-%064x", i, time.Now().UnixNano())
+					correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+					alertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerTripTest", "critical", fingerprint, correlationID)
+
+					signal, err := prometheusAdapter.Parse(ctx, alertPayload)
+					Expect(err).ToNot(HaveOccurred())
+
+					// Expect failure (circuit breaker should trip after ~5 failures)
+					_, _ = gwServer.ProcessSignal(ctx, signal)
+				}
+
+				By("3. Process signal that should hit open circuit breaker")
+				// Circuit breaker should now be OPEN, causing immediate failure
+				testFingerprint := fmt.Sprintf("%064x", uuid.New().ID())
+				testCorrelationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				testAlertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerOpenTest", "critical", testFingerprint, testCorrelationID)
+
+				testSignal, err := prometheusAdapter.Parse(ctx, testAlertPayload)
+				Expect(err).ToNot(HaveOccurred())
+
+				response, err := gwServer.ProcessSignal(ctx, testSignal)
+				Expect(err).To(HaveOccurred(), "ProcessSignal should fail when circuit breaker is open")
+				Expect(response).To(BeNil())
+
+				By("4. Query gateway.crd.failed audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.failed"
+				var failedEvent *ogenclient.AuditEvent
+
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &testCorrelationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					failedEvent = &events[0]
+					return true
+				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+					"BR-GATEWAY-058: Should emit gateway.crd.failed audit event")
+
+				By("5. Validate audit event includes circuit breaker error details")
+				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
+				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
+				Expect(failedEvent.CorrelationID).To(Equal(testCorrelationID))
+
+				payload, ok := extractGatewayPayload(failedEvent)
+				Expect(ok).To(BeTrue(), "Payload should be GatewayAuditPayload")
+				Expect(payload.EventType).To(Equal("gateway.crd.failed"))
+
+				// BR-GATEWAY-093: Verify circuit breaker error details
+				errorDetails, ok := payload.ErrorDetails.Get()
+				Expect(ok).To(BeTrue(), "ErrorDetails should be present for circuit breaker failure")
+
+				Expect(errorDetails.Code).To(Equal("ERR_CIRCUIT_BREAKER_OPEN"),
+					"Error code should indicate circuit breaker is open")
+				Expect(errorDetails.Message).To(ContainSubstring("circuit breaker"),
+					"Error message should mention circuit breaker")
+				Expect(errorDetails.Message).To(ContainSubstring("fail-fast"),
+					"Error message should explain fail-fast behavior")
+				Expect(errorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentGateway),
+					"Error component should be 'gateway'")
+				Expect(errorDetails.RetryPossible).To(BeTrue(),
+					"Circuit breaker errors are transient and retryable")
+
+				GinkgoWriter.Printf("✅ Circuit breaker error details validated: %s (retry_possible: %v)\n",
+					errorDetails.Code, errorDetails.RetryPossible)
 			})
 		})
 	})
