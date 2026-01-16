@@ -1027,47 +1027,47 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				rr.Status.OverallPhase = remediationv1alpha1.PhaseCompleted
 				Expect(k8sClient.Status().Update(ctx, &rr)).To(Succeed())
 
-			By("3. Process duplicate signal (same fingerprint)")
-			time.Sleep(1 * time.Second)
-			correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-			alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID2)
+				By("3. Process duplicate signal (same fingerprint)")
+				time.Sleep(1 * time.Second)
+				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID2)
 
-			signal2, err := prometheusAdapter.Parse(ctx, alert2)
-			Expect(err).ToNot(HaveOccurred())
-			// Gateway generates same fingerprint for same alertname/namespace/kind/name
-			Expect(signal2.Fingerprint).To(Equal(actualFingerprint), "Signals with same labels should have same fingerprint")
+				signal2, err := prometheusAdapter.Parse(ctx, alert2)
+				Expect(err).ToNot(HaveOccurred())
+				// Gateway generates same fingerprint for same alertname/namespace/kind/name
+				Expect(signal2.Fingerprint).To(Equal(actualFingerprint), "Signals with same labels should have same fingerprint")
 
-			response2, err := gwServer.ProcessSignal(ctx, signal2)
-			Expect(err).ToNot(HaveOccurred())
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
 
-			// BR-GATEWAY-057: Should create NEW RR (not deduplicate to Completed RR)
-			Expect(response2.Status).To(Equal("created"),
-				"BR-GATEWAY-057: Must create new RR for signals when existing RR is in terminal phase")
-			Expect(response2.RemediationRequestName).ToNot(Equal(existingRRName),
-				"BR-GATEWAY-057: New RR must have different name than terminal RR")
+				// BR-GATEWAY-057: Should create NEW RR (not deduplicate to Completed RR)
+				Expect(response2.Status).To(Equal("created"),
+					"BR-GATEWAY-057: Must create new RR for signals when existing RR is in terminal phase")
+				Expect(response2.RemediationRequestName).ToNot(Equal(existingRRName),
+					"BR-GATEWAY-057: New RR must have different name than terminal RR")
 
-			By("4. Verify NEW gateway.crd.created audit (not deduplication)")
-			client, err := createOgenClient()
-			Expect(err).ToNot(HaveOccurred())
+				By("4. Verify NEW gateway.crd.created audit (not deduplication)")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
 
-			// Use actual RR name as correlation ID
-			actualCorrelationID2 := response2.RemediationRequestName
-			eventType := "gateway.crd.created"
-			var crdCreatedEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID2, &eventType, nil)
-				if err != nil || len(events) == 0 {
-					return false
-				}
-				crdCreatedEvent = &events[0]
-				return true
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				// Use actual RR name as correlation ID
+				actualCorrelationID2 := response2.RemediationRequestName
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID2, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			// Validate it's a creation event, not deduplication
-			Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
-			payload, ok := extractGatewayPayload(crdCreatedEvent)
-			Expect(ok).To(BeTrue())
-			Expect(payload.Fingerprint).To(Equal(actualFingerprint))
+				// Validate it's a creation event, not deduplication
+				Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
+				payload, ok := extractGatewayPayload(crdCreatedEvent)
+				Expect(ok).To(BeTrue())
+				Expect(payload.Fingerprint).To(Equal(actualFingerprint))
 
 				GinkgoWriter.Printf("✅ Phase-based dedup rejection validated: Old RR=%s (Completed), New RR=%s\n",
 					existingRRName, response2.RemediationRequestName)
@@ -1364,11 +1364,11 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		// Section: 1.4.3
 		Context("when retrying failed CRD creation (GW-INT-AUD-018, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-018] should emit separate audit events for each retry attempt", func() {
-				Skip("Deferred: Gateway ProcessSignal() does not implement retry logic yet - BR-GATEWAY-188 required")
+				Skip("Deferred: Gateway ProcessSignal() audit enhancement needed - BR-GATEWAY-113 exists but intermediate retry events not audited")
 				// Implementation Note:
 				// - Gateway's ProcessSignal() currently fails immediately on K8s errors
 				// - No retry loop exists in the current implementation
-				// - Requires BR-GATEWAY-188 (Exponential Backoff & Retry) to be implemented first
+				// - Requires audit enhancement: BR-GATEWAY-113 exists (retry logic works), but intermediate retry events not audited
 				// - Once retry logic is added, this test will validate:
 				//   1. Each retry attempt emits a separate gateway.crd.failed event
 				//   2. Each event has unique EventID but same CorrelationID

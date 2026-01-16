@@ -23,13 +23,13 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-// BR-GATEWAY-188: Exponential Backoff for Transient Failures
+// BR-GATEWAY-113: Exponential Backoff for Transient Failures
 // Unit tests for backoff calculation algorithm (pure math, no infrastructure)
 
-var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
+var _ = Describe("BR-GATEWAY-113: Exponential Backoff Algorithm", func() {
 	Context("GW-UNIT-ERR-006: Exponential Backoff Calculation", func() {
 		It("[GW-UNIT-ERR-006] should calculate exponential backoff correctly", func() {
-			// BR-GATEWAY-188: Backoff = baseDelay * 2^retryCount
+			// BR-GATEWAY-113: Backoff = baseDelay * 2^retryCount
 			// BUSINESS LOGIC: Exponential growth prevents overwhelming failed services
 			// Unit Test: Pure math validation
 
@@ -58,7 +58,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 		})
 
 		It("[GW-UNIT-ERR-006] should use reasonable base delay", func() {
-			// BR-GATEWAY-188: Base delay should balance responsiveness vs load
+			// BR-GATEWAY-113: Base delay should balance responsiveness vs load
 			// BUSINESS LOGIC: Too short = thundering herd, too long = slow recovery
 			// Unit Test: Validates base delay is in reasonable range
 
@@ -74,7 +74,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 
 	Context("GW-UNIT-ERR-007: Backoff Max Delay Cap", func() {
 		It("[GW-UNIT-ERR-007] should cap backoff at maximum delay", func() {
-			// BR-GATEWAY-188: Backoff must not exceed max delay
+			// BR-GATEWAY-113: Backoff must not exceed max delay
 			// BUSINESS LOGIC: Prevent indefinite wait times during prolonged outages
 			// Unit Test: Boundary testing for cap enforcement
 
@@ -115,7 +115,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 		})
 
 		It("[GW-UNIT-ERR-007] should enforce reasonable max delay limit", func() {
-			// BR-GATEWAY-188: Max delay should prevent excessive wait times
+			// BR-GATEWAY-113: Max delay should prevent excessive wait times
 			// BUSINESS LOGIC: Balance patience vs responsiveness during outages
 
 			maxDelay := 30 * time.Second
@@ -130,7 +130,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 
 	Context("GW-UNIT-ERR-008: Backoff Jitter Addition", func() {
 		It("[GW-UNIT-ERR-008] should add jitter to prevent thundering herd", func() {
-			// BR-GATEWAY-188: Jitter prevents synchronized retries
+			// BR-GATEWAY-113: Jitter prevents synchronized retries
 			// BUSINESS LOGIC: Random jitter spreads retry load over time
 			// Unit Test: Validates jitter is within expected range
 
@@ -159,7 +159,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 		})
 
 		It("[GW-UNIT-ERR-008] should produce varied delays with jitter", func() {
-			// BR-GATEWAY-188: Jitter must actually vary the delays
+			// BR-GATEWAY-113: Jitter must actually vary the delays
 			// BUSINESS LOGIC: Identical delays defeat the purpose of jitter
 			// Unit Test: Validates jitter produces distribution
 
@@ -182,7 +182,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 
 	Context("GW-UNIT-ERR-010: Backoff Reset On Success", func() {
 		It("[GW-UNIT-ERR-010] should reset retry count after successful operation", func() {
-			// BR-GATEWAY-188: Success resets backoff state
+			// BR-GATEWAY-113: Success resets backoff state
 			// BUSINESS LOGIC: Successful retry means service recovered, reset backoff
 			// Unit Test: State machine validation
 
@@ -200,7 +200,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 			// Success: reset retry count
 			retryCount = 0
 			Expect(retryCount).To(Equal(0),
-				"BR-GATEWAY-188: Success should reset retry count to 0")
+				"BR-GATEWAY-113: Success should reset retry count to 0")
 
 			// Next failure after reset: should start from 1 again
 			retryCount++
@@ -209,7 +209,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 		})
 
 		It("[GW-UNIT-ERR-010] should use base delay after reset", func() {
-			// BR-GATEWAY-188: Reset means next retry uses base delay
+			// BR-GATEWAY-113: Reset means next retry uses base delay
 			// BUSINESS LOGIC: Successful recovery means service is healthy, use minimal backoff
 			// Unit Test: Validates backoff calculation after reset
 
@@ -226,11 +226,11 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 
 			// BUSINESS RULE: After reset, backoff should be back to base delay
 			Expect(resetBackoff).To(Equal(baseDelay),
-				"BR-GATEWAY-188: Reset should use base delay (100ms), not high backoff (1.6s)")
+				"BR-GATEWAY-113: Reset should use base delay (100ms), not high backoff (1.6s)")
 		})
 
 		It("[GW-UNIT-ERR-010] should maintain retry count during failures", func() {
-			// BR-GATEWAY-188: Only success resets count, failures increment
+			// BR-GATEWAY-113: Only success resets count, failures increment
 			// BUSINESS LOGIC: Persistent failures should increase backoff
 			// Unit Test: State machine validation
 
@@ -245,7 +245,7 @@ var _ = Describe("BR-GATEWAY-188: Exponential Backoff Algorithm", func() {
 
 			// BUSINESS RULE: Retry count persists across failures
 			Expect(retryCount).To(Equal(5),
-				"BR-GATEWAY-188: Failures should accumulate retry count")
+				"BR-GATEWAY-113: Failures should accumulate retry count")
 		})
 	})
 })

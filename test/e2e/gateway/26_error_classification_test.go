@@ -33,10 +33,10 @@ import (
 )
 
 // Test Plan Reference: docs/development/testing/GATEWAY_COVERAGE_GAP_TEST_PLAN.md
-// Section 4: Error Classification & Retry Logic Testing (BR-GATEWAY-188, BR-GATEWAY-189)
+// Section 4: Error Classification & Retry Logic Testing (BR-GATEWAY-111 to BR-GATEWAY-114, BR-GATEWAY-189)
 // Tests: GW-ERR-001, GW-ERR-002, GW-ERR-003
 
-var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR-GATEWAY-189)", func() {
+var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to BR-GATEWAY-114, BR-GATEWAY-189)", func() {
 	var (
 		testNamespace string // ✅ FIX: Unique namespace per parallel process (prevents data pollution)
 		testCtx       context.Context      // ← Test-local context
@@ -69,7 +69,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-188, BR
 	})
 
 	Context("GW-ERR-001: Transient Error Retry with Exponential Backoff (P0)", func() {
-		It("BR-GATEWAY-188: should retry transient K8s API errors with exponential backoff", func() {
+		It("BR-GATEWAY-113: should retry transient K8s API errors with exponential backoff", func() {
 			// Given: Gateway configured with retry policy (default: 3 attempts, exponential backoff)
 			// When: K8s API returns transient error (429 Too Many Requests, connection timeout)
 			// Then: Gateway retries with exponential backoff
