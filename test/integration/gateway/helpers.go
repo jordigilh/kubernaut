@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -1424,4 +1425,106 @@ func generateFingerprint(alertName, namespace, kind, name string) string {
 	input := fmt.Sprintf("%s|%s|%s|%s", alertName, namespace, kind, name)
 	hash := sha256.Sum256([]byte(input))
 	return fmt.Sprintf("%x", hash)
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// METRICS HELPERS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// getCounterValue retrieves the current value of a Counter metric
+// Returns 0 if the metric doesn't exist or has no matching labels
+func getCounterValue(registry *prometheus.Registry, metricName string, labels map[string]string) float64 {
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		return 0
+	}
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() != metricName {
+			continue
+		}
+
+		for _, metric := range mf.GetMetric() {
+			if labelsMatch(metric, labels) {
+				if metric.Counter != nil {
+					return metric.Counter.GetValue()
+				}
+			}
+		}
+	}
+
+	return 0
+}
+
+// getGaugeValue retrieves the current value of a Gauge metric
+func getGaugeValue(registry *prometheus.Registry, metricName string, labels map[string]string) float64 {
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		return 0
+	}
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() != metricName {
+			continue
+		}
+
+		for _, metric := range mf.GetMetric() {
+			if labelsMatch(metric, labels) {
+				if metric.Gauge != nil {
+					return metric.Gauge.GetValue()
+				}
+			}
+		}
+	}
+
+	return 0
+}
+
+// getHistogramSampleCount retrieves the sample count of a Histogram metric
+func getHistogramSampleCount(registry *prometheus.Registry, metricName string, labels map[string]string) uint64 {
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		return 0
+	}
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() != metricName {
+			continue
+		}
+
+		for _, metric := range mf.GetMetric() {
+			if labelsMatch(metric, labels) {
+				if metric.Histogram != nil {
+					return metric.Histogram.GetSampleCount()
+				}
+			}
+		}
+	}
+
+	return 0
+}
+
+// labelsMatch checks if a metric's labels match the given label map
+func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
+	if len(labels) == 0 {
+		return true
+	}
+
+	metricLabels := make(map[string]string)
+	for _, labelPair := range metric.GetLabel() {
+		metricLabels[labelPair.GetName()] = labelPair.GetValue()
+	}
+
+	for key, value := range labels {
+		if metricLabels[key] != value {
+			return false
+		}
+	}
+
+	return true
+}
+
+// createGatewayServerWithMetrics creates a Gateway server with custom metrics registry
+func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics) (*gateway.Server, error) {
+	return gateway.NewServerWithK8sClient(cfg, logger, metricsInstance, k8sClient)
 }
