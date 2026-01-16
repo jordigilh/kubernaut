@@ -1430,6 +1430,11 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 //
 // GW-INT-AUD-019 Enhancement (BR-GATEWAY-093):
 // Detects circuit breaker state and includes it in error details for audit trail compliance
+//
+// BR-GATEWAY-058-A (Enhanced Correlation ID Pattern):
+// Uses human-readable correlation ID (alertname:namespace:kind:name) instead of SHA256 hash
+// for better operator experience and pattern matching capabilities.
+// Fingerprint (SHA256) remains in payload for deduplication queries.
 func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.NormalizedSignal, err error) {
 	if s.auditStore == nil {
 		// ❌ CRITICAL: This should NEVER happen if init is fixed (ADR-032 §2)
@@ -1445,8 +1450,14 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "gateway", "crd-creator")
-	audit.SetResource(event, "RemediationRequest", signal.Fingerprint) // Use fingerprint as resource ID
-	audit.SetCorrelationID(event, signal.Fingerprint)                  // Use fingerprint as correlation (no RR name yet)
+	
+	// BR-GATEWAY-058-A: Use human-readable correlation ID
+	// Format: "alertname:namespace:kind:name" (e.g., "HighMemoryUsage:prod:Pod:api-789")
+	// Benefit: SRE can immediately understand what triggered the failure
+	// Fingerprint (SHA256) still available in payload for deduplication
+	correlationID := constructReadableCorrelationID(signal)
+	audit.SetResource(event, "RemediationRequest", correlationID)
+	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, signal.Namespace)
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details
@@ -1496,6 +1507,34 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 		s.logger.Info("DD-AUDIT-003: Failed to emit crd.creation_failed audit event",
 			"error", storeErr, "fingerprint", signal.Fingerprint)
 	}
+}
+
+// constructReadableCorrelationID creates human-readable correlation ID for failed CRD creation
+//
+// BR-GATEWAY-058-A: Enhanced Correlation ID Pattern
+//
+// Format: "alertname:namespace:kind:name"
+// Examples:
+//   - "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
+//   - "NodeNotReady:default:Node:worker-node-1"
+//   - "DeploymentReplicasUnavailable:prod-api:Deployment:api-server"
+//
+// Benefits:
+//   - Human-readable: SRE can immediately identify the alert and resource
+//   - Pattern matching: Query all failures for specific alert or namespace
+//   - Consistency: Aligns with industry standards (OpenTelemetry semantic conventions)
+//
+// Fingerprint (SHA256) remains in GatewayAuditPayload.fingerprint for deduplication queries.
+//
+// Returns:
+//   - string: Human-readable correlation ID (30-150 chars depending on names)
+func constructReadableCorrelationID(signal *types.NormalizedSignal) string {
+	return fmt.Sprintf("%s:%s:%s:%s",
+		signal.AlertName,
+		signal.Namespace,
+		signal.Resource.Kind,
+		signal.Resource.Name,
+	)
 }
 
 // createRemediationRequestCRD handles the CRD creation pipeline
