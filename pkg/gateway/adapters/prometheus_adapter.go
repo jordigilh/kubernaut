@@ -142,10 +142,19 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 	labels := MergeLabels(alert.Labels, webhook.CommonLabels)
 	annotations := MergeAnnotations(alert.Annotations, webhook.CommonAnnotations)
 
+	// BR-GATEWAY-111: Pass through severity without transformation
+	// Gateway acts as "dumb pipe" - extract and preserve, never transform
+	// Examples: "Sev1" → "Sev1", "P0" → "P0", "critical" → "critical"
+	// SignalProcessing Rego will normalize via BR-SP-105
+	severity := alert.Labels["severity"]
+	if severity == "" {
+		severity = "unknown" // Only default if missing entirely (not policy determination)
+	}
+
 	return &types.NormalizedSignal{
 		Fingerprint:  fingerprint,
 		AlertName:    alert.Labels["alertname"],
-		Severity:     determineSeverity(alert.Labels),
+		Severity:     severity, // BR-GATEWAY-111: Preserve external severity value
 		Namespace:    resource.Namespace,
 		Resource:     resource,
 		Labels:       labels,
@@ -163,8 +172,11 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 // Validation rules:
 // - Fingerprint must be non-empty (64-char SHA256 hex string)
 // - AlertName must be non-empty
-// - Severity must be one of: critical, warning, info
-// - Namespace must be specified (required for Kubernetes-targeted alerts)
+// - Severity must be non-empty string (any value accepted - BR-GATEWAY-111)
+// - Namespace can be empty for cluster-scoped alerts (e.g., node alerts)
+//
+// BR-GATEWAY-111: Gateway does NOT enforce severity enum validation
+// SignalProcessing Rego will normalize any value via BR-SP-105
 //
 // Returns:
 // - error: Validation errors with descriptive messages
@@ -175,8 +187,10 @@ func (a *PrometheusAdapter) Validate(signal *types.NormalizedSignal) error {
 	if signal.AlertName == "" {
 		return errors.New("alertName is required")
 	}
-	if signal.Severity != "critical" && signal.Severity != "warning" && signal.Severity != "info" {
-		return fmt.Errorf("invalid severity: %s (must be critical, warning, or info)", signal.Severity)
+	// BR-GATEWAY-111: Accept ANY severity value (no enum restriction)
+	// Examples: "Sev1", "P0", "critical", "HIGH" all valid
+	if signal.Severity == "" {
+		return errors.New("severity is required (cannot be empty)")
 	}
 	// Note: Namespace can be empty for cluster-scoped alerts (e.g., node alerts)
 	return nil
@@ -218,26 +232,6 @@ func calculateFingerprint(alertName string, resource types.ResourceIdentifier) s
 	)
 	hash := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("%x", hash)
-}
-
-// determineSeverity maps Prometheus severity labels to Gateway severity
-//
-// Mapping:
-// - "critical" → "critical"
-// - "warning" → "warning"
-// - "info" → "info"
-// - other → "warning" (default)
-//
-// Returns:
-// - string: "critical", "warning", or "info"
-func determineSeverity(labels map[string]string) string {
-	severity := labels["severity"]
-	switch severity {
-	case "critical", "warning", "info":
-		return severity
-	default:
-		return "warning" // Default to warning for unknown severities
-	}
 }
 
 // extractResourceKind determines Kubernetes resource type from labels
