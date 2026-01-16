@@ -105,20 +105,21 @@ var _ = Describe("AIAnalysisCreator", func() {
 			})
 
 			It("should build correct AIAnalysis spec with signal context and enrichment data", func() {
-				// Arrange - use testutil factories with custom options
-				// NOTE: Environment and Priority now come from SP.Status, not RR.Spec
-				// (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md)
-				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
-				// Override SP status to have custom environment/priority for test
-				completedSP.Status.EnvironmentClassification.Environment = "production"
-				completedSP.Status.PriorityAssignment.Priority = "P0"
-				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
-					WithStatusSubresource(completedSP).Build()
-				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
-				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
-					Severity:   "critical",
-					SignalType: "kubernetes-event",
-				})
+			// Arrange - use testutil factories with custom options
+			// NOTE: Environment, Priority, and Severity now come from SP.Status, not RR.Spec
+			// (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md and DD-SEVERITY-001)
+			completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+			// Override SP status to have custom environment/priority/severity for test
+			completedSP.Status.EnvironmentClassification.Environment = "production"
+			completedSP.Status.PriorityAssignment.Priority = "P0"
+			completedSP.Status.Severity = "critical" // DD-SEVERITY-001: Normalized severity from SP
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+				Severity:   "sev1", // External severity (not used by AIAnalysis per DD-SEVERITY-001)
+				SignalType: "kubernetes-event",
+			})
 
 				// Act
 				name, err := aiCreator.Create(ctx, rr, completedSP)
@@ -131,20 +132,22 @@ var _ = Describe("AIAnalysisCreator", func() {
 				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 				Expect(err).ToNot(HaveOccurred())
 
-				// Verify RemediationRequestRef
-				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
-				Expect(createdAI.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
+			// Verify RemediationRequestRef
+			Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+			Expect(createdAI.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
 
-				// Verify RemediationID
-				Expect(createdAI.Spec.RemediationID).To(Equal(string(rr.UID)))
+			// Verify RemediationID uses RR.Name per DD-AUDIT-CORRELATION-001
+			// (NOT rr.UID - that was the old inconsistent pattern)
+			Expect(createdAI.Spec.RemediationID).To(Equal(rr.Name))
 
-				// Verify SignalContext (from RR.Spec for these fields)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(rr.Spec.Severity))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(rr.Spec.SignalType))
-				// Environment and Priority now come from SP.Status (not RR.Spec)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(completedSP.Status.EnvironmentClassification.Environment))
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(completedSP.Status.PriorityAssignment.Priority))
+			// Verify SignalContext
+			// Fingerprint and SignalType come from RR.Spec (not normalized)
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalType).To(Equal(rr.Spec.SignalType))
+			// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(completedSP.Status.EnvironmentClassification.Environment))
+			Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(completedSP.Status.PriorityAssignment.Priority))
 
 				// Verify TargetResource
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind))

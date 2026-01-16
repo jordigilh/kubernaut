@@ -2,14 +2,32 @@
 
 ## Status
 **✅ APPROVED** (2026-01-09)
-**Last Reviewed**: 2026-01-15 (v1.1 - Severity value alignment)
+**Last Reviewed**: 2026-01-16 (v1.2 - Documentation restructuring)
 **Confidence**: 95%
 **Priority**: P0 (Blocks customer onboarding with custom severity schemes)
-**Version**: 1.1
+**Version**: 1.2
 
 ---
 
 ## 📝 **Changelog**
+
+### **v1.2 (2026-01-16) - Documentation Restructuring**
+**Change**: Extracted detailed implementation and test scenarios to dedicated documents
+
+**Rationale**:
+- ✅ **Separation of Concerns**: Design decisions (WHY) separate from implementation plans (HOW/WHEN)
+- ✅ **Maintainability**: Implementation status updates don't pollute design rationale
+- ✅ **Sprint Planning**: Implementation plans and E2E scenarios are sprint-ready
+- ✅ **Cross-Service Coordination**: Clear tracking for multi-service initiatives
+
+**New Documents Created**:
+- `docs/implementation/DD-SEVERITY-001-implementation-plan.md` - HOW + WHEN (tasks, timeline, status)
+- `docs/testing/test-plans/DD-SEVERITY-001-E2E-SCENARIOS.md` - Sprint N+1 E2E focus
+
+**Changes to This Document**:
+- Implementation section now references dedicated implementation plan
+- "Implementation Status" section replaced with high-level progress summary
+- All documents cross-referenced for easy navigation
 
 ### **v1.1 (2026-01-15) - Severity Value Alignment**
 **Change**: Updated normalized severity values from `critical/warning/info/unknown` to `critical/high/medium/low/unknown`
@@ -184,97 +202,40 @@ The critical insight from [TRIAGE-SEVERITY-EXTENSIBILITY.md](TRIAGE-SEVERITY-EXT
 
 ### **4-Week Implementation Plan + 1-Week Buffer**
 
-#### **Week 1: CRD Schema Changes**
+**For detailed task breakdowns, code snippets, and validation commands, see [Implementation Plan](../../implementation/DD-SEVERITY-001-implementation-plan.md).**
 
-**Files to Modify**:
-1. `api/remediation/v1alpha1/remediationrequest_types.go`
-2. `api/signalprocessing/v1alpha1/signalprocessing_types.go`
-3. `api/aianalysis/v1alpha1/aianalysis_types.go`
+#### **Week 1: CRD Schema Changes** ✅ COMPLETE
 
-**Changes**:
+**Summary**: Remove CRD enum validations to accept ANY severity string (Sev1, P0, etc.)
 
-**1. RemediationRequest (Remove Enum)**:
-```go
-// api/remediation/v1alpha1/remediationrequest_types.go
-type RemediationRequestSpec struct {
-    // Signal Classification
-    // Severity level (external value from signal provider)
-    // Examples: "Sev1", "P0", "critical", "HIGH", "warning"
-    // SignalProcessing will normalize via Rego policy
-    // +kubebuilder:validation:MinLength=1
-    // +kubebuilder:validation:MaxLength=50
-    Severity string `json:"severity"` // ← REMOVE: +kubebuilder:validation:Enum=critical;warning;info
+**Key Changes**:
+- Remove `RemediationRequest.Spec.Severity` enum (accept any string)
+- Remove `SignalProcessing.Spec.Signal.Severity` enum (accept any string)
+- Add `SignalProcessing.Status.Severity` field (normalized by Rego)
+- Update `AIAnalysis.SignalContext.Severity` enum to v1.1 values (critical/high/medium/low/unknown)
 
-    // ... other fields
-}
-```
+**Status**: ✅ Complete - All CRDs updated and deployed
 
-**2. SignalProcessing (Remove Spec Enum, Add Status Field)**:
-```go
-// api/signalprocessing/v1alpha1/signalprocessing_types.go
-type SignalData struct {
-    // Severity level (external value copied from RemediationRequest)
-    // +kubebuilder:validation:MinLength=1
-    // +kubebuilder:validation:MaxLength=50
-    Severity string `json:"severity"` // ← REMOVE: +kubebuilder:validation:Enum=critical;warning;info
-
-    // ... other fields
-}
-
-type SignalProcessingStatus struct {
-    // ... existing fields (Phase, Conditions, etc.)
-
-    EnvironmentClassification *EnvironmentClassification `json:"environmentClassification,omitempty"`
-    PriorityAssignment        *PriorityAssignment        `json:"priorityAssignment,omitempty"`
-    BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
-
-    // Normalized severity determined by Rego policy
-    // Valid values: critical, high, medium, low, unknown (aligned with HAPI/workflow catalog)
-    // Consumers (AIAnalysis, RemediationOrchestrator) MUST read this field
-    // +optional
-    Severity string `json:"severity,omitempty"` // ← ADD THIS
-}
-```
-
-**3. AIAnalysis (Update Enum to Match HAPI/Workflow Catalog)**:
-```go
-// api/aianalysis/v1alpha1/aianalysis_types.go
-type SignalContextInput struct {
-    // Signal severity (normalized by SignalProcessing Rego)
-    // Valid values: critical, high, medium, low, unknown (aligned with HAPI/workflow catalog per v1.1)
-    // +kubebuilder:validation:Enum=critical;high;medium;low;unknown
-    Severity string `json:"severity"`
-
-    // ... other fields
-}
-```
-
-**Validation**:
-- [ ] Run `make generate` to regenerate CRDs
-- [ ] Run `make manifests` to update YAML manifests
-- [ ] Verify Kubernetes API accepts "Sev1" in RemediationRequest
-- [ ] Unit tests for CRD validation
-
-**Deliverables**:
-- Updated CRD manifests in `deploy/`
-- Updated Go types in `api/*/v1alpha1/`
-- CRD validation unit tests
+See [Implementation Plan - Week 1](../../implementation/DD-SEVERITY-001-implementation-plan.md#week-1-crd-schema-changes-complete) for detailed code changes and validation steps.
 
 ---
 
-#### **Week 2: SignalProcessing Rego Implementation**
+#### **Week 2: SignalProcessing Rego Implementation** ✅ COMPLETE
 
-**Files to Create**:
-1. `deploy/signalprocessing/policies/severity.rego` (NEW)
-2. `pkg/signalprocessing/classifier/severity.go` (NEW)
+**Summary**: Implement Rego-based severity determination with hot-reload support
 
-**Files to Modify**:
-3. `internal/controller/signalprocessing/signalprocessing_controller.go`
-4. `pkg/signalprocessing/audit/client.go`
+**Key Components**:
+- Default `severity.rego` policy with 1:1 mapping (backward compatibility)
+- `SeverityClassifier` with OPA integration
+- Controller integration during classification phase
+- Audit client updated to emit normalized severity
+- Test fixtures for Enterprise (Sev1-4) and PagerDuty (P0-P4) schemes
 
-**Changes**:
+**Status**: ✅ Complete - 10 unit tests + 8 integration tests passing
 
-**1. Default Rego Policy** (`deploy/signalprocessing/policies/severity.rego`):
+See [Implementation Plan - Week 2](../../implementation/DD-SEVERITY-001-implementation-plan.md#week-2-signalprocessing-rego-implementation-complete) for detailed code changes.
+
+**Example Default Rego Policy**:
 ```rego
 package signalprocessing.severity
 
@@ -301,7 +262,73 @@ result := {"severity": "low", "source": "rego-policy"} if {
 default result := {"severity": "unknown", "source": "fallback"}
 ```
 
-**Operator Customization Example**:
+---
+
+#### **Week 3: Gateway Refactoring** 🟡 95% COMPLETE
+
+**Summary**: Remove hardcoded severity mappings, implement pass-through architecture
+
+**Key Changes**:
+- Remove `determineSeverity()` function entirely
+- Gateway passes through raw severity values (e.g., "Sev1", "P0")
+- Only default to "unknown" if severity is completely missing
+- Deprecate BR-GATEWAY-007 (priority determination moved to SP)
+
+**Status**: 🟡 Code complete, 2 integration tests pending (remove `PIt`/`Skip`)
+
+See [Implementation Plan - Week 3](../../implementation/DD-SEVERITY-001-implementation-plan.md#week-3-gateway-refactoring-95-complete) for detailed code changes and blocker resolution.
+
+---
+
+#### **Week 4: Consumer Updates + DataStorage Triage** ✅ COMPLETE
+
+**Summary**: Update consumers to use normalized severity, verify external preservation
+
+**Key Changes**:
+- `AIAnalysisCreator` uses `sp.Status.Severity` (normalized "critical") NOT `rr.Spec.Severity` (external "Sev1")
+- Notification creator preserves `rr.Spec.Severity` (external for operator familiarity)
+- WorkflowExecution handler preserves `rr.Spec.Severity` (external for messages)
+- DataStorage triaged - workflow severity is separate domain (no changes needed)
+
+**Status**: ✅ Complete - 1 unit test + 5 integration tests passing
+
+See [Implementation Plan - Week 4](../../implementation/DD-SEVERITY-001-implementation-plan.md#week-4-consumer-updates--datastorage-triage-complete) for detailed code changes.
+
+---
+
+#### **Week 5: E2E Testing** ⏸️ NEXT SPRINT
+
+**Summary**: Full pipeline validation with custom severity schemes
+
+**Scenarios**:
+1. Enterprise "Sev1" full pipeline (Gateway → RR → SP → RO → AA → NT)
+2. PagerDuty "P0" full pipeline
+3. Rego hot-reload verification (no pod restart)
+4. Multi-scheme support (Sev1, P0, critical all → critical)
+
+**Status**: ⏸️ Pending Gateway tests 005 & 006 completion (remove `PIt`/`Skip`)
+
+See [E2E Test Scenarios](../../testing/test-plans/DD-SEVERITY-001-E2E-SCENARIOS.md) for detailed test specifications.
+
+---
+
+### **Overall Implementation Status: 85% Complete**
+
+| Week | Status | Code | Tests | Blocker |
+|------|--------|------|-------|---------|
+| Week 1 | ✅ 100% | ✅ | ✅ | None |
+| Week 2 | ✅ 100% | ✅ | ✅ | None |
+| Week 3 | 🟡 95% | ✅ | 🟡 8/10 | Tests 005 & 006 |
+| Week 4 | ✅ 100% | ✅ | ✅ | None |
+| Week 5 | ⏸️ 0% | N/A | ⏸️ 0/4 | Gateway P1 |
+
+**Next Steps**: Gateway team to enable tests 005 & 006, then proceed to E2E scenarios in Sprint N+1.
+
+For real-time progress tracking and detailed task status, see [Implementation Plan](../../implementation/DD-SEVERITY-001-implementation-plan.md).
+
+---
+
+### **Operator Customization Example**:
 ```rego
 package signalprocessing.severity
 
@@ -344,296 +371,15 @@ result := {"severity": "low", "source": "rego-policy"} if {
 default result := {"severity": "unknown", "source": "fallback"}
 ```
 
-**2. Severity Classifier** (`pkg/signalprocessing/classifier/severity.go`):
-```go
-package classifier
-
-import (
-    "context"
-    "fmt"
-
-    "github.com/open-policy-agent/opa/rego"
-    signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-)
-
-type SeverityClassifier struct {
-    regoEngine *rego.Rego
-    logger     logr.Logger
-}
-
-type SeverityResult struct {
-    Severity string `json:"severity"` // critical, warning, info, or unknown
-    Source   string `json:"source"`   // rego-policy or fallback
-}
-
-func NewSeverityClassifier(policyPath string, logger logr.Logger) (*SeverityClassifier, error) {
-    // Load severity.rego policy (similar to environment/priority classifiers)
-    // ... implementation
-}
-
-func (c *SeverityClassifier) ClassifySeverity(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) (SeverityResult, error) {
-    input := map[string]interface{}{
-        "signal": map[string]interface{}{
-            "severity": sp.Spec.Signal.Severity, // External value (e.g., "Sev1")
-        },
-    }
-
-    // Evaluate Rego policy
-    results, err := c.regoEngine.Eval(ctx, rego.EvalInput(input))
-    if err != nil {
-        c.logger.Error(err, "Severity Rego evaluation failed", "externalSeverity", sp.Spec.Signal.Severity)
-        // Fallback to "unknown" on Rego failure
-        return SeverityResult{Severity: "unknown", Source: "fallback-error"}, nil
-    }
-
-    // Parse result
-    // ... implementation
-
-    return result, nil
-}
-```
-
-**3. Controller Integration** (`internal/controller/signalprocessing/signalprocessing_controller.go`):
-```go
-func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) (ctrl.Result, error) {
-    // ... existing environment classification
-    // ... existing priority assignment
-
-    // NEW: Severity determination
-    severityResult, err := r.severityClassifier.ClassifySeverity(ctx, sp)
-    if err != nil {
-        return ctrl.Result{}, fmt.Errorf("severity classification failed: %w", err)
-    }
-
-    // Write to Status
-    sp.Status.Severity = severityResult.Severity
-
-    // Emit audit event if fallback used
-    if severityResult.Source == "fallback" || severityResult.Source == "fallback-error" {
-        r.auditClient.RecordSeverityFallback(ctx, sp, severityResult)
-    }
-
-    // Emit metrics
-    severityDeterminationTotal.WithLabelValues(
-        sp.Spec.Signal.Severity, // external
-        severityResult.Severity,  // normalized
-        severityResult.Source,    // rego-policy/fallback
-    ).Inc()
-
-    // ... continue with business classification
-}
-```
-
-**4. Audit Client Update** (`pkg/signalprocessing/audit/client.go`):
-```go
-// BEFORE (Line 84):
-payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Spec.Signal.Severity)) // ❌ External
-
-// AFTER:
-payload.Severity.SetTo(toSignalProcessingAuditPayloadSeverity(sp.Status.Severity)) // ✅ Normalized
-```
-
-**Validation**:
-- [ ] Unit tests for `SeverityClassifier` (default policy)
-- [ ] Unit tests for custom operator policies (Sev1-4, P0-P4)
-- [ ] Integration tests: "Sev1" → Status.Severity = "critical"
-- [ ] Audit event emitted when fallback to "unknown"
-- [ ] Metrics emitted for severity determination
-
-**Deliverables**:
-- Default `severity.rego` policy in `deploy/`
-- `SeverityClassifier` implementation
-- Controller integration with Status field population
-- Unit + integration tests
+See [Implementation Plan](../../implementation/DD-SEVERITY-001-implementation-plan.md) for full `SeverityClassifier` implementation details.
 
 ---
 
-#### **Week 3: Gateway Refactoring (Severity + Priority Cleanup)**
+## Data Flow Diagram (Approved Architecture)
 
-**Files to Modify**:
-1. `pkg/gateway/adapters/prometheus_adapter.go`
-2. `pkg/gateway/adapters/kubernetes_event_adapter.go`
-3. `docs/services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md`
+**OLD SNIPPET REMOVED - See implementation plan for detailed code**
 
-**Changes**:
-
-**1. Remove Severity Hardcoding** (`pkg/gateway/adapters/prometheus_adapter.go`):
-```go
-// BEFORE (Lines 234-241):
-func determineSeverity(labels map[string]string) string {
-    severity := labels["severity"]
-    switch severity {
-    case "critical", "warning", "info":
-        return severity
-    default:
-        return "warning" // Default to warning for unknown severities
-    }
-}
-
-// AFTER:
-// REMOVED - Gateway now passes through raw severity without transformation
-```
-
-**Update Prometheus Alert Processing**:
-```go
-// BEFORE:
-severity := determineSeverity(alert.Labels)
-
-// AFTER:
-severity := alert.Labels["severity"] // Pass through as-is (e.g., "Sev1")
-if severity == "" {
-    severity = "unknown" // Only default if missing entirely
-}
-```
-
-**2. Remove Kubernetes Event Severity Mapping** (`pkg/gateway/adapters/kubernetes_event_adapter.go`):
-```go
-// BEFORE:
-func mapSeverity(eventType, reason string) string {
-    // Hardcoded mapping logic
-}
-
-// AFTER:
-// REMOVED - Pass through event Type/Reason as-is
-// SignalProcessing Rego will map k8s event types to severity
-```
-
-**3. Priority Cleanup (BR-GATEWAY-007)**:
-```go
-// REMOVE ALL priority determination logic from Gateway adapters
-// Gateway should NOT determine priority (SignalProcessing owns this via priority.rego)
-```
-
-**4. Update Business Requirements**:
-```markdown
-### **BR-GATEWAY-007: Priority Assignment** [DEPRECATED]
-**Status**: ⛔ DEPRECATED (2026-01-09)
-**Reason**: Priority determination moved to SignalProcessing Rego (BR-SP-070)
-**Replacement**: Gateway passes through raw priority hints, SignalProcessing determines final priority
-**Migration**: Remove priority determination logic from Gateway adapters
-```
-
-**Validation**:
-- [ ] Gateway writes "Sev1" to RemediationRequest (no transformation)
-- [ ] Gateway writes "P0" to RemediationRequest (no transformation)
-- [ ] Gateway no longer defaults unknown severity to "warning"
-- [ ] Gateway no longer determines priority
-- [ ] Integration tests: Prometheus alert "Sev1" → RR.Spec.Severity = "Sev1"
-- [ ] Gateway audit events include raw external severity
-
-**Deliverables**:
-- Gateway code cleaned of hardcoded severity/priority logic
-- BR-GATEWAY-007 marked DEPRECATED
-- Integration tests for pass-through behavior
-
----
-
-#### **Week 4: Consumer Updates + DataStorage Triage**
-
-**Files to Modify**:
-1. `pkg/remediationorchestrator/creator/aianalysis.go`
-2. `pkg/remediationorchestrator/creator/notification.go` (NO CHANGE - keeps external)
-3. `pkg/remediationorchestrator/handler/workflowexecution.go` (NO CHANGE - keeps external)
-4. `docs/services/crd-controllers/03-remediationorchestrator/BUSINESS_REQUIREMENTS.md`
-
-**Changes**:
-
-**1. AIAnalysis Creator** (`pkg/remediationorchestrator/creator/aianalysis.go:171`):
-```go
-// BEFORE:
-return aianalysisv1.SignalContextInput{
-    Fingerprint:      rr.Spec.SignalFingerprint,
-    Severity:         rr.Spec.Severity, // ❌ External "Sev1"
-    SignalType:       rr.Spec.SignalType,
-    Environment:      environment,
-    BusinessPriority: priority,
-    // ... other fields
-}
-
-// AFTER:
-return aianalysisv1.SignalContextInput{
-    Fingerprint:      rr.Spec.SignalFingerprint,
-    Severity:         sp.Status.Severity, // ✅ Normalized "critical" from Rego
-    SignalType:       rr.Spec.SignalType,
-    Environment:      environment,
-    BusinessPriority: priority,
-    // ... other fields
-}
-```
-
-**2. Notification Creator** (NO CHANGE - Approved Decision Q1):
-```go
-// pkg/remediationorchestrator/creator/notification.go:110,127,224,559
-// KEEP: rr.Spec.Severity (external "Sev1")
-// Rationale: Operators want to see their own severity values in notifications
-```
-
-**3. WorkflowExecution Handler** (NO CHANGE - Approved Decision Q1):
-```go
-// pkg/remediationorchestrator/handler/workflowexecution.go:447
-// KEEP: rr.Spec.Severity (external "Sev1")
-// Rationale: Operators want to see their own severity values in failure messages
-```
-
-**4. Audit Events** (IMPLEMENT - Approved Decision Q2):
-```go
-// All audit event constructors: Include BOTH external + normalized severity
-type AuditEventPayload struct {
-    SeverityExternal   string `json:"severity_external"`   // "Sev1"
-    SeverityNormalized string `json:"severity_normalized"` // "critical"
-    // ... other fields
-}
-```
-
-**5. DataStorage Triage**:
-- **Task**: Check if DataStorage needs SignalProcessing severity
-- **Current**: WorkflowSearch uses `critical, high, medium, low` (different domain - workflows, not signals)
-- **Decision**: Keep separate unless integration need discovered
-- **Action**: Document decision in DataStorage BUSINESS_REQUIREMENTS.md
-
-**Validation**:
-- [ ] AIAnalysis receives normalized severity from SP Status
-- [ ] AIAnalysis LLM prompts use consistent severity values
-- [ ] Notifications show external severity ("Sev1")
-- [ ] WE failure messages show external severity ("Sev1")
-- [ ] Audit events include both external + normalized
-- [ ] E2E test: "Sev1" → SP determines "critical" → AA receives "critical"
-
-**Deliverables**:
-- RemediationOrchestrator consumer updates
-- Audit event dual-severity fields
-- DataStorage triage decision documented
-- E2E tests for full severity flow
-
----
-
-### **Week 5: Testing + Buffer**
-
-**Integration Testing**:
-- [ ] E2E test: Prometheus "Sev1" → RR → SP Rego → AA with "critical"
-- [ ] E2E test: PagerDuty "P0" → SP Rego → AA with "critical"
-- [ ] E2E test: Unknown "MyCustomSev" → SP fallback → "unknown"
-- [ ] E2E test: Notification shows external "Sev1"
-- [ ] E2E test: WE failure message shows external "Sev1"
-- [ ] E2E test: Audit events include both severities
-
-**Operator Testing**:
-- [ ] Deploy custom `severity.rego` ConfigMap
-- [ ] Verify hot-reload without pod restart
-- [ ] Verify custom mapping "Sev1" → "critical"
-
-**Backward Compatibility Testing**:
-- [ ] Existing deployments with "critical/warning/info" continue working
-- [ ] Default Rego policy provides 1:1 mapping
-
-**Buffer Week**:
-- Fix any issues discovered during testing
-- Documentation updates
-- Migration guide for operators
-
----
-
-### **Data Flow Diagram (Approved Architecture)**
+**Severity Classifier Implementation**:
 
 ```
 Step 1: Gateway (Pass-Through)
@@ -894,9 +640,19 @@ default result := {"severity": "unknown", "source": "fallback"}
 
 ---
 
-## Implementation Status
+## Related Implementation Documents
 
-### **Service Impact Triage (January 16, 2026)**
+### **Documentation Structure (v1.2)**
+
+This design decision (DD-SEVERITY-001) focuses on **WHY** (architecture, rationale, consequences). Implementation details have been extracted to:
+
+| Document Type | Purpose | Link |
+|--------------|---------|------|
+| **Implementation Plan** | HOW + WHEN (tasks, timeline, status) | [DD-SEVERITY-001-implementation-plan.md](../../implementation/DD-SEVERITY-001-implementation-plan.md) |
+| **Comprehensive Test Plan** | WHAT (all test tiers) | [DD_SEVERITY_001_TEST_PLAN_JAN11_2026.md](../../handoff/DD_SEVERITY_001_TEST_PLAN_JAN11_2026.md) |
+| **E2E Test Scenarios** | WHEN (Sprint N+1 focus) | [DD-SEVERITY-001-E2E-SCENARIOS.md](../../testing/test-plans/DD-SEVERITY-001-E2E-SCENARIOS.md) |
+
+### **Implementation Status Summary (January 16, 2026)**
 
 **Services Analyzed**: 8 services triaged for DD-SEVERITY-001 impact
 
@@ -1057,6 +813,17 @@ default result := {"severity": "unknown", "source": "fallback"}
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-01-16 (Added Implementation Status section)
-**Next Review**: After completing Gateway tests 005 & 006 and RO integration test
+**Document Version**: 1.2
+**Last Updated**: 2026-01-16 (Documentation restructuring - extracted implementation and E2E scenarios)
+**Next Review**: After Sprint N+1 E2E completion
+
+---
+
+## Cross-Reference Summary
+
+| Document | Purpose | Status |
+|----------|---------|--------|
+| [DD-SEVERITY-001](DD-SEVERITY-001-severity-determination-refactoring.md) (this doc) | WHY - Design rationale | ✅ Approved |
+| [Implementation Plan](../../implementation/DD-SEVERITY-001-implementation-plan.md) | HOW + WHEN - Task breakdown | 🟡 85% Complete |
+| [Test Plan](../../handoff/DD_SEVERITY_001_TEST_PLAN_JAN11_2026.md) | WHAT - Test coverage | 🟡 86% Complete |
+| [E2E Scenarios](../../testing/test-plans/DD-SEVERITY-001-E2E-SCENARIOS.md) | WHEN - Sprint N+1 focus | ⏸️ Planning |
