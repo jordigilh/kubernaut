@@ -1528,3 +1528,63 @@ func labelsMatch(metric *dto.Metric, labels map[string]string) bool {
 func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, k8sClient client.Client, metricsInstance *metrics.Metrics) (*gateway.Server, error) {
 	return gateway.NewServerWithK8sClient(cfg, logger, metricsInstance, k8sClient)
 }
+
+// createPrometheusAlert creates a Prometheus AlertManager webhook payload
+// Used for testing Gateway adapter pass-through behavior
+func createPrometheusAlert(namespace, alertName, severity, fingerprint, correlationID string) []byte {
+	payload := fmt.Sprintf(`{
+		"alerts": [{
+			"labels": {
+				"alertname": "%s",
+				"severity": "%s",
+				"namespace": "%s",
+				"pod": "test-pod-123"
+			},
+			"annotations": {
+				"summary": "Test alert",
+				"description": "Test description",
+				"correlation_id": "%s"
+			},
+			"startsAt": "2025-01-15T10:00:00Z"
+		}]
+	}`, alertName, severity, namespace, correlationID)
+
+	return []byte(payload)
+}
+
+// createPrometheusAlertWithoutSeverity creates a Prometheus alert without severity label
+// Used for testing BR-GATEWAY-181 default behavior when severity is missing
+func createPrometheusAlertWithoutSeverity(namespace, alertName string) []byte {
+	payload := fmt.Sprintf(`{
+		"alerts": [{
+			"labels": {
+				"alertname": "%s",
+				"namespace": "%s",
+				"pod": "test-pod-123"
+			},
+			"annotations": {
+				"summary": "Test alert without severity"
+			},
+			"startsAt": "2026-01-16T12:00:00Z"
+		}]
+	}`, alertName, namespace)
+	return []byte(payload)
+}
+
+// createK8sEvent creates a Kubernetes Event payload
+// Used for testing Gateway K8s Event adapter pass-through behavior (BR-GATEWAY-181)
+func createK8sEvent(eventType, reason, namespace, kind, name string) []byte {
+	payload := fmt.Sprintf(`{
+		"type": "%s",
+		"reason": "%s",
+		"involvedObject": {
+			"kind": "%s",
+			"name": "%s",
+			"namespace": "%s"
+		},
+		"message": "Test K8s event",
+		"firstTimestamp": "2026-01-16T12:00:00Z",
+		"lastTimestamp": "2026-01-16T12:00:00Z"
+	}`, eventType, reason, kind, name, namespace)
+	return []byte(payload)
+}

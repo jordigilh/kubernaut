@@ -1486,25 +1486,3 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 // Note: ErrorInjectableK8sClient is defined in 29_k8s_api_failure_integration_test.go
 // and is shared across Gateway integration tests for K8s error injection
 
-// createPrometheusAlert creates a Prometheus AlertManager webhook payload
-// Used by audit emission tests to create test signals
-func createPrometheusAlert(namespace, alertName, severity, fingerprint, correlationID string) []byte {
-	payload := fmt.Sprintf(`{
-		"alerts": [{
-			"labels": {
-				"alertname": "%s",
-				"severity": "%s",
-				"namespace": "%s",
-				"pod": "test-pod-123"
-			},
-			"annotations": {
-				"summary": "Test alert",
-				"description": "Test description",
-				"correlation_id": "%s"
-			},
-			"startsAt": "2025-01-15T10:00:00Z"
-		}]
-	}`, alertName, severity, namespace, correlationID)
-
-	return []byte(payload)
-}
