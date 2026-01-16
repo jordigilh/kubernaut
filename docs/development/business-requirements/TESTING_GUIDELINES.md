@@ -497,6 +497,241 @@ def test_audit_events(mock_data_storage, mock_llm):
 | **Integration** | Registry inspection (metric values after operations) | controller-runtime registry | `NewMetricsWithRegistry(testRegistry)` |
 | **E2E** | HTTP endpoint (`/metrics` accessible) | Deployed controller with Service | `NewMetrics()` (production) |
 
+#### **MANDATORY: Metrics Testing Validation Pattern (Counter/Gauge/Histogram)**
+
+**Policy**: ALL metrics tests MUST capture initial state BEFORE operations and final state AFTER operations to prove the metric was actually incremented/updated by the test operation.
+
+**Rationale**: Without initial/final comparison, assertions like `Expect(value).To(BeNumerically(">=", 1))` don't prove the test operation caused the metric to change. The metric could have been incremented by a previous test or setup.
+
+##### **✅ CORRECT: Counter Metrics Pattern**
+
+**Rule**: Counters are monotonically increasing. Test MUST verify exact increment.
+
+```go
+// ✅ CORRECT: Counter with initial/final validation
+It("[TEST-ID] should increment counter on operation", func() {
+    // Setup service with test registry
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial counter value")
+    initialValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+
+    By("2. Perform operation that should increment counter")
+    err = service.PerformOperation(ctx, input)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("3. Verify counter incremented by exactly 1")
+    finalValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+    Expect(finalValue).To(Equal(initialValue+1),
+        "BR-XXX-YYY: Counter must increment by 1 for single operation")
+
+    GinkgoWriter.Printf("✅ Counter incremented: %.0f→%.0f\n", initialValue, finalValue)
+})
+
+// ✅ CORRECT: Counter with multiple increments
+It("[TEST-ID] should increment counter for multiple operations", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial counter value")
+    initialValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+
+    By("2. Perform 3 operations")
+    for i := 1; i <= 3; i++ {
+        err = service.PerformOperation(ctx, input)
+        Expect(err).ToNot(HaveOccurred())
+    }
+
+    By("3. Verify counter incremented by exactly 3")
+    finalValue := getCounterValue(testRegistry, "service_operations_total", map[string]string{
+        "operation": "create",
+        "status":    "success",
+    })
+    Expect(finalValue).To(Equal(initialValue+3),
+        "BR-XXX-YYY: Counter must increment by 3 for three operations")
+
+    GinkgoWriter.Printf("✅ Counter incremented: %.0f→%.0f (Δ+3)\n", initialValue, finalValue)
+})
+```
+
+**❌ WRONG: Counter without initial/final comparison**
+
+```go
+// ❌ WRONG: No initial value capture
+It("should increment counter on operation", func() {
+    service.PerformOperation(ctx, input)
+
+    // ❌ WRONG: Doesn't prove THIS test operation caused increment
+    value := getCounterValue(testRegistry, "service_operations_total", labels)
+    Expect(value).To(BeNumerically(">=", 1))  // Could be from previous test!
+})
+```
+
+##### **✅ CORRECT: Gauge Metrics Pattern**
+
+**Rule**: Gauges can increase or decrease. Test MUST verify value changed (delta ≠ 0) OR value is within expected range.
+
+```go
+// ✅ CORRECT: Gauge with delta validation
+It("[TEST-ID] should update gauge on operation", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial gauge value")
+    initialValue := getGaugeValue(testRegistry, "service_queue_depth", map[string]string{})
+
+    By("2. Perform operation that should update gauge")
+    err = service.EnqueueItem(ctx, item)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("3. Verify gauge was updated (delta > 0)")
+    finalValue := getGaugeValue(testRegistry, "service_queue_depth", map[string]string{})
+    Expect(finalValue).To(BeNumerically(">", initialValue),
+        "BR-XXX-YYY: Queue depth gauge must increase when item enqueued")
+
+    delta := finalValue - initialValue
+    GinkgoWriter.Printf("✅ Gauge updated: %.2f→%.2f (Δ+%.2f)\n", initialValue, finalValue, delta)
+})
+
+// ✅ CORRECT: Gauge with calculated value validation
+It("[TEST-ID] should update rate gauge to reflect operations", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial deduplication rate gauge")
+    initialRate := getGaugeValue(testRegistry, "service_deduplication_rate", map[string]string{})
+
+    By("2. Process 3 signals with 1 duplicate (33% dedup rate expected)")
+    // ... process signals ...
+
+    By("3. Verify gauge reflects expected rate OR was updated")
+    finalRate := getGaugeValue(testRegistry, "service_deduplication_rate", map[string]string{})
+
+    // Validate gauge bounds
+    Expect(finalRate).To(BeNumerically(">=", 0), "Rate must be non-negative")
+    Expect(finalRate).To(BeNumerically("<=", 1), "Rate must be <= 1 (100%)")
+
+    // If gauge unchanged, verify it's in expected range
+    if initialRate == finalRate {
+        Expect(finalRate).To(BeNumerically("~", 0.33, 0.1),
+            "BR-XXX-YYY: Rate should be ~33% for 1 dedup out of 3 signals")
+    }
+
+    GinkgoWriter.Printf("✅ Rate gauge: %.2f→%.2f (Δ%.2f, %.0f%%)\n",
+        initialRate, finalRate, finalRate-initialRate, finalRate*100)
+})
+```
+
+**❌ WRONG: Gauge without initial/final comparison**
+
+```go
+// ❌ WRONG: No initial value capture
+It("should update gauge on operation", func() {
+    service.EnqueueItem(ctx, item)
+
+    // ❌ WRONG: Doesn't prove THIS test operation caused change
+    value := getGaugeValue(testRegistry, "service_queue_depth", labels)
+    Expect(value).To(BeNumerically(">", 0))  // Could be from previous test!
+})
+```
+
+##### **✅ CORRECT: Histogram Metrics Pattern**
+
+**Rule**: Histograms track distributions. Test MUST verify observations were recorded (sample count > initial count).
+
+```go
+// ✅ CORRECT: Histogram with sample count validation
+It("[TEST-ID] should record duration observations", func() {
+    testRegistry := prometheus.NewRegistry()
+    metricsInstance := metrics.NewMetricsWithRegistry(testRegistry)
+    service, err := NewService(config, metricsInstance)
+    Expect(err).ToNot(HaveOccurred())
+
+    By("1. Get initial histogram sample count")
+    initialSampleCount := getHistogramSampleCount(testRegistry, "service_operation_duration_seconds", map[string]string{
+        "operation": "process",
+    })
+
+    By("2. Perform operations to generate duration samples")
+    for i := 1; i <= 5; i++ {
+        err = service.PerformOperation(ctx, input)
+        Expect(err).ToNot(HaveOccurred())
+    }
+
+    By("3. Verify histogram recorded observations")
+    finalSampleCount := getHistogramSampleCount(testRegistry, "service_operation_duration_seconds", map[string]string{
+        "operation": "process",
+    })
+    Expect(finalSampleCount).To(Equal(initialSampleCount+5),
+        "BR-XXX-YYY: Histogram must record 5 samples for 5 operations")
+
+    GinkgoWriter.Printf("✅ Histogram samples: %d→%d (Δ+5)\n", initialSampleCount, finalSampleCount)
+})
+
+// Helper function for histogram sample count
+func getHistogramSampleCount(registry *prometheus.Registry, name string, labels map[string]string) uint64 {
+    families, err := registry.Gather()
+    Expect(err).ToNot(HaveOccurred())
+
+    for _, family := range families {
+        if family.GetName() == name {
+            for _, metric := range family.GetMetric() {
+                if matchLabels(metric.GetLabel(), labels) {
+                    return metric.GetHistogram().GetSampleCount()
+                }
+            }
+        }
+    }
+    return 0
+}
+```
+
+**❌ WRONG: Histogram without sample count validation**
+
+```go
+// ❌ WRONG: Only checks histogram exists, doesn't verify observations
+It("should record duration observations", func() {
+    service.PerformOperation(ctx, input)
+
+    // ❌ WRONG: Doesn't prove observations were recorded
+    histogram := getHistogramMetric(testRegistry, "service_operation_duration_seconds")
+    Expect(histogram).ToNot(BeNil())  // Just checks metric exists!
+})
+```
+
+##### **Why This Matters**
+
+1. **Proves Causation**: Initial/final comparison proves YOUR test operation caused the metric change
+2. **Test Isolation**: Detects interference from parallel tests or setup/teardown
+3. **Exact Validation**: Counters should increment by exact amount, not just "be greater than 0"
+4. **False Positives**: Without comparison, tests pass even if metric isn't working
+5. **Debugging**: Delta values in output help diagnose test failures
+
+##### **Reference Implementation**
+
+**Gateway Integration Tests**: `test/integration/gateway/metrics_emission_integration_test.go`
+- GW-INT-MET-001, 002, 003, 005, 006, 007, 008, 010, 011, 013, 014, 015 (counters)
+- GW-INT-MET-012 (gauge)
+- GW-INT-MET-009 (histogram)
+
 #### CRD Controllers (AIAnalysis, Notification, RO, etc.)
 
 ```go
