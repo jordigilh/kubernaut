@@ -41,12 +41,18 @@ func toGatewayAuditPayloadSeverity(value string) api.GatewayAuditPayloadSeverity
 	switch value {
 	case "critical":
 		return api.GatewayAuditPayloadSeverityCritical
-	case "warning":
-		return api.GatewayAuditPayloadSeverityWarning
-	case "info":
-		return api.GatewayAuditPayloadSeverityInfo
+	case "high":
+		return api.GatewayAuditPayloadSeverityHigh
+	case "warning": // Map "warning" to "high" for OpenAPI compatibility
+		return api.GatewayAuditPayloadSeverityHigh
+	case "medium":
+		return api.GatewayAuditPayloadSeverityMedium
+	case "info": // Map "info" to "low" for OpenAPI compatibility
+		return api.GatewayAuditPayloadSeverityLow
+	case "low":
+		return api.GatewayAuditPayloadSeverityLow
 	default:
-		return "" // Or handle error
+		return api.GatewayAuditPayloadSeverityUnknown
 	}
 }
 
