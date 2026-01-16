@@ -669,7 +669,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					Spec: signalprocessingv1alpha1.SignalProcessingSpec{
 						Signal: signalprocessingv1alpha1.SignalData{
 							Fingerprint: "test-fingerprint-categorize",
-							Severity:    "warning",
+							Severity: "high",
 							TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
 								Kind:      "Pod",
 								Name:      "test-pod",

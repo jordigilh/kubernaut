@@ -2398,8 +2398,8 @@ components:
           example: "abc123"
         severity:
           type: string
-          enum: [critical, warning, info]
-          description: Severity level of the signal
+          enum: [critical, high, medium, low, unknown]
+          description: Normalized severity level (DD-SEVERITY-001 v1.1)
           example: "critical"
         resource_kind:
           type: string
@@ -2554,8 +2554,8 @@ components:
           example: "high-memory-payment-api-abc123"
         severity:
           type: string
-          enum: [critical, warning, info]
-          description: Severity level of the signal
+          enum: [critical, high, medium, low, unknown]
+          description: Normalized severity level (DD-SEVERITY-001 v1.1)
 
         # DD-SEVERITY-001: Severity Determination Fields (conditional)
         external_severity:
@@ -2564,9 +2564,9 @@ components:
           example: "Sev2"
         normalized_severity:
           type: string
-          enum: [critical, warning, info]
-          description: Normalized severity determined by Rego policy
-          example: "warning"
+          enum: [critical, high, medium, low, unknown]
+          description: Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1)
+          example: "high"
         determination_source:
           type: string
           enum: [rego-policy, fallback, default]

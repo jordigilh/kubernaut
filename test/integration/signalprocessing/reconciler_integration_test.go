@@ -139,7 +139,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Namespace: ns,
 			}
 			rrName := "test-signal-hp-02-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with parent RR")
@@ -176,7 +176,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-hp-03", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["reconciler-03"],
 				Name:        "LowDiskSpace",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -215,7 +215,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-hp-04", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["reconciler-04"],
 				Name:        "TestAlert",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -254,7 +254,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-05", ns, ValidTestFingerprints["reconciler-05"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-05", ns, ValidTestFingerprints["reconciler-05"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -294,7 +294,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "payment-processor",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-06", ns, ValidTestFingerprints["reconciler-06"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-06", ns, ValidTestFingerprints["reconciler-06"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -369,7 +369,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "ownerchain-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-07", ns, ValidTestFingerprints["reconciler-07"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-07", ns, ValidTestFingerprints["reconciler-07"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -408,7 +408,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-hp-08", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["reconciler-08"],
 				Name:        "PDBTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -453,7 +453,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "hpa-deployment",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-09", ns, ValidTestFingerprints["reconciler-09"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-09", ns, ValidTestFingerprints["reconciler-09"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -492,7 +492,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-hp-10", ns, ValidTestFingerprints["reconciler-10"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-hp-10", ns, ValidTestFingerprints["reconciler-10"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -534,7 +534,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-01", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-01"],
 				Name:        "DefaultEnv",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -572,7 +572,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "non-existent-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-ec-02", ns, ValidTestFingerprints["edge-case-02"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-ec-02", ns, ValidTestFingerprints["edge-case-02"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef for non-existent pod")
@@ -612,7 +612,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 					sp := createSignalProcessingCR(ns, "concurrent-"+string(rune('a'+idx)), signalprocessingv1alpha1.SignalData{
 						Fingerprint: GenerateConcurrentFingerprint("reconciler-concurrent", idx),
 						Name:        "ConcurrentTest",
-						Severity:    "warning",
+						Severity: "high",
 						Type:        "prometheus",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -647,7 +647,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-04", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-04"],
 				Name:        "MinimalSpec",
-				Severity:    "info",
+				Severity: "low",
 				Type:        "kubernetes-event",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -680,7 +680,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-05", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-05"],
 				Name:        "SpecialNs",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -755,7 +755,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-06", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-06"],
 				Name:        "DeepOwner",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -792,7 +792,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-07", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-07"],
 				Name:        "SuccessDetect",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -837,7 +837,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				Name:      "test-pod",
 				Namespace: ns,
 			}
-			rr := CreateTestRemediationRequest("test-rr-ec-08", ns, ValidTestFingerprints["edge-case-08"], "warning", targetResource)
+			rr := CreateTestRemediationRequest("test-rr-ec-08", ns, ValidTestFingerprints["edge-case-08"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR with RemediationRequestRef")
@@ -889,7 +889,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-er-02", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["error-02"],
 				Name:        "ConflictTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -934,7 +934,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			sp := createSignalProcessingCR(ns, "test-signal-er-04", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["error-04"],
 				Name:        "RegoError",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -972,7 +972,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			sp := createSignalProcessingCR(ns, "test-signal-er-06", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["error-06"],
 				Name:        "AuditFail",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1017,7 +1017,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						// Empty fingerprint - violates validation
 						Fingerprint: "",
 						Name:        "InvalidSpec",
-						Severity:    "warning",
+						Severity: "high",
 						Type:        "prometheus",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1242,7 +1242,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint: ValidTestFingerprints["audit-003"],
 						Name:        "RecoveryMissing",
-						Severity:    "warning",
+						Severity: "high",
 						Type:        "prometheus",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1296,7 +1296,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint: ValidTestFingerprints["audit-004"],
 						Name:        "NoRRRef",
-						Severity:    "info",
+						Severity: "low",
 						Type:        "prometheus",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -1402,7 +1402,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Namespace: ns,
 			}
 			rrName := "cond-msg-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["reconciler-02"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR")
@@ -1465,7 +1465,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Namespace: ns,
 			}
 			rrName := "backoff-success-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-01"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-01"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR")
@@ -1501,7 +1501,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Namespace: ns,
 			}
 			rrName := "backoff-init-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-02"], "info", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-02"], "low", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR")
@@ -1581,7 +1581,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 				Namespace: ns,
 			}
 			rrName := "backoff-schema-rr"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-04"], "warning", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["backoff-04"], "high", targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			By("Creating SignalProcessing CR")

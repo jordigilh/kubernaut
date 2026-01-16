@@ -1,12 +1,12 @@
 # BR-GATEWAY-093: Circuit Breaker for Kubernetes API
 
-**Business Requirement ID**: BR-GATEWAY-093  
-**Category**: Gateway Service (Signal Ingestion & Processing)  
-**Priority**: P1 (High)  
-**Target Version**: V1.0  
-**Status**: ✅ Implemented (2026-01-03)  
-**Date**: 2025-11-05  
-**Last Updated**: 2026-01-15  
+**Business Requirement ID**: BR-GATEWAY-093
+**Category**: Gateway Service (Signal Ingestion & Processing)
+**Priority**: P1 (High)
+**Target Version**: V1.0
+**Status**: ✅ Implemented (2026-01-03)
+**Date**: 2025-11-05
+**Last Updated**: 2026-01-15
 
 ---
 
@@ -197,7 +197,7 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context,
         if c.circuitBreaker.State() == gobreaker.StateOpen {
             return nil, gobreaker.ErrOpenState
         }
-        
+
         // Circuit breaker is CLOSED/HALF-OPEN → execute K8s API call
         return nil, c.k8sClient.Create(ctx, rr)
     })
@@ -233,13 +233,13 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context,
 func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context, rr *RemediationRequest) error {
     _, err := c.circuitBreaker.Execute(func() (interface{}, error) {
         err := c.k8sClient.Create(ctx, rr)
-        
+
         // Treat "AlreadyExists" as success for circuit breaker purposes
         if k8serrors.IsAlreadyExists(err) {
             c.recordOperationResultWithIdempotency("create", err)  // Metrics: success
             return nil, nil  // Circuit breaker: success (don't increment failure count)
         }
-        
+
         // All other errors: record and return as-is
         c.recordOperationResult("create", err)
         return nil, err
@@ -310,8 +310,8 @@ func (c *ClientWithCircuitBreaker) recordOperationResult(operation string, err e
 # Alert when failure rate exceeds 20% (pre-trip warning)
 - alert: GatewayK8sAPIHighFailureRate
   expr: |
-    rate(gateway_circuit_breaker_operations_total{name="k8s-api",result="failure"}[5m]) 
-    / 
+    rate(gateway_circuit_breaker_operations_total{name="k8s-api",result="failure"}[5m])
+    /
     rate(gateway_circuit_breaker_operations_total{name="k8s-api"}[5m]) > 0.20
   for: 2m
   severity: warning
@@ -484,16 +484,16 @@ It("[BR-GATEWAY-093] should trip circuit breaker when K8s API fails", func() {
     // Simulate K8s API failures
     failingClient := &ErrorInjectableK8sClient{failCreate: true}
     gwServer := gateway.NewServerWithK8sClient(config, logger, metrics, failingClient)
-    
+
     // Make 10 requests (should trip circuit breaker at 50% failure rate)
     for i := 0; i < 10; i++ {
         _, err := gwServer.ProcessSignal(ctx, signal)
         // Expect some failures
     }
-    
+
     // Verify circuit breaker is OPEN
     Expect(failingClient.circuitBreaker.State()).To(Equal(gobreaker.StateOpen))
-    
+
     // Verify fail-fast behavior (immediate error, no retry)
     _, err := gwServer.ProcessSignal(ctx, signal)
     Expect(err).To(MatchError(gobreaker.ErrOpenState))
@@ -611,13 +611,13 @@ docs/architecture/decisions/
 
 ## ✅ **Approval**
 
-**Approved By**: Gateway Team, Architecture Team  
-**Approval Date**: 2025-11-05  
-**Implementation Confidence**: 95%  
-**Production Status**: ✅ Implemented and validated (2026-01-03)  
+**Approved By**: Gateway Team, Architecture Team
+**Approval Date**: 2025-11-05
+**Implementation Confidence**: 95%
+**Production Status**: ✅ Implemented and validated (2026-01-03)
 
 ---
 
-**Document Maintained By**: Gateway Service Team  
-**Last Review**: 2026-01-15  
+**Document Maintained By**: Gateway Service Team
+**Last Review**: 2026-01-15
 **Next Review**: 2026-04-15 (quarterly review)

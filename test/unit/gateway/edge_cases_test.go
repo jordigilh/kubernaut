@@ -102,16 +102,19 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 		})
 	})
 
-	Context("BR-001: Severity Validation Edge Cases", func() {
-		It("should reject invalid severity with clear error message", func() {
-			// BUSINESS OUTCOME: Only valid severities accepted
-			// WHY: Severity drives priority assignment (critical+prod → P0)
-			// EXPECTED: Validation error listing valid values
+	Context("BR-GATEWAY-181: Severity Pass-Through Validation Edge Cases", func() {
+		It("should reject empty severity with clear error message", func() {
+			// BUSINESS OUTCOME: Severity pass-through architecture
+			// Gateway accepts ANY non-empty severity (Sev1, P0, INVALID, etc.)
+			// SignalProcessing Rego policies normalize downstream
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
+			//
+			// EDGE CASE: Empty severity should be rejected (required field)
 
 			signal := &types.NormalizedSignal{
 				Fingerprint:  "valid-fingerprint-12345",
 				AlertName:    "TestAlert",
-				Severity:     "INVALID", // Edge case: invalid severity
+				Severity:     "", // Edge case: empty severity
 				Namespace:    "production",
 				FiringTime:   time.Now(),
 				ReceivedTime: time.Now(),
@@ -120,12 +123,12 @@ var _ = Describe("BR-001, BR-008: Edge Case Handling - Adapter Validation", func
 			err := adapter.Validate(signal)
 
 			// BUSINESS VALIDATION:
-			// ✅ Error returned
-			// ✅ Error message mentions valid values (critical, warning, info)
-			// ✅ Error message mentions the invalid value (INVALID)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("severity"))
-			Expect(err.Error()).To(ContainSubstring("INVALID"))
+			// ✅ Error returned for empty severity
+			// ✅ Error message mentions severity is required
+			Expect(err).To(HaveOccurred(),
+				"BR-GATEWAY-181: Empty severity must be rejected")
+			Expect(err.Error()).To(ContainSubstring("severity"),
+				"Error message must indicate severity field")
 		})
 
 		It("should accept all valid severity values", func() {

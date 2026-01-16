@@ -2,9 +2,35 @@
 
 ## Status
 **✅ APPROVED** (2026-01-09)
-**Last Reviewed**: 2026-01-09
+**Last Reviewed**: 2026-01-15 (v1.1 - Severity value alignment)
 **Confidence**: 95%
 **Priority**: P0 (Blocks customer onboarding with custom severity schemes)
+**Version**: 1.1
+
+---
+
+## 📝 **Changelog**
+
+### **v1.1 (2026-01-15) - Severity Value Alignment**
+**Change**: Updated normalized severity values from `critical/warning/info/unknown` to `critical/high/medium/low/unknown`
+
+**Rationale**:
+- ✅ **Infrastructure Alignment**: HAPI LLM prompts and workflow catalog already use `critical/high/medium/low`
+- ✅ **Zero Infrastructure Changes**: No HAPI prompt updates or workflow catalog migrations needed
+- ✅ **Better Semantic Range**: 5-level granularity (critical > high > medium > low > unknown) provides clearer severity distinctions
+- ✅ **Bounded Cardinality**: Still maintains acceptable Prometheus cardinality (5 values)
+- ✅ **Operator Flexibility**: Rego policies can still map ANY external scheme (Sev1-4, P0-P4) to these 5 normalized values
+
+**Impact**:
+- CRD enum updates required (AIAnalysis, SignalProcessing Status)
+- Rego policy examples updated to output `high/medium/low` instead of `warning/info`
+- SignalProcessing controller validation updated
+- No HAPI code changes required (already using these values)
+
+### **v1.0 (2026-01-09) - Initial Approval**
+- Approved SignalProcessing Rego-based severity determination
+- Defined 4-week implementation plan
+- Established Gateway pass-through architecture
 
 ---
 
@@ -203,20 +229,20 @@ type SignalProcessingStatus struct {
     BusinessClassification    *BusinessClassification    `json:"businessClassification,omitempty"`
 
     // Normalized severity determined by Rego policy
-    // Valid values: critical, warning, info, unknown
+    // Valid values: critical, high, medium, low, unknown (aligned with HAPI/workflow catalog)
     // Consumers (AIAnalysis, RemediationOrchestrator) MUST read this field
     // +optional
     Severity string `json:"severity,omitempty"` // ← ADD THIS
 }
 ```
 
-**3. AIAnalysis (Keep Enum, Add "unknown")**:
+**3. AIAnalysis (Update Enum to Match HAPI/Workflow Catalog)**:
 ```go
 // api/aianalysis/v1alpha1/aianalysis_types.go
 type SignalContextInput struct {
     // Signal severity (normalized by SignalProcessing Rego)
-    // Valid values: critical, warning, info, unknown
-    // +kubebuilder:validation:Enum=critical;warning;info;unknown // ← ADD "unknown" to enum
+    // Valid values: critical, high, medium, low, unknown (aligned with HAPI/workflow catalog per v1.1)
+    // +kubebuilder:validation:Enum=critical;high;medium;low;unknown
     Severity string `json:"severity"`
 
     // ... other fields
@@ -259,15 +285,19 @@ result := {"severity": "critical", "source": "rego-policy"} if {
     lower(input.signal.severity) == "critical"
 }
 
-result := {"severity": "warning", "source": "rego-policy"} if {
-    lower(input.signal.severity) == "warning"
+result := {"severity": "high", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "high"
 }
 
-result := {"severity": "info", "source": "rego-policy"} if {
-    lower(input.signal.severity) == "info"
+result := {"severity": "medium", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "medium"
 }
 
-# Fallback: unmapped severity → unknown (NOT warning)
+result := {"severity": "low", "source": "rego-policy"} if {
+    lower(input.signal.severity) == "low"
+}
+
+# Fallback: unmapped severity → unknown
 default result := {"severity": "unknown", "source": "fallback"}
 ```
 
@@ -282,12 +312,16 @@ result := {"severity": "critical", "source": "rego-policy"} if {
     input.signal.severity in ["Sev1", "SEV1", "sev1"]
 }
 
-result := {"severity": "warning", "source": "rego-policy"} if {
+result := {"severity": "high", "source": "rego-policy"} if {
     input.signal.severity in ["Sev2", "SEV2", "sev2"]
 }
 
-result := {"severity": "info", "source": "rego-policy"} if {
-    input.signal.severity in ["Sev3", "SEV3", "sev3", "Sev4", "SEV4", "sev4"]
+result := {"severity": "medium", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev3", "SEV3", "sev3"]
+}
+
+result := {"severity": "low", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev4", "SEV4", "sev4"]
 }
 
 # PagerDuty "P" scheme
@@ -295,11 +329,15 @@ result := {"severity": "critical", "source": "rego-policy"} if {
     input.signal.severity in ["P0", "P1"]
 }
 
-result := {"severity": "warning", "source": "rego-policy"} if {
-    input.signal.severity in ["P2", "P3"]
+result := {"severity": "high", "source": "rego-policy"} if {
+    input.signal.severity in ["P2"]
 }
 
-result := {"severity": "info", "source": "rego-policy"} if {
+result := {"severity": "medium", "source": "rego-policy"} if {
+    input.signal.severity in ["P3"]
+}
+
+result := {"severity": "low", "source": "rego-policy"} if {
     input.signal.severity in ["P4"]
 }
 
@@ -767,11 +805,15 @@ result := {"severity": "critical", "source": "rego-policy"} if {
     input.signal.severity in ["Sev1", "SEV1", "sev1"]
 }
 
-result := {"severity": "warning", "source": "rego-policy"} if {
-    input.signal.severity in ["Sev2", "SEV2", "sev2", "Sev3", "SEV3", "sev3"]
+result := {"severity": "high", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev2", "SEV2", "sev2"]
 }
 
-result := {"severity": "info", "source": "rego-policy"} if {
+result := {"severity": "medium", "source": "rego-policy"} if {
+    input.signal.severity in ["Sev3", "SEV3", "sev3"]
+}
+
+result := {"severity": "low", "source": "rego-policy"} if {
     input.signal.severity in ["Sev4", "SEV4", "sev4"]
 }
 
@@ -789,11 +831,15 @@ result := {"severity": "critical", "source": "rego-policy"} if {
     input.signal.severity in ["P0", "P1"]
 }
 
-result := {"severity": "warning", "source": "rego-policy"} if {
-    input.signal.severity in ["P2", "P3"]
+result := {"severity": "high", "source": "rego-policy"} if {
+    input.signal.severity in ["P2"]
 }
 
-result := {"severity": "info", "source": "rego-policy"} if {
+result := {"severity": "medium", "source": "rego-policy"} if {
+    input.signal.severity in ["P3"]
+}
+
+result := {"severity": "low", "source": "rego-policy"} if {
     input.signal.severity in ["P4"]
 }
 
@@ -816,21 +862,30 @@ result := {"severity": "critical", "source": "rego-policy"} if {
     ]
 }
 
-# Warning severity mappings
-result := {"severity": "warning", "source": "rego-policy"} if {
+# High severity mappings
+result := {"severity": "high", "source": "rego-policy"} if {
     input.signal.severity in [
         "Sev2", "SEV2", "sev2",           # Enterprise
-        "P2", "P3",                        # PagerDuty
-        "warning", "WARNING", "Warning"    # Standard
+        "P2",                              # PagerDuty
+        "high", "HIGH", "High"            # Standard
     ]
 }
 
-# Info severity mappings
-result := {"severity": "info", "source": "rego-policy"} if {
+# Medium severity mappings
+result := {"severity": "medium", "source": "rego-policy"} if {
     input.signal.severity in [
-        "Sev3", "SEV3", "sev3", "Sev4", "SEV4", "sev4", # Enterprise
-        "P4",                                            # PagerDuty
-        "info", "INFO", "Info"                          # Standard
+        "Sev3", "SEV3", "sev3",           # Enterprise
+        "P3",                              # PagerDuty
+        "medium", "MEDIUM", "Medium"      # Standard
+    ]
+}
+
+# Low severity mappings
+result := {"severity": "low", "source": "rego-policy"} if {
+    input.signal.severity in [
+        "Sev4", "SEV4", "sev4",           # Enterprise
+        "P4",                              # PagerDuty
+        "low", "LOW", "Low"               # Standard
     ]
 }
 
@@ -839,6 +894,169 @@ default result := {"severity": "unknown", "source": "fallback"}
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2026-01-09
-**Next Review**: After Phase 1 (Week 1) implementation
+## Implementation Status
+
+### **Service Impact Triage (January 16, 2026)**
+
+**Services Analyzed**: 8 services triaged for DD-SEVERITY-001 impact
+
+| Service | Impact | Code Changes | Unit Tests | Integration Tests | Status |
+|---------|--------|--------------|------------|-------------------|--------|
+| **Gateway** | ✅ Updated | Week 3 | ✅ Complete | 🟡 80% (2 pending) | 95% |
+| **SignalProcessing** | ✅ Updated | Week 2 | ✅ Complete | ✅ Complete | 100% |
+| **RemediationOrchestrator** | ✅ Updated | Week 4 | ✅ Complete | ⚠️ Missing | 70% |
+| **AIAnalysis Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
+| **Notification Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
+| **WorkflowExecution Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
+| **DataStorage** | ✅ Triaged | Separate domain | N/A | N/A | 100% |
+| **HolmesGPT-API** | ✅ No Impact | Pass-through | N/A | N/A | 100% |
+
+**Key Findings**:
+- ✅ **AIAnalysis Controller**: No severity logic in reconciliation (just processes CRDs)
+- ✅ **Notification Controller**: No severity logic in reconciliation (RO handles NT creation with external severity)
+- ✅ **WorkflowExecution Controller**: No severity logic in reconciliation (RO handles WE creation with external severity)
+- ✅ **HolmesGPT-API**: Accepts severity as string, no validation/transformation (passes to LLM prompt)
+- ✅ **DataStorage**: Workflow severity is separate domain (decision documented in BUSINESS_REQUIREMENTS.md)
+
+**Rationale**: CRD controllers (AA, NT, WE) don't make policy decisions about severity - they just process their respective CRDs. RemediationOrchestrator is responsible for:
+- Creating AIAnalysis with **normalized** severity (from `sp.Status.Severity`)
+- Creating Notification with **external** severity (from `rr.Spec.Severity`)
+- Creating WorkflowExecution with **external** severity (from `rr.Spec.Severity`)
+
+---
+
+### **Week 1: CRD Schema Changes**
+| Task | Status | Date | Tests | Files |
+|------|--------|------|-------|-------|
+| RemediationRequest enum removal | ✅ Complete | Jan 15, 2026 | CRD validation | `api/remediation/v1alpha1/remediationrequest_types.go:234` |
+| SignalProcessing enum removal | ✅ Complete | Jan 15, 2026 | CRD validation | `api/signalprocessing/v1alpha1/signalprocessing_types.go` |
+| SignalProcessing Status.Severity field | ✅ Complete | Jan 15, 2026 | CRD validation | `api/signalprocessing/v1alpha1/signalprocessing_types.go:235` |
+| AIAnalysis enum update (v1.1) | ✅ Complete | Jan 15, 2026 | CRD validation | `api/aianalysis/v1alpha1/aianalysis_types.go:121,485` |
+
+**Deliverables**: ✅ All CRD changes complete, RR accepts ANY severity string
+
+---
+
+### **Week 2: SignalProcessing Rego Implementation**
+| Task | Status | Date | Tests | Files |
+|------|--------|------|-------|-------|
+| Default severity.rego policy | ✅ Complete | Jan 15, 2026 | Unit + Integration | `config/severity-policy-example.rego` |
+| SeverityClassifier implementation | ✅ Complete | Jan 15, 2026 | Unit | `pkg/signalprocessing/classifier/severity.go` |
+| Controller integration | ✅ Complete | Jan 15, 2026 | Integration | `internal/controller/signalprocessing/` |
+| Audit client update | ✅ Complete | Jan 15, 2026 | Integration | `pkg/signalprocessing/audit/client.go:84,325` |
+| Test fixtures created | ✅ Complete | Jan 16, 2026 | Documentation | `test/fixtures/severity/` |
+
+**Unit Tests**:
+- ✅ `test/unit/signalprocessing/severity_classifier_test.go` - Basic classification
+- ✅ `test/unit/signalprocessing/severity_case_sensitivity_test.go` - Case handling
+
+**Integration Tests**:
+- ✅ SignalProcessing controller emits normalized severity in status
+
+**Deliverables**: ✅ All SP changes complete, Rego policy functional
+
+---
+
+### **Week 3: Gateway Refactoring**
+| Task | Status | Date | Tests | Files |
+|------|--------|------|-------|-------|
+| Remove determineSeverity hardcoding | ✅ Complete | Jan 16, 2026 | Unit | `pkg/gateway/adapters/prometheus_adapter.go` |
+| Pass-through severity logic | ✅ Complete | Jan 16, 2026 | Unit + Integration | `pkg/gateway/adapters/*.go` |
+| Prometheus adapter update | ✅ Complete | Jan 16, 2026 | Integration | `pkg/gateway/adapters/prometheus_adapter.go` |
+| K8s event adapter update | ✅ Complete | Jan 16, 2026 | Integration | `pkg/gateway/adapters/kubernetes_event_adapter.go` |
+| BR-GATEWAY-007 deprecated | ✅ Complete | Jan 16, 2026 | Documentation | `docs/services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md` |
+
+**Unit Tests**:
+- ✅ Gateway unit tests verify pass-through behavior
+
+**Integration Tests Created**:
+- ✅ `[GW-INT-SEV-001]` - Preserve 'critical' severity (baseline)
+- ✅ `[GW-INT-SEV-002]` - Preserve 'warning' severity
+- ✅ `[GW-INT-SEV-003]` - Preserve 'info' severity
+- ✅ `[GW-INT-SEV-004]` - Default to 'unknown' if missing
+- ⚠️ `[GW-INT-SEV-005]` - Preserve 'Sev1' enterprise severity **[PENDING: Remove PIt/Skip]**
+- ⚠️ `[GW-INT-SEV-006]` - Preserve 'P0' PagerDuty severity **[PENDING: Remove PIt/Skip]**
+- ✅ `[GW-INT-SEV-007]` - Preserve K8s 'Warning' event type
+- ✅ `[GW-INT-SEV-008]` - Preserve K8s 'Error' event type
+- ✅ `[GW-INT-SEV-009]` - No hardcoded OOMKilled→critical mapping
+- ✅ `[GW-INT-SEV-010]` - Accept ANY non-empty severity string
+
+**Integration Tests Status**: 🟡 80% complete (8/10 passing, 2 pending `PIt()`/`Skip()` removal)
+
+**Blocking Issue**: Tests 005 & 006 use `PIt()` + `Skip()` which is **FORBIDDEN** per TESTING_GUIDELINES.md lines 1104-1233
+
+**Deliverables**: ✅ Gateway code complete, 🟡 Integration tests 80% complete
+
+---
+
+### **Week 4: Consumer Updates + DataStorage Triage**
+| Task | Status | Date | Tests | Files |
+|------|--------|------|-------|-------|
+| AIAnalysis creator update | ✅ Complete | Jan 15, 2026 | ✅ Unit | `pkg/remediationorchestrator/creator/aianalysis.go:172` |
+| Notification creator (no change) | ✅ Complete | Jan 15, 2026 | N/A | `pkg/remediationorchestrator/creator/notification.go` |
+| WorkflowExecution handler (no change) | ✅ Complete | Jan 15, 2026 | N/A | `pkg/remediationorchestrator/handler/workflowexecution.go` |
+| DataStorage triage | ✅ Complete | Jan 16, 2026 | Documentation | `docs/services/stateless/data-storage/BUSINESS_REQUIREMENTS.md` |
+| Audit events (dual severity) | ✅ Complete | Jan 15, 2026 | Integration | `pkg/signalprocessing/audit/client.go` |
+
+**Unit Tests**:
+- ✅ `test/unit/remediationorchestrator/aianalysis_creator_test.go:200-237`
+  - "should use normalized severity from SignalProcessing.Status.Severity (DD-SEVERITY-001)"
+  - Verifies RO uses `sp.Status.Severity` (normalized "critical") not `rr.Spec.Severity` (external "Sev1")
+
+**Integration Tests**:
+- ⚠️ **MISSING**: No RO integration test verifies normalized severity propagation in K8s environment
+
+**Rationale for Missing Integration Test**: RO integration tests focus on routing, approval, timeouts, notifications - but not severity propagation specifically. This is a **gap** that should be filled.
+
+**Deliverables**: ✅ RO code complete, ✅ Unit tests complete, ⚠️ Integration tests missing
+
+---
+
+### **Week 5: Testing + Buffer**
+| Task | Status | Date | Tests |
+|------|--------|------|-------|
+| Gateway integration tests | 🔄 In Progress | Jan 16, 2026 | 8/10 complete (2 pending) |
+| RO integration tests | ⚠️ **PENDING** | - | Not started |
+| E2E pipeline tests | ⚠️ **PENDING** | - | Not started |
+| Test fixtures created | ✅ Complete | Jan 16, 2026 | `test/fixtures/severity/` |
+
+**Test Fixtures**:
+- ✅ `enterprise-sev-policy.rego` - Enterprise "Sev1-4" scheme
+- ✅ `pagerduty-p-policy.rego` - PagerDuty "P0-P4" scheme
+- ✅ `prometheus-alert-sev1.json` - Production outage with `severity="Sev1"`
+- ✅ `prometheus-alert-p0.json` - Database outage with `severity="P0"`
+- ✅ `README.md` - Complete usage guide with code examples
+
+**E2E Tests** (Pending - Will use test fixtures):
+- ⚠️ Full "Sev1" → "critical" pipeline test
+- ⚠️ Full "P0" → "critical" pipeline test
+- ⚠️ Custom severity hot-reload verification
+
+---
+
+### **Overall Progress: 85% Complete**
+
+| Week | Component | Code | Unit Tests | Integration Tests | E2E Tests | Status |
+|------|-----------|------|------------|-------------------|-----------|--------|
+| **Week 1** | CRD Schema | ✅ 100% | ✅ 100% | N/A | N/A | ✅ 100% |
+| **Week 2** | SignalProcessing | ✅ 100% | ✅ 100% | ✅ 100% | N/A | ✅ 100% |
+| **Week 3** | Gateway | ✅ 100% | ✅ 100% | 🟡 80% (2 pending) | N/A | 🟡 95% |
+| **Week 4** | RO + DataStorage | ✅ 100% | ✅ 100% | ⚠️ 0% (missing) | N/A | 🟡 70% |
+| **Week 5** | E2E Pipeline | N/A | N/A | N/A | ⚠️ 0% (pending) | ⚠️ 0% |
+
+**Blocking Items**:
+1. ⚠️ **P1**: Enable Gateway tests 005 & 006 (remove `PIt()`/`Skip()` - TESTING_GUIDELINES.md violation)
+2. ⚠️ **P2**: Create RO integration test for normalized severity propagation
+3. ⚠️ **P3**: Create E2E pipeline test using test fixtures (full Gateway → RR → SP → RO → AA flow)
+
+**Confidence Assessment**:
+- **Code Implementation**: 100% complete (all services updated or triaged)
+- **Unit Test Coverage**: 100% complete (all critical paths tested)
+- **Integration Test Coverage**: 75% complete (Gateway 80%, SP 100%, RO 0%)
+- **E2E Test Coverage**: 0% complete (pending Gateway Week 3 completion)
+
+---
+
+**Document Version**: 1.1
+**Last Updated**: 2026-01-16 (Added Implementation Status section)
+**Next Review**: After completing Gateway tests 005 & 006 and RO integration test

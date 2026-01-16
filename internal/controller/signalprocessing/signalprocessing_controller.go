@@ -501,6 +501,20 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
 	logger.V(1).Info("Processing Classifying phase")
 
+	// SP-BUG-PHASE-TRANSITION-002: Idempotency guard to prevent duplicate classification.decision events
+	// Use non-cached APIReader to get FRESH phase data (cached client may be stale)
+	currentPhase, err := r.StatusManager.GetCurrentPhase(ctx, sp)
+	if err != nil {
+		logger.Error(err, "Failed to fetch current phase for idempotency check, proceeding with caution")
+		// Fail-safe: continue processing, but log the error
+	} else if currentPhase == signalprocessingv1alpha1.PhaseCategorizing ||
+		currentPhase == signalprocessingv1alpha1.PhaseCompleted ||
+		currentPhase == signalprocessingv1alpha1.PhaseFailed {
+		logger.V(1).Info("Skipping Classifying phase - already transitioned (non-cached check)",
+			"current_phase", currentPhase)
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	// DD-005: Track phase processing attempt and duration
 	r.Metrics.IncrementProcessingTotal("classifying", "attempt")
 	classifyingStart := time.Now()
@@ -630,6 +644,19 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 // BR-SP-080, BR-SP-081: Business Classification
 func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (ctrl.Result, error) {
 	logger.V(1).Info("Processing Categorizing phase")
+
+	// SP-BUG-PHASE-TRANSITION-003: Idempotency guard to prevent duplicate audit events
+	// Use non-cached APIReader to get FRESH phase data (cached client may be stale)
+	currentPhase, err := r.StatusManager.GetCurrentPhase(ctx, sp)
+	if err != nil {
+		logger.Error(err, "Failed to fetch current phase for idempotency check, proceeding with caution")
+		// Fail-safe: continue processing, but log the error
+	} else if currentPhase == signalprocessingv1alpha1.PhaseCompleted ||
+		currentPhase == signalprocessingv1alpha1.PhaseFailed {
+		logger.V(1).Info("Skipping Categorizing phase - already transitioned (non-cached check)",
+			"current_phase", currentPhase)
+		return ctrl.Result{Requeue: true}, nil
+	}
 
 	// DD-005: Track phase processing attempt and duration
 	r.Metrics.IncrementProcessingTotal("categorizing", "attempt")

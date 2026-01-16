@@ -22,14 +22,15 @@ limitations under the License.
 //
 // # Design Decisions
 //
-// DD-SEVERITY-001: Severity Determination Refactoring - Strategy B (Policy-Defined Fallback)
-// See: docs/handoff/DD_SEVERITY_001_STRATEGY_B_DECISION_JAN13_2026.md
+// DD-SEVERITY-001 v1.1: Severity Determination Refactoring - Strategy B (Policy-Defined Fallback)
+// See: docs/architecture/decisions/DD-SEVERITY-001-severity-determination-refactoring.md
 //
 // # Strategy B Implementation
 //
 // Operators MUST define fallback behavior in Rego policy.
 // System does NOT impose "unknown" fallback.
-// Policy must return: "critical", "warning", or "info"
+// Policy must return: "critical", "high", "medium", "low", or "unknown"
+// DD-SEVERITY-001 v1.1: Values aligned with HAPI/workflow catalog
 //
 // Example Conservative Policy:
 //
@@ -70,7 +71,8 @@ type SeverityClassifier struct {
 
 // SeverityResult contains the determined severity and source attribution.
 type SeverityResult struct {
-	// Severity is the normalized value: "critical", "warning", or "info"
+	// Severity is the normalized value: "critical", "high", "medium", "low", or "unknown"
+	// DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog
 	Severity string
 	// Source indicates how severity was determined: "rego-policy"
 	Source string
@@ -167,7 +169,7 @@ func (c *SeverityClassifier) ClassifySeverity(ctx context.Context, sp *signalpro
 
 	// Validate severity is valid enum
 	if !isValidSeverity(severityValue) {
-		return nil, fmt.Errorf("policy returned invalid severity %q - must be critical/warning/info", severityValue)
+		return nil, fmt.Errorf("policy returned invalid severity %q - must be critical/high/medium/low/unknown (DD-SEVERITY-001 v1.1)", severityValue)
 	}
 
 	return &SeverityResult{
@@ -178,9 +180,10 @@ func (c *SeverityClassifier) ClassifySeverity(ctx context.Context, sp *signalpro
 }
 
 // isValidSeverity checks if the severity is a valid enum value.
+// DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical/high/medium/low/unknown)
 func isValidSeverity(severity string) bool {
 	switch severity {
-	case "critical", "warning", "info":
+	case "critical", "high", "medium", "low", "unknown":
 		return true
 	default:
 		return false

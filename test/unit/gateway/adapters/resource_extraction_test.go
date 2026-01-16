@@ -483,13 +483,14 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 			"BR-GATEWAY-181: Event Type 'Error' passed through (no default mapping)")
 	})
 
-		It("maps BackOff to warning for non-critical issues", func() {
-			// BUSINESS OUTCOME: BackOff indicates retryable failures
-			// Warning severity - monitor but not immediate action
+		It("passes through 'Warning' event type as-is (BackOff reason ignored)", func() {
+			// BUSINESS OUTCOME: Gateway passes through raw K8s event type
+			// SignalProcessing Rego policies determine if BackOff is transient vs persistent
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := map[string]interface{}{
-				"reason":  "BackOff", // Non-critical reason
+				"reason":  "BackOff", // Reason NOT used for severity
 				"message": "Back-off restarting failed container",
-				"type":    "Warning",
+				"type":    "Warning", // Type passed through as-is
 				"involvedObject": map[string]interface{}{
 					"kind":      "Pod",
 					"name":      "flaky-app",
@@ -502,17 +503,18 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("warning"),
-				"BackOff mapped to warning - retryable failures don't require immediate action")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (BackOff reason not mapped)")
 		})
 
-		It("maps generic Warning events to warning", func() {
-			// BUSINESS OUTCOME: Generic warnings are informational
-			// Warning severity - log and monitor
+		It("passes through 'Warning' event type as-is (any reason)", func() {
+			// BUSINESS OUTCOME: Gateway extracts raw event type, no reason-based mapping
+			// SignalProcessing Rego policies handle ALL severity determination
+			// Authority: BR-GATEWAY-181, DD-SEVERITY-001 v1.1
 			payload := map[string]interface{}{
-				"reason":  "ImagePullBackOff",
+				"reason":  "ImagePullBackOff", // Reason ignored
 				"message": "Back-off pulling image",
-				"type":    "Warning",
+				"type":    "Warning", // Type passed through
 				"involvedObject": map[string]interface{}{
 					"kind":      "Pod",
 					"name":      "test-pod",
@@ -525,8 +527,8 @@ var _ = Describe("Kubernetes Event Adapter - Type Pass-Through (BR-GATEWAY-181)"
 			signal, err := adapter.Parse(ctx, payloadBytes)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Severity).To(Equal("warning"),
-				"Non-critical warnings mapped to warning severity for monitoring")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event Type 'Warning' passed through (no reason-based mapping)")
 		})
 	})
 })

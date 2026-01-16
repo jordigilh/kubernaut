@@ -135,7 +135,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
 					Name:         "NodeEnrichTest",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -192,7 +192,7 @@ var _ = Describe("BR-SP-001: Node Enrichment Enables Infrastructure Analysis", f
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6",
 					Name:         "DegradedModeTest",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -330,7 +330,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 						Name:         "MemoryPressure",
-						Severity:     "warning",
+						Severity: "high",
 						Type:         "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
@@ -447,7 +447,7 @@ var _ = Describe("BR-SP-070: Priority Assignment Delivers Correct Business Outco
 					Signal: signalprocessingv1alpha1.SignalData{
 						Fingerprint:  "d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4",
 						Name:         "DevInfo",
-						Severity:     "info",
+						Severity: "low",
 						Type:         "prometheus",
 						TargetType:   "kubernetes",
 						ReceivedTime: metav1.Now(),
@@ -521,7 +521,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5",
 					Name:         "TestAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -580,7 +580,7 @@ var _ = Describe("BR-SP-051: Environment Classification Enables Correct Routing"
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6",
 					Name:         "UnclassifiedAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -908,7 +908,7 @@ var _ = Describe("BR-SP-101: Detected Labels Enable Safe Remediation Decisions",
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9",
 					Name:         "HPAAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1342,7 +1342,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
 					Name:         "StatefulSetPodAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1546,7 +1546,7 @@ var _ = Describe("BR-SP-103: Workload Type Enrichment Enables Workload-Specific 
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
 					Name:         "ServicePodAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1665,7 +1665,7 @@ var _ = Describe("BR-SP-103-D: Deployment Signal Enrichment", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2",
 					Name:         "DeploymentRolloutAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -1923,7 +1923,7 @@ var _ = Describe("BR-SP-103-B: DaemonSet Signal Enrichment (Fixed)", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "d1a2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "DaemonSetNodeAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2043,7 +2043,7 @@ var _ = Describe("BR-SP-103-C: ReplicaSet Signal Enrichment", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2",
 					Name:         "ReplicaSetAlert",
-					Severity:     "warning",
+					Severity: "high",
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2388,7 +2388,7 @@ var _ = Describe("BR-SP-070-B: P2 Priority Classification", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
 					Name:         "StagingWarningAlert",
-					Severity:     "warning", // Warning severity
+					Severity: "high", // Warning severity
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),
@@ -2480,7 +2480,7 @@ var _ = Describe("BR-SP-070-C: P3 Priority Classification", func() {
 				Signal: signalprocessingv1alpha1.SignalData{
 					Fingerprint:  "c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2",
 					Name:         "ExperimentalInfoAlert",
-					Severity:     "info", // Info severity
+					Severity: "low", // Info severity
 					Type:         "prometheus",
 					TargetType:   "kubernetes",
 					ReceivedTime: metav1.Now(),

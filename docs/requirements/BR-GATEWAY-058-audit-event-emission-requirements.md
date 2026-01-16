@@ -1,9 +1,9 @@
 # BR-GATEWAY-058: Audit Event Emission Requirements for Gateway Service
 
-**Status**: ✅ APPROVED (Enhanced in BR-GATEWAY-058-A)  
-**Version**: 1.1.0 (Enhanced Correlation ID Pattern)  
-**Date**: 2026-01-16  
-**Owner**: Gateway Service Team  
+**Status**: ✅ APPROVED (Enhanced in BR-GATEWAY-058-A)
+**Version**: 1.1.0 (Enhanced Correlation ID Pattern)
+**Date**: 2026-01-16
+**Owner**: Gateway Service Team
 **Stakeholders**: Security Team, Compliance Team, SRE Team
 
 ---
@@ -163,17 +163,17 @@ alertname:namespace:kind:name
 **Query Examples**:
 ```sql
 -- Find all failures for specific alert
-SELECT * FROM audit_events 
+SELECT * FROM audit_events
 WHERE correlation_id LIKE 'HighMemoryUsage:%'
   AND event_type = 'gateway.crd.failed';
 
 -- Find all failures in namespace
-SELECT * FROM audit_events 
+SELECT * FROM audit_events
 WHERE correlation_id LIKE '%:prod-payment-service:%'
   AND event_type = 'gateway.crd.failed';
 
 -- Find failures for specific resource
-SELECT * FROM audit_events 
+SELECT * FROM audit_events
 WHERE correlation_id LIKE '%:Pod:payment-api-789'
   AND event_type = 'gateway.crd.failed';
 ```
@@ -375,9 +375,9 @@ if storeErr := s.auditStore.StoreAudit(ctx, event); storeErr != nil {
 
 ## Approval
 
-**Approved By**: Gateway Service Owner, Security Team, Compliance Team  
-**Date**: 2026-01-16  
-**Priority**: P0 - Foundational (SOC2 Compliance)  
+**Approved By**: Gateway Service Owner, Security Team, Compliance Team
+**Date**: 2026-01-16
+**Priority**: P0 - Foundational (SOC2 Compliance)
 **Compliance**: SOC2 CC6.8 (Non-Repudiation), CC7.2 (Monitoring Activities)
 
 ---
@@ -435,9 +435,9 @@ HighMemoryUsage:prod-payment-service:Pod:payment-api-789
 
 ## Support & Maintenance
 
-**Owner**: Gateway Service Team  
-**Escalation**: Platform Architecture Team  
-**Documentation**: This BR document (authoritative reference)  
+**Owner**: Gateway Service Team
+**Escalation**: Platform Architecture Team
+**Documentation**: This BR document (authoritative reference)
 **Code Location**: `pkg/gateway/server.go`, `pkg/gateway/audit_helpers.go`
 
 ---

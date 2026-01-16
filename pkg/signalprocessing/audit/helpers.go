@@ -45,26 +45,34 @@ func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAu
 	switch value {
 	case "critical":
 		return api.SignalProcessingAuditPayloadSeverityCritical
-	case "warning":
-		return api.SignalProcessingAuditPayloadSeverityWarning
-	case "info":
-		return api.SignalProcessingAuditPayloadSeverityInfo
+	case "high":
+		return api.SignalProcessingAuditPayloadSeverityHigh
+	case "medium":
+		return api.SignalProcessingAuditPayloadSeverityMedium
+	case "low":
+		return api.SignalProcessingAuditPayloadSeverityLow
+	case "unknown":
+		return api.SignalProcessingAuditPayloadSeverityUnknown
 	default:
-		return ""
+		return api.SignalProcessingAuditPayloadSeverityUnknown // DD-SEVERITY-001 v1.1 fallback
 	}
 }
 
-// DD-SEVERITY-001: Converter for normalized severity from Rego policy
+// DD-SEVERITY-001 v1.1: Converter for normalized severity from Rego policy
 func toSignalProcessingAuditPayloadNormalizedSeverity(value string) api.SignalProcessingAuditPayloadNormalizedSeverity {
 	switch value {
 	case "critical":
 		return api.SignalProcessingAuditPayloadNormalizedSeverityCritical
-	case "warning":
-		return api.SignalProcessingAuditPayloadNormalizedSeverityWarning
-	case "info":
-		return api.SignalProcessingAuditPayloadNormalizedSeverityInfo
+	case "high":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityHigh
+	case "medium":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityMedium
+	case "low":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityLow
+	case "unknown":
+		return api.SignalProcessingAuditPayloadNormalizedSeverityUnknown
 	default:
-		return ""
+		return api.SignalProcessingAuditPayloadNormalizedSeverityUnknown // DD-SEVERITY-001 v1.1 fallback
 	}
 }
 

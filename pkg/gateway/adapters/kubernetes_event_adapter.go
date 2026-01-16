@@ -218,8 +218,10 @@ func (a *KubernetesEventAdapter) Validate(signal *types.NormalizedSignal) error 
 	if signal.Fingerprint == "" {
 		return fmt.Errorf("fingerprint is required")
 	}
-	if signal.Severity != "critical" && signal.Severity != "warning" && signal.Severity != "info" {
-		return fmt.Errorf("invalid severity: %s (must be critical/warning/info)", signal.Severity)
+	// BR-GATEWAY-181: Gateway passes through raw severity. SignalProcessing will validate.
+	// Only validate if severity is completely empty, otherwise accept any string.
+	if signal.Severity == "" {
+		return fmt.Errorf("severity is required (cannot be empty)")
 	}
 	if signal.Resource.Kind == "" {
 		return fmt.Errorf("resource kind is required")

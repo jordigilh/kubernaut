@@ -125,29 +125,29 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			GinkgoWriter.Printf("📝 Creating AIAnalysis %s to trigger terminal failure\n", analysis.Name)
 			Expect(k8sClient.Create(testCtx, analysis)).To(Succeed())
 
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// When: Controller processes and reaches terminal state
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		GinkgoWriter.Printf("⏳ Waiting for AIAnalysis to reach Failed state...\n")
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			// When: Controller processes and reaches terminal state
+			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+			GinkgoWriter.Printf("⏳ Waiting for AIAnalysis to reach Failed state...\n")
 
-		// Per BR-HAPI-197: needs_human_review=true with human_review_reason="no_matching_workflows"
-		// should transition to Failed phase with WorkflowResolutionFailed reason
-		// Authority: RESPONSE_AIANALYSIS_NEEDS_HUMAN_REVIEW.md
-		Eventually(func() bool {
-			var updated aianalysisv1.AIAnalysis
-			if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &updated); err != nil {
-				return false
-			}
+			// Per BR-HAPI-197: needs_human_review=true with human_review_reason="no_matching_workflows"
+			// should transition to Failed phase with WorkflowResolutionFailed reason
+			// Authority: RESPONSE_AIANALYSIS_NEEDS_HUMAN_REVIEW.md
+			Eventually(func() bool {
+				var updated aianalysisv1.AIAnalysis
+				if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &updated); err != nil {
+					return false
+				}
 
-			GinkgoWriter.Printf("  Current phase: %s, Reason: %s, SubReason: %s\n",
-				updated.Status.Phase, updated.Status.Reason, updated.Status.SubReason)
+				GinkgoWriter.Printf("  Current phase: %s, Reason: %s, SubReason: %s\n",
+					updated.Status.Phase, updated.Status.Reason, updated.Status.SubReason)
 
-			// Terminal state: Failed + WorkflowResolutionFailed + NoMatchingWorkflows
-			return updated.Status.Phase == aianalysisv1.PhaseFailed &&
-				updated.Status.Reason == "WorkflowResolutionFailed" &&
-				updated.Status.SubReason == "NoMatchingWorkflows"
-		}, 90*time.Second, 2*time.Second).Should(BeTrue(),
-			"AIAnalysis should reach Failed phase with WorkflowResolutionFailed/NoMatchingWorkflows when no workflow found")
+				// Terminal state: Failed + WorkflowResolutionFailed + NoMatchingWorkflows
+				return updated.Status.Phase == aianalysisv1.PhaseFailed &&
+					updated.Status.Reason == "WorkflowResolutionFailed" &&
+					updated.Status.SubReason == "NoMatchingWorkflows"
+			}, 90*time.Second, 2*time.Second).Should(BeTrue(),
+				"AIAnalysis should reach Failed phase with WorkflowResolutionFailed/NoMatchingWorkflows when no workflow found")
 
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// Then: Audit trail includes appropriate audit events
@@ -178,76 +178,76 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 					return false
 				}
 
-			GinkgoWriter.Printf("  ✅ Found %d holmesgpt.response.complete event(s)\n", len(resp.Data))
+				GinkgoWriter.Printf("  ✅ Found %d holmesgpt.response.complete event(s)\n", len(resp.Data))
 
-			// Verify event outcome (should be success - HTTP 200 from HAPI perspective)
-			// Per holmesgpt-api/src/audit/events.py:413 - HAPI always returns outcome="success"
-			// because the API request succeeded (HTTP 200), even when needs_human_review=true.
-			// The "failure" is captured in the AIAnalysis audit event (analysis.failed), not the HAPI event.
-			for _, event := range resp.Data {
-				GinkgoWriter.Printf("    Event ID: %s, Outcome: %s\n",
-					event.EventID, event.EventOutcome)
+				// Verify event outcome (should be success - HTTP 200 from HAPI perspective)
+				// Per holmesgpt-api/src/audit/events.py:413 - HAPI always returns outcome="success"
+				// because the API request succeeded (HTTP 200), even when needs_human_review=true.
+				// The "failure" is captured in the AIAnalysis audit event (analysis.failed), not the HAPI event.
+				for _, event := range resp.Data {
+					GinkgoWriter.Printf("    Event ID: %s, Outcome: %s\n",
+						event.EventID, event.EventOutcome)
 
-				// Verify event outcome uses OpenAPI constant
-				Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),
-					"holmesgpt.response.complete should have outcome=success (HTTP 200 from provider perspective)")
-			}
+					// Verify event outcome uses OpenAPI constant
+					Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),
+						"holmesgpt.response.complete should have outcome=success (HTTP 200 from provider perspective)")
+				}
 
 				return true
 			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
 				"Controller should emit holmesgpt.response.complete audit event when HAPI returns needs_human_review=true")
 
-		// Verify analysis.failed event exists (AIAnalysis failed due to workflow resolution failure)
-		Eventually(func() bool {
-			eventCategory := ogenclient.NewOptString("analysis")
-			eventType := ogenclient.NewOptString("aianalysis.analysis.failed")
+			// Verify analysis.failed event exists (AIAnalysis failed due to workflow resolution failure)
+			Eventually(func() bool {
+				eventCategory := ogenclient.NewOptString("analysis")
+				eventType := ogenclient.NewOptString("aianalysis.analysis.failed")
 
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventCategory: eventCategory,
-				EventType:     eventType,
-			})
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventCategory: eventCategory,
+					EventType:     eventType,
+				})
 
-			if err != nil {
-				GinkgoWriter.Printf("  ⚠️  Audit query failed: %v\n", err)
-				return false
-			}
-
-			if resp.Data == nil || len(resp.Data) == 0 {
-				GinkgoWriter.Printf("  ⏳ No analysis.failed events yet\n")
-				return false
-			}
-
-			GinkgoWriter.Printf("  ✅ Found %d analysis.failed event(s)\n", len(resp.Data))
-
-			// Verify event data contains expected fields
-			for _, event := range resp.Data {
-				// Verify event uses OpenAPI discriminated union for event_data
-				if !event.EventData.IsAIAnalysisAuditPayload() {
-					GinkgoWriter.Printf("    ⚠️  Event data is not AIAnalysisAuditPayload\n")
-					continue
+				if err != nil {
+					GinkgoWriter.Printf("  ⚠️  Audit query failed: %v\n", err)
+					return false
 				}
 
-				payload, ok := event.EventData.GetAIAnalysisAuditPayload()
-				Expect(ok).To(BeTrue(), "Should be able to extract AIAnalysisAuditPayload")
+				if resp.Data == nil || len(resp.Data) == 0 {
+					GinkgoWriter.Printf("  ⏳ No analysis.failed events yet\n")
+					return false
+				}
 
-				GinkgoWriter.Printf("    Analysis: %s, Phase: %s, Reason: %s\n",
-					payload.AnalysisName, payload.Phase, payload.Reason.Value)
+				GinkgoWriter.Printf("  ✅ Found %d analysis.failed event(s)\n", len(resp.Data))
 
-				// Verify phase is Failed with WorkflowResolutionFailed reason
-				Expect(string(payload.Phase)).To(Equal("Failed"),
-					"Analysis should be in Failed phase")
-				Expect(payload.Reason.Value).To(Equal("WorkflowResolutionFailed"),
-					"Failure reason should be WorkflowResolutionFailed")
-			}
+				// Verify event data contains expected fields
+				for _, event := range resp.Data {
+					// Verify event uses OpenAPI discriminated union for event_data
+					if !event.EventData.IsAIAnalysisAuditPayload() {
+						GinkgoWriter.Printf("    ⚠️  Event data is not AIAnalysisAuditPayload\n")
+						continue
+					}
 
-			return true
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"Controller should emit analysis.failed audit event after workflow resolution fails")
+					payload, ok := event.EventData.GetAIAnalysisAuditPayload()
+					Expect(ok).To(BeTrue(), "Should be able to extract AIAnalysisAuditPayload")
 
-		GinkgoWriter.Printf("✅ Terminal failure auditing test complete\n")
+					GinkgoWriter.Printf("    Analysis: %s, Phase: %s, Reason: %s\n",
+						payload.AnalysisName, payload.Phase, payload.Reason.Value)
+
+					// Verify phase is Failed with WorkflowResolutionFailed reason
+					Expect(string(payload.Phase)).To(Equal("Failed"),
+						"Analysis should be in Failed phase")
+					Expect(payload.Reason.Value).To(Equal("WorkflowResolutionFailed"),
+						"Failure reason should be WorkflowResolutionFailed")
+				}
+
+				return true
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"Controller should emit analysis.failed audit event after workflow resolution fails")
+
+			GinkgoWriter.Printf("✅ Terminal failure auditing test complete\n")
+		})
 	})
-})
 
 	// ========================================
 	// NOTE: Generic error auditing moved to unit tests
@@ -284,9 +284,9 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 							// Use Mock LLM's problem_resolved scenario
 							// This triggers HAPI to return investigation_outcome="resolved"
 							// with confidence >= 0.7 and selected_workflow=null
-						SignalType:       "MOCK_PROBLEM_RESOLVED",
-						Severity:         "info", // DD-SEVERITY-001: Use normalized severity (critical, warning, info, unknown)
-						Environment:      "production",
+							SignalType:       "MOCK_PROBLEM_RESOLVED",
+							Severity:         "low", // DD-SEVERITY-001 v1.1: Use normalized severity (critical, high, medium, low, unknown)
+							Environment:      "production",
 							BusinessPriority: "P2",
 							Fingerprint:      "test-fingerprint-" + testID,
 							TargetResource: aianalysisv1.TargetResource{

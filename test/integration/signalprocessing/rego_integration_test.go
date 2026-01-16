@@ -79,7 +79,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-env-load-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-env-01"],
 				Name:        "RegoEnvLoadTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -162,7 +162,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-eval-env-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-eve-01"],
 				Name:        "RegoEvalEnvTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -199,7 +199,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-eval-pri-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-evp-01"],
 				Name:        "RegoEvalPriTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -249,7 +249,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-fallback-missing-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-fms-01"],
 				Name:        "RegoFallbackMissingTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -302,7 +302,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 					sp := createSignalProcessingCR(ns, "rego-concurrent-"+string(rune('a'+idx)), signalprocessingv1alpha1.SignalData{
 						Fingerprint: GenerateConcurrentFingerprint("rego-concurrent", idx),
 						Name:        "RegoConcurrentTest",
-						Severity:    "warning",
+						Severity: "high",
 						Type:        "prometheus",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -368,7 +368,7 @@ labels["computed"] := [result] if {
 			sp := createSignalProcessingCR(ns, "rego-timeout-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-tim-01"],
 				Name:        "RegoTimeoutTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -430,7 +430,7 @@ labels["shortvalue"] := ["ok"] if { true }
 			sp := createSignalProcessingCR(ns, "rego-val-value-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-vlv-01"],
 				Name:        "RegoValValueTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -488,7 +488,7 @@ labels["shortvalue"] := ["ok"] if { true }
 			sp := createSignalProcessingCR(ns, "rego-val-maxkeys-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-vmk-01"],
 				Name:        "RegoValMaxKeysTest",
-				Severity:    "warning",
+				Severity: "high",
 				Type:        "prometheus",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
