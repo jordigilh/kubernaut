@@ -1406,8 +1406,11 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				eventType := "gateway.crd.failed"
 				var failedEvent *ogenclient.AuditEvent
 
+				// BR-GATEWAY-058: For failed CRD creation, correlation ID is the fingerprint (no RR name yet)
+				fingerprintCorrelationID := testSignal.Fingerprint
+
 				Eventually(func() bool {
-					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &testCorrelationID, &eventType, nil)
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &fingerprintCorrelationID, &eventType, nil)
 					if err != nil || len(events) == 0 {
 						return false
 					}
@@ -1419,7 +1422,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("5. Validate audit event includes circuit breaker error details")
 				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
-				Expect(failedEvent.CorrelationID).To(Equal(testCorrelationID))
+				Expect(failedEvent.CorrelationID).To(Equal(fingerprintCorrelationID))
 
 				payload, ok := extractGatewayPayload(failedEvent)
 				Expect(ok).To(BeTrue(), "Payload should be GatewayAuditPayload")
