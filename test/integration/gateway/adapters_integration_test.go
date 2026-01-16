@@ -285,4 +285,279 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			GinkgoWriter.Printf("✅ Long annotation handled gracefully (no parsing error)\n")
 		})
 	})
+
+	Context("BR-GATEWAY-002: Kubernetes Event Parsing", func() {
+		It("[GW-INT-ADP-008] should parse Kubernetes Event format correctly", func() {
+			By("1. Create K8s Event payload")
+			k8sEvent := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server-123")
+
+			By("2. Parse event through K8s Event adapter")
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
+
+			By("3. Verify parsing succeeded")
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-002: K8s Event adapter must parse valid K8s Events")
+
+			By("4. Verify signal structure is populated")
+			Expect(signal).ToNot(BeNil(), "Signal must not be nil")
+			Expect(signal.Namespace).To(Equal(testNamespace),
+				"BR-GATEWAY-002: Namespace must be extracted from involvedObject")
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-002: Resource kind must be extracted from involvedObject")
+			Expect(signal.Resource.Name).To(Equal("api-server-123"),
+				"BR-GATEWAY-002: Resource name must be extracted from involvedObject")
+			Expect(signal.Severity).To(Equal("Warning"),
+				"BR-GATEWAY-181: Event type must be passed through as severity")
+			Expect(signal.Fingerprint).ToNot(BeEmpty(),
+				"BR-GATEWAY-004: Fingerprint must be generated")
+
+			GinkgoWriter.Printf("✅ K8s Event parsed: kind=%s, name=%s, namespace=%s, severity=%s\n",
+				signal.Resource.Kind, signal.Resource.Name, signal.Namespace, signal.Severity)
+		})
+
+		It("[GW-INT-ADP-009] should extract reason from event correctly", func() {
+			By("1. Create events with different reasons")
+			testCases := []struct {
+				reason         string
+				expectedReason string
+			}{
+				{"BackOff", "BackOff"},
+				{"FailedScheduling", "FailedScheduling"},
+				{"OOMKilled", "OOMKilled"},
+				{"Unhealthy", "Unhealthy"},
+			}
+
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+
+			for _, tc := range testCases {
+				By(fmt.Sprintf("2. Parse event with reason=%s", tc.reason))
+				event := createK8sEvent("Warning", tc.reason, testNamespace, "Pod", "test-pod")
+				signal, err := k8sAdapter.Parse(ctx, event)
+
+				By("3. Verify reason extracted correctly")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(signal.AlertName).To(Equal(tc.expectedReason),
+					"BR-GATEWAY-002: AlertName must be populated from event reason")
+
+				GinkgoWriter.Printf("✅ Reason extraction validated: %s → %s\n",
+					tc.reason, signal.AlertName)
+			}
+		})
+
+		It("[GW-INT-ADP-010] should extract involvedObject metadata correctly", func() {
+			By("1. Create Gateway server")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Create K8s Event with explicit involvedObject")
+			k8sEvent := createK8sEvent("Warning", "FailedMount", testNamespace, "Pod", "database-pod-456")
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Verify involvedObject fields extracted")
+			Expect(signal.Resource.Kind).To(Equal("Pod"),
+				"BR-GATEWAY-002: Resource kind must match involvedObject.kind")
+			Expect(signal.Resource.Name).To(Equal("database-pod-456"),
+				"BR-GATEWAY-002: Resource name must match involvedObject.name")
+			Expect(signal.Namespace).To(Equal(testNamespace),
+				"BR-GATEWAY-002: Namespace must match involvedObject.namespace")
+
+			By("4. Process signal and verify CRD targeting")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("5. Verify RemediationRequest targets correct resource")
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: testNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-002: CRD must be created for involvedObject resource")
+
+			GinkgoWriter.Printf("✅ InvolvedObject extraction validated: kind=%s, name=%s, namespace=%s\n",
+				signal.Resource.Kind, signal.Resource.Name, signal.Namespace)
+		})
+
+		It("[GW-INT-ADP-011] should pass through event type as severity (BR-GATEWAY-181)", func() {
+			By("1. Create events with different types")
+			testCases := []struct {
+				eventType        string
+				expectedSeverity string
+			}{
+				{"Warning", "Warning"},
+				{"Error", "Error"},
+				// Note: "Normal" events are filtered out by the adapter (business logic)
+				// BR-GATEWAY-002: Normal events are informational only, no remediation needed
+			}
+
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+
+			for _, tc := range testCases {
+				By(fmt.Sprintf("2. Parse event with type=%s", tc.eventType))
+				event := createK8sEvent(tc.eventType, "TestReason", testNamespace, "Pod", "test-pod")
+				signal, err := k8sAdapter.Parse(ctx, event)
+
+				By("3. Verify event type passed through as severity")
+				Expect(err).ToNot(HaveOccurred())
+				Expect(signal.Severity).To(Equal(tc.expectedSeverity),
+					"BR-GATEWAY-181: Event type must be passed through as-is (no hardcoded mapping)")
+
+				GinkgoWriter.Printf("✅ Event type pass-through validated: %s → %s\n",
+					tc.eventType, signal.Severity)
+			}
+		})
+
+		It("[GW-INT-ADP-012] should generate stable fingerprints for K8s Events (BR-GATEWAY-004)", func() {
+			By("1. Create identical events at different times")
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+			eventPayload1 := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server")
+			eventPayload2 := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server")
+
+			By("2. Parse both events")
+			signal1, err1 := k8sAdapter.Parse(ctx, eventPayload1)
+			signal2, err2 := k8sAdapter.Parse(ctx, eventPayload2)
+			Expect(err1).ToNot(HaveOccurred())
+			Expect(err2).ToNot(HaveOccurred())
+
+			By("3. Verify fingerprints are identical (stable)")
+			Expect(signal1.Fingerprint).To(Equal(signal2.Fingerprint),
+				"BR-GATEWAY-004: Identical events must generate identical fingerprints")
+
+			By("4. Create event with different pod name")
+			eventPayload3 := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "different-pod")
+			signal3, err3 := k8sAdapter.Parse(ctx, eventPayload3)
+			Expect(err3).ToNot(HaveOccurred())
+
+			By("5. Verify different event has different fingerprint")
+			Expect(signal3.Fingerprint).ToNot(Equal(signal1.Fingerprint),
+				"BR-GATEWAY-004: Different events must generate different fingerprints")
+
+			GinkgoWriter.Printf("✅ K8s Event fingerprint stability validated\n")
+		})
+
+		It("[GW-INT-ADP-013] should handle malformed K8s Event payloads gracefully (BR-GATEWAY-005)", func() {
+			By("1. Create malformed event (missing involvedObject)")
+			malformedEvent := []byte(`{
+				"type": "Warning",
+				"reason": "TestReason",
+				"message": "Test message"
+			}`)
+
+			By("2. Parse malformed event through adapter")
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+			signal, err := k8sAdapter.Parse(ctx, malformedEvent)
+
+			By("3. Verify adapter returns error for missing required fields")
+			Expect(err).To(HaveOccurred(),
+				"BR-GATEWAY-005: Adapter must reject events missing involvedObject")
+			Expect(signal).To(BeNil(),
+				"BR-GATEWAY-005: Signal must be nil when parsing fails")
+
+			GinkgoWriter.Printf("✅ Malformed K8s Event rejected: %v\n", err)
+		})
+
+		It("[GW-INT-ADP-014] should handle empty required fields gracefully (BR-GATEWAY-005)", func() {
+			By("1. Test events with empty required fields")
+			testCases := []struct {
+				description string
+				eventJSON   string
+				shouldFail  bool
+			}{
+				{
+					description: "Empty reason",
+					eventJSON: fmt.Sprintf(`{
+						"type": "Warning",
+						"reason": "",
+						"involvedObject": {"kind": "Pod", "name": "test-pod", "namespace": "%s"},
+						"message": "Test"
+					}`, testNamespace),
+					shouldFail: true, // Reason is required for AlertName
+				},
+				{
+					description: "Empty involvedObject kind",
+					eventJSON: fmt.Sprintf(`{
+						"type": "Warning",
+						"reason": "TestReason",
+						"involvedObject": {"kind": "", "name": "test-pod", "namespace": "%s"},
+						"message": "Test"
+					}`, testNamespace),
+					shouldFail: true, // Kind is required for resource targeting
+				},
+				{
+					description: "Empty involvedObject name",
+					eventJSON: fmt.Sprintf(`{
+						"type": "Warning",
+						"reason": "TestReason",
+						"involvedObject": {"kind": "Pod", "name": "", "namespace": "%s"},
+						"message": "Test"
+					}`, testNamespace),
+					shouldFail: true, // Name is required for resource targeting
+				},
+			}
+
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+
+			for _, tc := range testCases {
+				By(fmt.Sprintf("2. Parse event: %s", tc.description))
+				signal, err := k8sAdapter.Parse(ctx, []byte(tc.eventJSON))
+
+				By("3. Verify adapter behavior for empty fields")
+				if tc.shouldFail {
+					Expect(err).To(HaveOccurred(),
+						fmt.Sprintf("BR-GATEWAY-005: %s should cause validation failure", tc.description))
+					Expect(signal).To(BeNil(),
+						"BR-GATEWAY-005: Signal must be nil when required field is empty")
+				} else {
+					Expect(err).ToNot(HaveOccurred())
+					Expect(signal).ToNot(BeNil())
+				}
+
+				GinkgoWriter.Printf("✅ Empty field handling validated: %s (fail=%v)\n",
+					tc.description, tc.shouldFail)
+			}
+		})
+
+		It("[GW-INT-ADP-015] should allow signal processing to continue despite adapter errors (BR-GATEWAY-005)", func() {
+			By("1. Create Gateway server")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Process valid K8s Event")
+			validEvent := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "valid-pod")
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+			validSignal, err := k8sAdapter.Parse(ctx, validEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Process valid signal through Gateway")
+			response1, err := gwServer.ProcessSignal(ctx, validSignal)
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-005: Valid signal must be processed successfully")
+			Expect(response1.Status).To(Equal("created"),
+				"BR-GATEWAY-005: Valid signal must result in CRD creation")
+
+			By("4. Verify malformed event does NOT crash Gateway")
+			malformedEvent := []byte(`{"type": "Warning"}`) // Missing required fields
+			_, err = k8sAdapter.Parse(ctx, malformedEvent)
+			Expect(err).To(HaveOccurred(),
+				"BR-GATEWAY-005: Malformed event must be rejected by adapter")
+
+			By("5. Verify Gateway can still process subsequent valid events")
+			validEvent2 := createK8sEvent("Warning", "FailedMount", testNamespace, "Pod", "another-pod")
+			validSignal2, err := k8sAdapter.Parse(ctx, validEvent2)
+			Expect(err).ToNot(HaveOccurred())
+
+			response2, err := gwServer.ProcessSignal(ctx, validSignal2)
+			Expect(err).ToNot(HaveOccurred(),
+				"BR-GATEWAY-005: Gateway must continue processing after adapter error")
+			Expect(response2.Status).To(Equal("created"),
+				"BR-GATEWAY-005: Subsequent signals must be processed normally")
+
+			GinkgoWriter.Printf("✅ Adapter error non-fatal: Gateway continues processing\n")
+		})
+	})
 })
