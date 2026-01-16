@@ -1175,11 +1175,210 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				eventCount, len(uniqueIDs))
 		})
 	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// Tests GW-INT-AUD-016, GW-INT-AUD-017, GW-INT-AUD-018, GW-INT-AUD-019
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+	Describe("BR-GATEWAY-058: CRD Creation Failed Audit Events", func() {
+		var (
+			testNamespace string
+		)
+
+		BeforeEach(func() {
+			// Create unique test namespace for K8s resource isolation
+			processID := GinkgoParallelProcess()
+			testNamespace = fmt.Sprintf("gw-aud-fail-%d-%s", processID, uuid.New().String()[:8])
+
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			GinkgoWriter.Printf("✅ Test setup complete: namespace=%s\n", testNamespace)
+		})
+
+		AfterEach(func() {
+			// Cleanup namespace
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: testNamespace},
+			}
+			_ = k8sClient.Delete(ctx, ns)
+		})
+
+		// Test ID: GW-INT-AUD-016
+		// Scenario: K8s API Error Audit Event
+		// BR: BR-GATEWAY-058
+		// Section: 1.4.1
+		Context("when K8s API fails (GW-INT-AUD-016, BR-GATEWAY-058)", func() {
+			It("[GW-INT-AUD-016] should emit gateway.crd.failed audit event when K8s API fails", func() {
+				By("1. Create signal and process with failing K8s client")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert := createPrometheusAlert(testNamespace, "TestK8sFailure", "critical", fingerprint, correlationID)
+
+				signal, err := prometheusAdapter.Parse(ctx, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Create Gateway with ErrorInjectableK8sClient
+				failingK8sClient := &ErrorInjectableK8sClient{
+					Client:     k8sClient,
+					failCreate: true,
+					errorMsg:   "API server unavailable",
+				}
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = gwServer.ProcessSignal(ctx, signal)
+				Expect(err).To(HaveOccurred(), "BR-GATEWAY-058: ProcessSignal should return error when K8s fails")
+
+				By("2. Query gateway.crd.failed audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.failed"
+				var failedEvent *ogenclient.AuditEvent
+
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					failedEvent = &events[0]
+					return true
+				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
+					"BR-GATEWAY-058: Should emit gateway.crd.failed audit event")
+
+				By("3. Validate gateway.crd.failed audit event fields")
+				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
+				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
+				Expect(failedEvent.CorrelationID).To(Equal(fingerprint),
+					"BR-GATEWAY-058: Correlation ID should be fingerprint when no RR created")
+
+				By("4. Validate ErrorDetails in audit payload")
+				payload, ok := extractGatewayPayload(failedEvent)
+				Expect(ok).To(BeTrue(), "BR-GATEWAY-058: Must have GatewayAuditPayload")
+
+				errorDetails, hasError := payload.ErrorDetails.Get()
+				Expect(hasError).To(BeTrue(), "BR-GATEWAY-058: gateway.crd.failed must include ErrorDetails")
+				Expect(errorDetails.Message).To(ContainSubstring("API server unavailable"),
+					"BR-GATEWAY-058: Error message provides troubleshooting context")
+				Expect(errorDetails.Component).To(Equal(ogenclient.ErrorDetailsComponentGateway),
+					"BR-GATEWAY-058: Error component identifies source")
+
+				GinkgoWriter.Printf("✅ K8s API failure audit validated: event_id=%v\n", failedEvent.EventID)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-017
+		// Scenario: Error Type Classification in Audit
+		// BR: BR-GATEWAY-058
+		// Section: 1.4.2
+		Context("when classifying error types (GW-INT-AUD-017, BR-GATEWAY-058)", func() {
+			It("[GW-INT-AUD-017] should include error_type (transient vs permanent) in audit event", func() {
+				By("1. Create signal and process with transient K8s error")
+				prometheusAdapter := adapters.NewPrometheusAdapter()
+				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert := createPrometheusAlert(testNamespace, "TestErrorType", "critical", fingerprint, correlationID)
+
+				signal, err := prometheusAdapter.Parse(ctx, alert)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Simulate transient error (503 Service Unavailable)
+				failingK8sClient := &ErrorInjectableK8sClient{
+					Client:     k8sClient,
+					failCreate: true,
+					errorMsg:   "503 Service Unavailable: API server temporarily unavailable",
+				}
+
+				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+				gwServer, err := createGatewayServer(gatewayConfig, logger, failingK8sClient)
+				Expect(err).ToNot(HaveOccurred())
+
+				_, err = gwServer.ProcessSignal(ctx, signal)
+				Expect(err).To(HaveOccurred())
+
+				By("2. Query gateway.crd.failed audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
+
+				eventType := "gateway.crd.failed"
+				var failedEvent *ogenclient.AuditEvent
+
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					failedEvent = &events[0]
+					return true
+				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue())
+
+				By("3. Validate ErrorDetails indicates transient error")
+				payload, ok := extractGatewayPayload(failedEvent)
+				Expect(ok).To(BeTrue())
+
+				errorDetails, hasError := payload.ErrorDetails.Get()
+				Expect(hasError).To(BeTrue(), "BR-GATEWAY-058: gateway.crd.failed must include ErrorDetails")
+
+				// BR-GATEWAY-058: RetryPossible indicates transient vs permanent error
+				Expect(errorDetails.RetryPossible).To(BeTrue(),
+					"BR-GATEWAY-058: 503 errors are transient and retryable")
+				Expect(errorDetails.Message).To(ContainSubstring("Service Unavailable"),
+					"BR-GATEWAY-058: Error message provides context")
+
+				GinkgoWriter.Printf("✅ Error type classification validated: retry_possible=%v\n", errorDetails.RetryPossible)
+			})
+		})
+
+		// Test ID: GW-INT-AUD-018
+		// Scenario: Retry Attempt Audit Events
+		// BR: BR-GATEWAY-058
+		// Section: 1.4.3
+		Context("when retrying failed CRD creation (GW-INT-AUD-018, BR-GATEWAY-058)", func() {
+			It("[GW-INT-AUD-018] should emit separate audit events for each retry attempt", func() {
+				Skip("Deferred: Gateway ProcessSignal() does not implement retry logic yet - BR-GATEWAY-188 required")
+				// Implementation Note:
+				// - Gateway's ProcessSignal() currently fails immediately on K8s errors
+				// - No retry loop exists in the current implementation
+				// - Requires BR-GATEWAY-188 (Exponential Backoff & Retry) to be implemented first
+				// - Once retry logic is added, this test will validate:
+				//   1. Each retry attempt emits a separate gateway.crd.failed event
+				//   2. Each event has unique EventID but same CorrelationID
+				//   3. ErrorDetails includes retry count or attempt number
+			})
+		})
+
+		// Test ID: GW-INT-AUD-019
+		// Scenario: Circuit Breaker State in Audit
+		// BR: BR-GATEWAY-058
+		// Section: 1.4.4
+		Context("when circuit breaker is open (GW-INT-AUD-019, BR-GATEWAY-058)", func() {
+			It("[GW-INT-AUD-019] should include circuit_breaker_state when circuit is open", func() {
+				Skip("Deferred: Circuit breaker state not yet integrated with audit events - BR-GATEWAY-093 required")
+				// Implementation Note:
+				// - Gateway has circuit breaker (BR-GATEWAY-093) for K8s API health
+				// - Circuit breaker state is not yet included in audit event ErrorDetails
+				// - Requires enhancement to emitCRDCreationFailedAudit() to detect circuit state
+				// - Once integrated, this test will validate:
+				//   1. gateway.crd.failed events include circuit breaker state when open
+				//   2. ErrorDetails.Metadata or similar field contains circuit_breaker_state
+				//   3. Error message indicates circuit breaker prevented the attempt
+			})
+		})
+	})
 })
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // HELPER FUNCTIONS FOR AUDIT EMISSION TESTS
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Note: ErrorInjectableK8sClient is defined in 29_k8s_api_failure_integration_test.go
+// and is shared across Gateway integration tests for K8s error injection
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload
 // Used by audit emission tests to create test signals
