@@ -1415,8 +1415,24 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	payload.ResourceKind.SetTo(signal.Resource.Kind)
 	payload.ResourceName.SetTo(signal.Resource.Name)
 	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
+	payload.OccurrenceCount.SetTo(1) // BR-GATEWAY-056: New CRD always has OccurrenceCount=1
 
 	event.EventData = api.NewAuditEventRequestEventDataGatewayCrdCreatedAuditEventRequestEventData(payload)
+
+	// DEBUG: Log full event structure for HTTP 400 troubleshooting
+	s.logger.Info("[DEBUG] emitCRDCreatedAudit - full event",
+		"event_type", event.EventType,
+		"correlation_id", event.CorrelationID,
+		"resource_type", event.ResourceType,
+		"resource_id", event.ResourceID,
+		"actor_type", event.ActorType,
+		"actor_id", event.ActorID,
+		"namespace", event.Namespace)
+	s.logger.Info("[DEBUG] emitCRDCreatedAudit - payload",
+		"event_type_discriminator", payload.EventType,
+		"signal_type", payload.SignalType,
+		"severity_is_set", payload.Severity.IsSet(),
+		"alert_name", payload.AlertName)
 
 	// Fire-and-forget: StoreAudit is non-blocking per DD-AUDIT-002
 	if err := s.auditStore.StoreAudit(ctx, event); err != nil {
@@ -1450,7 +1466,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetEventAction(event, "created")
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "gateway", "crd-creator")
-	
+
 	// BR-GATEWAY-058-A: Use human-readable correlation ID
 	// Format: "alertname:namespace:kind:name" (e.g., "HighMemoryUsage:prod:Pod:api-789")
 	// Benefit: SRE can immediately understand what triggered the failure
