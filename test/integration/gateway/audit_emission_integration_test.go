@@ -1359,15 +1359,20 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 		// Section: 1.4.4
 		Context("when circuit breaker is open (GW-INT-AUD-019, BR-GATEWAY-058)", func() {
 			It("[GW-INT-AUD-019] should include circuit_breaker_state when circuit is open", func() {
-				Skip("Deferred: Circuit breaker state not yet integrated with audit events - BR-GATEWAY-093 required")
+				Skip("Deferred: Circuit breaker exists (BR-GATEWAY-093) but state not integrated with audit events")
 				// Implementation Note:
-				// - Gateway has circuit breaker (BR-GATEWAY-093) for K8s API health
-				// - Circuit breaker state is not yet included in audit event ErrorDetails
-				// - Requires enhancement to emitCRDCreationFailedAudit() to detect circuit state
+				// - BR-GATEWAY-093 implemented: pkg/gateway/k8s/client_with_circuit_breaker.go
+				// - Circuit breaker works and exposes metrics (gateway_circuit_breaker_state)
+				// - Missing: Audit integration in emitCRDCreationFailedAudit()
+				// - Required Enhancement:
+				//   1. Detect circuit state: cbClient.State() when emitting audit
+				//   2. Add circuit_breaker_state to ErrorDetails or Metadata
+				//   3. Include in gateway.crd.failed event payload
 				// - Once integrated, this test will validate:
 				//   1. gateway.crd.failed events include circuit breaker state when open
-				//   2. ErrorDetails.Metadata or similar field contains circuit_breaker_state
+				//   2. ErrorDetails contains circuit_breaker_state field
 				//   3. Error message indicates circuit breaker prevented the attempt
+				// - Reference: docs/services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md (BR-GATEWAY-093, lines 558-582)
 			})
 		})
 	})
