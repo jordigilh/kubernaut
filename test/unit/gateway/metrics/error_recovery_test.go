@@ -23,10 +23,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-// GW-UNIT-ERR-013: BR-GATEWAY-188 Error Recovery Metrics
+// GW-UNIT-ERR-013: BR-GATEWAY-113 Error Recovery Metrics
 // Unit tests for error recovery metric emission (mock metrics, no infrastructure)
 
-var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
+var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 	var (
 		registry *prometheus.Registry
 
@@ -73,7 +73,7 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 
 	Context("GW-UNIT-ERR-013: Error Recovery Metric Emission", func() {
 		It("[GW-UNIT-ERR-013] should increment recovery counter on successful retry", func() {
-			// BR-GATEWAY-188: Track successful error recoveries
+			// BR-GATEWAY-113: Track successful error recoveries
 			// BUSINESS LOGIC: Recovery metrics show system resilience
 			// Unit Test: Mock metric increment validation
 
@@ -86,11 +86,11 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 			// BUSINESS RULE: Recovery counter should increment
 			count := testutil.ToFloat64(errorRecoveryCounter.WithLabelValues(errorType, operation))
 			Expect(count).To(Equal(1.0),
-				"BR-GATEWAY-188: Recovery counter should increment on successful retry")
+				"BR-GATEWAY-113: Recovery counter should increment on successful retry")
 		})
 
 		It("[GW-UNIT-ERR-013] should increment retry counter for each retry attempt", func() {
-			// BR-GATEWAY-188: Track retry attempts for observability
+			// BR-GATEWAY-113: Track retry attempts for observability
 			// BUSINESS LOGIC: Retry metrics show system load under failure
 			// Unit Test: Mock metric increment validation
 
@@ -105,11 +105,11 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 			// BUSINESS RULE: Retry counter should track all attempts
 			count := testutil.ToFloat64(errorRetryCounter.WithLabelValues(errorType, operation))
 			Expect(count).To(Equal(3.0),
-				"BR-GATEWAY-188: Retry counter should increment for each attempt")
+				"BR-GATEWAY-113: Retry counter should increment for each attempt")
 		})
 
 		It("[GW-UNIT-ERR-013] should increment failure counter on permanent failure", func() {
-			// BR-GATEWAY-188: Track permanent failures for alerting
+			// BR-GATEWAY-113: Track permanent failures for alerting
 			// BUSINESS LOGIC: Failure metrics trigger operational alerts
 			// Unit Test: Mock metric increment validation
 
@@ -122,11 +122,11 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 			// BUSINESS RULE: Failure counter should increment
 			count := testutil.ToFloat64(errorFailureCounter.WithLabelValues(errorType, operation))
 			Expect(count).To(Equal(1.0),
-				"BR-GATEWAY-188: Failure counter should increment on permanent error")
+				"BR-GATEWAY-113: Failure counter should increment on permanent error")
 		})
 
 		It("[GW-UNIT-ERR-013] should emit metrics with correct labels", func() {
-			// BR-GATEWAY-188: Metric labels enable detailed observability
+			// BR-GATEWAY-113: Metric labels enable detailed observability
 			// BUSINESS LOGIC: Labels distinguish error types and operations
 			// Unit Test: Label validation
 
@@ -146,7 +146,7 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 		})
 
 		It("[GW-UNIT-ERR-013] should track recovery rate (recoveries vs failures)", func() {
-			// BR-GATEWAY-188: Recovery rate shows system health
+			// BR-GATEWAY-113: Recovery rate shows system health
 			// BUSINESS LOGIC: High recovery rate = resilient, low rate = systemic issues
 			// Unit Test: Calculate recovery rate from metrics
 
@@ -166,13 +166,13 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 
 			// BUSINESS RULE: Recovery rate should be 75% (3 recoveries / 4 total)
 			Expect(recoveryRate).To(BeNumerically("~", 0.75, 0.01),
-				"BR-GATEWAY-188: Recovery rate should reflect system resilience")
+				"BR-GATEWAY-113: Recovery rate should reflect system resilience")
 			Expect(recoveryRate).To(BeNumerically(">", 0.5),
 				"Healthy system should have >50%% recovery rate")
 		})
 
 		It("[GW-UNIT-ERR-013] should track retry overhead (retries per recovery)", func() {
-			// BR-GATEWAY-188: Retry overhead shows backoff effectiveness
+			// BR-GATEWAY-113: Retry overhead shows backoff effectiveness
 			// BUSINESS LOGIC: High retries/recovery = inefficient backoff
 			// Unit Test: Calculate retry overhead from metrics
 
@@ -192,7 +192,7 @@ var _ = Describe("BR-GATEWAY-188: Error Recovery Metrics", func() {
 
 			// BUSINESS RULE: 5 retries per recovery (efficiency metric)
 			Expect(retriesPerRecovery).To(Equal(5.0),
-				"BR-GATEWAY-188: Retry overhead should be measurable")
+				"BR-GATEWAY-113: Retry overhead should be measurable")
 			Expect(retriesPerRecovery).To(BeNumerically("<", 10.0),
 				"Retry overhead should be reasonable (<10 retries per recovery)")
 		})

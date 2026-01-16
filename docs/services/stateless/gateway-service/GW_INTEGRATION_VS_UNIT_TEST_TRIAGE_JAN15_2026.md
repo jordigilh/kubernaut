@@ -248,27 +248,27 @@ A test **SHOULD** be in unit tier if it:
 
 2. **GW-UNIT-ERR-006**: Exponential backoff calculation
    - **Location**: `test/unit/gateway/processing/backoff_test.go` (new file)
-   - **BR**: BR-GATEWAY-188
+   - **BR**: BR-GATEWAY-113
    - **Effort**: 1 hour
 
 3. **GW-UNIT-ERR-007**: Backoff max delay cap
    - **Location**: `test/unit/gateway/processing/backoff_test.go`
-   - **BR**: BR-GATEWAY-188
+   - **BR**: BR-GATEWAY-113
    - **Effort**: 30 minutes
 
 4. **GW-UNIT-ERR-008**: Backoff jitter addition
    - **Location**: `test/unit/gateway/processing/backoff_test.go`
-   - **BR**: BR-GATEWAY-188
+   - **BR**: BR-GATEWAY-113
    - **Effort**: 30 minutes
 
 5. **GW-UNIT-ERR-010**: Backoff reset on success
    - **Location**: `test/unit/gateway/processing/backoff_test.go`
-   - **BR**: BR-GATEWAY-188
+   - **BR**: BR-GATEWAY-113
    - **Effort**: 30 minutes
 
 6. **GW-UNIT-ERR-013**: Error recovery metrics (mock metrics)
    - **Location**: `test/unit/gateway/metrics/error_recovery_test.go` (new file)
-   - **BR**: BR-GATEWAY-188
+   - **BR**: BR-GATEWAY-113
    - **Effort**: 45 minutes
 
 7. **GW-UNIT-CFG-006**: Config rollback on error
