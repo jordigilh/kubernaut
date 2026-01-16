@@ -31,6 +31,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -40,6 +41,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	// DD-GATEWAY-004: kubernetes import removed - no longer needed
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -58,6 +60,7 @@ import (
 
 // ErrorInjectableK8sClient simulates Kubernetes API failures for integration testing
 // BR-GATEWAY-019: Test error handling when K8s API unavailable
+// BR-GATEWAY-058-A: Returns proper K8s API errors for realistic error classification
 type ErrorInjectableK8sClient struct {
 	client.Client
 	failCreate bool
@@ -66,6 +69,11 @@ type ErrorInjectableK8sClient struct {
 
 func (f *ErrorInjectableK8sClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
 	if f.failCreate {
+		// BR-GATEWAY-058-A: Return proper K8s API errors for realistic testing
+		// This ensures NewErrorDetailsFromK8sError() correctly classifies errors
+		if strings.Contains(f.errorMsg, "503") || strings.Contains(f.errorMsg, "Service Unavailable") {
+			return apierrors.NewServiceUnavailable(f.errorMsg)
+		}
 		return errors.New(f.errorMsg)
 	}
 	// Success case: Return nil (no actual CRD creation needed for test)
