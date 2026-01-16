@@ -309,17 +309,18 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			prometheusAdapter := adapters.NewPrometheusAdapter()
 
 			testCases := []struct {
-				severity string
-				valid    bool
+				severity         string
+				expectedSeverity string
+				shouldPass       bool
 			}{
-				{"critical", true},
-				{"warning", true},
-				{"info", true},
-				{"Sev1", true},   // Enterprise
-				{"P0", true},     // PagerDuty
-				{"HIGH", true},   // Custom
-				{"medium", true}, // Custom
-				{"", false},      // Empty = invalid
+				{"critical", "critical", true},
+				{"warning", "warning", true},
+				{"info", "info", true},
+				{"Sev1", "Sev1", true},     // Enterprise
+				{"P0", "P0", true},         // PagerDuty
+				{"HIGH", "HIGH", true},     // Custom
+				{"medium", "medium", true}, // Custom
+				{"", "unknown", true},      // Empty defaults to "unknown" in Parse()
 			}
 
 			for _, tc := range testCases {
@@ -327,17 +328,19 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 				signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 				Expect(err).ToNot(HaveOccurred())
 
+				// Verify Parse() applied correct default
+				Expect(signal.Severity).To(Equal(tc.expectedSeverity),
+					fmt.Sprintf("Parse() should convert '%s' to '%s'", tc.severity, tc.expectedSeverity))
+
+				// Verify Validate() accepts the severity
 				err = prometheusAdapter.Validate(signal)
-				if tc.valid {
+				if tc.shouldPass {
 					Expect(err).ToNot(HaveOccurred(),
-						fmt.Sprintf("BR-GATEWAY-181: Adapter must accept '%s' severity", tc.severity))
-				} else {
-					Expect(err).To(HaveOccurred(),
-						"BR-GATEWAY-181: Adapter must reject empty severity")
+						fmt.Sprintf("BR-GATEWAY-181: Adapter must accept '%s' severity", tc.expectedSeverity))
 				}
 			}
 
-			GinkgoWriter.Printf("✅ Adapter validation accepts ANY non-empty severity string\n")
+			GinkgoWriter.Printf("✅ Adapter validation accepts ANY non-empty severity string (including 'unknown' default)\n")
 		})
 	})
 })
