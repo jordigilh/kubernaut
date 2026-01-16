@@ -18,6 +18,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"strings"
 
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
@@ -38,7 +39,7 @@ func toGatewayAuditPayloadSignalType(value string) api.GatewayAuditPayloadSignal
 
 // toGatewayAuditPayloadSeverity converts string to api.GatewayAuditPayloadSeverity enum
 func toGatewayAuditPayloadSeverity(value string) api.GatewayAuditPayloadSeverity {
-	switch value {
+	switch strings.ToLower(value) {
 	case "critical":
 		return api.GatewayAuditPayloadSeverityCritical
 	case "high":
