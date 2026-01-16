@@ -812,28 +812,28 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 				Expect(err).ToNot(HaveOccurred())
 
-			response, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response.Status).To(Equal("created"))
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response.Status).To(Equal("created"))
 
-			By("3. Query gateway.crd.created audit event")
-			client, err := createOgenClient()
-			Expect(err).ToNot(HaveOccurred())
+				By("3. Query gateway.crd.created audit event")
+				client, err := createOgenClient()
+				Expect(err).ToNot(HaveOccurred())
 
-			// Use actual RR name as correlation ID
-			actualCorrelationID := response.RemediationRequestName
-			eventType := "gateway.crd.created"
-			var crdCreatedEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID, &eventType, nil)
-				if err != nil || len(events) == 0 {
-					return false
-				}
-				crdCreatedEvent = &events[0]
-				return true
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
+				// Use actual RR name as correlation ID
+				actualCorrelationID := response.RemediationRequestName
+				eventType := "gateway.crd.created"
+				var crdCreatedEvent *ogenclient.AuditEvent
+				Eventually(func() bool {
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &actualCorrelationID, &eventType, nil)
+					if err != nil || len(events) == 0 {
+						return false
+					}
+					crdCreatedEvent = &events[0]
+					return true
+				}, 10*time.Second, 500*time.Millisecond).Should(BeTrue())
 
-			By("4. Validate occurrence_count field in audit payload")
+				By("4. Validate occurrence_count field in audit payload")
 				payload, ok := extractGatewayPayload(crdCreatedEvent)
 				Expect(ok).To(BeTrue())
 
@@ -999,12 +999,12 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-015] should NOT deduplicate signals for RRs in terminal phases", func() {
 				By("1. Create initial signal and process")
 				prometheusAdapter := adapters.NewPrometheusAdapter()
-				fingerprint := fmt.Sprintf("eee%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert1 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", fingerprint, correlationID1)
+				alert1 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID1)
 
 				signal1, err := prometheusAdapter.Parse(ctx, alert1)
 				Expect(err).ToNot(HaveOccurred())
+				actualFingerprint := signal1.Fingerprint // Gateway generates fingerprint from alert labels
 
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
 				gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
@@ -1027,22 +1027,24 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				rr.Status.OverallPhase = remediationv1alpha1.PhaseCompleted
 				Expect(k8sClient.Status().Update(ctx, &rr)).To(Succeed())
 
-				By("3. Process duplicate signal (same fingerprint)")
-				time.Sleep(1 * time.Second)
-				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", fingerprint, correlationID2)
+			By("3. Process duplicate signal (same fingerprint)")
+			time.Sleep(1 * time.Second)
+			correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+			alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID2)
 
-				signal2, err := prometheusAdapter.Parse(ctx, alert2)
-				Expect(err).ToNot(HaveOccurred())
+			signal2, err := prometheusAdapter.Parse(ctx, alert2)
+			Expect(err).ToNot(HaveOccurred())
+			// Gateway generates same fingerprint for same alertname/namespace/kind/name
+			Expect(signal2.Fingerprint).To(Equal(actualFingerprint), "Signals with same labels should have same fingerprint")
 
-				response2, err := gwServer.ProcessSignal(ctx, signal2)
-				Expect(err).ToNot(HaveOccurred())
+			response2, err := gwServer.ProcessSignal(ctx, signal2)
+			Expect(err).ToNot(HaveOccurred())
 
-				// BR-GATEWAY-057: Should create NEW RR (not deduplicate to Completed RR)
-				Expect(response2.Status).To(Equal("created"),
-					"BR-GATEWAY-057: Must create new RR for signals when existing RR is in terminal phase")
-				Expect(response2.RemediationRequestName).ToNot(Equal(existingRRName),
-					"BR-GATEWAY-057: New RR must have different name than terminal RR")
+			// BR-GATEWAY-057: Should create NEW RR (not deduplicate to Completed RR)
+			Expect(response2.Status).To(Equal("created"),
+				"BR-GATEWAY-057: Must create new RR for signals when existing RR is in terminal phase")
+			Expect(response2.RemediationRequestName).ToNot(Equal(existingRRName),
+				"BR-GATEWAY-057: New RR must have different name than terminal RR")
 
 			By("4. Verify NEW gateway.crd.created audit (not deduplication)")
 			client, err := createOgenClient()
@@ -1065,10 +1067,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			Expect(crdCreatedEvent.EventType).To(Equal("gateway.crd.created"))
 			payload, ok := extractGatewayPayload(crdCreatedEvent)
 			Expect(ok).To(BeTrue())
-			Expect(payload.Fingerprint).To(Equal(fingerprint))
+			Expect(payload.Fingerprint).To(Equal(actualFingerprint))
 
-			GinkgoWriter.Printf("✅ Phase-based dedup rejection validated: Old RR=%s (Completed), New RR=%s\n",
-				existingRRName, response2.RemediationRequestName)
+				GinkgoWriter.Printf("✅ Phase-based dedup rejection validated: Old RR=%s (Completed), New RR=%s\n",
+					existingRRName, response2.RemediationRequestName)
 			})
 		})
 	})
@@ -1108,22 +1110,22 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
 			Expect(err).ToNot(HaveOccurred())
 
-		var correlationIDs []string
-		for i := 0; i < 3; i++ {
-			fingerprint := fmt.Sprintf("%064x", uuid.New().ID()+uint32(i))
-			correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix()+int64(i))
+			var correlationIDs []string
+			for i := 0; i < 3; i++ {
+				fingerprint := fmt.Sprintf("%064x", uuid.New().ID()+uint32(i))
+				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix()+int64(i))
 
-			alert := createPrometheusAlert(testNamespace, fmt.Sprintf("TestAlert%d", i), "critical", fingerprint, correlationID)
-			signal, err := prometheusAdapter.Parse(ctx, alert)
-			Expect(err).ToNot(HaveOccurred())
+				alert := createPrometheusAlert(testNamespace, fmt.Sprintf("TestAlert%d", i), "critical", fingerprint, correlationID)
+				signal, err := prometheusAdapter.Parse(ctx, alert)
+				Expect(err).ToNot(HaveOccurred())
 
-			// ProcessSignal returns the actual RR name - this is the correlation ID!
-			response, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred())
-			correlationIDs = append(correlationIDs, response.RemediationRequestName)
+				// ProcessSignal returns the actual RR name - this is the correlation ID!
+				response, err := gwServer.ProcessSignal(ctx, signal)
+				Expect(err).ToNot(HaveOccurred())
+				correlationIDs = append(correlationIDs, response.RemediationRequestName)
 
-			time.Sleep(100 * time.Millisecond) // Small delay between signals
-		}
+				time.Sleep(100 * time.Millisecond) // Small delay between signals
+			}
 
 			By("2. Query all audit events for the 3 correlation IDs")
 			client, err := createOgenClient()
