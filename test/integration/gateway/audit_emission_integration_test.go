@@ -1263,8 +1263,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("3. Validate gateway.crd.failed audit event fields")
 				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
-				Expect(failedEvent.CorrelationID).To(Equal(fingerprint),
-					"BR-GATEWAY-058: Correlation ID should be fingerprint when no RR created")
+				Expect(failedEvent.CorrelationID).To(Equal(readableCorrelationID),
+					"BR-GATEWAY-058-A: Correlation ID should be readable format (alertname:namespace:kind:name)")
 
 				By("4. Validate ErrorDetails in audit payload")
 				payload, ok := extractGatewayPayload(failedEvent)
