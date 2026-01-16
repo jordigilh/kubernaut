@@ -368,7 +368,7 @@ import rego.v1
 # Using else chain to prevent eval_conflict_error
 # NOTE: input.environment is a STRING (e.g., "production"), not a struct
 
-# Priority matrix: environment × severity
+# Priority matrix: environment × severity (DD-SEVERITY-001 v1.1)
 result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment == "production"
     input.signal.severity == "critical"
@@ -376,7 +376,7 @@ result := {"priority": "P0", "confidence": 1.0, "source": "policy-matrix"} if {
 
 else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment == "production"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
@@ -386,7 +386,7 @@ else := {"priority": "P1", "confidence": 1.0, "source": "policy-matrix"} if {
 
 else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment == "staging"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
@@ -396,7 +396,7 @@ else := {"priority": "P2", "confidence": 1.0, "source": "policy-matrix"} if {
 
 else := {"priority": "P3", "confidence": 1.0, "source": "policy-matrix"} if {
     input.environment == "development"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 # BR-SP-071: Severity-only fallback
@@ -407,7 +407,7 @@ else := {"priority": "P1", "confidence": 0.7, "source": "severity-fallback"} if 
 
 else := {"priority": "P2", "confidence": 0.7, "source": "severity-fallback"} if {
     input.environment == "unknown"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 # Default
@@ -474,21 +474,25 @@ else := {"business_unit": "unknown", "criticality": "medium", "confidence": 0.5,
 	_, err = severityPolicyFile.WriteString(`package signalprocessing.severity
 import rego.v1
 # BR-SP-105: Severity Determination via Rego Policy
-# DD-SEVERITY-001: Strategy B - Policy-Defined Fallback + REFACTOR (lowercase normalization)
+# DD-SEVERITY-001 v1.1: Aligned with HAPI/workflow catalog (critical/high/medium/low/unknown)
 determine_severity := "critical" if {
 	input.signal.severity == "sev1"
 } else := "critical" if {
 	input.signal.severity == "p0"
 } else := "critical" if {
 	input.signal.severity == "p1"
-} else := "warning" if {
+} else := "high" if {
 	input.signal.severity == "sev2"
-} else := "warning" if {
+} else := "high" if {
 	input.signal.severity == "p2"
-} else := "info" if {
+} else := "medium" if {
 	input.signal.severity == "sev3"
-} else := "info" if {
+} else := "medium" if {
 	input.signal.severity == "p3"
+} else := "low" if {
+	input.signal.severity == "sev4"
+} else := "low" if {
+	input.signal.severity == "p4"
 } else := "invalid-severity-enum" if {
 	# Test case: Return invalid severity value to trigger validation error
 	# This simulates operator error in policy configuration
@@ -794,7 +798,7 @@ priority := "P0" if {
 
 priority := "P1" if {
     input.environment == "production"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 priority := "P1" if {
@@ -804,7 +808,7 @@ priority := "P1" if {
 
 priority := "P2" if {
     input.environment == "staging"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 priority := "P2" if {
@@ -814,7 +818,7 @@ priority := "P2" if {
 
 priority := "P3" if {
     input.environment == "development"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 # BR-SP-071: Severity-only fallback
@@ -825,7 +829,7 @@ priority := "P1" if {
 
 priority := "P2" if {
     input.environment == "unknown"
-    input.signal.severity == "warning"
+    input.signal.severity == "high"
 }
 
 default priority := "P3"

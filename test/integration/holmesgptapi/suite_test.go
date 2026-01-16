@@ -101,6 +101,17 @@ var _ = SynchronizedAfterSuite(func() {
 	// This runs ONCE on process 1 only - tears down shared infrastructure
 	By("Tearing down HolmesGPT API integration infrastructure")
 
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("holmesgptapi", []string{
+		infrastructure.HAPIIntegrationDataStorageContainer, // holmesgptapi_datastorage_1
+		infrastructure.HAPIIntegrationPostgresContainer,    // holmesgptapi_postgres_1
+		infrastructure.HAPIIntegrationRedisContainer,       // holmesgptapi_redis_1
+		infrastructure.MockLLMContainerNameHAPI,            // mock-llm-hapi
+	}, GinkgoWriter)
+
 	// Stop Mock LLM service first
 	By("Stopping Mock LLM service (HAPI-specific)")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

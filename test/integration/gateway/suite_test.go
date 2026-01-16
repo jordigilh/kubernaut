@@ -237,6 +237,18 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("Gateway Integration Suite - Infrastructure Cleanup")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+		// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+		// ALWAYS collect logs - failures may have occurred on other parallel processes
+		// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+		if dsInfra != nil {
+			GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+			infrastructure.MustGatherContainerLogs("gateway", []string{
+				dsInfra.DataStorageContainer,
+				dsInfra.PostgresContainer,
+				dsInfra.RedisContainer,
+			}, GinkgoWriter)
+		}
+
 		// Use unified cleanup (same pattern as AIAnalysis/SignalProcessing)
 		if dsInfra != nil {
 			infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)

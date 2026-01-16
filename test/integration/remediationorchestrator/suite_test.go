@@ -457,6 +457,16 @@ var _ = SynchronizedAfterSuite(func() {
 	// ======================================================================
 	By("Cleaning up shared infrastructure")
 
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+	infrastructure.MustGatherContainerLogs("remediationorchestrator", []string{
+		"remediationorchestrator_datastorage_test",
+		"remediationorchestrator_postgres_test",
+		"remediationorchestrator_redis_test",
+	}, GinkgoWriter)
+
 	// Infrastructure cleanup handled by DeferCleanup (StopDSBootstrap)
 	// No action needed here - DeferCleanup will stop PostgreSQL, Redis, DataStorage
 

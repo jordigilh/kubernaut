@@ -539,6 +539,20 @@ var _ = SynchronizedAfterSuite(func() {
 	// This runs ONCE on the last parallel process - cleanup shared infrastructure
 	GinkgoWriter.Println("━━━ [Last Process] Cleaning up shared infrastructure ━━━")
 
+	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
+	// ALWAYS collect logs - failures may have occurred on other parallel processes
+	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	if dsInfra != nil {
+		GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
+		infrastructure.MustGatherContainerLogs("aianalysis", []string{
+			dsInfra.DataStorageContainer,
+			dsInfra.PostgresContainer,
+			dsInfra.RedisContainer,
+			"mock-llm-aianalysis",  // Mock LLM service
+			"aianalysis_hapi_test", // HolmesGPT-API service
+		}, GinkgoWriter)
+	}
+
 	// Check if containers should be preserved for debugging
 	preserveContainers := os.Getenv("PRESERVE_CONTAINERS") == "true"
 
