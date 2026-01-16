@@ -1448,7 +1448,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				payload, ok := extractGatewayPayload(failedEvent)
 				Expect(ok).To(BeTrue(), "Payload should be GatewayAuditPayload")
-				Expect(payload.EventType).To(Equal("gateway.crd.failed"))
+				Expect(payload.EventType).To(Equal(ogenclient.GatewayAuditPayloadEventTypeGatewayCrdFailed))
 
 				// BR-GATEWAY-093: Verify circuit breaker error details
 				errorDetails, ok := payload.ErrorDetails.Get()
