@@ -182,21 +182,18 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			GinkgoWriter.Printf("✅ Missing severity defaulted to 'unknown' (not policy)\n")
 		})
 
-		// TODO: Enable after Week 1 CRD enum removal
-		PIt("[GW-INT-SEV-005] should preserve 'Sev1' enterprise severity (requires Week 1 CRD changes)", func() {
-			Skip("Waiting on Week 1: RemediationRequest enum removal")
-			// prometheusAlert := createPrometheusAlert(testNamespace, "CriticalAlert", "Sev1", "", "")
-			// signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
-			// Expect(signal.Severity).To(Equal("Sev1"))
-		})
-
-		// TODO: Enable after Week 1 CRD enum removal
-		PIt("[GW-INT-SEV-006] should preserve 'P0' PagerDuty severity (requires Week 1 CRD changes)", func() {
-			Skip("Waiting on Week 1: RemediationRequest enum removal")
-			// prometheusAlert := createPrometheusAlert(testNamespace, "CriticalAlert", "P0", "", "")
-			// signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
-			// Expect(signal.Severity).To(Equal("P0"))
-		})
+		// NOTE: GW-INT-SEV-005 and GW-INT-SEV-006 DEFERRED to Week 1 DD-SEVERITY-001
+		// These tests require CRD schema changes (RemediationRequest.Spec.Severity enum removal)
+		// which are part of Week 1 work. Tests will be added after CRD refactoring is complete.
+		//
+		// Deferred test scenarios:
+		// - GW-INT-SEV-005: Verify "Sev1" (enterprise severity) passes through unchanged
+		// - GW-INT-SEV-006: Verify "P0" (PagerDuty severity) passes through unchanged
+		//
+		// Per TESTING_GUIDELINES.md: Neither PIt() nor Skip() allowed in integration tests.
+		// Tests removed to avoid guideline violations until CRD schema changes are complete.
+		//
+		// Authority: BR-GATEWAY-181, DD-SEVERITY-001 Week 1 dependency
 	})
 
 	Context("Kubernetes Events with Type-as-Severity", func() {
@@ -247,7 +244,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-010] should accept ANY non-empty severity string in validation", func() {
 			By("1. Create signals with various severity values")
 			prometheusAdapter := adapters.NewPrometheusAdapter()
-			
+
 			testCases := []struct {
 				severity string
 				valid    bool
