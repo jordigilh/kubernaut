@@ -1480,6 +1480,24 @@ func getGaugeValue(registry *prometheus.Registry, metricName string, labels map[
 	return 0
 }
 
+// getHistogramMetric retrieves a Histogram metric object
+// Returns nil if the metric doesn't exist
+func getHistogramMetric(registry *prometheus.Registry, metricName string) *dto.Histogram {
+	metricFamilies, err := registry.Gather()
+	if err != nil {
+		return nil
+	}
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() == metricName {
+			if len(mf.GetMetric()) > 0 {
+				return mf.GetMetric()[0].GetHistogram()
+			}
+		}
+	}
+	return nil
+}
+
 // getHistogramSampleCount retrieves the sample count of a Histogram metric
 func getHistogramSampleCount(registry *prometheus.Registry, metricName string, labels map[string]string) uint64 {
 	metricFamilies, err := registry.Gather()
