@@ -1242,15 +1242,23 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				eventType := "gateway.crd.failed"
 				var failedEvent *ogenclient.AuditEvent
 
+				// BR-GATEWAY-058-A: Use readable correlation ID
+				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
+					signal.AlertName,
+					signal.Namespace,
+					signal.Resource.Kind,
+					signal.Resource.Name,
+				)
+
 				Eventually(func() bool {
-					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &readableCorrelationID, &eventType, nil)
 					if err != nil || len(events) == 0 {
 						return false
 					}
 					failedEvent = &events[0]
 					return true
 				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
-					"BR-GATEWAY-058: Should emit gateway.crd.failed audit event")
+					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("3. Validate gateway.crd.failed audit event fields")
 				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
@@ -1309,8 +1317,16 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				eventType := "gateway.crd.failed"
 				var failedEvent *ogenclient.AuditEvent
 
+				// BR-GATEWAY-058-A: Use readable correlation ID
+				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
+					signal.AlertName,
+					signal.Namespace,
+					signal.Resource.Kind,
+					signal.Resource.Name,
+				)
+
 				Eventually(func() bool {
-					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &correlationID, &eventType, nil)
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &readableCorrelationID, &eventType, nil)
 					if err != nil || len(events) == 0 {
 						return false
 					}
@@ -1406,23 +1422,29 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				eventType := "gateway.crd.failed"
 				var failedEvent *ogenclient.AuditEvent
 
-				// BR-GATEWAY-058: For failed CRD creation, correlation ID is the fingerprint (no RR name yet)
-				fingerprintCorrelationID := testSignal.Fingerprint
+				// BR-GATEWAY-058-A: For failed CRD creation, correlation ID is human-readable
+				// Format: "alertname:namespace:kind:name"
+				readableCorrelationID := fmt.Sprintf("%s:%s:%s:%s",
+					testSignal.AlertName,
+					testSignal.Namespace,
+					testSignal.Resource.Kind,
+					testSignal.Resource.Name,
+				)
 
 				Eventually(func() bool {
-					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &fingerprintCorrelationID, &eventType, nil)
+					events, _, err := sharedhelpers.QueryAuditEvents(ctx, client, &readableCorrelationID, &eventType, nil)
 					if err != nil || len(events) == 0 {
 						return false
 					}
 					failedEvent = &events[0]
 					return true
 				}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
-					"BR-GATEWAY-058: Should emit gateway.crd.failed audit event")
+					"BR-GATEWAY-058-A: Should emit gateway.crd.failed audit event with readable correlation ID")
 
 				By("5. Validate audit event includes circuit breaker error details")
 				Expect(failedEvent.EventType).To(Equal("gateway.crd.failed"))
 				Expect(failedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeFailure))
-				Expect(failedEvent.CorrelationID).To(Equal(fingerprintCorrelationID))
+				Expect(failedEvent.CorrelationID).To(Equal(readableCorrelationID))
 
 				payload, ok := extractGatewayPayload(failedEvent)
 				Expect(ok).To(BeTrue(), "Payload should be GatewayAuditPayload")
