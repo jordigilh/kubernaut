@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 **alert_name** | **str** | Name of the alert | 
 **namespace** | **str** | Kubernetes namespace of the affected resource | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
-**severity** | **str** | Severity level of the signal | [optional] 
+**severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
 **resource_kind** | **str** | Kubernetes resource kind | [optional] 
 **resource_name** | **str** | Name of the affected Kubernetes resource | [optional] 
 **remediation_request** | **str** | Created RemediationRequest reference (namespace/name) | [optional] 

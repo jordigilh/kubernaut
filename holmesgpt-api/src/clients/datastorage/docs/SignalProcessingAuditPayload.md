@@ -9,9 +9,9 @@ Name | Type | Description | Notes
 **event_type** | **str** | Event type for discriminator (matches parent event_type) | 
 **phase** | **str** | Current phase of the SignalProcessing | 
 **signal** | **str** | Name of the signal being processed | 
-**severity** | **str** | Severity level of the signal | [optional] 
+**severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
 **external_severity** | **str** | Original severity from external monitoring system (e.g., Sev1, P0, critical) | [optional] 
-**normalized_severity** | **str** | Normalized severity determined by Rego policy | [optional] 
+**normalized_severity** | **str** | Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1) | [optional] 
 **determination_source** | **str** | Source of severity determination for audit trail | [optional] 
 **policy_hash** | **str** | SHA256 hash of Rego policy used for severity determination (for audit trail and policy version tracking) | [optional] 
 **environment** | **str** | Classified environment | [optional] 

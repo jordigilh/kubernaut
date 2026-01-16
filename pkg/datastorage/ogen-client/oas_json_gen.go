@@ -8585,10 +8585,14 @@ func (s *GatewayAuditPayloadSeverity) Decode(d *jx.Decoder) error {
 	switch GatewayAuditPayloadSeverity(v) {
 	case GatewayAuditPayloadSeverityCritical:
 		*s = GatewayAuditPayloadSeverityCritical
-	case GatewayAuditPayloadSeverityWarning:
-		*s = GatewayAuditPayloadSeverityWarning
-	case GatewayAuditPayloadSeverityInfo:
-		*s = GatewayAuditPayloadSeverityInfo
+	case GatewayAuditPayloadSeverityHigh:
+		*s = GatewayAuditPayloadSeverityHigh
+	case GatewayAuditPayloadSeverityMedium:
+		*s = GatewayAuditPayloadSeverityMedium
+	case GatewayAuditPayloadSeverityLow:
+		*s = GatewayAuditPayloadSeverityLow
+	case GatewayAuditPayloadSeverityUnknown:
+		*s = GatewayAuditPayloadSeverityUnknown
 	default:
 		*s = GatewayAuditPayloadSeverity(v)
 	}
@@ -20516,10 +20520,14 @@ func (s *SignalProcessingAuditPayloadNormalizedSeverity) Decode(d *jx.Decoder) e
 	switch SignalProcessingAuditPayloadNormalizedSeverity(v) {
 	case SignalProcessingAuditPayloadNormalizedSeverityCritical:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityCritical
-	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
-	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityInfo
+	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityHigh
+	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityMedium
+	case SignalProcessingAuditPayloadNormalizedSeverityLow:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityLow
+	case SignalProcessingAuditPayloadNormalizedSeverityUnknown:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityUnknown
 	default:
 		*s = SignalProcessingAuditPayloadNormalizedSeverity(v)
 	}
@@ -20694,10 +20702,14 @@ func (s *SignalProcessingAuditPayloadSeverity) Decode(d *jx.Decoder) error {
 	switch SignalProcessingAuditPayloadSeverity(v) {
 	case SignalProcessingAuditPayloadSeverityCritical:
 		*s = SignalProcessingAuditPayloadSeverityCritical
-	case SignalProcessingAuditPayloadSeverityWarning:
-		*s = SignalProcessingAuditPayloadSeverityWarning
-	case SignalProcessingAuditPayloadSeverityInfo:
-		*s = SignalProcessingAuditPayloadSeverityInfo
+	case SignalProcessingAuditPayloadSeverityHigh:
+		*s = SignalProcessingAuditPayloadSeverityHigh
+	case SignalProcessingAuditPayloadSeverityMedium:
+		*s = SignalProcessingAuditPayloadSeverityMedium
+	case SignalProcessingAuditPayloadSeverityLow:
+		*s = SignalProcessingAuditPayloadSeverityLow
+	case SignalProcessingAuditPayloadSeverityUnknown:
+		*s = SignalProcessingAuditPayloadSeverityUnknown
 	default:
 		*s = SignalProcessingAuditPayloadSeverity(v)
 	}

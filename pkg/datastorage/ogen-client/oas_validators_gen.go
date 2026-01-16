@@ -1202,9 +1202,13 @@ func (s GatewayAuditPayloadSeverity) Validate() error {
 	switch s {
 	case "critical":
 		return nil
-	case "warning":
+	case "high":
 		return nil
-	case "info":
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	case "unknown":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3763,9 +3767,13 @@ func (s SignalProcessingAuditPayloadNormalizedSeverity) Validate() error {
 	switch s {
 	case "critical":
 		return nil
-	case "warning":
+	case "high":
 		return nil
-	case "info":
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	case "unknown":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -3825,9 +3833,13 @@ func (s SignalProcessingAuditPayloadSeverity) Validate() error {
 	switch s {
 	case "critical":
 		return nil
-	case "warning":
+	case "high":
 		return nil
-	case "info":
+	case "medium":
+		return nil
+	case "low":
+		return nil
+	case "unknown":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

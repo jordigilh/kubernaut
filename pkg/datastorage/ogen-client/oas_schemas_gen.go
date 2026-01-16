@@ -4460,7 +4460,7 @@ type GatewayAuditPayload struct {
 	Namespace string `json:"namespace"`
 	// Unique identifier for the signal (deduplication).
 	Fingerprint string `json:"fingerprint"`
-	// Severity level of the signal.
+	// Normalized severity level (DD-SEVERITY-001 v1.1).
 	Severity OptGatewayAuditPayloadSeverity `json:"severity"`
 	// Kubernetes resource kind.
 	ResourceKind OptString `json:"resource_kind"`
@@ -4735,21 +4735,25 @@ func (s *GatewayAuditPayloadOriginalPayload) init() GatewayAuditPayloadOriginalP
 	return m
 }
 
-// Severity level of the signal.
+// Normalized severity level (DD-SEVERITY-001 v1.1).
 type GatewayAuditPayloadSeverity string
 
 const (
 	GatewayAuditPayloadSeverityCritical GatewayAuditPayloadSeverity = "critical"
-	GatewayAuditPayloadSeverityWarning  GatewayAuditPayloadSeverity = "warning"
-	GatewayAuditPayloadSeverityInfo     GatewayAuditPayloadSeverity = "info"
+	GatewayAuditPayloadSeverityHigh     GatewayAuditPayloadSeverity = "high"
+	GatewayAuditPayloadSeverityMedium   GatewayAuditPayloadSeverity = "medium"
+	GatewayAuditPayloadSeverityLow      GatewayAuditPayloadSeverity = "low"
+	GatewayAuditPayloadSeverityUnknown  GatewayAuditPayloadSeverity = "unknown"
 )
 
 // AllValues returns all GatewayAuditPayloadSeverity values.
 func (GatewayAuditPayloadSeverity) AllValues() []GatewayAuditPayloadSeverity {
 	return []GatewayAuditPayloadSeverity{
 		GatewayAuditPayloadSeverityCritical,
-		GatewayAuditPayloadSeverityWarning,
-		GatewayAuditPayloadSeverityInfo,
+		GatewayAuditPayloadSeverityHigh,
+		GatewayAuditPayloadSeverityMedium,
+		GatewayAuditPayloadSeverityLow,
+		GatewayAuditPayloadSeverityUnknown,
 	}
 }
 
@@ -4758,9 +4762,13 @@ func (s GatewayAuditPayloadSeverity) MarshalText() ([]byte, error) {
 	switch s {
 	case GatewayAuditPayloadSeverityCritical:
 		return []byte(s), nil
-	case GatewayAuditPayloadSeverityWarning:
+	case GatewayAuditPayloadSeverityHigh:
 		return []byte(s), nil
-	case GatewayAuditPayloadSeverityInfo:
+	case GatewayAuditPayloadSeverityMedium:
+		return []byte(s), nil
+	case GatewayAuditPayloadSeverityLow:
+		return []byte(s), nil
+	case GatewayAuditPayloadSeverityUnknown:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -4773,11 +4781,17 @@ func (s *GatewayAuditPayloadSeverity) UnmarshalText(data []byte) error {
 	case GatewayAuditPayloadSeverityCritical:
 		*s = GatewayAuditPayloadSeverityCritical
 		return nil
-	case GatewayAuditPayloadSeverityWarning:
-		*s = GatewayAuditPayloadSeverityWarning
+	case GatewayAuditPayloadSeverityHigh:
+		*s = GatewayAuditPayloadSeverityHigh
 		return nil
-	case GatewayAuditPayloadSeverityInfo:
-		*s = GatewayAuditPayloadSeverityInfo
+	case GatewayAuditPayloadSeverityMedium:
+		*s = GatewayAuditPayloadSeverityMedium
+		return nil
+	case GatewayAuditPayloadSeverityLow:
+		*s = GatewayAuditPayloadSeverityLow
+		return nil
+	case GatewayAuditPayloadSeverityUnknown:
+		*s = GatewayAuditPayloadSeverityUnknown
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -12652,11 +12666,11 @@ type SignalProcessingAuditPayload struct {
 	Phase SignalProcessingAuditPayloadPhase `json:"phase"`
 	// Name of the signal being processed.
 	Signal string `json:"signal"`
-	// Severity level of the signal.
+	// Normalized severity level (DD-SEVERITY-001 v1.1).
 	Severity OptSignalProcessingAuditPayloadSeverity `json:"severity"`
 	// Original severity from external monitoring system (e.g., Sev1, P0, critical).
 	ExternalSeverity OptString `json:"external_severity"`
-	// Normalized severity determined by Rego policy.
+	// Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1).
 	NormalizedSeverity OptSignalProcessingAuditPayloadNormalizedSeverity `json:"normalized_severity"`
 	// Source of severity determination for audit trail.
 	DeterminationSource OptSignalProcessingAuditPayloadDeterminationSource `json:"determination_source"`
@@ -13246,21 +13260,25 @@ func (s *SignalProcessingAuditPayloadEventType) UnmarshalText(data []byte) error
 	}
 }
 
-// Normalized severity determined by Rego policy.
+// Normalized severity determined by Rego policy (DD-SEVERITY-001 v1.1).
 type SignalProcessingAuditPayloadNormalizedSeverity string
 
 const (
 	SignalProcessingAuditPayloadNormalizedSeverityCritical SignalProcessingAuditPayloadNormalizedSeverity = "critical"
-	SignalProcessingAuditPayloadNormalizedSeverityWarning  SignalProcessingAuditPayloadNormalizedSeverity = "warning"
-	SignalProcessingAuditPayloadNormalizedSeverityInfo     SignalProcessingAuditPayloadNormalizedSeverity = "info"
+	SignalProcessingAuditPayloadNormalizedSeverityHigh     SignalProcessingAuditPayloadNormalizedSeverity = "high"
+	SignalProcessingAuditPayloadNormalizedSeverityMedium   SignalProcessingAuditPayloadNormalizedSeverity = "medium"
+	SignalProcessingAuditPayloadNormalizedSeverityLow      SignalProcessingAuditPayloadNormalizedSeverity = "low"
+	SignalProcessingAuditPayloadNormalizedSeverityUnknown  SignalProcessingAuditPayloadNormalizedSeverity = "unknown"
 )
 
 // AllValues returns all SignalProcessingAuditPayloadNormalizedSeverity values.
 func (SignalProcessingAuditPayloadNormalizedSeverity) AllValues() []SignalProcessingAuditPayloadNormalizedSeverity {
 	return []SignalProcessingAuditPayloadNormalizedSeverity{
 		SignalProcessingAuditPayloadNormalizedSeverityCritical,
-		SignalProcessingAuditPayloadNormalizedSeverityWarning,
-		SignalProcessingAuditPayloadNormalizedSeverityInfo,
+		SignalProcessingAuditPayloadNormalizedSeverityHigh,
+		SignalProcessingAuditPayloadNormalizedSeverityMedium,
+		SignalProcessingAuditPayloadNormalizedSeverityLow,
+		SignalProcessingAuditPayloadNormalizedSeverityUnknown,
 	}
 }
 
@@ -13269,9 +13287,13 @@ func (s SignalProcessingAuditPayloadNormalizedSeverity) MarshalText() ([]byte, e
 	switch s {
 	case SignalProcessingAuditPayloadNormalizedSeverityCritical:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
+	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
+	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadNormalizedSeverityLow:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadNormalizedSeverityUnknown:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -13284,11 +13306,17 @@ func (s *SignalProcessingAuditPayloadNormalizedSeverity) UnmarshalText(data []by
 	case SignalProcessingAuditPayloadNormalizedSeverityCritical:
 		*s = SignalProcessingAuditPayloadNormalizedSeverityCritical
 		return nil
-	case SignalProcessingAuditPayloadNormalizedSeverityWarning:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityWarning
+	case SignalProcessingAuditPayloadNormalizedSeverityHigh:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityHigh
 		return nil
-	case SignalProcessingAuditPayloadNormalizedSeverityInfo:
-		*s = SignalProcessingAuditPayloadNormalizedSeverityInfo
+	case SignalProcessingAuditPayloadNormalizedSeverityMedium:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityMedium
+		return nil
+	case SignalProcessingAuditPayloadNormalizedSeverityLow:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityLow
+		return nil
+	case SignalProcessingAuditPayloadNormalizedSeverityUnknown:
+		*s = SignalProcessingAuditPayloadNormalizedSeverityUnknown
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -13477,21 +13505,25 @@ func (s *SignalProcessingAuditPayloadPrioritySource) UnmarshalText(data []byte) 
 	}
 }
 
-// Severity level of the signal.
+// Normalized severity level (DD-SEVERITY-001 v1.1).
 type SignalProcessingAuditPayloadSeverity string
 
 const (
 	SignalProcessingAuditPayloadSeverityCritical SignalProcessingAuditPayloadSeverity = "critical"
-	SignalProcessingAuditPayloadSeverityWarning  SignalProcessingAuditPayloadSeverity = "warning"
-	SignalProcessingAuditPayloadSeverityInfo     SignalProcessingAuditPayloadSeverity = "info"
+	SignalProcessingAuditPayloadSeverityHigh     SignalProcessingAuditPayloadSeverity = "high"
+	SignalProcessingAuditPayloadSeverityMedium   SignalProcessingAuditPayloadSeverity = "medium"
+	SignalProcessingAuditPayloadSeverityLow      SignalProcessingAuditPayloadSeverity = "low"
+	SignalProcessingAuditPayloadSeverityUnknown  SignalProcessingAuditPayloadSeverity = "unknown"
 )
 
 // AllValues returns all SignalProcessingAuditPayloadSeverity values.
 func (SignalProcessingAuditPayloadSeverity) AllValues() []SignalProcessingAuditPayloadSeverity {
 	return []SignalProcessingAuditPayloadSeverity{
 		SignalProcessingAuditPayloadSeverityCritical,
-		SignalProcessingAuditPayloadSeverityWarning,
-		SignalProcessingAuditPayloadSeverityInfo,
+		SignalProcessingAuditPayloadSeverityHigh,
+		SignalProcessingAuditPayloadSeverityMedium,
+		SignalProcessingAuditPayloadSeverityLow,
+		SignalProcessingAuditPayloadSeverityUnknown,
 	}
 }
 
@@ -13500,9 +13532,13 @@ func (s SignalProcessingAuditPayloadSeverity) MarshalText() ([]byte, error) {
 	switch s {
 	case SignalProcessingAuditPayloadSeverityCritical:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadSeverityWarning:
+	case SignalProcessingAuditPayloadSeverityHigh:
 		return []byte(s), nil
-	case SignalProcessingAuditPayloadSeverityInfo:
+	case SignalProcessingAuditPayloadSeverityMedium:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadSeverityLow:
+		return []byte(s), nil
+	case SignalProcessingAuditPayloadSeverityUnknown:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -13515,11 +13551,17 @@ func (s *SignalProcessingAuditPayloadSeverity) UnmarshalText(data []byte) error 
 	case SignalProcessingAuditPayloadSeverityCritical:
 		*s = SignalProcessingAuditPayloadSeverityCritical
 		return nil
-	case SignalProcessingAuditPayloadSeverityWarning:
-		*s = SignalProcessingAuditPayloadSeverityWarning
+	case SignalProcessingAuditPayloadSeverityHigh:
+		*s = SignalProcessingAuditPayloadSeverityHigh
 		return nil
-	case SignalProcessingAuditPayloadSeverityInfo:
-		*s = SignalProcessingAuditPayloadSeverityInfo
+	case SignalProcessingAuditPayloadSeverityMedium:
+		*s = SignalProcessingAuditPayloadSeverityMedium
+		return nil
+	case SignalProcessingAuditPayloadSeverityLow:
+		*s = SignalProcessingAuditPayloadSeverityLow
+		return nil
+	case SignalProcessingAuditPayloadSeverityUnknown:
+		*s = SignalProcessingAuditPayloadSeverityUnknown
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
