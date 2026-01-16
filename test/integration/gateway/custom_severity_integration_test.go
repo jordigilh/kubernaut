@@ -182,18 +182,71 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			GinkgoWriter.Printf("✅ Missing severity defaulted to 'unknown' (not policy)\n")
 		})
 
-		// NOTE: GW-INT-SEV-005 and GW-INT-SEV-006 DEFERRED to Week 1 DD-SEVERITY-001
-		// These tests require CRD schema changes (RemediationRequest.Spec.Severity enum removal)
-		// which are part of Week 1 work. Tests will be added after CRD refactoring is complete.
-		//
-		// Deferred test scenarios:
-		// - GW-INT-SEV-005: Verify "Sev1" (enterprise severity) passes through unchanged
-		// - GW-INT-SEV-006: Verify "P0" (PagerDuty severity) passes through unchanged
-		//
-		// Per TESTING_GUIDELINES.md: Neither PIt() nor Skip() allowed in integration tests.
-		// Tests removed to avoid guideline violations until CRD schema changes are complete.
-		//
-		// Authority: BR-GATEWAY-181, DD-SEVERITY-001 Week 1 dependency
+		It("[GW-INT-SEV-005] should preserve 'Sev1' enterprise severity without transformation", func() {
+			By("1. Create Gateway server")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Process Prometheus alert with 'Sev1' severity")
+			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAlert := createPrometheusAlert(testNamespace, "EnterpriseCritical", "Sev1", "", "")
+			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Verify 'Sev1' preserved in NormalizedSignal (no transformation)")
+			Expect(signal.Severity).To(Equal("Sev1"),
+				"BR-GATEWAY-181: Gateway must NOT transform 'Sev1' to 'critical'")
+
+			By("4. Process signal through Gateway")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("5. Verify RemediationRequest CRD has original 'Sev1' severity")
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: testNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr.Spec.Severity).To(Equal("Sev1"),
+				"BR-GATEWAY-181: CRD must preserve enterprise severity scheme")
+
+			GinkgoWriter.Printf("✅ Enterprise severity preserved: Sev1 → Sev1 (no transformation)\n")
+		})
+
+		It("[GW-INT-SEV-006] should preserve 'P0' PagerDuty severity without transformation", func() {
+			By("1. Create Gateway server")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Process Prometheus alert with 'P0' severity")
+			prometheusAdapter := adapters.NewPrometheusAdapter()
+			prometheusAlert := createPrometheusAlert(testNamespace, "PagerDutyCritical", "P0", "", "")
+			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("3. Verify 'P0' preserved in NormalizedSignal (no transformation)")
+			Expect(signal.Severity).To(Equal("P0"),
+				"BR-GATEWAY-181: Gateway must NOT transform 'P0' to 'critical'")
+
+			By("4. Process signal through Gateway")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("5. Verify RemediationRequest CRD has original 'P0' severity")
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: testNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr.Spec.Severity).To(Equal("P0"),
+				"BR-GATEWAY-181: CRD must preserve PagerDuty severity scheme")
+
+			GinkgoWriter.Printf("✅ PagerDuty severity preserved: P0 → P0 (no transformation)\n")
+		})
 	})
 
 	Context("Kubernetes Events with Type-as-Severity", func() {
