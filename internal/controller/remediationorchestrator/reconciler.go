@@ -1648,7 +1648,9 @@ func (r *Reconciler) emitRemediationCreatedAudit(ctx context.Context, rr *remedi
 		return
 	}
 
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Convert TimeoutConfig for audit event (Gap #8)
 	// Direct pointer assignment - roaudit.TimeoutConfig uses same *metav1.Duration type
@@ -1698,7 +1700,9 @@ func (r *Reconciler) emitLifecycleStartedAudit(ctx context.Context, rr *remediat
 		// If we reach here, it's a programming error (e.g., test misconfiguration).
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildLifecycleStartedEvent(
 		correlationID,
@@ -1736,7 +1740,9 @@ func (r *Reconciler) emitPhaseTransitionAudit(ctx context.Context, rr *remediati
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildPhaseTransitionEvent(
 		correlationID,
@@ -1775,7 +1781,9 @@ func (r *Reconciler) emitCompletionAudit(ctx context.Context, rr *remediationv1.
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildCompletionEvent(
 		correlationID,
@@ -1815,7 +1823,9 @@ func (r *Reconciler) emitFailureAudit(ctx context.Context, rr *remediationv1.Rem
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	event, err := r.auditManager.BuildFailureEvent(
 		correlationID,
@@ -1854,7 +1864,9 @@ func (r *Reconciler) emitRoutingBlockedAudit(ctx context.Context, rr *remediatio
 		// Note: In production, this never happens due to main.go:128 crash check.
 		return
 	}
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Build routing blocked data
 	requeueSeconds := int(blocked.RequeueAfter.Seconds())
@@ -1918,7 +1930,9 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 		return
 	}
 
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Calculate RAR name using deterministic naming pattern
 	rarName := fmt.Sprintf("rar-%s", rr.Name)
@@ -1961,7 +1975,9 @@ func (r *Reconciler) emitApprovalDecisionAudit(ctx context.Context, rr *remediat
 		return
 	}
 
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Determine event type and outcome based on decision
 	var eventType string
@@ -2035,7 +2051,9 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 		return
 	}
 
-	correlationID := string(rr.UID)
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+	// Per universal standard: All services use RemediationRequest.Name for audit correlation
+	correlationID := rr.Name
 
 	// Use audit helper to create event with proper timestamp (DD-AUDIT-002 V2.0)
 	// Reuse lifecycle.completed event type with outcome=failure for timeouts

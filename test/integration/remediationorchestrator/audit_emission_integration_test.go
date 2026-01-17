@@ -107,7 +107,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			rr := newValidRemediationRequest("rr-lifecycle-started", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Wait for RO to transition to Processing (creates SignalProcessing CRD)
 			Eventually(func() remediationv1.RemediationPhase {
@@ -146,7 +148,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			rr := newValidRemediationRequest("rr-phase-transition", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Wait for Processing phase (RO creates SignalProcessing CRD)
 			Eventually(func() remediationv1.RemediationPhase {
@@ -214,7 +218,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 
 			// Refresh RR to get server-populated fields (including UID for correlation_id)
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)).To(Succeed())
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Fast-forward through phases: update RO-created child CRDs to completed status
 			// Wait for Processing
@@ -334,7 +340,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			rr := newValidRemediationRequest("rr-failure", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Wait for Processing
 			Eventually(func() remediationv1.RemediationPhase {
@@ -423,7 +431,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			rr := newValidRemediationRequest("rr-approval", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Fast-forward to Analyzing
 			Eventually(func() remediationv1.RemediationPhase {
@@ -499,7 +509,9 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			rr := newValidRemediationRequest("rr-metadata", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Wait for Processing
 			Eventually(func() remediationv1.RemediationPhase {

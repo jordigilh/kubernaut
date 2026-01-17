@@ -99,7 +99,9 @@ var _ = Describe("Gap #8: TimeoutConfig Audit Capture", func() {
 			err := k8sClient.Create(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Then: orchestrator.lifecycle.created event should be emitted
 			// BR-AUDIT-005 Gap #8: Must capture TimeoutConfig for RR reconstruction
@@ -221,7 +223,9 @@ var _ = Describe("Gap #8: TimeoutConfig Audit Capture", func() {
 			err := k8sClient.Create(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 
-			correlationID := string(rr.UID)
+			// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		// Per universal standard: RemediationRequest.Name is the correlation ID for all services
+		correlationID := rr.Name
 
 			// Then: Audit event should reflect initialized TimeoutConfig
 			// (not nil, proving event was emitted AFTER initialization)

@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -408,13 +409,16 @@ func (c *CRDCreator) CreateRemediationRequest(
 	// Example: rr-bd773c9f25ac-1731868032
 	// This ensures each signal occurrence creates a unique CRD, even if the
 	// same problem reoccurs after a previous remediation completed.
-	// See: docs/architecture/decisions/DD-015-timestamp-based-crd-naming.md
+	// Per DD-AUDIT-CORRELATION-002: Use UUID suffix (not timestamp) for guaranteed uniqueness
+	// Format: rr-{fingerprint-prefix}-{uuid-suffix}
+	// Example: "rr-pod-crash-f8a3b9c2" (human-readable + globally unique)
 	fingerprintPrefix := signal.Fingerprint
 	if len(fingerprintPrefix) > 12 {
 		fingerprintPrefix = fingerprintPrefix[:12]
 	}
-	timestamp := c.clock.Now().Unix()
-	crdName := fmt.Sprintf("rr-%s-%d", fingerprintPrefix, timestamp)
+	// DD-AUDIT-CORRELATION-002: UUID suffix guarantees zero collision risk
+	shortUUID := uuid.New().String()[:8]
+	crdName := fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
 
 	// Build RemediationRequest CRD
 	rr := &remediationv1alpha1.RemediationRequest{

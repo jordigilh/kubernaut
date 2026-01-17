@@ -18,7 +18,6 @@ package adapters
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,10 +131,10 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		Namespace: extractNamespace(alert.Labels),
 	}
 
-	// Generate fingerprint for deduplication
+	// Generate fingerprint for deduplication (shared utility)
 	// Format: SHA256(alertname:namespace:kind:name)
 	// Example: "HighMemoryUsage:prod-payment-service:Pod:payment-api-789"
-	fingerprint := calculateFingerprint(alert.Labels["alertname"], resource)
+	fingerprint := types.CalculateFingerprint(alert.Labels["alertname"], resource)
 
 	// Merge alert-specific labels with common labels
 	// Common labels are shared across all alerts in the webhook group
@@ -223,16 +222,6 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 //
 // Returns:
 // - string: 64-character hex string (e.g., "a1b2c3d4e5f6...")
-func calculateFingerprint(alertName string, resource types.ResourceIdentifier) string {
-	key := fmt.Sprintf("%s:%s:%s:%s",
-		alertName,
-		resource.Namespace,
-		resource.Kind,
-		resource.Name,
-	)
-	hash := sha256.Sum256([]byte(key))
-	return fmt.Sprintf("%x", hash)
-}
 
 // extractResourceKind determines Kubernetes resource type from labels
 //
