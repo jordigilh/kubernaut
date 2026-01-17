@@ -143,22 +143,22 @@ func NewServer(
 	connMaxLifetime, err := time.ParseDuration(appCfg.Database.ConnMaxLifetime)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("invalid conn_max_lifetime: %w", err)
+		return nil, fmt.Errorf("invalid connMaxLifetime: %w", err)
 	}
 	db.SetConnMaxLifetime(connMaxLifetime)
 
 	connMaxIdleTime, err := time.ParseDuration(appCfg.Database.ConnMaxIdleTime)
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("invalid conn_max_idle_time: %w", err)
+		return nil, fmt.Errorf("invalid connMaxIdleTime: %w", err)
 	}
 	db.SetConnMaxIdleTime(connMaxIdleTime)
 
 	logger.Info("PostgreSQL connection established",
-		"max_open_conns", appCfg.Database.MaxOpenConns,
-		"max_idle_conns", appCfg.Database.MaxIdleConns,
-		"conn_max_lifetime", appCfg.Database.ConnMaxLifetime,
-		"conn_max_idle_time", appCfg.Database.ConnMaxIdleTime,
+		"maxOpenConns", appCfg.Database.MaxOpenConns,
+		"maxIdleConns", appCfg.Database.MaxIdleConns,
+		"connMaxLifetime", appCfg.Database.ConnMaxLifetime,
+		"connMaxIdleTime", appCfg.Database.ConnMaxIdleTime,
 	)
 
 	// Connect to Redis for DLQ (DD-009)

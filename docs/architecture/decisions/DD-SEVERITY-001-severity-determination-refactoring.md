@@ -264,7 +264,7 @@ default result := {"severity": "unknown", "source": "fallback"}
 
 ---
 
-#### **Week 3: Gateway Refactoring** 🟡 95% COMPLETE
+#### **Week 3: Gateway Refactoring** ✅ COMPLETE
 
 **Summary**: Remove hardcoded severity mappings, implement pass-through architecture
 
@@ -274,9 +274,9 @@ default result := {"severity": "unknown", "source": "fallback"}
 - Only default to "unknown" if severity is completely missing
 - Deprecate BR-GATEWAY-007 (priority determination moved to SP)
 
-**Status**: 🟡 Code complete, 2 integration tests pending (remove `PIt`/`Skip`)
+**Status**: ✅ Code complete, all 10 integration tests implemented and enabled
 
-See [Implementation Plan - Week 3](../../implementation/DD-SEVERITY-001-implementation-plan.md#week-3-gateway-refactoring-95-complete) for detailed code changes and blocker resolution.
+See [Implementation Plan - Week 3](../../implementation/DD-SEVERITY-001-implementation-plan.md#week-3-gateway-refactoring-95-complete) for detailed code changes.
 
 ---
 
@@ -303,26 +303,26 @@ See [Implementation Plan - Week 4](../../implementation/DD-SEVERITY-001-implemen
 **Scenarios**:
 1. Enterprise "Sev1" full pipeline (Gateway → RR → SP → RO → AA → NT)
 2. PagerDuty "P0" full pipeline
-3. Rego hot-reload verification (no pod restart)
+3. Rego hot-reload verification (no pod restart) - ✅ COMPLETE (SP integration test)
 4. Multi-scheme support (Sev1, P0, critical all → critical)
 
-**Status**: ⏸️ Pending Gateway tests 005 & 006 completion (remove `PIt`/`Skip`)
+**Status**: ⏸️ Ready for Sprint N+1 (all blockers resolved)
 
 See [E2E Test Scenarios](../../testing/test-plans/DD-SEVERITY-001-E2E-SCENARIOS.md) for detailed test specifications.
 
 ---
 
-### **Overall Implementation Status: 85% Complete**
+### **Overall Implementation Status: 95% Complete**
 
 | Week | Status | Code | Tests | Blocker |
 |------|--------|------|-------|---------|
 | Week 1 | ✅ 100% | ✅ | ✅ | None |
 | Week 2 | ✅ 100% | ✅ | ✅ | None |
-| Week 3 | 🟡 95% | ✅ | 🟡 8/10 | Tests 005 & 006 |
+| Week 3 | ✅ 100% | ✅ | ✅ | None |
 | Week 4 | ✅ 100% | ✅ | ✅ | None |
-| Week 5 | ⏸️ 0% | N/A | ⏸️ 0/4 | Gateway P1 |
+| Week 5 | ⏸️ 25% | N/A | ⏸️ 1/4 | E2E next sprint |
 
-**Next Steps**: Gateway team to enable tests 005 & 006, then proceed to E2E scenarios in Sprint N+1.
+**Next Steps**: E2E scenarios in Sprint N+1 (Weeks 1-4 complete, all blockers resolved).
 
 For real-time progress tracking and detailed task status, see [Implementation Plan](../../implementation/DD-SEVERITY-001-implementation-plan.md).
 
@@ -658,9 +658,9 @@ This design decision (DD-SEVERITY-001) focuses on **WHY** (architecture, rationa
 
 | Service | Impact | Code Changes | Unit Tests | Integration Tests | Status |
 |---------|--------|--------------|------------|-------------------|--------|
-| **Gateway** | ✅ Updated | Week 3 | ✅ Complete | 🟡 80% (2 pending) | 95% |
+| **Gateway** | ✅ Updated | Week 3 | ✅ Complete | ✅ Complete | 100% |
 | **SignalProcessing** | ✅ Updated | Week 2 | ✅ Complete | ✅ Complete | 100% |
-| **RemediationOrchestrator** | ✅ Updated | Week 4 | ✅ Complete | ⚠️ Missing | 70% |
+| **RemediationOrchestrator** | ✅ Updated | Week 4 | ✅ Complete | ✅ Complete | 100% |
 | **AIAnalysis Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
 | **Notification Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
 | **WorkflowExecution Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
@@ -730,18 +730,16 @@ This design decision (DD-SEVERITY-001) focuses on **WHY** (architecture, rationa
 - ✅ `[GW-INT-SEV-002]` - Preserve 'warning' severity
 - ✅ `[GW-INT-SEV-003]` - Preserve 'info' severity
 - ✅ `[GW-INT-SEV-004]` - Default to 'unknown' if missing
-- ⚠️ `[GW-INT-SEV-005]` - Preserve 'Sev1' enterprise severity **[PENDING: Remove PIt/Skip]**
-- ⚠️ `[GW-INT-SEV-006]` - Preserve 'P0' PagerDuty severity **[PENDING: Remove PIt/Skip]**
+- ✅ `[GW-INT-SEV-005]` - Preserve 'Sev1' enterprise severity (2026-01-16: enabled)
+- ✅ `[GW-INT-SEV-006]` - Preserve 'P0' PagerDuty severity (2026-01-16: enabled)
 - ✅ `[GW-INT-SEV-007]` - Preserve K8s 'Warning' event type
 - ✅ `[GW-INT-SEV-008]` - Preserve K8s 'Error' event type
 - ✅ `[GW-INT-SEV-009]` - No hardcoded OOMKilled→critical mapping
 - ✅ `[GW-INT-SEV-010]` - Accept ANY non-empty severity string
 
-**Integration Tests Status**: 🟡 80% complete (8/10 passing, 2 pending `PIt()`/`Skip()` removal)
+**Integration Tests Status**: ✅ 100% complete (all 10 tests enabled and implemented)
 
-**Blocking Issue**: Tests 005 & 006 use `PIt()` + `Skip()` which is **FORBIDDEN** per TESTING_GUIDELINES.md lines 1104-1233
-
-**Deliverables**: ✅ Gateway code complete, 🟡 Integration tests 80% complete
+**Deliverables**: ✅ Gateway code complete, ✅ Integration tests complete
 
 ---
 
@@ -760,11 +758,12 @@ This design decision (DD-SEVERITY-001) focuses on **WHY** (architecture, rationa
   - Verifies RO uses `sp.Status.Severity` (normalized "critical") not `rr.Spec.Severity` (external "Sev1")
 
 **Integration Tests**:
-- ⚠️ **MISSING**: No RO integration test verifies normalized severity propagation in K8s environment
+- ✅ `test/integration/remediationorchestrator/severity_normalization_integration_test.go`
+  - `[RO-INT-SEV-001]` - Sev1 → critical (line 73)
+  - `[RO-INT-SEV-002]` - Sev2 → high (line 152)
+  - `[RO-INT-SEV-003]` - P0 → critical (line 231)
 
-**Rationale for Missing Integration Test**: RO integration tests focus on routing, approval, timeouts, notifications - but not severity propagation specifically. This is a **gap** that should be filled.
-
-**Deliverables**: ✅ RO code complete, ✅ Unit tests complete, ⚠️ Integration tests missing
+**Deliverables**: ✅ RO code complete, ✅ Unit tests complete, ✅ Integration tests complete
 
 ---
 
@@ -790,26 +789,27 @@ This design decision (DD-SEVERITY-001) focuses on **WHY** (architecture, rationa
 
 ---
 
-### **Overall Progress: 85% Complete**
+### **Overall Progress: 95% Complete**
 
 | Week | Component | Code | Unit Tests | Integration Tests | E2E Tests | Status |
 |------|-----------|------|------------|-------------------|-----------|--------|
 | **Week 1** | CRD Schema | ✅ 100% | ✅ 100% | N/A | N/A | ✅ 100% |
 | **Week 2** | SignalProcessing | ✅ 100% | ✅ 100% | ✅ 100% | N/A | ✅ 100% |
-| **Week 3** | Gateway | ✅ 100% | ✅ 100% | 🟡 80% (2 pending) | N/A | 🟡 95% |
-| **Week 4** | RO + DataStorage | ✅ 100% | ✅ 100% | ⚠️ 0% (missing) | N/A | 🟡 70% |
-| **Week 5** | E2E Pipeline | N/A | N/A | N/A | ⚠️ 0% (pending) | ⚠️ 0% |
+| **Week 3** | Gateway | ✅ 100% | ✅ 100% | ✅ 100% | N/A | ✅ 100% |
+| **Week 4** | RO + DataStorage | ✅ 100% | ✅ 100% | ✅ 100% | N/A | ✅ 100% |
+| **Week 5** | E2E Pipeline | N/A | N/A | N/A | ⏸️ 0/3 (Sprint N+1) | ⏸️ 25% |
 
-**Blocking Items**:
-1. ⚠️ **P1**: Enable Gateway tests 005 & 006 (remove `PIt()`/`Skip()` - TESTING_GUIDELINES.md violation)
-2. ⚠️ **P2**: Create RO integration test for normalized severity propagation
-3. ⚠️ **P3**: Create E2E pipeline test using test fixtures (full Gateway → RR → SP → RO → AA flow)
+**Remaining Items**:
+1. ⏸️ **Sprint N+1**: E2E Scenario 1 - Enterprise "Sev1" full pipeline
+2. ⏸️ **Sprint N+1**: E2E Scenario 2 - PagerDuty "P0" full pipeline  
+3. ⏸️ **Sprint N+1**: E2E Scenario 4 - Multi-scheme support
+4. ✅ **COMPLETE**: E2E Scenario 3 - Rego hot-reload (covered in SP integration tests)
 
 **Confidence Assessment**:
 - **Code Implementation**: 100% complete (all services updated or triaged)
 - **Unit Test Coverage**: 100% complete (all critical paths tested)
-- **Integration Test Coverage**: 75% complete (Gateway 80%, SP 100%, RO 0%)
-- **E2E Test Coverage**: 0% complete (pending Gateway Week 3 completion)
+- **Integration Test Coverage**: 100% complete (Gateway 100%, SP 100%, RO 100%)
+- **E2E Test Coverage**: 25% complete (Scenario 3 done, Scenarios 1/2/4 Sprint N+1)
 
 ---
 
