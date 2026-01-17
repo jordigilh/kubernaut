@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	// DD-GATEWAY-011: sharedtypes import removed (Spec.Deduplication no longer populated)
 )
 
@@ -404,14 +405,17 @@ func (c *CRDCreator) CreateRemediationRequest(
 		return nil, err
 	}
 
-	// DD-015: Timestamp-Based CRD Naming for Unique Occurrences
-	// Generate CRD name from fingerprint (first 12 chars) + Unix timestamp
-	// Example: rr-bd773c9f25ac-1731868032
-	// This ensures each signal occurrence creates a unique CRD, even if the
-	// same problem reoccurs after a previous remediation completed.
-	// Per DD-AUDIT-CORRELATION-002: Use UUID suffix (not timestamp) for guaranteed uniqueness
+	// DD-AUDIT-CORRELATION-002: UUID-Based CRD Naming for Unique Occurrences
+	// Generate CRD name from fingerprint (first 12 chars) + UUID suffix (8 chars)
 	// Format: rr-{fingerprint-prefix}-{uuid-suffix}
 	// Example: "rr-pod-crash-f8a3b9c2" (human-readable + globally unique)
+	// 
+	// This ensures:
+	// - Each signal occurrence creates a unique CRD (zero collision risk)
+	// - Human-readable correlation IDs for debugging
+	// - Universal standard: All services use rr.Name as correlation_id
+	//
+	// Supersedes: DD-015 (timestamp-based naming)
 	fingerprintPrefix := signal.Fingerprint
 	if len(fingerprintPrefix) > 12 {
 		fingerprintPrefix = fingerprintPrefix[:12]
@@ -726,44 +730,18 @@ func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remedia
 	}
 }
 
-// truncateLabelValues truncates label values to comply with K8s 63 character limit
-// K8s label values must be <= 63 characters
+// truncateLabelValues truncates label values to comply with K8s 63 character limit.
+// Uses shared K8s validation utility for consistent behavior across services.
 // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
 func (c *CRDCreator) truncateLabelValues(labels map[string]string) map[string]string {
-	if labels == nil {
-		return nil
-	}
-
-	truncated := make(map[string]string, len(labels))
-	for key, value := range labels {
-		if len(value) > 63 {
-			truncated[key] = value[:63]
-		} else {
-			truncated[key] = value
-		}
-	}
-	return truncated
+	return sharedK8s.TruncateMapValues(labels, sharedK8s.MaxLabelValueLength)
 }
 
-// truncateAnnotationValues truncates annotation values to comply with K8s 256KB limit
-// K8s annotation values must be < 256KB (262144 bytes)
-// We truncate to 262000 bytes to leave room for metadata overhead
+// truncateAnnotationValues truncates annotation values to comply with K8s 256KB limit.
+// Uses shared K8s validation utility for consistent behavior across services.
 // See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/#syntax-and-character-set
 func (c *CRDCreator) truncateAnnotationValues(annotations map[string]string) map[string]string {
-	if annotations == nil {
-		return nil
-	}
-
-	const maxAnnotationSize = 262000 // Slightly less than 256KB to leave room for overhead
-	truncated := make(map[string]string, len(annotations))
-	for key, value := range annotations {
-		if len(value) > maxAnnotationSize {
-			truncated[key] = value[:maxAnnotationSize]
-		} else {
-			truncated[key] = value
-		}
-	}
-	return truncated
+	return sharedK8s.TruncateMapValues(annotations, sharedK8s.MaxAnnotationValueLength)
 }
 
 // isNamespaceNotFoundError checks if an error is specifically about a namespace not being found
