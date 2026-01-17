@@ -113,13 +113,10 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Expect(sp.Spec.Signal.Severity).To(Equal("Sev1"),
 				"SignalProcessing.Spec should copy external severity from RemediationRequest")
 
-			By("4. Simulate SignalProcessing Rego normalization by updating Status")
-			// In real environment, SignalProcessing controller runs Rego policy
-			// For integration test, we manually set normalized severity
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical" // Normalized by Rego (Sev1 → critical)
-			sp.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		By("4. Simulate SignalProcessing Rego normalization by updating Status")
+		// In real environment, SignalProcessing controller runs Rego policy
+		// For integration test, we use helper to consistently set normalized severity
+		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("5. Wait for RO to create AIAnalysis")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -127,7 +124,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sClient.List(ctx, &aaList,
 					client.InNamespace(namespace),
-					client.MatchingLabels{"remediation-request": rrName})
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
 					return false
 				}
@@ -187,10 +184,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "high" // Normalized by Rego (Sev2 → high)
-			sp.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -198,7 +193,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sClient.List(ctx, &aaList,
 					client.InNamespace(namespace),
-					client.MatchingLabels{"remediation-request": rrName})
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
 					return false
 				}
@@ -268,10 +263,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Expect(sp.Spec.Signal.Severity).To(Equal("P0"),
 				"SignalProcessing should preserve external 'P0' in Spec")
 
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical" // Normalized by Rego (P0 → critical)
-			sp.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -279,7 +272,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sClient.List(ctx, &aaList,
 					client.InNamespace(namespace),
-					client.MatchingLabels{"remediation-request": rrName})
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
 					return false
 				}
@@ -331,10 +324,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "medium" // Normalized by Rego (P3 → medium)
-			sp.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -342,7 +333,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sClient.List(ctx, &aaList,
 					client.InNamespace(namespace),
-					client.MatchingLabels{"remediation-request": rrName})
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
 					return false
 				}
@@ -409,10 +400,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical" // 1:1 mapping (critical → critical)
-			sp.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -420,7 +409,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				var aaList aianalysisv1.AIAnalysisList
 				err := k8sClient.List(ctx, &aaList,
 					client.InNamespace(namespace),
-					client.MatchingLabels{"remediation-request": rrName})
+					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
 					return false
 				}
