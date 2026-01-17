@@ -164,12 +164,12 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 			ExponentialBackoffBase:        int64(1 * time.Minute / time.Second),  // 60 seconds (1 minute)
 			ExponentialBackoffMax:         int64(10 * time.Minute / time.Second), // 600 seconds (10 minutes)
 			ExponentialBackoffMaxExponent: 4,                                     // 2^4 = 16x multiplier
-	}
-	// TODO: Get namespace from controller-runtime manager or environment variable
-	// For now, using empty string which means all namespaces
-	routingNamespace := ""
-	// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
-	routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig)
+		}
+		// TODO: Get namespace from controller-runtime manager or environment variable
+		// For now, using empty string which means all namespaces
+		routingNamespace := ""
+		// DD-STATUS-001: Pass apiReader for cache-bypassed routing queries
+		routingEngine = routing.NewRoutingEngine(c, apiReader, routingNamespace, routingConfig)
 	}
 
 	// ========================================

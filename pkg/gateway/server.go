@@ -967,10 +967,10 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 		// Record metrics
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
-		
+
 		// BR-GATEWAY-069: Cache hit metric (deduplication detected)
 		s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
-		
+
 		// Note: DeduplicationRate gauge is calculated on-the-fly by custom collector
 		// when /metrics endpoint is scraped (see metrics.DeduplicationRateCollector)
 
