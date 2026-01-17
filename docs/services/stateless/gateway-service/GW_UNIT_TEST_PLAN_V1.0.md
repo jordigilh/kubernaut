@@ -971,8 +971,8 @@ var _ = Describe("BR-GATEWAY-108: Goroutine Management", func() {
 **Implementation Required**:
 - `pkg/gateway/server/server.go` - Ensure goroutine cleanup in Shutdown()
 - `pkg/gateway/server/worker_pool.go` - Bounded worker pool implementation
-- `pkg/gateway/server/goroutine_test.go` - Goroutine leak tests (this file)
-- `pkg/testutil/runtime/leak_detector.go` - Goroutine leak detection utility
+- `test/unit/gateway/goroutine_test.go` - Goroutine leak tests (this file)
+- `test/unit/gateway/helpers/runtime.go` - Goroutine leak detection helper (if reusable)
 
 **Timeline**: 3-5 hours
 
@@ -1013,25 +1013,25 @@ var _ = Describe("BR-GATEWAY-108: Goroutine Management", func() {
 ## 📝 **Implementation Checklist**
 
 ### **Phase 1: Log Sanitization** (Week 1 - 2-4 hours)
-- [ ] Implement `pkg/gateway/logging/sanitizer.go`
-- [ ] Implement `pkg/gateway/logging/patterns.go`
-- [ ] Create unit tests in `pkg/gateway/logging/sanitizer_test.go`
-- [ ] Run tests: `go test ./pkg/gateway/logging/... -v`
+- [ ] Verify `pkg/shared/sanitization/sanitizer.go` exists (shared library)
+- [ ] Create unit tests in `test/unit/gateway/logging/sanitization_test.go`
+- [ ] Create fallback tests in `test/unit/gateway/logging/sanitization_fallback_test.go`
+- [ ] Run tests: `go test ./test/unit/gateway/logging/... -v`
 - [ ] Verify all 8 tests passing
 
 ### **Phase 2: Memory Management** (Week 1-2 - 4-6 hours)
 - [ ] Review `pkg/gateway/server/server.go` for cleanup patterns
 - [ ] Implement proper resource cleanup in `Shutdown()`
-- [ ] Create memory tests in `pkg/gateway/server/memory_test.go`
-- [ ] Run tests: `go test ./pkg/gateway/server/... -run Memory -v`
+- [ ] Create memory tests in `test/unit/gateway/memory_test.go`
+- [ ] Run tests: `go test ./test/unit/gateway/... -run Memory -v`
 - [ ] Verify all 5 tests passing
 
 ### **Phase 3: Goroutine Management** (Week 2 - 3-5 hours)
 - [ ] Review `pkg/gateway/server/server.go` for goroutine lifecycle
 - [ ] Implement worker pool in `pkg/gateway/server/worker_pool.go`
-- [ ] Create leak detector in `pkg/testutil/runtime/leak_detector.go`
-- [ ] Create goroutine tests in `pkg/gateway/server/goroutine_test.go`
-- [ ] Run tests: `go test ./pkg/gateway/server/... -run Goroutine -v`
+- [ ] Create goroutine tests in `test/unit/gateway/goroutine_test.go`
+- [ ] Create runtime helpers in `test/unit/gateway/helpers/runtime.go` (if needed)
+- [ ] Run tests: `go test ./test/unit/gateway/... -run Goroutine -v`
 - [ ] Verify all 6 tests passing
 
 ### **Final Validation**
@@ -1055,6 +1055,7 @@ var _ = Describe("BR-GATEWAY-108: Goroutine Management", func() {
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| v1.0.1 | 2026-01-17 | **Corrected test paths**: Fixed incorrect `pkg/testutil/` references to use correct `test/unit/gateway/` and `test/shared/` patterns. Clarified that BR-042 uses existing `pkg/shared/sanitization/` library (no custom implementation needed). | Gateway Team |
 | v1.0 | 2026-01-17 | **Initial unit test plan created**: 19 unit tests across 3 P0 security and resilience gaps (BR-042, BR-107, BR-108). Includes comprehensive test scenarios for log sanitization, memory leak detection, and goroutine leak detection. Timeline: 9-15 hours (1-2 sprints). Status: Planned. | Gateway Team |
 
 ---

@@ -619,7 +619,7 @@ func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aian
 }
 
 // updateSPStatus updates the SignalProcessing status to simulate completion.
-func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase) error {
+func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
 		return err
@@ -629,6 +629,14 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 	if phase == signalprocessingv1.PhaseCompleted {
 		now := metav1.Now()
 		sp.Status.CompletionTime = &now
+		// DD-SEVERITY-001: Set normalized severity for downstream services (AIAnalysis, RO)
+		// This simulates what SignalProcessing Rego policy would do in real environment
+		// Default to "critical" if not specified, or use provided severity
+		severityValue := "critical" // Default normalized severity
+		if len(severity) > 0 && severity[0] != "" {
+			severityValue = severity[0] // Use test-specific severity (e.g., "high", "medium", "low")
+		}
+		sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
 		// Set environment classification for downstream use
 		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
 		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
