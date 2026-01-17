@@ -118,37 +118,32 @@ func (d *DataStorageConfig) String() string {
 //	}
 //	// Use redisConfig.Password, redisConfig.Host, redisConfig.Port
 func (s *SecretLoader) LoadRedisConfig(ctx context.Context, namespace, secretName string) (*RedisConfig, error) {
-	// Fetch Secret from K8s API
-	var secret corev1.Secret
-	secretKey := types.NamespacedName{
-		Namespace: namespace,
-		Name:      secretName,
+	// REFACTOR: Extract common secret fetching logic
+	secret, err := s.getSecret(ctx, namespace, secretName)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := s.k8sClient.Get(ctx, secretKey, &secret); err != nil {
-		return nil, fmt.Errorf("secret not found: %s/%s: %w", namespace, secretName, err)
+	// REFACTOR: Extract field extraction with helper
+	password, err := s.extractRequiredField(secret, "redis-password", namespace, secretName)
+	if err != nil {
+		return nil, err
 	}
 
-	// Extract required fields
-	password, ok := secret.Data["redis-password"]
-	if !ok {
-		return nil, fmt.Errorf("redis-password required field missing in secret %s/%s", namespace, secretName)
+	host, err := s.extractRequiredField(secret, "redis-host", namespace, secretName)
+	if err != nil {
+		return nil, err
 	}
 
-	host, ok := secret.Data["redis-host"]
-	if !ok {
-		return nil, fmt.Errorf("redis-host required field missing in secret %s/%s", namespace, secretName)
-	}
-
-	port, ok := secret.Data["redis-port"]
-	if !ok {
-		return nil, fmt.Errorf("redis-port required field missing in secret %s/%s", namespace, secretName)
+	port, err := s.extractRequiredField(secret, "redis-port", namespace, secretName)
+	if err != nil {
+		return nil, err
 	}
 
 	return &RedisConfig{
-		Password: string(password),
-		Host:     string(host),
-		Port:     string(port),
+		Password: password,
+		Host:     host,
+		Port:     port,
 	}, nil
 }
 
@@ -177,7 +172,48 @@ func (s *SecretLoader) LoadRedisConfig(ctx context.Context, namespace, secretNam
 //	}
 //	// Use dsConfig.URL, dsConfig.APIKey, dsConfig.Timeout
 func (s *SecretLoader) LoadDataStorageConfig(ctx context.Context, namespace, secretName string) (*DataStorageConfig, error) {
-	// Fetch Secret from K8s API
+	// REFACTOR: Extract common secret fetching logic
+	secret, err := s.getSecret(ctx, namespace, secretName)
+	if err != nil {
+		return nil, err
+	}
+
+	// REFACTOR: Extract field extraction with helper
+	url, err := s.extractRequiredField(secret, "datastorage-url", namespace, secretName)
+	if err != nil {
+		return nil, err
+	}
+
+	apiKey, err := s.extractRequiredField(secret, "datastorage-api-key", namespace, secretName)
+	if err != nil {
+		return nil, err
+	}
+
+	timeoutStr, err := s.extractRequiredField(secret, "datastorage-timeout", namespace, secretName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse timeout duration
+	timeout, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid datastorage-timeout format in secret %s/%s: %w", namespace, secretName, err)
+	}
+
+	return &DataStorageConfig{
+		URL:     url,
+		APIKey:  apiKey,
+		Timeout: timeout,
+	}, nil
+}
+
+// ========================================
+// REFACTOR: Private helper methods
+// ========================================
+
+// getSecret fetches a Secret from the Kubernetes API.
+// REFACTOR: Eliminates duplication between LoadRedisConfig and LoadDataStorageConfig.
+func (s *SecretLoader) getSecret(ctx context.Context, namespace, secretName string) (*corev1.Secret, error) {
 	var secret corev1.Secret
 	secretKey := types.NamespacedName{
 		Namespace: namespace,
@@ -188,31 +224,16 @@ func (s *SecretLoader) LoadDataStorageConfig(ctx context.Context, namespace, sec
 		return nil, fmt.Errorf("secret not found: %s/%s: %w", namespace, secretName, err)
 	}
 
-	// Extract required fields
-	url, ok := secret.Data["datastorage-url"]
+	return &secret, nil
+}
+
+// extractRequiredField extracts a required field from a Secret's data.
+// REFACTOR: Eliminates duplication in field extraction logic.
+// Returns the field value as string, or error if field is missing.
+func (s *SecretLoader) extractRequiredField(secret *corev1.Secret, fieldName, namespace, secretName string) (string, error) {
+	value, ok := secret.Data[fieldName]
 	if !ok {
-		return nil, fmt.Errorf("datastorage-url required field missing in secret %s/%s", namespace, secretName)
+		return "", fmt.Errorf("%s required field missing in secret %s/%s", fieldName, namespace, secretName)
 	}
-
-	apiKey, ok := secret.Data["datastorage-api-key"]
-	if !ok {
-		return nil, fmt.Errorf("datastorage-api-key required field missing in secret %s/%s", namespace, secretName)
-	}
-
-	timeoutStr, ok := secret.Data["datastorage-timeout"]
-	if !ok {
-		return nil, fmt.Errorf("datastorage-timeout required field missing in secret %s/%s", namespace, secretName)
-	}
-
-	// Parse timeout duration
-	timeout, err := time.ParseDuration(string(timeoutStr))
-	if err != nil {
-		return nil, fmt.Errorf("invalid datastorage-timeout format in secret %s/%s: %w", namespace, secretName, err)
-	}
-
-	return &DataStorageConfig{
-		URL:     string(url),
-		APIKey:  string(apiKey),
-		Timeout: timeout,
-	}, nil
+	return string(value), nil
 }
