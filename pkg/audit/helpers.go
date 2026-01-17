@@ -25,8 +25,11 @@ import (
 // ========================================
 
 // NewAuditEventRequest creates a new audit event request with default values
+// CRITICAL: Timestamp MUST be UTC to match DataStorage server validation
+// Issue: DataStorage validates timestamps against server time (UTC)
+// Fix: Use time.Now().UTC() instead of time.Now() to avoid timezone mismatches
 func NewAuditEventRequest() *ogenclient.AuditEventRequest {
-	now := time.Now()
+	now := time.Now().UTC() // ✅ Force UTC to match DataStorage server timezone
 	version := "1.0"
 	return &ogenclient.AuditEventRequest{
 		Version:        version,

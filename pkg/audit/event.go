@@ -171,16 +171,17 @@ type AuditEvent struct {
 // Defaults:
 // - EventID: auto-generated UUID
 // - EventVersion: "1.0"
-// - EventTimestamp: time.Now()
+// - EventTimestamp: time.Now().UTC() (MUST be UTC to match DataStorage validation)
 // - RetentionDays: 2555 (7 years for SOC 2 / ISO 27001 compliance)
 // - IsSensitive: false
 //
 // All other fields must be set by the caller.
+// CRITICAL: Timestamp is UTC to avoid DataStorage rejecting events as "future timestamps"
 func NewAuditEvent() *AuditEvent {
 	return &AuditEvent{
 		EventID:        uuid.New(),
 		EventVersion:   "1.0",
-		EventTimestamp: time.Now(),
+		EventTimestamp: time.Now().UTC(), // ✅ Force UTC to match DataStorage server timezone
 		RetentionDays:  2555, // 7 years (SOC 2 / ISO 27001)
 		IsSensitive:    false,
 	}

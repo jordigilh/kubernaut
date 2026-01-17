@@ -71,12 +71,12 @@ type DatabaseConfig struct {
 	Port            int    `yaml:"port"`
 	Name            string `yaml:"name"`
 	User            string `yaml:"user"`
-	Password        string `yaml:"-"`                // NOT in YAML - loaded from secret file via LoadSecrets()
-	SSLMode         string `yaml:"sslMode"`          // disable, require, verify-ca, verify-full
-	MaxOpenConns    int    `yaml:"maxOpenConns"`     // Maximum open connections
-	MaxIdleConns    int    `yaml:"maxIdleConns"`     // Maximum idle connections
-	ConnMaxLifetime string `yaml:"connMaxLifetime"`  // e.g., "5m"
-	ConnMaxIdleTime string `yaml:"connMaxIdleTime"`  // e.g., "10m"
+	Password        string `yaml:"-"`               // NOT in YAML - loaded from secret file via LoadSecrets()
+	SSLMode         string `yaml:"sslMode"`         // disable, require, verify-ca, verify-full
+	MaxOpenConns    int    `yaml:"maxOpenConns"`    // Maximum open connections
+	MaxIdleConns    int    `yaml:"maxIdleConns"`    // Maximum idle connections
+	ConnMaxLifetime string `yaml:"connMaxLifetime"` // e.g., "5m"
+	ConnMaxIdleTime string `yaml:"connMaxIdleTime"` // e.g., "10m"
 
 	// Secret file configuration (ADR-030 Section 6)
 	SecretsFile string `yaml:"secretsFile"` // Full path to secret file, e.g., "/etc/secrets/database/credentials.yaml"

@@ -285,7 +285,7 @@ See [event.go](./event.go) for full field documentation.
 **Auto-Generated Fields**:
 - `EventID`: UUID (auto-generated)
 - `EventVersion`: "1.0" (default)
-- `EventTimestamp`: time.Now() (default)
+- `EventTimestamp`: time.Now().UTC() (default, MUST be UTC for DataStorage validation)
 - `RetentionDays`: 2555 (7 years, default)
 - `IsSensitive`: false (default)
 
