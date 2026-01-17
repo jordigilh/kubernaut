@@ -18,7 +18,6 @@ package adapters
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -179,11 +178,10 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 		Namespace: event.InvolvedObject.Namespace,
 	}
 
-	// 6. Generate fingerprint for deduplication
+	// 6. Generate fingerprint for deduplication (shared utility)
 	// Format: SHA256(reason:namespace:kind:name)
 	// Same resource + same reason = same fingerprint = deduplicated
-	fingerprint := a.generateFingerprint(event.Reason, event.InvolvedObject.Namespace,
-		event.InvolvedObject.Kind, event.InvolvedObject.Name)
+	fingerprint := types.CalculateFingerprint(event.Reason, resource)
 
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{
@@ -256,14 +254,6 @@ func (a *KubernetesEventAdapter) GetMetadata() AdapterMetadata {
 // - Same resource can have multiple failure types simultaneously
 // - Example: Pod can be OOMKilled AND BackOff at same time
 // - Different reasons = different remediation strategies
-func (a *KubernetesEventAdapter) generateFingerprint(reason, namespace, kind, name string) string {
-	// Build fingerprint string
-	fingerprintStr := fmt.Sprintf("%s:%s:%s:%s", reason, namespace, kind, name)
-
-	// Hash with SHA256
-	hash := sha256.Sum256([]byte(fingerprintStr))
-	return fmt.Sprintf("%x", hash)
-}
 
 // extractLabels extracts labels from Kubernetes Event for CRD propagation
 //
