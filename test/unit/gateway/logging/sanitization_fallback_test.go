@@ -92,8 +92,8 @@ var _ = Describe("Gateway Sanitizer Fallback - Graceful Degradation", func() {
 
 			result := sanitizer.SafeFallback(input)
 
-			Expect(result).To(ContainSubstring("[REDACTED]"))
-			Expect(result).NotTo(ContainSubstring("secret123"))
+			// REFACTOR: Use helper for redaction validation
+			AssertSecretRedacted(result, "secret123", "password redaction")
 		})
 
 		It("should redact API keys using simple string matching", func() {
@@ -102,8 +102,8 @@ var _ = Describe("Gateway Sanitizer Fallback - Graceful Degradation", func() {
 
 			result := sanitizer.SafeFallback(input)
 
-			Expect(result).To(ContainSubstring("[REDACTED]"))
-			Expect(result).NotTo(ContainSubstring("sk-abc123def456"))
+			// REFACTOR: Use helper for redaction validation
+			AssertSecretRedacted(result, "sk-abc123def456", "API key redaction")
 		})
 
 		It("should redact tokens using simple string matching", func() {
@@ -112,8 +112,8 @@ var _ = Describe("Gateway Sanitizer Fallback - Graceful Degradation", func() {
 
 			result := sanitizer.SafeFallback(input)
 
-			Expect(result).To(ContainSubstring("[REDACTED]"))
-			Expect(result).NotTo(ContainSubstring("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"))
+			// REFACTOR: Use helper for redaction validation
+			AssertSecretRedacted(result, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "token redaction")
 		})
 
 		It("should handle multiple secrets in same log message", func() {
@@ -123,12 +123,8 @@ var _ = Describe("Gateway Sanitizer Fallback - Graceful Degradation", func() {
 
 			result := sanitizer.SafeFallback(input)
 
-			// All secrets should be redacted
-			Expect(result).NotTo(ContainSubstring("secret1"))
-			Expect(result).NotTo(ContainSubstring("abc789"))
-			Expect(result).NotTo(ContainSubstring("xyz123"))
-			// Should have multiple [REDACTED] placeholders
-			Expect(result).To(ContainSubstring("[REDACTED]"))
+			// REFACTOR: Use helper for multi-secret validation
+			AssertSecretsRedacted(result, []string{"secret1", "abc789", "xyz123"}, "multiple secrets")
 		})
 
 		It("should handle secrets with different delimiters", func() {
@@ -200,22 +196,11 @@ var _ = Describe("Gateway Sanitizer Fallback - Graceful Degradation", func() {
 
 			result, err := sanitizer.SanitizeWithFallback(input)
 
-			// Even if error occurred, we should have SOME output (degraded delivery)
-			Expect(result).NotTo(BeEmpty())
-			Expect(result).To(ContainSubstring("CRITICAL"))
-			Expect(result).To(ContainSubstring("Signal processing failed"))
-
-			// If sanitization succeeded, no error
-			// If fallback triggered, error is returned but result is still safe
-			if err != nil {
-				// Fallback path - verify critical alert info preserved
-				Expect(result).To(ContainSubstring("DatabaseDown"))
-				// And secret redacted by fallback
-				Expect(result).NotTo(ContainSubstring("dbpass123"))
-			} else {
-				// Normal path - verify proper sanitization
-				Expect(result).To(ContainSubstring("[REDACTED]"))
-			}
+			// REFACTOR: Use helper for fallback behavior validation
+			AssertFallbackBehavior(result, err,
+				[]string{"CRITICAL", "Signal processing failed", "DatabaseDown"},
+				[]string{"dbpass123"},
+				"critical signal processing error")
 		})
 
 		It("should handle Prometheus alert with fallback", func() {
@@ -232,21 +217,11 @@ Error: failed to process
 
 			result, err := sanitizer.SanitizeWithFallback(input)
 
-			// Log message should be deliverable
-			Expect(result).NotTo(BeEmpty())
-			Expect(result).To(ContainSubstring("Received Prometheus alert"))
-			Expect(result).To(ContainSubstring("DatabaseDown"))
-
-			// Secret should be redacted
-			if err == nil {
-				// Normal sanitization
-				Expect(result).To(ContainSubstring("[REDACTED]"))
-			} else {
-				// Fallback sanitization
-				Expect(result).To(ContainSubstring("[REDACTED]"))
-			}
-			// Either way, secret must not appear
-			Expect(result).NotTo(ContainSubstring("secretpass"))
+			// REFACTOR: Use helper for fallback behavior validation
+			AssertFallbackBehavior(result, err,
+				[]string{"Received Prometheus alert", "DatabaseDown"},
+				[]string{"secretpass"},
+				"Prometheus alert with credentials")
 		})
 
 		It("should handle K8s Event with sensitive data with fallback", func() {
@@ -261,16 +236,11 @@ InvolvedObject: Pod/myapp-xyz
 
 			result, err := sanitizer.SanitizeWithFallback(input)
 
-			// Log message should be deliverable
-			Expect(result).NotTo(BeEmpty())
-			Expect(result).To(ContainSubstring("Processing K8s Event failed"))
-			Expect(result).To(ContainSubstring("FailedMount"))
-
-			// Secret should be redacted
-			if err == nil || err != nil {
-				// Both paths must redact
-				Expect(result).NotTo(ContainSubstring("supersecret"))
-			}
+			// REFACTOR: Use helper for fallback behavior validation
+			AssertFallbackBehavior(result, err,
+				[]string{"Processing K8s Event failed", "FailedMount"},
+				[]string{"supersecret"},
+				"K8s Event with sensitive data")
 		})
 	})
 })

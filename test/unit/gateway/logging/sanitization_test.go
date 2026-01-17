@@ -125,21 +125,8 @@ var _ = Describe("BR-GATEWAY-042: Log Sanitization", func() {
 				result := sanitizer.Sanitize(input)
 
 				if expectedRedacted {
-					// CORRECTNESS VALIDATION: Redaction marker present
-					Expect(result).To(ContainSubstring("[REDACTED]"),
-						"%s - should contain redaction marker", scenario)
-
-					// CORRECTNESS VALIDATION: Secrets completely removed
-					for _, secret := range shouldNotContain {
-						Expect(result).ToNot(ContainSubstring(secret),
-							"%s - should not contain secret: %s", scenario, secret)
-					}
-
-					// CORRECTNESS VALIDATION: Non-sensitive context preserved
-					for _, context := range shouldContain {
-						Expect(result).To(ContainSubstring(context),
-							"%s - should preserve context: %s", scenario, context)
-					}
+					// REFACTOR: Use helper for complete redaction validation
+					AssertCompleteRedaction(result, shouldNotContain, shouldContain, scenario)
 				} else {
 					// CORRECTNESS VALIDATION: Clean content unchanged
 					Expect(result).To(Equal(input),
@@ -231,12 +218,8 @@ var _ = Describe("BR-GATEWAY-042: Log Sanitization", func() {
 			// BEHAVIOR: Sanitizer guarantees secrets never appear in output
 			// BUSINESS CONTEXT: Critical security requirement (CVSS 5.3)
 
-			testSecrets := []string{
-				"password=supersecret123",
-				"apiKey=sk-proj-verysecretkey",
-				"token=ghp_githubtoken123",
-				"redis://user:redispass123@localhost:6379",
-			}
+			// REFACTOR: Use centralized test data
+			testSecrets := CommonGatewaySecrets()
 
 			for _, secretInput := range testSecrets {
 				result := sanitizer.Sanitize(secretInput)
