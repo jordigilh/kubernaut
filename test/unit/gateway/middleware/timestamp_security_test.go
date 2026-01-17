@@ -1,4 +1,4 @@
-package middleware_test
+package middleware
 
 import (
 	"encoding/json"
