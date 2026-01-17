@@ -473,6 +473,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
+		"-e", "CONN_MAX_LIFETIME=30m", // Fix for Notification/WorkflowExecution BeforeSuite failures
 		"-e", fmt.Sprintf("REDIS_ADDR=%s:6379", infra.RedisContainer),
 		"-e", "PORT=8080",
 		imageName,

@@ -435,6 +435,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{}, err
 		}
 
+		// Gap #8: Refetch RR to ensure we have the persisted TimeoutConfig for audit
+		// The AtomicStatusUpdate may have refetched internally, so we need fresh state
+		if err := r.client.Get(ctx, req.NamespacedName, rr); err != nil {
+			logger.Error(err, "Failed to refetch RemediationRequest after status initialization")
+			return ctrl.Result{}, err
+		}
+
 		// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
 		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
 		// This happens AFTER status initialization to capture actual defaults

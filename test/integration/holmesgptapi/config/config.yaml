@@ -21,10 +21,10 @@ database:
   name: "action_history"
   user: "slm_user"
   ssl_mode: "disable"
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: "5m"
-  conn_max_idle_time: "10m"
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: "5m"
+  connMaxIdleTime: "10m"
   # ADR-030 Section 6: Secrets loaded from mounted files
   secretsFile: "/etc/datastorage-secrets/database-credentials.yaml"
   passwordKey: "password"
@@ -34,9 +34,9 @@ redis:
   addr: host.containers.internal:16387
   db: 0
   # DD-009: Redis used for Dead Letter Queue (DLQ) fallback
-  dlq_stream_name: "audit:dlq:notification"
-  dlq_max_len: 10000
-  dlq_consumer_group: "datastorage-dlq-consumers"
+  dlqStreamName: "audit:dlq:notification"
+  dlqMaxLen: 10000
+  dlqConsumerGroup: "datastorage-dlq-consumers"
   # ADR-030 Section 6: Secrets loaded from mounted files
   secretsFile: "/etc/datastorage-secrets/redis-credentials.yaml"
   passwordKey: "password"

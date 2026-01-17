@@ -35,9 +35,9 @@ import (
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
-	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
+	"github.com/jordigilh/kubernaut/pkg/audit"                       // DD-AUDIT-003: Audit integration
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Ogen generated audit types
-	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit" // BR-AUDIT-005 Gap #7: Standardized error details
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
 
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -60,11 +60,11 @@ import (
 // Gateway Audit Event Type Constants (from OpenAPI spec)
 // See: api/openapi/data-storage-v1.yaml - GatewayAuditPayload.event_type enum
 const (
-	EventTypeSignalReceived       = "gateway.signal.received"       // BR-GATEWAY-190: New signal received, RR created
-	EventTypeSignalDeduplicated   = "gateway.signal.deduplicated"   // BR-GATEWAY-191: Duplicate signal detected
-	EventTypeCRDCreated           = "gateway.crd.created"           // DD-AUDIT-003: RR CRD successfully created
-	EventTypeCRDFailed            = "gateway.crd.failed"            // DD-AUDIT-003: RR CRD creation failed
-	CategoryGateway               = "gateway"                       // Service-level category per ADR-034
+	EventTypeSignalReceived     = "gateway.signal.received"     // BR-GATEWAY-190: New signal received, RR created
+	EventTypeSignalDeduplicated = "gateway.signal.deduplicated" // BR-GATEWAY-191: Duplicate signal detected
+	EventTypeCRDCreated         = "gateway.crd.created"         // DD-AUDIT-003: RR CRD successfully created
+	EventTypeCRDFailed          = "gateway.crd.failed"          // DD-AUDIT-003: RR CRD creation failed
+	CategoryGateway             = "gateway"                     // Service-level category per ADR-034
 )
 
 // Server is the main Gateway HTTP server
@@ -247,7 +247,7 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		Addr:         cfg.Server.ListenAddr,
 		Handler:      handler,
 		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout:  cfg.Server.WriteTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
 	}
 
 	return server, nil
@@ -777,7 +777,7 @@ func (s *Server) sendSuccessResponse(
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
 	if response.Status == StatusAccepted || response.Status == StatusDeduplicated || response.Duplicate {
-		statusCode = http.StatusAccepted  // HTTP 202 for storm aggregation and deduplication
+		statusCode = http.StatusAccepted // HTTP 202 for storm aggregation and deduplication
 	}
 
 	// Record metrics
@@ -967,6 +967,12 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 
 		// Record metrics
 		s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+		
+		// BR-GATEWAY-069: Cache hit metric (deduplication detected)
+		s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
+		
+		// Note: DeduplicationRate gauge is calculated on-the-fly by custom collector
+		// when /metrics endpoint is scraped (see metrics.DeduplicationRateCollector)
 
 		logger.V(1).Info("Duplicate signal detected (K8s status-based)",
 			"fingerprint", signal.Fingerprint,
