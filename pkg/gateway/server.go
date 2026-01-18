@@ -67,6 +67,15 @@ const (
 	CategoryGateway             = "gateway"                     // Service-level category per ADR-034
 )
 
+// Gateway Audit Event Action Constants (ADR-034 event_action field)
+// These are past-tense verbs describing what action was performed
+const (
+	ActionReceived     = "received"     // Signal was received and processed
+	ActionDeduplicated = "deduplicated" // Signal was deduplicated to existing RR
+	ActionCreated      = "created"      // RemediationRequest CRD was created
+	ActionFailed       = "failed"       // Operation failed
+)
+
 // Server is the main Gateway HTTP server
 //
 // The Gateway Server orchestrates the complete signal-to-CRD pipeline:
@@ -409,7 +418,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// All state in K8s RR status - Redis fully deprecated
 	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+	// Use apiReader for deduplication to avoid race conditions from cached client
+	// Per GW_E2E_REMAINING_FAILURES_TRIAGE_JAN17_2026.md: apiReader provides real-time K8s API queries
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance
 	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
@@ -1120,9 +1131,9 @@ type ProcessingResponse struct {
 
 // Processing status constants
 const (
-	StatusCreated      = "created"      // RemediationRequest CRD created
-	StatusDeduplicated = "deduplicated" // Signal deduplicated to existing RR (past participle for consistency)
-	StatusAccepted     = "accepted"     // Alert accepted for storm aggregation (CRD will be created later)
+	StatusCreated      = "created"   // RemediationRequest CRD created
+	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum value)
+	StatusAccepted     = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
 )
 
 // NewDuplicateResponse creates a ProcessingResponse for duplicate signals
@@ -1316,7 +1327,7 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalReceived)
 	audit.SetEventCategory(event, CategoryGateway)
-	audit.SetEventAction(event, "received")
+	audit.SetEventAction(event, ActionReceived)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "external", signal.SourceType) // e.g., "prometheus", "kubernetes"
 	audit.SetResource(event, "Signal", signal.Fingerprint)
@@ -1390,7 +1401,7 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalDeduplicated)
 	audit.SetEventCategory(event, CategoryGateway)
-	audit.SetEventAction(event, "deduplicated")
+	audit.SetEventAction(event, ActionDeduplicated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "external", signal.SourceType)
 	audit.SetResource(event, "Signal", signal.Fingerprint)
@@ -1451,7 +1462,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeCRDCreated)
 	audit.SetEventCategory(event, CategoryGateway)
-	audit.SetEventAction(event, "created")
+	audit.SetEventAction(event, ActionCreated)
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "gateway", "crd-creator") // Gateway's CRD creator component
 	audit.SetResource(event, "RemediationRequest", fmt.Sprintf("%s/%s", rrNamespace, rrName))
@@ -1522,7 +1533,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeCRDFailed)
 	audit.SetEventCategory(event, CategoryGateway)
-	audit.SetEventAction(event, "created")
+	audit.SetEventAction(event, ActionFailed)
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "gateway", "crd-creator")
 

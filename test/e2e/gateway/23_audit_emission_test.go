@@ -305,9 +305,11 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.Fingerprint).To(Equal(event.ResourceID.Value),
 				"fingerprint in event_data should match resource_id")
 
-			// Field 16: severity
-			Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
-				"severity should match alert severity")
+		// Field 16: severity
+		// Gateway maps Prometheus "warning" → OpenAPI "high" per severity mapping table
+		// See: pkg/gateway/audit_helpers.go severityMapping
+		Expect(string(gatewayPayload.Severity.Value)).To(Equal("high"),
+			"severity should be mapped per OpenAPI spec (warning → high)")
 
 			// Field 17: resource_kind
 			Expect(gatewayPayload.ResourceKind.Value).To(Equal("Pod"),
