@@ -16,9 +16,9 @@
 | Failure # | Test ID | Root Cause | Category | Severity |
 |---|---|---|---|---|
 | 1 | DD-AUDIT-003 | Severity mapping mismatch (`"warning"` → `"high"`) | Test Expectation | P2 |
-| 2 | DD-GATEWAY-009 (Pending) | Deduplication status terminology (`"deduplicated"` vs `"duplicate"`) | Test Expectation | P2 |
-| 3 | DD-GATEWAY-009 (Unknown) | Deduplication status terminology (`"deduplicated"` vs `"duplicate"`) | Test Expectation | P2 |
-| 4 | GW-DEDUP-002 | K8s cached client race - **inherent limitation** (5 CRDs vs 1) | Architecture | P2 |
+| 2 | DD-GATEWAY-009 (Pending) | Deduplication status terminology (`"deduplicated"` vs `"duplicate"`) | Code Issue | P2 |
+| 3 | DD-GATEWAY-009 (Unknown) | Deduplication status terminology (`"deduplicated"` vs `"duplicate"`) | Code Issue | P2 |
+| 4 | GW-DEDUP-002 | Using **cached** client for deduplication (should use `apiReader`) | Code Issue | P2 |
 
 ---
 
@@ -263,7 +263,7 @@ grep -r '"deduplicated"' pkg/gateway/ --include="*.go"
 
 ### **Test Details**
 
-**Test**: `GW-DEDUP-002: should handle concurrent requests for same fingerprint gracefully`  
+**Test**: `GW-DEDUP-002: should handle concurrent requests for same fingerprint gracefully`
 **File**: `test/e2e/gateway/35_deduplication_edge_cases_test.go:258`
 
 **Failure**:
@@ -295,7 +295,7 @@ shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, sign
 func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(...) {
     // List RRs matching the fingerprint via field selector (BR-GATEWAY-185 v1.1)
     rrList := &remediationv1alpha1.RemediationRequestList{}
-    
+
     err := c.client.List(ctx, rrList,
         client.InNamespace(namespace),
         client.MatchingFields{"spec.signalFingerprint": fingerprint},
@@ -460,42 +460,91 @@ Eventually(func() int {
 
 ---
 
-### **Recommendation**
+---
 
-**APPROVE: Option A** - Accept as E2E limitation and adjust test
+#### **Option D: Use Non-Cached Client for Deduplication Checks (NEW - BEST SOLUTION)**
 
-**Rationale**:
-1. **Kubernetes Architecture**: Cannot prevent race conditions with cached clients
-2. **Real-World Rarity**: Concurrent requests with identical fingerprint+namespace are extremely rare
-3. **Eventual Consistency**: Gateway's DD-GATEWAY-011 design embraces eventual consistency
-4. **Controller Cleanup**: Duplicate CRDs are handled by controllers via status reconciliation
-5. **Test Validity**: Test expectation (100% deduplication in concurrent scenario) is unrealistic for K8s cached client architecture
+**Change**: Pass `apiReader` (non-cached client) to `PhaseBasedDeduplicationChecker` instead of `ctrlClient`
 
-**Test Adjustment**:
+**Current Code** (`pkg/gateway/server.go:412`):
 ```go
-// Update test expectation to acknowledge race condition
-It("should minimize duplicate CRDs in concurrent scenarios", func() {
-    // Send 5 concurrent requests
-    // ...
-    
-    // ADJUSTED: Allow 1-3 CRDs (depending on cache sync timing)
-    // In practice: 1 CRD (cache fast) to 5 CRDs (cache slow)
-    Eventually(func() int {
-        rrList := &remediationv1alpha1.RemediationRequestList{}
-        _ = k8sClient.List(ctx, rrList,
-            client.InNamespace(namespace),
-            client.MatchingFields{"spec.signalFingerprint": fingerprint})
-        return len(rrList.Items)
-    }).WithTimeout(30*time.Second).Should(BeNumerically(">=", 1))
-    
-    // Verify controllers eventually consolidate to single active RR
-    // (duplicate CRDs transition to terminal phases)
-})
+// ❌ CURRENT: Uses cached client (race condition)
+phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 ```
 
-**Alternative**: Mark test as `[Flaky]` or `[P1]` (non-blocking) instead of P0
+**Proposed Fix**:
+```go
+// ✅ FIXED: Use non-cached client for real-time API queries
+phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+```
 
-**Next Step**: Update test expectation or mark as known limitation in test plan
+**Why This Works**:
+1. **`apiReader` Already Exists**: Gateway creates non-cached client for DD-STATUS-001
+   ```go
+   // pkg/gateway/server.go:331-335
+   apiReader, err := client.New(kubeConfig, client.Options{
+       Scheme: scheme,
+       // NO Cache option = direct API server reads (no cache)
+   })
+   ```
+
+2. **Real-Time Queries**: `apiReader` bypasses cache, queries K8s API directly
+   - Request 1: Create CRD → Write to K8s API
+   - Request 2: Query via `apiReader` → Sees newly created CRD immediately
+   - Result: Deduplication works correctly
+
+3. **Already Used for Similar Purpose**: `StatusUpdater` uses `apiReader` for fresh status reads
+   ```go
+   // pkg/gateway/server.go:411
+   statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
+   ```
+
+**Pros**:
+- ✅ **Eliminates race condition** completely
+- ✅ **Minimal code change** (one parameter change)
+- ✅ **No architecture changes** (`apiReader` already exists)
+- ✅ **Aligns with DD-STATUS-001 pattern** (use apiReader for fresh data)
+- ✅ **No performance concerns** (deduplication checks are infrequent)
+- ✅ **Test passes at 100%** (no adjustment needed)
+
+**Cons**:
+- ⚠️ Slightly higher K8s API load (direct queries vs cache)
+- ⚠️ Marginally slower per-request (network call to API server)
+
+**Performance Impact Analysis**:
+- **Before**: Cache query (~1ms, local memory)
+- **After**: API query (~5-10ms, network call)
+- **Trade-off**: 5-10ms per request is acceptable for correctness
+- **Volume**: Deduplication checks only on signal ingestion (low frequency)
+
+**Confidence**: **95%** - This is the correct architectural fix
+
+---
+
+### **Recommendation**
+
+**APPROVE: Option D** - Use non-cached `apiReader` for deduplication checks
+
+**Rationale**:
+1. **Gateway Already Has Solution**: `apiReader` exists for DD-STATUS-001 (fresh data reads)
+2. **Minimal Change**: One-line parameter change in server initialization
+3. **Correct Architecture**: Deduplication requires real-time data, not cached data
+4. **Test Validity**: Test expectation (100% deduplication) is correct and achievable
+5. **Pattern Alignment**: Same approach as `StatusUpdater` (uses `apiReader` for fresh status)
+
+**Implementation**:
+```go
+// pkg/gateway/server.go:412
+// BEFORE
+phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+
+// AFTER
+phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+```
+
+**Expected Result**: 100% deduplication accuracy, test passes consistently
+
+**Next Step**: Implement one-line fix and verify with E2E tests
 
 ---
 
@@ -507,40 +556,46 @@ It("should minimize duplicate CRDs in concurrent scenarios", func() {
 |---|---|---|---|---|
 | **P2** | #1 (Severity) | Update test expectation to `"high"` | 5 min | Low |
 | **P2** | #2 & #3 (Dedup Status) | Fix Gateway to use `"duplicate"` | 10 min | Low |
-| **P2** | #4 (Concurrent Race) | Adjust test expectation or mark as flaky | 10 min | Low |
+| **P2** | #4 (Concurrent Race) | **Use `apiReader` instead of `ctrlClient`** | 2 min | Low |
 
 ### **Implementation Order**
 
-1. **Fix #1 & #2 & #3** (Test expectations and simple code fix)
+1. **Fix #1** (Test expectation)
    - Update test for severity mapping (`"warning"` → `"high"`)
+   - File: `test/e2e/gateway/23_audit_emission_test.go:309`
+   - **Expected Result**: 95/98 PASS (96.9%)
+
+2. **Fix #2 & #3** (String literal)
    - Fix deduplication status string literal (`"deduplicated"` → `"duplicate"`)
+   - Locate: `grep -r '"deduplicated"' pkg/gateway/`
    - **Expected Result**: 97/98 PASS (99%)
 
-2. **Fix #4** (Test adjustment for K8s architectural limitation)
-   - **Option A**: Adjust test to allow 1-5 CRDs (reflect cache sync timing)
-   - **Option B**: Mark test as `[Flaky]` or `[P1]` (non-blocking)
-   - **Rationale**: Kubernetes cached clients cannot prevent race conditions
-   - **Expected Result**: 98/98 PASS (100%) OR 97/98 PASS with 1 flaky test
+3. **Fix #4** (Use non-cached client)
+   - Change: `phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)`
+   - File: `pkg/gateway/server.go:412`
+   - **Rationale**: Use non-cached client for real-time deduplication checks
+   - **Expected Result**: 98/98 PASS (100%) ✅
 
 ### **Expected Timeline**
 
-- **Phase 1** (Fixes #1, #2, #3): 15-20 minutes
-- **Phase 2** (Fix #4 - test adjustment): 10-15 minutes
-- **Total**: ~30 minutes to 100% E2E pass rate (or 97/98 with 1 known flaky)
+- **Phase 1** (Fix #1): 5 minutes
+- **Phase 2** (Fix #2 & #3): 10 minutes  
+- **Phase 3** (Fix #4): 2 minutes
+- **Total**: ~17 minutes to 100% E2E pass rate ✅
 
 ---
 
 ## 🔧 **NEXT STEPS**
 
 **Immediate**:
-1. **Locate `"deduplicated"` string**: `grep -r '"deduplicated"' pkg/gateway/` (Fix #2 & #3)
-2. **Verify K8s deduplication architecture**: Confirm DD-GATEWAY-011 design intent
-3. **Review test #4 expectations**: Determine if 100% deduplication is realistic with cached K8s client
+1. **Fix #1**: Update test expectation (`test/e2e/gateway/23_audit_emission_test.go:309`)
+2. **Fix #2 & #3**: Locate and fix `"deduplicated"` string: `grep -r '"deduplicated"' pkg/gateway/`
+3. **Fix #4**: Change `phaseChecker` to use `apiReader` (`pkg/gateway/server.go:412`)
 
 **After Fix**:
 1. Run E2E tests: `make test-e2e-gateway`
-2. Update test plan: Document fixes and architectural limitations in `GW_INTEGRATION_TEST_PLAN_V1.0.md`
-3. Verify 97-98/98 E2E pass rate
+2. Update test plan: Document fixes in `GW_INTEGRATION_TEST_PLAN_V1.0.md`
+3. Verify **98/98 E2E pass rate (100%)** ✅
 
 ---
 
@@ -550,9 +605,11 @@ It("should minimize duplicate CRDs in concurrent scenarios", func() {
 |---|---|---|---|
 | #1 (Severity) | **100%** | Trivial (test change) | None |
 | #2 & #3 (Dedup Status) | **90%** | Simple (string literal) | Low |
-| #4 (Concurrent Race) | **95%** | Moderate (Redis operation) | Medium |
+| #4 (Concurrent Race) | **95%** | Trivial (parameter change) | Low |
 
-**Overall Confidence**: **95%** - Root causes identified, fixes are straightforward
+**Overall Confidence**: **95%** - Root causes identified, all fixes are straightforward
+
+**Fix #4 Updated Analysis**: Use non-cached `apiReader` instead of cached `ctrlClient` for deduplication checks. Gateway already has `apiReader` for DD-STATUS-001 (fresh status reads). This eliminates the race condition with a one-line change.
 
 ---
 
