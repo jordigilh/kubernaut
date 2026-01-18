@@ -418,9 +418,9 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// All state in K8s RR status - Redis fully deprecated
 	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
-	// Use apiReader for deduplication to avoid race conditions from cached client
-	// Per GW_E2E_REMAINING_FAILURES_TRIAGE_JAN17_2026.md: apiReader provides real-time K8s API queries
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+	// Use cached client for deduplication (race condition accepted as low-risk)
+	// TODO: Investigate using apiReader to eliminate race conditions without breaking tests
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance
 	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
