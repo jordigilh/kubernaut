@@ -52,15 +52,11 @@ import (
 
 // PhaseBasedDeduplicationChecker checks for existing in-progress RRs by fingerprint
 type PhaseBasedDeduplicationChecker struct {
-	// Use client.Reader instead of client.Client to support both cached and non-cached clients
-	// This allows passing apiReader (non-cached) to avoid race conditions in concurrent scenarios
-	client client.Reader
+	client client.Client
 }
 
 // NewPhaseBasedDeduplicationChecker creates a new phase-based checker
-// Accepts client.Reader to support both cached (ctrlClient) and non-cached (apiReader) clients
-// For production: Use apiReader to get real-time K8s API data and avoid cache-based race conditions
-func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader) *PhaseBasedDeduplicationChecker {
+func NewPhaseBasedDeduplicationChecker(k8sClient client.Client) *PhaseBasedDeduplicationChecker {
 	return &PhaseBasedDeduplicationChecker{
 		client: k8sClient,
 	}
