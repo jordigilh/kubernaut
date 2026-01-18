@@ -263,14 +263,15 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				correlationID2 := response2.RemediationRequestName
 
-				By("2. Validate correlation ID format")
-				// BR-GATEWAY-055: Format: rr-{12-char-hex-fingerprint}-{10-digit-timestamp}
-				// This enables fingerprint extraction for deduplication
-				correlationIDPattern := `^rr-[a-f0-9]{12}-\d{10}$`
-				Expect(correlationID1).To(MatchRegexp(correlationIDPattern),
-					"BR-GATEWAY-055: Correlation ID must follow rr-{fingerprint}-{timestamp} format")
-				Expect(correlationID2).To(MatchRegexp(correlationIDPattern),
-					"BR-GATEWAY-055: Correlation ID must follow standard format")
+			By("2. Validate correlation ID format")
+			// BR-GATEWAY-055: Format: rr-{12-char-hex-fingerprint}-{8-char-hex-uuid}
+			// Per DD-AUDIT-CORRELATION-002: UUID suffix guarantees zero collision risk
+			// This enables fingerprint extraction for deduplication
+			correlationIDPattern := `^rr-[a-f0-9]{12}-[a-f0-9]{8}$`
+			Expect(correlationID1).To(MatchRegexp(correlationIDPattern),
+				"BR-GATEWAY-055: Correlation ID must follow rr-{fingerprint}-{uuid} format (DD-AUDIT-CORRELATION-002)")
+			Expect(correlationID2).To(MatchRegexp(correlationIDPattern),
+				"BR-GATEWAY-055: Correlation ID must follow standard format")
 
 				By("3. Validate correlation IDs are unique")
 				Expect(correlationID1).ToNot(Equal(correlationID2),
@@ -435,10 +436,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(ok).To(BeTrue())
 
 				// BR-GATEWAY-056: RemediationRequest field must contain namespace/name format
-				rrRef, hasRR := payload.RemediationRequest.Get()
-				Expect(hasRR).To(BeTrue(), "BR-GATEWAY-056: RemediationRequest field must be present")
-				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`),
-					"BR-GATEWAY-056: RemediationRequest must be in namespace/name format")
+			rrRef, hasRR := payload.RemediationRequest.Get()
+			Expect(hasRR).To(BeTrue(), "BR-GATEWAY-056: RemediationRequest field must be present")
+			Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]{12}-[a-f0-9]{8}$`),
+				"BR-GATEWAY-056: RemediationRequest must be in namespace/name format (DD-AUDIT-CORRELATION-002)")
 
 				// Validate namespace matches
 				Expect(payload.Namespace).To(Equal(testNamespace))
@@ -519,10 +520,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				// Validate RemediationRequest reference
 				rrRef, hasRR := payload.RemediationRequest.Get()
 				Expect(hasRR).To(BeTrue())
-				Expect(rrRef).To(ContainSubstring(testNamespace),
-					"BR-GATEWAY-056: RR reference must contain namespace")
-				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`),
-					"BR-GATEWAY-056: RR reference must be in namespace/name format")
+			Expect(rrRef).To(ContainSubstring(testNamespace),
+				"BR-GATEWAY-056: RR reference must contain namespace")
+			Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]{12}-[a-f0-9]{8}$`),
+				"BR-GATEWAY-056: RR reference must be in namespace/name format (DD-AUDIT-CORRELATION-002)")
 
 				GinkgoWriter.Printf("✅ Target resource metadata preserved: alert=%s, namespace=%s\n",
 					payload.AlertName, payload.Namespace)
@@ -607,10 +608,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				correlationID2 := response2.RemediationRequestName
 
-				By("2. Validate correlation IDs are unique and properly formatted")
-				Expect(correlationID1).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`),
-					"BR-GATEWAY-056: Correlation ID must follow standard format")
-				Expect(correlationID2).To(MatchRegexp(`^rr-[a-f0-9]{12}-\d{10}$`))
+			By("2. Validate correlation IDs are unique and properly formatted")
+			Expect(correlationID1).To(MatchRegexp(`^rr-[a-f0-9]{12}-[a-f0-9]{8}$`),
+				"BR-GATEWAY-056: Correlation ID must follow standard format (DD-AUDIT-CORRELATION-002)")
+			Expect(correlationID2).To(MatchRegexp(`^rr-[a-f0-9]{12}-[a-f0-9]{8}$`))
 				Expect(correlationID1).ToNot(Equal(correlationID2),
 					"BR-GATEWAY-056: Each CRD must have unique correlation ID")
 
@@ -778,10 +779,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(ok).To(BeTrue())
 
 				// BR-GATEWAY-057: RemediationRequest field contains existing RR reference
-				rrRef, hasRR := payload.RemediationRequest.Get()
-				Expect(hasRR).To(BeTrue(), "BR-GATEWAY-057: RemediationRequest field must be present")
-				Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]+-\d+$`),
-					"BR-GATEWAY-057: RR reference must be in namespace/name format")
+			rrRef, hasRR := payload.RemediationRequest.Get()
+			Expect(hasRR).To(BeTrue(), "BR-GATEWAY-057: RemediationRequest field must be present")
+			Expect(rrRef).To(MatchRegexp(`^[^/]+/rr-[a-f0-9]{12}-[a-f0-9]{8}$`),
+				"BR-GATEWAY-057: RR reference must be in namespace/name format (DD-AUDIT-CORRELATION-002)")
 				Expect(rrRef).To(ContainSubstring(existingRRName),
 					"BR-GATEWAY-057: RR reference must contain existing RR name")
 
