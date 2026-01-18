@@ -393,11 +393,11 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			alert2 := createPrometheusAlert(testNamespace, alertName, "critical", "", "")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
-			response2, err := gwServer.ProcessSignal(ctx, signal2)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response2.Status).To(Equal("deduplicated"))
+		response2, err := gwServer.ProcessSignal(ctx, signal2)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(response2.Status).To(Equal("duplicate"))
 
-			By("4. Verify deduplication metric incremented")
+		By("4. Verify deduplication metric incremented")
 			finalDedupValue := getCounterValue(metricsReg, "gateway_signals_deduplicated_total", map[string]string{
 				"signal_name": alertName,
 			})

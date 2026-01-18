@@ -280,11 +280,11 @@ var _ = Describe("GW-UNIT-AUD-005: Audit Failure Resilience", func() {
 			response2, err := gwServer.ProcessSignal(ctx, signal2)
 
 			By("5. Verify deduplication works despite audit failures")
-			Expect(err).ToNot(HaveOccurred(),
-				"BR-GATEWAY-055: Deduplication must work even if audit fails")
-			Expect(response2.Status).To(Equal("deduplicated"),
-				"BR-GATEWAY-055: Duplicate detection must not be affected by audit issues")
-			Expect(response2.RemediationRequestName).To(Equal(initialRRName),
+		Expect(err).ToNot(HaveOccurred(),
+			"BR-GATEWAY-055: Deduplication must work even if audit fails")
+		Expect(response2.Status).To(Equal("duplicate"),
+			"BR-GATEWAY-055: Duplicate detection must not be affected by audit issues")
+		Expect(response2.RemediationRequestName).To(Equal(initialRRName),
 				"BR-GATEWAY-055: Same RR must be returned for duplicates")
 
 			By("6. Verify audit attempts were made for both signals")

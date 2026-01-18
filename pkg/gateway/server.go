@@ -1129,11 +1129,12 @@ type ProcessingResponse struct {
 	WindowID  string `json:"windowID,omitempty"`  // aggregation window identifier
 }
 
-// Processing status constants
+// Processing status constants (HTTP response body status field)
+// Aligned with OpenAPI enum values for consistency (no backwards compatibility needed)
 const (
-	StatusCreated      = "created"   // RemediationRequest CRD created
-	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum value)
-	StatusAccepted     = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
+	StatusCreated      = "created"    // RemediationRequest CRD created
+	StatusDeduplicated = "duplicate"  // Signal deduplicated to existing RR (matches OpenAPI enum)
+	StatusAccepted     = "accepted"   // Alert accepted for storm aggregation (CRD will be created later)
 )
 
 // NewDuplicateResponse creates a ProcessingResponse for duplicate signals
