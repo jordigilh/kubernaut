@@ -209,10 +209,10 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			validResponse, err := gwServer.ProcessSignal(ctx, validSignal)
-			Expect(err).ToNot(HaveOccurred(),
-				"BR-GATEWAY-113: Gateway must recover from cascading failures")
-			Expect(validResponse.Status).To(Or(Equal("created"), Equal("deduplicated")),
-				"BR-GATEWAY-113: Gateway must continue normal operation after stress")
+		Expect(err).ToNot(HaveOccurred(),
+			"BR-GATEWAY-113: Gateway must recover from cascading failures")
+		Expect(validResponse.Status).To(Or(Equal("created"), Equal("duplicate")),
+			"BR-GATEWAY-113: Gateway must continue normal operation after stress")
 
 			GinkgoWriter.Printf("✅ Cascading failure resilience: %d/%d signals succeeded, Gateway operational\n",
 				successCount, 5)
