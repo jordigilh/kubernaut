@@ -545,22 +545,3 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	)
 	return nil
 }
-
-// toWorkflowExecutionAuditPayloadEventType converts event type string to ogen enum
-// Uses constants defined above that match OpenAPI spec event_type enum values
-func toWorkflowExecutionAuditPayloadEventType(eventType string) api.WorkflowExecutionAuditPayloadEventType {
-	switch eventType {
-	case EventTypeStarted:
-		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted
-	case EventTypeCompleted:
-		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowCompleted
-	case EventTypeFailed:
-		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowFailed
-	case EventTypeSelectionCompleted:
-		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionSelectionCompleted
-	case EventTypeExecutionStarted:
-		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted
-	default:
-		return api.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionWorkflowStarted // default fallback
-	}
-}

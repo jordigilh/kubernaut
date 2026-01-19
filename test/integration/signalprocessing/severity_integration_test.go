@@ -38,7 +38,6 @@ limitations under the License.
 package signalprocessing
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -672,41 +671,5 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 		},
 	}
 }
-
-// queryAuditEvents queries DataStorage for audit events by event type.
-// Uses ogen client per DD-TESTING-001 standards.
-// Note: Namespace filtering happens via correlation ID or resource context in event data
-func queryAuditEvents(ctx context.Context, namespace, eventType string) []ogenclient.AuditEvent {
-	params := ogenclient.QueryAuditEventsParams{
-		EventType: ogenclient.NewOptString(eventType),
-		// Note: Namespace field doesn't exist in QueryAuditEventsParams
-		// Filtering by namespace happens in post-processing or via correlation ID
-	}
-
-	resp, err := dsClient.QueryAuditEvents(ctx, params)
-	if err != nil {
-		GinkgoWriter.Printf("Query error: %v\n", err)
-		return []ogenclient.AuditEvent{}
-	}
-
-	GinkgoWriter.Printf("DEBUG queryAuditEvents: eventType=%s, namespace=%s, total_returned=%d\n",
-		eventType, namespace, len(resp.Data))
-	for i, event := range resp.Data {
-		GinkgoWriter.Printf("  Event[%d]: namespace=%s, event_type=%s\n",
-			i, event.Namespace.Value, event.EventType)
-	}
-
-	// Filter by namespace if needed (event data contains namespace)
-	var filtered []ogenclient.AuditEvent
-	for _, event := range resp.Data {
-		if event.Namespace.Value == namespace {
-			filtered = append(filtered, event)
-		}
-	}
-
-	GinkgoWriter.Printf("DEBUG queryAuditEvents: after namespace filter, filtered=%d\n", len(filtered))
-	return filtered
-}
-
 // Note: flushAuditStoreAndWait() helper is defined in audit_integration_test.go
 // and shared across all integration tests in this package.

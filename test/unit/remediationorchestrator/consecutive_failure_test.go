@@ -551,12 +551,6 @@ func createBlockedRR(ctx context.Context, c client.Client, namespace, fingerprin
 	Expect(c.Create(ctx, rr)).To(Succeed())
 	return rr
 }
-
-// stringPtr returns a pointer to a string.
-func stringPtr(s string) *string { //nolint:unused
-	return &s
-}
-
 // generateRandomString generates a random string of specified length.
 func generateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"

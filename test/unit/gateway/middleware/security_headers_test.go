@@ -98,7 +98,7 @@ var _ = Describe("Security Headers Middleware", func() {
 			testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Custom-Header", "test-value")
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("response body"))
+				_, _ = w.Write([]byte("response body"))
 			})
 
 			wrappedHandler := middleware.SecurityHeaders()(testHandler)

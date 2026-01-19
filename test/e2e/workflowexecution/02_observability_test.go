@@ -866,12 +866,6 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		})
 	})
 })
-
-// Helper to check if metrics contain expected labels
-func metricsContainLabel(metrics, label string) bool { //nolint:unused
-	return strings.Contains(metrics, label)
-}
-
 // extractMetricValue parses Prometheus metrics format and extracts the value for a specific metric and label
 // Example: workflowexecution_total{outcome="Completed"} 5.0
 func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
@@ -909,25 +903,6 @@ func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
 	// Return 0 if metric not found
 	return 0.0
 }
-
-// getPipelineRunForWFE finds the PipelineRun created by a WorkflowExecution
-func getPipelineRunForWFE(wfeName, wfeNamespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
-	prList := &tektonv1.PipelineRunList{}
-	if err := k8sClient.List(ctx, prList); err != nil {
-		return nil, err
-	}
-
-	for i := range prList.Items {
-		pr := &prList.Items[i]
-		if labels := pr.Labels; labels != nil {
-			if labels["kubernaut.ai/workflow-execution"] == wfeName {
-				return pr, nil
-			}
-		}
-	}
-	return nil, fmt.Errorf("PipelineRun not found for WFE %s", wfeName)
-}
-
 // isDataStorageDeployed checks if Data Storage service is deployed in the cluster
 // This is used to skip audit persistence tests when DS infrastructure is not available
 func isDataStorageDeployed() bool {

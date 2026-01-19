@@ -19,8 +19,6 @@ package authwebhook
 import (
 	"context"
 	"fmt"
-	"net"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -37,11 +35,8 @@ import (
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -230,132 +225,6 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("   • Webhook configurations applied (Mutating + Validating)")
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 })
-
-// configureWebhooks creates MutatingWebhookConfiguration and ValidatingWebhookConfiguration
-// resources in the envtest API server, pointing to the webhook server we started.
-func configureWebhooks(ctx context.Context, k8sClient client.Client, webhookOpts envtest.WebhookInstallOptions) error {
-	// Read CA cert PEM file directly (envtest uses self-signed certs)
-	caBundle, err := os.ReadFile(filepath.Join(webhookOpts.LocalServingCertDir, "tls.crt"))
-	if err != nil {
-		return fmt.Errorf("failed to read CA certificate: %w", err)
-	}
-
-	// Construct webhook URL
-	webhookHost := webhookOpts.LocalServingHost
-	if webhookHost == "" {
-		webhookHost = "127.0.0.1"
-	}
-	webhookPort := webhookOpts.LocalServingPort
-	webhookURL := fmt.Sprintf("https://%s", net.JoinHostPort(webhookHost, fmt.Sprintf("%d", webhookPort)))
-
-	// Create MutatingWebhookConfiguration
-	mutatingWebhook := &admissionregistrationv1.MutatingWebhookConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-authwebhook-mutating",
-		},
-		Webhooks: []admissionregistrationv1.MutatingWebhook{
-			{
-				Name: "workflowexecution.mutate.kubernaut.ai",
-				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					URL:      ptr.To(webhookURL + "/mutate-workflowexecution"),
-					CABundle: caBundle,
-				},
-				Rules: []admissionregistrationv1.RuleWithOperations{
-					{
-						Operations: []admissionregistrationv1.OperationType{
-							admissionregistrationv1.Update,
-						},
-						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"kubernaut.ai"},
-							APIVersions: []string{"v1alpha1"},
-							Resources:   []string{"workflowexecutions/status"},
-							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
-						},
-					},
-				},
-				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
-				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
-				AdmissionReviewVersions: []string{"v1"},
-				TimeoutSeconds:          ptr.To(int32(10)),
-			},
-			{
-				Name: "remediationapprovalrequest.mutate.kubernaut.ai",
-				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					URL:      ptr.To(webhookURL + "/mutate-remediationapprovalrequest"),
-					CABundle: caBundle,
-				},
-				Rules: []admissionregistrationv1.RuleWithOperations{
-					{
-						Operations: []admissionregistrationv1.OperationType{
-							admissionregistrationv1.Update,
-						},
-						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"kubernaut.ai"},
-							APIVersions: []string{"v1alpha1"},
-							Resources:   []string{"remediationapprovalrequests/status"},
-							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
-						},
-					},
-				},
-				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
-				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNone),
-				AdmissionReviewVersions: []string{"v1"},
-				TimeoutSeconds:          ptr.To(int32(10)),
-			},
-			// Note: NotificationRequest DELETE webhook moved to ValidatingWebhookConfiguration
-			// (K8s doesn't invoke mutating webhooks for DELETE operations)
-		},
-	}
-
-	if err := k8sClient.Create(ctx, mutatingWebhook); err != nil {
-		return fmt.Errorf("failed to create MutatingWebhookConfiguration: %w", err)
-	}
-
-	// Create ValidatingWebhookConfiguration for DELETE operations
-	// Note: Kubernetes doesn't invoke mutating webhooks for DELETE
-	// (nothing to mutate), so we use validating webhook for audit capture
-	validatingWebhook := &admissionregistrationv1.ValidatingWebhookConfiguration{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-authwebhook-validating",
-		},
-		Webhooks: []admissionregistrationv1.ValidatingWebhook{
-			{
-				Name: "notificationrequest.validate.kubernaut.ai",
-				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					URL:      ptr.To(webhookURL + "/validate-notificationrequest-delete"),
-					CABundle: caBundle,
-				},
-				Rules: []admissionregistrationv1.RuleWithOperations{
-					{
-						Operations: []admissionregistrationv1.OperationType{
-							admissionregistrationv1.Delete,
-						},
-						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"kubernaut.ai"},
-							APIVersions: []string{"v1alpha1"},
-							Resources:   []string{"notificationrequests"},
-							Scope:       ptr.To(admissionregistrationv1.NamespacedScope),
-						},
-					},
-				},
-				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
-				SideEffects:             ptr.To(admissionregistrationv1.SideEffectClassNoneOnDryRun),
-				AdmissionReviewVersions: []string{"v1"},
-				TimeoutSeconds:          ptr.To(int32(10)),
-			},
-		},
-	}
-
-	if err := k8sClient.Create(ctx, validatingWebhook); err != nil {
-		return fmt.Errorf("failed to create ValidatingWebhookConfiguration: %w", err)
-	}
-
-	// Wait for webhook configurations to be ready
-	time.Sleep(1 * time.Second)
-
-	return nil
-}
-
 var _ = SynchronizedAfterSuite(func() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// PHASE 1: Runs on ALL parallel processes

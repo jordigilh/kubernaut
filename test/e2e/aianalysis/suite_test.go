@@ -54,8 +54,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
-	"encoding/json"
-
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
@@ -363,30 +361,4 @@ func createTestNamespace(prefix string) string {
 	err := k8sClient.Create(ctx, ns)
 	Expect(err).ToNot(HaveOccurred())
 	return name
-}
-
-// deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(name string) { //nolint:unused
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-	}
-	_ = k8sClient.Delete(ctx, ns)
-}
-
-// convertJSONToAuditEvent converts a raw JSON audit event to dsgen.AuditEvent.
-// This enables E2E tests to use testutil.ValidateAuditEvent() helper (P0 - MANDATORY).
-//
-// Rationale: E2E tests query Data Storage via HTTP, which returns JSON.
-// Converting to typed structs allows testutil helpers for consistent validation.
-func convertJSONToAuditEvent(jsonEvent map[string]interface{}) dsgen.AuditEvent { //nolint:unused
-	// Marshal back to JSON, then unmarshal into typed struct
-	// This ensures proper type conversion for all fields
-	data, err := json.Marshal(jsonEvent)
-	Expect(err).ToNot(HaveOccurred(), "Failed to marshal JSON event")
-
-	var typedEvent dsgen.AuditEvent
-	err = json.Unmarshal(data, &typedEvent)
-	Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal into dsgen.AuditEvent")
-
-	return typedEvent
 }

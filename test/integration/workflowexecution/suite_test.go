@@ -495,14 +495,6 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 		return false, nil
 	})
 }
-
-// getPipelineRun gets a PipelineRun by name
-func getPipelineRun(name, namespace string) (*tektonv1.PipelineRun, error) { //nolint:unused
-	pr := &tektonv1.PipelineRun{}
-	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, pr)
-	return pr, err
-}
-
 // cleanupWFE cleans up a WFE and its associated PipelineRun
 func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 	// Delete WFE (will cascade to PipelineRun via owner reference)
@@ -518,24 +510,6 @@ func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 		}
 	}
 }
-
-// completePipelineRun simulates a PipelineRun completing successfully or failing
-func completePipelineRun(pr *tektonv1.PipelineRun, succeeded bool) error { //nolint:unused
-	return simulatePipelineRunCompletion(pr, succeeded)
-}
-
-// failPipelineRunWithReason simulates a PipelineRun failing with a specific reason and message
-func failPipelineRunWithReason(pr *tektonv1.PipelineRun, reason, message string) error { //nolint:unused
-	pr.Status.InitializeConditions(testClock)
-	pr.Status.SetCondition(&apis.Condition{
-		Type:    apis.ConditionSucceeded,
-		Status:  corev1.ConditionFalse,
-		Reason:  reason,
-		Message: message,
-	})
-	return k8sClient.Status().Update(ctx, pr)
-}
-
 // flushAuditBuffer flushes the buffered audit store to ensure all events are written to DataStorage
 // MANDATORY before querying audit events to prevent flaky tests due to buffering
 func flushAuditBuffer() {

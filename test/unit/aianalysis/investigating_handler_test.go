@@ -54,6 +54,10 @@ func (n *noopAuditClient) RecordAnalysisFailed(ctx context.Context, analysis *ai
 	return nil
 }
 
+func (n *noopAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+	// No-op: Unit tests don't need audit recording
+}
+
 // auditClientSpy is a spy implementation that records audit events for validation.
 // BR-AUDIT-005 Gap #7: Unit tests validate ErrorDetails structure.
 type auditClientSpy struct {
@@ -79,6 +83,10 @@ func (s *auditClientSpy) RecordAnalysisFailed(ctx context.Context, analysis *aia
 		err:      err,
 	})
 	return nil
+}
+
+func (s *auditClientSpy) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+	// Not tracked in spy for Gap #7 tests
 }
 
 func (s *auditClientSpy) getFailedEvents() []failedAnalysisEvent {

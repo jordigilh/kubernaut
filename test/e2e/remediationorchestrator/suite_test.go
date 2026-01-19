@@ -290,29 +290,6 @@ var _ = SynchronizedAfterSuite(
 		GinkgoWriter.Println("✅ E2E cleanup complete")
 	},
 )
-
-// ============================================================================
-// Kind Cluster Management Helpers
-// ============================================================================
-
-// ============================================================================
-// Kind Cluster Management Helpers (now handled by hybrid infrastructure)
-// ============================================================================
-// NOTE: Most cluster management is now handled by the hybrid infrastructure
-// (SetupROInfrastructureHybridWithCoverage). These remaining helpers are
-// used only for cleanup in AfterSuite.
-
-func deleteKindCluster(name string) {
-	cmd := exec.Command("kind", "delete", "cluster", "--name", name)
-	cmd.Stdout = GinkgoWriter
-	cmd.Stderr = GinkgoWriter
-
-	err := cmd.Run()
-	if err != nil {
-		GinkgoWriter.Printf("⚠️  Failed to delete cluster (may not exist): %v\n", err)
-	}
-}
-
 // ============================================================================
 // Test Namespace Helpers
 // ============================================================================

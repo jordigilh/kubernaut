@@ -47,10 +47,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -274,12 +272,8 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
 
 	auditLogger := ctrl.Log.WithName("audit")
-	auditConfig := audit.Config{
-		FlushInterval: 1 * time.Second, // Fast flush for tests
-		BufferSize:    10,
-		BatchSize:     5,
-		MaxRetries:    3,
-	}
+	auditConfig := audit.DefaultConfig()
+	auditConfig.FlushInterval = 1 * time.Second // Fast flush for tests (override default)
 	auditStore, err = audit.NewBufferedStore(dataStorageClient, auditConfig, "remediation-orchestrator", auditLogger)
 	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Failed to create audit store - ensure DataStorage is running at %s", dataStorageBaseURL))
 
@@ -539,33 +533,6 @@ func deleteTestNamespace(ns string) {
 
 	GinkgoWriter.Printf("🗑️  Initiated async deletion for namespace: %s (cleanup continues in background)\n", ns)
 }
-
-// waitForRRPhase waits for a RemediationRequest to reach a specific phase.
-func waitForRRPhase(name, namespace, expectedPhase string, timeout time.Duration) error { //nolint:unused
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
-		rr := &remediationv1.RemediationRequest{}
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr)
-		if err != nil {
-			return false, err
-		}
-		return string(rr.Status.OverallPhase) == expectedPhase, nil
-	})
-}
-
-// waitForChildCRD waits for a child CRD to be created by RO.
-func waitForChildCRD(name, namespace string, obj client.Object, timeout time.Duration) error { //nolint:unused
-	return wait.PollImmediate(interval, timeout, func() (bool, error) {
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, obj)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return false, nil // Keep waiting
-			}
-			return false, err
-		}
-		return true, nil
-	})
-}
-
 // createRemediationRequest creates a RemediationRequest for testing.
 func createRemediationRequest(namespace, name string) *remediationv1.RemediationRequest {
 	now := metav1.Now()
@@ -600,24 +567,6 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 	GinkgoWriter.Printf("✅ Created RemediationRequest: %s/%s\n", namespace, name)
 	return rr
 }
-
-// updateAIAnalysisStatus updates the AIAnalysis status to simulate completion.
-func updateAIAnalysisStatus(namespace, name string, phase string, workflow *aianalysisv1.SelectedWorkflow) error { //nolint:unused
-	ai := &aianalysisv1.AIAnalysis{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, ai); err != nil {
-		return err
-	}
-
-	ai.Status.Phase = phase
-	ai.Status.SelectedWorkflow = workflow
-	if phase == "Completed" {
-		now := metav1.Now()
-		ai.Status.CompletedAt = &now
-	}
-
-	return k8sClient.Status().Update(ctx, ai)
-}
-
 // updateSPStatus updates the SignalProcessing status to simulate completion.
 func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
@@ -656,153 +605,6 @@ func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProce
 
 	return k8sClient.Status().Update(ctx, sp)
 }
-
-// ========================================
-// Phase 1 Integration Test Helper Functions
-// ========================================
-// These helpers manually create child CRDs with proper owner references.
-// In Phase 1 integration tests, only the RO controller runs - child
-// controllers (SP, AA, WE) are NOT started. Tests manually control
-// child CRD phases to validate RO's orchestration logic in isolation.
-//
-// Reference: RO_PHASE1_INTEGRATION_STRATEGY_IMPLEMENTED_DEC_19_2025.md
-
-// createSignalProcessingCRD manually creates a SignalProcessing CRD for a RemediationRequest.
-// Used in Phase 1 integration tests where child controllers are not running.
-func createSignalProcessingCRD(namespace string, rr *remediationv1.RemediationRequest) *signalprocessingv1.SignalProcessing { //nolint:unused
-	return &signalprocessingv1.SignalProcessing{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "sp-" + rr.Name,
-			Namespace: namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         remediationv1.GroupVersion.String(),
-					Kind:               "RemediationRequest",
-					Name:               rr.Name,
-					UID:                rr.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
-				},
-			},
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "signal-processing",
-			},
-		},
-		Spec: signalprocessingv1.SignalProcessingSpec{
-			RemediationRequestRef: signalprocessingv1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  namespace,
-				UID:        string(rr.UID),
-			},
-			Signal: signalprocessingv1.SignalData{
-				Fingerprint: rr.Spec.SignalFingerprint,
-				Name:        rr.Spec.SignalName,
-				Severity:    rr.Spec.Severity,
-				Type:        rr.Spec.SignalType,
-				TargetType:  rr.Spec.TargetType,
-				TargetResource: signalprocessingv1.ResourceIdentifier{
-					Kind:      rr.Spec.TargetResource.Kind,
-					Name:      rr.Spec.TargetResource.Name,
-					Namespace: rr.Spec.TargetResource.Namespace,
-				},
-				ReceivedTime: metav1.Now(),
-			},
-		},
-	}
-}
-
-// createAIAnalysisCRD manually creates an AIAnalysis CRD for a RemediationRequest.
-// Used in Phase 1 integration tests where child controllers are not running.
-func createAIAnalysisCRD(namespace string, rr *remediationv1.RemediationRequest) *aianalysisv1.AIAnalysis { //nolint:unused
-	return &aianalysisv1.AIAnalysis{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ai-" + rr.Name,
-			Namespace: namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         remediationv1.GroupVersion.String(),
-					Kind:               "RemediationRequest",
-					Name:               rr.Name,
-					UID:                rr.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
-				},
-			},
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "ai-analysis",
-			},
-		},
-		Spec: aianalysisv1.AIAnalysisSpec{
-			RemediationRequestRef: corev1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  namespace,
-				UID:        rr.UID,
-			},
-			RemediationID: string(rr.UID),
-			AnalysisRequest: aianalysisv1.AnalysisRequest{
-				SignalContext: aianalysisv1.SignalContextInput{
-					Fingerprint:      rr.Spec.SignalFingerprint,
-					Severity:         rr.Spec.Severity,
-					SignalType:       rr.Spec.SignalType,
-					BusinessPriority: "P1",   // Required: business priority
-					Environment:      "test", // Required: environment classification
-				},
-				AnalysisTypes: []string{"recommendation"}, // Required: type of analysis
-			},
-			IsRecoveryAttempt: false,
-		},
-	}
-}
-
-// createWorkflowExecutionCRD manually creates a WorkflowExecution CRD for a RemediationRequest.
-// Used in Phase 1 integration tests where child controllers are not running.
-func createWorkflowExecutionCRD(namespace string, rr *remediationv1.RemediationRequest, workflowID string) *workflowexecutionv1.WorkflowExecution { //nolint:unused
-	return &workflowexecutionv1.WorkflowExecution{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "wfe-" + rr.Name + "-",
-			Namespace:    namespace,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         remediationv1.GroupVersion.String(),
-					Kind:               "RemediationRequest",
-					Name:               rr.Name,
-					UID:                rr.UID,
-					Controller:         ptr.To(true),
-					BlockOwnerDeletion: ptr.To(true),
-				},
-			},
-			Labels: map[string]string{
-				"kubernaut.ai/remediation-request": rr.Name,
-				"kubernaut.ai/component":           "workflow-execution",
-			},
-		},
-		Spec: workflowexecutionv1.WorkflowExecutionSpec{
-			RemediationRequestRef: corev1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  namespace,
-				UID:        rr.UID,
-			},
-			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:     workflowID,
-				Version:        "v1",
-				ContainerImage: "test/" + workflowID + ":v1",
-			},
-			TargetResource: fmt.Sprintf("%s/%s/%s", rr.Spec.TargetResource.Namespace, rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
-			Parameters:     map[string]string{},
-			Confidence:     0.9,
-			Rationale:      "Test workflow for integration testing",
-		},
-	}
-}
-
 // GenerateTestFingerprint creates a unique 64-character fingerprint for tests.
 // This prevents test pollution where multiple tests using the same hardcoded fingerprint
 // cause the routing engine to see failures from other tests (BR-ORCH-042, DD-RO-002).

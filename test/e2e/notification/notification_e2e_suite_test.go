@@ -22,7 +22,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -66,10 +65,6 @@ var (
 
 	// Shared Notification Controller configuration (deployed ONCE for all tests)
 	controllerNamespace string = "notification-e2e"
-
-	// Test failure tracking (for keeping cluster alive on failure)
-	suiteHadFailures bool //nolint:unused
-
 	// E2E file output directory (for FileService validation)
 	e2eFileOutputDir string
 
@@ -80,33 +75,6 @@ var (
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
 )
-
-// convertHostPathToPodPath converts a host path to the equivalent pod path.
-//
-// The controller runs inside a Kind pod where:
-//   - Host: /Users/me/.kubernaut/e2e-notifications/* → Pod: /tmp/notifications/*
-//   - Host: /tmp/kubernaut-e2e-notifications/*       → Pod: /tmp/notifications/*
-//
-// This function replaces the host base path with the pod mount path.
-//
-// Example:
-//   - Input:  "/Users/me/.kubernaut/e2e-notifications/priority-test-abc123"
-//   - Output: "/tmp/notifications/priority-test-abc123"
-func convertHostPathToPodPath(hostPath string) string {
-	// Extract the relative path from the host base directory
-	relPath, err := filepath.Rel(e2eFileOutputDir, hostPath)
-	if err != nil {
-		// Fallback: if we can't compute relative path, return as-is
-		// This will cause test failure but makes debugging clearer
-		return hostPath
-	}
-
-	// Pod mount path (from notification-deployment.yaml)
-	podBasePath := "/tmp/notifications"
-
-	// Combine pod base with relative path
-	return filepath.Join(podBasePath, relPath)
-}
 
 // SynchronizedBeforeSuite runs cluster setup ONCE on process 1, then each process connects
 var _ = SynchronizedBeforeSuite(

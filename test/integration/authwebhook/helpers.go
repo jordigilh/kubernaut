@@ -30,26 +30,6 @@ import (
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
-
-// waitForStatusField polls for a status field to be populated by webhook
-// Per TESTING_GUIDELINES.md: Use Eventually(), NEVER time.Sleep()
-func waitForStatusField(
-	ctx context.Context,
-	k8sClient client.Client,
-	obj client.Object,
-	fieldGetter func() string,
-	timeout time.Duration,
-) {
-	Eventually(func() string {
-		err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-		if err != nil {
-			return ""
-		}
-		return fieldGetter()
-	}, timeout, 500*time.Millisecond).ShouldNot(BeEmpty(),
-		"Webhook should populate status field within %s", timeout)
-}
-
 // createAndWaitForCRD creates a CRD and waits for it to be ready
 // Per TESTING_GUIDELINES.md: Use Eventually() for K8s eventual consistency
 func createAndWaitForCRD(ctx context.Context, k8sClient client.Client, obj client.Object) {
@@ -92,33 +72,6 @@ func updateStatusAndWaitForWebhook(
 	}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
 		"Webhook should mutate CRD within 10 seconds")
 }
-
-// deleteAndWaitForAnnotations deletes a CRD and waits for webhook to add annotations
-// Used for NotificationRequest DELETE attribution tests
-func deleteAndWaitForAnnotations(
-	ctx context.Context,
-	k8sClient client.Client,
-	obj client.Object,
-	expectedAnnotationKey string,
-) {
-	Expect(k8sClient.Delete(ctx, obj)).To(Succeed(),
-		"CRD deletion should succeed")
-
-	// Wait for webhook to add annotations before finalizer cleanup
-	Eventually(func() string {
-		err := k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)
-		if err != nil {
-			return ""
-		}
-		annotations := obj.GetAnnotations()
-		if annotations == nil {
-			return ""
-		}
-		return annotations[expectedAnnotationKey]
-	}, 10*time.Second, 500*time.Millisecond).ShouldNot(BeEmpty(),
-		"Webhook should add %s annotation on DELETE", expectedAnnotationKey)
-}
-
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AUDIT EVENT VALIDATION HELPERS - DD-TESTING-001 Compliance
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
