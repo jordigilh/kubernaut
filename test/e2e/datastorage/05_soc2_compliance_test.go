@@ -769,12 +769,6 @@ func generateTestCorrelationID() string {
 	// Parallel Ginkgo tests running in the same second would otherwise get duplicate IDs
 	return fmt.Sprintf("soc2-e2e-%s", uuid.New().String()[:8])
 }
-
-// Helper function to convert int to *int for optional parameters
-func toPtr(i int) *int {
-	return &i
-}
-
 // Helper function to create test audit events
 func createTestAuditEvents(ctx context.Context, correlationID string, count int) []string {
 	eventIDs := make([]string, count)
@@ -806,68 +800,11 @@ func createTestAuditEvents(ctx context.Context, correlationID string, count int)
 
 	return eventIDs
 }
-
-// Helper function to query audit events directly from PostgreSQL
-func queryAuditEventsFromDB(correlationID string) ([]map[string]interface{}, error) {
-	db, err := sql.Open("pgx", postgresURL)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = db.Close() }()
-
-	rows, err := db.Query(`
-		SELECT event_id, event_hash, previous_event_hash, legal_hold
-		FROM audit_events
-		WHERE correlation_id = $1
-		ORDER BY event_timestamp ASC
-	`, correlationID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var events []map[string]interface{}
-	for rows.Next() {
-		var eventID, eventHash, previousHash string
-		var legalHold bool
-
-		if err := rows.Scan(&eventID, &eventHash, &previousHash, &legalHold); err != nil {
-			return nil, err
-		}
-
-		events = append(events, map[string]interface{}{
-			"event_id":            eventID,
-			"event_hash":          eventHash,
-			"previous_event_hash": previousHash,
-			"legal_hold":          legalHold,
-		})
-	}
-
-	return events, nil
-}
-
 // Helper function to verify base64 encoded signature
 func verifyBase64Signature(signature string) error {
 	_, err := base64.StdEncoding.DecodeString(signature)
 	return err
 }
-
-// Helper to convert string to pointer
-func stringPtr(s string) *string {
-	return &s
-}
-
-// createNamespace creates a Kubernetes namespace
-func createNamespace(kubeconfigPath, namespace string) error {
-	cmd := exec.Command("kubectl", "create", "namespace", namespace,
-		"--kubeconfig", kubeconfigPath)
-	output, err := cmd.CombinedOutput()
-	if err != nil && !strings.Contains(string(output), "AlreadyExists") {
-		return fmt.Errorf("failed to create namespace %s: %w, output: %s", namespace, err, output)
-	}
-	return nil
-}
-
 // WaitForPodsReady waits for pods matching a label selector to be ready
 func WaitForPodsReady(kubeconfigPath, namespace, labelSelector string, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)

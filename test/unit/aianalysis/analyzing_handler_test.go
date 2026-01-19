@@ -55,6 +55,11 @@ func (n *noopAnalyzingAuditClient) RecordAnalysisComplete(ctx context.Context, a
 	// No-op: Unit tests don't need audit recording
 }
 
+func (n *noopAnalyzingAuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error {
+	// No-op: Unit tests don't need audit recording
+	return nil
+}
+
 // BR-AI-012: AnalyzingHandler tests
 var _ = Describe("AnalyzingHandler", func() {
 	var (

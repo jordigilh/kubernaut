@@ -204,21 +204,6 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 
 	return nil
 }
-
-// generateFilename creates a unique filename for the notification (legacy method).
-//
-// Format: notification-{name}-{timestamp}.json
-// Example: notification-critical-alert-20251123-143022.123456.json
-//
-// Timestamp includes microseconds to prevent collisions in high-throughput scenarios.
-// This ensures thread-safe concurrent delivery without overwrites.
-//
-// DEPRECATED: Use generateFilenameWithFormat instead
-func (s *FileDeliveryService) generateFilename(notification *notificationv1alpha1.NotificationRequest) string {
-	timestamp := time.Now().Format("20060102-150405.000000")
-	return fmt.Sprintf("notification-%s-%s.json", notification.Name, timestamp)
-}
-
 // generateFilenameWithFormat creates a unique filename for the notification with specified format.
 //
 // Format: notification-{name}-{timestamp}.{format}

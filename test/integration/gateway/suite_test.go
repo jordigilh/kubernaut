@@ -249,10 +249,10 @@ var _ = SynchronizedAfterSuite(
 			}, GinkgoWriter)
 		}
 
-		// Use unified cleanup (same pattern as AIAnalysis/SignalProcessing)
-		if dsInfra != nil {
-			infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
-		}
+	// Use unified cleanup (same pattern as AIAnalysis/SignalProcessing)
+	if dsInfra != nil {
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+	}
 
 		logger.Info("✅ Suite complete - All infrastructure cleaned up")
 	},
@@ -270,13 +270,4 @@ func getKubernetesClient() client.Client {
 		return nil
 	}
 	return k8sClient
-}
-
-// getDataStorageClient returns the per-process DataStorage client
-func getDataStorageClient() audit.DataStorageClient {
-	if dsClient == nil {
-		fmt.Fprintf(os.Stderr, "ERROR: DataStorage client not initialized\n")
-		return nil
-	}
-	return dsClient
 }

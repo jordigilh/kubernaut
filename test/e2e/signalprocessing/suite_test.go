@@ -52,8 +52,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,8 +59,6 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-
-	"github.com/google/uuid"
 )
 
 // Global test variables
@@ -307,45 +303,3 @@ var _ = SynchronizedAfterSuite(
 		GinkgoWriter.Println("✅ E2E cleanup complete (DD-TEST-001 v1.1 compliant)")
 	},
 )
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Test Helper Functions
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// createTestNamespace creates a uniquely named namespace for test isolation.
-func createTestNamespace(prefix string, labels map[string]string) string { //nolint:unused
-	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:8])
-
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   ns,
-			Labels: labels,
-		},
-	}
-
-	err := k8sClient.Create(ctx, namespace)
-	Expect(err).ToNot(HaveOccurred())
-
-	return ns
-}
-
-// deleteTestNamespace cleans up a test namespace.
-func deleteTestNamespace(ns string) { //nolint:unused
-	namespace := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: ns},
-	}
-	_ = k8sClient.Delete(ctx, namespace)
-}
-
-// waitForSignalProcessingComplete waits for a SignalProcessing CR to reach Completed phase.
-func waitForSignalProcessingComplete(name, namespace string) *signalprocessingv1alpha1.SignalProcessing { //nolint:unused
-	sp := &signalprocessingv1alpha1.SignalProcessing{}
-	Eventually(func() string {
-		err := k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, sp)
-		if err != nil {
-			return ""
-		}
-		return string(sp.Status.Phase)
-	}, timeout, interval).Should(Equal("Completed"))
-	return sp
-}

@@ -66,12 +66,12 @@ func NewInvestigatingHandler(hgClient HolmesGPTClientInterface, log logr.Logger,
 	handlerLog := log.WithName("investigating-handler")
 	return &InvestigatingHandler{
 		hgClient:        hgClient,
-		metrics:         m,
-		auditClient:     auditClient,
-		log:             handlerLog,
-		processor:       NewResponseProcessor(log, m),   // P1.1: Initialize response processor (audit recorded by handler, not processor)
-		builder:         NewRequestBuilder(log),         // P1.2: Initialize request builder
-		errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
+	metrics:         m,
+	auditClient:     auditClient,
+	log:             handlerLog,
+	processor:       NewResponseProcessor(log, m, auditClient),   // P1.1: Initialize response processor (audit recorded by processor for failures)
+	builder:         NewRequestBuilder(log),         // P1.2: Initialize request builder
+	errorClassifier: NewErrorClassifier(handlerLog), // P2.1: Initialize error classifier
 	}
 }
 
@@ -288,32 +288,6 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 
 	return ctrl.Result{}, nil
 }
-
-// P1.1 Refactoring: Response processing methods moved to response_processor.go
-// - ProcessIncidentResponse (was processIncidentResponse)
-// - ProcessRecoveryResponse (was processRecoveryResponse)
-// - PopulateRecoveryStatusFromRecovery (was populateRecoveryStatusFromRecovery)
-// - handleWorkflowResolutionFailureFromIncident (private method in processor)
-// - handleProblemResolvedFromIncident (private method in processor)
-// - handleRecoveryNotPossible (private method in processor)
-// - mapEnumToSubReason (private method in processor)
-
-// getRetryCount reads retry count from annotations
-func (h *InvestigatingHandler) getRetryCount(analysis *aianalysisv1.AIAnalysis) int {
-	if analysis.Annotations == nil {
-		return 0
-	}
-	countStr, ok := analysis.Annotations[RetryCountAnnotation]
-	if !ok {
-		return 0
-	}
-	count, err := strconv.Atoi(countStr)
-	if err != nil {
-		return 0
-	}
-	return count
-}
-
 // setRetryCount writes retry count to annotations
 func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
 	if analysis.Annotations == nil {

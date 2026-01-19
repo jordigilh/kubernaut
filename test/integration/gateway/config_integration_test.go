@@ -53,7 +53,7 @@ var _ = Describe("Gateway Configuration", Label("integration", "config"), func()
 	AfterEach(func() {
 		// Cleanup temporary directory
 		if tempDir != "" {
-			os.RemoveAll(tempDir)
+			_ = os.RemoveAll(tempDir)
 		}
 	})
 

@@ -706,95 +706,6 @@ type MockSlackServer struct {
 	CurrentFailures int    // Counter for failures
 	FailureStatus   int    // HTTP status code to return on failure
 }
-
-// createMockSlackServer creates an isolated mock Slack webhook server for a single test
-// Returns server instance with dedicated request tracking (prevents test pollution)
-func createMockSlackServer() *MockSlackServer { //nolint:unused
-	mock := &MockSlackServer{
-		Requests:      make([]SlackWebhookRequest, 0),
-		FailureMode:   "none",
-		FailureStatus: http.StatusServiceUnavailable,
-	}
-
-	mock.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Read request body
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			GinkgoWriter.Printf("❌ Failed to read Slack webhook body: %v\n", err)
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-
-		// Validate JSON
-		var payload map[string]interface{}
-		if err := json.Unmarshal(body, &payload); err != nil {
-			GinkgoWriter.Printf("❌ Invalid JSON in Slack webhook: %v\n", err)
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = w.Write([]byte("invalid_payload"))
-			return
-		}
-
-		// Check failure mode for testing retry logic
-		mock.RequestsMu.Lock()
-		mode := mock.FailureMode
-		failCount := mock.FailureCount
-		currentFail := mock.CurrentFailures
-		failStatus := mock.FailureStatus
-		mock.RequestsMu.Unlock()
-
-		if mode == "always" {
-			GinkgoWriter.Printf("⚠️  Mock Slack webhook configured to always fail (%d)\n", failStatus)
-			w.WriteHeader(failStatus)
-			_, _ = w.Write([]byte("service_unavailable"))
-			return
-		}
-
-		if mode == "first-N" && currentFail < failCount {
-			mock.RequestsMu.Lock()
-			mock.CurrentFailures++
-			current := mock.CurrentFailures
-			mock.RequestsMu.Unlock()
-
-			GinkgoWriter.Printf("⚠️  Mock Slack webhook failure %d/%d (%d)\n", current, failCount, failStatus)
-			w.WriteHeader(failStatus)
-			_, _ = w.Write([]byte("service_unavailable"))
-			return
-		}
-
-		// Extract test correlation ID from webhook payload
-		testID := "unknown"
-		if blocks, ok := payload["blocks"].([]interface{}); ok && len(blocks) > 0 {
-			if firstBlock, ok := blocks[0].(map[string]interface{}); ok {
-				if textObj, ok := firstBlock["text"].(map[string]interface{}); ok {
-					if text, ok := textObj["text"].(string); ok {
-						testID = text
-					}
-				}
-			}
-		}
-
-		// Record successful request (thread-safe, per-test isolated)
-		mock.RequestsMu.Lock()
-		mock.Requests = append(mock.Requests, SlackWebhookRequest{
-			Timestamp: time.Now(),
-			Body:      body,
-			Headers:   r.Header.Clone(),
-			TestID:    testID,
-		})
-		requestCount := len(mock.Requests)
-		mock.RequestsMu.Unlock()
-
-		GinkgoWriter.Printf("✅ Mock Slack webhook received request #%d (testID: %s)\n", requestCount, testID)
-
-		// Simulate Slack webhook response
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}))
-
-	mock.WebhookURL = mock.Server.URL
-	return mock
-}
-
 // ConfigureFailure sets failure behavior for MockSlackServer
 func (m *MockSlackServer) ConfigureFailure(mode string, count int, statusCode int) {
 	m.RequestsMu.Lock()
@@ -924,14 +835,6 @@ func deleteAndWait(ctx context.Context, client client.Client, notif *notificatio
 		return false, nil
 	})
 }
-
-// getSlackRequestCount returns the count of Slack requests (thread-safe)
-func getSlackRequestCount() int { //nolint:unused
-	slackRequestsMu.Lock()
-	defer slackRequestsMu.Unlock()
-	return len(slackRequests)
-}
-
 // resetSlackRequests clears the slackRequests slice (thread-safe for parallel tests)
 func resetSlackRequests() {
 	slackRequestsMu.Lock()

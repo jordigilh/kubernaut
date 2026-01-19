@@ -425,24 +425,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			rr.Status.OverallPhase = phase.Pending
 			rr.Status.StartTime = &metav1.Time{Time: startTime}
 
-			// Gap #8: Initialize TimeoutConfig with controller defaults
-			// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
-			r.populateTimeoutDefaults(ctx, rr)
+		// Gap #8: Initialize TimeoutConfig with controller defaults
+		// REFACTOR: Delegated to populateTimeoutDefaults() for validation + reusability
+		r.populateTimeoutDefaults(ctx, rr)
 
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to initialize RemediationRequest status")
-			return ctrl.Result{}, err
-		}
+		return nil
+	}); err != nil {
+		logger.Error(err, "Failed to initialize RemediationRequest status")
+		return ctrl.Result{}, err
+	}
 
-		// Gap #8: Refetch RR to ensure we have the persisted TimeoutConfig for audit
-		// The AtomicStatusUpdate may have refetched internally, so we need fresh state
-		if err := r.client.Get(ctx, req.NamespacedName, rr); err != nil {
-			logger.Error(err, "Failed to refetch RemediationRequest after status initialization")
-			return ctrl.Result{}, err
-		}
+	// Gap #8: NO REFETCH NEEDED - AtomicStatusUpdate already updated rr in-memory
+	// The rr object passed to AtomicStatusUpdate is updated with the persisted status
+	// (including TimeoutConfig) by the Status().Update() call inside AtomicStatusUpdate.
+	// Refetching here would risk getting a cached/stale version.
 
-		// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
+	// Gap #8: Emit orchestrator.lifecycle.created event with TimeoutConfig
 		// Per BR-AUDIT-005 Gap #8: Capture initial TimeoutConfig for RR reconstruction
 		// This happens AFTER status initialization to capture actual defaults
 		r.emitRemediationCreatedAudit(ctx, rr)
@@ -2511,12 +2509,4 @@ func (r *Reconciler) validateTimeoutConfig(ctx context.Context, rr *remediationv
 	}
 
 	return nil
-}
-
-// safeStringValue safely dereferences a string pointer.
-func safeStringValue(s *string) string { //nolint:unused
-	if s == nil {
-		return ""
-	}
-	return *s
 }

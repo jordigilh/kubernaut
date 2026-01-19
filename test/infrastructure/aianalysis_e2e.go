@@ -773,62 +773,6 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 
 	return nil
 }
-
-func findAIAnalysisKindConfig() string {
-	// First, try to find via runtime caller location (most reliable)
-	_, currentFile, _, ok := runtime.Caller(0)
-	if ok {
-		dir := filepath.Dir(currentFile)
-		configPath := filepath.Join(dir, "kind-aianalysis-config.yaml")
-		if _, err := os.Stat(configPath); err == nil {
-			return configPath
-		}
-	}
-
-	// Try relative paths from different working directories
-	candidates := []string{
-		"test/infrastructure/kind-aianalysis-config.yaml",
-		"../test/infrastructure/kind-aianalysis-config.yaml",
-		"../../test/infrastructure/kind-aianalysis-config.yaml",
-		"../../../test/infrastructure/kind-aianalysis-config.yaml",
-		// Also try from the test directory itself
-		"../infrastructure/kind-aianalysis-config.yaml",
-		"../../infrastructure/kind-aianalysis-config.yaml",
-		"infrastructure/kind-aianalysis-config.yaml",
-		// Try from this package's location
-		"kind-aianalysis-config.yaml",
-	}
-
-	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
-			absPath, _ := filepath.Abs(path)
-			return absPath
-		}
-	}
-
-	return ""
-}
-
-func containsCluster(output, clusterName string) bool {
-	lines := splitLines(output)
-	for _, line := range lines {
-		if line == clusterName {
-			return true
-		}
-	}
-	return false
-}
-
-func exportKubeconfig(clusterName, kubeconfigPath string, writer io.Writer) error {
-	cmd := exec.Command("kind", "export", "kubeconfig",
-		"--name", clusterName,
-		"--kubeconfig", kubeconfigPath,
-	)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	return cmd.Run()
-}
-
 func waitForClusterReady(kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
 	for i := 0; i < 60; i++ {
@@ -909,32 +853,6 @@ func deployRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
 	_ = pipeWriter2.Close()
 	return applyCmd.Wait()
 }
-
-func splitLines(s string) []string {
-	var lines []string
-	for _, line := range []byte(s) {
-		if line == '\n' {
-			continue
-		}
-	}
-	// Simple split
-	current := ""
-	for _, c := range s {
-		if c == '\n' {
-			if current != "" {
-				lines = append(lines, current)
-			}
-			current = ""
-		} else {
-			current += string(c)
-		}
-	}
-	if current != "" {
-		lines = append(lines, current)
-	}
-	return lines
-}
-
 func containsReady(s string) bool {
 	return len(s) > 0 && s != "" && (s == "True" || s == "True True")
 }

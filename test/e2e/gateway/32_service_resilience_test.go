@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test Plan Reference: docs/development/testing/GATEWAY_COVERAGE_GAP_TEST_PLAN.md
@@ -51,7 +52,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace to prevent circuit breaker degradation
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
-		testNamespace = createTestNamespace("gw-resilience")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-resilience")
 
 		// Get DataStorage URL from environment (for reference, though not used in all tests)
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -69,7 +70,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 	}
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace
 		if testNamespace != "" {
-			deleteTestNamespace(testNamespace)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}
 	})
 
@@ -275,7 +276,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Parse response to get actual namespace (BR-GATEWAY-NAMESPACE-FALLBACK)
 			var gwResp GatewayResponse
 			bodyBytes, _ := io.ReadAll(resp.Body)
-			json.Unmarshal(bodyBytes, &gwResp)
+			_ = json.Unmarshal(bodyBytes, &gwResp)
 
 			// And: CRD should be created (audit is best-effort)
 			Eventually(func() bool {
@@ -325,7 +326,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Parse response to get actual namespace (BR-GATEWAY-NAMESPACE-FALLBACK)
 			var gwResp GatewayResponse
 			bodyBytes, _ := io.ReadAll(resp.Body)
-			json.Unmarshal(bodyBytes, &gwResp)
+			_ = json.Unmarshal(bodyBytes, &gwResp)
 
 			// And: CRD created
 			Eventually(func() bool {

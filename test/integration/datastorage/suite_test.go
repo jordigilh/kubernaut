@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -85,9 +84,6 @@ var (
 	cancel      context.CancelFunc
 	schemaName  string // Schema name for this parallel process (test_process_N)
 )
-
-// generateTestID creates a unique test identifier for data isolation
-// Format: test-{process}-{timestamp}
 // This enables parallel test execution by ensuring each test has unique data
 func generateTestID() string { //nolint:unused
 	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
@@ -97,6 +93,47 @@ func generateTestID() string { //nolint:unused
 // Used for audit events and other UUID-based records
 func generateTestUUID() uuid.UUID { //nolint:unused
 	return uuid.New()
+}
+
+// usePublicSchema sets the search_path to public schema
+// (e.g., schema validation tests, tests that check partitions, etc.)
+func usePublicSchema() { //nolint:unused
+	if db != nil {
+		// CRITICAL: Force ALL connections in pool to reconnect with search_path=public
+		// This prevents inconsistent search_path across connection pool which causes
+		// workflows to be split across schemas (DS-FLAKY-006 fix)
+		//
+		// Problem: Connection pool can retain old connections with stale search_path
+		// (e.g., test_process_X from schema isolation before usePublicSchema() was added)
+		// Solution: Aggressively close ALL connections and force reconnection
+		//
+		// Connection string already sets search_path=public for NEW connections
+		// (see connectPostgreSQL() - options='-c search_path=public')
+		// This function ensures OLD pooled connections are closed and replaced
+
+		// Close ALL idle connections immediately
+		db.SetMaxIdleConns(0)
+
+		// Force existing connections to close after current use
+		// This ensures active connections don't linger with stale search_path
+		db.SetConnMaxLifetime(0)
+
+		// Set search_path for current session (in case this connection is reused)
+		_, err := db.Exec("SET search_path TO public")
+		if err != nil {
+			GinkgoWriter.Printf("⚠️  Failed to set search_path to public: %v\n", err)
+		}
+
+		// Restore normal pool settings after forcing reconnection
+		// Future connections will come from pool with search_path=public (from connection string)
+		db.SetMaxIdleConns(10)
+		db.SetConnMaxLifetime(5 * time.Minute)
+
+		// Verify search_path is set correctly for debugging
+		var currentPath string
+		_ = db.QueryRow("SHOW search_path").Scan(&currentPath)
+		GinkgoWriter.Printf("🔄 Set search_path to public (current: %s)\n", currentPath)
+	}
 }
 
 // createProcessSchema creates a process-specific PostgreSQL schema for test isolation
@@ -325,65 +362,6 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	GinkgoWriter.Printf("✅ [Process %d] Schema created with %d tables, search_path set: %s\n", processNum, len(tables), schemaName)
 	return schemaName, nil
 }
-
-// dropProcessSchema drops the process-specific schema (cleanup)
-func dropProcessSchema(db *sqlx.DB, schemaName string) error {
-	if schemaName == "" || schemaName == "public" {
-		// Safety check: never drop public schema
-		return nil
-	}
-
-	GinkgoWriter.Printf("🗑️  Dropping schema: %s\n", schemaName)
-	_, err := db.Exec(fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaName))
-	if err != nil {
-		return fmt.Errorf("failed to drop schema: %w", err)
-	}
-
-	GinkgoWriter.Printf("✅ Schema dropped: %s\n", schemaName)
-	return nil
-}
-
-// usePublicSchema sets the search_path to public schema
-// (e.g., schema validation tests, tests that check partitions, etc.)
-func usePublicSchema() { //nolint:unused
-	if db != nil {
-		// CRITICAL: Force ALL connections in pool to reconnect with search_path=public
-		// This prevents inconsistent search_path across connection pool which causes
-		// workflows to be split across schemas (DS-FLAKY-006 fix)
-		//
-		// Problem: Connection pool can retain old connections with stale search_path
-		// (e.g., test_process_X from schema isolation before usePublicSchema() was added)
-		// Solution: Aggressively close ALL connections and force reconnection
-		//
-		// Connection string already sets search_path=public for NEW connections
-		// (see connectPostgreSQL() - options='-c search_path=public')
-		// This function ensures OLD pooled connections are closed and replaced
-
-		// Close ALL idle connections immediately
-		db.SetMaxIdleConns(0)
-
-		// Force existing connections to close after current use
-		// This ensures active connections don't linger with stale search_path
-		db.SetConnMaxLifetime(0)
-
-		// Set search_path for current session (in case this connection is reused)
-		_, err := db.Exec("SET search_path TO public")
-		if err != nil {
-			GinkgoWriter.Printf("⚠️  Failed to set search_path to public: %v\n", err)
-		}
-
-		// Restore normal pool settings after forcing reconnection
-		// Future connections will come from pool with search_path=public (from connection string)
-		db.SetMaxIdleConns(10)
-		db.SetConnMaxLifetime(5 * time.Minute)
-
-		// Verify search_path is set correctly for debugging
-		var currentPath string
-		_ = db.QueryRow("SHOW search_path").Scan(&currentPath)
-		GinkgoWriter.Printf("🔄 Set search_path to public (current: %s)\n", currentPath)
-	}
-}
-
 // preflightCheck validates the test environment before running tests
 // This ensures we have a clean slate and prevents test failures due to corrupted data
 func preflightCheck() error {
@@ -1026,98 +1004,6 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
 }
-
-// createConfigFiles creates ADR-030 compliant config and secret files
-func createConfigFiles() { //nolint:unused
-	var err error
-	configDir, err = os.MkdirTemp("", "datastorage-config-*")
-	Expect(err).ToNot(HaveOccurred())
-
-	// Determine database and redis hosts based on environment
-	// Docker Compose: Use service names (postgres, redis)
-	// Direct execution: Use container names on shared network (datastorage-postgres-test, datastorage-redis-test)
-	dbHost := os.Getenv("POSTGRES_HOST")
-	if dbHost == "" {
-		dbHost = postgresContainer // Use container name for container-to-container communication
-	}
-	dbPort := os.Getenv("POSTGRES_PORT")
-	if dbPort == "" {
-		dbPort = "5432" // Use internal port (not mapped port)
-	}
-
-	redisHost := os.Getenv("REDIS_HOST")
-	if redisHost == "" {
-		redisHost = redisContainer // Use container name for container-to-container communication
-	}
-	redisPort := os.Getenv("REDIS_PORT")
-	if redisPort == "" {
-		redisPort = "6379"
-	}
-
-	// Create config.yaml (ADR-030)
-	configYAML := fmt.Sprintf(`
-service:
-  name: data-storage
-  metricsPort: 9090
-  logLevel: debug
-  shutdownTimeout: 30s
-server:
-  port: 8080
-  host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
-database:
-  host: %s
-  port: %s
-  name: action_history
-  user: slm_user
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
-  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
-  usernameKey: "username"
-  passwordKey: "password"
-redis:
-  addr: %s:%s
-  db: 0
-  dlq_stream_name: dlq-stream
-  dlq_max_len: 1000
-  dlq_consumer_group: dlq-group
-  secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
-  passwordKey: "password"
-logging:
-  level: debug
-  format: json
-`, dbHost, dbPort, redisHost, redisPort)
-
-	configPath := filepath.Join(configDir, "config.yaml")
-	err = os.WriteFile(configPath, []byte(configYAML), 0666) // World-readable for Podman mount (macOS compatibility)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Create database secrets file
-	dbSecretsYAML := `
-username: slm_user
-password: test_password
-`
-	dbSecretsPath := filepath.Join(configDir, "db-secrets.yaml")
-	err = os.WriteFile(dbSecretsPath, []byte(dbSecretsYAML), 0666) // World-readable for Podman mount (macOS compatibility)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Create Redis secrets file
-	redisSecretsYAML := `password: ""` // Redis without auth in test
-	redisSecretsPath := filepath.Join(configDir, "redis-secrets.yaml")
-	err = os.WriteFile(redisSecretsPath, []byte(redisSecretsYAML), 0666) // World-readable for Podman mount (macOS compatibility)
-	Expect(err).ToNot(HaveOccurred())
-
-	// Set directory permissions for Podman mount (macOS compatibility)
-	err = os.Chmod(configDir, 0777)
-	Expect(err).ToNot(HaveOccurred())
-
-	GinkgoWriter.Printf("  ✅ Config files created in %s\n", configDir)
-}
-
 // NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)
 // removed as part of refactoring to in-process testing pattern (consistent with other services).
 // DataStorage now runs via httptest.Server with server.NewServer() for integration tests.

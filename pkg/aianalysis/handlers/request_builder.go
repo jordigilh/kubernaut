@@ -299,8 +299,3 @@ func getOrDefault(labels map[string][]string, key, defaultVal string) string {
 	}
 	return defaultVal
 }
-
-// strPtr returns a pointer to the string
-func strPtr(s string) *string {
-	return &s
-}

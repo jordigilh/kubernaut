@@ -187,54 +187,6 @@ func (h *WorkflowExecutionHandler) HandleFailed(
 	// V1.1+: Will call evaluateRecoveryOptions here
 	return ctrl.Result{}, nil
 }
-
-// handleManualReviewRequired handles skip reasons requiring manual intervention.
-// Reference: BR-ORCH-032 v1.1, BR-ORCH-036
-func (h *WorkflowExecutionHandler) handleManualReviewRequired(
-	ctx context.Context,
-	rr *remediationv1.RemediationRequest,
-	we *workflowexecutionv1.WorkflowExecution,
-	sp *signalprocessingv1.SignalProcessing,
-	skipReason string,
-	message string,
-) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// Update RR status (DD-GATEWAY-011, BR-ORCH-038)
-	// REFACTOR-RO-001: Using retry helper
-	err := helpers.UpdateRemediationRequestStatus(ctx, h.client, h.metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		// Update RR status - FAILED, not Skipped (per BR-ORCH-032 v1.1)
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
-		rr.Status.SkipReason = skipReason
-		rr.Status.RequiresManualReview = true
-		rr.Status.DuplicateOf = "" // NOT a duplicate
-		// V1.0: SkipDetails removed, message comes from FailureDetails or will be set by RO routing
-		rr.Status.Message = "Manual review required"
-		return nil
-	})
-	if err != nil {
-		logger.Error(err, "Failed to update RR status for manual review")
-		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
-	}
-
-	logger.Info("Manual review required",
-		"skipReason", skipReason,
-		"message", message,
-	)
-
-	// Create manual review notification (BR-ORCH-036)
-	notificationName, err := h.CreateManualReviewNotification(ctx, rr, we, sp)
-	if err != nil {
-		logger.Error(err, "Failed to create manual review notification")
-		// Continue even if notification fails - don't block the skip handling
-	} else {
-		logger.Info("Created manual review notification", "notification", notificationName)
-	}
-
-	// NO requeue - manual intervention required
-	return ctrl.Result{}, nil
-}
-
 // CalculateRequeueTime calculates requeue duration from NextAllowedExecution.
 // REFACTOR-RO-003: Using centralized timeout constant for fallback
 // Reference: DD-WE-004 (exponential backoff)

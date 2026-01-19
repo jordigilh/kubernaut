@@ -20,7 +20,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -412,9 +411,14 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			_, err := dsClient.CreateWorkflow(ctx, &wildcardWorkflow)
+			resp1, err := dsClient.CreateWorkflow(ctx, &wildcardWorkflow)
 			Expect(err).ToNot(HaveOccurred())
 			// Extract workflow_id from response
+			createdWildcard, ok := resp1.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Expected *RemediationWorkflow response")
+			wfID, ok := createdWildcard.WorkflowID.Get()
+			Expect(ok).To(BeTrue(), "Expected WorkflowID to be set")
+			wildcardWorkflowID = wfID.String()
 
 			// Workflow with specific: component="deployment"
 			// DD-API-001: Use typed OpenAPI struct
@@ -436,9 +440,14 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 				ExecutionEngine: "tekton",                              // Required per OpenAPI spec
 				Status:          dsgen.RemediationWorkflowStatusActive, // Required per OpenAPI spec
 			}
-			_, err = dsClient.CreateWorkflow(ctx, &specificWorkflow)
+			resp2, err := dsClient.CreateWorkflow(ctx, &specificWorkflow)
 			Expect(err).ToNot(HaveOccurred())
 			// Extract workflow_id from response
+			createdSpecific, ok := resp2.(*dsgen.RemediationWorkflow)
+			Expect(ok).To(BeTrue(), "Expected *RemediationWorkflow response")
+			wfID2, ok := createdSpecific.WorkflowID.Get()
+			Expect(ok).To(BeTrue(), "Expected WorkflowID to be set")
+			specificWorkflowID = wfID2.String()
 
 			testLogger.Info("✅ Created workflows with wildcard and specific component labels")
 		})
@@ -535,12 +544,3 @@ var _ = Describe("Scenario 8: Workflow Search Edge Cases", Label("e2e", "workflo
 		})
 	})
 })
-
-// Helper function to marshal JSON (panics on error for test setup)
-func mustMarshal(v interface{}) []byte {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal JSON: %v", err))
-	}
-	return data
-}

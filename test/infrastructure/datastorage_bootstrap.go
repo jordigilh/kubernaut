@@ -365,25 +365,6 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 	cmd.Stderr = writer
 	return cmd.Run()
 }
-
-// waitForDSBootstrapPostgresReady waits for PostgreSQL to be ready
-func waitForDSBootstrapPostgresReady(infra *DSBootstrapInfra, writer io.Writer) error {
-	for i := 1; i <= 30; i++ {
-		cmd := exec.Command("podman", "exec", infra.PostgresContainer,
-			"pg_isready", "-U", defaultPostgresUser, "-d", defaultPostgresDB)
-		if cmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   PostgreSQL ready (attempt %d/30)\n", i)
-			return nil
-		}
-		if i == 30 {
-			return fmt.Errorf("PostgreSQL failed to become ready after 30 seconds")
-		}
-		_, _ = fmt.Fprintf(writer, "   Waiting... (attempt %d/30)\n", i)
-		time.Sleep(1 * time.Second)
-	}
-	return nil
-}
-
 // runDSBootstrapMigrations applies database migrations
 // Migrations are always located at {project_root}/migrations (universal location)
 func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {

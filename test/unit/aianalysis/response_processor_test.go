@@ -51,12 +51,12 @@ var _ = Describe("ResponseProcessor Recovery Flow", func() {
 		m         *metrics.Metrics
 	)
 
-	BeforeEach(func() {
-		// Create metrics with test registry for isolation
-		m = metrics.NewMetrics()
-		processor = handlers.NewResponseProcessor(logr.Discard(), m)
-		ctx = context.Background()
-	})
+BeforeEach(func() {
+	// Create metrics with test registry for isolation
+	m = metrics.NewMetrics()
+	processor = handlers.NewResponseProcessor(logr.Discard(), m, &noopAuditClient{})
+	ctx = context.Background()
+})
 
 	// ═══════════════════════════════════════════════════════════════════════════
 	// AA-UNIT-RCV-002: Recovery Determined Impossible (can_recover=false)

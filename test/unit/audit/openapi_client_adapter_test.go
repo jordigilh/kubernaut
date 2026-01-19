@@ -28,12 +28,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
-
-// Helper function to create string pointers
-func strPtr(s string) *string {
-	return &s
-}
-
 var _ = Describe("OpenAPIClientAdapter - DD-API-001 Compliance", Label("unit", "audit", "dd-api-001"), func() {
 	var (
 		ctx    context.Context
