@@ -48,7 +48,7 @@ class TestGatewayAuditPayload(unittest.TestCase):
                 alert_name = 'HighMemoryUsage',
                 namespace = 'payment',
                 fingerprint = 'abc123',
-                severity = 'critical',
+                severity = 'warning',
                 resource_kind = 'Deployment',
                 resource_name = 'payment-api',
                 remediation_request = 'payment/restart-payment-api-2025-12-17-abc123',

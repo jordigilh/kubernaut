@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // =============================================================================
@@ -92,7 +93,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		dsClient          *ogenclient.Client
 		dataStorageURL    string
 		prometheusPayload []byte
-		sharedNamespace   string // Created in BeforeEach using createTestNamespace()
+		sharedNamespace   string // Created in BeforeEach using helpers.CreateTestNamespaceAndWait(k8sClient, )
 	)
 
 	BeforeEach(func() {
@@ -101,7 +102,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
-		sharedNamespace = createTestNamespace("test-audit")
+		sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-audit")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		// Per DD-TEST-001: All parallel processes share same Data Storage instance
@@ -161,7 +162,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 
 	AfterEach(func() {
 		// Clean up test namespace (Pattern: RO E2E)
-		deleteTestNamespace(sharedNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, sharedNamespace)
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -306,10 +307,10 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"fingerprint in event_data should match resource_id")
 
 		// Field 16: severity
-		// Gateway maps Prometheus "warning" → OpenAPI "high" per severity mapping table
-		// See: pkg/gateway/audit_helpers.go severityMapping
-		Expect(string(gatewayPayload.Severity.Value)).To(Equal("high"),
-			"severity should be mapped per OpenAPI spec (warning → high)")
+		// Gateway passes through raw severity per DD-SEVERITY-001
+		// SignalProcessing will normalize severity in its audit events
+		Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
+			"severity should be raw pass-through value per DD-SEVERITY-001")
 
 			// Field 17: resource_kind
 			Expect(gatewayPayload.ResourceKind.Value).To(Equal("Pod"),
@@ -360,7 +361,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.AlertName).To(Equal("AuditTestAlert"),
 				"Business outcome: alert_name enables filtering audit by alert type")
 			Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
-				"Business outcome: severity enables SLA tracking per severity level")
+				"Business outcome: Gateway passes through RAW severity (DD-SEVERITY-001). No normalization. SignalProcessing performs Rego-based normalization.")
 
 			// ✅ OUTCOME 6: SOC2 compliance - 7-year audit trail
 			Expect(event.Version).To(Equal("1.0"),

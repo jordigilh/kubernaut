@@ -39,7 +39,7 @@ class GatewayAuditPayload(BaseModel):
     alert_name: StrictStr = Field(description="Name of the alert")
     namespace: StrictStr = Field(description="Kubernetes namespace of the affected resource")
     fingerprint: StrictStr = Field(description="Unique identifier for the signal (deduplication)")
-    severity: Optional[StrictStr] = Field(default=None, description="Normalized severity level (DD-SEVERITY-001 v1.1)")
+    severity: Optional[StrictStr] = Field(default=None, description="Raw severity from signal source (pass-through per DD-SEVERITY-001). Gateway does NOT normalize. Accepts ANY value (e.g., \"warning\", \"Sev1\", \"P0\", \"critical\", etc.). SignalProcessing performs normalization via Rego.")
     resource_kind: Optional[StrictStr] = Field(default=None, description="Kubernetes resource kind")
     resource_name: Optional[StrictStr] = Field(default=None, description="Name of the affected Kubernetes resource")
     remediation_request: Optional[StrictStr] = Field(default=None, description="Created RemediationRequest reference (namespace/name)")
@@ -60,16 +60,6 @@ class GatewayAuditPayload(BaseModel):
         """Validates the enum"""
         if value not in ('prometheus-alert', 'kubernetes-event'):
             raise ValueError("must be one of enum values ('prometheus-alert', 'kubernetes-event')")
-        return value
-
-    @field_validator('severity')
-    def severity_validate_enum(cls, value):
-        """Validates the enum"""
-        if value is None:
-            return value
-
-        if value not in ('critical', 'high', 'medium', 'low', 'unknown'):
-            raise ValueError("must be one of enum values ('critical', 'high', 'medium', 'low', 'unknown')")
         return value
 
     @field_validator('deduplication_status')

@@ -4460,8 +4460,10 @@ type GatewayAuditPayload struct {
 	Namespace string `json:"namespace"`
 	// Unique identifier for the signal (deduplication).
 	Fingerprint string `json:"fingerprint"`
-	// Normalized severity level (DD-SEVERITY-001 v1.1).
-	Severity OptGatewayAuditPayloadSeverity `json:"severity"`
+	// Raw severity from signal source (pass-through per DD-SEVERITY-001). Gateway does NOT normalize.
+	// Accepts ANY value (e.g., "warning", "Sev1", "P0", "critical", etc.). SignalProcessing performs
+	// normalization via Rego.
+	Severity OptString `json:"severity"`
 	// Kubernetes resource kind.
 	ResourceKind OptString `json:"resource_kind"`
 	// Name of the affected Kubernetes resource.
@@ -4516,7 +4518,7 @@ func (s *GatewayAuditPayload) GetFingerprint() string {
 }
 
 // GetSeverity returns the value of Severity.
-func (s *GatewayAuditPayload) GetSeverity() OptGatewayAuditPayloadSeverity {
+func (s *GatewayAuditPayload) GetSeverity() OptString {
 	return s.Severity
 }
 
@@ -4591,7 +4593,7 @@ func (s *GatewayAuditPayload) SetFingerprint(val string) {
 }
 
 // SetSeverity sets the value of Severity.
-func (s *GatewayAuditPayload) SetSeverity(val OptGatewayAuditPayloadSeverity) {
+func (s *GatewayAuditPayload) SetSeverity(val OptString) {
 	s.Severity = val
 }
 
@@ -4733,69 +4735,6 @@ func (s *GatewayAuditPayloadOriginalPayload) init() GatewayAuditPayloadOriginalP
 		*s = m
 	}
 	return m
-}
-
-// Normalized severity level (DD-SEVERITY-001 v1.1).
-type GatewayAuditPayloadSeverity string
-
-const (
-	GatewayAuditPayloadSeverityCritical GatewayAuditPayloadSeverity = "critical"
-	GatewayAuditPayloadSeverityHigh     GatewayAuditPayloadSeverity = "high"
-	GatewayAuditPayloadSeverityMedium   GatewayAuditPayloadSeverity = "medium"
-	GatewayAuditPayloadSeverityLow      GatewayAuditPayloadSeverity = "low"
-	GatewayAuditPayloadSeverityUnknown  GatewayAuditPayloadSeverity = "unknown"
-)
-
-// AllValues returns all GatewayAuditPayloadSeverity values.
-func (GatewayAuditPayloadSeverity) AllValues() []GatewayAuditPayloadSeverity {
-	return []GatewayAuditPayloadSeverity{
-		GatewayAuditPayloadSeverityCritical,
-		GatewayAuditPayloadSeverityHigh,
-		GatewayAuditPayloadSeverityMedium,
-		GatewayAuditPayloadSeverityLow,
-		GatewayAuditPayloadSeverityUnknown,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s GatewayAuditPayloadSeverity) MarshalText() ([]byte, error) {
-	switch s {
-	case GatewayAuditPayloadSeverityCritical:
-		return []byte(s), nil
-	case GatewayAuditPayloadSeverityHigh:
-		return []byte(s), nil
-	case GatewayAuditPayloadSeverityMedium:
-		return []byte(s), nil
-	case GatewayAuditPayloadSeverityLow:
-		return []byte(s), nil
-	case GatewayAuditPayloadSeverityUnknown:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *GatewayAuditPayloadSeverity) UnmarshalText(data []byte) error {
-	switch GatewayAuditPayloadSeverity(data) {
-	case GatewayAuditPayloadSeverityCritical:
-		*s = GatewayAuditPayloadSeverityCritical
-		return nil
-	case GatewayAuditPayloadSeverityHigh:
-		*s = GatewayAuditPayloadSeverityHigh
-		return nil
-	case GatewayAuditPayloadSeverityMedium:
-		*s = GatewayAuditPayloadSeverityMedium
-		return nil
-	case GatewayAuditPayloadSeverityLow:
-		*s = GatewayAuditPayloadSeverityLow
-		return nil
-	case GatewayAuditPayloadSeverityUnknown:
-		*s = GatewayAuditPayloadSeverityUnknown
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Signal annotations for RR.Spec.SignalAnnotations reconstruction.
@@ -8258,52 +8197,6 @@ func (o OptGatewayAuditPayloadOriginalPayload) Get() (v GatewayAuditPayloadOrigi
 
 // Or returns value if set, or given parameter if does not.
 func (o OptGatewayAuditPayloadOriginalPayload) Or(d GatewayAuditPayloadOriginalPayload) GatewayAuditPayloadOriginalPayload {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptGatewayAuditPayloadSeverity returns new OptGatewayAuditPayloadSeverity with value set to v.
-func NewOptGatewayAuditPayloadSeverity(v GatewayAuditPayloadSeverity) OptGatewayAuditPayloadSeverity {
-	return OptGatewayAuditPayloadSeverity{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptGatewayAuditPayloadSeverity is optional GatewayAuditPayloadSeverity.
-type OptGatewayAuditPayloadSeverity struct {
-	Value GatewayAuditPayloadSeverity
-	Set   bool
-}
-
-// IsSet returns true if OptGatewayAuditPayloadSeverity was set.
-func (o OptGatewayAuditPayloadSeverity) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptGatewayAuditPayloadSeverity) Reset() {
-	var v GatewayAuditPayloadSeverity
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptGatewayAuditPayloadSeverity) SetTo(v GatewayAuditPayloadSeverity) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptGatewayAuditPayloadSeverity) Get() (v GatewayAuditPayloadSeverity, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptGatewayAuditPayloadSeverity) Or(d GatewayAuditPayloadSeverity) GatewayAuditPayloadSeverity {
 	if v, ok := o.Get(); ok {
 		return v
 	}

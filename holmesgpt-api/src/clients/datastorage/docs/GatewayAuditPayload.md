@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 **alert_name** | **str** | Name of the alert | 
 **namespace** | **str** | Kubernetes namespace of the affected resource | 
 **fingerprint** | **str** | Unique identifier for the signal (deduplication) | 
-**severity** | **str** | Normalized severity level (DD-SEVERITY-001 v1.1) | [optional] 
+**severity** | **str** | Raw severity from signal source (pass-through per DD-SEVERITY-001). Gateway does NOT normalize. Accepts ANY value (e.g., \&quot;warning\&quot;, \&quot;Sev1\&quot;, \&quot;P0\&quot;, \&quot;critical\&quot;, etc.). SignalProcessing performs normalization via Rego. | [optional] 
 **resource_kind** | **str** | Kubernetes resource kind | [optional] 
 **resource_name** | **str** | Name of the affected Kubernetes resource | [optional] 
 **remediation_request** | **str** | Created RemediationRequest reference (namespace/name) | [optional] 
