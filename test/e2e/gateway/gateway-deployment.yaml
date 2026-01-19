@@ -119,6 +119,16 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+          # ADR-052: Pod identity for distributed locking (multi-replica safety)
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           # Note: KUBECONFIG env var not set - uses in-cluster config automatically
           volumeMounts:
             - name: config
@@ -218,6 +228,12 @@ rules:
   - apiGroups: [""]
     resources: ["configmaps"]
     verbs: ["get", "list", "watch"]
+
+  # Lease resource permissions for distributed locking (DD-GATEWAY-013, BR-GATEWAY-190)
+  # CRITICAL: Required for K8s Lease-based distributed locking to prevent deduplication races
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "update", "delete"]
 
 ---
 # Gateway ClusterRoleBinding

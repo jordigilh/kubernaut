@@ -737,7 +737,9 @@ func buildGatewayImageOnly(writer io.Writer) (string, error) {
 
 	// Build with podman (similar to BuildGatewayImageWithCoverage but without --build-arg GOFLAGS=-cover)
 	cmd := exec.Command("podman", "build",
-		"--no-cache", // Force fresh build to include latest code changes
+		"--no-cache",        // Force fresh build to include latest code changes
+		"--pull=always",     // Force pull fresh base image (clears Go build cache in base image)
+		"--build-arg", "GOCACHE=/tmp/go-build-cache", // Force Go to not use cached build artifacts
 		"-t", imageName,
 		"-f", dockerfilePath,
 		projectRoot,
@@ -797,95 +799,6 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   ✅ Gateway image built and loaded to Kind with unique tag")
 	return nil
 }
-
-// deployDataStorageToCluster is DEPRECATED - replaced by shared deployDataStorage from aianalysis.go
-// See: docs/handoff/DS_TEAM_GATEWAY_E2E_DATASTORAGE_ISSUE.md (Option A)
-// This function is no longer called and will be removed in future cleanup.
-func deployDataStorageToCluster_DEPRECATED(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
-	// Deploy using Data Storage's shared deployment function
-	// This is a simplified version - full deployment would include ConfigMap, Secrets, etc.
-	// For now, Gateway E2E tests will use a basic deployment
-
-	// Use the existing deployDataStorage function from aianalysis.go pattern
-	// But for Gateway, we don't need all the complexity
-	// Gateway only needs Data Storage to be available for audit events
-
-	// Create Data Storage deployment YAML
-	deploymentYAML := fmt.Sprintf(`
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: datastorage
-  namespace: %s
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: datastorage
-  template:
-    metadata:
-      labels:
-        app: datastorage
-    spec:
-      containers:
-      - name: datastorage
-        image: datastorage:e2e-test
-        ports:
-        - containerPort: 8080
-        env:
-        - name: POSTGRES_HOST
-          value: postgres
-        - name: POSTGRES_PORT
-          value: "5432"
-        - name: POSTGRES_USER
-          value: testuser
-        - name: POSTGRES_PASSWORD
-          value: testpass
-        - name: POSTGRES_DB
-          value: testdb
-        - name: REDIS_ADDR
-          value: redis:6379
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: datastorage
-  namespace: %s
-spec:
-  type: NodePort
-  ports:
-  - port: 8080
-    targetPort: 8080
-    nodePort: %d
-  selector:
-    app: datastorage
-`, namespace, namespace, GatewayDataStoragePort)
-
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(deploymentYAML)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("kubectl apply Data Storage failed: %w", err)
-	}
-
-	// Wait for Data Storage to be ready
-	_, _ = fmt.Fprintln(writer, "   Waiting for Data Storage pod...")
-	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"wait", "--for=condition=ready", "pod",
-		"-l", "app=datastorage",
-		"-n", namespace,
-		"--timeout=120s")
-	waitCmd.Stdout = writer
-	waitCmd.Stderr = writer
-	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("Data Storage pod not ready: %w", err)
-	}
-
-	return nil
-}
-
 // deployGatewayService deploys Gateway service to the cluster
 // DD-TEST-001: Uses unique image tag for multi-developer testing support
 //
@@ -943,38 +856,6 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	waitCmd.Stderr = writer
 	if err := waitCmd.Run(); err != nil {
 		return fmt.Errorf("Gateway pod not ready: %w", err)
-	}
-
-	return nil
-}
-
-// waitForDataStorageInfraReady waits for PostgreSQL and Redis to be ready
-// This is a simplified version for Gateway E2E tests
-func waitForDataStorageInfraReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error { //nolint:unused
-	// Wait for PostgreSQL
-	_, _ = fmt.Fprintln(writer, "   Waiting for PostgreSQL...")
-	pgCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"wait", "--for=condition=ready", "pod",
-		"-l", "app=postgresql",
-		"-n", namespace,
-		"--timeout=120s")
-	pgCmd.Stdout = writer
-	pgCmd.Stderr = writer
-	if err := pgCmd.Run(); err != nil {
-		return fmt.Errorf("PostgreSQL not ready: %w", err)
-	}
-
-	// Wait for Redis
-	_, _ = fmt.Fprintln(writer, "   Waiting for Redis...")
-	redisCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
-		"wait", "--for=condition=ready", "pod",
-		"-l", "app=redis",
-		"-n", namespace,
-		"--timeout=120s")
-	redisCmd.Stdout = writer
-	redisCmd.Stderr = writer
-	if err := redisCmd.Run(); err != nil {
-		return fmt.Errorf("Redis not ready: %w", err)
 	}
 
 	return nil

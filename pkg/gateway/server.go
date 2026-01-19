@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -38,7 +39,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"                       // DD-AUDIT-003: Audit integration
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client" // Ogen generated audit types
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"    // BR-AUDIT-005 Gap #7: Standardized error details
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"              // ADR-052 Addendum 001: Exponential backoff with jitter
 
+	coordinationv1 "k8s.io/api/coordination/v1" // BR-GATEWAY-190: Lease resources for distributed locking
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -126,6 +129,7 @@ type Server struct {
 	statusUpdater *processing.StatusUpdater                  // Updates RR status.deduplication and status.stormAggregation
 	phaseChecker  *processing.PhaseBasedDeduplicationChecker // Phase-based deduplication logic
 	crdCreator    *processing.CRDCreator
+	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
 
 	// Infrastructure clients
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free
@@ -222,6 +226,8 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	adapterRegistry := adapters.NewAdapterRegistry(logger)
 
 	// Create phaseChecker (for deduplication)
+	// DD-GATEWAY-011: Use ctrlClient as apiReader for deduplication (test environment uses direct API access)
+	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
 	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
 
 	// Create statusUpdater
@@ -234,6 +240,18 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 	}
 	crdCreator := processing.NewCRDCreator(k8sClient, logger, metricsInstance, fallbackNamespace, &cfg.Processing.Retry)
 
+	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety (test environment)
+	// Uses ctrlClient as apiReader (test clients don't have separate cache/apiReader)
+	var lockManager *processing.DistributedLockManager
+	podName := os.Getenv("POD_NAME")
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "default" // Test environment default
+	}
+	if podName != "" {
+		lockManager = processing.NewDistributedLockManager(ctrlClient, namespace, podName)
+	}
+
 	// Create server
 	server := &Server{
 		adapterRegistry: adapterRegistry,
@@ -242,7 +260,8 @@ func NewServerForTesting(cfg *config.ServerConfig, logger logr.Logger, metricsIn
 		crdCreator:      crdCreator,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
-		auditStore:      auditStore, // Injected for testing
+		lockManager:     lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
+		auditStore:      auditStore,  // Injected for testing
 		metricsInstance: metricsInstance,
 		logger:          logger,
 	}
@@ -280,7 +299,8 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 	// This is required for controller-runtime to work with custom CRDs
 	scheme := k8sruntime.NewScheme()
 	_ = remediationv1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme) // Add core types (Namespace, Pod, etc.)
+	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
+	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
 
 	// ========================================
 	// BR-GATEWAY-185 v1.1: Create cached client with field index
@@ -370,7 +390,8 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 // DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 // DD-AUDIT-003: Audit store initialization for P0 service compliance
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch (adopted from RO)
-func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Reader, k8sClient *k8s.Client) (*Server, error) {
+// BR-GATEWAY-190: apiReader is client.Client (not just client.Reader) for distributed locking Create/Update/Delete operations
+func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics, ctrlClient client.Client, apiReader client.Client, k8sClient *k8s.Client) (*Server, error) {
 	// Metrics are mandatory for observability
 	// If nil, create a new metrics instance with default registry (production mode)
 	if metricsInstance == nil {
@@ -418,9 +439,26 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 	// All state in K8s RR status - Redis fully deprecated
 	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
 	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
-	// Use cached client for deduplication (race condition accepted as low-risk)
-	// TODO: Investigate using apiReader to eliminate race conditions without breaking tests
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(ctrlClient)
+	// DD-GATEWAY-011: Use apiReader for deduplication to eliminate race conditions (cache-bypassed reads)
+	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
+
+	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety
+	// Uses K8s Lease resources for distributed locking (no external dependencies)
+	//
+	// CRITICAL: Uses apiReader (non-cached client) for immediate consistency
+	// WHY: Cached client has 5-50ms sync delay → race condition → duplicate locks
+	// IMPACT: 3-24 API req/sec (production load) - acceptable per impact analysis
+	// See: docs/services/stateless/gateway-service/GW_API_SERVER_IMPACT_ANALYSIS_DISTRIBUTED_LOCKING_JAN18_2026.md
+	var lockManager *processing.DistributedLockManager
+	podName := os.Getenv("POD_NAME")
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "kubernaut-system"
+	}
+	if podName != "" {
+		lockManager = processing.NewDistributedLockManager(apiReader, namespace, podName)
+	}
 
 	// DD-AUDIT-003: Initialize audit store for P0 service compliance
 	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
@@ -457,6 +495,7 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		statusUpdater:   statusUpdater,
 		phaseChecker:    phaseChecker,
 		crdCreator:      crdCreator,
+		lockManager:     lockManager,
 		k8sClient:       k8sClient,
 		ctrlClient:      ctrlClient,
 		auditStore:      auditStore,
@@ -951,6 +990,79 @@ func (s *Server) ProcessSignal(ctx context.Context, signal *types.NormalizedSign
 	// Record ingestion metric (environment label removed - SP owns classification)
 	s.metricsInstance.AlertsReceivedTotal.WithLabelValues(signal.SourceType, signal.Severity).Inc()
 
+	// BR-GATEWAY-190: Acquire distributed lock for multi-replica safety
+	// DD-GATEWAY-013: K8s Lease-based distributed locking pattern
+	// ADR-052 Addendum 001 (Jan 2026): Exponential backoff with jitter (anti-thundering herd)
+	if s.lockManager != nil {
+		const maxRetries = 10 // 10 retries = ~2.5s total wait with exponential backoff
+
+		// Configure shared backoff with jitter (pkg/shared/backoff)
+		// ADR-052 Addendum 001: Use production-proven backoff from Notification v3.1
+		backoffConfig := backoff.Config{
+			BasePeriod:    100 * time.Millisecond, // Start at 100ms (proven in production)
+			MaxPeriod:     1 * time.Second,        // Cap at 1s (faster than 30s lease expiry)
+			Multiplier:    2.0,                    // Standard exponential (100ms → 200ms → 400ms → 800ms)
+			JitterPercent: 10,                     // ±10% jitter (prevents thundering herd)
+		}
+
+		// Iterative retry loop with exponential backoff (replaces unbounded recursion)
+		// ADR-052 Addendum 001: Prevents stack overflow risk from recursive retry
+		for attempt := int32(1); attempt <= maxRetries; attempt++ {
+			acquired, err := s.lockManager.AcquireLock(ctx, signal.Fingerprint)
+			if err != nil {
+				return nil, fmt.Errorf("distributed lock acquisition failed: %w", err)
+			}
+
+			if acquired {
+				// Lock acquired - exit retry loop and proceed with normal flow
+				break
+			}
+
+			// Lock held by another Gateway pod
+			logger.V(1).Info("Lock contention, retrying with exponential backoff",
+				"attempt", attempt,
+				"maxRetries", maxRetries,
+				"fingerprint", signal.Fingerprint)
+
+			// Check if we've exhausted all retries (early return for failure case)
+			if attempt >= maxRetries {
+				// Max retries exceeded - fail immediately
+				return nil, fmt.Errorf("lock acquisition timeout after %d attempts (fingerprint: %s)",
+					maxRetries, signal.Fingerprint)
+			}
+
+			// Exponential backoff with jitter (shared implementation)
+			backoffDuration := backoffConfig.Calculate(attempt)
+			logger.V(2).Info("Backing off before retry",
+				"backoff", backoffDuration,
+				"attempt", attempt,
+				"fingerprint", signal.Fingerprint)
+
+			time.Sleep(backoffDuration)
+
+			// Retry deduplication check (other pod may have created RR by now)
+			shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
+			if err != nil {
+				return nil, fmt.Errorf("deduplication check failed after lock contention: %w", err)
+			}
+
+			if shouldDeduplicate && existingRR != nil {
+				// BR-GATEWAY-190: Another pod created RR during lock contention
+				// Handle deduplication and return early (no need to continue retry loop)
+				return s.handleDuplicateSignal(ctx, signal, existingRR)
+			}
+
+			// Still no RR - continue to next retry attempt
+		}
+
+		// Lock acquired successfully - ensure it's released after operation
+		defer func() {
+			if err := s.lockManager.ReleaseLock(ctx, signal.Fingerprint); err != nil {
+				logger.Error(err, "Failed to release distributed lock", "fingerprint", signal.Fingerprint)
+			}
+		}()
+	}
+
 	// 1. Deduplication check (DD-GATEWAY-011: K8s status-based, NOT Redis)
 	// BR-GATEWAY-185: Redis deprecation - use PhaseBasedDeduplicationChecker
 	shouldDeduplicate, existingRR, err := s.phaseChecker.ShouldDeduplicate(ctx, signal.Namespace, signal.Fingerprint)
@@ -1132,27 +1244,10 @@ type ProcessingResponse struct {
 // Processing status constants (HTTP response body status field)
 // Aligned with OpenAPI enum values for consistency (no backwards compatibility needed)
 const (
-	StatusCreated      = "created"    // RemediationRequest CRD created
-	StatusDeduplicated = "duplicate"  // Signal deduplicated to existing RR (matches OpenAPI enum)
-	StatusAccepted     = "accepted"   // Alert accepted for storm aggregation (CRD will be created later)
+	StatusCreated      = "created"   // RemediationRequest CRD created
+	StatusDeduplicated = "duplicate" // Signal deduplicated to existing RR (matches OpenAPI enum)
+	StatusAccepted     = "accepted"  // Alert accepted for storm aggregation (CRD will be created later)
 )
-
-// NewDuplicateResponse creates a ProcessingResponse for duplicate signals
-// TDD REFACTOR: Extracted factory function for duplicate response pattern
-// Business Outcome: Consistent duplicate signal handling (BR-005)
-// DEPRECATED: Use NewDuplicateResponseFromRR for DD-GATEWAY-011 status-based deduplication
-// NewDuplicateResponse is DEPRECATED - use NewDuplicateResponseFromRR instead
-// DD-GATEWAY-011: Redis metadata replaced with K8s status-based tracking
-// Kept for backward compatibility with any external code that might use it
-func NewDuplicateResponse(fingerprint string, metadata *processing.DeduplicationMetadata) *ProcessingResponse {
-	return &ProcessingResponse{
-		Status:      StatusDeduplicated,
-		Message:     "Duplicate signal (deduplication successful)",
-		Fingerprint: fingerprint,
-		Duplicate:   true,
-		Metadata:    metadata,
-	}
-}
 
 // NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
 // DD-GATEWAY-011: Status-based deduplication (Redis deprecation)
@@ -1227,41 +1322,6 @@ func NewCRDCreatedResponse(fingerprint, crdName, crdNamespace string) *Processin
 		RemediationRequestNamespace: crdNamespace,
 	}
 }
-
-// processDuplicateSignal handles the duplicate signal fast path
-// processDuplicateSignal is DEPRECATED and removed
-// DD-GATEWAY-011: Replaced by inline logic in ProcessSignal using PhaseBasedDeduplicationChecker
-// BR-GATEWAY-185: Redis deprecation complete for deduplication path
-
-// parseCRDReference is DEPRECATED - no longer needed after DD-GATEWAY-011
-// DD-GATEWAY-011: PhaseChecker returns the actual RR, no need to parse references
-// Kept for backward compatibility with any external code
-//
-// DD-GATEWAY-009: Helper for parsing RemediationRequestRef
-// Format: "namespace/name" (e.g., "production/rr-abc123")
-//
-// Returns:
-// - namespace: The namespace part (empty if invalid format)
-//
-// - name: The name part (empty if invalid format)
-//
-//nolint:unused // Deprecated but kept for compatibility
-func (s *Server) parseCRDReference(ref string) (namespace, name string) {
-	if ref == "" {
-		return "", ""
-	}
-
-	parts := strings.Split(ref, "/")
-	if len(parts) != 2 {
-		return "", ""
-	}
-
-	return parts[0], parts[1]
-}
-
-// DD-GATEWAY-012: processStormAggregation REMOVED - Redis-based storm buffering deprecated
-// Storm detection now uses status.stormAggregation via StatusUpdater (async pattern)
-// Per DD-GATEWAY-008 supersession: Create RR immediately, track storm in status
 
 // =============================================================================
 // DD-AUDIT-003: Audit Event Emission (P0 Compliance)
@@ -1373,7 +1433,7 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	}
 
 	// Optional fields
-	payload.Severity.SetTo(toGatewayAuditPayloadSeverity(signal.Severity))
+	payload.Severity = toGatewayAuditPayloadSeverity(signal.Severity) // Pass through raw severity (DD-SEVERITY-001)
 	payload.ResourceKind.SetTo(signal.Resource.Kind)
 	payload.ResourceName.SetTo(signal.Resource.Name)
 	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
@@ -1482,7 +1542,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	}
 
 	// Optional fields
-	payload.Severity.SetTo(toGatewayAuditPayloadSeverity(signal.Severity))
+	payload.Severity = toGatewayAuditPayloadSeverity(signal.Severity) // Pass through raw severity (DD-SEVERITY-001)
 	payload.ResourceKind.SetTo(signal.Resource.Kind)
 	payload.ResourceName.SetTo(signal.Resource.Name)
 	payload.RemediationRequest.SetTo(fmt.Sprintf("%s/%s", rrNamespace, rrName))
@@ -1582,7 +1642,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	}
 
 	// Optional fields
-	payload.Severity.SetTo(toGatewayAuditPayloadSeverity(signal.Severity))
+	payload.Severity = toGatewayAuditPayloadSeverity(signal.Severity) // Pass through raw severity (DD-SEVERITY-001)
 	payload.ResourceKind.SetTo(signal.Resource.Kind)
 	payload.ResourceName.SetTo(signal.Resource.Name)
 	payload.ErrorDetails.SetTo(apiErrorDetails) // Gap #7: Standardized error_details for SOC2 compliance
@@ -1622,6 +1682,51 @@ func constructReadableCorrelationID(signal *types.NormalizedSignal) string {
 		signal.Resource.Kind,
 		signal.Resource.Name,
 	)
+}
+
+// handleDuplicateSignal handles the case where another pod created a RemediationRequest during lock contention
+// TDD REFACTOR: Extracted from ProcessSignal lock retry loop for clarity and testability
+//
+// BR-GATEWAY-190: Multi-replica deduplication safety
+// ADR-052 Addendum 001: This helper is called when exponential backoff retry discovers
+// that another Gateway pod successfully acquired the lock and created the RR.
+//
+// Business Outcome:
+//   - Updates occurrence count for deduplication tracking
+//   - Records metrics for alert deduplication monitoring
+//   - Emits audit event for compliance and debugging
+//   - Returns early from retry loop (no need to continue retrying)
+//
+// Returns:
+//   - *ProcessingResponse: Duplicate response with existing RR reference
+//   - error: Non-nil if status update or audit emission fails critically
+func (s *Server) handleDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, existingRR *remediationv1alpha1.RemediationRequest) (*ProcessingResponse, error) {
+	logger := middleware.GetLogger(ctx)
+
+	// Update occurrence count for deduplication tracking
+	if err := s.statusUpdater.UpdateDeduplicationStatus(ctx, existingRR); err != nil {
+		// Non-critical: Log and continue (deduplication still succeeded)
+		logger.Info("Failed to update deduplication status after lock contention",
+			"error", err,
+			"fingerprint", signal.Fingerprint,
+			"rr", existingRR.Name)
+	}
+
+	// Get updated occurrence count for metrics and audit
+	occurrenceCount := int32(1)
+	if existingRR.Status.Deduplication != nil {
+		occurrenceCount = existingRR.Status.Deduplication.OccurrenceCount
+	}
+
+	// Record metrics for monitoring dashboard
+	s.metricsInstance.AlertsDeduplicatedTotal.WithLabelValues(signal.AlertName).Inc()
+	s.metricsInstance.DeduplicationCacheHitsTotal.Inc()
+
+	// Emit audit event for compliance (DD-AUDIT-003)
+	s.emitSignalDeduplicatedAudit(ctx, signal, existingRR.Name, existingRR.Namespace, occurrenceCount)
+
+	// Return duplicate response (early exit from retry loop)
+	return NewDuplicateResponseFromRR(signal.Fingerprint, existingRR), nil
 }
 
 // createRemediationRequestCRD handles the CRD creation pipeline
@@ -1681,13 +1786,6 @@ func (s *Server) createRemediationRequestCRD(ctx context.Context, signal *types.
 
 	return NewCRDCreatedResponse(signal.Fingerprint, rr.Name, rr.Namespace), nil
 }
-
-// DD-GATEWAY-012: createAggregatedCRD REMOVED - Redis-based storm aggregation deprecated
-// Storm tracking now uses status.stormAggregation via StatusUpdater (async pattern)
-// RRs are created immediately on first alert, storm status updated on subsequent alerts
-
-// DD-GATEWAY-012: monitorWindowExpiration REMOVED - No Redis windows to monitor
-// Storm detection threshold now based on status.deduplication.occurrenceCount
 
 // TDD REFACTOR: RFC7807Error moved to pkg/gateway/errors package to eliminate duplication
 
