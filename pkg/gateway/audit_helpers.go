@@ -18,7 +18,6 @@ package gateway
 
 import (
 	"encoding/json"
-	"strings"
 
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
@@ -47,26 +46,13 @@ import (
 //
 // **Authority**: api/openapi/data-storage-v1.yaml (GatewayAuditPayload.signal_type enum)
 var signalTypeMapping = map[string]api.GatewayAuditPayloadSignalType{
-	adapters.SourceTypePrometheusAlert:  api.GatewayAuditPayloadSignalTypePrometheusAlert,
-	adapters.SourceTypeKubernetesEvent:  api.GatewayAuditPayloadSignalTypeKubernetesEvent,
+	adapters.SourceTypePrometheusAlert: api.GatewayAuditPayloadSignalTypePrometheusAlert,
+	adapters.SourceTypeKubernetesEvent: api.GatewayAuditPayloadSignalTypeKubernetesEvent,
 }
 
-// severityMapping maps string severity values to OpenAPI enum values.
-// Used by toGatewayAuditPayloadSeverity() for audit event emission.
-//
-// **Authority**: api/openapi/data-storage-v1.yaml (GatewayAuditPayload.severity enum)
-//
-// **Mappings**:
-//   - "warning" → "high" (OpenAPI compatibility)
-//   - "info" → "low" (OpenAPI compatibility)
-var severityMapping = map[string]api.GatewayAuditPayloadSeverity{
-	"critical": api.GatewayAuditPayloadSeverityCritical,
-	"high":     api.GatewayAuditPayloadSeverityHigh,
-	"warning":  api.GatewayAuditPayloadSeverityHigh, // Map "warning" to "high"
-	"medium":   api.GatewayAuditPayloadSeverityMedium,
-	"info":     api.GatewayAuditPayloadSeverityLow, // Map "info" to "low"
-	"low":      api.GatewayAuditPayloadSeverityLow,
-}
+// ❌ REMOVED: severityMapping (DD-SEVERITY-001 v1.2)
+// Gateway is a "dumb pipe" - passes through raw severity values without normalization.
+// SignalProcessing performs normalization via Rego policy.
 
 // deduplicationStatusMapping maps string deduplication status to OpenAPI enum values.
 // Used by toGatewayAuditPayloadDeduplicationStatus() for audit event emission.
@@ -103,19 +89,18 @@ func toGatewayAuditPayloadSignalType(value string) api.GatewayAuditPayloadSignal
 	return "" // ❌ Invalid signal_type: must be [prometheus-alert, kubernetes-event] per OpenAPI spec
 }
 
-// toGatewayAuditPayloadSeverity converts string to api.GatewayAuditPayloadSeverity enum.
+// toGatewayAuditPayloadSeverity passes through raw severity value without normalization.
 //
-// **Refactoring**: Replaced switch statement with map lookup (Phase 3).
+// **DD-SEVERITY-001 v1.2**: Gateway is a "dumb pipe" - no normalization.
+// SignalProcessing performs normalization via Rego policy.
 //
-// **Valid Values**: critical, high, warning, medium, info, low
-// **Mappings**: warning→high, info→low (OpenAPI compatibility)
-// **Returns**: "unknown" if value not in mapping
-func toGatewayAuditPayloadSeverity(value string) api.GatewayAuditPayloadSeverity {
-	normalized := strings.ToLower(value)
-	if mapped, ok := severityMapping[normalized]; ok {
-		return mapped
+// **Accepts ANY value**: "warning", "Sev1", "P0", "critical", etc.
+// **Returns**: api.OptString with raw value (or empty if value is empty string)
+func toGatewayAuditPayloadSeverity(value string) api.OptString {
+	if value == "" {
+		return api.OptString{} // Return empty OptString for empty input
 	}
-	return api.GatewayAuditPayloadSeverityUnknown
+	return api.NewOptString(value) // Pass through raw severity
 }
 
 // toGatewayAuditPayloadDeduplicationStatus converts string to api.GatewayAuditPayloadDeduplicationStatus enum.

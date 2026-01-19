@@ -2398,9 +2398,8 @@ components:
           example: "abc123"
         severity:
           type: string
-          enum: [critical, high, medium, low, unknown]
-          description: Normalized severity level (DD-SEVERITY-001 v1.1)
-          example: "critical"
+          description: Raw severity from signal source (pass-through per DD-SEVERITY-001). Gateway does NOT normalize. Accepts ANY value (e.g., "warning", "Sev1", "P0", "critical", etc.). SignalProcessing performs normalization via Rego.
+          example: "warning"
         resource_kind:
           type: string
           description: Kubernetes resource kind

@@ -1113,24 +1113,6 @@ func (s *GatewayAuditPayload) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.Severity.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "severity",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if value, ok := s.DeduplicationStatus.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -1192,23 +1174,6 @@ func (s GatewayAuditPayloadEventType) Validate() error {
 	case "gateway.crd.created":
 		return nil
 	case "gateway.crd.failed":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s GatewayAuditPayloadSeverity) Validate() error {
-	switch s {
-	case "critical":
-		return nil
-	case "high":
-		return nil
-	case "medium":
-		return nil
-	case "low":
-		return nil
-	case "unknown":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

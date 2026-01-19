@@ -8567,52 +8567,6 @@ func (s *GatewayAuditPayloadOriginalPayload) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes GatewayAuditPayloadSeverity as json.
-func (s GatewayAuditPayloadSeverity) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes GatewayAuditPayloadSeverity from json.
-func (s *GatewayAuditPayloadSeverity) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode GatewayAuditPayloadSeverity to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch GatewayAuditPayloadSeverity(v) {
-	case GatewayAuditPayloadSeverityCritical:
-		*s = GatewayAuditPayloadSeverityCritical
-	case GatewayAuditPayloadSeverityHigh:
-		*s = GatewayAuditPayloadSeverityHigh
-	case GatewayAuditPayloadSeverityMedium:
-		*s = GatewayAuditPayloadSeverityMedium
-	case GatewayAuditPayloadSeverityLow:
-		*s = GatewayAuditPayloadSeverityLow
-	case GatewayAuditPayloadSeverityUnknown:
-		*s = GatewayAuditPayloadSeverityUnknown
-	default:
-		*s = GatewayAuditPayloadSeverity(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s GatewayAuditPayloadSeverity) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *GatewayAuditPayloadSeverity) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode implements json.Marshaler.
 func (s GatewayAuditPayloadSignalAnnotations) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -14134,39 +14088,6 @@ func (s OptGatewayAuditPayloadOriginalPayload) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptGatewayAuditPayloadOriginalPayload) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes GatewayAuditPayloadSeverity as json.
-func (o OptGatewayAuditPayloadSeverity) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Str(string(o.Value))
-}
-
-// Decode decodes GatewayAuditPayloadSeverity from json.
-func (o *OptGatewayAuditPayloadSeverity) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptGatewayAuditPayloadSeverity to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptGatewayAuditPayloadSeverity) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptGatewayAuditPayloadSeverity) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
