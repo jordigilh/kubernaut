@@ -30,6 +30,7 @@ import (
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // DD-GATEWAY-009: State-Based Deduplication - Integration Tests
@@ -69,7 +70,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 
 	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
 	// Note: This test uses a shared namespace for state validation across specs
-	sharedNamespace = createTestNamespace("gw-dedup-state")
+	sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-state")
 
 		// Note: prometheusPayload created in Context's BeforeEach with unique UUID
 		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
@@ -81,7 +82,7 @@ var _ = Describe("DD-GATEWAY-009: State-Based Deduplication - Integration Tests"
 		}
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
 		// Note: This will delete the shared namespace and all its CRDs
-		deleteTestNamespace(sharedNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, sharedNamespace)
 
 		// Previous CRD cleanup code (REMOVED - namespace deletion handles this):
 		// By("Cleaning up CRDs in shared namespace")

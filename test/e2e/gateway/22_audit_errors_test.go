@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // =============================================================================
@@ -77,13 +78,13 @@ var _ = Describe("BR-GATEWAY-NAMESPACE-FALLBACK: Gateway Namespace Fallback E2E 
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
-		testNamespace = createTestNamespace("test-error-audit")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-error-audit")
 
 	})
 
 	AfterEach(func() {
 		// Clean up test namespace (Pattern: RO E2E)
-		deleteTestNamespace(testNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 	})
 
 	Context("BR-GATEWAY-NAMESPACE-FALLBACK: Namespace Fallback Validation", func() {

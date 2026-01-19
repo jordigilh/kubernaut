@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Integration Tests: Error Handling & Edge Cases
@@ -57,14 +58,14 @@ var _ = Describe("Error Handling & Edge Cases", func() {
 		// No local test server needed
 
 	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
-	testNamespace = createTestNamespace("test-err")
+	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-err")
 
 		// Clear Redis
 	})
 
 AfterEach(func() {
 	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
-	deleteTestNamespace(testNamespace)
+	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 	// Previous code (REMOVED - namespace cleanup now handled properly):
 	// ns := &corev1.Namespace{

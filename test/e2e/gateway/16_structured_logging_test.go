@@ -31,6 +31,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-GATEWAY-075)", Ordered, func() {
@@ -51,7 +52,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		testNamespace = createTestNamespace("logging")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "logging")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -73,7 +74,7 @@ var _ = Describe("Test 16: Structured Logging Verification (BR-GATEWAY-024, BR-G
 		} else {
 			testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 			// Clean up test namespace (Pattern: RO E2E)
-			deleteTestNamespace(testNamespace)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 			testLogger.Info("✅ Test cleanup complete")
 		}
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

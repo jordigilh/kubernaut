@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test Plan Reference: docs/development/testing/GATEWAY_COVERAGE_GAP_TEST_PLAN.md
@@ -49,7 +50,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 		testClient = k8sClient // Use suite-level client (DD-E2E-K8S-CLIENT-001)
 
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
-		testNamespace = createTestNamespace("gw-error-test")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-error-test")
 
 		// Get DataStorage URL from environment
 		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
@@ -65,7 +66,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 		testCancel()  // ← Only cancels test-local context
 	}
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
-		deleteTestNamespace(testNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 	})
 
 	Context("GW-ERR-001: Transient Error Retry with Exponential Backoff (P0)", func() {

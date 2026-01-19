@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // =============================================================================
@@ -107,7 +108,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		testClient      client.Client
 		dsClient        *ogenclient.Client
 		dataStorageURL  string
-		sharedNamespace string // Created in BeforeEach using createTestNamespace()
+		sharedNamespace string // Created in BeforeEach using helpers.CreateTestNamespaceAndWait(k8sClient, )
 	)
 
 	BeforeEach(func() {
@@ -117,7 +118,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
-		sharedNamespace = createTestNamespace("test-rr-audit")
+		sharedNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-rr-audit")
 
 		// DD-TEST-001: Get Data Storage URL from suite's shared infrastructure
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
@@ -160,7 +161,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 		testCancel()  // ← Only cancels test-local context
 	}
 		// Clean up test namespace (Pattern: RO E2E)
-		deleteTestNamespace(sharedNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, sharedNamespace)
 	})
 
 	Context("Gap #1-3: Complete Signal Data Capture", func() {

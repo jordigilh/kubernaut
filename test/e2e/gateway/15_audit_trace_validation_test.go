@@ -31,6 +31,7 @@ import (
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 15: Audit Trace Validation (DD-AUDIT-003)
@@ -74,7 +75,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		testLogger.Info("OpenAPI audit client initialized", "dataStorageURL", dataStorageURL)
 
 		// Create unique test namespace (Pattern: RO E2E)
-		testNamespace = createTestNamespace("audit-trace")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "audit-trace")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -88,7 +89,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 				"namespace", testNamespace)
 		} else {
 			// Clean up test namespace (Pattern: RO E2E)
-			deleteTestNamespace(testNamespace)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 			testLogger.Info("✅ Cleanup complete")
 		}
 

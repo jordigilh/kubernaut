@@ -30,6 +30,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 04: Metrics Endpoint (BR-GATEWAY-017)
@@ -60,7 +61,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
-		testNamespace = createTestNamespace("metrics")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "metrics")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -79,7 +80,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, func() {
 		}
 
 		// Clean up test namespace (Pattern: RO E2E)
-		deleteTestNamespace(testNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		if testCancel != nil {
 			testCancel()

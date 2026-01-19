@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
@@ -49,7 +50,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
-	testNamespace = createTestNamespace("security-headers")
+	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "security-headers")
 	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -76,7 +77,7 @@ var _ = Describe("Test 20: Security Headers & Observability", Ordered, func() {
 
 	testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 	// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace (Pattern: RO E2E)
-	deleteTestNamespace(testNamespace)
+	helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 	if testCancel != nil {
 		testCancel()

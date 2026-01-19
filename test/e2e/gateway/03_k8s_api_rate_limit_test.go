@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Parallel Execution: ✅ ENABLED
@@ -58,7 +59,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// This prevents circuit breaker degradation from "namespace not found" errors
-		testNamespace = createTestNamespace("rate-limit")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "rate-limit")
 
 		testLogger.Info("Deploying test services...", "namespace", testNamespace)
 
@@ -97,7 +98,7 @@ var _ = Describe("Test 3: K8s API Rate Limiting (429 Responses)", Ordered, func(
 		// Note: Gateway uses status-based deduplication (DD-GATEWAY-011)
 		// Deduplication state stored in RemediationRequest CRD status, not Redis
 		testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
-		deleteTestNamespace(testNamespace)
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 
 		if testCancel != nil {
 			testCancel()
