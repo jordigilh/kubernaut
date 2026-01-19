@@ -28,6 +28,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)", Ordered, func() {
@@ -48,7 +49,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 	testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace (Pattern: RO E2E)
-	testNamespace = createTestNamespace("error-codes")
+	testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "error-codes")
 	testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)
 		testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -70,7 +71,7 @@ var _ = Describe("Test 17: Error Response Codes (BR-GATEWAY-101, BR-GATEWAY-043)
 		} else {
 			testLogger.Info("Cleaning up test namespace...", "namespace", testNamespace)
 			// Clean up test namespace (Pattern: RO E2E)
-			deleteTestNamespace(testNamespace)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 			testLogger.Info("✅ Test cleanup complete")
 		}
 

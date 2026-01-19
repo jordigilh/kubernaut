@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Observability E2E Tests", func() {
@@ -28,7 +29,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Pre-create namespace to prevent circuit breaker degradation
 		// Pattern: RO E2E (test/e2e/remediationorchestrator/suite_test.go)
-		testNamespace = createTestNamespace("gw-obs")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-obs")
 
 		// Note: gatewayURL is provided by E2E suite (deployed Gateway service)
 	})
@@ -39,7 +40,7 @@ var _ = Describe("Observability E2E Tests", func() {
 		}
 		// BR-GATEWAY-NAMESPACE-FALLBACK: Clean up test namespace
 		if testNamespace != "" {
-			deleteTestNamespace(testNamespace)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 		}
 	})
 

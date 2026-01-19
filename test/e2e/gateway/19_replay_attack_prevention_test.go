@@ -27,6 +27,7 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-075)", Ordered, func() {
@@ -46,7 +47,7 @@ var _ = Describe("Test 19: Replay Attack Prevention (BR-GATEWAY-074, BR-GATEWAY-
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		testNamespace = createTestNamespace("replay")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "replay")
 
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 		testLogger.Info("✅ Using shared Gateway", "url", gatewayURL)

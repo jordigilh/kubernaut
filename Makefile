@@ -139,7 +139,7 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -149,7 +149,7 @@ test-integration-%: ginkgo ## Run integration tests for specified service (e.g.,
 
 # Integration Tests with Coverage (WorkflowExecution pattern)
 .PHONY: test-integration-%-coverage
-test-integration-%-coverage: ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
+test-integration-%-coverage: generate ## Run integration tests with production code coverage (e.g., make test-integration-aianalysis-coverage)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📊 $* - Integration Tests with Production Code Coverage"
 	@echo "════════════════════════════════════════════════════════════════════════"
@@ -177,7 +177,7 @@ ensure-coverdata: ## Ensure coverdata directory exists for E2E coverage collecti
 	fi
 
 .PHONY: test-e2e-%
-test-e2e-%: ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
+test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified service (e.g., make test-e2e-workflowexecution)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - E2E Tests (Kind cluster, $(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"

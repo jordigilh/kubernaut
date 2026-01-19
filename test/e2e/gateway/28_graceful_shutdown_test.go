@@ -1,15 +1,15 @@
 package gateway
 
 import (
-	"context"
 	"fmt"
-
 	"sync"
 	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -38,42 +38,24 @@ import (
 
 var _ = Describe("BR-GATEWAY-019: Graceful Shutdown Foundation - E2E Tests", func() {
 	var (
-		// testServer removed - using deployed Gateway
-		// TODO (GW Team): k8sClient     client.Client
-		// TODO (GW Team): ctx           context.Context
-		cancel        context.CancelFunc
 		testNamespace string
-		testCounter   int
 	)
 
 	BeforeEach(func() {
-		ctx, cancel = context.WithCancel(context.Background())
-
-		// Generate unique namespace for test isolation
-		testCounter++
-		testNamespace = fmt.Sprintf("test-shutdown-%d-%d-%d",
-			time.Now().UnixNano(),
-			GinkgoRandomSeed(),
-			testCounter)
-
-		// Setup test clients
-		// TODO (GW Team): // k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-
-		// Ensure unique test namespace exists
+		// BR-GATEWAY-019: Create test namespace BEFORE sending requests
+		// CRITICAL: Prevents "namespace not found" errors that trigger circuit breaker
+		// Uses shared helper from test/shared/helpers that:
+		// 1. Generates unique name with UUID (prevents collisions in parallel runs)
+		// 2. Creates actual Namespace object in K8s (prevents "not found" errors)
+		// 3. WAITS for namespace to become Active (prevents race conditions)
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "test-shutdown")
 
 		// DD-GATEWAY-012: Redis cleanup no longer needed (Gateway is Redis-free)
-
-		// Start test Gateway server
-
-		// Create httptest server from Gateway's HTTP handler
 	})
 
 	AfterEach(func() {
-		if cancel != nil {
-			cancel()
-		}
-
-		// Reset Redis config after tests
+		// BR-GATEWAY-019: Clean up test namespace after test completes
+		helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

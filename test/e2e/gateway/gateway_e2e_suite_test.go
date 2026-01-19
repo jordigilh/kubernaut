@@ -26,12 +26,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -348,44 +345,3 @@ var _ = SynchronizedAfterSuite(
 // createTestNamespace creates a unique namespace for test isolation
 // This prevents "namespace not found" errors that degrade the circuit breaker
 // Pattern: Similar to RO E2E (test/e2e/remediationorchestrator/suite_test.go)
-func createTestNamespace(prefix string) string {
-	// Generate unique name with UUID component (Pattern: RO E2E)
-	// UUID guarantees uniqueness even for parallel tests in same second
-	name := fmt.Sprintf("%s-%d-%s",
-		prefix,
-		GinkgoParallelProcess(),
-		uuid.New().String()[:8])
-
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-			Labels: map[string]string{
-				"kubernaut.io/test": "e2e-gateway",
-			},
-		},
-	}
-	// Use fresh context for namespace operations to avoid cancellation issues
-	// Per DD-E2E-PARALLEL: Namespace operations should not be affected by test-level timeouts
-	nsCtx := context.Background()
-	err := k8sClient.Create(nsCtx, ns)
-	Expect(err).ToNot(HaveOccurred())
-	return name
-}
-
-// deleteTestNamespace cleans up test namespace after test completion
-func deleteTestNamespace(name string) {
-	// Guard against empty namespace names (can happen if BeforeEach fails/cancels)
-	if name == "" {
-		return
-	}
-
-	ns := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name,
-		},
-	}
-	err := k8sClient.Delete(ctx, ns)
-	if err != nil && !apierrors.IsNotFound(err) {
-		GinkgoWriter.Printf("⚠️  Failed to delete namespace %s: %v\n", name, err)
-	}
-}

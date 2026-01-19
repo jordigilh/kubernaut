@@ -32,6 +32,7 @@ import (
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 
 	"github.com/google/uuid"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)
@@ -59,7 +60,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 
 		// Create unique test namespace (Pattern: RO E2E)
 		// k8sClient available from suite (DD-E2E-K8S-CLIENT-001)
-		testNamespace = createTestNamespace("k8s-event")
+		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "k8s-event")
 		testLogger.Info("✅ Test namespace ready", "namespace", testNamespace)
 	})
 
@@ -68,7 +69,7 @@ var _ = Describe("Test 08: Kubernetes Event Ingestion (BR-GATEWAY-002)", Ordered
 			testLogger.Info("⚠️  Test FAILED - Preserving namespace", "namespace", testNamespace)
 		} else {
 			// Clean up test namespace (Pattern: RO E2E)
-			deleteTestNamespace(testNamespace)
+			helpers.DeleteTestNamespace(ctx, k8sClient, testNamespace)
 			testLogger.Info("✅ Test cleanup complete")
 		}
 		if testCancel != nil {
