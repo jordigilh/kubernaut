@@ -158,6 +158,9 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		analysis.Status.AlternativeWorkflows = alternatives
 	}
 
+	// BR-HAPI-197: No human review needed for successful workflow selection
+	analysis.Status.NeedsHumanReview = false
+
 	// Set InvestigationComplete condition
 	aianalysis.SetInvestigationComplete(analysis, true, "HolmesGPT-API investigation completed successfully")
 
@@ -318,6 +321,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// BR-HAPI-197: Store human review flag and reason in CRD status
+	analysis.Status.NeedsHumanReview = true
+	if humanReviewReason != "" {
+		analysis.Status.HumanReviewReason = humanReviewReason
+	}
+
 	// BR-HAPI-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Inc()
 
@@ -424,6 +433,9 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.SubReason = "ProblemResolved"
 	analysis.Status.InvestigationID = resp.IncidentID
 
+	// BR-HAPI-197: No human review needed for resolved problems
+	analysis.Status.NeedsHumanReview = false
+
 	if resp.Analysis != "" {
 		analysis.Status.Message = resp.Analysis
 	} else if len(resp.Warnings) > 0 {
@@ -477,6 +489,12 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromRecovery(ctx cont
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = "WorkflowResolutionFailed"
 	analysis.Status.InvestigationID = resp.IncidentID
+
+	// BR-HAPI-197: Store human review flag and reason in CRD status (recovery flow)
+	analysis.Status.NeedsHumanReview = true
+	if humanReviewReason != "" {
+		analysis.Status.HumanReviewReason = humanReviewReason
+	}
 
 	// BR-HAPI-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Inc()
@@ -533,6 +551,10 @@ func (p *ResponseProcessor) handleRecoveryNotPossible(ctx context.Context, analy
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = "RecoveryNotPossible"
 	analysis.Status.SubReason = "NoRecoveryStrategy"
+
+	// BR-HAPI-197: Recovery not possible requires human review
+	analysis.Status.NeedsHumanReview = true
+	// Note: No HumanReviewReason set because HAPI determined recovery impossible (different from workflow resolution failure)
 
 	// BR-HAPI-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("RecoveryNotPossible", "NoRecoveryStrategy").Inc()
