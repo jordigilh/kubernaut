@@ -76,9 +76,30 @@ def parse_and_validate_investigation_result(
 
     # Try to parse JSON from analysis
     # Pattern 1: JSON code block (standard format)
-    json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
+    # BR-HAPI-200: Use greedy match to capture FULL JSON dict, not just first {...} object
+    json_match = re.search(r'```json\s*(\{.*\})\s*```', analysis, re.DOTALL)
+    if json_match:
+        logger.info(f"Pattern 1: Matched ```json``` block ({len(json_match.group(1))} chars)")
+    else:
+        logger.info("Pattern 1: Did NOT match ```json``` block")
 
-    # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
+    # BR-HAPI-200: Pattern 2A - Extract complete JSON dict (Mock LLM format with confidence, investigation_outcome)
+    # Mock LLM includes the full JSON dict in the response, not just section headers
+    if not json_match:
+        # Look for complete JSON dict (handles Mock LLM format)
+        json_dict_match = re.search(r'\{[\s\S]*?"root_cause_analysis"[\s\S]*?\}(?=\n```|\n\n|\Z)', analysis, re.DOTALL)
+        if json_dict_match:
+            logger.debug(f"Pattern 2A: Found complete JSON dict: {json_dict_match.group(0)[:200]}...")
+            class FakeMatch:
+                def __init__(self, text):
+                    self._text = text
+                    self.lastindex = None
+                def group(self, n):
+                    return self._text
+            json_match = FakeMatch(json_dict_match.group(0))
+            logger.info("Pattern 2A: Successfully extracted complete JSON dict")
+
+    # Pattern 2B: Legacy - Python dict format with section headers (HolmesGPT SDK format)
     # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
     if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
         import ast
@@ -88,13 +109,25 @@ def parse_and_validate_investigation_result(
         rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
         if rca_match:
             parts['root_cause_analysis'] = rca_match.group(1)
-            logger.debug(f"Pattern 2: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
+            logger.debug(f"Pattern 2B: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
 
         # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\}|None)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
         if wf_match:
             parts['selected_workflow'] = wf_match.group(1)
-            logger.debug(f"Pattern 2: Extracted workflow: {parts['selected_workflow'][:100]}...")
+            logger.debug(f"Pattern 2B: Extracted workflow: {parts['selected_workflow'][:100]}...")
+
+        # BR-HAPI-200: Extract investigation_outcome (for problem_resolved case)
+        outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if outcome_match:
+            parts['investigation_outcome'] = f'"{outcome_match.group(1).strip()}"'
+            logger.debug(f"Pattern 2B: Extracted investigation_outcome: {parts['investigation_outcome']}")
+
+        # BR-HAPI-200: Extract confidence (for problem_resolved case)
+        conf_match = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if conf_match:
+            parts['confidence'] = conf_match.group(1)
+            logger.debug(f"Pattern 2B: Extracted confidence: {parts['confidence']}")
 
         if parts:
             # Combine into a single dict string
@@ -102,7 +135,7 @@ def parse_and_validate_investigation_result(
             for key, value in parts.items():
                 combined_dict += f'"{key}": {value}, '
             combined_dict = combined_dict.rstrip(', ') + '}'
-            logger.debug(f"Pattern 2: Combined dict: {combined_dict[:200]}...")
+            logger.debug(f"Pattern 2B: Combined dict: {combined_dict[:200]}...")
 
             # Create a fake match object
             class FakeMatch:
@@ -113,7 +146,7 @@ def parse_and_validate_investigation_result(
                     return self._text
 
             json_match = FakeMatch(combined_dict)
-            logger.info("Pattern 2: Successfully created FakeMatch for SDK format")
+            logger.info("Pattern 2B: Successfully created FakeMatch for SDK format (legacy)")
 
     alternative_workflows = []
     selected_workflow = None
@@ -138,7 +171,9 @@ def parse_and_validate_investigation_result(
 
             rca = json_data.get("root_cause_analysis", {})
             selected_workflow = json_data.get("selected_workflow")
-            confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+            # BR-HAPI-200: Extract confidence from top-level JSON first (for problem_resolved case)
+            # Fall back to selected_workflow.confidence for backward compatibility
+            confidence = json_data.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
 
             # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
             raw_alternatives = json_data.get("alternative_workflows", [])
@@ -225,6 +260,18 @@ def parse_and_validate_investigation_result(
         warnings.append(f"Low confidence selection ({confidence:.0%}) - manual review recommended")
         needs_human_review = True
         human_review_reason = "low_confidence"
+    # BR-HAPI-212: Validate affectedResource is present when workflow selected
+    # This check must happen AFTER problem_resolved check (workflow not needed if resolved)
+    elif selected_workflow is not None and not rca_target:
+        warnings.append("RCA is missing affectedResource field - cannot determine target for remediation")
+        needs_human_review = True
+        human_review_reason = "rca_incomplete"
+        logger.warning({
+            "event": "rca_incomplete_missing_affected_resource",
+            "incident_id": incident_id,
+            "selected_workflow_id": selected_workflow.get("workflow_id") if selected_workflow else None,
+            "message": "BR-HAPI-212: Workflow selected but affectedResource missing from RCA"
+        })
 
     result = {
         "incident_id": incident_id,
@@ -341,9 +388,30 @@ def parse_investigation_result(
 
     # Try to parse JSON from analysis
     # Pattern 1: JSON code block (standard format)
-    json_match = re.search(r'```json\s*(\{.*?\})\s*```', analysis, re.DOTALL)
+    # BR-HAPI-200: Use greedy match to capture FULL JSON dict, not just first {...} object
+    json_match = re.search(r'```json\s*(\{.*\})\s*```', analysis, re.DOTALL)
+    if json_match:
+        logger.info(f"Pattern 1: Matched ```json``` block ({len(json_match.group(1))} chars)")
+    else:
+        logger.info("Pattern 1: Did NOT match ```json``` block")
 
-    # Pattern 2: Python dict format with section headers (HolmesGPT SDK format)
+    # BR-HAPI-200: Pattern 2A - Extract complete JSON dict (Mock LLM format with confidence, investigation_outcome)
+    # Mock LLM includes the full JSON dict in the response, not just section headers
+    if not json_match:
+        # Look for complete JSON dict (handles Mock LLM format)
+        json_dict_match = re.search(r'\{[\s\S]*?"root_cause_analysis"[\s\S]*?\}(?=\n```|\n\n|\Z)', analysis, re.DOTALL)
+        if json_dict_match:
+            logger.debug(f"Pattern 2A: Found complete JSON dict: {json_dict_match.group(0)[:200]}...")
+            class FakeMatch:
+                def __init__(self, text):
+                    self._text = text
+                    self.lastindex = None
+                def group(self, n):
+                    return self._text
+            json_match = FakeMatch(json_dict_match.group(0))
+            logger.info("Pattern 2A: Successfully extracted complete JSON dict")
+
+    # Pattern 2B: Legacy - Python dict format with section headers (HolmesGPT SDK format)
     # Format: "# root_cause_analysis\n{'summary': '...', ...}\n\n# selected_workflow\n{'workflow_id': '...', ...}"
     if not json_match and ('# selected_workflow' in analysis or '# root_cause_analysis' in analysis):
         import ast
@@ -353,13 +421,25 @@ def parse_investigation_result(
         rca_match = re.search(r'# root_cause_analysis\s*\n\s*(\{.*?\})\s*(?:\n#|$)', analysis, re.DOTALL)
         if rca_match:
             parts['root_cause_analysis'] = rca_match.group(1)
-            logger.debug(f"Pattern 2: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
+            logger.debug(f"Pattern 2B: Extracted RCA: {parts['root_cause_analysis'][:100]}...")
 
         # Extract selected_workflow
-        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\})\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        wf_match = re.search(r'# selected_workflow\s*\n\s*(\{.*?\}|None)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
         if wf_match:
             parts['selected_workflow'] = wf_match.group(1)
-            logger.debug(f"Pattern 2: Extracted workflow: {parts['selected_workflow'][:100]}...")
+            logger.debug(f"Pattern 2B: Extracted workflow: {parts['selected_workflow'][:100]}...")
+
+        # BR-HAPI-200: Extract investigation_outcome (for problem_resolved case)
+        outcome_match = re.search(r'# investigation_outcome\s*\n\s*["\']?(.*?)["\']?\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if outcome_match:
+            parts['investigation_outcome'] = f'"{outcome_match.group(1).strip()}"'
+            logger.debug(f"Pattern 2B: Extracted investigation_outcome: {parts['investigation_outcome']}")
+
+        # BR-HAPI-200: Extract confidence (for problem_resolved case)
+        conf_match = re.search(r'# confidence\s*\n\s*([\d.]+)\s*(?:\n#|$|\n\n)', analysis, re.DOTALL)
+        if conf_match:
+            parts['confidence'] = conf_match.group(1)
+            logger.debug(f"Pattern 2B: Extracted confidence: {parts['confidence']}")
 
         if parts:
             # Combine into a single dict string
@@ -367,7 +447,7 @@ def parse_investigation_result(
             for key, value in parts.items():
                 combined_dict += f'"{key}": {value}, '
             combined_dict = combined_dict.rstrip(', ') + '}'
-            logger.debug(f"Pattern 2: Combined dict: {combined_dict[:200]}...")
+            logger.debug(f"Pattern 2B: Combined dict: {combined_dict[:200]}...")
 
             # Create a fake match object
             class FakeMatch:
@@ -378,7 +458,7 @@ def parse_investigation_result(
                     return self._text
 
             json_match = FakeMatch(combined_dict)
-            logger.info("Pattern 2: Successfully created FakeMatch for SDK format")
+            logger.info("Pattern 2B: Successfully created FakeMatch for SDK format (legacy)")
 
     alternative_workflows = []
     if json_match:
@@ -403,7 +483,9 @@ def parse_investigation_result(
                     raise  # Re-raise to be caught by outer exception handler
             rca = json_data.get("root_cause_analysis", {})
             selected_workflow = json_data.get("selected_workflow")
-            confidence = selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0
+            # BR-HAPI-200: Extract confidence from top-level JSON first (for problem_resolved case)
+            # Fall back to selected_workflow.confidence for backward compatibility
+            confidence = json_data.get("confidence", selected_workflow.get("confidence", 0.0) if selected_workflow else 0.0)
 
             # Extract alternative workflows (ADR-045 v1.2 - for audit/context only)
             raw_alternatives = json_data.get("alternative_workflows", [])
