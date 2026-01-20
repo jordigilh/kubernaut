@@ -309,7 +309,7 @@ func (c *CRDCreator) CreateRemediationRequest(
 	// Generate CRD name from fingerprint (first 12 chars) + UUID suffix (8 chars)
 	// Format: rr-{fingerprint-prefix}-{uuid-suffix}
 	// Example: "rr-pod-crash-f8a3b9c2" (human-readable + globally unique)
-	// 
+	//
 	// This ensures:
 	// - Each signal occurrence creates a unique CRD (zero collision risk)
 	// - Human-readable correlation IDs for debugging
