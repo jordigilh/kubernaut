@@ -428,13 +428,17 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 				}
 				// Wait for Failed phase AND all 5 attempts exhausted
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed &&
-					notif.Status.FailedDeliveries == 5
+					len(notif.Status.DeliveryAttempts) == 5
 			}, 45*time.Second, 500*time.Millisecond).Should(BeTrue(),
 				"Should reach Failed phase after exhausting all 5 retry attempts")
 
 			// BEHAVIOR VALIDATION: All delivery attempts recorded (Per TESTING_GUIDELINES.md)
 			Expect(notif.Status.DeliveryAttempts).To(HaveLen(5),
 				"Controller must record all 5 delivery attempts for failed notification (NT-BUG-002 fix)")
+			// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
+			// 5 attempts for 1 channel (Slack) = 1 failed channel
+			Expect(notif.Status.FailedDeliveries).To(Equal(1),
+				"Should have exactly 1 failed channel (BR-NOT-051: unique channels, not attempts)")
 
 			// CORRECTNESS VALIDATION: Error message contains specific failure information
 			// Per TESTING_GUIDELINES.md: Test what, not just that fields exist
@@ -513,15 +517,17 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 				}
 				// Wait for Failed phase AND all 7 attempts exhausted
 				return notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed &&
-					notif.Status.FailedDeliveries == 7
+					len(notif.Status.DeliveryAttempts) == 7
 			}, 90*time.Second, 1*time.Second).Should(BeTrue(),
 				"Should reach Failed phase after exhausting all 7 retry attempts")
 
 			// BEHAVIOR VALIDATION: Status handles many delivery attempts
 			Expect(notif.Status.DeliveryAttempts).To(HaveLen(7),
 				"Status should contain all 7 delivery attempts (verified by Eventually condition)")
-			Expect(notif.Status.FailedDeliveries).To(Equal(7),
-				"Should have exactly 7 failed attempts (verified by Eventually condition)")
+			// BR-NOT-051: FailedDeliveries tracks UNIQUE channels, not attempts
+			// 7 attempts for 1 channel (Slack) = 1 failed channel
+			Expect(notif.Status.FailedDeliveries).To(Equal(1),
+				"Should have exactly 1 failed channel (BR-NOT-051: unique channels, not attempts)")
 
 			// CORRECTNESS: Status object size is manageable (< 1MB)
 			// (Kubernetes etcd has ~1.5MB limit for objects)

@@ -158,43 +158,53 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
-			// Get the RO-created SignalProcessing CRD and update its status to Completed
-			spName := fmt.Sprintf("sp-%s", rr.Name)
+		// Get the RO-created SignalProcessing CRD and update its status to Completed
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
-			}, timeout, interval).Should(Succeed(), "Expected RO to create SignalProcessing CRD")
+			return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+		}, timeout, interval).Should(Succeed(), "Expected RO to create SignalProcessing CRD")
 
-			// Update SP status to Completed to trigger transition to Analyzing
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+		// Update SP status to Completed (including severity per DD-SEVERITY-001)
+		Expect(updateSPStatus(testNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
-			// Wait for transition to Analyzing
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+		// Wait for transition to Analyzing
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
 
-			// Query for phase transition audit event using Eventually (accounts for buffer flush)
-			// Timeout increased to 10s for consistency with other audit event queries (AE-INT-3, AE-INT-4, AE-INT-8)
-			// and to account for audit store flush interval (1s) + network latency + query processing
-			eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned)
-			var transitionEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-				// Find the Processing→Analyzing transition
-				for i, e := range events {
-					// Use strongly-typed access (DD-AUDIT-004)
-					payload := e.EventData.RemediationOrchestratorAuditPayload
-					if payload.FromPhase.IsSet() && payload.ToPhase.IsSet() {
-						if payload.FromPhase.Value == "Processing" && payload.ToPhase.Value == "Analyzing" {
-							transitionEvent = &events[i]
-							return true
-						}
+		// Wait for controller to emit event, then flush once
+		time.Sleep(500 * time.Millisecond)
+		err := auditStore.Flush(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Query for phase transition audit event using Eventually (accounts for buffer flush)
+		// Timeout increased to 10s for consistency with other audit event queries (AE-INT-3, AE-INT-4, AE-INT-8)
+		// and to account for audit store flush interval (1s) + network latency + query processing
+		eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned)
+		var transitionEvent *ogenclient.AuditEvent
+		Eventually(func() bool {
+			events := queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+			if len(events) == 0 {
+				GinkgoWriter.Printf("No phase_transition events found for correlation_id=%s\n", correlationID)
+				return false
+			}
+			GinkgoWriter.Printf("Found %d phase_transition events for correlation_id=%s\n", len(events), correlationID)
+			// Find the Processing→Analyzing transition
+			for i, e := range events {
+				// Use strongly-typed access (DD-AUDIT-004)
+				payload := e.EventData.RemediationOrchestratorAuditPayload
+				if payload.FromPhase.IsSet() && payload.ToPhase.IsSet() {
+					if payload.FromPhase.Value == "Processing" && payload.ToPhase.Value == "Analyzing" {
+						transitionEvent = &events[i]
+						return true
 					}
 				}
-				return false
-			}, "10s", "500ms").Should(BeTrue(), "Expected Processing→Analyzing transition event after buffer flush")
+			}
+			GinkgoWriter.Printf("Processing→Analyzing transition not found in %d events\n", len(events))
+			return false
+		}, "10s", "500ms").Should(BeTrue(), "Expected Processing→Analyzing transition event after buffer flush")
 
 			// Validate event
 			Expect(transitionEvent.EventType).To(Equal(string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleTransitioned)))
@@ -229,17 +239,16 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
-			// Get the RO-created SP and update status to Completed
-			spName := fmt.Sprintf("sp-%s", rr.Name)
+		// Get the RO-created SP and update status to Completed (including severity per DD-SEVERITY-001)
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
-			}, timeout, interval).Should(Succeed())
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+			return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(testNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
-			// Wait for Analyzing
-			Eventually(func() remediationv1.RemediationPhase {
+		// Wait for Analyzing
+		Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
@@ -275,39 +284,40 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			we.Status.Phase = workflowexecutionv1.PhaseCompleted
 			Expect(k8sClient.Status().Update(ctx, we)).To(Succeed())
 
-			// Wait for Completed
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
+		// Wait for Completed
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted))
 
-			// RACE CONDITION FIX: Controller emits lifecycle_completed AFTER status update completes (async)
-			// Wait for audit event to be buffered and queryable (Flush + query in Eventually loop)
-			// Expected: 5 events total (lifecycle_started + 3 transitions + lifecycle_completed)
-			Eventually(func() bool {
-				// Flush audit store to write buffered events to DataStorage
-				flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer flushCancel()
-				err := auditStore.Flush(flushCtx)
-				if err != nil {
-					GinkgoWriter.Printf("⚠️  Flush failed: %v\n", err)
-					return false
-				}
+		// Wait for controller to emit event, then flush once
+		time.Sleep(500 * time.Millisecond)
+		flushCtx, flushCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := auditStore.Flush(flushCtx)
+		flushCancel()
+		Expect(err).ToNot(HaveOccurred())
 
-				// Query for lifecycle_completed event
-				params := ogenclient.QueryAuditEventsParams{
-					CorrelationID: ogenclient.NewOptString(correlationID),
-					EventCategory: ogenclient.NewOptString("orchestration"),
-					EventType:     ogenclient.NewOptString(string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted)),
-				}
-				resp, queryErr := dsClient.QueryAuditEvents(ctx, params)
-				if queryErr != nil || resp.Data == nil {
-					GinkgoWriter.Printf("⚠️  Query failed or no data: err=%v\n", queryErr)
-					return false
-				}
-				GinkgoWriter.Printf("✅ Found %d lifecycle_completed events\n", len(resp.Data))
-				return len(resp.Data) > 0
-			}, "10s", "500ms").Should(BeTrue(), "lifecycle_completed event should be emitted, buffered, and queryable")
+		// RACE CONDITION FIX: Controller emits lifecycle_completed AFTER status update completes (async)
+		// Wait for audit event to be queryable (after flush)
+		// Expected: 5 events total (lifecycle_started + 3 transitions + lifecycle_completed)
+		Eventually(func() bool {
+			// Query for lifecycle_completed event
+			params := ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString("orchestration"),
+				EventType:     ogenclient.NewOptString(string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted)),
+			}
+			resp, queryErr := dsClient.QueryAuditEvents(ctx, params)
+			if queryErr != nil || resp.Data == nil {
+				GinkgoWriter.Printf("⚠️  Query failed or no data: err=%v\n", queryErr)
+				return false
+			}
+			if len(resp.Data) != 1 {
+				GinkgoWriter.Printf("Found %d lifecycle_completed events (expected 1) for correlation_id=%s\n",
+					len(resp.Data), correlationID)
+			}
+			return len(resp.Data) == 1
+		}, "10s", "500ms").Should(BeTrue(), "lifecycle_completed event should be emitted, buffered, and queryable")
 
 			// Query one more time to get the event for validation
 			eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCompleted)
@@ -441,21 +451,20 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				return rr.Status.OverallPhase
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing))
 
-			// Get the RO-created SP and update status to Completed
-			spName := fmt.Sprintf("sp-%s", rr.Name)
+		// Get the RO-created SP and update status to Completed (including severity per DD-SEVERITY-001)
+		spName := fmt.Sprintf("sp-%s", rr.Name)
+		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			Eventually(func() error {
-				return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
-			}, timeout, interval).Should(Succeed())
-			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			Expect(k8sClient.Status().Update(ctx, sp)).To(Succeed())
+			return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+		}, timeout, interval).Should(Succeed())
+		Expect(updateSPStatus(testNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAnalyzing))
 
-			// Get the RO-created AI and update status with LOW confidence (triggers approval)
+		// Get the RO-created AI and update status with LOW confidence (triggers approval)
 			aiName := fmt.Sprintf("ai-%s", rr.Name)
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() error {
@@ -472,21 +481,30 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.ApprovalReason = "Confidence below threshold (0.65 < 0.80)"
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-			// Wait for AwaitingApproval
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseAwaitingApproval))
+		// Wait for AwaitingApproval
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseAwaitingApproval))
 
-			// Query for approval requested audit event using Eventually (accounts for buffer flush)
-			// Per DataStorage batch flushing: Default 60s flush interval in integration tests
-			// Use 90s timeout to account for: 60s flush + 30s safety margin for processing
-			eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested)
-			var events []ogenclient.AuditEvent
-			Eventually(func() int {
-				events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
-				return len(events)
-			}, "90s", "1s").Should(Equal(1), "Expected exactly 1 approval_requested audit event after buffer flush")
+		// Wait for controller to emit event, then flush once
+		time.Sleep(500 * time.Millisecond)
+		err := auditStore.Flush(ctx)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Query for approval requested audit event using Eventually (accounts for buffer flush)
+		// Per DataStorage batch flushing: Default 60s flush interval in integration tests
+		// Use 90s timeout to account for: 60s flush + 30s safety margin for processing
+		eventType := string(ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRequested)
+		var events []ogenclient.AuditEvent
+		Eventually(func() int {
+			events = queryAuditEventsOpenAPI(dsClient, correlationID, eventType)
+			if len(events) != 1 {
+				GinkgoWriter.Printf("Found %d approval_requested events (expected 1) for correlation_id=%s\n",
+					len(events), correlationID)
+			}
+			return len(events)
+		}, "90s", "1s").Should(Equal(1), "Expected exactly 1 approval_requested audit event after buffer flush")
 
 			// Validate event
 			event := events[0]

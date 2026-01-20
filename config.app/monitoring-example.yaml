@@ -52,10 +52,10 @@ database:
   database: "prometheus_alerts_slm"
   username: "slm_user"
   password: "${DATABASE_PASSWORD}"
-  ssl_mode: "disable"
-  max_open_conns: 10
-  max_idle_conns: 5
-  conn_max_lifetime_minutes: 5
+  sslMode: "disable"
+  maxOpenConns: 10
+  maxIdleConns: 5
+  connMaxLifetime: "5m"
 
 # Vector Database Configuration (for pattern learning and analytics)
 vectordb:
