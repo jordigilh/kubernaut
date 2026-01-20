@@ -43,7 +43,18 @@ type SignalProcessing struct {
 
 // SignalProcessingSpec defines the desired state of SignalProcessing.
 // Implementation Plan Day 2: Aligned with IMPLEMENTATION_PLAN.md structure
+//
+// ADR-001: Spec Immutability
+// SignalProcessing represents an immutable event (signal enrichment).
+// Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+// - Audit trail integrity (processed signal matches original signal)
+// - No signal data tampering during enrichment
+// - Consistent context passed to AIAnalysis
+//
+// To reprocess a signal, delete and recreate the SignalProcessing CRD.
+//
 // +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ''",message="remediationRequestRef.name is required for audit trail correlation"
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type SignalProcessingSpec struct{
 	// Reference to parent RemediationRequest
 	RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
