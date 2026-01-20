@@ -50,7 +50,17 @@ spec:
           metadata:
             type: object
           spec:
-            description: AIAnalysisSpec defines the desired state of AIAnalysis.
+            description: |-
+              AIAnalysisSpec defines the desired state of AIAnalysis.
+
+              ADR-001: Spec Immutability
+              AIAnalysis represents an immutable event (AI investigation).
+              Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+              - Audit trail integrity (AI investigation matches original RCA request)
+              - No tampering with RCA targets post-HAPI validation
+              - No workflow selection modification after AI recommendation
+
+              To re-analyze, delete and recreate the AIAnalysis CRD.
             properties:
               analysisRequest:
                 description: |-
@@ -702,6 +712,9 @@ spec:
             - remediationId
             - remediationRequestRef
             type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
           status:
             description: AIAnalysisStatus defines the observed state of AIAnalysis.
             properties:
@@ -919,6 +932,21 @@ spec:
                   DegradedMode indicates if the analysis ran with degraded capabilities
                   (e.g., Rego policy evaluation failed, using safe defaults)
                 type: boolean
+              humanReviewReason:
+                description: |-
+                  Reason why human review needed (when NeedsHumanReview=true)
+                  BR-HAPI-197: Maps to HAPI's human_review_reason enum values
+                  BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
+                enum:
+                - workflow_not_found
+                - image_mismatch
+                - parameter_validation_failed
+                - no_matching_workflows
+                - low_confidence
+                - llm_parsing_error
+                - investigation_inconclusive
+                - rca_incomplete
+                type: string
               investigationId:
                 description: |-
                   ========================================
@@ -940,6 +968,16 @@ spec:
                 type: integer
               message:
                 type: string
+              needsHumanReview:
+                description: |-
+                  ========================================
+                  HUMAN REVIEW SIGNALING (BR-HAPI-197)
+                  Set by HAPI when AI cannot produce reliable result
+                  ========================================
+                  True if human review required (HAPI decision: RCA incomplete/unreliable)
+                  BR-HAPI-197: Triggers NotificationRequest creation in RO
+                  BR-HAPI-212: Set when workflow selected but affectedResource missing
+                type: boolean
               observedGeneration:
                 description: |-
                   ObservedGeneration is the most recent generation observed by the controller.
@@ -1154,6 +1192,7 @@ spec:
                 type: array
             required:
             - approvalRequired
+            - needsHumanReview
             - phase
             type: object
         type: object

@@ -432,6 +432,21 @@ type AIAnalysisStatus struct {
 	ApprovalContext *ApprovalContext `json:"approvalContext,omitempty"`
 
 	// ========================================
+	// HUMAN REVIEW SIGNALING (BR-HAPI-197)
+	// Set by HAPI when AI cannot produce reliable result
+	// ========================================
+	// True if human review required (HAPI decision: RCA incomplete/unreliable)
+	// BR-HAPI-197: Triggers NotificationRequest creation in RO
+	// BR-HAPI-212: Set when workflow selected but affectedResource missing
+	NeedsHumanReview bool `json:"needsHumanReview"`
+	// Reason why human review needed (when NeedsHumanReview=true)
+	// BR-HAPI-197: Maps to HAPI's human_review_reason enum values
+	// BR-HAPI-212: Includes "rca_incomplete" for missing affectedResource
+	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete
+	// +optional
+	HumanReviewReason string `json:"humanReviewReason,omitempty"`
+
+	// ========================================
 	// INVESTIGATION DETAILS
 	// ========================================
 	// HolmesGPT investigation ID for correlation
