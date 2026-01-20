@@ -1,7 +1,7 @@
 # Testing Guidelines: Business Requirements vs Unit Tests
 
-**Version**: 2.5.1
-**Last Updated**: 2026-01-12
+**Version**: 2.5.2
+**Last Updated**: 2026-01-20
 **Status**: Active
 
 This document provides clear guidance on **when** and **how** to use each type of test in the kubernaut system.
@@ -9,6 +9,13 @@ This document provides clear guidance on **when** and **how** to use each type o
 ---
 
 ## 📋 **Changelog**
+
+### Version 2.5.2 (2026-01-20)
+- **CLARIFIED**: Integration test infrastructure uses **programmatic Go** (NOT podman-compose) for container orchestration
+- **CLARIFIED**: Test Tier Infrastructure Matrix - envtest for K8s, programmatic Go for external services
+- **REFERENCE**: Links to `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md` for architecture clarification
+- **DOCUMENTED**: Performance tier is OUT OF SCOPE for v1.0 (resource constraints on development host)
+- **NOTE**: No structural changes - only clarifications based on January 2026 architecture triage
 
 ### Version 2.5.1 (2026-01-12)
 - **ADDED**: RR Reconstruction example to HTTP anti-pattern section
@@ -73,6 +80,11 @@ Kubernaut uses **defense-in-depth** with overlapping BR coverage and cumulative 
 | **E2E** | **<10% BR coverage** | Critical user journeys only |
 
 **Key**: Same BRs tested at multiple tiers (e.g., retry logic in unit, integration, AND E2E)
+
+**Performance Tier** (v2.5.2 - January 2026):
+- ⚠️ **OUT OF SCOPE for v1.0** due to resource constraints on development host
+- 📋 Documented in test tier definitions but not part of v1.0 defense-in-depth strategy
+- 🔮 Future consideration when dedicated performance infrastructure becomes available
 
 #### Code Coverage - CUMULATIVE (~100% combined)
 
@@ -1244,9 +1256,13 @@ linters-settings:
 
 ## 🐳 **Integration Test Infrastructure**
 
-### Podman Compose for Integration Tests
+> 📋 **Architecture Clarification** (v2.5.2 - January 2026):
+> Integration tests use **programmatic Go** for container orchestration, NOT `podman-compose`.
+> See `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md` for detailed architecture explanation.
 
-Integration tests require real service dependencies (HolmesGPT-API, Data Storage, PostgreSQL, Redis). Use `podman-compose` to spin up these services locally.
+### Integration Test Container Orchestration
+
+Integration tests require real service dependencies (HolmesGPT-API, Data Storage, PostgreSQL, Redis). Services are orchestrated using **programmatic Go** via `test/infrastructure/container_management.go`.
 
 #### Available Infrastructure
 
@@ -1259,21 +1275,29 @@ Integration tests require real service dependencies (HolmesGPT-API, Data Storage
 
 #### Running Integration Tests
 
+**v2.5.2 Update**: Integration tests now use **programmatic Go** for container orchestration. The test suite itself starts and stops containers via `test/infrastructure/` helpers.
+
 ```bash
-# Start infrastructure (from project root)
-podman-compose -f podman-compose.test.yml up -d
-
-# Wait for services to be healthy
-podman-compose -f podman-compose.test.yml ps
-
-# Run integration tests
+# Option 1: Let test suite manage containers (RECOMMENDED)
+# Test suite uses programmatic Go to start/stop containers automatically
 make test-container-integration
+
+# Option 2: Manual container management (for debugging)
+# Start infrastructure using programmatic Go helpers
+go run test/infrastructure/setup.go
 
 # Run specific service integration tests
 go test ./test/integration/aianalysis/... -v
 
-# Tear down
-podman-compose -f podman-compose.test.yml down -v
+# Tear down (automatic via test cleanup or manual)
+go run test/infrastructure/teardown.go
+```
+
+**Legacy `podman-compose` approach** (deprecated for integration tests):
+```bash
+# ⚠️ DEPRECATED: podman-compose has race conditions and health reporting issues
+# Use programmatic Go approach instead (see DD-TEST-002)
+# podman-compose -f podman-compose.test.yml up -d  # ← DON'T USE
 ```
 
 ### ⚠️ **CRITICAL: `podman-compose` Race Condition Warning**
@@ -1467,8 +1491,15 @@ export REDIS_PORT=6379
 | Test Tier | K8s Environment | Services | Infrastructure |
 |-----------|-----------------|----------|----------------|
 | **Unit** | None | Mocked | None required |
-| **Integration** | envtest | Real (podman-compose) | `podman-compose.test.yml` |
+| **Integration** | envtest | Real (programmatic Go) | `test/infrastructure/container_management.go` |
 | **E2E** | KIND cluster | Real (deployed to KIND) | KIND + Helm/manifests |
+
+**CRITICAL CLARIFICATION** (v2.5.2 - January 2026):
+- **Integration tests use programmatic Go**, NOT `podman-compose`, for external service orchestration
+- **Why programmatic Go?**: `podman-compose` has health reporting issues and race conditions (see DD-TEST-002)
+- **Reference**: `test/infrastructure/container_management.go` - Generic container orchestration functions
+- **Pattern**: `StartGenericContainer()` → wait for health → run tests → `StopContainer()`
+- **See**: `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md` for detailed architecture explanation
 
 #### Mock LLM in All Tiers
 
@@ -3106,5 +3137,6 @@ This template provides:
 > find docs/architecture/decisions -name "*.md" -newer docs/development/business-requirements/TESTING_GUIDELINES.md
 > ```
 >
-> **Last Updated**: 2025-12-19 (v2.1.0)
+> **Last Updated**: 2026-01-20 (v2.5.2)
+> **Last Triage**: 2026-01-20 - Architecture clarification (see `TESTING_GUIDELINES_INCONSISTENCY_TRIAGE_JAN20_2026.md`)
 > **Next Review**: When any new ADR/DD affecting testing is created

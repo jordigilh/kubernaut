@@ -4,7 +4,7 @@
 **Date**: 2026-01-17
 **Priority**: P0 - Foundational (Audit Trail Integrity)
 **Scope**: System-wide - All services (Gateway, RemediationOrchestrator, WorkflowExecution, SignalProcessing, AIAnalysis, Notification)
-**Supersedes**: DD-AUDIT-CORRELATION-001 (extended to system-wide)
+**Supersedes**: DD-AUDIT-CORRELATION-001 (extended to system-wide), DD-015 (timestamp-based CRD naming)
 **Related**: BR-AUDIT-005 (Audit Trail), DD-AUDIT-001 (Audit Responsibility), ADR-032 (Data Access Layer)
 
 ---

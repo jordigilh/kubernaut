@@ -132,6 +132,11 @@ status:
   # REQUIRED: Phase for workflow control
   phase: string  # Pending, Investigating, Analyzing, Completed, Failed
 
+  # REQUIRED: Human review flag (from HAPI - BR-HAPI-197, BR-HAPI-212)
+  # Set by HAPI when AI cannot produce reliable result
+  needsHumanReview: bool           # true = AI can't answer (RCA incomplete)
+  humanReviewReason: string        # Why review needed (when needsHumanReview=true)
+
   # REQUIRED (when phase=Completed): Selected workflow
   # NOTE: containerImage resolved by HolmesGPT-API during MCP search (DD-CONTRACT-001 v1.2)
   selectedWorkflow:
@@ -146,8 +151,9 @@ status:
       # ... other workflow-specific params
     rationale: string        # Why this workflow was selected
 
-  # REQUIRED: Approval signal
-  approvalRequired: bool    # true if confidence < 80%
+  # REQUIRED: Approval signal (from AIAnalysis Rego policies)
+  # Set by AIAnalysis when policy requires approval for high-risk remediation
+  approvalRequired: bool    # true = AI has answer, policy requires approval
   approvalReason: string    # Why approval needed (when approvalRequired=true)
 
   # OPTIONAL: Rich context for approval
@@ -155,6 +161,14 @@ status:
     investigationSummary: string
     evidenceCollected: []string
     alternativesConsidered: []AlternativeWorkflow
+
+  # REQUIRED (when phase=Completed): RCA-determined target resource (BR-HAPI-212, DD-HAPI-006)
+  rootCauseAnalysis:
+    targetResource:
+      kind: string           # e.g., "Deployment"
+      apiVersion: string     # e.g., "apps/v1" (optional - static mapping fallback for core resources)
+      name: string           # e.g., "payment-api"
+      namespace: string      # e.g., "production" (optional for cluster-scoped resources)
 ```
 
 ### Contract Guarantees
@@ -162,28 +176,42 @@ status:
 | Field | Type | Required | RO Expects |
 |-------|------|----------|------------|
 | `status.phase` | string | ✅ | One of: Pending, Investigating, Analyzing, Completed, Failed |
+| `status.needsHumanReview` | bool | ✅ | HAPI decision: AI can't answer (BR-HAPI-197, BR-HAPI-212) |
+| `status.humanReviewReason` | string | ✅ (when needsHumanReview=true) | Why review needed (e.g., "rca_incomplete", "workflow_not_found") |
 | `status.selectedWorkflow.workflowId` | string | ✅ (when Completed) | Valid workflow identifier |
 | `status.selectedWorkflow.version` | string | ✅ (when Completed) | Semantic version |
 | `status.selectedWorkflow.containerImage` | string | ✅ (when Completed) | OCI bundle reference (from HolmesGPT-API) |
 | `status.selectedWorkflow.containerDigest` | string | ✅ (when Completed) | Image digest (from HolmesGPT-API) |
 | `status.selectedWorkflow.confidence` | float64 | ✅ (when Completed) | 0.0 to 1.0 |
 | `status.selectedWorkflow.parameters` | map[string]string | ✅ (when Completed) | UPPER_SNAKE_CASE keys |
-| `status.approvalRequired` | bool | ✅ | true if confidence < 0.80 |
+| `status.approvalRequired` | bool | ✅ | Rego decision: Policy requires approval for high-risk remediation |
+| `status.rootCauseAnalysis.targetResource` | object | ✅ (when Completed) | RCA-determined target (BR-HAPI-212, DD-HAPI-006) |
 
-### RO Decision Logic
+### RO Decision Logic (Updated for Two-Flag Architecture)
+
+**CRITICAL DISTINCTION** (BR-HAPI-197, BR-HAPI-212):
+- **`needsHumanReview`** (HAPI decision) = AI **can't** answer → NotificationRequest
+- **`approvalRequired`** (Rego decision) = AI **has** answer, policy requires approval → RemediationApprovalRequest
 
 ```go
 // pkg/remediationorchestrator/reconciler.go
 func (r *Reconciler) handleAIAnalysisCompleted(ctx context.Context, aiAnalysis *v1alpha1.AIAnalysis) error {
-    // 1. Check if approval needed
+    // 1. Check if HAPI couldn't produce reliable result (BR-HAPI-197, BR-HAPI-212)
+    if aiAnalysis.Status.NeedsHumanReview {
+        // Create NotificationRequest (manual investigation needed)
+        // AI can't answer: incomplete RCA, workflow validation failed, etc.
+        return r.createManualReviewNotification(ctx, aiAnalysis)
+    }
+
+    // 2. Check if Rego policy requires approval (existing behavior)
     if aiAnalysis.Status.ApprovalRequired {
         // Create NotificationRequest for approval notification
         // Create RemediationApprovalRequest for approval tracking
-        // Wait for approval decision (watch RemediationApprovalRequest.status.decision)
+        // AI has answer, but policy requires human approval
         return r.initiateApprovalFlow(ctx, aiAnalysis)
     }
 
-    // 2. No approval needed OR already approved - proceed to execution
+    // 3. No review or approval needed - proceed to automatic execution
     return r.createWorkflowExecution(ctx, aiAnalysis)
 }
 ```

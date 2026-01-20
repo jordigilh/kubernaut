@@ -40,7 +40,7 @@ data:
     #   postgres_user: {{CONTROLLER_NAME}}_user
     #   postgres_password: ${POSTGRES_PASSWORD}  # From secret
     #   postgres_database: kubernaut
-    #   ssl_mode: require
+    #   sslMode: require
     #
     # context:
     #   endpoint: http://context-api.{{NAMESPACE}}.svc.cluster.local:8080
