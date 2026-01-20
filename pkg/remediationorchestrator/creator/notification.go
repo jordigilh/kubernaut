@@ -342,10 +342,13 @@ const (
 type ManualReviewContext struct {
 	// Source indicates which component triggered the manual review
 	Source ManualReviewSource
-	// Reason is the high-level failure reason (e.g., "WorkflowResolutionFailed", "ExhaustedRetries")
+	// Reason is the high-level failure reason (e.g., "WorkflowResolutionFailed", "ExhaustedRetries", "HumanReviewRequired")
 	Reason string
 	// SubReason provides granular detail (e.g., "WorkflowNotFound", "LowConfidence")
 	SubReason string
+	// HumanReviewReason (BR-HAPI-197): Explicit reason from HAPI when needs_human_review=true
+	// Maps to AIAnalysis.Status.HumanReviewReason enum (workflow_not_found, rca_incomplete, etc.)
+	HumanReviewReason string
 	// Message is a human-readable description of the failure
 	Message string
 	// RootCauseAnalysis if available (from AIAnalysis)
@@ -520,6 +523,11 @@ func (c *NotificationCreator) buildManualReviewMetadata(rr *remediationv1.Remedi
 	// Add SubReason if present
 	if ctx.SubReason != "" {
 		metadata["subReason"] = ctx.SubReason
+	}
+
+	// BR-HAPI-197: Add HumanReviewReason if present (explicit HAPI decision)
+	if ctx.HumanReviewReason != "" {
+		metadata["humanReviewReason"] = ctx.HumanReviewReason
 	}
 
 	// Add RootCauseAnalysis if present (from AIAnalysis)
