@@ -898,9 +898,9 @@ database:
   name: action_history
   user: slm_user
   sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
+  maxOpenConns: 50
+  maxIdleConns: 10
+  connMaxLifetime: 1h
   connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
@@ -908,9 +908,9 @@ database:
 redis:
   addr: redis.%s.svc.cluster.local:6379
   db: 0
-  dlq_stream_name: dlq-stream
-  dlq_max_len: 1000
-  dlq_consumer_group: dlq-group
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:
@@ -1733,9 +1733,9 @@ database:
   name: %s
   user: %s
   sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
+  maxOpenConns: 50
+  maxIdleConns: 10
+  connMaxLifetime: 1h
   connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
@@ -1743,9 +1743,9 @@ database:
 redis:
   addr: %s:6379
   db: 0
-  dlq_stream_name: dlq-stream
-  dlq_max_len: 1000
-  dlq_consumer_group: dlq-group
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:

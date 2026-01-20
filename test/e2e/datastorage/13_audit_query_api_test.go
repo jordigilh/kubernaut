@@ -553,22 +553,23 @@ var _ = Describe("Audit Events Query API", func() {
 				Expect(err).ToNot(HaveOccurred())
 			}
 
-			// ACT: Query with multiple filters (ADR-034 field names)
-			resp, err := http.Get(fmt.Sprintf("%s?event_category=gateway&event_outcome=failure", baseURL))
-			Expect(err).ToNot(HaveOccurred())
-			defer func() { _ = resp.Body.Close() }()
+		// ACT: Query with multiple filters (ADR-034 field names)
+		// FIX: Include correlation_id to isolate this test's events in parallel execution
+		resp, err := http.Get(fmt.Sprintf("%s?correlation_id=%s&event_category=gateway&event_outcome=failure", baseURL, correlationID))
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
 
-			// ASSERT: Response is 200 OK
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		// ASSERT: Response is 200 OK
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			// ASSERT: Only events matching ALL filters are returned
-			var response map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&response)
-			Expect(err).ToNot(HaveOccurred())
+		// ASSERT: Only events matching ALL filters are returned
+		var response map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&response)
+		Expect(err).ToNot(HaveOccurred())
 
-			data, ok := response["data"].([]interface{})
-			Expect(ok).To(BeTrue())
-			Expect(data).To(HaveLen(2), "should return only 2 failure events")
+		data, ok := response["data"].([]interface{})
+		Expect(ok).To(BeTrue())
+		Expect(data).To(HaveLen(2), "should return only 2 failure events for this correlation_id")
 
 			for _, item := range data {
 				event := item.(map[string]interface{})
