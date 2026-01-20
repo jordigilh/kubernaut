@@ -93,7 +93,7 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
-	audit.SetEventType(auditEvent, "notification.request.cancelled") // DD-WEBHOOK-001 line 349
+	audit.SetEventType(auditEvent, "webhook.notification.cancelled") // DD-WEBHOOK-001 line 349 - Must match payload EventType
 	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
 	audit.SetEventAction(auditEvent, "deleted")
 	audit.SetEventOutcome(auditEvent, audit.OutcomeSuccess)

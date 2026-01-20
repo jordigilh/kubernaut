@@ -359,8 +359,14 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 	pr := r.BuildPipelineRun(wfe)
 	existingPR := &tektonv1.PipelineRun{}
 	prExists := false
-	if err := r.Get(ctx, client.ObjectKey{Name: pr.Name, Namespace: r.ExecutionNamespace}, existingPR); err == nil {
+	prGetErr := r.Get(ctx, client.ObjectKey{Name: pr.Name, Namespace: r.ExecutionNamespace}, existingPR)
+	if prGetErr == nil {
 		prExists = true
+	} else if apierrors.IsNotFound(prGetErr) && wfe.Status.PipelineRunRef != nil {
+		// INT-EXTERN-02: PipelineRun was deleted externally after we created it
+		// We know we created it because PipelineRunRef is set, but now it's NotFound
+		logger.Error(prGetErr, "PipelineRun not found - deleted externally during Pending phase")
+		return r.MarkFailed(ctx, wfe, nil)
 	}
 
 	if !prExists {
