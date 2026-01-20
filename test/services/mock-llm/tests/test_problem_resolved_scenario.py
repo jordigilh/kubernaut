@@ -37,8 +37,8 @@ class TestProblemResolvedScenario:
         assert "self-resolved" in scenario.root_cause.lower(), \
             "Root cause should mention self-resolution"
 
-        # Verify severity is info (problem no longer exists)
-        assert scenario.severity == "info", "problem_resolved severity should be 'info'"
+        # Verify severity is low (DD-SEVERITY-001 v1.1: problem no longer critical/high)
+        assert scenario.severity == "low", "problem_resolved severity should be 'low'"
 
     def test_problem_resolved_vs_no_workflow_found_distinction(self):
         """Verify problem_resolved is distinct from no_workflow_found scenario."""
@@ -60,8 +60,8 @@ class TestProblemResolvedScenario:
             "problem_resolved and no_workflow_found should have distinct signal types"
 
         # Different severities
-        assert problem_resolved.severity == "info", \
-            "problem_resolved should be 'info' (problem no longer exists)"
+        assert problem_resolved.severity == "low", \
+            "problem_resolved should be 'low' (DD-SEVERITY-001 v1.1: problem no longer critical)"
         assert no_workflow_found.severity == "critical", \
             "no_workflow_found should be 'critical' (problem still exists, needs attention)"
 
@@ -89,7 +89,7 @@ class TestProblemResolvedIntegrationPattern:
     """Tests for how problem_resolved scenario integrates with test suite."""
 
     def test_problem_resolved_scenario_count(self):
-        """Verify we have the expected number of scenarios (7 total including problem_resolved)."""
+        """Verify we have the expected number of scenarios (9 total including problem_resolved and rca_incomplete)."""
         expected_scenarios = {
             "oomkilled",
             "crashloop",
@@ -98,7 +98,8 @@ class TestProblemResolvedIntegrationPattern:
             "test_signal",
             "no_workflow_found",
             "low_confidence",
-            "problem_resolved"  # NEW
+            "problem_resolved",  # BR-HAPI-200
+            "rca_incomplete"  # BR-HAPI-212
         }
 
         actual_scenarios = set(MOCK_SCENARIOS.keys())
