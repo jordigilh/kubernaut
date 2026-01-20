@@ -38,7 +38,21 @@ spec:
           metadata:
             type: object
           spec:
-            description: RemediationRequestSpec defines the desired state of RemediationRequest.
+            description: |-
+              RemediationRequestSpec defines the desired state of RemediationRequest.
+
+              ADR-001: Spec Immutability
+              RemediationRequest represents an immutable event (signal received, remediation required).
+              Once created (by Gateway or external source), spec cannot be modified to ensure:
+              - Audit trail integrity (remediation matches original signal)
+              - No signal metadata tampering during remediation lifecycle
+              - Consistent signal data across all child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution)
+
+              Cancellation: Delete the RemediationRequest CRD (Kubernetes-native pattern).
+              Status updates: Controllers update .status fields (not affected by spec immutability).
+
+              Note: Individual field immutability (e.g., signalFingerprint) is redundant with full spec immutability,
+              but retained for explicit documentation of critical fields.
             properties:
               affectedResources:
                 description: |-
@@ -223,6 +237,9 @@ spec:
             - targetResource
             - targetType
             type: object
+            x-kubernetes-validations:
+            - message: spec is immutable after creation (ADR-001)
+              rule: self == oldSelf
           status:
             description: RemediationRequestStatus defines the observed state of RemediationRequest.
             properties:

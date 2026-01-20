@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -206,7 +207,7 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 }
 
 // handleFailed processes AIAnalysis Failed phase.
-// Handles WorkflowResolutionFailed and other failure scenarios (BR-ORCH-036).
+// Handles NeedsHumanReview (BR-HAPI-197), WorkflowResolutionFailed (BR-ORCH-036), and other failure scenarios.
 func (h *AIAnalysisHandler) handleFailed(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
@@ -219,6 +220,12 @@ func (h *AIAnalysisHandler) handleFailed(
 		"subReason", ai.Status.SubReason,
 	)
 
+	// BR-HAPI-197: Check NeedsHumanReview FIRST (takes precedence over WorkflowResolutionFailed)
+	// This flag is set by HAPI when AI cannot produce a reliable result
+	if ai.Status.NeedsHumanReview {
+		return h.handleHumanReviewRequired(ctx, rr, ai)
+	}
+
 	// BR-ORCH-036: Handle WorkflowResolutionFailed
 	if ai.Status.Reason == "WorkflowResolutionFailed" {
 		return h.handleWorkflowResolutionFailed(ctx, rr, ai)
@@ -227,6 +234,37 @@ func (h *AIAnalysisHandler) handleFailed(
 	// Other failures (APIError, Timeout, etc.) - propagate failure to RR
 	logger.Info("AIAnalysis failed with non-recoverable error")
 	return h.propagateFailure(ctx, rr, ai)
+}
+
+// handleHumanReviewRequired processes AIAnalysis when HAPI explicitly requires human review (BR-HAPI-197).
+// This triggers a manual review notification with the specific HumanReviewReason from HAPI.
+func (h *AIAnalysisHandler) handleHumanReviewRequired(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"aiAnalysis", ai.Name,
+		"humanReviewReason", ai.Status.HumanReviewReason,
+	)
+
+	logger.Info("AIAnalysis requires human review - creating manual review notification")
+
+	// Build manual review context with BR-HAPI-197 fields
+	reviewCtx := &creator.ManualReviewContext{
+		Source:            creator.ManualReviewSourceAIAnalysis,
+		Reason:            "HumanReviewRequired", // BR-HAPI-197 reason
+		SubReason:         ai.Status.HumanReviewReason,
+		Message:           ai.Status.Message,
+		HumanReviewReason: ai.Status.HumanReviewReason, // BR-HAPI-197: Store for metadata
+	}
+
+	// Populate root cause and warnings (common pattern)
+	h.populateManualReviewContext(reviewCtx, ai)
+
+	// Create notification and update RR status (common pattern)
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, "HumanReviewRequired", ai.Status.HumanReviewReason)
 }
 
 // handleWorkflowResolutionFailed processes AIAnalysis WorkflowResolutionFailed (BR-ORCH-036).
@@ -252,6 +290,16 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 		Message:   ai.Status.Message,
 	}
 
+	// Populate root cause and warnings (common pattern)
+	h.populateManualReviewContext(reviewCtx, ai)
+
+	// Create notification and update RR status (common pattern)
+	return h.createManualReviewAndUpdateStatus(ctx, logger, rr, reviewCtx, ai.Status.Reason, ai.Status.SubReason)
+}
+
+// populateManualReviewContext adds root cause analysis and warnings to the review context.
+// Common helper for handleHumanReviewRequired and handleWorkflowResolutionFailed.
+func (h *AIAnalysisHandler) populateManualReviewContext(reviewCtx *creator.ManualReviewContext, ai *aianalysisv1.AIAnalysis) {
 	// Add root cause analysis if available
 	if ai.Status.RootCauseAnalysis != nil {
 		reviewCtx.RootCauseAnalysis = ai.Status.RootCauseAnalysis.Summary
@@ -263,7 +311,19 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 	if ai.Status.Warnings != nil {
 		reviewCtx.Warnings = ai.Status.Warnings
 	}
+}
 
+// createManualReviewAndUpdateStatus creates a NotificationRequest and updates RemediationRequest status.
+// Common helper for handleHumanReviewRequired and handleWorkflowResolutionFailed.
+// Returns ctrl.Result and error suitable for returning from handler methods.
+func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
+	ctx context.Context,
+	logger logr.Logger,
+	rr *remediationv1.RemediationRequest,
+	reviewCtx *creator.ManualReviewContext,
+	metricReason string,
+	metricSubReason string,
+) (ctrl.Result, error) {
 	// Create manual review notification
 	notifName, err := h.notificationCreator.CreateManualReviewNotification(ctx, rr, reviewCtx)
 	if err != nil {
@@ -279,7 +339,7 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 		rr.Status.Outcome = "ManualReviewRequired"
 		failurePhase := "ai_analysis"
 		rr.Status.FailurePhase = &failurePhase
-		rr.Status.FailureReason = &ai.Status.Message
+		rr.Status.FailureReason = &reviewCtx.Message
 		rr.Status.RequiresManualReview = true
 
 		// Track notification reference (BR-ORCH-035)
@@ -292,23 +352,24 @@ func (h *AIAnalysisHandler) handleWorkflowResolutionFailed(
 		return nil
 	})
 	if err != nil {
-		logger.Error(err, "Failed to update RR status for WorkflowResolutionFailed")
+		logger.Error(err, "Failed to update RR status for manual review")
 		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
 	}
 
-	// Record metric (BR-ORCH-036)
+	// Record metric (BR-ORCH-036, BR-HAPI-197)
 	if h.Metrics != nil {
 		h.Metrics.ManualReviewNotificationsTotal.WithLabelValues(
 			string(creator.ManualReviewSourceAIAnalysis),
-			ai.Status.Reason,
-			ai.Status.SubReason,
+			metricReason,
+			metricSubReason,
 			rr.Namespace,
 		).Inc()
 	}
 
-	logger.Info("Created manual review notification for WorkflowResolutionFailed",
+	logger.Info("Created manual review notification",
 		"notificationName", notifName,
-		"subReason", ai.Status.SubReason,
+		"reason", metricReason,
+		"subReason", metricSubReason,
 	)
 
 	return ctrl.Result{}, nil
