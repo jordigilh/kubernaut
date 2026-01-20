@@ -71,6 +71,8 @@ class MockScenario:
     rca_resource_kind: str = "Pod"
     rca_resource_namespace: str = "default"
     rca_resource_name: str = "test-pod"
+    rca_resource_api_version: str = "v1"  # BR-HAPI-212: API version for GVK resolution
+    include_affected_resource: bool = True  # BR-HAPI-212: Whether to include affectedResource in RCA
     parameters: Dict[str, str] = field(default_factory=dict)
 
 
@@ -186,6 +188,22 @@ MOCK_SCENARIOS: Dict[str, MockScenario] = {
         rca_resource_namespace="production",
         rca_resource_name="recovered-pod",
         parameters={}
+    ),
+    "rca_incomplete": MockScenario(
+        name="rca_incomplete",
+        workflow_name="generic-restart-v1",
+        signal_type="MOCK_RCA_INCOMPLETE",
+        severity="critical",
+        workflow_id="d2c84d90-55ba-5ae1-b48d-6cc16e0edb5c",  # DD-WORKFLOW-002 v3.0: Deterministic UUID for generic-restart-v1
+        workflow_title="Generic Pod Restart",
+        confidence=0.88,  # High confidence (>= 0.7) but incomplete RCA
+        root_cause="Root cause identified but affected resource could not be determined from signal context",
+        rca_resource_kind="Pod",
+        rca_resource_namespace="production",
+        rca_resource_name="ambiguous-pod",
+        rca_resource_api_version="v1",
+        include_affected_resource=False,  # BR-HAPI-212: Trigger missing affectedResource scenario
+        parameters={"ACTION": "restart"}
     ),
 }
 
@@ -443,6 +461,8 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             return MOCK_SCENARIOS.get("low_confidence", DEFAULT_SCENARIO)
         if "mock_problem_resolved" in content or "mock problem resolved" in content:
             return MOCK_SCENARIOS.get("problem_resolved", DEFAULT_SCENARIO)
+        if "mock_rca_incomplete" in content or "mock rca incomplete" in content:
+            return MOCK_SCENARIOS.get("rca_incomplete", DEFAULT_SCENARIO)
 
         # Check for test signal (graceful shutdown tests)
         if "testsignal" in content or "test signal" in content:
@@ -539,10 +559,27 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             }
         }
 
+        # BR-HAPI-212: Conditionally include affectedResource in RCA
+        # This allows testing scenarios where affectedResource is missing despite workflow being selected
+        if scenario.include_affected_resource:
+            affected_resource = {
+                "kind": scenario.rca_resource_kind,
+                "name": scenario.rca_resource_name,
+            }
+            # Add apiVersion if present (BR-HAPI-212: Optional field for GVK resolution)
+            if scenario.rca_resource_api_version:
+                affected_resource["apiVersion"] = scenario.rca_resource_api_version
+            # Add namespace if present (not applicable for cluster-scoped resources)
+            if scenario.rca_resource_namespace:
+                affected_resource["namespace"] = scenario.rca_resource_namespace
+
+            analysis_json["root_cause_analysis"]["affectedResource"] = affected_resource
+
         # BR-HAPI-200: Handle problem resolved case (investigation_outcome: "resolved")
         if scenario.name == "problem_resolved":
             analysis_json["selected_workflow"] = None
             analysis_json["investigation_outcome"] = "resolved"  # BR-HAPI-200: Signal problem self-resolved
+            analysis_json["confidence"] = scenario.confidence  # BR-HAPI-200: High confidence (>=0.7) that problem is resolved
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 ## Root Cause Analysis
@@ -560,6 +597,7 @@ The problem has self-resolved. No remediation workflow is needed.
         # Handle no workflow found case
         elif not scenario.workflow_id:
             analysis_json["selected_workflow"] = None
+            analysis_json["confidence"] = scenario.confidence  # Low confidence (0.0) triggers human review
             content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 ## Root Cause Analysis
