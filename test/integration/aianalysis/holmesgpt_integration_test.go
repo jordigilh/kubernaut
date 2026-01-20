@@ -118,7 +118,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				IncidentID:        "test-memory-001",
 				RemediationID:     "req-test-002",
 				SignalType:        "MemoryPressure",
-				Severity:          "warning",
+				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				ResourceKind:      "Pod",
@@ -271,7 +271,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 					IncidentID:        "test-hr-loop-" + reason,
 					RemediationID:     "req-hr-loop",
 					SignalType:        "Test",
-					Severity:          "warning",
+					Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 					SignalSource:      "kubernaut",
 					ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					ResourceKind:      "Pod",
@@ -304,7 +304,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				IncidentID:        "test-resolved-001",
 				RemediationID:     "req-resolved-001",
 				SignalType:        "CrashLoopBackOff",
-				Severity:          "warning",
+				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				ResourceKind:      "Pod",
@@ -337,7 +337,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				IncidentID:        "test-inconclusive-001",
 				RemediationID:     "req-inconclusive-001",
 				SignalType:        "NetworkFailure",
-				Severity:          "warning",
+				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 				ResourceKind:      "Pod",
@@ -369,7 +369,7 @@ var _ = Describe("HolmesGPT-API Integration", Label("integration", "holmesgpt"),
 				IncidentID:        "test-validation-001",
 				RemediationID:     "req-validation-001",
 				SignalType:        "DatabaseTimeout",
-				Severity:          "warning",
+				Severity:          "medium", // DD-SEVERITY-001: Use normalized severity enum
 				SignalSource:      "kubernaut",
 				ResourceNamespace: "staging",
 				ResourceKind:      "Pod",
