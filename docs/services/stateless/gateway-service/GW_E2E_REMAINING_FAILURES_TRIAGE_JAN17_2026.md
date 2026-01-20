@@ -579,7 +579,7 @@ phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader)
 ### **Expected Timeline**
 
 - **Phase 1** (Fix #1): 5 minutes
-- **Phase 2** (Fix #2 & #3): 10 minutes  
+- **Phase 2** (Fix #2 & #3): 10 minutes
 - **Phase 3** (Fix #4): 2 minutes
 - **Total**: ~17 minutes to 100% E2E pass rate ✅
 

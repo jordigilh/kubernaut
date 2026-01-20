@@ -477,7 +477,7 @@ make test-e2e-gateway
    data:
      DB_HOST: "postgres.kubernaut-system.svc.cluster.local"
      DB_CONN_MAX_LIFETIME: "15m"
-   
+
    # ✅ NEW (CORRECT): YAML file format per ADR-030
    data:
      config.yaml: |
