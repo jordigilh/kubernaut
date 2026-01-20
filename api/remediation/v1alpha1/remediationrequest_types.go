@@ -107,12 +107,13 @@ const (
 
 	// PhaseBlocked indicates remediation cannot proceed due to external blocking condition.
 	// This is a NON-terminal phase (Gateway deduplicates, prevents RR flood).
-	// V1.0: Unified blocking for 5 scenarios (DD-RO-002-ADDENDUM Blocked Phase Semantics):
+	// V1.0: Unified blocking for 6 scenarios (DD-RO-002-ADDENDUM Blocked Phase Semantics):
 	// - ConsecutiveFailures: After cooldown → Failed (BR-ORCH-042)
 	// - ResourceBusy: When resource available → Proceeds to execute
 	// - RecentlyRemediated: After cooldown → Proceeds to execute (DD-WE-001)
 	// - ExponentialBackoff: After backoff window → Retries execution (DD-WE-004)
 	// - DuplicateInProgress: When original completes → Inherits outcome
+	// - UnmanagedResource: Retries until scope label added or RR times out (BR-SCOPE-001)
 	// Reference: DD-RO-002-ADDENDUM (Blocked Phase Semantics)
 	PhaseBlocked RemediationPhase = "Blocked"
 
@@ -165,6 +166,12 @@ const (
 	// This implements graduated retry for transient infrastructure failures.
 	// Reference: DD-WE-004
 	BlockReasonExponentialBackoff BlockReason = "ExponentialBackoff"
+
+	// BlockReasonUnmanagedResource indicates the target resource is not managed by Kubernaut.
+	// The resource or namespace does not have the kubernaut.ai/managed=true label.
+	// RO will retry with exponential backoff (5s → 10s → ... → 5min) until RR times out.
+	// Reference: BR-SCOPE-001, FR-SCOPE-003
+	BlockReasonUnmanagedResource BlockReason = "UnmanagedResource"
 )
 
 // ========================================
@@ -207,6 +214,21 @@ type TimeoutConfig struct {
 }
 
 // RemediationRequestSpec defines the desired state of RemediationRequest.
+//
+// ADR-001: Spec Immutability
+// RemediationRequest represents an immutable event (signal received, remediation required).
+// Once created (by Gateway or external source), spec cannot be modified to ensure:
+// - Audit trail integrity (remediation matches original signal)
+// - No signal metadata tampering during remediation lifecycle
+// - Consistent signal data across all child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution)
+//
+// Cancellation: Delete the RemediationRequest CRD (Kubernetes-native pattern).
+// Status updates: Controllers update .status fields (not affected by spec immutability).
+//
+// Note: Individual field immutability (e.g., signalFingerprint) is redundant with full spec immutability,
+// but retained for explicit documentation of critical fields.
+//
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type RemediationRequestSpec struct {
 	// ========================================
 	// UNIVERSAL FIELDS (ALL SIGNALS)

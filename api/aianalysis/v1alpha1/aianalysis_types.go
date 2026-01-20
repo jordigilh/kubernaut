@@ -33,6 +33,17 @@ import (
 // ========================================
 
 // AIAnalysisSpec defines the desired state of AIAnalysis.
+//
+// ADR-001: Spec Immutability
+// AIAnalysis represents an immutable event (AI investigation).
+// Once created by RemediationOrchestrator, spec cannot be modified to ensure:
+// - Audit trail integrity (AI investigation matches original RCA request)
+// - No tampering with RCA targets post-HAPI validation
+// - No workflow selection modification after AI recommendation
+//
+// To re-analyze, delete and recreate the AIAnalysis CRD.
+//
+// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
 type AIAnalysisSpec struct {
 	// ========================================
 	// PARENT REFERENCE (Audit/Lineage)
