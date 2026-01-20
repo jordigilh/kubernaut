@@ -188,7 +188,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
-							Severity:         "warning",
+							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalType:       "TestSignal",
 							Environment:      "test",
 							BusinessPriority: "P3",

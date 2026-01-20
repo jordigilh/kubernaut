@@ -506,7 +506,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-corr-%s", uuid.New().String()[:8]),
-							Severity:         "warning",
+							Severity:         "medium", // DD-SEVERITY-001: Use normalized severity enum
 							SignalType:       "ImagePullBackOff",
 							Environment:      "development",
 							BusinessPriority: "P2",

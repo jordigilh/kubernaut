@@ -35,6 +35,7 @@ import (
 // Event type constants (per DD-AUDIT-003)
 const (
 	EventTypeAnalysisCompleted = "aianalysis.analysis.completed"
+	EventTypeAnalysisFailed    = "aianalysis.analysis.failed"
 	EventTypePhaseTransition   = "aianalysis.phase.transition"
 	EventTypeHolmesGPTCall     = "aianalysis.holmesgpt.call"
 	EventTypeApprovalDecision  = "aianalysis.approval.decision"
@@ -51,6 +52,7 @@ const (
 // Event action constants (per DD-AUDIT-003)
 const (
 	EventActionAnalysisComplete = "analysis_complete"
+	EventActionAnalysisFailed   = "analysis_failed"
 	EventActionPhaseTransition  = "phase_transition"
 	EventActionError            = "error"
 	EventActionHolmesGPTCall    = "holmesgpt_call"
@@ -506,22 +508,60 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 	// Build audit event per DD-AUDIT-002 V2.0: OpenAPI types
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "aianalysis.analysis.failed")
+	audit.SetEventType(event, EventTypeAnalysisFailed) // DD-AUDIT-003: Use constant
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
-	audit.SetEventAction(event, "failed")
+	audit.SetEventAction(event, EventActionAnalysisFailed) // DD-AUDIT-003: Use constant
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
-	audit.SetActor(event, "service", "aianalysis-controller")
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController) // DD-AUDIT-003: Use constants
 	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	audit.SetCorrelationID(event, string(analysis.UID))
+	// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event correlation
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	payload := ogenclient.AIAnalysisAuditPayload{
-		AnalysisName: analysis.Name,
-		Namespace:    analysis.Namespace,
-		Phase:        toAIAnalysisAuditPayloadPhase(string(analysis.Status.Phase)),
-		ErrorDetails: toOptErrorDetails(errorDetails), // Gap #7: Standardized error_details for SOC2 compliance
+		EventType:        EventTypeAnalysisFailed,
+		AnalysisName:     analysis.Name,
+		Namespace:        analysis.Namespace,
+		Phase:            toAIAnalysisAuditPayloadPhase(string(analysis.Status.Phase)),
+		ApprovalRequired: analysis.Status.ApprovalRequired,
+		DegradedMode:     analysis.Status.DegradedMode,
+		WarningsCount:    len(analysis.Status.Warnings),
+		ErrorDetails:     toOptErrorDetails(errorDetails), // Gap #7: Standardized error_details for SOC2 compliance
+	}
+
+	// Optional fields (OGEN-MIGRATION: Use .SetTo() for optional fields)
+	if analysis.Status.ApprovalReason != "" {
+		payload.ApprovalReason.SetTo(analysis.Status.ApprovalReason)
+	}
+	if analysis.Status.SelectedWorkflow != nil {
+		confidence := float32(analysis.Status.SelectedWorkflow.Confidence)
+		payload.Confidence.SetTo(confidence)
+		payload.WorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+	}
+	if analysis.Status.TargetInOwnerChain != nil {
+		payload.TargetInOwnerChain.SetTo(*analysis.Status.TargetInOwnerChain)
+	}
+	if analysis.Status.Reason != "" {
+		payload.Reason.SetTo(analysis.Status.Reason)
+	}
+	if analysis.Status.SubReason != "" {
+		payload.SubReason.SetTo(analysis.Status.SubReason)
+	}
+
+	// DD-AUDIT-005: Add provider response summary (consumer perspective) if available
+	if analysis.Status.InvestigationID != "" {
+		summary := ogenclient.ProviderResponseSummary{
+			IncidentID:       analysis.Status.InvestigationID,
+			AnalysisPreview:  truncateString(analysis.Status.RootCause, 500),
+			NeedsHumanReview: true, // Failures always need human review
+			WarningsCount:    len(analysis.Status.Warnings),
+		}
+		if analysis.Status.SelectedWorkflow != nil {
+			summary.SelectedWorkflowID.SetTo(analysis.Status.SelectedWorkflow.WorkflowID)
+		}
+		payload.ProviderResponseSummary.SetTo(summary)
 	}
 	// Use ogen union constructor (OGEN-MIGRATION)
 	// Determine which constructor based on phase

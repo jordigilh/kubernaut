@@ -92,7 +92,6 @@ var (
 	ctx        context.Context
 	cancel     context.CancelFunc
 	testEnv    *envtest.Environment
-	cfg        *rest.Config
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
