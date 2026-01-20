@@ -148,6 +148,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(err).ToNot(HaveOccurred(), "Create should succeed")
 
 				// ASSERT: Verify workflow persisted with correct composite PK
+				// Use Eventually to handle transaction commit delays (DS-FLAKY-006 fix)
 				var (
 					dbWorkflowName, dbVersion, dbName, dbDescription, dbContent, dbContentHash, dbStatus, dbExecutionEngine string
 					dbLabels                                                                                                []byte // JSONB
@@ -155,29 +156,29 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 					dbCreatedAt, dbUpdatedAt                                                                                time.Time
 				)
 
-				row := db.QueryRowContext(ctx, `
-					SELECT workflow_name, version, name, description, content, content_hash,
-					       labels, status, execution_engine, is_latest_version, created_at, updated_at
-					FROM remediation_workflow_catalog
-					WHERE workflow_name = $1 AND version = $2
-				`, workflowName, "v1.0.0")
+				Eventually(func() error {
+					row := db.QueryRowContext(ctx, `
+						SELECT workflow_name, version, name, description, content, content_hash,
+						       labels, status, execution_engine, is_latest_version, created_at, updated_at
+						FROM remediation_workflow_catalog
+						WHERE workflow_name = $1 AND version = $2
+					`, workflowName, "v1.0.0")
 
-				err = row.Scan(
-					&dbWorkflowName,
-					&dbVersion,
-					&dbName,
-					&dbDescription,
-					&dbContent,
-					&dbContentHash,
-					&dbLabels,
-					&dbStatus,
-					&dbExecutionEngine,
-					&dbIsLatestVersion,
-					&dbCreatedAt,
-					&dbUpdatedAt,
-				)
-
-				Expect(err).ToNot(HaveOccurred(), "Should retrieve workflow from database")
+					return row.Scan(
+						&dbWorkflowName,
+						&dbVersion,
+						&dbName,
+						&dbDescription,
+						&dbContent,
+						&dbContentHash,
+						&dbLabels,
+						&dbStatus,
+						&dbExecutionEngine,
+						&dbIsLatestVersion,
+						&dbCreatedAt,
+						&dbUpdatedAt,
+					)
+				}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 5 seconds")
 
 				// CRITICAL ASSERTIONS: Verify composite PK and all fields
 				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")

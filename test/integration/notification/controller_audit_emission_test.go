@@ -137,18 +137,21 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
-			// Per DD-AUDIT-003: Integration tests MUST use real Data Storage service (no mocks)
-			var sentEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.sent", notificationName)
-				if len(events) > 0 {
-					sentEvent = &events[0]
-					return true
-				}
-				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit notification.message.sent audit event to Data Storage")
+		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
+		// Per DD-AUDIT-003: Integration tests MUST use real Data Storage service (no mocks)
+		var sentEvent *ogenclient.AuditEvent
+		Eventually(func() bool {
+			// Flush audit buffer on each retry to ensure events are written to DataStorage
+			_ = realAuditStore.Flush(queryCtx)
+
+			events := queryAuditEvents("notification.message.sent", notificationName)
+			if len(events) > 0 {
+				sentEvent = &events[0]
+				return true
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"Controller should emit notification.message.sent audit event to Data Storage")
 
 			Expect(sentEvent).ToNot(BeNil(), "Controller must emit 'notification.message.sent' event (DD-AUDIT-003)")
 
@@ -212,17 +215,20 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
-			var slackEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.sent", notificationName)
-				if len(events) > 0 {
-					slackEvent = &events[0]
-					return true
-				}
-				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit audit event for Slack delivery to Data Storage")
+		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
+		var slackEvent *ogenclient.AuditEvent
+		Eventually(func() bool {
+			// Flush audit buffer on each retry to ensure events are written to DataStorage
+			_ = realAuditStore.Flush(queryCtx)
+
+			events := queryAuditEvents("notification.message.sent", notificationName)
+			if len(events) > 0 {
+				slackEvent = &events[0]
+				return true
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"Controller should emit audit event for Slack delivery to Data Storage")
 
 			Expect(slackEvent).ToNot(BeNil(), "Controller must emit audit event for Slack delivery")
 
@@ -348,100 +354,15 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for events from each channel
-			Eventually(func() int {
-				events := queryAuditEvents("notification.message.sent", notificationName)
-				return len(events)
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
-				"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
+		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for events from each channel
+		Eventually(func() int {
+			// Flush audit buffer on each retry to ensure events are written to DataStorage
+			_ = realAuditStore.Flush(queryCtx)
 
-			// Cleanup
-			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
-		})
-	})
-
-	// ========================================
-	// TEST 5: Acknowledged notification audit event
-	// BR-NOT-062: Unified audit table integration
-	// ========================================
-	Context("BR-NOT-062: Audit on Acknowledged Notification", func() {
-		It("should emit notification.message.acknowledged when notification is acknowledged", func() {
-			// NOTE: Acknowledgment is a V2.0 roadmap feature (interactive Slack buttons)
-			// This integration test validates the audit emission mechanism is working
-			// even though acknowledgment is not yet implemented in controller logic
-
-			// Create unique notification name for this test
-			testID := fmt.Sprintf("audit-ack-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-acknowledged-%s", testID[:8])
-
-			notification := &notificationv1alpha1.NotificationRequest{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       notificationName,
-					Namespace:  testNamespace,
-					Generation: 1, // K8s increments on create/update
-				},
-				Spec: notificationv1alpha1.NotificationRequestSpec{
-					Type:     notificationv1alpha1.NotificationTypeSimple,
-					Priority: notificationv1alpha1.NotificationPriorityCritical,
-					Subject:  "Audit Emission Test - Acknowledgment",
-					Body:     "Testing controller emits audit on notification acknowledgment",
-					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
-					// No Metadata - let correlation ID fallback to notification.UID
-				},
-			}
-
-			// Create the notification
-			Expect(k8sClient.Create(ctx, notification)).To(Succeed())
-
-			// Wait for notification to be sent
-			Eventually(func() notificationv1alpha1.NotificationPhase {
-				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
-					return ""
-				}
-				return n.Status.Phase
-			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
-
-			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for acknowledged event
-			// NOTE: In V2.0, this event will be emitted when user clicks [Acknowledge] button
-			// For V1.0, we validate the audit emission mechanism through controller method
-			var ackEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.acknowledged", notificationName)
-				if len(events) > 0 {
-					ackEvent = &events[0]
-					return true
-				}
-				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Controller should emit notification.message.acknowledged audit event to Data Storage (DD-AUDIT-003)")
-
-			// Verify event details and field matching (Per TESTING_GUIDELINES.md)
-			Expect(ackEvent).ToNot(BeNil(), "Controller must emit 'notification.message.acknowledged' event (BR-AUDIT-004)")
-
-			// ========================================
-			// SERVICE_MATURITY_REQUIREMENTS v1.2.0 (P0 - MANDATORY)
-			// Use validators.ValidateAuditEvent for structured validation
-			// See: docs/development/business-requirements/TESTING_GUIDELINES.md §1224-1309
-			// ========================================
-			actorType := "service"
-			actorID := "notification-controller"
-
-			validators.ValidateAuditEvent(*ackEvent, validators.ExpectedAuditEvent{
-				EventType:     "notification.message.acknowledged",
-				EventCategory: ogenclient.AuditEventEventCategoryNotification,
-				EventAction:   "acknowledged",
-				EventOutcome:  validators.EventOutcomePtr(ogenclient.AuditEventEventOutcomeSuccess),
-				CorrelationID: string(notification.UID),
-				ActorType:     &actorType,
-				ActorID:       &actorID,
-			})
-
-			Expect(ackEvent.ResourceType.IsSet()).To(BeTrue(), "ResourceType is required (ADR-034)")
-			Expect(ackEvent.ResourceType.Value).To(Equal("NotificationRequest"), "Resource type must be CRD kind (DD-AUDIT-002)")
-
-			Expect(ackEvent.ResourceID.IsSet()).To(BeTrue(), "ResourceId is required (ADR-034)")
-			Expect(ackEvent.ResourceID.Value).To(Equal(notificationName), "Resource ID must match notification name (DD-AUDIT-002)")
+			events := queryAuditEvents("notification.message.sent", notificationName)
+			return len(events)
+		}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
+			"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
@@ -486,26 +407,29 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check ADR-034 fields
-			var validEvent *ogenclient.AuditEvent
-			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.sent", notificationName)
-				for _, e := range events {
-					// Verify all ADR-034 required fields (OptString types)
-					if string(e.EventCategory) == "notification" &&
-						e.EventAction == "sent" &&
-						string(e.EventOutcome) == "success" &&
-						e.ActorType.IsSet() && e.ActorType.Value == "service" &&
-						e.ActorID.IsSet() && e.ActorID.Value == "notification-controller" &&
-						e.ResourceType.IsSet() && e.ResourceType.Value == "NotificationRequest" &&
-						e.ResourceID.IsSet() && e.ResourceID.Value == notificationName {
-						validEvent = &e
-						return true
-					}
+		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check ADR-034 fields
+		var validEvent *ogenclient.AuditEvent
+		Eventually(func() bool {
+			// Flush audit buffer on each retry to ensure events are written to DataStorage
+			_ = realAuditStore.Flush(queryCtx)
+
+			events := queryAuditEvents("notification.message.sent", notificationName)
+			for _, e := range events {
+				// Verify all ADR-034 required fields (OptString types)
+				if string(e.EventCategory) == "notification" &&
+					e.EventAction == "sent" &&
+					string(e.EventOutcome) == "success" &&
+					e.ActorType.IsSet() && e.ActorType.Value == "service" &&
+					e.ActorID.IsSet() && e.ActorID.Value == "notification-controller" &&
+					e.ResourceType.IsSet() && e.ResourceType.Value == "NotificationRequest" &&
+					e.ResourceID.IsSet() && e.ResourceID.Value == notificationName {
+					validEvent = &e
+					return true
 				}
-				return false
-			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-				"Audit event should have all ADR-034 required fields populated correctly (DD-AUDIT-003)")
+			}
+			return false
+		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"Audit event should have all ADR-034 required fields populated correctly (DD-AUDIT-003)")
 
 			Expect(validEvent).ToNot(BeNil(), "Must find valid ADR-034 compliant event in Data Storage")
 

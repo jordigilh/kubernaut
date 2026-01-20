@@ -7,15 +7,15 @@ service:
 server:
   port: 8080
   host: "0.0.0.0"
-  read_timeout: 30s
-  write_timeout: 30s
+  readTimeout: 30s
+  writeTimeout: 30s
 
 database:
   host: host.containers.internal
   port: 15436
   name: action_history
   user: slm_user
-  ssl_mode: disable
+  sslMode: disable
   maxOpenConns: 100  # Increased for 12 parallel test processes
   maxIdleConns: 50   # Increased to reduce connection churn
   connMaxLifetime: 5m

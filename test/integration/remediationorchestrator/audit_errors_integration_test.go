@@ -105,13 +105,14 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 				// We'll set it after creation via status update (simulates operator error or webhook bypass)
 			}
 
-			// When: Create RemediationRequest CRD
-			err := k8sClient.Create(ctx, rr)
-			Expect(err).ToNot(HaveOccurred())
+		// When: Create RemediationRequest CRD
+		err := k8sClient.Create(ctx, rr)
+		Expect(err).ToNot(HaveOccurred())
 
-			correlationID := string(rr.UID)
+		// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) for audit event queries
+		correlationID := rr.Name
 
-			// Wait for controller to initialize status.timeoutConfig with defaults
+		// Wait for controller to initialize status.timeoutConfig with defaults
 			Eventually(func() bool {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.TimeoutConfig != nil
@@ -123,16 +124,17 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 			err = k8sClient.Status().Update(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Then: Controller should detect invalid config and transition to Failed
-			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
-				return rr.Status.OverallPhase
-			}, timeout, interval).Should(Equal(remediationv1.PhaseFailed), "RR should transition to Failed on invalid timeout")
+		// Then: Controller should detect invalid config and transition to Failed
+		Eventually(func() remediationv1.RemediationPhase {
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			return rr.Status.OverallPhase
+		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed), "RR should transition to Failed on invalid timeout")
 
-			// Wait for audit batch to flush (1s flush interval + buffer)
-			time.Sleep(3 * time.Second)
+		// Flush buffered audit events to DataStorage before querying
+		err = auditStore.Flush(ctx)
+		Expect(err).ToNot(HaveOccurred(), "Failed to flush audit events to DataStorage")
 
-			// Query for orchestrator.lifecycle.completed (failure) audit event
+		// Query for orchestrator.lifecycle.completed (failure) audit event
 			eventType := "orchestrator.lifecycle.completed"
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {

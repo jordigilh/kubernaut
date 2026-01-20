@@ -112,10 +112,10 @@ database:
   database: "action_history"
   username: "slm_user"
   password: "slm_password"
-  ssl_mode: "disable"
-  max_open_conns: 10
-  max_idle_conns: 5
-  conn_max_lifetime_minutes: 5
+  sslMode: "disable"
+  maxOpenConns: 10
+  maxIdleConns: 5
+  connMaxLifetime: "5m"
 
 # Vector Database - Using PostgreSQL with pgvector (✅ FULLY IMPLEMENTED)
 vectordb:
