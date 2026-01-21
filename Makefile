@@ -190,7 +190,20 @@ test-e2e-%: generate ginkgo ensure-coverdata ## Run E2E tests for specified serv
 		}; \
 		echo "✅ DataStorage client validated successfully"; \
 	fi
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS) ./test/e2e/$*/...
+	@GINKGO_CMD="$(GINKGO) -v --timeout=$(TEST_TIMEOUT_E2E) --procs=$(TEST_PROCS)"; \
+	if [ -n "$(GINKGO_LABEL)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --label-filter='$(GINKGO_LABEL)'"; \
+		echo "🏷️  Label filter: $(GINKGO_LABEL)"; \
+	fi; \
+	if [ -n "$(GINKGO_FOCUS)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --focus='$(GINKGO_FOCUS)'"; \
+		echo "🔍 Focusing on: $(GINKGO_FOCUS)"; \
+	fi; \
+	if [ -n "$(GINKGO_SKIP)" ]; then \
+		GINKGO_CMD="$$GINKGO_CMD --skip='$(GINKGO_SKIP)'"; \
+		echo "⏭️  Skipping: $(GINKGO_SKIP)"; \
+	fi; \
+	eval "$$GINKGO_CMD ./test/e2e/$*/..."
 
 # All Tests for Service
 .PHONY: test-all-%
@@ -617,3 +630,23 @@ mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
 endef
+
+##@ Cursor Rule Compliance
+
+.PHONY: lint-rules
+lint-rules: lint-test-patterns lint-business-integration lint-tdd-compliance ## Run all cursor rule compliance checks
+
+.PHONY: lint-test-patterns
+lint-test-patterns: ## Check for test anti-patterns
+	@echo "🔍 Checking for test anti-patterns..."
+	@./scripts/validation/check-test-anti-patterns.sh
+
+.PHONY: lint-business-integration
+lint-business-integration: ## Check business code integration in main applications
+	@echo "🔍 Checking business code integration..."
+	@./scripts/validation/check-business-integration.sh
+
+.PHONY: lint-tdd-compliance
+lint-tdd-compliance: ## Check TDD compliance (BDD framework, BR references)
+	@echo "🔍 Checking TDD compliance..."
+	@./scripts/validation/check-tdd-compliance.sh

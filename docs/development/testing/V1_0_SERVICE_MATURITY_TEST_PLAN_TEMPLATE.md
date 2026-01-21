@@ -27,6 +27,48 @@ This template provides a standardized approach for testing all V1.0 maturity fea
 
 ---
 
+## Test Scenario Naming Convention
+
+**Format**: `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}`
+
+- **TIER**: Test pyramid tier prefix
+  - `UT` - Unit Test (70%+ coverage target)
+  - `IT` - Integration Test (<20% coverage target)
+  - `E2E` - End-to-End Test (<10% coverage target)
+
+- **SERVICE**: Service abbreviation (2-4 characters)
+  - `AA` - AI Analysis
+  - `RO` - Remediation Orchestrator
+  - `GW` - Gateway
+  - `WE` - Workflow Execution
+  - `DS` - Data Storage
+  - `SP` - Signal Processing
+  - `WF` - Workflow (generic)
+
+- **BR_NUMBER**: Business requirement number (e.g., `197` from BR-HAPI-197)
+
+- **SEQUENCE**: Zero-padded 3-digit sequence (e.g., `001`, `002`, `010`)
+
+**Examples** (from BR-HAPI-197):
+- `UT-AA-197-001` - Unit test for AI Analysis service, BR 197, scenario 1
+- `IT-RO-197-001` - Integration test for Remediation Orchestrator, BR 197, scenario 1
+- `E2E-RO-197-002` - End-to-end test for Remediation Orchestrator, BR 197, scenario 2
+
+**Usage in Test Descriptions**:
+```go
+Describe("UT-AA-197-001: Extract needs_human_review from HAPI response", func() {
+    It("should correctly parse needs_human_review field", func() {
+        // Test implementation maps to UT-AA-197-001 in test plan
+    })
+})
+```
+
+**Reference**: See [docs/testing/BR-HAPI-197/](../../testing/BR-HAPI-197/) for real-world examples
+
+**Fallback**: If test plan does not exist, use Business Requirement ID in test description (e.g., `BR-WORKFLOW-001`)
+
+---
+
 ## 1. Metrics Testing
 
 ### 1.1 Integration Tests - Metric Value Verification

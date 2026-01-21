@@ -5,18 +5,19 @@ description: "AI/ML components and integration patterns for kubernaut"
 
 # AI/ML Guidelines for Kubernaut
 
-## AI Service Architecture
-Kubernaut integrates multiple AI providers through a unified interface pattern following strict interface reuse principles.
+## 🤖 **AI Service Architecture**
+
+Kubernaut integrates multiple AI providers through a unified interface pattern.
 
 **CRITICAL**: Follow AI development methodology in [12-ai-ml-development-methodology.mdc](mdc:.cursor/rules/12-ai-ml-development-methodology.mdc) for TDD and interface management.
 
-### Interface Reuse Principles - MANDATORY
+### **Interface Reuse Principles - MANDATORY**
 - **FORBIDDEN**: Creating new AI interfaces - use existing `pkg/ai/llm.Client`
 - **MANDATORY**: Enhance existing AI clients rather than creating new ones
 - **INTEGRATION**: All AI components must integrate with main applications (`cmd/*/main.go`)
 
-### Supported AI Providers
-- **HolmesGPT**: Primary AI service via [pkg/ai/holmesgpt/client.go](mdc:pkg/ai/holmesgpt/client.go)
+### **Supported AI Providers**
+- **HolmesGPT**: Primary AI service ([pkg/ai/holmesgpt/client.go](mdc:pkg/ai/holmesgpt/client.go))
 - **OpenAI**: GPT-3.5, GPT-4 models
 - **Anthropic**: Claude models
 - **Azure OpenAI**: Enterprise OpenAI deployment
@@ -24,13 +25,15 @@ Kubernaut integrates multiple AI providers through a unified interface pattern f
 - **Ollama**: Local LLM deployment
 - **Ramalama**: Local model serving
 
-## HolmesGPT Integration Patterns
-### Client Usage - ENHANCE EXISTING INTERFACES
+---
+
+## 🔌 **Integration Patterns**
+
+### **Client Usage**
 ```go
 // ✅ CORRECT: Use existing unified interface
 import "pkg/ai/llm"
 
-// Use existing LLM client interface
 llmClient := llm.NewClient(config.LLM)
 response, err := llmClient.AnalyzeAlert(ctx, alertData)
 if err != nil {
@@ -38,57 +41,62 @@ if err != nil {
 }
 ```
 
-### Context Enrichment
-- **Kubernetes Context**: Real-time cluster data from [pkg/platform/k8s/client.go](mdc:pkg/platform/k8s/client.go)
-- **Historical Context**: Action patterns from PostgreSQL via [pkg/ai/context/](mdc:pkg/ai/context/)
+### **Context Enrichment**
+- **Kubernetes Context**: Real-time cluster data ([pkg/platform/k8s/client.go](mdc:pkg/platform/k8s/client.go))
+- **Historical Context**: Action patterns from PostgreSQL ([pkg/ai/context/](mdc:pkg/ai/context/))
 - **Vector Context**: Similarity search from vector database
 
-## AI Response Processing
-### Validation Pipeline
+---
+
+## ✅ **Response Validation**
+
+### **Validation Pipeline**
 1. **Structure Validation**: Ensure response matches expected schema
-2. **Confidence Scoring**: Evaluate AI recommendation confidence
+2. **Confidence Scoring**: Evaluate AI recommendation confidence (>0.8 high, 0.5-0.8 medium, <0.5 low)
 3. **Safety Validation**: Check recommendations against safety policies
 4. **Business Rule Validation**: Ensure recommendations align with business logic
 
-### Confidence Thresholds
-```go
-type ConfidenceLevel struct {
-    High   float64 // >0.8 - Execute automatically
-    Medium float64 // 0.5-0.8 - Require approval
-    Low    float64 // <0.5 - Log only, no action
-}
-```
+---
 
-## Workflow Engine AI Integration
-### Intelligent Workflow Builder
+## 🎯 **Workflow Engine AI Integration**
+
+### **Intelligent Workflow Builder**
 **Location**: [pkg/workflow/engine/intelligent_workflow_builder_impl.go](mdc:pkg/workflow/engine/intelligent_workflow_builder_impl.go)
 - AI-generated multi-step remediation workflows
 - Dynamic template generation based on alert patterns
-- Learning from historical workflow effectiveness
 
-### AI Condition Evaluator
+### **AI Condition Evaluator**
 **Location**: [pkg/workflow/engine/ai_condition_evaluator_impl.go](mdc:pkg/workflow/engine/ai_condition_evaluator_impl.go)
 - Intelligent step condition evaluation
 - Context-aware decision making
-- Pattern recognition for workflow branching
 
-## Vector Database Integration
-### Embedding Generation
+---
+
+## 🗄️ **Vector Database Integration**
+
+### **Embedding Generation**
 **Location**: [pkg/ai/embedding/pipeline.go](mdc:pkg/ai/embedding/pipeline.go)
 - Support for multiple embedding models (OpenAI, HuggingFace)
-- Consistent embedding generation for similarity search
 - Caching for performance optimization
 
-### Vector Storage
+### **Vector Storage**
 **Location**: [pkg/storage/vector/](mdc:pkg/storage/vector/)
 - PostgreSQL with pgvector extension
 - Similarity search for historical patterns
 - RAG (Retrieval Augmented Generation) enhancement
 
-## AI Safety and Reliability
-### Circuit Breaker Pattern
+---
+
+## 🛡️ **Safety and Reliability**
+
+### **Fallback Strategies**
+1. **Primary**: HolmesGPT with full context
+2. **Secondary**: Direct LLM provider with reduced context
+3. **Fallback**: Rule-based decision making
+4. **Emergency**: Safe default actions only
+
+### **Circuit Breaker Pattern**
 ```go
-// Implement circuit breaker for AI service calls
 breaker := circuitbreaker.New(&Config{
     Timeout:     30 * time.Second,
     MaxRequests: 100,
@@ -96,67 +104,77 @@ breaker := circuitbreaker.New(&Config{
 })
 ```
 
-### Fallback Strategies
-1. **Primary**: HolmesGPT with full context
-2. **Secondary**: Direct LLM provider with reduced context
-3. **Fallback**: Rule-based decision making
-4. **Emergency**: Safe default actions only
-
-### Rate Limiting and Quotas
+### **Rate Limiting**
 - Respect AI provider rate limits
 - Implement exponential backoff for retries
 - Monitor AI service usage and costs
 - Prioritize high-criticality alerts
 
-## Learning and Adaptation
-### Effectiveness Assessment
+---
+
+## 🧪 **Testing Patterns**
+
+### **Mock Strategy**
+**AUTHORITY**: Follow comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc)
+
+**AI-Specific**:
+- **Unit Tests**: Mock external AI APIs ([pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go))
+- **Business Logic**: Always test real AI analysis algorithms
+- **CI/CD**: Use mock LLM for reliability (`USE_MOCK_LLM=true`)
+- **Error Testing**: Include error simulation and timeout testing
+
+---
+
+## 🎓 **Learning and Adaptation**
+
+### **Effectiveness Assessment**
 **Location**: [pkg/ai/insights/assessor.go](mdc:pkg/ai/insights/assessor.go)
 - Track action outcomes and effectiveness
-- Learn from successful and failed interventions
 - Adjust confidence scores based on historical performance
 
-### Pattern Discovery
+### **Pattern Discovery**
 **Location**: [pkg/intelligence/patterns/pattern_discovery_engine.go](mdc:pkg/intelligence/patterns/pattern_discovery_engine.go)
 - Identify recurring alert patterns
 - Discover correlation between actions and outcomes
-- Generate insights for proactive maintenance
 
-## AI Testing Patterns
-### Mock Strategy - REFERENCE AUTHORITATIVE SOURCE
-**AUTHORITY**: Follow the comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc#mock-usage-decision-matrix---authoritative-source)
+---
 
-### AI-Specific Implementation
-- **Unit Tests**: Use [pkg/testutil/mocks/ai_mocks.go](mdc:pkg/testutil/mocks/ai_mocks.go) for external AI APIs
-- **Test Scenarios**: Support configurable responses for different test scenarios
-- **Error Testing**: Include error simulation and timeout testing with mocks
-- **Business Logic**: Always test real AI analysis algorithms and business logic
+## ⚡ **Performance Optimization**
 
-### Integration Testing
-- **Development**: Test against real AI services when available
-- **CI/CD**: Use mock LLM for reliability: `USE_MOCK_LLM=true`
-- **Quality Validation**: Test AI response quality and consistency with real components
-- **Fallback Testing**: Test fallback mechanisms under various failure conditions
+### **Caching Strategy**
+- Cache embedding generation results with TTL
+- Store frequent AI responses in Redis
+- Use distributed caching across instances
 
-## Performance Optimization
-### Caching Strategy
-- Cache embedding generation results
-- Store frequent AI responses with TTL
-- Use Redis for distributed caching across instances
-
-### Batch Processing
+### **Batch Processing**
 - Group similar alerts for batch AI analysis
 - Optimize context sharing across related requests
 - Balance latency vs. throughput based on criticality
 
-## Monitoring and Observability
-### AI Metrics
+---
+
+## 📊 **Monitoring and Observability**
+
+### **AI Metrics**
 - Track AI response times and success rates
 - Monitor confidence score distributions
 - Measure action effectiveness over time
 - Alert on AI service degradation
 
-### Cost Management
+### **Cost Management**
 - Track AI service usage and costs per provider
 - Implement budget alerts and quotas
 - Optimize prompt size and frequency
-- Use appropriate model tiers based on use case complexity
+- Use appropriate model tiers based on complexity
+
+---
+
+## 📚 **Related Documentation**
+
+- **[AI/ML Methodology](mdc:.cursor/rules/12-ai-ml-development-methodology.mdc)** - TDD workflow for AI components
+- **[Testing Strategy](mdc:.cursor/rules/03-testing-strategy.mdc)** - Mock usage and test pyramid
+- **[Core Rules](mdc:.cursor/rules/00-kubernaut-core-rules.mdc)** - APDC methodology and TDD workflow
+
+---
+
+**Remember**: AI components must integrate with main applications, use existing interfaces, and follow the same TDD methodology as all other code.

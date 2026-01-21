@@ -72,7 +72,8 @@ build_failures.*
 !.env.example
 
 # IDE configuration directories
-.cursor/
+.cursor/*
+!.cursor/rules/
 .claude/
 
 # Ephemeral documentation files
