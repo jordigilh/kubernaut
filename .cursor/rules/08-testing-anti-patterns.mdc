@@ -1,475 +1,283 @@
 ---
 globs: "*_test.go,test/**/*"
-description: "Critical testing anti-patterns to avoid in kubernaut development"
+description: "Critical testing anti-patterns to avoid - detection and remediation"
 ---
 
-# Testing Anti-Patterns - CRITICAL REFERENCE WITH AUTOMATED DETECTION
-
-## 🤖 **AUTOMATED ANTI-PATTERN DETECTION - MANDATORY**
-
-### Detection Scripts - MANDATORY
-Run these checks before ANY test commit:
-
-```bash
-# Run comprehensive cursor rule validation
-# Prevention through APDC methodology and design patterns
-
-# Individual pattern checks:
-# 1. NULL-TESTING DETECTION
-find test/ -name "*_test.go" -exec grep -H -n "ToNot(BeEmpty())\|ToNot(BeNil())" {} \;
-# VIOLATION: Any matches = immediate rejection
-
-# 2. STATIC DATA TESTING DETECTION
-find test/ -name "*_test.go" -exec grep -H -n ".*:= \".*\".*Expect(" {} \;
-# VIOLATION: Testing hardcoded strings = immediate rejection
-
-# 3. LIBRARY TESTING DETECTION
-find test/ -name "*_test.go" -exec grep -H -n "logrus\.New()\|context\.With\|os\.Set" {} \;
-# VIOLATION: Testing libraries instead of business logic = immediate rejection
-
-# 4. BUSINESS LOGIC INTEGRATION CHECK
-for file in $(find test/ -name "*_test.go"); do
-  if ! grep -q "github.com/jordigilh/kubernaut/pkg/" "$file"; then
-    echo "VIOLATION: $file - No business logic imports"
-  fi
-done
-```
-
-### Enforcement Levels - MANDATORY
-- **LEVEL 1 - BLOCK COMPILATION**: Tests with anti-patterns MUST NOT compile
-- **LEVEL 2 - PRE-COMMIT GATE**: Git hooks prevent commits with violations
-- **LEVEL 3 - CI/CD GATE**: Pipeline fails on cursor rule violations
-
-### Git Hook Integration - MANDATORY
-```bash
-#!/bin/bash
-# .git/hooks/pre-commit (MANDATORY)
-
-# Run cursor rule validation
-# Prevention through APDC methodology and design patterns
-if [ $? -ne 0 ]; then
-    echo "❌ Cursor rule violations detected. Commit blocked."
-    exit 1
-fi
-
-echo "✅ All cursor rule validations passed"
-```
-
----
+# Testing Anti-Patterns - Critical Reference
 
 ## 🚨 **CRITICAL ANTI-PATTERNS - IMMEDIATE REJECTION**
 
-### **ANTI-PATTERN 1: NULL-TESTING (MOST CRITICAL)**
+### **ANTI-PATTERN 1: NULL-TESTING (Most Critical)**
 
 **Definition**: Testing for basic existence rather than business outcomes
 
-**❌ VIOLATION EXAMPLES**:
+**Violations**:
 ```go
-// NULL-TESTING: Tests nothing meaningful
-Expect(result).ToNot(BeNil())           // ❌ VIOLATION
-Expect(result).ToNot(BeEmpty())         // ❌ VIOLATION
-Expect(len(items)).To(BeNumerically(">", 0))  // ❌ VIOLATION
-Expect(err).To(BeNil())                 // ❌ VIOLATION (weak error testing)
+// ❌ NULL-TESTING: Tests nothing meaningful
+Expect(result).ToNot(BeNil())
+Expect(result).ToNot(BeEmpty())
+Expect(len(items)).To(BeNumerically(">", 0))
+Expect(err).To(BeNil())  // Weak error testing
 ```
 
-**✅ CORRECT BUSINESS TESTING**:
+**Correct Approach**:
 ```go
-// BUSINESS OUTCOME TESTING: Tests meaningful business results
+// ✅ BUSINESS OUTCOME TESTING
 Expect(workflow.Template.SafetyValidation).To(ContainElement("resource-limits"))
 Expect(analysis.ConfidenceScore).To(BeNumerically(">=", 0.8))
 Expect(recommendation.Actions).To(HaveLen(3))
-Expect(result.BusinessMetrics.SuccessRate).To(BeNumerically(">", 0.9))
 ```
 
-**Automated Detection**:
-```bash
-# Detect NULL-TESTING violations
-grep -r "ToNot(BeNil())\|ToNot(BeEmpty())\|BeNumerically(\">\".*0)" test/ --include="*_test.go"
-# Any matches = IMMEDIATE REJECTION
-```
+---
 
 ### **ANTI-PATTERN 2: STATIC DATA TESTING**
 
 **Definition**: Testing hardcoded values instead of business logic
 
-**❌ VIOLATION EXAMPLES**:
+**Violations**:
 ```go
-// STATIC DATA TESTING: Tests hardcoded strings
-input := "test-alert-name"               // ❌ VIOLATION: Hardcoded test data
-Expect(result.Name).To(Equal("test-alert-name"))  // ❌ VIOLATION: Static assertion
-
-config := Config{Endpoint: "http://test"}  // ❌ VIOLATION: Hardcoded config
-Expect(client.endpoint).To(Equal("http://test"))  // ❌ VIOLATION: Static testing
+// ❌ STATIC DATA TESTING
+input := "test-alert-name"
+Expect(result.Name).To(Equal("test-alert-name"))
 ```
 
-**✅ CORRECT DYNAMIC TESTING**:
+**Correct Approach**:
 ```go
-// DYNAMIC BUSINESS TESTING: Tests business logic with realistic data
-alertData := testutil.GenerateRealisticAlert()  // ✅ CORRECT: Dynamic test data
-workflow, err := engine.CreateWorkflow(ctx, alertData)
-Expect(workflow.Template.Actions).To(ContainElement(
-    MatchFields(IgnoreExtras, Fields{
-        "Type": Equal("scale-deployment"),
-        "Target": Equal(alertData.Resource.Name),
-    }),
-))
+// ✅ BUSINESS LOGIC TESTING
+input := testutil.GenerateAlertName()
+Expect(result.Name).To(MatchRegexp("^alert-[0-9]+$"))
 ```
 
-**Automated Detection**:
-```bash
-# Detect STATIC DATA TESTING violations
-grep -r ".*:= \".*\".*Expect(" test/ --include="*_test.go"
-# Any matches = IMMEDIATE REJECTION
-```
+---
 
 ### **ANTI-PATTERN 3: LIBRARY TESTING**
 
-**Definition**: Testing external libraries instead of business logic
+**Definition**: Testing third-party libraries instead of business logic
 
-**❌ VIOLATION EXAMPLES**:
+**Violations**:
 ```go
-// LIBRARY TESTING: Tests external library behavior
-logger := logrus.New()                   // ❌ VIOLATION: Testing logrus
-logger.SetLevel(logrus.InfoLevel)
-Expect(logger.Level).To(Equal(logrus.InfoLevel))  // ❌ VIOLATION: Library testing
-
-ctx := context.WithTimeout(context.Background(), time.Second)  // ❌ VIOLATION
-Expect(ctx.Err()).To(BeNil())           // ❌ VIOLATION: Testing context library
+// ❌ LIBRARY TESTING
+logger := logrus.New()
+Expect(logger).ToNot(BeNil())
 ```
 
-**✅ CORRECT BUSINESS TESTING**:
+**Correct Approach**:
 ```go
-// BUSINESS LOGIC TESTING: Tests our business components
-analyticsEngine := insights.NewAnalyticsEngine(config)  // ✅ CORRECT: Business component
-riskAssessment, err := analyticsEngine.AssessWorkflowRisk(workflow)
-Expect(riskAssessment.RiskLevel).To(BeNumerically("<", 0.3))  // ✅ CORRECT: Business outcome
+// ✅ BUSINESS LOGIC TESTING
+logger := business.NewStructuredLogger(config)
+logger.LogWorkflowEvent("workflow-123", "completed")
+Expect(logger.GetLastEvent().WorkflowID).To(Equal("workflow-123"))
 ```
 
-**Automated Detection**:
+**Rule**: If it's not in `pkg/`, don't test it
+
+---
+
+### **ANTI-PATTERN 4: IMPLEMENTATION TESTING**
+
+**Definition**: Testing how code works instead of what business outcome it produces
+
+**Violations**:
+```go
+// ❌ IMPLEMENTATION TESTING
+Expect(engine.parseWorkflowSteps(input)).To(HaveLen(3))
+Expect(workflow.internalCache).To(HaveKey("step-1"))
+```
+
+**Correct Approach**:
+```go
+// ✅ BUSINESS OUTCOME TESTING
+workflow, err := engine.CreateWorkflow(input)
+Expect(err).ToNot(HaveOccurred())
+Expect(workflow.Status).To(Equal(business.StatusReady))
+Expect(workflow.CanExecute()).To(BeTrue())
+```
+
+---
+
+### **ANTI-PATTERN 5: MOCK OVERUSE**
+
+**Definition**: Mocking internal business logic instead of external dependencies
+
+**Violations**:
+```go
+// ❌ MOCK OVERUSE: All business logic mocked = testing nothing
+mockValidator := mocks.NewMockWorkflowValidator()
+mockAnalyzer := mocks.NewMockPerformanceAnalyzer()
+mockOptimizer := mocks.NewMockResourceOptimizer()
+engine := NewEngine(mockValidator, mockAnalyzer, mockOptimizer)
+```
+
+**Correct Approach**:
+```go
+// ✅ REAL BUSINESS LOGIC: Mock only external dependencies
+mockLLMClient := mocks.NewMockLLMClient()
+mockK8sClient := fake.NewClientBuilder().Build()
+
+// Use REAL business components
+validator := business.NewWorkflowValidator()
+analyzer := business.NewPerformanceAnalyzer()
+engine := NewEngine(validator, analyzer, mockLLMClient, mockK8sClient)
+```
+
+---
+
+## 🔧 **AUTOMATED DETECTION**
+
+### **Run Anti-Pattern Detection**
+
 ```bash
+# Comprehensive anti-pattern check
+make lint-test-patterns
+
+# Or directly via script
+./scripts/validation/check-test-anti-patterns.sh
+
+# Verbose mode (shows file locations)
+./scripts/validation/check-test-anti-patterns.sh --verbose
+```
+
+### **Manual Detection Commands**
+
+```bash
+# Detect NULL-TESTING violations
+grep -r "ToNot(BeNil())\|ToNot(BeEmpty())" test/ --include="*_test.go"
+
+# Detect STATIC DATA violations
+grep -r "Equal(\".*\")" test/ --include="*_test.go" | grep -v "BR-"
+
 # Detect LIBRARY TESTING violations
-grep -r "logrus\.New()\|context\.With\|os\.Set\|time\.Now()" test/ --include="*_test.go"
-# Any matches = IMMEDIATE REJECTION
+grep -r "logrus\.New()\|context\.WithValue" test/ --include="*_test.go"
+
+# Check for missing BR references
+find test/ -name "*_test.go" -exec grep -L "BR-" {} \;
 ```
 
-### **ANTI-PATTERN 4: MOCK OVERUSE**
+---
 
-**Definition**: Mocking business logic instead of external dependencies
+## 🚨 **ENFORCEMENT**
 
-**AUTHORITY**: See comprehensive mock usage matrix in [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc#mock-usage-decision-matrix---authoritative-source) for correct mock usage patterns.
+### **Pre-Commit Hook**
 
-**❌ VIOLATION EXAMPLES**:
-```go
-// MOCK OVERUSE: Mocking business logic
-mockWorkflowEngine := &MockWorkflowEngine{}  // ❌ VIOLATION: Business logic mocked
-mockAnalytics := &MockAnalyticsEngine{}     // ❌ VIOLATION: Business logic mocked
-mockSafety := &MockSafetyFramework{}        // ❌ VIOLATION: Business logic mocked
-```
-
-**✅ CORRECT MOCK USAGE**:
-```go
-// CORRECT MOCKING: Mock external dependencies only
-mockLLMClient := mocks.NewMockLLMClient()    // ✅ CORRECT: External AI service
-mockK8sClient := mocks.NewMockKubernetesClient()  // ✅ CORRECT: External infrastructure
-
-// Use REAL business logic
-workflowEngine := engine.NewIntelligentWorkflowBuilder(mockLLMClient, mockK8sClient)
-analyticsEngine := insights.NewAnalyticsEngine(realConfig)  // ✅ CORRECT: Real business logic
-```
-
-**Automated Detection**:
 ```bash
-# Detect MOCK OVERUSE violations
-grep -r "Mock.*Engine\|Mock.*Analytics\|Mock.*Safety" test/ --include="*_test.go" | grep -v "LLM\|K8s\|Database"
-# Any matches = IMMEDIATE REJECTION
+#!/bin/bash
+# .git/hooks/pre-commit
+
+./scripts/validation/check-test-anti-patterns.sh
+
+if [ $? -ne 0 ]; then
+    echo "❌ Test anti-patterns detected. Commit blocked."
+    exit 1
+fi
 ```
 
-### **ANTI-PATTERN 5: HTTP SERVER IN INTEGRATION TESTS (CRITICAL)**
+**Setup**: Run `./scripts/setup-githooks.sh` to install
 
-**Definition**: Using HTTP server/endpoint in integration tests instead of calling business logic directly
+---
 
-**SEVERITY**: Critical - Violates testing tier boundaries (per [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc))
+### **CI/CD Integration**
 
-**DISCOVERED**: 2026-01-12 during RR Reconstruction feature development
+**Pipeline**: Tests automatically checked in pull requests
+**Blocking**: PR cannot merge with anti-pattern violations
+**Reporting**: Detailed violation report in PR comments
 
-**WHY THIS IS WRONG**:
-- Integration tests MUST test business logic with real infrastructure (database, etc.)
-- HTTP layer testing belongs in E2E tests (10-15% coverage tier)
-- Using HTTP server conflates integration and E2E testing tiers
-- Prevents proper testing pyramid architecture
+---
 
-**❌ VIOLATION EXAMPLES**:
-```go
-// ❌ WRONG: Integration test using HTTP server
-testServer, err := server.NewServer(db.DB, redisClient, logger)
-req := httptest.NewRequest(http.MethodPost, "/api/v1/endpoint", nil)
-rr := httptest.NewRecorder()
-testServer.ServeHTTP(rr, req)                    // ❌ VIOLATION: HTTP testing in integration tests
+## 📊 **REMEDIATION WORKFLOW**
 
-// Asserting HTTP responses in integration tests
-Expect(rr.Code).To(Equal(http.StatusOK))         // ❌ VIOLATION: Testing HTTP status codes
-var response map[string]interface{}
-json.Unmarshal(rr.Body.Bytes(), &response)       // ❌ VIOLATION: Testing JSON serialization
+### **Step 1: Identify Violations**
+
+```bash
+# Run detection with file locations
+./scripts/validation/check-test-anti-patterns.sh --verbose
 ```
 
-**✅ CORRECT INTEGRATION TESTING**:
+### **Step 2: Fix Pattern**
+
 ```go
-// ✅ CORRECT: Integration test calls business logic directly
-// Test with REAL database, REAL business components
-events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
-Expect(err).ToNot(HaveOccurred())
-
-parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
-for _, event := range events {
-    parsed, err := reconstruction.ParseAuditEvent(event)
-    Expect(err).ToNot(HaveOccurred())
-    parsedData = append(parsedData, *parsed)
-}
-
-rrFields, err := reconstruction.MergeAuditData(parsedData)
-Expect(err).ToNot(HaveOccurred())
-
-rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
-Expect(err).ToNot(HaveOccurred())
-
-// Assert business outcomes, NOT HTTP responses
-Expect(rr.Spec.SignalName).To(Equal("HighCPU"))
-Expect(rr.Status.TimeoutConfig.Global.Duration).To(Equal(time.Hour))
-```
-
-**✅ CORRECT E2E TESTING (For HTTP Layer)**:
-```go
-// ✅ CORRECT: E2E test uses OpenAPI client for HTTP endpoint
-client, _ := ogenclient.NewClient("http://data-storage-service:8080")
-response, err := client.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
-    CorrelationID: correlationID,
+// BEFORE (NULL-TESTING)
+It("should return a result", func() {
+    result := engine.Process(input)
+    Expect(result).ToNot(BeNil())
 })
 
-// Assert HTTP-level concerns
-Expect(err).ToNot(HaveOccurred())
-Expect(response.RemediationRequestYaml).ToNot(BeEmpty())
-Expect(response.Validation.IsValid).To(BeTrue())
+// AFTER (BUSINESS OUTCOME)
+It("should process workflow and return ready status (BR-WF-001)", func() {
+    result := engine.Process(input)
+    Expect(result.Status).To(Equal(business.StatusReady))
+    Expect(result.CanExecute()).To(BeTrue())
+})
 ```
 
-**TESTING TIER DECISION MATRIX**:
+### **Step 3: Validate Fix**
 
-| Question | Unit | Integration | E2E |
-|----------|------|-------------|-----|
-| Uses httptest.NewRecorder()? | ❌ Never | ❌ Never | ✅ Yes |
-| Uses testServer.ServeHTTP()? | ❌ Never | ❌ Never | ✅ Yes |
-| Calls business logic directly? | ✅ Yes | ✅ Yes | ❌ No |
-| Uses OpenAPI client? | ❌ No | ❌ No | ✅ Yes |
-| Tests HTTP status codes? | ❌ No | ❌ No | ✅ Yes |
-| Tests JSON serialization? | ❌ No | ❌ No | ✅ Yes |
-| Uses real database? | ❌ No (mock) | ✅ Yes | ✅ Yes |
-
-**Automated Detection**:
 ```bash
-# Detect HTTP SERVER usage in integration tests
-grep -r "testServer\.ServeHTTP\|httptest\.NewRecorder\|NewServer.*http" test/integration/ --include="*_test.go"
-# Any matches in test/integration/ = IMMEDIATE REJECTION
+# Re-run tests
+go test ./test/unit/workflow/... -v
 
-# Verify integration tests call business logic directly
-grep -r "\.Query.*ForReconstruction\|\.Parse.*Event\|\.Build.*Request\|\.Validate.*RR" test/integration/ --include="*_test.go"
-# No matches = MISSING BUSINESS LOGIC CALLS
-```
+# Re-run anti-pattern detection
+./scripts/validation/check-test-anti-patterns.sh
 
-**REFERENCE AUTHORITY**:
-- **Testing Strategy**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) - Testing pyramid and tier boundaries
-- **Testing Tiers Guide**: `docs/development/SOC2/RECONSTRUCTION_TESTING_TIERS.md` - Detailed tier specifications
-- **Coverage Standards**: [15-testing-coverage-standards.mdc](mdc:.cursor/rules/15-testing-coverage-standards.mdc) - >50% integration coverage requirement
-
-**IMPACT**:
-- ❌ Incorrect: 3 integration tests using HTTP server (VIOLATED testing tier boundaries)
-- ✅ Corrected: 5 integration tests calling business logic directly (COMPLIANT with testing tiers)
-
----
-
-## 🔧 **AUTOMATED VALIDATION SCRIPTS**
-
-### **Master Validation Script**
-```bash
-#!/bin/bash
-# scripts/cursor-rule-validator.sh
-
-set -e
-
-echo "🔍 CURSOR RULE VALIDATION - TESTING ANTI-PATTERNS"
-
-VIOLATIONS=0
-
-# 1. NULL-TESTING DETECTION
-echo "Checking for NULL-TESTING violations..."
-NULL_VIOLATIONS=$(find test/ -name "*_test.go" -exec grep -H -n "ToNot(BeNil())\|ToNot(BeEmpty())\|BeNumerically(\">\".*0)" {} \; | wc -l)
-if [ "$NULL_VIOLATIONS" -gt 0 ]; then
-    echo "❌ NULL-TESTING violations found: $NULL_VIOLATIONS"
-    find test/ -name "*_test.go" -exec grep -H -n "ToNot(BeNil())\|ToNot(BeEmpty())" {} \;
-    VIOLATIONS=$((VIOLATIONS + NULL_VIOLATIONS))
-fi
-
-# 2. STATIC DATA TESTING DETECTION
-echo "Checking for STATIC DATA TESTING violations..."
-STATIC_VIOLATIONS=$(find test/ -name "*_test.go" -exec grep -H -n ".*:= \".*\".*Expect(" {} \; | wc -l)
-if [ "$STATIC_VIOLATIONS" -gt 0 ]; then
-    echo "❌ STATIC DATA TESTING violations found: $STATIC_VIOLATIONS"
-    find test/ -name "*_test.go" -exec grep -H -n ".*:= \".*\".*Expect(" {} \;
-    VIOLATIONS=$((VIOLATIONS + STATIC_VIOLATIONS))
-fi
-
-# 3. LIBRARY TESTING DETECTION
-echo "Checking for LIBRARY TESTING violations..."
-LIBRARY_VIOLATIONS=$(find test/ -name "*_test.go" -exec grep -H -n "logrus\.New()\|context\.With\|os\.Set" {} \; | wc -l)
-if [ "$LIBRARY_VIOLATIONS" -gt 0 ]; then
-    echo "❌ LIBRARY TESTING violations found: $LIBRARY_VIOLATIONS"
-    find test/ -name "*_test.go" -exec grep -H -n "logrus\.New()\|context\.With\|os\.Set" {} \;
-    VIOLATIONS=$((VIOLATIONS + LIBRARY_VIOLATIONS))
-fi
-
-# 4. BUSINESS LOGIC INTEGRATION CHECK
-echo "Checking for BUSINESS LOGIC integration..."
-MISSING_BUSINESS_LOGIC=0
-for file in $(find test/ -name "*_test.go"); do
-    if ! grep -q "github.com/jordigilh/kubernaut/pkg/" "$file"; then
-        echo "❌ MISSING BUSINESS LOGIC: $file"
-        MISSING_BUSINESS_LOGIC=$((MISSING_BUSINESS_LOGIC + 1))
-    fi
-done
-VIOLATIONS=$((VIOLATIONS + MISSING_BUSINESS_LOGIC))
-
-# 5. MOCK OVERUSE DETECTION
-echo "Checking for MOCK OVERUSE violations..."
-MOCK_VIOLATIONS=$(find test/ -name "*_test.go" -exec grep -H -n "Mock.*Engine\|Mock.*Analytics\|Mock.*Safety" {} \; | grep -v "LLM\|K8s\|Database" | wc -l)
-if [ "$MOCK_VIOLATIONS" -gt 0 ]; then
-    echo "❌ MOCK OVERUSE violations found: $MOCK_VIOLATIONS"
-    find test/ -name "*_test.go" -exec grep -H -n "Mock.*Engine\|Mock.*Analytics\|Mock.*Safety" {} \; | grep -v "LLM\|K8s\|Database"
-    VIOLATIONS=$((VIOLATIONS + MOCK_VIOLATIONS))
-fi
-
-# FINAL RESULT
-if [ "$VIOLATIONS" -gt 0 ]; then
-    echo ""
-    echo "🚨 TOTAL VIOLATIONS: $VIOLATIONS"
-    echo "❌ CURSOR RULE VALIDATION FAILED"
-    echo ""
-    echo "🔧 REMEDIATION REQUIRED:"
-    echo "1. Replace NULL-TESTING with business outcome assertions"
-    echo "2. Replace static data with dynamic test data generators"
-    echo "3. Replace library testing with business logic testing"
-    echo "4. Add business logic imports to all test files"
-    echo "5. Replace business logic mocks with real components"
-    echo ""
-    exit 1
-else
-    echo "✅ ALL CURSOR RULE VALIDATIONS PASSED"
-    exit 0
-fi
-```
-
-### **Pre-Commit Hook Installation**
-```bash
-#!/bin/bash
-# scripts/install-cursor-rule-hooks.sh
-
-echo "Installing cursor rule validation hooks..."
-
-# Create pre-commit hook
-cat > .git/hooks/pre-commit << 'EOF'
-#!/bin/bash
-# Cursor rule validation pre-commit hook
-
-echo "🔍 Running cursor rule validation..."
-
-# Run cursor rule validator
-# Prevention through APDC methodology and design patterns
-if [ $? -ne 0 ]; then
-    echo "❌ Cursor rule violations detected. Commit blocked."
-    echo "🔧 Fix violations and try again."
-    exit 1
-fi
-
-echo "✅ Cursor rule validation passed"
-EOF
-
-# Make hook executable
-chmod +x .git/hooks/pre-commit
-
-echo "✅ Cursor rule hooks installed successfully"
+# Verify BR reference added
+grep "BR-WF-001" test/unit/workflow/engine_test.go
 ```
 
 ---
 
-## 📋 **ANTI-PATTERN REMEDIATION GUIDE**
+## 🎯 **BEST PRACTICES**
 
-### **NULL-TESTING → BUSINESS OUTCOME TESTING**
+### **Writing Tests**
+
+1. ✅ **Always** reference business requirements (BR-XXX-XXX)
+2. ✅ **Always** test business outcomes, not implementation
+3. ✅ **Always** use real business logic, mock only external deps
+4. ✅ **Always** use descriptive assertions with business context
+
+### **Common Questions**
+
+**Q**: How do I know if my assertion is weak?
+**A**: If you're testing `BeNil()` or `BeEmpty()` without business context, it's weak.
+
+**Q**: What counts as "business logic" vs "external dependency"?
+**A**: Business logic = `pkg/` code. External = databases, APIs, K8s, LLM services.
+
+**Q**: Can I ever use `ToNot(BeNil())`?
+**A**: Only with business context:
 ```go
-// ❌ BEFORE: NULL-TESTING
-Expect(result).ToNot(BeNil())
-
-// ✅ AFTER: BUSINESS OUTCOME TESTING
-Expect(result.WorkflowTemplate.SafetyChecks).To(ContainElement("resource-validation"))
-Expect(result.ConfidenceScore).To(BeNumerically(">=", 0.8))
+Expect(result).ToNot(BeNil(),
+    "BR-WF-001: Workflow must return result for tracking")
 ```
 
-### **STATIC DATA → DYNAMIC DATA**
-```go
-// ❌ BEFORE: STATIC DATA
-input := "test-alert"
-Expect(output.Name).To(Equal("test-alert"))
-
-// ✅ AFTER: DYNAMIC DATA
-alertData := testutil.GenerateRealisticAlert()
-workflow, err := engine.CreateWorkflow(ctx, alertData)
-Expect(workflow.SourceAlert.ID).To(Equal(alertData.ID))
-```
-
-### **LIBRARY TESTING → BUSINESS TESTING**
-```go
-// ❌ BEFORE: LIBRARY TESTING
-logger := logrus.New()
-Expect(logger.Level).To(Equal(logrus.InfoLevel))
-
-// ✅ AFTER: BUSINESS TESTING
-analyticsEngine := insights.NewAnalyticsEngine(config)
-metrics, err := analyticsEngine.CalculateEffectiveness(workflow)
-Expect(metrics.SuccessRate).To(BeNumerically(">", 0.9))
-```
-
-### **MOCK OVERUSE → REAL BUSINESS LOGIC**
-```go
-// ❌ BEFORE: MOCK OVERUSE
-mockEngine := &MockWorkflowEngine{}
-
-// ✅ AFTER: REAL BUSINESS LOGIC
-mockLLMClient := mocks.NewMockLLMClient()  // Mock external only
-realEngine := engine.NewIntelligentWorkflowBuilder(mockLLMClient, realConfig)
-```
+**Q**: How many mocks are too many?
+**A**: >3 mocks in a single test = red flag. Use real business components instead.
 
 ---
 
-## 🎯 **QUALITY GATES**
+## 📚 **COMPLETE DOCUMENTATION**
 
-### **Commit-Level Gates**
-- **Gate 1**: No NULL-TESTING patterns allowed
-- **Gate 2**: No static data testing allowed
-- **Gate 3**: No library testing allowed
-- **Gate 4**: Business logic integration required
-- **Gate 5**: Proper mock usage enforced
+**See**: [Anti-Pattern Detection Guide](mdc:docs/testing/ANTI_PATTERN_DETECTION.md)
 
-### **CI/CD-Level Gates**
-- **Pipeline Gate**: All cursor rule validations must pass
-- **Coverage Gate**: Business logic coverage requirements met
-- **Quality Gate**: Anti-pattern detection score = 0
-
-### **Release-Level Gates**
-- **Final Validation**: Complete anti-pattern scan
-- **Business Logic Audit**: All tests validate business outcomes
-- **Mock Usage Audit**: External dependencies only
+**Complete guide includes**:
+- Detailed violation examples
+- Automated detection scripts
+- CI/CD integration details
+- Historical tracking
+- Training scenarios
 
 ---
 
-## 🔗 **INTEGRATION WITH OTHER RULES**
+## ⚡ **QUICK REFERENCE**
 
-**Enforces**: [03-testing-strategy.mdc](mdc:.cursor/rules/03-testing-strategy.mdc) pyramid testing approach
-**Supports**: [00-core-development-methodology.mdc](mdc:.cursor/rules/00-core-development-methodology.mdc) TDD methodology
-**Validates**: [12-ai-ml-development-methodology.mdc](mdc:.cursor/rules/12-ai-ml-development-methodology.mdc) AI testing patterns
-**Priority**: ENFORCEMENT - Automated quality gates that prevent anti-pattern violations
+| Anti-Pattern | Detection | Fix |
+|--------------|-----------|-----|
+| **NULL-TESTING** | `BeNil()\|BeEmpty()` | Test business outcomes |
+| **STATIC DATA** | Hardcoded strings | Use testutil generators |
+| **LIBRARY TESTING** | Testing `logrus`, `context` | Test business logic |
+| **IMPLEMENTATION** | Testing internal methods | Test public behavior |
+| **MOCK OVERUSE** | >3 mocks | Use real business components |
+
+**Command**: `make lint-test-patterns`
+
+---
+
+**Remember**: Tests validate business value, not technical implementation. Focus on outcomes, not mechanics.
