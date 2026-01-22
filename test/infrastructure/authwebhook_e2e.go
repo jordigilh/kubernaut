@@ -823,20 +823,20 @@ database:
   port: 5432
   name: action_history
   user: slm_user
-  ssl_mode: disable
-  max_open_conns: 25
-  max_idle_conns: 5
-  conn_max_lifetime: 5m
-  conn_max_idle_time: 10m
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
   passwordKey: "password"
 redis:
   addr: redis.%s.svc.cluster.local:6379
   db: 0
-  dlq_stream_name: dlq-stream
-  dlq_max_len: 1000
-  dlq_consumer_group: dlq-group
+  dlqStreamName: dlq-stream
+  dlqMaxLen: 1000
+  dlqConsumerGroup: dlq-group
   secretsFile: "/etc/datastorage/secrets/redis-secrets.yaml"
   passwordKey: "password"
 logging:
