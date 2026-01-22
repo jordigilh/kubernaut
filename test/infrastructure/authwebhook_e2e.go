@@ -278,13 +278,13 @@ func buildAuthWebhookImageOnly(writer io.Writer) (string, error) {
 	}
 
 	// Generate unique image tag using DD-TEST-001 pattern
-	imageTag := GenerateInfraImageName("webhooks", "e2e")
+	imageTag := GenerateInfraImageName("authwebhook", "e2e")
 	_, _ = fmt.Fprintf(writer, "🔨 Building AuthWebhook image: %s\n", imageTag)
 
 	cmd := exec.Command("podman", "build",
 		"--no-cache",
 		"-t", imageTag,
-		"-f", "docker/webhooks.Dockerfile",
+		"-f", "docker/authwebhook.Dockerfile",
 		".")
 	cmd.Dir = workspaceRoot
 	cmd.Stdout = writer

@@ -37,8 +37,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
 	"testing"
 	"time"
 
@@ -272,21 +270,6 @@ var _ = SynchronizedAfterSuite(
 		pruneCmd := exec.Command("podman", "image", "prune", "-f")
 		_, _ = pruneCmd.CombinedOutput()
 
-		By("Cleaning up Notification output directory")
-		// Remove the notification output directory (OS-specific path)
-		var notificationOutputDir string
-		if runtime.GOOS == "darwin" {
-			homeDir, _ := os.UserHomeDir()
-			notificationOutputDir = filepath.Join(homeDir, ".kubernaut", "ro-e2e-notifications")
-		} else {
-			notificationOutputDir = "/tmp/kubernaut-ro-e2e-notifications"
-		}
-		if err := os.RemoveAll(notificationOutputDir); err != nil {
-			GinkgoWriter.Printf("⚠️  Failed to remove notification output directory: %v\n", err)
-		} else {
-			GinkgoWriter.Printf("✅ Notification output directory removed: %s\n", notificationOutputDir)
-		}
-
 		GinkgoWriter.Println("✅ E2E cleanup complete")
 	},
 )
@@ -306,6 +289,19 @@ func createTestNamespace(prefix string) string {
 	}
 	err := k8sClient.Create(ctx, ns)
 	Expect(err).ToNot(HaveOccurred())
+
+	// Wait for namespace to be Active before proceeding
+	// This prevents race conditions where CRDs are created before namespace is fully ready
+	Eventually(func() bool {
+		updatedNS := &corev1.Namespace{}
+		err := k8sClient.Get(ctx, client.ObjectKey{Name: name}, updatedNS)
+		if err != nil {
+			return false
+		}
+		return updatedNS.Status.Phase == corev1.NamespaceActive
+	}, timeout, interval).Should(BeTrue(), "Namespace should become Active")
+
+	GinkgoWriter.Printf("✅ Namespace ready: %s\n", name)
 	return name
 }
 

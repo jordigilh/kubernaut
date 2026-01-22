@@ -159,14 +159,16 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
 		logger.Info("✅ Audit infrastructure ready")
 
-		// Deploy AuthWebhook for SOC2-compliant notification cancellations
+		// Deploy AuthWebhook manifests (using pre-built + pre-loaded image from PHASE 1 & 3)
 		// Per DD-WEBHOOK-001: Required for NotificationRequest DELETE operations
 		// Per SOC2 CC8.1: Captures WHO cancelled notifications
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		logger.Info("🔐 Deploying AuthWebhook for Cancellation Attribution")
+		logger.Info("🔐 Deploying AuthWebhook Manifests")
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-		err = infrastructure.DeployAuthWebhookToCluster(ctx, clusterName, controllerNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "AuthWebhook deployment should succeed")
+		awImage := os.Getenv("E2E_AUTHWEBHOOK_IMAGE")
+		Expect(awImage).ToNot(BeEmpty(), "AuthWebhook image should be set by infrastructure")
+		err = infrastructure.DeployAuthWebhookManifestsOnly(ctx, clusterName, controllerNamespace, kubeconfigPath, awImage, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "AuthWebhook manifest deployment should succeed")
 		logger.Info("✅ AuthWebhook deployed - SOC2 CC8.1 cancellation attribution enabled")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

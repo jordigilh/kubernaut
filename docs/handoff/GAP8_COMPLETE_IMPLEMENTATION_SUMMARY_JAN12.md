@@ -24,8 +24,8 @@
 - ✅ Integration tests validate default timeout config capture
 
 ### **Phase 3: Webhook Implementation** ✅ (NEW)
-- ✅ Created `pkg/webhooks/remediationrequest_handler.go`
-- ✅ Registered webhook in `cmd/webhooks/main.go`
+- ✅ Created `pkg/authwebhook/remediationrequest_handler.go`
+- ✅ Registered webhook in `cmd/authwebhook/main.go`
 - ✅ Updated `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml`
 - ✅ Updated RBAC ClusterRole for `remediationrequests/status`
 - ✅ Updated `test/infrastructure/authwebhook_e2e.go` CA bundle patching
@@ -37,7 +37,7 @@
 ## 📁 **Files Modified**
 
 ### **New Files Created:**
-1. `pkg/webhooks/remediationrequest_handler.go` (202 lines)
+1. `pkg/authwebhook/remediationrequest_handler.go` (202 lines)
    - `RemediationRequestStatusHandler` struct
    - `Handle()` method for admission webhook
    - `timeoutConfigChanged()` comparison logic
@@ -76,7 +76,7 @@
    - Added `webhook.remediationrequest.timeout_modified` to discriminator mapping
 
 #### **Webhook Infrastructure:**
-8. `cmd/webhooks/main.go`
+8. `cmd/authwebhook/main.go`
    - Registered `RemediationRequestStatusHandler`
    - Added webhook path `/mutate-remediationrequest`
 
@@ -212,8 +212,8 @@ if err := DeployAuthWebhookToCluster(ctx, clusterName, namespace, kubeconfigPath
 ## ✅ **Validation Checklist**
 
 ### **Build Validation:**
-- ✅ `go build ./pkg/webhooks/...` - Success
-- ✅ `go build ./cmd/webhooks/...` - Success
+- ✅ `go build ./pkg/authwebhook/...` - Success
+- ✅ `go build ./cmd/authwebhook/...` - Success
 - ✅ `go test -c ./test/integration/remediationorchestrator/...` - Success
 
 ### **Code Quality:**
@@ -224,7 +224,7 @@ if err := DeployAuthWebhookToCluster(ctx, clusterName, namespace, kubeconfigPath
 - ✅ TDD RED → GREEN → REFACTOR cycle followed
 
 ### **Integration:**
-- ✅ Handler registered in `cmd/webhooks/main.go`
+- ✅ Handler registered in `cmd/authwebhook/main.go`
 - ✅ RBAC permissions updated
 - ✅ Webhook configuration added to manifest
 - ✅ CA bundle patching updated

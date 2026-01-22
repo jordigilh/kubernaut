@@ -684,7 +684,7 @@ GET /api/v1/workflows/*           | ❌      | ❌    | ✅
 **Integration Testing**:
 - ✅ E2E tests already passing (`test/e2e/authwebhook/`)
 - ✅ 97% coverage via defense-in-depth (unit + integration + E2E)
-- ✅ Health check handlers added to `cmd/webhooks/main.go`
+- ✅ Health check handlers added to `cmd/authwebhook/main.go`
 
 ---
 

@@ -7958,8 +7958,8 @@ func (s *ErrorDetailsComponent) Decode(d *jx.Decoder) error {
 		*s = ErrorDetailsComponentRemediationorchestrator
 	case ErrorDetailsComponentSignalprocessing:
 		*s = ErrorDetailsComponentSignalprocessing
-	case ErrorDetailsComponentWebhooks:
-		*s = ErrorDetailsComponentWebhooks
+	case ErrorDetailsComponentAuthwebhook:
+		*s = ErrorDetailsComponentAuthwebhook
 	default:
 		*s = ErrorDetailsComponent(v)
 	}

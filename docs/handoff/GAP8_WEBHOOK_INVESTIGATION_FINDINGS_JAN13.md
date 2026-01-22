@@ -11,7 +11,7 @@
 
 ### **1. Webhook Handler Implementation** ✅
 
-**File**: `pkg/webhooks/remediationrequest_handler.go`
+**File**: `pkg/authwebhook/remediationrequest_handler.go`
 
 **Verified**:
 - ✅ Handler detects TimeoutConfig changes (`timeoutConfigChanged()`)
@@ -37,7 +37,7 @@ if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 
 ### **2. Webhook Registration** ✅
 
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 
 **Verified**:
 - ✅ Audit store initialized (`audit.NewBufferedStore()`)
@@ -175,7 +175,7 @@ err = k8sClient.Status().Update(ctx, rr)
 **Change**: Add verbose logging to webhook handler and test
 
 **Implementation**:
-1. Add logging in `pkg/webhooks/remediationrequest_handler.go`:
+1. Add logging in `pkg/authwebhook/remediationrequest_handler.go`:
 ```go
 func (h *RemediationRequestStatusHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
     fmt.Printf("DEBUG: Webhook received RemediationRequest update: %s/%s\n", req.Namespace, req.Name)

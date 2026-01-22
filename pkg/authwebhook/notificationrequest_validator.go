@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhooks
+package authwebhook
 
 import (
 	"context"
@@ -22,7 +22,6 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -43,7 +42,7 @@ import (
 // Reference: https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation
 // Reference: https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/
 type NotificationRequestValidator struct {
-	authenticator *authwebhook.Authenticator
+	authenticator *Authenticator
 	auditStore    audit.AuditStore
 }
 
@@ -53,7 +52,7 @@ var _ webhook.CustomValidator = &NotificationRequestValidator{}
 // NewNotificationRequestValidator creates a new NotificationRequest validator
 func NewNotificationRequestValidator(auditStore audit.AuditStore) *NotificationRequestValidator {
 	return &NotificationRequestValidator{
-		authenticator: authwebhook.NewAuthenticator(),
+		authenticator: NewAuthenticator(),
 		auditStore:    auditStore,
 	}
 }

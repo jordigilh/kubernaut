@@ -64,7 +64,7 @@ Defense-in-Depth:   50%+ of code tested in ALL 3 tiers ✅
 ✅ pkg/authwebhook/authenticator.go    (~100% - all functions tested)
 ✅ pkg/authwebhook/validator.go        (~100% - all validators tested)
 ✅ pkg/authwebhook/types.go            (~50% - struct definitions)
-⚠️ pkg/webhooks/*.go handlers          (~0% - not covered by unit tests)
+⚠️ pkg/authwebhook/*.go handlers          (~0% - not covered by unit tests)
 ```
 
 **Lines Tested**: ~200-250 lines (auth extraction, validation)
@@ -83,9 +83,9 @@ Defense-in-Depth:   50%+ of code tested in ALL 3 tiers ✅
 
 **Code Covered**:
 ```go
-✅ pkg/webhooks/workflowexecution_handler.go        (80-90%)
-✅ pkg/webhooks/remediationapprovalrequest_handler.go (80-90%)
-✅ pkg/webhooks/notificationrequest_handler.go       (80-90%)
+✅ pkg/authwebhook/workflowexecution_handler.go        (80-90%)
+✅ pkg/authwebhook/remediationapprovalrequest_handler.go (80-90%)
+✅ pkg/authwebhook/notificationrequest_handler.go       (80-90%)
 ✅ pkg/authwebhook/authenticator.go                  (100%)
 ✅ pkg/authwebhook/validator.go                      (100%)
 ```
@@ -106,7 +106,7 @@ Defense-in-Depth:   50%+ of code tested in ALL 3 tiers ✅
 
 **Code Covered**:
 ```go
-✅ pkg/webhooks/*.go handlers               (60-70% - production paths)
+✅ pkg/authwebhook/*.go handlers               (60-70% - production paths)
 ✅ pkg/authwebhook/*                        (70-80% - real K8s context)
 ⚠️ Error paths (K8s API failures)          (20-30% - hard to trigger)
 ⚠️ Edge cases (TLS failures, timeouts)     (10-20% - infrastructure specific)
@@ -138,9 +138,9 @@ TOTAL:       178-198%  ❌ IMPOSSIBLE!
 
 **Total Webhook Code**: ~600-700 lines
 ```
-pkg/webhooks/*.go:       ~400 lines (handlers)
+pkg/authwebhook/*.go:       ~400 lines (handlers)
 pkg/authwebhook/*.go:    ~200 lines (auth/validation)
-cmd/webhooks/main.go:    ~100 lines (setup)
+cmd/authwebhook/main.go:    ~100 lines (setup)
 ```
 
 **Coverage by Component**:
@@ -327,7 +327,7 @@ cmd/webhooks/main.go:    ~100 lines (setup)
 
 | Area | Current | Target | Effort | Business Value |
 |------|---------|--------|--------|----------------|
-| **Main setup (cmd/webhooks/main.go)** | 50% | 70% | 2 hours | Low (startup code) |
+| **Main setup (cmd/authwebhook/main.go)** | 50% | 70% | 2 hours | Low (startup code) |
 | **Error paths (K8s failures)** | 50% | 70% | 3 hours | Medium (error handling) |
 | **TLS failure scenarios** | 20% | 50% | 2 hours | Medium (security) |
 | **Webhook registration failures** | 10% | 40% | 2 hours | Medium (deployment) |

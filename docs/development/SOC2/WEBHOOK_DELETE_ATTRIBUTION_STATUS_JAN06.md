@@ -98,9 +98,9 @@ description: |
 ### **3. Webhook Handlers Updated**
 
 **Files Updated**:
-- `pkg/webhooks/notificationrequest_handler.go`
-- `pkg/webhooks/workflowexecution_handler.go`
-- `pkg/webhooks/remediationapprovalrequest_handler.go`
+- `pkg/authwebhook/notificationrequest_handler.go`
+- `pkg/authwebhook/workflowexecution_handler.go`
+- `pkg/authwebhook/remediationapprovalrequest_handler.go`
 
 **Before** (Wrong - Used Business Domain):
 ```go

@@ -16,7 +16,7 @@
 
 ### Why E2E Tests Fail
 ```
-Error: building at STEP "RUN ... go build ./cmd/webhooks/main.go"
+Error: building at STEP "RUN ... go build ./cmd/authwebhook/main.go"
 pkg/datastorage/client/generated.go:2375:4: v.EventType undefined (type AIAnalysisPhaseTransitionPayload has no field or method EventType)
 ```
 

@@ -261,7 +261,7 @@
 **Breakdown**:
 
 #### **Phase 1: Webhook Service Scaffolding** (1.5 days)
-- Create `cmd/webhooks/main.go` with HTTP server
+- Create `cmd/authwebhook/main.go` with HTTP server
 - Support both Mutating AND Validating webhook configurations
 - Register 4 endpoint handlers
 - **+0.5 days** for ValidatingWebhookConfiguration support
@@ -332,7 +332,7 @@
 | Component | Status | Next Action |
 |-----------|--------|-------------|
 | **Shared Library** | ✅ **COMPLETE** | None - ready to use |
-| **Webhook Service** | ❌ **NOT STARTED** | Create `cmd/webhooks/main.go` |
+| **Webhook Service** | ❌ **NOT STARTED** | Create `cmd/authwebhook/main.go` |
 | **CRD Handlers** | ❌ **NOT STARTED** | Implement **4 handlers** (corrected) |
 | **K8s Config** | ❌ **NOT STARTED** | Create **2 webhook configs** (Mutating + Validating) |
 | **Tests** | ❌ **NOT STARTED** | **92 tests** (72 unit + 12 integration + 8 E2E) |

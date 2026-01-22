@@ -161,7 +161,7 @@ validateEventData(event, map[string]string{...})
 
 **Webhook Handler Behavior**:
 ```go
-// pkg/webhooks/notificationrequest_handler.go:117
+// pkg/authwebhook/notificationrequest_handler.go:117
 CorrelationID: nr.Name,  // Uses NotificationRequest name
 ```
 
@@ -242,12 +242,12 @@ auditStore, err = audit.NewBufferedStore(
 ### **Phase 3: WorkflowExecution & RemediationApprovalRequest Handlers** (Future)
 **Prerequisite**: DD-WEBHOOK-003 (Webhook-Complete Audit Pattern)
 
-1. Update `pkg/webhooks/workflowexecution_handler.go`:
+1. Update `pkg/authwebhook/workflowexecution_handler.go`:
    - Accept `audit.AuditStore` in constructor
    - Write complete audit event on UPDATE for block clearance
    - Use `WorkflowExecution.Name` as correlation ID
 
-2. Update `pkg/webhooks/remediationapprovalrequest_handler.go`:
+2. Update `pkg/authwebhook/remediationapprovalrequest_handler.go`:
    - Accept `audit.AuditStore` in constructor
    - Write complete audit event on UPDATE for approval decisions
    - Use `RemediationApprovalRequest.Name` as correlation ID

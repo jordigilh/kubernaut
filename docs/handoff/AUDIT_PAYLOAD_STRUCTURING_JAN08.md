@@ -115,16 +115,16 @@ Eliminate all `map[string]interface{}` violations in audit event construction ac
 ### **6. Webhooks (4 violations)**
 
 **Files Created**:
-- `pkg/webhooks/audit_types.go` - Structured `NotificationAuditPayload`, `WorkflowExecutionAuditPayload`, `RemediationApprovalAuditPayload`
+- `pkg/authwebhook/audit_types.go` - Structured `NotificationAuditPayload`, `WorkflowExecutionAuditPayload`, `RemediationApprovalAuditPayload`
 
 **Files Modified**:
-- `pkg/webhooks/notificationrequest_handler.go`
+- `pkg/authwebhook/notificationrequest_handler.go`
   - Line 105-114: `HandleNotificationCancel` - Uses `NotificationAuditPayload`
-- `pkg/webhooks/workflowexecution_handler.go`
+- `pkg/authwebhook/workflowexecution_handler.go`
   - Line 112-126: `HandleWorkflowUnblock` - Uses `WorkflowExecutionAuditPayload`
-- `pkg/webhooks/remediationapprovalrequest_handler.go`
+- `pkg/authwebhook/remediationapprovalrequest_handler.go`
   - Line 112-126: `HandleApprovalDecision` - Uses `RemediationApprovalAuditPayload`
-- `pkg/webhooks/notificationrequest_validator.go`
+- `pkg/authwebhook/notificationrequest_validator.go`
   - Line 123-138: `ValidateDelete` - Uses `NotificationAuditPayload`
 
 **Key Changes**:
@@ -175,7 +175,7 @@ audit.SetEventData(event, payload)  // Direct assignment!
 | `pkg/gateway/audit_types.go` | 171 | Gateway audit payload types |
 | `pkg/signalprocessing/audit_types.go` | 201 | SignalProcessing audit payload types |
 | `pkg/aianalysis/audit_types.go` | 121 | AIAnalysis audit payload types |
-| `pkg/webhooks/audit_types.go` | 203 | Webhooks audit payload types (3 types) |
+| `pkg/authwebhook/audit_types.go` | 203 | Webhooks audit payload types (3 types) |
 | **Total** | **1,018** | **6 new files** |
 
 ---
@@ -189,10 +189,10 @@ audit.SetEventData(event, payload)  // Direct assignment!
 | `pkg/gateway/server.go` | 4 | ~80 |
 | `pkg/signalprocessing/audit/client.go` | 6 | ~150 |
 | `pkg/aianalysis/audit/audit.go` | 1 | ~10 |
-| `pkg/webhooks/notificationrequest_handler.go` | 1 | ~10 |
-| `pkg/webhooks/workflowexecution_handler.go` | 1 | ~10 |
-| `pkg/webhooks/remediationapprovalrequest_handler.go` | 1 | ~10 |
-| `pkg/webhooks/notificationrequest_validator.go` | 1 | ~10 |
+| `pkg/authwebhook/notificationrequest_handler.go` | 1 | ~10 |
+| `pkg/authwebhook/workflowexecution_handler.go` | 1 | ~10 |
+| `pkg/authwebhook/remediationapprovalrequest_handler.go` | 1 | ~10 |
+| `pkg/authwebhook/notificationrequest_validator.go` | 1 | ~10 |
 | **Total** | **18** | **~325** |
 
 ---

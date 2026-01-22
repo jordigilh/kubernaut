@@ -29,7 +29,7 @@ Test Suite Passed
 **Kubebuilder CustomValidator Pattern** successfully implemented for DELETE operations in envtest:
 
 ```go
-// pkg/webhooks/notificationrequest_validator.go
+// pkg/authwebhook/notificationrequest_validator.go
 type NotificationRequestValidator struct {
     authenticator *authwebhook.Authenticator
     auditStore    audit.AuditStore
@@ -208,7 +208,7 @@ enum: [gateway, notification, analysis, signalprocessing, workflow, execution, o
 
 ### Code Changes
 
-1. **`pkg/webhooks/notificationrequest_validator.go`**
+1. **`pkg/authwebhook/notificationrequest_validator.go`**
    - New file implementing Kubebuilder CustomValidator
    - `ValidateDelete()` method for DELETE attribution
    - Audit event creation with standard fields

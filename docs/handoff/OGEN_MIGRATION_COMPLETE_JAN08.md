@@ -322,14 +322,14 @@ After examining the Q2 reference file (`pkg/workflowexecution/audit/manager.go`)
 ### **Compilation Errors**
 
 ```bash
-$ go build ./pkg/webhooks/...
+$ go build ./pkg/authwebhook/...
 
-# github.com/jordigilh/kubernaut/pkg/webhooks
-pkg/webhooks/notificationrequest_handler.go:107:13: undefined: NotificationAuditPayload
-pkg/webhooks/notificationrequest_validator.go:125:13: undefined: NotificationAuditPayload
-pkg/webhooks/remediationapprovalrequest_handler.go:114:13: undefined: RemediationApprovalAuditPayload
-pkg/webhooks/workflowexecution_handler.go:114:13: undefined: WorkflowExecutionAuditPayload
-pkg/webhooks/*_handler.go:118:36: auditEvent.CorrelationId undefined (field is CorrelationID)
+# github.com/jordigilh/kubernaut/pkg/authwebhook
+pkg/authwebhook/notificationrequest_handler.go:107:13: undefined: NotificationAuditPayload
+pkg/authwebhook/notificationrequest_validator.go:125:13: undefined: NotificationAuditPayload
+pkg/authwebhook/remediationapprovalrequest_handler.go:114:13: undefined: RemediationApprovalAuditPayload
+pkg/authwebhook/workflowexecution_handler.go:114:13: undefined: WorkflowExecutionAuditPayload
+pkg/authwebhook/*_handler.go:118:36: auditEvent.CorrelationId undefined (field is CorrelationID)
 ```
 
 ### **Root Cause**
@@ -365,10 +365,10 @@ Standard ogen casing issue: `CorrelationId` → `CorrelationID` (4 occurrences)
 
 | File | Lines | Issues | Effort |
 |------|-------|--------|--------|
-| `pkg/webhooks/workflowexecution_handler.go` | ~150 | Missing import, undefined type, casing | ~10 min |
-| `pkg/webhooks/remediationapprovalrequest_handler.go` | ~140 | Missing import, undefined type, casing | ~10 min |
-| `pkg/webhooks/notificationrequest_handler.go` | ~130 | Missing import, undefined type, casing | ~10 min |
-| `pkg/webhooks/notificationrequest_validator.go` | ~150 | Missing import, undefined type, casing | ~10 min |
+| `pkg/authwebhook/workflowexecution_handler.go` | ~150 | Missing import, undefined type, casing | ~10 min |
+| `pkg/authwebhook/remediationapprovalrequest_handler.go` | ~140 | Missing import, undefined type, casing | ~10 min |
+| `pkg/authwebhook/notificationrequest_handler.go` | ~130 | Missing import, undefined type, casing | ~10 min |
+| `pkg/authwebhook/notificationrequest_validator.go` | ~150 | Missing import, undefined type, casing | ~10 min |
 
 **Total Effort**: ~40 minutes (following Team Migration Guide Pattern 1)
 
@@ -501,7 +501,7 @@ func NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(
 
 #### **Current Webhook Code** (Already Correct!)
 
-**File**: `pkg/webhooks/workflowexecution_handler.go` lines 114-120
+**File**: `pkg/authwebhook/workflowexecution_handler.go` lines 114-120
 
 ```go
 // ❌ ONLY ISSUE: Missing ogenclient import!
@@ -578,14 +578,14 @@ Document claims webhook tests are migrated, but if business logic doesn't compil
 >
 > **Migration Sequence (AUTHORITATIVE)**:
 > 1. **Business Logic First** (~40 minutes):
->    - Fix 4 webhook handler files (`pkg/webhooks/*_handler.go`, `*_validator.go`)
+>    - Fix 4 webhook handler files (`pkg/authwebhook/*_handler.go`, `*_validator.go`)
 >    - Add ogen client imports
 >    - Use ogen union constructors
 >    - Fix OptString field assignments
 >    - Fix field casing (Id → ID)
 >
 > 2. **Then Tests** (~10-15 minutes):
->    - Validate test compilation: `go build ./pkg/webhooks/...`
+>    - Validate test compilation: `go build ./pkg/authwebhook/...`
 >    - Apply same patterns if errors found
 >    - Likely changes: imports, EventData access patterns, field casing
 >
@@ -868,7 +868,7 @@ func (h *WorkflowExecutionAuthHandler) Handle(...) {
 2. [ ] Map webhook fields to ogen schema fields
 3. [ ] Fix field casing (`CorrelationId` → `CorrelationID`)
 4. [ ] Use ogen union constructors
-5. [ ] Validate compilation: `go build ./pkg/webhooks/...`
+5. [ ] Validate compilation: `go build ./pkg/authwebhook/...`
 6. [ ] Run webhook tests (if exist)
 7. [ ] Run AuthWebhook E2E: `make test-e2e-authwebhook`
 

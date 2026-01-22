@@ -20,11 +20,11 @@
 
 ### **Files Updated**
 
-1. **`pkg/webhooks/notificationrequest_validator.go`**
+1. **`pkg/authwebhook/notificationrequest_validator.go`**
    - Changed: `audit.SetEventType(auditEvent, "notification.request.deleted")`
    - To: `audit.SetEventType(auditEvent, "notification.request.cancelled") // DD-WEBHOOK-001 line 349`
 
-2. **`pkg/webhooks/notificationrequest_handler.go`**
+2. **`pkg/authwebhook/notificationrequest_handler.go`**
    - Changed: `audit.SetEventType(auditEvent, "notification.request.deleted")`
    - To: `audit.SetEventType(auditEvent, "notification.request.cancelled") // DD-WEBHOOK-001 line 349`
 

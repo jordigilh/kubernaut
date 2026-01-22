@@ -189,7 +189,7 @@ It("should capture operator identity in audit trail", func() {
 1. Pass `audit.AuditStore` to `NewWorkflowExecutionAuthHandler()`
 2. Pass `audit.AuditStore` to `NewRemediationApprovalRequestAuthHandler()`
 3. Write complete audit events with WHO/WHAT/ACTION details
-4. Update `cmd/webhooks/main.go` to replace `noOpAuditManager`
+4. Update `cmd/authwebhook/main.go` to replace `noOpAuditManager`
 
 ### **Phase 3: E2E Tests** (Days 5-6)
 

@@ -283,7 +283,7 @@ It("should handle concurrent webhook requests", func() {
 **Alternative**: If high priority, implement **performance benchmarks** instead:
 ```bash
 # Run as Go benchmark (not integration test)
-go test -bench=BenchmarkWebhookConcurrent -benchmem pkg/webhooks/...
+go test -bench=BenchmarkWebhookConcurrent -benchmem pkg/authwebhook/...
 ```
 
 ---

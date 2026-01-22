@@ -77,8 +77,8 @@
 | **OpenAPI** | Already correct ✅ | *(unchanged)* |
 
 **Files Modified**:
-- `pkg/webhooks/notificationrequest_validator.go`
-- `pkg/webhooks/notificationrequest_handler.go`
+- `pkg/authwebhook/notificationrequest_validator.go`
+- `pkg/authwebhook/notificationrequest_handler.go`
 - `test/integration/authwebhook/notificationrequest_test.go`
 
 **Authority**: DD-WEBHOOK-001 line 349

@@ -209,8 +209,6 @@ func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) 
 // PostgreSQL-only architecture (SOC2 audit storage)
 //
 // Based on SignalProcessing reference implementation (test/infrastructure/signalprocessing.go:246)
-// SetupDataStorageInfrastructureParallel sets up DataStorage E2E infrastructure with OAuth2-Proxy.
-// TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io (no manual build/load).
 func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, kubeconfigPath, namespace, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 DataStorage E2E Infrastructure (HYBRID PATTERN)")
@@ -338,7 +336,6 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	}()
 	go func() {
 		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar (image from quay.io)
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
@@ -379,8 +376,6 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 // dataStorageImage: DD-TEST-001 compliant image tag (e.g., "datastorage:holmesgpt-api-a1b2c3d4")
 //
 // PostgreSQL-only architecture (SOC2 audit storage)
-// DeployDataStorageTestServices deploys DataStorage with OAuth2-Proxy for testing.
-// TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io.
 func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
@@ -411,8 +406,8 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service with OAuth2-Proxy (TD-E2E-001 Phase 1 - image from quay.io)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar (quay.io)...\n")
+	// 5. Deploy Data Storage Service
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
@@ -441,8 +436,6 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 //
 //	// Gateway E2E: Uses NodePort 30081 (per kind-gateway-config.yaml)
 //	DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, image, 30081, writer)
-// DeployDataStorageTestServicesWithNodePort deploys DataStorage with OAuth2-Proxy using a specific NodePort.
-// TD-E2E-001 Phase 1: OAuth2-Proxy pulled automatically from quay.io.
 func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Deploying Data Storage Test Services in Namespace: %s\n", namespace)
@@ -474,8 +467,8 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 5. Deploy Data Storage Service with OAuth2-Proxy and custom NodePort (TD-E2E-001 Phase 1 - image from quay.io)
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy from quay.io (NodePort %d)...\n", nodePort)
+	// 5. Deploy Data Storage Service with custom NodePort
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service (NodePort %d)...\n", nodePort)
 	if err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, nodePort, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage Service: %w", err)
 	}
@@ -880,18 +873,16 @@ func ApplyMigrations(ctx context.Context, namespace, kubeconfigPath string, writ
 
 // deployDataStorageServiceInNamespace deploys DataStorage with OAuth2-Proxy sidecar using default NodePort.
 // TD-E2E-001 Phase 1: All E2E deployments now include oauth2-proxy for SOC2 architecture parity.
-// OAuth2-Proxy image pulled automatically from quay.io (public registry).
-func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
-	return deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30081, writer)
+func deployDataStorageServiceInNamespace(ctx context.Context, namespace, kubeconfigPath, dataStorageImage, oauth2ProxyImage string, writer io.Writer) error {
+	return deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, oauth2ProxyImage, 30081, writer)
 }
 
 // deployDataStorageServiceInNamespaceWithNodePort deploys DataStorage with OAuth2-Proxy sidecar.
 // Architecture: Service:8080 → oauth2-proxy:8080 → DataStorage:8081
 // TD-E2E-001 Phase 1: Pass-through mode (--skip-auth-regex=.*) for architecture parity without breaking existing tests.
-// OAuth2-Proxy image: quay.io/oauth2-proxy/oauth2-proxy:v7.5.1 (pulled automatically by Kubernetes).
-func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, nodePort int32, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with OAuth2-Proxy sidecar (public registry: quay.io)...\n")
-
+func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage, oauth2ProxyImage string, nodePort int32, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with OAuth2-Proxy sidecar (Phase 1: Pass-Through Mode)...\n")
+	
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return err
@@ -1062,30 +1053,24 @@ password: test_password`,
 					}(),
 				Containers: []corev1.Container{
 					// Container 1: oauth2-proxy sidecar (TD-E2E-001 Phase 1: SOC2 architecture parity)
-					// Image pulled automatically from public registry (no manual build/load needed)
 					{
 						Name:            "oauth2-proxy",
-						Image:           "quay.io/oauth2-proxy/oauth2-proxy:v7.5.1",
-						ImagePullPolicy: corev1.PullIfNotPresent, // Pull from quay.io if not cached
+						Image:           oauth2ProxyImage,
+						ImagePullPolicy: corev1.PullNever,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "http",
 								ContainerPort: 8080, // External port (Service routes here)
 							},
 						},
-					Args: []string{
-						"--http-address=0.0.0.0:8080",
-						"--upstream=http://localhost:8081",      // Forward to DataStorage internal port
-						"--skip-auth-regex=.*",                  // Phase 1: Pass-through mode (no real auth)
-						"--set-xauthrequest=true",               // Still inject X-Forwarded-User header
-						"--pass-user-headers=true",              // Pass through headers
-						"--email-domain=*",                      // Allow all email domains
-						"--provider=google",                     // Dummy provider (not used in pass-through)
-						"--client-id=e2e-test-client",           // Dummy client-id (not used in pass-through)
-						"--client-secret=e2e-test-secret",       // Dummy client-secret (not used in pass-through)
-						"--cookie-secret=0123456789ABCDEF0123456789ABCDEF", // Dummy 32-char secret (not used)
-						"--skip-provider-button=true",           // No provider UI
-					},
+						Args: []string{
+							"--http-address=0.0.0.0:8080",
+							"--upstream=http://localhost:8081", // Forward to DataStorage internal port
+							"--skip-auth-regex=.*",             // Phase 1: Pass-through mode (no real auth)
+							"--set-xauthrequest=true",          // Still inject X-Forwarded-User header
+							"--pass-user-headers=true",
+							"--email-domain=*",
+						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
 								corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -2255,3 +2240,300 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	return nil
 }
 
+// DeployDataStorageWithOAuth2Proxy deploys DataStorage with oauth2-proxy sidecar in E2E pass-through mode.
+//
+// Architecture (matches production):
+//   Service:8080 → oauth2-proxy:8080 → DataStorage:8081
+//
+// Configuration (E2E pass-through mode):
+//   - --skip-auth-regex=.*  (allow all requests, no real OAuth)
+//   - --set-xauthrequest=true (still inject X-Forwarded-User header from existing mock transport)
+//
+// Authority: TD-E2E-001 Phase 1, DD-AUTH-007, DD-AUTH-004
+//
+// Phase 1 Goal: Architecture parity (sidecar deployed, port routing correct)
+// Phase 2 Goal: Real OAuth testing (ServiceAccount tokens, RBAC, auth failures)
+func DeployDataStorageWithOAuth2Proxy(ctx context.Context, namespace, kubeconfigPath, dataStorageImage, oauth2ProxyImage string, writer io.Writer) error {
+	return deployDataStorageWithOAuth2ProxyAndNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, oauth2ProxyImage, 0, writer)
+}
+
+// deployDataStorageWithOAuth2ProxyAndNodePort is the internal implementation with optional NodePort support
+func deployDataStorageWithOAuth2ProxyAndNodePort(ctx context.Context, namespace, kubeconfigPath, dataStorageImage, oauth2ProxyImage string, nodePort int32, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "📦 Deploying DataStorage with OAuth2-Proxy sidecar (Phase 1: Pass-Through Mode)...\n")
+
+	// Load kubeconfig
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to load kubeconfig: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	// Determine NodePort for Service
+	serviceNodePort := nodePort
+	if nodePort == 0 {
+		// Use default E2E port per DD-TEST-001
+		serviceNodePort = 30090
+	}
+
+	// Create ConfigMap for DataStorage
+	configYAML := `server:
+  port: 8081  # Internal port (behind oauth2-proxy)
+  host: "0.0.0.0"
+
+database:
+  host: "postgres"
+  port: 5432
+  database: "slm_db"
+  sslmode: "disable"
+  maxConnections: 25
+  maxIdleConnections: 5
+  connectionMaxLifetime: "1h"
+
+redis:
+  enabled: false
+
+deadLetterQueue:
+  enabled: false
+
+logging:
+  level: "info"
+  format: "json"
+
+metrics:
+  enabled: true
+  port: 9181`
+
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-config",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"config.yaml": configYAML,
+		},
+	}
+
+	if _, err := clientset.CoreV1().ConfigMaps(namespace).Create(ctx, configMap, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create DataStorage ConfigMap: %w", err)
+	}
+
+	// Create Secret for database credentials
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage-secret",
+			Namespace: namespace,
+		},
+		StringData: map[string]string{
+			"db-secrets.yaml":    `username: slm_user\npassword: test_password`,
+			"redis-secrets.yaml": `password: ""`,
+		},
+	}
+
+	if _, err := clientset.CoreV1().Secrets(namespace).Create(ctx, secret, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create DataStorage Secret: %w", err)
+	}
+
+	// Create Service (routes to oauth2-proxy:8080)
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "datastorage"},
+		},
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{
+				{
+					Name:       "http",
+					Port:       8080, // External port (oauth2-proxy)
+					TargetPort: intstr.FromInt(8080),
+					NodePort:   serviceNodePort,
+					Protocol:   corev1.ProtocolTCP,
+				},
+			},
+			Selector: map[string]string{"app": "datastorage"},
+		},
+	}
+
+	if _, err := clientset.CoreV1().Services(namespace).Create(ctx, service, metav1.CreateOptions{}); err != nil {
+		return fmt.Errorf("failed to create DataStorage service: %w", err)
+	}
+
+	// Create Deployment with oauth2-proxy sidecar
+	replicas := int32(1)
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "datastorage",
+			Namespace: namespace,
+			Labels:    map[string]string{"app": "datastorage"},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "datastorage"},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "datastorage"},
+				},
+				Spec: corev1.PodSpec{
+					NodeSelector: map[string]string{
+						"node-role.kubernetes.io/control-plane": "",
+					},
+					Tolerations: []corev1.Toleration{
+						{
+							Key:      "node-role.kubernetes.io/control-plane",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+					},
+					Containers: []corev1.Container{
+						// Container 1: oauth2-proxy (E2E pass-through mode)
+						{
+							Name:            "oauth2-proxy",
+							Image:           oauth2ProxyImage,
+							ImagePullPolicy: corev1.PullNever,
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "http",
+									ContainerPort: 8080, // External port
+								},
+							},
+							Args: []string{
+								"--http-address=0.0.0.0:8080",
+								"--upstream=http://localhost:8081", // Forward to DataStorage
+								"--skip-auth-regex=.*",             // E2E Phase 1: Pass-through mode (no real auth)
+								"--set-xauthrequest=true",          // Still inject X-Forwarded-User header
+								"--pass-user-headers=true",
+								"--email-domain=*",
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+									corev1.ResourceMemory: resource.MustParse("20Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("100Mi"),
+								},
+							},
+						},
+						// Container 2: DataStorage (internal port 8081)
+						{
+							Name:            "datastorage",
+							Image:           dataStorageImage,
+							ImagePullPolicy: corev1.PullNever,
+							Ports: []corev1.ContainerPort{
+								{
+									Name:          "http-internal",
+									ContainerPort: 8081, // Internal port (behind oauth2-proxy)
+								},
+								{
+									Name:          "metrics",
+									ContainerPort: 9181,
+								},
+							},
+							Env: func() []corev1.EnvVar {
+								envVars := []corev1.EnvVar{
+									{
+										Name:  "CONFIG_PATH",
+										Value: "/etc/datastorage/config.yaml",
+									},
+								}
+								// DD-TEST-007: E2E Coverage
+								if os.Getenv("E2E_COVERAGE") == "true" {
+									envVars = append(envVars, corev1.EnvVar{
+										Name:  "GOCOVERDIR",
+										Value: "/coverdata",
+									})
+								}
+								return envVars
+							}(),
+							VolumeMounts: func() []corev1.VolumeMount {
+								mounts := []corev1.VolumeMount{
+									{
+										Name:      "config",
+										MountPath: "/etc/datastorage",
+										ReadOnly:  true,
+									},
+									{
+										Name:      "secrets",
+										MountPath: "/etc/datastorage/secrets",
+										ReadOnly:  true,
+									},
+								}
+								if os.Getenv("E2E_COVERAGE") == "true" {
+									mounts = append(mounts, corev1.VolumeMount{
+										Name:      "coverage",
+										MountPath: "/coverdata",
+									})
+								}
+								return mounts
+							}(),
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("1000m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+							},
+						},
+					},
+					Volumes: func() []corev1.Volume {
+						volumes := []corev1.Volume{
+							{
+								Name: "config",
+								VolumeSource: corev1.VolumeSource{
+									ConfigMap: &corev1.ConfigMapVolumeSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: "datastorage-config",
+										},
+									},
+								},
+							},
+							{
+								Name: "secrets",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName: "datastorage-secret",
+									},
+								},
+							},
+						}
+						if os.Getenv("E2E_COVERAGE") == "true" {
+							volumes = append(volumes, corev1.Volume{
+								Name: "coverage",
+								VolumeSource: corev1.VolumeSource{
+									HostPath: &corev1.HostPathVolumeSource{
+										Path: "/coverdata",
+										Type: func() *corev1.HostPathType {
+											t := corev1.HostPathDirectoryOrCreate
+											return &t
+										}(),
+									},
+								},
+							})
+						}
+						return volumes
+					}(),
+				},
+			},
+		},
+	}
+
+	_, err = clientset.AppsV1().Deployments(namespace).Create(ctx, deployment, metav1.CreateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to create DataStorage Deployment with OAuth2-Proxy: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage + OAuth2-Proxy sidecar deployed (Service:8080 → proxy:8080 → DS:8081)\n")
+	_, _ = fmt.Fprintf(writer, "   ℹ️  Phase 1: Pass-through mode (--skip-auth-regex=.*)\n")
+	return nil
+}

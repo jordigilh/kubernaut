@@ -108,8 +108,8 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
-	// Wait for both builds to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	// Wait for all 3 builds to complete (TD-E2E-001: Now includes OAuth2-Proxy)
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
 	var buildErrors []error
 	for i := 0; i < 2; i++ {
 		result := <-buildResults
@@ -201,7 +201,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
-	// Wait for both loads to complete
+	// Wait for all 3 loads to complete (TD-E2E-001: Now includes OAuth2-Proxy)
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
 	for i := 0; i < 2; i++ {
@@ -254,6 +254,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		// Per Consolidated API Migration (January 2026):
 		// Use DataStorage image name from builtImages map (built in Phase 1)
 		dsImage := builtImages["DataStorage"]
+		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()

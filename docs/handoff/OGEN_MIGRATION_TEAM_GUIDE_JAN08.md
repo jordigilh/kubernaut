@@ -63,7 +63,7 @@ grep -r "dsgen\|dsclient\|audit.SetEventData" pkg/YOUR_SERVICE/ internal/control
 | **WorkflowExecution** | `pkg/workflowexecution/audit/manager.go` | 15 min |
 | **Notification** | `pkg/notification/audit/manager.go` | 15 min |
 | **DataStorage** | `pkg/datastorage/audit/*.go`, `pkg/datastorage/server/*.go` | 30 min |
-| **Webhooks** | `pkg/webhooks/*_handler.go` | 15 min |
+| **Webhooks** | `pkg/authwebhook/*_handler.go` | 15 min |
 
 ---
 
@@ -1324,7 +1324,7 @@ func (m *MockAuditStore) GetEvents() []*ogenclient.AuditEventRequest {
 
 ## 🚧 **QUESTIONS FROM WEBHOOK MIGRATION (Jan 8, 2026)**
 
-**Context**: Migrating webhook handlers (`pkg/webhooks/*_handler.go`) from oapi-codegen to ogen. Need architectural clarification on event namespace strategy before implementation.
+**Context**: Migrating webhook handlers (`pkg/authwebhook/*_handler.go`) from oapi-codegen to ogen. Need architectural clarification on event namespace strategy before implementation.
 
 **Requestor**: AI Assistant (unblocking webhook compilation for AuthWebhook E2E tests)
 
@@ -1332,7 +1332,7 @@ func (m *MockAuditStore) GetEvents() []*ogenclient.AuditEventRequest {
 
 ### **Q9: Webhook Event Namespace Architecture** 🚨
 
-**File**: `pkg/webhooks/workflowexecution_handler.go`, `notification_handler.go`, `remediationapproval_handler.go`
+**File**: `pkg/authwebhook/workflowexecution_handler.go`, `notification_handler.go`, `remediationapproval_handler.go`
 
 **Issue**: Two conflicting patterns discovered for webhook audit events - need architectural decision on which to use.
 
@@ -1696,7 +1696,7 @@ type NotificationAuditPayloadRecipientsItem struct {
 
 **Step 3: Updated Webhook Handler** (8 min)
 ```go
-// pkg/webhooks/notificationrequest_validator.go
+// pkg/authwebhook/notificationrequest_validator.go
 if len(nr.Spec.Recipients) > 0 {
     recipients := make([]api.NotificationAuditPayloadRecipientsItem, len(nr.Spec.Recipients))
     for i, r := range nr.Spec.Recipients {
@@ -1724,7 +1724,7 @@ if len(nr.Spec.Recipients) > 0 {
 
 **Verification**:
 ```bash
-✅ go build ./pkg/webhooks/... # Success
+✅ go build ./pkg/authwebhook/... # Success
 ```
 
 ---

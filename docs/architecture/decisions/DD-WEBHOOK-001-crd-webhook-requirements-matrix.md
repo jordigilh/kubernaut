@@ -79,11 +79,11 @@
 ### **Implementation Structure**
 
 ```
-cmd/webhooks/main.go                    # Single webhook server entry point
-pkg/webhooks/auth/common.go             # Shared: ExtractAuthenticatedUser()
-pkg/webhooks/workflowexecution_handler.go     # WE-specific logic
-pkg/webhooks/remediationapprovalrequest_handler.go  # RAR-specific logic
-pkg/webhooks/notificationrequest_handler.go         # NR-specific logic
+cmd/authwebhook/main.go                    # Single webhook server entry point
+pkg/authwebhook/auth/common.go             # Shared: ExtractAuthenticatedUser()
+pkg/authwebhook/workflowexecution_handler.go     # WE-specific logic
+pkg/authwebhook/remediationapprovalrequest_handler.go  # RAR-specific logic
+pkg/authwebhook/notificationrequest_handler.go         # NR-specific logic
 ```
 
 **Comprehensive Plans**:
@@ -554,7 +554,7 @@ Is this an approval workflow or override action?
 
 **Single Webhook Service Ownership**:
 - **Webhook Team**: Implements unified `kubernaut-auth-webhook` service
-- **Phase 1 (Day 1)**: Common authentication logic (`pkg/webhooks/auth/common.go`)
+- **Phase 1 (Day 1)**: Common authentication logic (`pkg/authwebhook/auth/common.go`)
 - **Phase 2-4 (Days 2-4)**: CRD-specific handlers (one per day)
 - **Phase 5-6 (Days 5-6)**: Integration + E2E testing + documentation
 
@@ -577,28 +577,28 @@ Is this an approval workflow or override action?
 ### **High-Level Timeline**
 
 **Day 1: Webhook Server Foundation** (Webhook Team)
-- Create `cmd/webhooks/main.go` (single webhook server)
-- Implement `pkg/webhooks/auth/common.go` (shared authentication logic)
+- Create `cmd/authwebhook/main.go` (single webhook server)
+- Implement `pkg/authwebhook/auth/common.go` (shared authentication logic)
 - Write 10 unit tests for common auth
 - Setup TLS certificates (cert-manager)
 - **Deliverable**: Webhook server runs, common auth tested ✅
 
 **Day 2: WorkflowExecution Handler** (Webhook Team)
-- Implement `pkg/webhooks/workflowexecution_handler.go`
+- Implement `pkg/authwebhook/workflowexecution_handler.go`
 - Wire handler to webhook server (`/mutate-workflowexecution`)
 - Write 20 unit tests + 3 integration tests
 - Update WE controller to detect `clearedBy` field
 - **Deliverable**: WE attribution working end-to-end ✅
 
 **Day 3: RemediationApprovalRequest Handler** (Webhook Team)
-- Implement `pkg/webhooks/remediationapprovalrequest_handler.go`
+- Implement `pkg/authwebhook/remediationapprovalrequest_handler.go`
 - Wire handler to webhook server (`/mutate-remediationapprovalrequest`)
 - Write 20 unit tests + 3 integration tests
 - Update RAR controller to detect `approvedBy`/`rejectedBy` fields
 - **Deliverable**: RAR attribution working end-to-end ✅
 
 **Day 4: NotificationRequest Handler** (Webhook Team)
-- Implement `pkg/webhooks/notificationrequest_handler.go`
+- Implement `pkg/authwebhook/notificationrequest_handler.go`
 - Wire handler to webhook server (`/validate-notificationrequest-delete`)
 - Write 20 unit tests + 3 integration tests
 - Update NR controller to detect cancellation annotations

@@ -208,7 +208,7 @@ rm pkg/gateway/audit_types.go
 rm pkg/remediationorchestrator/audit_types.go
 rm pkg/signalprocessing/audit_types.go
 rm pkg/workflowexecution/audit_types.go
-rm pkg/webhooks/audit_types.go
+rm pkg/authwebhook/audit_types.go
 ```
 
 ### **Nice-to-Have Enhancements**

@@ -129,7 +129,6 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 		err := loadImageToKind(clusterName, mockLLMImage, writer)
 		loadResults <- imageLoadResult{"Mock LLM", err}
 	}()
-
 	for i := 0; i < 3; i++ {
 		result := <-loadResults
 		if result.err != nil {
@@ -172,6 +171,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	}()
 	go func() {
 		// Use NodePort 30098 for HAPI E2E (per DD-TEST-001 v1.8)
+		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar
 		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30098, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()

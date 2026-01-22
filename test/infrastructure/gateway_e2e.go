@@ -255,8 +255,8 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 4b. Deploy DataStorage using the built image
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
+	// 4b. Deploy DataStorage with OAuth2-Proxy sidecar (TD-E2E-001 Phase 1)
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
@@ -399,8 +399,8 @@ func SetupGatewayInfrastructureSequentialWithCoverage(ctx context.Context, clust
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Deploying Data Storage infrastructure...")
 
-	// Deploy shared Data Storage infrastructure (PostgreSQL + Redis + Migrations + Data Storage)
-	// Use same image tag that was built and loaded earlier
+	// Deploy shared Data Storage infrastructure with OAuth2-Proxy (TD-E2E-001 Phase 1)
+	// Use same image tags that were built and loaded earlier
 	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
@@ -580,9 +580,9 @@ func SetupGatewayInfrastructureParallelWithCoverage(ctx context.Context, cluster
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
-	// 3b. Deploy DataStorage using the image built in Phase 2 (parallel)
+	// 3b. Deploy DataStorage with OAuth2-Proxy sidecar (TD-E2E-001 Phase 1 - image from quay.io)
 	// Per DD-TEST-001: Use the UUID-tagged image for E2E isolation
-	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service...\n")
+	_, _ = fmt.Fprintf(writer, "🚀 Deploying Data Storage Service with OAuth2-Proxy sidecar (quay.io)...\n")
 	if err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
@@ -660,13 +660,15 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 //
 // NOTE: This function appears to be UNUSED in actual test code (only referenced in documentation)
 // Consider removing in future cleanup if confirmed unused.
+// DeployTestServices deploys Gateway E2E services including DataStorage with OAuth2-Proxy.
+// TD-E2E-001 Phase 1: oauth2ProxyImage parameter added for SOC2 architecture parity.
 func DeployTestServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage, gatewayImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📦 Deploying Gateway E2E services...")
 
 	// 0. Create namespace first (shared function from datastorage.go)
-	// Deploy shared Data Storage infrastructure (Namespace + PostgreSQL + Redis + Migrations + Data Storage)
-	// Use same image tag that was built and loaded earlier
-	_, _ = fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure...")
+	// Deploy shared Data Storage infrastructure with OAuth2-Proxy (TD-E2E-001 Phase 1)
+	// Use same image tags that were built and loaded earlier
+	_, _ = fmt.Fprintln(writer, "📦 Deploying Data Storage infrastructure with OAuth2-Proxy...")
 	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}

@@ -131,7 +131,7 @@
 ### **Fix 2: Service Name** ✅
 - **Before**: `authwebhook` everywhere
 - **After**: `webhooks` (service binary), `authwebhook` (logical component name)
-- Rationale: Service binary is `cmd/webhooks/main.go`
+- Rationale: Service binary is `cmd/authwebhook/main.go`
 
 ### **Fix 3: Image Naming** ✅
 - **Before**: `authwebhook:e2e-test`
@@ -259,7 +259,7 @@ The infrastructure is **100% complete**. Remaining work is test execution and fi
 ### **Architectural Decisions**:
 
 **DD-WEBHOOK-001**: Single Consolidated Webhook Service
-- Service binary: `cmd/webhooks/main.go`
+- Service binary: `cmd/authwebhook/main.go`
 - Logical component: `authwebhook` (for test organization)
 - Rationale: Shared authentication logic across multiple CRD types
 

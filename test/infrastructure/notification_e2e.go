@@ -44,26 +44,69 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	}
 
 	// ============================================================
-	// PHASE 1: Build Docker image (BEFORE cluster creation)
+	// PHASE 1: Build images IN PARALLEL (BEFORE cluster creation)
 	// ============================================================
-	_, _ = fmt.Fprintln(writer, "")
-	_, _ = fmt.Fprintln(writer, "PHASE 1: Building Notification Controller Docker image...")
-	_, _ = fmt.Fprintln(writer, "  • Hybrid pattern: Build before cluster creation")
-	_, _ = fmt.Fprintln(writer, "  • Eliminates cluster idle time during build")
-	_, _ = fmt.Fprintln(writer, "  • Authority: Gateway/DataStorage hybrid pattern migration (Jan 7, 2026)")
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
+	_, _ = fmt.Fprintln(writer, "  ├── Notification Controller")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2 minutes (parallel)")
+	_, _ = fmt.Fprintln(writer, "  Authority: RO/WE hybrid parallel pattern")
 
-	cfg := E2EImageConfig{
-		ServiceName:      "notification",
-		ImageName:        "kubernaut-notification",
-		DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
-		BuildContextPath: "",
-		EnableCoverage:   false,
+	type buildResult struct {
+		name      string
+		imageName string
+		err       error
 	}
-	notificationImageName, err := BuildImageForKind(cfg, writer)
-	if err != nil {
-		return "", fmt.Errorf("failed to build Notification Controller image: %w", err)
+
+	buildResults := make(chan buildResult, 2)
+	builtImages := make(map[string]string)
+
+	// Build Notification Controller in parallel
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "notification",
+			ImageName:        "kubernaut-notification",
+			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   false,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "Notification", imageName: imageName, err: err}
+	}()
+
+	// Build AuthWebhook in parallel
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "webhooks",
+			ImageName:        "webhooks",
+			DockerfilePath:   "docker/webhooks.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   false,
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
+	}()
+
+	// Wait for both builds to complete
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
+	var buildErrors []error
+	for i := 0; i < 2; i++ {
+		result := <-buildResults
+		if result.err != nil {
+			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
+			buildErrors = append(buildErrors, result.err)
+		} else {
+			_, _ = fmt.Fprintf(writer, "  ✅ %s build completed: %s\n", result.name, result.imageName)
+			builtImages[result.name] = result.imageName
+		}
 	}
-	_, _ = fmt.Fprintf(writer, "✅ PHASE 1 Complete: Image built: %s\n", notificationImageName)
+
+	if len(buildErrors) > 0 {
+		return "", fmt.Errorf("image builds failed: %v", buildErrors)
+	}
+
+	_, _ = fmt.Fprintln(writer, "\n✅ All images built successfully!")
+	notificationImageName := builtImages["Notification"]
 
 	// ============================================================
 	// PHASE 2: Create Kind cluster (after build completes)
@@ -90,16 +133,54 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 2 Complete: Cluster created")
 
 	// ============================================================
-	// PHASE 3: Load image into cluster
+	// PHASE 3: Load images into Kind cluster IN PARALLEL
 	// ============================================================
-	_, _ = fmt.Fprintln(writer, "")
-	_, _ = fmt.Fprintln(writer, "PHASE 3: Loading Notification Controller image into Kind cluster...")
-	_, _ = fmt.Fprintln(writer, "  • Uses consolidated LoadImageToKind() helper")
-	_, _ = fmt.Fprintln(writer, "  • Automatic cleanup of tar file and Podman image")
-	if err := LoadImageToKind(notificationImageName, "notification", clusterName, writer); err != nil {
-		return "", fmt.Errorf("failed to load Notification Controller image: %w", err)
+	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
+	_, _ = fmt.Fprintln(writer, "  ├── Notification Controller")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (SOC2)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30 seconds")
+
+	type loadResult struct {
+		name string
+		err  error
 	}
-	_, _ = fmt.Fprintln(writer, "✅ PHASE 3 Complete: Image loaded")
+
+	loadResults := make(chan loadResult, 2)
+
+	// Load Notification image
+	go func() {
+		err := LoadImageToKind(notificationImageName, "notification", clusterName, writer)
+		loadResults <- loadResult{name: "Notification", err: err}
+	}()
+
+	// Load AuthWebhook image
+	go func() {
+		awImage := builtImages["AuthWebhook"]
+		err := LoadImageToKind(awImage, "webhooks", clusterName, writer)
+		loadResults <- loadResult{name: "AuthWebhook", err: err}
+	}()
+
+	// Wait for both loads to complete
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
+	var loadErrors []error
+	for i := 0; i < 2; i++ {
+		result := <-loadResults
+		if result.err != nil {
+			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
+			loadErrors = append(loadErrors, result.err)
+		} else {
+			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", result.name)
+		}
+	}
+
+	if len(loadErrors) > 0 {
+		return "", fmt.Errorf("image loads failed: %v", loadErrors)
+	}
+
+	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded successfully!")
+
+	// Store AuthWebhook image for later use in suite
+	os.Setenv("E2E_AUTHWEBHOOK_IMAGE", builtImages["AuthWebhook"])
 
 	// ============================================================
 	// PHASE 4: Install CRDs
@@ -247,9 +328,9 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	dataStorageImage = actualImageName
 	_, _ = fmt.Fprintf(writer, "✅ Using actual image: %s\n", dataStorageImage)
 
-	// 3. Deploy shared Data Storage infrastructure with Notification-specific NodePort 30090
+	// 3. Deploy shared Data Storage infrastructure with OAuth2-Proxy and Notification-specific NodePort 30090
 	// CRITICAL: Must match kind-notification-config.yaml port mapping
-	_, _ = fmt.Fprintf(writer, "📦 Deploying Data Storage infrastructure (NodePort 30090)...\n")
+	_, _ = fmt.Fprintf(writer, "📦 Deploying Data Storage infrastructure with OAuth2-Proxy (NodePort 30090)...\n")
 	if err := DeployNotificationDataStorageServices(ctx, namespace, kubeconfigPath, dataStorageImage, writer); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage infrastructure: %w", err)
 	}
@@ -464,7 +545,9 @@ func deployNotificationControllerOnly(namespace, kubeconfigPath, notificationIma
 	return nil
 }
 
+// DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.
+// TD-E2E-001 Phase 1: oauth2ProxyImage parameter added for SOC2 architecture parity.
 func DeployNotificationDataStorageServices(ctx context.Context, namespace, kubeconfigPath, dataStorageImage string, writer io.Writer) error {
-	// Deploy DataStorage with Notification-specific NodePort 30090
+	// Deploy DataStorage with OAuth2-Proxy and Notification-specific NodePort 30090 (TD-E2E-001 Phase 1)
 	return DeployDataStorageTestServicesWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30090, writer)
 }

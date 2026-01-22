@@ -129,7 +129,7 @@ import (
     "time"
 
     "github.com/jordigilh/kubernaut/pkg/audit"
-    "github.com/jordigilh/kubernaut/pkg/webhooks"
+    "github.com/jordigilh/kubernaut/pkg/authwebhook"
     ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -411,7 +411,7 @@ spec:
 | **Gateway** | `--data-storage-url` | OpenAPI client + BufferedStore | `cmd/gateway/main.go:86-103` |
 | **Notification** | `--datastorage-url` | OpenAPI client + BufferedStore | `cmd/notification/main.go` |
 | **AI Analysis** | `--data-storage-url` | OpenAPI client + BufferedStore | `cmd/aianalysis/main.go` |
-| **Webhook** (NEW) | `--data-storage-url` | OpenAPI client + BufferedStore | `cmd/webhooks/main.go` |
+| **Webhook** (NEW) | `--data-storage-url` | OpenAPI client + BufferedStore | `cmd/authwebhook/main.go` |
 
 **Result**: ✅ Consistent pattern across all services
 

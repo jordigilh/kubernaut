@@ -132,7 +132,7 @@ rm pkg/gateway/audit_types.go
 rm pkg/remediationorchestrator/audit_types.go
 rm pkg/signalprocessing/audit_types.go
 rm pkg/workflowexecution/audit_types.go
-rm pkg/webhooks/audit_types.go
+rm pkg/authwebhook/audit_types.go
 # Note: pkg/aianalysis/audit/event_types.go and pkg/notification/audit/event_types.go already deleted
 ```
 

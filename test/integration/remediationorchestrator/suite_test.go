@@ -34,6 +34,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,6 +71,7 @@ import (
 
 	// Import audit infrastructure (ADR-032)
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -98,6 +100,7 @@ var (
 	k8sClient  client.Client
 	k8sManager ctrl.Manager
 	auditStore audit.AuditStore
+	dsClient   *ogenclient.Client // OpenAPI client for DataStorage queries
 
 	// dataStorageBaseURL is the base URL for DataStorage API calls
 	// Uses ROIntegrationDataStoragePort to avoid brittle hardcoded ports (DD-TEST-001 v2.2)
@@ -270,6 +273,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		mockTransport, // ← Mock user header injection (simulates oauth-proxy)
 	)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create Data Storage client")
+
+	// Create OpenAPI client for direct DataStorage queries in tests
+	// Uses same mock transport for consistency with audit store
+	httpClient := &http.Client{Transport: mockTransport, Timeout: 5 * time.Second}
+	dsClient, err = ogenclient.NewClient(dataStorageBaseURL, ogenclient.WithClient(httpClient))
+	Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI DataStorage client for queries")
 
 	auditLogger := ctrl.Log.WithName("audit")
 	auditConfig := audit.DefaultConfig()

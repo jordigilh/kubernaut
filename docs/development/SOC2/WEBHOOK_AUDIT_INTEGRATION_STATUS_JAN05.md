@@ -14,7 +14,7 @@ Connect authentication webhooks to **real audit store** (replacing noOpAuditMana
 
 ### Implementation
 
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 - ✅ Replaced `noOpAuditManager` stub with real `BufferedAuditStore`
 - ✅ Added CLI flag `--data-storage-url` with production default: `http://datastorage-service:8080`
 - ✅ Created OpenAPI audit client adapter and buffered store
@@ -30,7 +30,7 @@ Connect authentication webhooks to **real audit store** (replacing noOpAuditMana
 
 ## ✅ **Phase 2: Implement Complete Audit Events** (COMPLETED)
 
-### WorkflowExecution Handler (`pkg/webhooks/workflowexecution_handler.go`)
+### WorkflowExecution Handler (`pkg/authwebhook/workflowexecution_handler.go`)
 ```go
 auditEvent := audit.NewAuditEventRequest()
 audit.SetEventType(auditEvent, "workflowexecution.block.cleared")
@@ -45,7 +45,7 @@ audit.SetEventData(auditEvent, eventData)
 h.auditStore.StoreAudit(ctx, auditEvent) // Async buffered write
 ```
 
-### RemediationApprovalRequest Handler (`pkg/webhooks/remediationapprovalrequest_handler.go`)
+### RemediationApprovalRequest Handler (`pkg/authwebhook/remediationapprovalrequest_handler.go`)
 ```go
 auditEvent := audit.NewAuditEventRequest()
 audit.SetEventType(auditEvent, fmt.Sprintf("remediation.approval.%s", string(rar.Status.Decision)))
@@ -54,7 +54,7 @@ audit.SetEventAction(auditEvent, "approval_decided")
 // ... similar pattern
 ```
 
-### NotificationRequest DELETE Handler (`pkg/webhooks/notificationrequest_handler.go`)
+### NotificationRequest DELETE Handler (`pkg/authwebhook/notificationrequest_handler.go`)
 ```go
 auditEvent := audit.NewAuditEventRequest()
 audit.SetEventType(auditEvent, "notification.request.deleted")
@@ -194,7 +194,7 @@ fdcad0a41 Fix: Use 'webhook' as event_category for all webhook handlers
 
 2. ✅ Add debug logging to NotificationRequest DELETE handler
    ```go
-   // In pkg/webhooks/notificationrequest_handler.go
+   // In pkg/authwebhook/notificationrequest_handler.go
    fmt.Printf("DELETE webhook invoked for NotificationRequest: %s/%s\n", nr.Namespace, nr.Name)
    ```
 

@@ -2314,7 +2314,7 @@ components:
         component:
           type: string
           description: Service emitting the error
-          enum: [gateway, aianalysis, workflowexecution, remediationorchestrator, signalprocessing, webhooks]
+          enum: [gateway, aianalysis, workflowexecution, remediationorchestrator, signalprocessing, authwebhook]
           example: "gateway"
         retry_possible:
           type: boolean
@@ -2787,7 +2787,7 @@ components:
 
     # ========================================
     # Webhooks Audit Payloads
-    # From: pkg/webhooks/audit_types.go
+    # From: pkg/authwebhook/audit_types.go
     # ========================================
 
     NotificationAuditPayload:

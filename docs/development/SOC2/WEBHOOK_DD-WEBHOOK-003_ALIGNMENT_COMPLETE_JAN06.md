@@ -41,7 +41,7 @@ Test Suite Passed
 
 ### **Phase 1: NotificationRequest Webhook** ✅
 
-**File**: `pkg/webhooks/notificationrequest_validator.go`
+**File**: `pkg/authwebhook/notificationrequest_validator.go`
 
 **BEFORE** (WRONG - duplicates structured columns):
 ```go
@@ -120,7 +120,7 @@ validateEventData(event, map[string]interface{}{
 
 ### **Phase 3: WorkflowExecution Webhook** ✅
 
-**File**: `pkg/webhooks/workflowexecution_handler.go`
+**File**: `pkg/authwebhook/workflowexecution_handler.go`
 
 **BEFORE** (WRONG - includes redundant fields):
 ```go
@@ -154,7 +154,7 @@ eventData := map[string]interface{}{
 
 ### **Phase 4: RemediationApprovalRequest Webhook** ✅
 
-**File**: `pkg/webhooks/remediationapprovalrequest_handler.go`
+**File**: `pkg/authwebhook/remediationapprovalrequest_handler.go`
 
 **BEFORE** (WRONG - includes redundant fields):
 ```go

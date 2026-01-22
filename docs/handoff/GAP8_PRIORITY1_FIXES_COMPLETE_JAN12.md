@@ -240,7 +240,7 @@ grep -r "spec\.timeoutConfig" docs/ --include="*.md" | wc -l
 ### **Phase 3 Complete (Webhook)**: ✅ 6/6 (100%) 🎉
 
 - ✅ `RemediationRequestStatusHandler` webhook implemented
-- ✅ Webhook registered in `cmd/webhooks/main.go`
+- ✅ Webhook registered in `cmd/authwebhook/main.go`
 - ✅ `webhook.remediationrequest.timeout_modified` event emitted
 - ✅ Status fields `LastModifiedBy`, `LastModifiedAt` populated
 - ✅ OpenAPI schema updated
@@ -288,8 +288,8 @@ grep -r "spec\.timeoutConfig" docs/ --include="*.md" | wc -l
 2. ✅ `config/crd/bases/remediation_v1alpha1_remediationrequest.yaml` (Generated CRD)
 3. ✅ `internal/controller/remediationorchestrator/reconciler.go` (Controller logic)
 4. ✅ `pkg/remediationorchestrator/audit/manager.go` (Audit event builder)
-5. ✅ `pkg/webhooks/remediationrequest_handler.go` (Webhook handler)
-6. ✅ `cmd/webhooks/main.go` (Webhook registration)
+5. ✅ `pkg/authwebhook/remediationrequest_handler.go` (Webhook handler)
+6. ✅ `cmd/authwebhook/main.go` (Webhook registration)
 7. ✅ `deploy/authwebhook/06-mutating-webhook.yaml` (Webhook config)
 8. ✅ `deploy/authwebhook/02-rbac.yaml` (RBAC permissions)
 9. ✅ `api/openapi/data-storage-v1.yaml` (OpenAPI schema)

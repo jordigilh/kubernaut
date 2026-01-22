@@ -67,17 +67,17 @@ kubectl exec -it <test-pod> -- curl -k https://authwebhook.authwebhook-e2e.svc:9
 
 **Possible Causes**:
 1. Audit store not configured in webhook handler
-2. `pkg/webhooks/remediationrequest_handler.go` not calling `auditStore.StoreAudit()`
+2. `pkg/authwebhook/remediationrequest_handler.go` not calling `auditStore.StoreAudit()`
 3. Audit event payload construction error
 4. Webhook handler returning error before audit emission
 
 **Investigation Steps**:
 ```bash
 # Check webhook handler audit store initialization
-grep -A 10 "NewRemediationRequestStatusHandler" cmd/webhooks/main.go
+grep -A 10 "NewRemediationRequestStatusHandler" cmd/authwebhook/main.go
 
 # Verify audit event construction
-grep -A 20 "StoreAudit" pkg/webhooks/remediationrequest_handler.go
+grep -A 20 "StoreAudit" pkg/authwebhook/remediationrequest_handler.go
 
 # Check for webhook errors
 kubectl logs -n authwebhook-e2e -l app=authwebhook | grep -i error
@@ -168,7 +168,7 @@ curl "http://localhost:28099/api/v1/audit/events?event_type=webhook.remediationr
 
 2. **Verify webhook handler registration**:
    ```bash
-   grep -A 10 "/mutate-remediationrequest" cmd/webhooks/main.go
+   grep -A 10 "/mutate-remediationrequest" cmd/authwebhook/main.go
    ```
 
 3. **Test webhook manually**:
@@ -219,9 +219,9 @@ curl "http://localhost:28099/api/v1/audit/events?event_type=webhook.remediationr
 | File | Purpose | Status |
 |------|---------|--------|
 | `test/e2e/authwebhook/02_gap8_remediationrequest_timeout_mutation_test.go` | E2E test | ⚠️ Failing |
-| `pkg/webhooks/remediationrequest_handler.go` | Webhook handler | ✅ Implemented |
+| `pkg/authwebhook/remediationrequest_handler.go` | Webhook handler | ✅ Implemented |
 | `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml` | Webhook deployment | ✅ Deployed |
-| `cmd/webhooks/main.go` | Webhook server | ✅ Running |
+| `cmd/authwebhook/main.go` | Webhook server | ✅ Running |
 | `test/integration/remediationorchestrator/gap8_timeout_config_audit_test.go` | Integration tests | ✅ 2/2 Passing |
 
 ---
@@ -239,7 +239,7 @@ curl "http://localhost:28099/api/v1/audit/events?event_type=webhook.remediationr
 
 | Component | Status | Evidence |
 |-----------|--------|----------|
-| **Implementation** | ✅ Complete | `pkg/webhooks/remediationrequest_handler.go` |
+| **Implementation** | ✅ Complete | `pkg/authwebhook/remediationrequest_handler.go` |
 | **Integration Tests** | ✅ 2/2 Passing | Controller initialization working |
 | **E2E Test** | ❌ Failing | Webhook audit event not emitted |
 | **Production Ready** | ⚠️ **Blocked** | E2E validation required |

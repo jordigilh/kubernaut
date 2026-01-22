@@ -78,7 +78,7 @@ readinessProbe:
 ```
 
 **Files Modified**:
-- `cmd/webhooks/main.go` - Added `HealthProbeBindAddress: ":8081"`
+- `cmd/authwebhook/main.go` - Added `HealthProbeBindAddress: ":8081"`
 - `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml` - Changed probe configuration
 
 ---
@@ -185,7 +185,7 @@ Port 8081 (health)   - HTTP  - /healthz, /readyz endpoints ✅
   - Reordered deployment sequence
 
 ### Application
-- `cmd/webhooks/main.go`
+- `cmd/authwebhook/main.go`
   - Added `HealthProbeBindAddress: ":8081"`
 
 ### Deployment

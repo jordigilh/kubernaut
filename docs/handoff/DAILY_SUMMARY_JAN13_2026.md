@@ -220,7 +220,7 @@ AuthWebhook E2E Suite:
 |-----------|--------|----------|
 | CRD Schema | ✅ Complete | TimeoutConfig in status |
 | Controller Init | ✅ Complete | orchestrator.lifecycle.created |
-| Webhook Handler | ✅ Complete | pkg/webhooks/remediationrequest_handler.go |
+| Webhook Handler | ✅ Complete | pkg/authwebhook/remediationrequest_handler.go |
 | Webhook Deployment | ✅ Complete | Manifest configured |
 | Integration Tests | ✅ **2/2 Passing** | Controller behavior validated |
 | E2E Test | ❌ **Failing** | Webhook audit event not emitted |
