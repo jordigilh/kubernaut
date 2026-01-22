@@ -123,12 +123,12 @@ def mock_llm_mode():
 def mock_analyze_recovery():
     """
     Mock fixture for analyze_recovery function in unit tests.
-    
+
     Recovery endpoint tests need this to avoid real LLM calls.
     Returns a mock that simulates successful recovery analysis.
     """
     from unittest.mock import AsyncMock, patch
-    
+
     mock_response = {
         "incident_id": "test-inc-001",
         "can_recover": True,
@@ -149,7 +149,7 @@ def mock_analyze_recovery():
             "analysis_time_ms": 1500
         }
     }
-    
+
     with patch('src.extensions.recovery.endpoint.analyze_recovery', new_callable=AsyncMock) as mock:
         mock.return_value = mock_response
         yield mock
@@ -159,7 +159,7 @@ def mock_analyze_recovery():
 def client():
     """Create FastAPI test client for unit tests"""
     from fastapi.testclient import TestClient
-    
+
     # Config file already set at module level
     from src.main import app
     return TestClient(app)
