@@ -316,9 +316,13 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	})
 	Expect(err).NotTo(HaveOccurred())
 
-	By("Setting up the SignalProcessing controller with audit client")
-	// Create audit client for BR-SP-090 compliance
+	By("Setting up the SignalProcessing controller with audit client and manager")
+	// Create audit client for BR-SP-090 compliance (legacy)
 	auditClient := spaudit.NewAuditClient(auditStore, logger)
+	
+	// Create audit manager (Phase 3 refactoring - 2026-01-22)
+	// ADR-032: AuditManager is MANDATORY for all audit operations
+	auditManager := spaudit.NewManager(auditClient)
 
 	By("Creating temporary Rego policy files for classifiers")
 	// Day 10 Integration: Create Rego policy files (IMPLEMENTATION_PLAN_V1.31.md)
@@ -583,8 +587,9 @@ result := {}
 	err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             k8sManager.GetClient(),
 		Scheme:             k8sManager.GetScheme(),
-		AuditClient:        auditClient,
-		Metrics:            sharedMetrics, // DD-005: Observability
+		AuditClient:        auditClient,        // Legacy audit client
+		AuditManager:       auditManager,       // Phase 3 refactoring - MANDATORY per ADR-032
+		Metrics:            sharedMetrics,      // DD-005: Observability
 		Recorder:           recorder,
 		StatusManager:      statusManager, // DD-PERF-001 + SP-CACHE-001
 		EnvClassifier:      envClassifier,
