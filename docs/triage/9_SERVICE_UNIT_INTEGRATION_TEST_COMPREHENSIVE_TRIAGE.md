@@ -1,6 +1,6 @@
 # 9-Service Unit + Integration Test Comprehensive Triage
-**Date**: January 22, 2026  
-**Scope**: All 9 Kubernaut services (Unit + Integration tests)  
+**Date**: January 22, 2026
+**Scope**: All 9 Kubernaut services (Unit + Integration tests)
 **Test Coverage**: Go services (8) + Python service (1)
 
 ---
@@ -31,8 +31,8 @@
 ## 🔍 **Common Patterns Identified**
 
 ### **Pattern 1: Missing AuditManager After Refactoring**
-**Services Affected**: Signal Processing (SP) - FIXED  
-**Root Cause**: Phase 3 audit refactoring (2026-01-22) introduced mandatory `AuditManager`  
+**Services Affected**: Signal Processing (SP) - FIXED
+**Root Cause**: Phase 3 audit refactoring (2026-01-22) introduced mandatory `AuditManager`
 **Error Signature**:
 ```
 error: AuditManager is nil - audit is MANDATORY per ADR-032
@@ -56,8 +56,8 @@ AuditManager: auditManager,
 ---
 
 ### **Pattern 2: LLM Configuration for Python Services**
-**Services Affected**: HolmesGPT API (HAPI)  
-**Root Cause**: Missing LLM environment variables in test configuration  
+**Services Affected**: HolmesGPT API (HAPI)
+**Root Cause**: Missing LLM environment variables in test configuration
 **Error Signatures**:
 ```
 ValueError: LLM_MODEL environment variable or config.llm.model is required
@@ -82,8 +82,8 @@ os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
 ---
 
 ### **Pattern 3: Test Scenario Naming Convention Updates**
-**Services Affected**: All (Documentation/Templates)  
-**Root Cause**: Initial assumption of "TP-" prefix vs. actual `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}` format  
+**Services Affected**: All (Documentation/Templates)
+**Root Cause**: Initial assumption of "TP-" prefix vs. actual `{TIER}-{SERVICE}-{BR_NUMBER}-{SEQUENCE}` format
 **Examples**:
 - `UT-AA-197-001`: Unit test for AI Analysis, BR-197, test #1
 - `IT-RO-045-010`: Integration test for Remediation Orchestrator, BR-045, test #10
@@ -97,8 +97,8 @@ os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
 ---
 
 ### **Pattern 4: UUID-Based Resource Naming**
-**Services Affected**: Gateway (GW) - FIXED  
-**Root Cause**: Test expected timestamp-based naming, implementation used UUID-based  
+**Services Affected**: Gateway (GW) - FIXED
+**Root Cause**: Test expected timestamp-based naming, implementation used UUID-based
 **Error**:
 ```
 Expected: ^rr-same-fingerp-\d+$  (timestamp)
@@ -116,8 +116,8 @@ Expect(crdName).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`))
 ---
 
 ### **Pattern 5: YAML Field Naming (snake_case vs camelCase)**
-**Services Affected**: AuthWebhook E2E (AW) - FIXED  
-**Root Cause**: ConfigMap used snake_case, Go struct expected camelCase  
+**Services Affected**: AuthWebhook E2E (AW) - FIXED
+**Root Cause**: ConfigMap used snake_case, Go struct expected camelCase
 **Error**:
 ```
 invalid connMaxLifetime: time: invalid duration ""
@@ -141,9 +141,9 @@ connMaxIdleTime: "10m"
 ## 🐛 **Active Issues**
 
 ### **Issue 1: Notification Retry Logic Race Condition**
-**Service**: Notification (N)  
-**Test**: `Controller Retry Logic (BR-NOT-054) [It] should stop retrying after first success`  
-**Status**: 🔴 **FAILING (1/117 tests)**  
+**Service**: Notification (N)
+**Test**: `Controller Retry Logic (BR-NOT-054) [It] should stop retrying after first success`
+**Status**: 🔴 **FAILING (1/117 tests)**
 **Severity**: Medium (99.1% pass rate, edge case timing issue)
 
 **Root Cause Analysis**:
@@ -192,7 +192,7 @@ if len(attempts) > 0 {
     if err := r.StatusManager.UpdateDeliveryAttempts(ctx, notification, attempts); err != nil {
         return ctrl.Result{}, err
     }
-    
+
     // Re-fetch to get persisted state
     if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
         return ctrl.Result{}, err
@@ -216,9 +216,9 @@ finalPhase := r.determineFinalPhase(notification)
 ---
 
 ### **Issue 2: HAPI Integration Tests Infrastructure Dependency**
-**Service**: HolmesGPT API (HAPI)  
-**Tests**: 19/65 tests require Mock LLM  
-**Status**: 🟡 **INFRASTRUCTURE DEPENDENCY (not code issue)**  
+**Service**: HolmesGPT API (HAPI)
+**Tests**: 19/65 tests require Mock LLM
+**Status**: 🟡 **INFRASTRUCTURE DEPENDENCY (not code issue)**
 **Severity**: Low (configuration correct, infrastructure pending)
 
 **Failing Test Categories**:
@@ -340,7 +340,7 @@ TOTAL                 | 586   | -              | 97.3%
      - Main application setup
      - **Test suite setup** ← Often forgotten
      - Documentation
-   
+
 2. **Integration Test Infrastructure**
    - Document which tests require which infrastructure
    - CI pipeline should validate infrastructure availability
@@ -457,6 +457,6 @@ make test-unit-holmesgpt-api 2>&1 | tail -3
 
 ---
 
-**Triage Completed**: January 22, 2026  
-**Next Review**: After Notification retry fix  
+**Triage Completed**: January 22, 2026
+**Next Review**: After Notification retry fix
 **Overall Health**: 🟢 **EXCELLENT** (96.7% integration, 100% unit)
