@@ -1082,7 +1082,8 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "action", Operator: "->>", Value: "timeout_modified", ExpectedRows: 1},
+			// FIX: Query 'modified_by' which exists in RemediationRequestWebhookAuditPayload
+			{Field: "modified_by", Operator: "->>", Value: "admin@example.com", ExpectedRows: 1},
 		},
 	},
 
@@ -1126,7 +1127,9 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "results_count", Operator: "->", Value: "5", ExpectedRows: 1},
+			// FIX: Query nested field results->total_found (WorkflowSearchAuditPayload.results is a ResultsMetadata object)
+			// Query construction: event_data->'results'->>'total_found' = '5'
+			{Field: "total_found", Operator: "->'results'->>", Value: "5", ExpectedRows: 1},
 		},
 	},
 
@@ -1139,7 +1142,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflow,
 		EventAction:   "created",
 		CreateEvent: func() ogenclient.AuditEventRequest {
-			workflowID := uuid.New().String()
+			workflowID := uuid.New()
 			correlationID := fmt.Sprintf("test-gap-1.1-ds-workflow-created-%s", uuid.New().String()[:8])
 			return ogenclient.AuditEventRequest{
 				Version:        "1.0",
@@ -1151,11 +1154,18 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ActorType:      ogenclient.NewOptString("service"),
 				ActorID:        ogenclient.NewOptString("datastorage-service"),
 				ResourceType:   ogenclient.NewOptString("WorkflowCatalog"),
-				ResourceID:     ogenclient.NewOptString(workflowID),
+				ResourceID:     ogenclient.NewOptString(workflowID.String()),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewWorkflowCatalogCreatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogCreatedPayload{
-					WorkflowName: "test-workflow",
-					Version:      "v1.0.0",
+					WorkflowID:      workflowID,                                            // REQUIRED
+					WorkflowName:    "test-workflow",                                       // REQUIRED
+					Version:         "v1.0.0",                                              // REQUIRED
+					Status:          ogenclient.WorkflowCatalogCreatedPayloadStatusActive, // REQUIRED
+					IsLatestVersion: true,                                                  // REQUIRED
+					ExecutionEngine: "tekton",                                              // REQUIRED
+					Name:            "Test Workflow Display Name",                          // REQUIRED
+					Description:     ogenclient.NewOptString("Test workflow description"),  // OPTIONAL
+					Labels: ogenclient.NewOptWorkflowCatalogCreatedPayloadLabels(ogenclient.WorkflowCatalogCreatedPayloadLabels{}), // OPTIONAL
 				}),
 			}
 		},
@@ -1170,7 +1180,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflow,
 		EventAction:   "updated",
 		CreateEvent: func() ogenclient.AuditEventRequest {
-			workflowID := uuid.New().String()
+			workflowID := uuid.New()
 			correlationID := fmt.Sprintf("test-gap-1.1-ds-workflow-updated-%s", uuid.New().String()[:8])
 			return ogenclient.AuditEventRequest{
 				Version:        "1.0",
@@ -1182,14 +1192,21 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ActorType:      ogenclient.NewOptString("service"),
 				ActorID:        ogenclient.NewOptString("datastorage-service"),
 				ResourceType:   ogenclient.NewOptString("WorkflowCatalog"),
-				ResourceID:     ogenclient.NewOptString(workflowID),
+				ResourceID:     ogenclient.NewOptString(workflowID.String()),
 				CorrelationID:  correlationID,
-				EventData:      ogenclient.NewWorkflowCatalogUpdatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogUpdatedPayload{}),
+				EventData: ogenclient.NewWorkflowCatalogUpdatedPayloadAuditEventRequestEventData(ogenclient.WorkflowCatalogUpdatedPayload{
+					WorkflowID: workflowID, // REQUIRED
+					UpdatedFields: ogenclient.WorkflowCatalogUpdatedFields{ // REQUIRED (at least one field updated)
+						Version:     ogenclient.NewOptString("v2.0.0"), // OPTIONAL (but provide at least one)
+						Description: ogenclient.NewOptString("Updated description"), // OPTIONAL
+					},
+				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "workflow_name", Operator: "->>", Value: "test-workflow", ExpectedRows: 1},
-			{Field: "version", Operator: "->>", Value: "v1.1.0", ExpectedRows: 1},
+			// Query nested field updated_fields->version (WorkflowCatalogUpdatedPayload.updated_fields.version)
+			// Query construction: event_data->'updated_fields'->>'version' = 'v2.0.0'
+			{Field: "version", Operator: "->'updated_fields'->>", Value: "v2.0.0", ExpectedRows: 1},
 		},
 	},
 
@@ -1216,11 +1233,15 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
 				ResourceID:     ogenclient.NewOptString(analysisName),
 				CorrelationID:  correlationID,
-				EventData:      ogenclient.NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(ogenclient.AIAnalysisPhaseTransitionPayload{}),
+				EventData: ogenclient.NewAIAnalysisPhaseTransitionPayloadAuditEventRequestEventData(ogenclient.AIAnalysisPhaseTransitionPayload{
+					OldPhase: "Pending",   // REQUIRED
+					NewPhase: "Analyzing", // REQUIRED
+				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "to_phase", Operator: "->>", Value: "Analyzing", ExpectedRows: 1},
+			// FIX: Schema uses 'new_phase' not 'to_phase' (DD-AUDIT-003)
+			{Field: "new_phase", Operator: "->>", Value: "Analyzing", ExpectedRows: 1},
 		},
 	},
 	{
@@ -1243,11 +1264,16 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceType:   ogenclient.NewOptString("AIAnalysis"),
 				ResourceID:     ogenclient.NewOptString(analysisName),
 				CorrelationID:  correlationID,
-				EventData:      ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(ogenclient.AIAnalysisHolmesGPTCallPayload{}),
+				EventData: ogenclient.NewAIAnalysisHolmesGPTCallPayloadAuditEventRequestEventData(ogenclient.AIAnalysisHolmesGPTCallPayload{
+					Endpoint:       "/api/v1/analyze", // REQUIRED
+					HTTPStatusCode: 200,                // REQUIRED
+					DurationMs:     150,                // REQUIRED
+				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "call_type", Operator: "->>", Value: "investigate", ExpectedRows: 1},
+			// FIX: Schema uses 'endpoint' not 'call_type' (DD-AUDIT-003)
+			{Field: "endpoint", Operator: "->>", Value: "/api/v1/analyze", ExpectedRows: 1},
 		},
 	},
 	{

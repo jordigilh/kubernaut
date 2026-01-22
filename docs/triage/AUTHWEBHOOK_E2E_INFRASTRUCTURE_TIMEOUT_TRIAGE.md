@@ -1,7 +1,7 @@
 # AuthWebhook E2E Infrastructure Timeout Triage
 
-**Date**: January 21, 2026  
-**Session**: AuthWebhook Refactoring & Testing  
+**Date**: January 21, 2026
+**Session**: AuthWebhook Refactoring & Testing
 **Issue**: E2E test suite fails with Data Storage pod readiness timeout
 
 ---
@@ -229,7 +229,7 @@ The webhooks→authwebhook refactoring is **100% verified** through other test t
        for _, pod := range pods.Items {
            fmt.Fprintf(writer, "   ❌ Pod %s: Phase=%s\n", pod.Name, pod.Status.Phase)
            for _, cond := range pod.Status.Conditions {
-               fmt.Fprintf(writer, "      Condition: %s=%s (%s)\n", 
+               fmt.Fprintf(writer, "      Condition: %s=%s (%s)\n",
                    cond.Type, cond.Status, cond.Message)
            }
        }

@@ -86,9 +86,10 @@ import (
 //   - Pod readiness wait
 //
 // Standard E2E Infrastructure Pattern (all 3 services):
-//   PHASE 1: awImage := BuildImageForKind(awConfig, writer)           // ← BUILD
-//   PHASE 3: LoadImageToKind(awImage, "webhooks", cluster, writer)    // ← UPLOAD/LOAD
-//   PHASE 4.5: DeployAuthWebhookManifestsOnly(ctx, ..., awImage, ...)  // ← DEPLOY ONLY
+//
+//	PHASE 1: awImage := BuildImageForKind(awConfig, writer)           // ← BUILD
+//	PHASE 3: LoadImageToKind(awImage, "webhooks", cluster, writer)    // ← UPLOAD/LOAD
+//	PHASE 4.5: DeployAuthWebhookManifestsOnly(ctx, ..., awImage, ...)  // ← DEPLOY ONLY
 //
 // Authority: DD-WEBHOOK-001, DD-AUTH-001, SOC2 CC8.1
 func DeployAuthWebhookManifestsOnly(ctx context.Context, clusterName, namespace, kubeconfigPath, preLoadedImage string, writer io.Writer) error {

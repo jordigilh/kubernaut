@@ -109,30 +109,29 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 	switch we.Status.Phase {
 	case workflowexecutionv1.PhaseCompleted:
 		logger.Info("WorkflowExecution completed, transitioning to Completed")
-		
+
 		// Note: WorkflowExecutionComplete condition is set by the reconciler
 		// via DD-PERF-001 atomic status update before calling transitionToCompleted.
 		// This handler focuses on phase transition logic only.
-		
+
 		// Delegate to reconciler's transitionToCompleted() for audit emission (DD-AUDIT-003)
 		return h.transitionToCompleted(ctx, rr, "Remediated") // CRD enum: Remediated, NoActionRequired, ManualReviewRequired
 
 	case workflowexecutionv1.PhaseFailed:
 		logger.Info("WorkflowExecution failed, transitioning to Failed")
-		
+
 		// Note: WorkflowExecutionComplete condition (false) is set by the reconciler
 		// via DD-PERF-001 atomic status update before calling transitionToFailed.
 		// This handler focuses on phase transition logic only.
-		
+
 		// Delegate to reconciler's transitionToFailed() for audit emission (DD-AUDIT-003)
 		return h.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution failed")
 
 	case "":
-		// Empty phase could mean: 1) not created yet, or 2) missing/deleted
-		// The reconciler should check AllChildrenHealthy before calling this handler,
-		// so if we reach here with empty phase, it's an error case.
-		logger.Error(nil, "WorkflowExecution has empty phase")
-		return h.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+		// Empty phase means WE was just created but controller hasn't set phase yet
+		// Requeue to check status again after controller processes it
+		logger.V(1).Info("WorkflowExecution has empty phase, waiting for controller to process")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 
 	case workflowexecutionv1.PhasePending, workflowexecutionv1.PhaseRunning:
 		// Still in progress, requeue to check status again
