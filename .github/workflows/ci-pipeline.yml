@@ -139,6 +139,7 @@ jobs:
       matrix:
         service:
           - aianalysis
+          - authwebhook
           - datastorage
           - gateway
           - notification
@@ -231,7 +232,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [signalprocessing, aianalysis, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
+        service: [signalprocessing, aianalysis, authwebhook, workflowexecution, remediationorchestrator, notification, gateway, datastorage, holmesgpt-api]
         include:
           - service: signalprocessing
             service_name: "Signal Processing"
@@ -239,6 +240,9 @@ jobs:
           - service: aianalysis
             service_name: "AI Analysis"
             timeout: 15
+          - service: authwebhook
+            service_name: "Auth Webhook"
+            timeout: 10
           - service: workflowexecution
             service_name: "Workflow Execution"
             timeout: 15
