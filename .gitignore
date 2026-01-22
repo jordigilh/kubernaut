@@ -199,10 +199,12 @@ SESSION_*.txt
 GOOD_*.md
 OVERNIGHT_*.md
 
-# EXCEPTIONS: Allow all files in docs/handoff/ (cross-team Q&A archive)
+# EXCEPTIONS: Allow all files in docs/handoff/ and docs/triage/ (cross-team documentation)
 # Must be at the END of the file to override all ignore patterns above
 !docs/handoff/
 !docs/handoff/**
+!docs/triage/
+!docs/triage/**
 
 # Auto-generated OpenAPI spec copies (via go:generate)
 # DD-API-002: These are auto-generated from api/openapi/*.yaml
