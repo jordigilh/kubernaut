@@ -225,17 +225,27 @@ func (o *Orchestrator) DeliverToChannels(
 			continue
 		}
 
+		// NT-RACE-FIX: Increment in-flight counter BEFORE delivery
+		// This ensures concurrent reconciliations see the correct attempt count
+		o.incrementInFlightAttempts(string(notification.UID), string(channel))
+
 		// Attempt delivery
 		deliveryErr := o.DeliverToChannel(ctx, notification, channel)
+
+		// NT-RACE-FIX: Re-fetch attempt count AFTER in-flight increment
+		// This gives us the correct 1-based attempt number for concurrent reconciliations
+		attemptCountAfterIncrement := getChannelAttemptCount(notification, string(channel))
+
+		// Decrement in-flight counter now that delivery is complete
+		o.decrementInFlightAttempts(string(notification.UID), string(channel))
 
 		// Create delivery attempt record (but DON'T write to status yet)
 		// This prevents status updates from triggering immediate reconciles
 		now := metav1.Now()
-		// attemptCount already retrieved above (line 195)
 
 		attempt := notificationv1alpha1.DeliveryAttempt{
 			Channel:   string(channel),
-			Attempt:   attemptCount + 1, // 1-based attempt number
+			Attempt:   attemptCountAfterIncrement, // Use post-increment count for correct numbering
 			Timestamp: now,
 		}
 
@@ -330,18 +340,12 @@ func (o *Orchestrator) DeliverToChannel(
 
 // doDelivery performs the actual delivery (called by singleflight)
 // DD-NOT-008: Tracks in-flight attempts and successful deliveries to prevent duplicate deliveries
+// NT-RACE-FIX: In-flight counter is now managed by caller (DeliverToChannels) to fix attempt numbering race
 func (o *Orchestrator) doDelivery(
 	ctx context.Context,
 	notification *notificationv1alpha1.NotificationRequest,
 	channel notificationv1alpha1.Channel,
 ) error {
-	// DD-NOT-008: Increment in-flight counter BEFORE delivery attempt
-	// This ensures getChannelAttemptCount() sees this attempt even before status update
-	o.incrementInFlightAttempts(string(notification.UID), string(channel))
-
-	// DD-NOT-008: ALWAYS decrement on exit (success or failure)
-	defer o.decrementInFlightAttempts(string(notification.UID), string(channel))
-
 	// DD-NOT-007: Map lookup instead of switch statement (thread-safe)
 	serviceVal, exists := o.channels.Load(string(channel))
 	if !exists {
