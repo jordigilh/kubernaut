@@ -1,7 +1,7 @@
 # Notification Retry Attempt Numbering Race Condition - FIXED
-**Date**: January 22, 2026  
-**Service**: Notification (NT)  
-**Status**: ✅ **RESOLVED**  
+**Date**: January 22, 2026
+**Service**: Notification (NT)
+**Status**: ✅ **RESOLVED**
 **Test**: `Controller Retry Logic (BR-NOT-054) [It] should stop retrying after first success`
 
 ---
