@@ -25,19 +25,19 @@ Business Requirements: BR-HAPI-001 to 050 (Recovery Analysis)
 class TestRecoveryEndpoint:
     """Tests for /api/v1/recovery/analyze endpoint"""
 
-    def test_recovery_returns_200_on_valid_request(self, client, sample_recovery_request):
+    def test_recovery_returns_200_on_valid_request(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Recovery endpoint accepts valid requests"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         assert response.status_code == 200
 
-    def test_recovery_returns_incident_id(self, client, sample_recovery_request):
+    def test_recovery_returns_incident_id(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes incident ID"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         data = response.json()
 
         assert data["incident_id"] == sample_recovery_request["incident_id"]
 
-    def test_recovery_returns_can_recover_flag(self, client, sample_recovery_request):
+    def test_recovery_returns_can_recover_flag(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response indicates if recovery is possible"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         data = response.json()
@@ -45,7 +45,7 @@ class TestRecoveryEndpoint:
         assert "can_recover" in data
         assert isinstance(data["can_recover"], bool)
 
-    def test_recovery_returns_strategies_list(self, client, sample_recovery_request):
+    def test_recovery_returns_strategies_list(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes recovery strategies"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         data = response.json()
@@ -53,7 +53,7 @@ class TestRecoveryEndpoint:
         assert "strategies" in data
         assert isinstance(data["strategies"], list)
 
-    def test_recovery_strategy_has_required_fields(self, client, sample_recovery_request):
+    def test_recovery_strategy_has_required_fields(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Each strategy has action_type, confidence, rationale"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         data = response.json()
@@ -65,14 +65,14 @@ class TestRecoveryEndpoint:
             assert "rationale" in strategy
             assert "estimated_risk" in strategy
 
-    def test_recovery_includes_primary_recommendation(self, client, sample_recovery_request):
+    def test_recovery_includes_primary_recommendation(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes primary recommendation"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         data = response.json()
 
         assert "primary_recommendation" in data
 
-    def test_recovery_includes_confidence_score(self, client, sample_recovery_request):
+    def test_recovery_includes_confidence_score(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes overall confidence"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         data = response.json()
@@ -93,7 +93,7 @@ class TestRecoveryEndpoint:
 class TestRecoveryAnalysisLogic:
     """Tests for recovery analysis core logic via HTTP endpoint (uses mock LLM)"""
 
-    def test_analyze_recovery_generates_strategies(self, client, sample_recovery_request):
+    def test_analyze_recovery_generates_strategies(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Analysis generates recovery strategies"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         assert response.status_code == 200
@@ -102,7 +102,7 @@ class TestRecoveryAnalysisLogic:
         assert data["can_recover"] is True
         assert len(data["strategies"]) > 0
 
-    def test_analyze_recovery_includes_warnings_field(self, client):
+    def test_analyze_recovery_includes_warnings_field(self, client, mock_analyze_recovery):
         """Business Requirement: Response includes warnings field"""
         request = {
             "incident_id": "test-inc-002",
@@ -148,7 +148,7 @@ class TestRecoveryAnalysisLogic:
         assert "warnings" in data
         assert isinstance(data["warnings"], list)
 
-    def test_analyze_recovery_returns_metadata(self, client, sample_recovery_request):
+    def test_analyze_recovery_returns_metadata(self, client, sample_recovery_request, mock_analyze_recovery):
         """Business Requirement: Response includes analysis metadata"""
         response = client.post("/api/v1/recovery/analyze", json=sample_recovery_request)
         assert response.status_code == 200

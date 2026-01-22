@@ -1,8 +1,8 @@
 # HAPI Unit Test Failures Triage
 
-**Date**: January 22, 2026  
-**Service**: HolmesGPT API (HAPI)  
-**Status**: 25 failed, 508 passed, 21 warnings  
+**Date**: January 22, 2026
+**Service**: HolmesGPT API (HAPI)
+**Status**: 25 failed, 508 passed, 21 warnings
 **Root Cause**: Test mocks using obsolete method name `get_workflow_by_uuid` instead of `get_workflow_by_id`
 
 ---
