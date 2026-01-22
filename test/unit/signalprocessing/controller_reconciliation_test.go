@@ -235,6 +235,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 					AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 					K8sEnricher:   newDefaultMockK8sEnricher(),
 				}
 
@@ -467,6 +468,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 					AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 					K8sEnricher:   newMockK8sEnricherWithClient(fakeClient),
 				}
 
@@ -535,6 +537,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 					AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 					K8sEnricher:   newDefaultMockK8sEnricher(),
 				}
 
@@ -624,6 +627,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					StatusManager:    spstatus.NewManager(fakeClient, fakeClient),
 					Metrics:          spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 					AuditClient:      auditClient,
+					AuditManager:     spaudit.NewManager(auditClient),
 					EnvClassifier:    newDefaultMockEnvironmentClassifier(),
 					PriorityAssigner: newDefaultMockPriorityAssigner(),
 				}
@@ -707,6 +711,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 					StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 					Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 					AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 					K8sEnricher:   newDefaultMockK8sEnricher(),
 				}
 
@@ -834,6 +839,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newMockK8sEnricherWithClient(fakeClient),
 					}
 
@@ -916,6 +922,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newDefaultMockK8sEnricher(),
 					}
 
@@ -1007,6 +1014,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newDefaultMockK8sEnricher(),
 					}
 
@@ -1091,6 +1099,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newDefaultMockK8sEnricher(),
 					}
 
@@ -1176,6 +1185,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newDefaultMockK8sEnricher(),
 					}
 
@@ -1244,6 +1254,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newDefaultMockK8sEnricher(),
 					}
 
@@ -1321,6 +1332,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newMockK8sEnricherWithClient(fakeClient),
 					}
 
@@ -1392,6 +1404,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newMockK8sEnricherWithClient(fakeClient),
 					}
 
@@ -1461,6 +1474,7 @@ var _ = Describe("SignalProcessing Controller Reconciliation (ADR-004)", func() 
 						StatusManager: spstatus.NewManager(fakeClient, fakeClient),
 						Metrics:       spmetrics.NewMetricsWithRegistry(prometheus.NewRegistry()),
 						AuditClient:   auditClient,
+					AuditManager:  spaudit.NewManager(auditClient),
 						K8sEnricher:   newMockK8sEnricherWithClient(fakeClient),
 					}
 

@@ -70,18 +70,9 @@ var _ = BeforeSuite(func() {
 	suiteLogger.Info("  • Field selector support (spec.signalFingerprint)")
 	suiteLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// Set KUBEBUILDER_ASSETS if not already set
-	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
-		cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest", "use", "-p", "path")
-		output, err := cmd.Output()
-		if err != nil {
-			suiteLogger.Error(err, "Failed to get KUBEBUILDER_ASSETS path")
-			Expect(err).ToNot(HaveOccurred(), "Should get KUBEBUILDER_ASSETS path from setup-envtest")
-		}
-		assetsPath := strings.TrimSpace(string(output))
-		_ = os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
-		suiteLogger.Info("   📍 Set KUBEBUILDER_ASSETS", "path", assetsPath)
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
+	Expect(os.Getenv("KUBEBUILDER_ASSETS")).ToNot(BeEmpty(), "KUBEBUILDER_ASSETS must be set by Makefile (test-integration-% → setup-envtest)")
+	suiteLogger.Info("   📍 KUBEBUILDER_ASSETS set by Makefile", "path", os.Getenv("KUBEBUILDER_ASSETS"))
 
 	// Start envtest
 	testEnv = &envtest.Environment{

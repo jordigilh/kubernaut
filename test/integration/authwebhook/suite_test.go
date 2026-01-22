@@ -19,7 +19,9 @@ package authwebhook
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -145,6 +147,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// STEP 2: Setup envtest + webhook server
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
+	By("Verifying KUBEBUILDER_ASSETS is set by Makefile")
+	Expect(os.Getenv("KUBEBUILDER_ASSETS")).ToNot(BeEmpty(), "KUBEBUILDER_ASSETS must be set by Makefile (test-integration-% → setup-envtest)")
+
 	By("Bootstrapping test environment with envtest + webhook")
 	testEnv = &envtest.Environment{
 		CRDDirectoryPaths: []string{

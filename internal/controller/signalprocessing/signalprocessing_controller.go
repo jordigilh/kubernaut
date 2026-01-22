@@ -75,8 +75,9 @@ import (
 // Day 10 Integration: Wired with Rego-based classifiers from pkg/signalprocessing/classifier
 type SignalProcessingReconciler struct {
 	client.Client
-	Scheme      *runtime.Scheme
-	AuditClient *audit.AuditClient // BR-SP-090: Categorization Audit Trail
+	Scheme       *runtime.Scheme
+	AuditClient  *audit.AuditClient  // BR-SP-090: Categorization Audit Trail (legacy - use AuditManager)
+	AuditManager *audit.Manager      // BR-SP-090: Audit Manager (Phase 3 refactoring - 2026-01-22)
 
 	// V1.0 Maturity Requirements (per SERVICE_MATURITY_REQUIREMENTS.md)
 	Metrics  *metrics.Metrics     // DD-005: Observability - metrics wired to controller
@@ -365,7 +366,10 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 		// Test: audit_integration_test.go:761 expects error.occurred OR signal.processed
 		// NOTE: NotFound errors enter degraded mode (return success), so this only fires for
 		//       other errors: namespace fetch failures, API timeouts, RBAC denials, etc.
-		r.AuditClient.RecordError(ctx, sp, "Enriching", err)
+		// **Refactoring**: 2026-01-22 - Phase 3: Use AuditManager
+		if r.AuditManager != nil {
+			_ = r.AuditManager.RecordError(ctx, sp, "Enriching", err)
+		}
 
 		return ctrl.Result{}, fmt.Errorf("enrichment failed: %w", err)
 	}
@@ -619,9 +623,10 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 
 	// Record classification decision audit event (BR-SP-105, DD-SEVERITY-001)
 	// Must be called after atomic status update to include normalized severity
-	if r.AuditClient != nil && severityResult != nil {
+	// **Refactoring**: 2026-01-22 - Phase 3: Use AuditManager
+	if r.AuditManager != nil && severityResult != nil {
 		durationMs := int(time.Since(classifyingStart).Milliseconds())
-		r.AuditClient.RecordClassificationDecision(ctx, sp, durationMs)
+		_ = r.AuditManager.RecordClassificationDecision(ctx, sp, durationMs)
 	}
 
 	// Record phase transition audit event (BR-SP-090)
@@ -1263,56 +1268,42 @@ func isTransientError(err error) bool {
 // Services MUST return error if audit client is nil
 
 // recordPhaseTransitionAudit records a phase transition audit event.
-// ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// ADR-032: Returns error if AuditManager is nil (no silent skip allowed).
 // SP-BUG-002: Prevents duplicate audit events when phase hasn't actually changed (race condition mitigation).
+//
+// **Refactoring**: 2026-01-22 - Phase 3: Delegates to AuditManager for ADR-032 enforcement
 func (r *SignalProcessingReconciler) recordPhaseTransitionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase, newPhase string) error {
-	if r.AuditClient == nil {
-		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	if r.AuditManager == nil {
+		return fmt.Errorf("AuditManager is nil - audit is MANDATORY per ADR-032")
 	}
-	// SP-BUG-002: Skip audit if no actual transition occurred
-	// This prevents duplicate events when controller processes same phase twice due to K8s cache/watch timing
-	if oldPhase == newPhase {
-		return nil
-	}
-	r.AuditClient.RecordPhaseTransition(ctx, sp, oldPhase, newPhase)
-	return nil
+	return r.AuditManager.RecordPhaseTransition(ctx, sp, oldPhase, newPhase)
 }
 
 // recordEnrichmentCompleteAudit records an enrichment completion audit event.
-// ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// ADR-032: Returns error if AuditManager is nil (no silent skip allowed).
 // RF-SP-003: Now tracks actual enrichment duration for audit metrics.
 // SP-BUG-ENRICHMENT-001: Prevents duplicate audit events when enrichment already completed (race condition mitigation).
+//
+// **Refactoring**: 2026-01-22 - Phase 3: Delegates to AuditManager for ADR-032 enforcement
 func (r *SignalProcessingReconciler) recordEnrichmentCompleteAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, durationMs int, alreadyCompleted bool) error {
-	if r.AuditClient == nil {
-		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
-	}
-
-	// SP-BUG-ENRICHMENT-001: Idempotency guard - skip if enrichment was already completed before this reconciliation
-	// This prevents duplicate events when controller processes same enrichment phase twice due to K8s cache/watch timing
-	// Similar to SP-BUG-002 for phase transitions
-	if alreadyCompleted {
-		// Enrichment already completed and audited - skip to prevent duplicate
-		return nil
+	if r.AuditManager == nil {
+		return fmt.Errorf("AuditManager is nil - audit is MANDATORY per ADR-032")
 	}
 
 	// Create a temporary SP with enriched context for audit
 	auditSP := sp.DeepCopy()
 	auditSP.Status.KubernetesContext = k8sCtx
-	r.AuditClient.RecordEnrichmentComplete(ctx, auditSP, durationMs)
-	return nil
+	return r.AuditManager.RecordEnrichmentComplete(ctx, auditSP, durationMs, alreadyCompleted)
 }
 
 // recordCompletionAudit records the final signal processed and classification decision audit events.
-// ADR-032: Returns error if AuditClient is nil (no silent skip allowed).
+// ADR-032: Returns error if AuditManager is nil (no silent skip allowed).
 // AUDIT-06: Now also emits business.classified event for granular audit trail.
+//
+// **Refactoring**: 2026-01-22 - Phase 3: Delegates to AuditManager for ADR-032 enforcement
 func (r *SignalProcessingReconciler) recordCompletionAudit(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) error {
-	if r.AuditClient == nil {
-		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	if r.AuditManager == nil {
+		return fmt.Errorf("AuditManager is nil - audit is MANDATORY per ADR-032")
 	}
-	r.AuditClient.RecordSignalProcessed(ctx, sp)
-	// DD-SEVERITY-001: Classification decision emitted ONCE during Classifying phase (line ~570)
-	// Not duplicated here to maintain "one classification decision = one audit event" principle
-	// AUDIT-06: Emit dedicated business classification event (per integration-test-plan.md v1.1.0)
-	r.AuditClient.RecordBusinessClassification(ctx, sp)
-	return nil
+	return r.AuditManager.RecordCompletion(ctx, sp)
 }

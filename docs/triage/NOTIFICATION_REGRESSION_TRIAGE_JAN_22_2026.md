@@ -2,7 +2,7 @@
 
 **Context**: After fixing the race condition in Notification service (DD-PERF-001 + DD-NOT-008), we have introduced a regression affecting 2-5 tests depending on test run.
 
-**Session**: Post-race-condition-fix validation  
+**Session**: Post-race-condition-fix validation
 **Status**: 🚨 REGRESSION DETECTED
 
 ---
@@ -25,8 +25,8 @@
 
 ### **Test #1: Retry Logic - Stop After Success**
 
-**File**: `test/integration/notification/controller_retry_logic_test.go:356`  
-**Test**: `[BR-NOT-054] should stop retrying after first success`  
+**File**: `test/integration/notification/controller_retry_logic_test.go:356`
+**Test**: `[BR-NOT-054] should stop retrying after first success`
 **Business Requirement**: BR-NOT-054 (Retry Logic Correctness)
 
 #### **Error**
@@ -61,8 +61,8 @@ statusDeliveryAttempts: 2  <-- Already has 2 before new attempt added!
 
 ### **Test #2: Partial Failure Handling**
 
-**File**: `test/integration/notification/controller_partial_failure_test.go:178`  
-**Test**: `[BR-NOT-053] should mark notification as PartiallySent`  
+**File**: `test/integration/notification/controller_partial_failure_test.go:178`
+**Test**: `[BR-NOT-053] should mark notification as PartiallySent`
 **Business Requirement**: BR-NOT-053 (Partial Failure Handling)
 
 #### **Error**
@@ -83,8 +83,8 @@ Expected status.Phase to be PartiallySent
 
 ### **Test #3-5: Audit Event Emission (Sporadic)**
 
-**File**: `test/integration/notification/controller_audit_emission_test.go:230, 300, 364`  
-**Tests**: Audit event correlation and emission  
+**File**: `test/integration/notification/controller_audit_emission_test.go:230, 300, 364`
+**Tests**: Audit event correlation and emission
 **Business Requirements**: BR-NOT-062, DD-AUDIT-003
 
 #### **Errors**
@@ -271,6 +271,6 @@ Which hypothesis should we investigate first?
 
 ---
 
-**Last Updated**: 2026-01-22 16:23:00 EST  
-**Status**: Awaiting user decision on investigation approach  
+**Last Updated**: 2026-01-22 16:23:00 EST
+**Status**: Awaiting user decision on investigation approach
 **Impact**: 2-5 Notification integration tests failing (95.7%-99.1% pass rate)

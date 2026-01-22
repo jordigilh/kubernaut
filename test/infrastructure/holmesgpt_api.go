@@ -22,9 +22,11 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,7 +94,7 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	// Expected: <1 minute
 	_, _ = fmt.Fprintf(writer, "🔨 [%s] Building Mock LLM...\n", time.Now().Format("15:04:05"))
 	if err := buildImageOnly("Mock LLM", mockLLMImage,
-		"test/services/mock-llm/Dockerfile", projectRoot, writer); err != nil {
+		"Dockerfile", filepath.Join(projectRoot, "test/services/mock-llm"), writer); err != nil {
 		return fmt.Errorf("failed to build mock-llm image: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ [%s] Mock LLM image built: %s\n", time.Now().Format("15:04:05"), mockLLMImage)
@@ -118,14 +120,17 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 	loadResults := make(chan imageLoadResult, 3)
 
 	go func() {
+		defer GinkgoRecover()
 		err := loadImageToKind(clusterName, dataStorageImage, writer)
 		loadResults <- imageLoadResult{"DataStorage", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		err := loadImageToKind(clusterName, hapiImage, writer)
 		loadResults <- imageLoadResult{"HolmesGPT-API", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		err := loadImageToKind(clusterName, mockLLMImage, writer)
 		loadResults <- imageLoadResult{"Mock LLM", err}
 	}()
@@ -158,28 +163,34 @@ func SetupHAPIInfrastructure(ctx context.Context, clusterName, kubeconfigPath, n
 
 	// Launch ALL kubectl apply commands concurrently
 	go func() {
+		defer GinkgoRecover()
 		err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer)
 		deployResults <- deployResult{"PostgreSQL", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		err := deployRedisInNamespace(ctx, namespace, kubeconfigPath, writer)
 		deployResults <- deployResult{"Redis", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		err := ApplyAllMigrations(ctx, namespace, kubeconfigPath, writer)
 		deployResults <- deployResult{"Migrations", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		// Use NodePort 30098 for HAPI E2E (per DD-TEST-001 v1.8)
 		// TD-E2E-001 Phase 1: Deploy with OAuth2-Proxy sidecar
 		err := deployDataStorageServiceInNamespaceWithNodePort(ctx, namespace, kubeconfigPath, dataStorageImage, 30098, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		err := deployHAPIOnly(clusterName, kubeconfigPath, namespace, hapiImage, writer)
 		deployResults <- deployResult{"HolmesGPT-API", err}
 	}()
 	go func() {
+		defer GinkgoRecover()
 		// HAPI E2E: No workflow seeding, Mock LLM uses default UUIDs
 		err := deployMockLLMInNamespace(ctx, namespace, kubeconfigPath, mockLLMImage, nil, writer)
 		deployResults <- deployResult{"Mock LLM", err}
@@ -426,6 +437,32 @@ func waitForHAPIServicesReady(ctx context.Context, namespace, kubeconfigPath str
 func deployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, imageTag string, workflowUUIDs map[string]string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   📦 Deploying Mock LLM service (image: %s)...\n", imageTag)
 
+	// Create ConfigMap with default scenarios for Mock LLM
+	// For HAPI E2E, use empty scenarios since no workflows are seeded
+	scenariosYAML := "scenarios: []"
+	configMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mock-llm-scenarios
+  namespace: %s
+  labels:
+    app: mock-llm
+    component: test-infrastructure
+data:
+  scenarios.yaml: |
+    %s
+---`, namespace, scenariosYAML)
+
+	_, _ = fmt.Fprintf(writer, "   📦 Creating Mock LLM ConfigMap...\n")
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd.Stdin = strings.NewReader(configMap)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create Mock LLM ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ ConfigMap created\n")
+
 	// Use the manifests from deploy/mock-llm/ with the provided image tag
 	deployment := fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
@@ -528,7 +565,7 @@ spec:
     app: mock-llm
 `, namespace, imageTag, namespace)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	cmd = exec.CommandContext(ctx, "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
 	cmd.Stdin = strings.NewReader(deployment)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

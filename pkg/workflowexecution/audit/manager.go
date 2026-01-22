@@ -491,14 +491,12 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	}
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details for SOC2 compliance
+	// **Refactoring**: 2026-01-22 - Use shared helper for type-safe component enum conversion
 	if errorDetails != nil {
-		payload.ErrorDetails.SetTo(api.ErrorDetails{
-			Message:       errorDetails.Message,
-			Code:          errorDetails.Code,
-			Component:     api.ErrorDetailsComponent(errorDetails.Component),
-			RetryPossible: errorDetails.RetryPossible,
-			StackTrace:    errorDetails.StackTrace,
-		})
+		optErrorDetails := sharedaudit.ToOgenOptErrorDetails(errorDetails)
+		if details, ok := optErrorDetails.Get(); ok {
+			payload.ErrorDetails.SetTo(details)
+		}
 	}
 
 	// Add timing info if available

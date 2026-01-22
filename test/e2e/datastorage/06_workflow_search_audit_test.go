@@ -383,40 +383,56 @@ execution:
 			testLogger.Info("Test: Async Audit Non-Blocking Behavior")
 			testLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			// ACT: Perform multiple rapid searches to test async behavior
-			testLogger.Info("🔍 Performing rapid workflow searches...")
+		// ACT: Perform multiple rapid searches to test async behavior
+		testLogger.Info("🔍 Performing rapid workflow searches...")
 
-			var totalDuration time.Duration
-			numSearches := 5
+		// FIX: Warm-up search to exclude cold-start overhead from average (E2E environment constraint)
+		warmupRequest := dsgen.WorkflowSearchRequest{
+			RemediationID: dsgen.NewOptString(fmt.Sprintf("rem-async-warmup-%s", testID)),
+			Filters: dsgen.WorkflowSearchFilters{
+				SignalType:  "OOMKilled",
+				Severity:    dsgen.WorkflowSearchFiltersSeverityCritical,
+				Component:   "deployment",
+				Environment: "production",
+				Priority:    dsgen.WorkflowSearchFiltersPriorityP0,
+			},
+			TopK: dsgen.NewOptInt(3),
+		}
+		_, err := dsClient.SearchWorkflows(context.Background(), &warmupRequest)
+		Expect(err).ToNot(HaveOccurred())
+		testLogger.Info("  Warm-up search completed (excluded from average)")
 
-			for i := 0; i < numSearches; i++ {
-				remediationID := fmt.Sprintf("rem-async-%s-%d", testID, i)
-				topK := 3
-				// DD-API-001: Use typed OpenAPI struct
-				searchRequest := dsgen.WorkflowSearchRequest{
-					RemediationID: dsgen.NewOptString(remediationID),
-					Filters: dsgen.WorkflowSearchFilters{
-						SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
-						Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
-						Component:   "deployment",                                // mandatory
-						Environment: "production",                                // mandatory
-						Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
-					},
-					TopK: dsgen.NewOptInt(topK),
-				}
+		var totalDuration time.Duration
+		numSearches := 5
 
-				start := time.Now()
-				_, err := dsClient.SearchWorkflows(context.Background(), &searchRequest)
-				duration := time.Since(start)
-				totalDuration += duration
-
-				Expect(err).ToNot(HaveOccurred())
-
-				testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),
-					"duration", duration)
+		for i := 0; i < numSearches; i++ {
+			remediationID := fmt.Sprintf("rem-async-%s-%d", testID, i)
+			topK := 3
+			// DD-API-001: Use typed OpenAPI struct
+			searchRequest := dsgen.WorkflowSearchRequest{
+				RemediationID: dsgen.NewOptString(remediationID),
+				Filters: dsgen.WorkflowSearchFilters{
+					SignalType:  "OOMKilled",                                 // mandatory (DD-WORKFLOW-001 v1.4)
+					Severity:    dsgen.WorkflowSearchFiltersSeverityCritical, // mandatory
+					Component:   "deployment",                                // mandatory
+					Environment: "production",                                // mandatory
+					Priority:    dsgen.WorkflowSearchFiltersPriorityP0,       // mandatory
+				},
+				TopK: dsgen.NewOptInt(topK),
 			}
 
-			avgDuration := totalDuration / time.Duration(numSearches)
+			start := time.Now()
+			_, err := dsClient.SearchWorkflows(context.Background(), &searchRequest)
+			duration := time.Since(start)
+			totalDuration += duration
+
+			Expect(err).ToNot(HaveOccurred())
+
+			testLogger.Info(fmt.Sprintf("  Search %d completed", i+1),
+				"duration", duration)
+		}
+
+		avgDuration := totalDuration / time.Duration(numSearches)
 
 			// ASSERT: Average search latency should be <200ms (async audit should not add significant latency)
 			// Per BR-AUDIT-024: Audit writes use buffered async pattern, search latency < 50ms impact

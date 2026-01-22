@@ -579,6 +579,8 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 // OGEN-MIGRATION: Helper functions for type conversion
 // ========================================
 
+// Note: componentMapping moved to pkg/shared/audit/ogen_helpers.go for reuse across all services
+
 // toAIAnalysisAuditPayloadPhase converts string phase to ogen enum type.
 func toAIAnalysisAuditPayloadPhase(phase string) ogenclient.AIAnalysisAuditPayloadPhase {
 	switch phase {
@@ -601,33 +603,7 @@ func toOptErrorDetails(errorDetails *sharedaudit.ErrorDetails) ogenclient.OptErr
 		return ogenclient.OptErrorDetails{}
 	}
 
-	ogenErrorDetails := ogenclient.ErrorDetails{
-		Message:       errorDetails.Message,
-		Code:          errorDetails.Code,
-		RetryPossible: errorDetails.RetryPossible,
-	}
-
-	// Convert Component enum
-	switch errorDetails.Component {
-	case "gateway":
-		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentGateway
-	case "aianalysis":
-		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentAianalysis
-	case "workflowexecution":
-		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentWorkflowexecution
-	case "webhooks":
-		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentWebhooks
-	case "remediationorchestrator":
-		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentRemediationorchestrator
-	case "signalprocessing":
-		ogenErrorDetails.Component = ogenclient.ErrorDetailsComponentSignalprocessing
-	}
-
-	// Set StackTrace ([]string, not optional)
-	if len(errorDetails.StackTrace) > 0 {
-		ogenErrorDetails.StackTrace = errorDetails.StackTrace
-	}
-	var result ogenclient.OptErrorDetails
-	result.SetTo(ogenErrorDetails)
-	return result
+	// Use shared helper for type-safe conversion
+	// **Refactoring**: 2026-01-22 - Use pkg/shared/audit/ogen_helpers.go for consistency
+	return sharedaudit.ToOgenOptErrorDetails(errorDetails)
 }
