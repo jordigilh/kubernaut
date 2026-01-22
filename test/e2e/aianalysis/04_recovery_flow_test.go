@@ -243,7 +243,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-recovery-fp-003",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "development",
 							BusinessPriority: "P2",
@@ -442,7 +442,7 @@ var _ = Describe("Recovery Flow E2E", Label("e2e", "recovery"), func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-recovery-fp-005",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P2",

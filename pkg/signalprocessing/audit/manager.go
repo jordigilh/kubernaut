@@ -19,79 +19,193 @@ limitations under the License.
 // Reference: CONTROLLER_REFACTORING_PATTERN_LIBRARY.md - Pattern 7 (Audit Manager)
 //
 // The Audit Manager pattern centralizes audit operations to provide:
+// - ADR-032 enforcement (audit is MANDATORY - fail if not configured)
 // - Consistent audit event formatting across the controller
-// - Retry logic for audit event submission
-// - Correlation ID tracking
-// - Structured audit context management
+// - Single point of control for audit operations
 //
-// TODO: Complete Audit Manager implementation (Phase 3 refactoring)
-// - Extract recordPhaseTransitionAudit from controller
-// - Extract recordClassificationAudit from controller
-// - Add retry logic for audit client operations
-// - Add correlation ID propagation
-// - Add structured audit context builder
-// - Update controller to use Manager instead of direct AuditClient calls
-// - Update integration tests to verify audit manager behavior
+// Per Controller Refactoring Pattern Library (P3: Audit Manager):
+// - Extracted from internal/controller/signalprocessing/signalprocessing_controller.go
+// - Follows RemediationOrchestrator/WorkflowExecution/AIAnalysis/Notification patterns
+// - Consistent package structure across all controllers
 //
-// Estimated effort: 1-2 days (P3 priority - polish and consistency)
-// Expected benefits: ~50-80 lines removed from controller, consistent audit patterns
+// Business Requirements:
+// - BR-SP-090: Categorization Audit Trail
+// - ADR-032: Audit is MANDATORY - fail if not configured
+//
+// **Refactoring**: 2026-01-22 - Phase 3 audit manager extraction complete
 package audit
 
 import (
 	"context"
+	"fmt"
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 // Manager centralizes audit event recording for SignalProcessing.
-// It wraps the AuditClient with higher-level operations specific to SignalProcessing workflows.
+// It wraps the AuditClient with ADR-032 enforcement and provides a consistent
+// interface for the controller.
 //
 // Business Requirements:
 // - BR-SP-090: Categorization Audit Trail
 // - ADR-032: Audit is MANDATORY - fail if not configured
 type Manager struct {
-	client        *AuditClient
-	correlationID string // Tracks audit correlation across phases
+	client *AuditClient
 }
 
 // NewManager creates a new Audit Manager.
-func NewManager(client *AuditClient, correlationID string) *Manager {
+//
+// The Manager wraps the AuditClient and provides ADR-032 enforcement,
+// ensuring audit operations fail explicitly if misconfigured.
+//
+// Parameters:
+// - client: AuditClient for writing audit events
+//
+// Per ADR-032: client should never be nil in production. The Manager
+// will return explicit errors if audit operations are attempted with nil client.
+func NewManager(client *AuditClient) *Manager {
 	return &Manager{
-		client:        client,
-		correlationID: correlationID,
+		client: client,
 	}
 }
 
-// TODO: Implement Manager methods
-// These methods will be extracted from the controller during Phase 3 refactoring:
+// RecordPhaseTransition records a phase transition audit event.
 //
-// // RecordPhaseTransition records a phase transition audit event.
-// func (m *Manager) RecordPhaseTransition(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, fromPhase, toPhase string) error {
-//     // Build structured audit event
-//     // Add correlation ID
-//     // Submit via client with retry logic
-//     // Return error if submission fails (ADR-032 mandate)
-// }
+// This method provides ADR-032 enforcement: returns error if AuditClient is nil,
+// preventing silent audit failures. Delegates to AuditClient for event construction.
 //
-// // RecordClassification records a classification audit event.
-// func (m *Manager) RecordClassification(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, classification string) error {
-//     // Build structured audit event
-//     // Add correlation ID
-//     // Submit via client with retry logic
-//     // Return error if submission fails (ADR-032 mandate)
-// }
+// Parameters:
+// - ctx: Context for the operation
+// - sp: SignalProcessing CRD with current state
+// - fromPhase: Previous phase (for idempotency check)
+// - toPhase: New phase
 //
-// // RecordCategorization records a categorization audit event.
-// func (m *Manager) RecordCategorization(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, category string) error {
-//     // Build structured audit event
-//     // Add correlation ID
-//     // Submit via client with retry logic
-//     // Return error if submission fails (ADR-032 mandate)
-// }
+// Returns:
+// - error if AuditClient is nil (ADR-032 mandate)
+// - error if phase transition is duplicate (idempotency guard)
+// - nil if audit event was successfully submitted (fire-and-forget)
+func (m *Manager) RecordPhaseTransition(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, fromPhase, toPhase string) error {
+	if m.client == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
 
-// Placeholder to satisfy linting until methods are implemented
-var _ context.Context
-var _ *signalprocessingv1alpha1.SignalProcessing
+	// SP-BUG-002: Skip audit if no actual transition occurred
+	// This prevents duplicate events when controller processes same phase twice due to K8s cache/watch timing
+	if fromPhase == toPhase {
+		return nil
+	}
+
+	m.client.RecordPhaseTransition(ctx, sp, fromPhase, toPhase)
+	return nil
+}
+
+// RecordEnrichmentComplete records enrichment completion audit event.
+//
+// This method provides ADR-032 enforcement and idempotency guards.
+//
+// Parameters:
+// - ctx: Context for the operation
+// - sp: SignalProcessing CRD with enriched context
+// - durationMs: Enrichment duration in milliseconds (for performance metrics)
+// - alreadyCompleted: Idempotency guard - skip if enrichment was already completed
+//
+// Returns:
+// - error if AuditClient is nil (ADR-032 mandate)
+// - error if alreadyCompleted is true (idempotency guard)
+// - nil if audit event was successfully submitted (fire-and-forget)
+func (m *Manager) RecordEnrichmentComplete(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, durationMs int, alreadyCompleted bool) error {
+	if m.client == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+
+	// SP-BUG-ENRICHMENT-001: Idempotency guard - skip if enrichment was already completed before this reconciliation
+	// This prevents duplicate events when controller processes same enrichment phase twice due to K8s cache/watch timing
+	if alreadyCompleted {
+		// Enrichment already completed and audited - skip to prevent duplicate
+		return nil
+	}
+
+	m.client.RecordEnrichmentComplete(ctx, sp, durationMs)
+	return nil
+}
+
+// RecordCompletion records final signal processing completion audit events.
+//
+// This method emits two audit events:
+// 1. signalprocessing.signal.processed (primary completion event)
+// 2. signalprocessing.business.classified (business classification details)
+//
+// Per DD-SEVERITY-001: Classification decision is emitted ONCE during Classifying phase,
+// not duplicated here to maintain "one classification decision = one audit event" principle.
+//
+// Parameters:
+// - ctx: Context for the operation
+// - sp: SignalProcessing CRD with final status
+//
+// Returns:
+// - error if AuditClient is nil (ADR-032 mandate)
+// - nil if audit events were successfully submitted (fire-and-forget)
+func (m *Manager) RecordCompletion(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) error {
+	if m.client == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+
+	m.client.RecordSignalProcessed(ctx, sp)
+
+	// DD-SEVERITY-001: Classification decision emitted ONCE during Classifying phase
+	// Not duplicated here to maintain "one classification decision = one audit event" principle
+
+	// AUDIT-06: Emit dedicated business classification event (per integration-test-plan.md v1.1.0)
+	m.client.RecordBusinessClassification(ctx, sp)
+
+	return nil
+}
+
+// RecordClassificationDecision records classification decision audit event.
+//
+// This method is called during the Classifying phase to record severity,
+// priority, environment, and business classification decisions.
+//
+// Per DD-SEVERITY-001: Includes both external and normalized severity for audit trail.
+//
+// Parameters:
+// - ctx: Context for the operation
+// - sp: SignalProcessing CRD with classification results
+// - durationMs: Classification duration in milliseconds (for performance metrics)
+//
+// Returns:
+// - error if AuditClient is nil (ADR-032 mandate)
+// - nil if audit event was successfully submitted (fire-and-forget)
+func (m *Manager) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, durationMs int) error {
+	if m.client == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+
+	m.client.RecordClassificationDecision(ctx, sp, durationMs)
+	return nil
+}
+
+// RecordError records error audit event.
+//
+// This method is called when the controller encounters errors during processing.
+//
+// Parameters:
+// - ctx: Context for the operation
+// - sp: SignalProcessing CRD when error occurred
+// - phase: Phase where error occurred (for troubleshooting)
+// - err: The error that occurred
+//
+// Returns:
+// - error if AuditClient is nil (ADR-032 mandate)
+// - nil if audit event was successfully submitted (fire-and-forget)
+func (m *Manager) RecordError(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, phase string, err error) error {
+	if m.client == nil {
+		return fmt.Errorf("AuditClient is nil - audit is MANDATORY per ADR-032")
+	}
+
+	m.client.RecordError(ctx, sp, phase, err)
+	return nil
+}
 
 
 

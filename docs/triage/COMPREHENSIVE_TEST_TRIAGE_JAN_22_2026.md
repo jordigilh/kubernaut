@@ -178,7 +178,7 @@ grep -r "SignalProcessingReconciler" test/integration/remediationorchestrator/ -
 
 **Status**: 🔴 **FAILING** - Regression introduced by race condition fix
 
-**Test Results**: 
+**Test Results**:
 - **Best case**: 116/117 passing (99.1%, 1 flaked)
 - **Worst case**: 112/117 passing (95.7%, 5 failed)
 - **Non-deterministic**: Results vary between test runs
@@ -299,6 +299,6 @@ grep -r "SignalProcessingReconciler" test/integration/remediationorchestrator/ -
 
 ---
 
-**Last Updated**: 2026-01-22 16:24:00 EST  
-**Status**: 🚨 Notification regression detected - user decision required  
+**Last Updated**: 2026-01-22 16:24:00 EST
+**Status**: 🚨 Notification regression detected - user decision required
 **Next Action**: Investigate Notification extra attempts issue (see NOTIFICATION_REGRESSION_TRIAGE_JAN_22_2026.md)

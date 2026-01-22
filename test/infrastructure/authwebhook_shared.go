@@ -76,7 +76,7 @@ import (
 //
 // Prerequisites (must be completed BEFORE calling this function):
 //   - PHASE 1: Image built using BuildImageForKind(awConfig, writer)
-//   - PHASE 3: Image loaded to Kind using LoadImageToKind(awImage, "webhooks", cluster, writer)
+//   - PHASE 3: Image loaded to Kind using LoadImageToKind(awImage, "authwebhook", cluster, writer)
 //
 // This function ONLY handles MANIFEST DEPLOYMENT:
 //   - TLS certificate generation
@@ -88,7 +88,7 @@ import (
 // Standard E2E Infrastructure Pattern (all 3 services):
 //
 //	PHASE 1: awImage := BuildImageForKind(awConfig, writer)           // ← BUILD
-//	PHASE 3: LoadImageToKind(awImage, "webhooks", cluster, writer)    // ← UPLOAD/LOAD
+//	PHASE 3: LoadImageToKind(awImage, "authwebhook", cluster, writer)    // ← UPLOAD/LOAD
 //	PHASE 4.5: DeployAuthWebhookManifestsOnly(ctx, ..., awImage, ...)  // ← DEPLOY ONLY
 //
 // Authority: DD-WEBHOOK-001, DD-AUTH-001, SOC2 CC8.1

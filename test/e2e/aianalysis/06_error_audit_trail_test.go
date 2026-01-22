@@ -129,7 +129,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-error-retry-fp",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "staging",
 							BusinessPriority: "P1",
@@ -280,7 +280,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-restart-fp",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "HighMemoryUsage",
 							Environment:      "staging",
 							BusinessPriority: "P2",

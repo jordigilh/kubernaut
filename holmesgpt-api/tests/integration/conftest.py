@@ -188,7 +188,7 @@ def audit_store(data_storage_url):
         print(f"✅ Audit store flushed (all buffered events written)")
     else:
         print(f"⚠️  Warning: Audit store flush timed out or failed")
-    
+
     print(f"🔄 Closing audit store...")
     store.close()
     print(f"✅ Audit store closed")
@@ -225,7 +225,7 @@ def hapi_client():
 
     # Environment variables are set globally in pytest_configure
     # (CONFIG_FILE, MOCK_LLM_MODE, LLM_MODEL, LLM_ENDPOINT)
-    
+
     # Import app (env vars already set by pytest_configure)
     from src.main import app
 
@@ -395,12 +395,12 @@ def is_integration_infra_available() -> bool:
 def pytest_configure(config):
     """
     Register custom pytest markers and set global environment variables.
-    
+
     CRITICAL: Set LLM configuration env vars here (before test collection)
     to ensure they're available in all pytest workers (gw0-gw3).
     """
     import os
-    
+
     # Set LLM configuration for all integration tests
     # These must be set BEFORE any test modules import src.main
     os.environ["LLM_MODEL"] = "gpt-4-turbo"
@@ -408,7 +408,7 @@ def pytest_configure(config):
     os.environ["MOCK_LLM_MODE"] = "true"
     os.environ["CONFIG_FILE"] = "config.yaml"
     os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
-    
+
     config.addinivalue_line(
         "markers",
         "requires_data_storage: mark test as requiring Data Storage service"

@@ -160,17 +160,8 @@ var _ = SynchronizedBeforeSuite(
 		// Create per-process envtest
 		logger.Info(fmt.Sprintf("[Process %d] Creating per-process envtest", processNum))
 
-		// Set KUBEBUILDER_ASSETS if not already set
-		if os.Getenv("KUBEBUILDER_ASSETS") == "" {
-			cmd := exec.Command("go", "run", "sigs.k8s.io/controller-runtime/tools/setup-envtest@latest", "use", "-p", "path")
-			output, err := cmd.Output()
-			if err != nil {
-				logger.Error(err, "Failed to get KUBEBUILDER_ASSETS path")
-				Expect(err).ToNot(HaveOccurred(), "Should get KUBEBUILDER_ASSETS path from setup-envtest")
-			}
-			assetsPath := strings.TrimSpace(string(output))
-			_ = os.Setenv("KUBEBUILDER_ASSETS", assetsPath)
-		}
+		// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
+		Expect(os.Getenv("KUBEBUILDER_ASSETS")).ToNot(BeEmpty(), "KUBEBUILDER_ASSETS must be set by Makefile (test-integration-% → setup-envtest)")
 
 		// Create envtest with CRD auto-installation
 		testEnv = &envtest.Environment{

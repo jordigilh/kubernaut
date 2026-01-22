@@ -266,7 +266,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	return awImageName, dsImageName, nil
 }
 
-// buildAuthWebhookImageWithTag builds the AuthWebhook (webhooks service) Docker image with a specific tag
+// buildAuthWebhookImageWithTag builds the AuthWebhook Docker image with a specific tag
 // buildAuthWebhookImageOnly builds AuthWebhook image without loading it to Kind.
 // This is Phase 1 of the hybrid E2E pattern (build before cluster creation).
 //

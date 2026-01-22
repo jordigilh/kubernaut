@@ -148,9 +148,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Build AuthWebhook in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "webhooks",
-			ImageName:        "webhooks",
-			DockerfilePath:   "docker/webhooks.Dockerfile",
+		ServiceName:      "authwebhook",
+		ImageName:        "authwebhook",
+		DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
@@ -266,7 +266,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "webhooks", clusterName, writer)
+		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 

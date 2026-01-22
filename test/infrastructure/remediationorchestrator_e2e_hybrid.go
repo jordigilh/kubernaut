@@ -103,9 +103,9 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Build AuthWebhook in parallel using consolidated API
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "webhooks",
-			ImageName:        "webhooks",
-			DockerfilePath:   "docker/webhooks.Dockerfile",
+			ServiceName:      "authwebhook",
+			ImageName:        "authwebhook",
+			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
@@ -226,7 +226,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "webhooks", clusterName, writer)
+		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 

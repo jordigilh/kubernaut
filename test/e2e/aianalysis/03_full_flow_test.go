@@ -57,7 +57,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-001",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -168,7 +168,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-002",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "OOMKilled",
 							Environment:      "staging", // Non-production = auto-approve
 							BusinessPriority: "P2",
@@ -291,7 +291,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1alpha1.AnalysisRequest{
 						SignalContext: aianalysisv1alpha1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-004",
-							Severity:         "warning",
+							Severity:        "medium",
 							SignalType:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P2",

@@ -674,39 +674,11 @@ func ToOptDecision(decision string) api.OptRemediationOrchestratorAuditPayloadDe
 }
 
 // toOptErrorDetails converts sharedaudit.ErrorDetails to api.OptErrorDetails.
+//
+// **Refactoring**: 2026-01-22 - Use shared helper from pkg/shared/audit/ogen_helpers.go
+// **Authority**: api/openapi/data-storage-v1.yaml (ErrorDetails schema)
 func toOptErrorDetails(errorDetails *sharedaudit.ErrorDetails) api.OptErrorDetails {
-	if errorDetails == nil {
-		return api.OptErrorDetails{}
-	}
-
-	ogenErrorDetails := api.ErrorDetails{
-		Message:       errorDetails.Message,
-		Code:          errorDetails.Code,
-		RetryPossible: errorDetails.RetryPossible,
-	}
-
-	// Convert Component enum
-	switch errorDetails.Component {
-	case "gateway":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentGateway
-	case "aianalysis":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentAianalysis
-	case "workflowexecution":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentWorkflowexecution
-	case "webhooks":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentAuthwebhook
-	case "remediationorchestrator":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentRemediationorchestrator
-	case "signalprocessing":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentSignalprocessing
-	}
-
-	// Set StackTrace ([]string, not optional)
-	if len(errorDetails.StackTrace) > 0 {
-		ogenErrorDetails.StackTrace = errorDetails.StackTrace
-	}
-
-	var result api.OptErrorDetails
-	result.SetTo(ogenErrorDetails)
-	return result
+	// Use shared helper for type-safe conversion
+	// **Pattern**: Eliminates switch statement duplication across services
+	return sharedaudit.ToOgenOptErrorDetails(errorDetails)
 }

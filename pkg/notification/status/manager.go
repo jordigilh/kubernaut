@@ -129,15 +129,19 @@ func (m *Manager) AtomicStatusUpdate(
 
 		// 3. Record all delivery attempts atomically
 		// De-duplicate attempts to prevent concurrent reconciles from recording the same attempt twice
+		// BUG FIX (Jan 22, 2026): Relaxed deduplication to only reject truly identical attempts
+		// Previous logic rejected legitimate failed attempts with same attempt# due to API propagation lag
 		for _, attempt := range attempts {
-			// Check if this exact attempt already exists (same channel, attempt number, status, timestamp within 1 second)
-			// BUG FIX: Must check Status to avoid deduplicating failed attempt vs. successful retry
+			// Check if this exact attempt already exists (same channel, timestamp, status, and error message)
+			// We NO LONGER check attempt number because concurrent reconciles can assign the same attempt#
+			// before the previous status update propagates (even with apiReader cache bypass).
 			alreadyExists := false
 			for _, existing := range notification.Status.DeliveryAttempts {
 				if existing.Channel == attempt.Channel &&
-					existing.Attempt == attempt.Attempt &&
 					existing.Status == attempt.Status &&
+					existing.Error == attempt.Error &&
 					abs(existing.Timestamp.Time.Sub(attempt.Timestamp.Time)) < time.Second {
+					// Truly identical attempt (same error message at same time)
 					alreadyExists = true
 					break
 				}

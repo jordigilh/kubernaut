@@ -77,9 +77,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Build AuthWebhook in parallel
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "webhooks",
-			ImageName:        "webhooks",
-			DockerfilePath:   "docker/webhooks.Dockerfile",
+		ServiceName:      "authwebhook",
+		ImageName:        "authwebhook",
+		DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
@@ -156,7 +156,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "webhooks", clusterName, writer)
+		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 

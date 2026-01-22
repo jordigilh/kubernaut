@@ -139,13 +139,13 @@ test-unit-%: ginkgo ## Run unit tests for specified service (e.g., make test-uni
 
 # Integration Tests
 .PHONY: test-integration-%
-test-integration-%: generate ginkgo ## Run integration tests for specified service (e.g., make test-integration-gateway)
+test-integration-%: generate ginkgo setup-envtest ## Run integration tests for specified service (e.g., make test-integration-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Integration Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + Podman dependencies)"
 	@echo "💡 For coverage: make test-integration-$*-coverage"
-	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
+	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --keep-going ./test/integration/$*/...
 
 # Integration Tests with Coverage (WorkflowExecution pattern)
 .PHONY: test-integration-%-coverage
@@ -509,14 +509,7 @@ test-unit-authwebhook: ginkgo ## Run authentication webhook unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --cover --covermode=atomic ./test/unit/authwebhook/...
 
-.PHONY: test-integration-authwebhook
-test-integration-authwebhook: ginkgo setup-envtest ## Run webhook integration tests (envtest + real CRDs)
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🧪 Authentication Webhook - Integration Tests ($(TEST_PROCS) procs)"
-	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "📋 Pattern: DD-INTEGRATION-001 v2.0 (envtest + programmatic infrastructure)"
-	@KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" $(GINKGO) -v --timeout=$(TEST_TIMEOUT_INTEGRATION) --procs=$(TEST_PROCS) --cover --covermode=atomic --keep-going ./test/integration/authwebhook/...
-
+# test-integration-authwebhook now uses the general test-integration-% pattern (no override needed)
 .PHONY: test-e2e-authwebhook
 test-e2e-authwebhook: ginkgo ensure-coverdata ## Run webhook E2E tests (Kind cluster)
 	@echo "════════════════════════════════════════════════════════════════════════"

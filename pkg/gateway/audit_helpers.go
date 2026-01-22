@@ -63,19 +63,8 @@ var deduplicationStatusMapping = map[string]api.GatewayAuditPayloadDeduplication
 	"duplicate": api.GatewayAuditPayloadDeduplicationStatusDuplicate,
 }
 
-// componentMapping maps string component names to OpenAPI ErrorDetails.Component enum values.
-// Used by toAPIErrorDetails() for error context in audit events.
-//
-// **Authority**: api/openapi/data-storage-v1.yaml (ErrorDetails.component enum)
-// **Refactoring**: 2026-01-22 - Updated "webhooks" → "authwebhook" per pkg refactoring
-var componentMapping = map[string]api.ErrorDetailsComponent{
-	"gateway":                 api.ErrorDetailsComponentGateway,
-	"aianalysis":              api.ErrorDetailsComponentAianalysis,
-	"workflowexecution":       api.ErrorDetailsComponentWorkflowexecution,
-	"authwebhook":             api.ErrorDetailsComponentAuthwebhook,
-	"remediationorchestrator": api.ErrorDetailsComponentRemediationorchestrator,
-	"signalprocessing":        api.ErrorDetailsComponentSignalprocessing,
-}
+// Note: componentMapping moved to pkg/shared/audit/ogen_helpers.go for reuse across all services
+// **Refactoring**: 2026-01-22 - Consolidated into shared helper to eliminate duplication
 
 // toGatewayAuditPayloadSignalType converts string to api.GatewayAuditPayloadSignalType enum.
 //
@@ -130,30 +119,17 @@ func convertMapToJxRaw(m map[string]interface{}) api.GatewayAuditPayloadOriginal
 
 // toAPIErrorDetails converts sharedaudit.ErrorDetails to api.ErrorDetails.
 //
-// **Refactoring**: Replaced switch statement with map lookup (Phase 3).
+// **Refactoring**: 2026-01-22 - Use shared helper from pkg/shared/audit/ogen_helpers.go
 //
-// **Component Mapping**: Uses componentMapping table for enum conversion.
+// **Component Mapping**: Uses sharedaudit.ToOgenOptErrorDetails for type-safe conversion.
 // **Returns**: api.ErrorDetails with converted component enum (empty if not mapped)
 func toAPIErrorDetails(errorDetails *sharedaudit.ErrorDetails) api.ErrorDetails {
 	if errorDetails == nil {
 		return api.ErrorDetails{}
 	}
 
-	result := api.ErrorDetails{
-		Message:       errorDetails.Message,
-		Code:          errorDetails.Code,
-		RetryPossible: errorDetails.RetryPossible,
-	}
-
-	// Convert Component enum using mapping table (refactored from switch)
-	if mapped, ok := componentMapping[errorDetails.Component]; ok {
-		result.Component = mapped
-	}
-
-	// Set StackTrace ([]string, not optional)
-	if len(errorDetails.StackTrace) > 0 {
-		result.StackTrace = errorDetails.StackTrace
-	}
-
+	// Use shared helper for type-safe conversion, then unwrap OptErrorDetails
+	optErrorDetails := sharedaudit.ToOgenOptErrorDetails(errorDetails)
+	result, _ := optErrorDetails.Get()
 	return result
 }

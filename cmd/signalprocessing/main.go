@@ -50,7 +50,7 @@ import (
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
+	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/detection"
@@ -168,7 +168,7 @@ func main() {
 	}
 
 	// Create service-specific audit client (BR-SP-090)
-	auditClient := audit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
+	auditClient := spaudit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
 	setupLog.Info("audit client configured successfully")
 
 	// ========================================
@@ -347,11 +347,20 @@ func main() {
 	statusManager := spstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001 + SP-CACHE-001)")
 
+	// ========================================
+	// Phase 3 Refactoring: Audit Manager (2026-01-22)
+	// Wraps AuditClient with ADR-032 enforcement
+	// Follows RO/WE/AIA/NT pattern for consistency
+	// ========================================
+	auditManager := spaudit.NewManager(auditClient)
+	setupLog.Info("SignalProcessing audit manager initialized (Phase 3 refactoring)")
+
 	// Setup reconciler with ALL required components
 	if err = (&signalprocessing.SignalProcessingReconciler{
 		Client:             mgr.GetClient(),
 		Scheme:             mgr.GetScheme(),
-		AuditClient:        auditClient,
+		AuditClient:        auditClient,     // Legacy - kept for backwards compatibility during migration
+		AuditManager:       auditManager,    // Phase 3 refactoring (2026-01-22)
 		Metrics:            spMetrics,       // DD-005: Observability
 		Recorder:           mgr.GetEventRecorderFor("signalprocessing-controller"),
 		StatusManager:      statusManager,   // DD-PERF-001: Atomic status updates
