@@ -205,13 +205,13 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	// HANDLER INITIALIZATION (Handler Consistency Refactoring 2026-01-22)
 	// Initialize handlers with transition callbacks for audit emission (BR-AUDIT-005, DD-AUDIT-003)
 	// ========================================
-	
+
 	// SignalProcessingHandler: delegates phase transitions
 	r.spHandler = handler.NewSignalProcessingHandler(c, s, r.transitionPhase)
-	
+
 	// AIAnalysisHandler: delegates failure transitions
 	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
-	
+
 	// WorkflowExecutionHandler: delegates completion and failure transitions
 	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToCompleted)
 
@@ -711,6 +711,22 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 			logger.Error(err, "Failed to update SignalProcessingComplete condition")
 			// Continue - condition update is best-effort
 		}
+	}
+
+	// Handle SignalProcessing failure before delegating
+	if sp.Status.Phase == signalprocessingv1.PhaseFailed {
+		logger.Info("SignalProcessing failed, transitioning to Failed")
+		// Set SignalProcessingComplete condition (false)
+		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
+			remediationrequest.SetSignalProcessingComplete(rr, false,
+				remediationrequest.ReasonSignalProcessingFailed,
+				"SignalProcessing failed", r.Metrics)
+			return nil
+		}); err != nil {
+			logger.Error(err, "Failed to update SignalProcessingComplete condition")
+			// Continue - condition update is best-effort
+		}
+		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing failed")
 	}
 
 	// Delegate to SignalProcessingHandler for status-based transitions

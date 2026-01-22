@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -81,21 +80,28 @@ func (h *SignalProcessingHandler) HandleStatus(
 		return h.transitionToPhase(ctx, rr, phase.Analyzing)
 
 	case signalprocessingv1.PhaseFailed:
-		// Future: Add failure handling logic
-		// For V1.0, SP failures are expected to be rare (validation errors)
-		logger.Error(nil, "SignalProcessing failed - requires investigation")
-		return ctrl.Result{}, fmt.Errorf("SignalProcessing failed")
+		// SignalProcessing failed - this is rare but possible (e.g., validation errors)
+		// The reconciler's handleProcessingPhase will call transitionToFailed before this handler
+		logger.Info("SignalProcessing failed, already transitioned to Failed")
+		// Return without requeue - terminal state
+		return ctrl.Result{}, nil
 
 	case signalprocessingv1.PhasePending, "Processing":
 		// Still in progress, requeue to check status again
 		logger.V(1).Info("SignalProcessing still in progress, requeuing")
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+
+	case "":
+		// Empty phase means SP was just created but controller hasn't set phase yet
+		// Requeue to check status again after controller processes it
+		logger.V(1).Info("SignalProcessing has empty phase, waiting for controller to process")
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 
 	default:
 		// Unknown phase - log warning and requeue
 		logger.Info("SignalProcessing has unknown phase, requeuing",
 			"phase", sp.Status.Phase)
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 }
 

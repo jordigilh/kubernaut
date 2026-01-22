@@ -23,6 +23,8 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -116,24 +118,52 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 	Describe("HandleAIAnalysisStatus", func() {
 		var (
-			fakeClient *fake.ClientBuilder
-			h          *handler.AIAnalysisHandler
-			nc         *creator.NotificationCreator
-			ctx        context.Context
+			fakeClientBuilder     *fake.ClientBuilder
+			h                     *handler.AIAnalysisHandler
+			nc                    *creator.NotificationCreator
+			ctx                   context.Context
+			mockTransitionFailed  func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)
+			transitionFailedCalls int
 		)
 
 		BeforeEach(func() {
-			fakeClient = fake.NewClientBuilder().WithScheme(scheme)
+			fakeClientBuilder = fake.NewClientBuilder().WithScheme(scheme)
 			ctx = context.Background()
+			// Default no-op callback for tests that don't trigger failure paths
+			transitionFailedCalls = 0
+			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase, reason string) (ctrl.Result, error) {
+				transitionFailedCalls++
+				return ctrl.Result{}, nil
+			}
 		})
+
+		// createMockTransitionFailed creates a mock callback that persists status changes
+		// This must be called after the client is built to have access to the client instance
+		createMockTransitionFailed := func(c client.WithWatch) func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error) {
+			transitionFailedCalls = 0
+			return func(ctx context.Context, rr *remediationv1.RemediationRequest, phase, reason string) (ctrl.Result, error) {
+				transitionFailedCalls++
+				// Simulate the transition by directly updating the phase and persisting to fake client
+				rr.Status.OverallPhase = remediationv1.PhaseFailed
+				failurePhase := phase
+				rr.Status.FailurePhase = &failurePhase
+				rr.Status.FailureReason = &reason
+				// Persist to fake client
+				if err := c.Status().Update(ctx, rr); err != nil {
+					return ctrl.Result{}, err
+				}
+				return ctrl.Result{}, nil
+			}
+		}
+		_ = createMockTransitionFailed // Suppress unused warning if not used immediately
 
 		Context("In-Progress Phases", func() {
 			// Test #10: Pending phase - no action
 			It("should return no error for Pending phase", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Pending"
@@ -146,9 +176,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #11: Investigating phase - no action
 			It("should return no error for Investigating phase", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Investigating"
@@ -161,9 +191,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #12: Analyzing phase - no action
 			It("should return no error for Analyzing phase", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Analyzing"
@@ -178,9 +208,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #13: Sets RR status to Completed with NoActionRequired
 			It("should set RR status to Completed with Outcome=NoActionRequired", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
@@ -206,9 +236,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #14: Creates approval notification when ApprovalRequired=true
 			It("should create approval notification when ApprovalRequired=true", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
@@ -232,9 +262,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #15: Creates manual review notification
 			It("should create manual review notification for WorkflowResolutionFailed", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -258,9 +288,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #16: Sets RR status to Failed with ManualReviewRequired
 			It("should set RR status to Failed with Outcome=ManualReviewRequired", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -284,9 +315,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #17: Includes RootCauseAnalysis in context
 			It("should include RootCauseAnalysis in notification context", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -310,9 +342,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #18: Propagates non-WorkflowResolutionFailed failures
 			It("should propagate failure to RR for non-WorkflowResolutionFailed", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -342,9 +375,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// UT-RO-197-001: Creates NotificationRequest when NeedsHumanReview=true
 			It("should create manual review notification when NeedsHumanReview=true", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -368,9 +402,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// UT-RO-197-002: NeedsHumanReview=false on normal completion - no notification
 			It("should NOT create notification when NeedsHumanReview=false on normal completion", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Completed"
@@ -394,9 +428,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// UT-RO-197-003: NeedsHumanReview takes precedence over WorkflowResolutionFailed
 			It("should handle NeedsHumanReview when BOTH NeedsHumanReview=true AND WorkflowResolutionFailed", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				// Both flags set (edge case)
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
@@ -423,9 +458,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// UT-RO-197-004: RR status updated correctly when NeedsHumanReview=true
 			It("should set RR status to Failed with RequiresManualReview=true", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"
@@ -449,9 +485,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// UT-RO-197-005: All HumanReviewReason enum values map correctly
 			It("should handle all 8 HumanReviewReason enum values", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
+				mockTransitionFailed = createMockTransitionFailed(client)
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				// Test all 8 enum values
 				reasons := []string{
@@ -491,9 +528,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// UT-RO-197-006: Notification contains correct metadata
 			It("should include HumanReviewReason in notification metadata", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
-				client := fakeClient.WithObjects(rr).WithStatusSubresource(rr).Build()
+				client := fakeClientBuilder.WithObjects(rr).WithStatusSubresource(rr).Build()
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
-				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil)
+				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
 				ai.Status.Phase = "Failed"

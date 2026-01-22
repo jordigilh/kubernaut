@@ -694,7 +694,7 @@ func toOptErrorDetails(errorDetails *sharedaudit.ErrorDetails) api.OptErrorDetai
 	case "workflowexecution":
 		ogenErrorDetails.Component = api.ErrorDetailsComponentWorkflowexecution
 	case "webhooks":
-		ogenErrorDetails.Component = api.ErrorDetailsComponentWebhooks
+		ogenErrorDetails.Component = api.ErrorDetailsComponentAuthwebhook
 	case "remediationorchestrator":
 		ogenErrorDetails.Component = api.ErrorDetailsComponentRemediationorchestrator
 	case "signalprocessing":
