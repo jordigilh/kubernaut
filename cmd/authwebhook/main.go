@@ -11,7 +11,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/webhooks"
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -125,7 +125,7 @@ func main() {
 	decoder := admission.NewDecoder(scheme)
 
 	// Register WorkflowExecution handler (DD-WEBHOOK-003: Complete audit events)
-	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler(auditStore)
+	wfeHandler := authwebhook.NewWorkflowExecutionAuthHandler(auditStore)
 	if err := wfeHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into WorkflowExecution handler")
 		os.Exit(1)
@@ -134,7 +134,7 @@ func main() {
 	setupLog.Info("Registered WorkflowExecution webhook handler with audit store")
 
 	// Register RemediationApprovalRequest handler (DD-WEBHOOK-003: Complete audit events)
-	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler(auditStore)
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore)
 	if err := rarHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationApprovalRequest handler")
 		os.Exit(1)
@@ -143,7 +143,7 @@ func main() {
 	setupLog.Info("Registered RemediationApprovalRequest webhook handler with audit store")
 
 	// Register RemediationRequest status handler (Gap #8: TimeoutConfig mutation audit)
-	rrHandler := webhooks.NewRemediationRequestStatusHandler(auditStore)
+	rrHandler := authwebhook.NewRemediationRequestStatusHandler(auditStore)
 	if err := rrHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationRequest handler")
 		os.Exit(1)
@@ -153,7 +153,7 @@ func main() {
 
 	// Register NotificationRequest DELETE handler (DD-WEBHOOK-003: Complete audit events)
 	// Note: This handler writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
-	nrHandler := webhooks.NewNotificationRequestDeleteHandler(auditStore)
+	nrHandler := authwebhook.NewNotificationRequestDeleteHandler(auditStore)
 	if err := nrHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into NotificationRequest handler")
 		os.Exit(1)

@@ -35,7 +35,7 @@
 
 ### WorkflowExecution (UPDATE - Block Clearance)
 
-**Current Implementation**: `pkg/webhooks/workflowexecution_handler.go`
+**Current Implementation**: `pkg/authwebhook/workflowexecution_handler.go`
 
 ```go
 // ✅ CORRECT: Status fields populated (ClearedBy, ClearedAt)
@@ -61,7 +61,7 @@ h.auditManager.RecordEvent(ctx, audit.Event{
 
 ### RemediationApprovalRequest (UPDATE - Decision)
 
-**Current Implementation**: `pkg/webhooks/remediationapprovalrequest_handler.go`
+**Current Implementation**: `pkg/authwebhook/remediationapprovalrequest_handler.go`
 
 ```go
 // ✅ CORRECT: Status fields populated (DecidedBy, DecidedAt)
@@ -86,7 +86,7 @@ h.auditManager.RecordEvent(ctx, audit.Event{
 
 ### NotificationRequest (DELETE - Cancellation)
 
-**Current Implementation**: `pkg/webhooks/notificationrequest_handler.go`
+**Current Implementation**: `pkg/authwebhook/notificationrequest_handler.go`
 
 ```go
 // ✅ CORRECT: Complete audit event
@@ -116,7 +116,7 @@ h.auditManager.RecordEvent(ctx, audit.Event{
 
 #### Task 1.1: WorkflowExecution Webhook Enhancement
 
-**File**: `pkg/webhooks/workflowexecution_handler.go`
+**File**: `pkg/authwebhook/workflowexecution_handler.go`
 
 **Changes Needed**:
 1. Add `auditManager audit.Manager` field to `WorkflowExecutionAuthHandler`
@@ -133,7 +133,7 @@ h.auditManager.RecordEvent(ctx, audit.Event{
 
 #### Task 1.2: RemediationApprovalRequest Webhook Enhancement
 
-**File**: `pkg/webhooks/remediationapprovalrequest_handler.go`
+**File**: `pkg/authwebhook/remediationapprovalrequest_handler.go`
 
 **Changes Needed**:
 1. Add `auditManager audit.Manager` field

@@ -342,7 +342,7 @@ kubectl exec -it postgres-0 -- psql -U slm_user -d action_history \
 **Fix**:
 ```bash
 # Check webhook handler code
-cat pkg/webhooks/remediationrequest_handler.go | grep -A 10 "SetEventType"
+cat pkg/authwebhook/remediationrequest_handler.go | grep -A 10 "SetEventType"
 
 # Verify event structure in database
 kubectl exec -it postgres-0 -- psql -U slm_user -d action_history \
@@ -357,7 +357,7 @@ kubectl exec -it postgres-0 -- psql -U slm_user -d action_history \
 |-----------|--------|----------|
 | **CRD Schema** | ✅ Complete | `api/remediation/v1alpha1/remediationrequest_types.go` |
 | **Controller Init** | ✅ Complete | `pkg/remediationorchestrator/controllers/remediationrequest_controller.go` |
-| **Webhook Handler** | ✅ Complete | `pkg/webhooks/remediationrequest_handler.go` |
+| **Webhook Handler** | ✅ Complete | `pkg/authwebhook/remediationrequest_handler.go` |
 | **Webhook Deployment** | ✅ Complete | `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml` |
 | **Integration Tests** | ✅ 2/2 Passing | `test/integration/remediationorchestrator/gap8_timeout_config_audit_test.go` |
 | **E2E Test** | ✅ Complete | `test/e2e/authwebhook/02_gap8_remediationrequest_timeout_mutation_test.go` |

@@ -37,10 +37,10 @@
 
 | Component | WorkflowExecution | RemediationApprovalRequest | **RemediationRequest (Gap #8)** |
 |---|---|---|---|
-| **Handler File** | `pkg/webhooks/workflowexecution_handler.go` | `pkg/webhooks/remediationapprovalrequest_handler.go` | ❌ **NOT IMPLEMENTED** |
+| **Handler File** | `pkg/authwebhook/workflowexecution_handler.go` | `pkg/authwebhook/remediationapprovalrequest_handler.go` | ❌ **NOT IMPLEMENTED** |
 | **Webhook Config** | `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml:157-174` | Lines 176-193 | ❌ **NOT IN MANIFEST** |
 | **RBAC Permission** | `workflowexecutions/status` (line 25) | `remediationapprovalrequests/status` (line 25) | ❌ **NOT IN RBAC** |
-| **Registration** | `cmd/webhooks/main.go` | `cmd/webhooks/main.go` | ❌ **NOT REGISTERED** |
+| **Registration** | `cmd/authwebhook/main.go` | `cmd/authwebhook/main.go` | ❌ **NOT REGISTERED** |
 | **Audit Event** | `workflowexecution.block.cleared` | `remediation.approval.approved` | ✅ **OpenAPI READY** (`webhook.remediationrequest.timeout_modified`) |
 
 ---
@@ -48,7 +48,7 @@
 ## 📋 **Implementation Plan: Add RemediationRequest Webhook**
 
 ### **Phase 3.1: Webhook Handler (TDD GREEN)**
-**File**: `pkg/webhooks/remediationrequest_handler.go` (new)
+**File**: `pkg/authwebhook/remediationrequest_handler.go` (new)
 
 **Pattern**: Follow `remediationapprovalrequest_handler.go` pattern
 
@@ -137,7 +137,7 @@ webhookNames := []string{
 ---
 
 ### **Phase 3.3: Webhook Registration**
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 
 **Changes**:
 ```go
@@ -216,7 +216,7 @@ ginkgo -v --focus="Gap #8" ./test/integration/remediationorchestrator/...
 **User has approved continuation**. Proceeding with:
 1. ✅ Phase 3.1: Create `remediationrequest_handler.go` following TDD
 2. ✅ Phase 3.2: Update webhook manifest + RBAC
-3. ✅ Phase 3.3: Register in `cmd/webhooks/main.go`
+3. ✅ Phase 3.3: Register in `cmd/authwebhook/main.go`
 4. ✅ Phase 3.4: Re-enable Scenario 2 integration test
 5. ✅ Phase 3.5: Run complete Gap #8 test suite
 
@@ -226,7 +226,7 @@ ginkgo -v --focus="Gap #8" ./test/integration/remediationorchestrator/...
 
 ## 📚 **References**
 
-- **Existing Handlers**: `pkg/webhooks/remediationapprovalrequest_handler.go` (best pattern to follow)
+- **Existing Handlers**: `pkg/authwebhook/remediationapprovalrequest_handler.go` (best pattern to follow)
 - **Webhook Deployment**: `test/infrastructure/remediationorchestrator_e2e_hybrid.go:346-356`
 - **Webhook Manifest**: `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml`
 - **Test Plan**: `docs/handoff/GAP8_COMPLETE_IMPLEMENTATION_PLAN_JAN12.md`

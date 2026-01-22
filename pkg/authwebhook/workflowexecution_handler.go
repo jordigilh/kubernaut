@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhooks
+package authwebhook
 
 import (
 	"context"
@@ -25,7 +25,6 @@ import (
 
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -41,7 +40,7 @@ import (
 // 2. Populates status.BlockClearance.ClearedAt (timestamp)
 // 3. Writes complete audit event (WHO + WHAT + ACTION)
 type WorkflowExecutionAuthHandler struct {
-	authenticator *authwebhook.Authenticator
+	authenticator *Authenticator
 	decoder       admission.Decoder
 	auditStore    audit.AuditStore
 }
@@ -49,7 +48,7 @@ type WorkflowExecutionAuthHandler struct {
 // NewWorkflowExecutionAuthHandler creates a new WorkflowExecution authentication handler
 func NewWorkflowExecutionAuthHandler(auditStore audit.AuditStore) *WorkflowExecutionAuthHandler {
 	return &WorkflowExecutionAuthHandler{
-		authenticator: authwebhook.NewAuthenticator(),
+		authenticator: NewAuthenticator(),
 		auditStore:    auditStore,
 	}
 }

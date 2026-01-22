@@ -391,7 +391,7 @@ This triage validates that **100% of BR-AUDIT-005 v2.0 RR Reconstruction require
 | Change diff (new) | `event_data.changes.new` | Audit payload | Same | ✅ Diff validation | ✅ COMPLETE |
 
 **Event Type**: `webhook.remediationrequest.timeout_modified`
-**Webhook**: ✅ `pkg/webhooks/remediationrequest_handler.go`
+**Webhook**: ✅ `pkg/authwebhook/remediationrequest_handler.go`
 **Service**: Remediation Orchestrator
 **Test Files**:
 - ✅ `test/e2e/remediationorchestrator/gap8_webhook_test.go` (421.68s duration)

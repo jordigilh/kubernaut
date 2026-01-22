@@ -42,15 +42,17 @@ type AIAnalysisHandler struct {
 	scheme              *runtime.Scheme
 	notificationCreator *creator.NotificationCreator
 	Metrics             *metrics.Metrics
+	transitionToFailed  func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)
 }
 
 // NewAIAnalysisHandler creates a new AIAnalysisHandler.
-func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics) *AIAnalysisHandler {
+func NewAIAnalysisHandler(c client.Client, s *runtime.Scheme, nc *creator.NotificationCreator, m *metrics.Metrics, ttf func(context.Context, *remediationv1.RemediationRequest, string, string) (ctrl.Result, error)) *AIAnalysisHandler {
 	return &AIAnalysisHandler{
 		client:              c,
 		scheme:              s,
 		notificationCreator: nc,
 		Metrics:             m,
+		transitionToFailed:  ttf,
 	}
 }
 
@@ -331,15 +333,12 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 		return ctrl.Result{}, fmt.Errorf("failed to create manual review notification: %w", err)
 	}
 
-	// Update RR status (DD-GATEWAY-011, BR-ORCH-038)
+	// Update RR status with handler-specific fields (DD-GATEWAY-011, BR-ORCH-038)
+	// Note: Phase transition and audit emission handled by transitionToFailed() callback below
 	// REFACTOR-RO-001: Using retry helper
 	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		// Update failure tracking
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
+		// Handler-specific status fields
 		rr.Status.Outcome = "ManualReviewRequired"
-		failurePhase := "ai_analysis"
-		rr.Status.FailurePhase = &failurePhase
-		rr.Status.FailureReason = &reviewCtx.Message
 		rr.Status.RequiresManualReview = true
 
 		// Track notification reference (BR-ORCH-035)
@@ -372,7 +371,9 @@ func (h *AIAnalysisHandler) createManualReviewAndUpdateStatus(
 		"subReason", metricSubReason,
 	)
 
-	return ctrl.Result{}, nil
+	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
+	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
+	return h.transitionToFailed(ctx, rr, "ai_analysis", reviewCtx.Message)
 }
 
 // propagateFailure propagates AIAnalysis failure to RemediationRequest.
@@ -386,28 +387,28 @@ func (h *AIAnalysisHandler) propagateFailure(
 		"aiAnalysis", ai.Name,
 	)
 
-	// Update RR status (DD-GATEWAY-011, BR-ORCH-038)
+	// Prepare failure reason with comprehensive tracking
+	failureReason := fmt.Sprintf("AIAnalysis failed: %s: %s", ai.Status.Reason, ai.Status.Message)
+
+	// Update RR message field (DD-GATEWAY-011)
+	// Note: Phase transition and audit emission handled by transitionToFailed() callback below
 	// REFACTOR-RO-001: Using retry helper
 	err := helpers.UpdateRemediationRequestStatus(ctx, h.client, h.Metrics, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = remediationv1.PhaseFailed
-		failurePhase := "ai_analysis"
-		rr.Status.FailurePhase = &failurePhase
-		// Include both reason type and message for comprehensive failure tracking
-		failureReason := fmt.Sprintf("AIAnalysis failed: %s: %s", ai.Status.Reason, ai.Status.Message)
-		rr.Status.FailureReason = &failureReason
 		rr.Status.Message = failureReason
 		return nil
 	})
 	if err != nil {
-		logger.Error(err, "Failed to propagate AIAnalysis failure to RR")
-		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
+		logger.Error(err, "Failed to update RR message for AIAnalysis failure")
+		// Continue to transitionToFailed even if message update fails
 	}
 
-	logger.Info("Propagated AIAnalysis failure to RemediationRequest",
+	logger.Info("Propagating AIAnalysis failure to RemediationRequest",
 		"reason", ai.Status.Reason,
 	)
 
-	return ctrl.Result{}, nil
+	// Transition to Failed phase with audit emission (BR-AUDIT-005, DD-AUDIT-003)
+	// Handler Consistency Refactoring (2026-01-22): Delegate to reconciler's transitionToFailed
+	return h.transitionToFailed(ctx, rr, "ai_analysis", failureReason)
 }
 
 // IsWorkflowResolutionFailed checks if AIAnalysis failed due to workflow resolution issues.

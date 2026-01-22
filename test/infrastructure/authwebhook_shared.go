@@ -70,12 +70,35 @@ import (
 //	if err != nil {
 //	    return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
 //	}
-func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kubeconfigPath string, writer io.Writer) error {
+//
+// DeployAuthWebhookManifestsOnly deploys AuthWebhook using pre-built + pre-loaded image
+// SHARED FUNCTION for all E2E suites (RO, WE, NT)
+//
+// Prerequisites (must be completed BEFORE calling this function):
+//   - PHASE 1: Image built using BuildImageForKind(awConfig, writer)
+//   - PHASE 3: Image loaded to Kind using LoadImageToKind(awImage, "webhooks", cluster, writer)
+//
+// This function ONLY handles MANIFEST DEPLOYMENT:
+//   - TLS certificate generation
+//   - CRD installation (if not already installed)
+//   - Manifest application (deployment, service, webhook configs)
+//   - Webhook configuration patching (CA bundle injection)
+//   - Pod readiness wait
+//
+// Standard E2E Infrastructure Pattern (all 3 services):
+//   PHASE 1: awImage := BuildImageForKind(awConfig, writer)           // ← BUILD
+//   PHASE 3: LoadImageToKind(awImage, "webhooks", cluster, writer)    // ← UPLOAD/LOAD
+//   PHASE 4.5: DeployAuthWebhookManifestsOnly(ctx, ..., awImage, ...)  // ← DEPLOY ONLY
+//
+// Authority: DD-WEBHOOK-001, DD-AUTH-001, SOC2 CC8.1
+func DeployAuthWebhookManifestsOnly(ctx context.Context, clusterName, namespace, kubeconfigPath, preLoadedImage string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🔐 Deploying AuthWebhook for SOC2 User Attribution (CC8.1)")
+	_, _ = fmt.Fprintln(writer, "🔐 Deploying AuthWebhook Manifests (SOC2 CC8.1)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintf(writer, "   Cluster: %s\n", clusterName)
 	_, _ = fmt.Fprintf(writer, "   Namespace: %s\n", namespace)
+	_, _ = fmt.Fprintf(writer, "   Image (pre-loaded): %s\n", preLoadedImage)
+	_, _ = fmt.Fprintf(writer, "   Mode: MANIFEST DEPLOYMENT ONLY (build + load already done)\n")
 	_, _ = fmt.Fprintf(writer, "   Authority: DD-WEBHOOK-001, DD-AUTH-001\n")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -85,38 +108,21 @@ func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kub
 		return fmt.Errorf("failed to find workspace root: %w", err)
 	}
 
-	// STEP 1: Build AuthWebhook image
-	_, _ = fmt.Fprintln(writer, "\n📦 STEP 1: Building AuthWebhook image...")
-	cfg := E2EImageConfig{
-		ServiceName:      "webhooks",
-		ImageName:        "webhooks",
-		DockerfilePath:   "docker/webhooks.Dockerfile",
-		BuildContextPath: "",
-		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
-	}
-	awImageName, err := BuildImageForKind(cfg, writer)
-	if err != nil {
-		return fmt.Errorf("AuthWebhook image build failed: %w", err)
-	}
-	_, _ = fmt.Fprintf(writer, "   ✅ AuthWebhook image built: %s\n", awImageName)
+	// Deploy manifests only (image already built and loaded to Kind)
+	return deployAuthWebhookManifestsInternal(ctx, namespace, kubeconfigPath, preLoadedImage, workspaceRoot, writer)
+}
 
-	// STEP 2: Load image to Kind cluster
-	_, _ = fmt.Fprintln(writer, "\n📦 STEP 2: Loading AuthWebhook image to Kind cluster...")
-	err = LoadImageToKind(awImageName, "webhooks", clusterName, writer)
-	if err != nil {
-		return fmt.Errorf("AuthWebhook image load failed: %w", err)
-	}
-	_, _ = fmt.Fprintln(writer, "   ✅ AuthWebhook image loaded")
-
-	// STEP 3: Generate webhook TLS certificates
-	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 3: Generating webhook TLS certificates...")
+// Assumes image already built (PHASE 1) and loaded to Kind (PHASE 3)
+func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconfigPath, awImageName, workspaceRoot string, writer io.Writer) error {
+	// STEP 1: Generate webhook TLS certificates
+	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 1: Generating webhook TLS certificates...")
 	if err := generateWebhookCerts(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to generate webhook certs: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ TLS certificates generated")
 
 	// STEP 4: Apply ALL CRDs (required for webhook registration)
-	_, _ = fmt.Fprintln(writer, "\n📋 STEP 4: Applying ALL CRDs...")
+	_, _ = fmt.Fprintln(writer, "\n📋 STEP 2: Applying ALL CRDs...")
 	cmd := exec.Command("kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
@@ -128,7 +134,7 @@ func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kub
 	_, _ = fmt.Fprintln(writer, "   ✅ All CRDs applied")
 
 	// STEP 5: Deploy AuthWebhook service + webhook configurations
-	_, _ = fmt.Fprintln(writer, "\n🚀 STEP 5: Deploying AuthWebhook service...")
+	_, _ = fmt.Fprintln(writer, "\n🚀 STEP 3: Deploying AuthWebhook service...")
 	// Read and substitute namespace in manifest (Go-based replacement for envsubst)
 	manifestPath := filepath.Join(workspaceRoot, "test/e2e/authwebhook/manifests/authwebhook-deployment.yaml")
 	manifestContent, err := os.ReadFile(manifestPath)
@@ -153,7 +159,7 @@ func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kub
 	_, _ = fmt.Fprintln(writer, "   ✅ AuthWebhook deployment applied")
 
 	// STEP 6: Patch deployment with correct image
-	_, _ = fmt.Fprintf(writer, "\n🔧 STEP 6: Patching deployment with image: %s\n", awImageName)
+	_, _ = fmt.Fprintf(writer, "\n🔧 STEP 4: Patching deployment with image: %s\n", awImageName)
 	cmd = exec.Command("kubectl", "set", "image",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
@@ -166,7 +172,7 @@ func DeployAuthWebhookToCluster(ctx context.Context, clusterName, namespace, kub
 	_, _ = fmt.Fprintln(writer, "   ✅ Deployment image patched")
 
 	// STEP 7: Patch webhook configurations with CA bundle
-	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 7: Patching webhook configurations with CA bundle...")
+	_, _ = fmt.Fprintln(writer, "\n🔐 STEP 5: Patching webhook configurations with CA bundle...")
 	if err := patchWebhookConfigsWithCABundle(kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to patch webhook configurations: %w", err)
 	}

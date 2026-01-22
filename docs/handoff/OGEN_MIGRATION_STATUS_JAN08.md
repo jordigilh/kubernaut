@@ -170,7 +170,7 @@ def create_llm_request_event(...) -> AuditEventRequest:
 - `pkg/aianalysis/audit/event_types.go`
 - `pkg/workflowexecution/audit_types.go`
 - `pkg/notification/audit/event_types.go`
-- `pkg/webhooks/audit_types.go`
+- `pkg/authwebhook/audit_types.go`
 - `pkg/datastorage/audit_types.go` (if exists)
 
 **All replaced by**: `pkg/datastorage/ogen-client/oas_schemas_gen.go`

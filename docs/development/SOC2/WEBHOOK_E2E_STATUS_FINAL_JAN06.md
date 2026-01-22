@@ -152,7 +152,7 @@ kubectl exec -n authwebhook-e2e deployment/authwebhook -- openssl s_client -conn
 ### **Architectural Decisions Validated**:
 
 **DD-WEBHOOK-001**: Single Consolidated Webhook Service
-- Service binary: `cmd/webhooks/main.go` ✅
+- Service binary: `cmd/authwebhook/main.go` ✅
 - Logical component: `authwebhook` (for test organization) ✅
 - Shared authentication logic across CRD types ✅
 

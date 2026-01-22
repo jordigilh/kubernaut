@@ -258,7 +258,7 @@ AfterSuite:
 
 ### **RED Phase Validation** ✅
 
-1. **Tests Written BEFORE Handlers**: All 9 test files created before `pkg/webhooks` handler implementation
+1. **Tests Written BEFORE Handlers**: All 9 test files created before `pkg/authwebhook` handler implementation
 2. **Failing Tests Expected**: Tests will fail until GREEN phase implements handlers
 3. **Business Requirements Mapped**: Every test maps to specific BR-XXX-XXX requirements
 4. **Anti-Pattern Corrected**: No HTTP-based webhook testing; envtest + CRD operations only
@@ -373,15 +373,15 @@ webhookServer.Register("/mutate-workflowexecution",
 
 ## 🎉 **Next Steps (GREEN Phase)**
 
-1. **Implement `pkg/webhooks/workflowexecution_handler.go`**
+1. **Implement `pkg/authwebhook/workflowexecution_handler.go`**
    - `WorkflowExecutionAuthHandler.Handle()`
    - Populate `status.BlockClearance.ClearedBy` + `ClearedAt`
 
-2. **Implement `pkg/webhooks/remediationapprovalrequest_handler.go`**
+2. **Implement `pkg/authwebhook/remediationapprovalrequest_handler.go`**
    - `RemediationApprovalRequestAuthHandler.Handle()`
    - Populate `status.DecidedBy` + `DecidedAt`
 
-3. **Implement `pkg/webhooks/notificationrequest_handler.go`**
+3. **Implement `pkg/authwebhook/notificationrequest_handler.go`**
    - `NotificationRequestDeleteHandler.Handle()`
    - Add `kubernaut.ai/cancelled-by` + `kubernaut.ai/cancelled-at` annotations on DELETE
 

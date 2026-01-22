@@ -399,7 +399,7 @@ import (
 // - WorkflowExecution (pkg/workflowexecution/controller.go)
 // - RemediationOrchestrator (pkg/remediationorchestrator/controller.go)
 // - Notification (pkg/notification/server.go)
-// - AuthWebhook (cmd/webhooks/main.go)
+// - AuthWebhook (cmd/authwebhook/main.go)
 // - SignalProcessing (cmd/signalprocessing/main.go)
 //
 // Authentication Flow:
@@ -452,7 +452,7 @@ func NewOpenAPIClientAdapter(baseURL string, timeout time.Duration) (*OpenAPICli
 3. ✅ WorkflowExecution - uses `audit.NewOpenAPIClientAdapter()`
 4. ✅ RemediationOrchestrator - uses `audit.NewOpenAPIClientAdapter()`
 5. ✅ Notification - uses `audit.NewOpenAPIClientAdapter()`
-6. ✅ AuthWebhook - uses `audit.NewOpenAPIClientAdapter()` (see `cmd/webhooks/main.go:81`)
+6. ✅ AuthWebhook - uses `audit.NewOpenAPIClientAdapter()` (see `cmd/authwebhook/main.go:81`)
 7. ✅ SignalProcessing - uses `audit.NewOpenAPIClientAdapter()` (see `cmd/signalprocessing/main.go:153`)
 
 ---

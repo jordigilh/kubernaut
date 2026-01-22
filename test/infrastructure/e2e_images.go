@@ -77,6 +77,13 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	// We need to use the same name for both build and load operations
 	localImageName := fmt.Sprintf("localhost/%s", fullImageName)
 
+	// Check if image already exists (cache hit) - DD-TEST-002 optimization
+	checkCmd := exec.Command("podman", "image", "exists", localImageName)
+	if checkCmd.Run() == nil {
+		_, _ = fmt.Fprintf(writer, "   ✅ Image already exists (using cache): %s\n", fullImageName)
+		return localImageName, nil
+	}
+
 	_, _ = fmt.Fprintf(writer, "🔨 Building E2E image: %s\n", fullImageName)
 
 	// Build image with optional coverage instrumentation

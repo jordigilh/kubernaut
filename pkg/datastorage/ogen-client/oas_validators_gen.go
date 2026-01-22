@@ -1066,7 +1066,7 @@ func (s ErrorDetailsComponent) Validate() error {
 		return nil
 	case "signalprocessing":
 		return nil
-	case "webhooks":
+	case "authwebhook":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

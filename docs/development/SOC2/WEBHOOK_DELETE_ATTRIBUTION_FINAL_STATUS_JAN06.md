@@ -53,7 +53,7 @@ Error at "/event_category": value is not one of the allowed values
 
 ### Kubebuilder CustomValidator Pattern
 
-**File**: `pkg/webhooks/notificationrequest_validator.go`
+**File**: `pkg/authwebhook/notificationrequest_validator.go`
 
 ```go
 // Implements webhook.CustomValidator interface

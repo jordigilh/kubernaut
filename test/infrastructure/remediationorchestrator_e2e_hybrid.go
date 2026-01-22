@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"time"
 
 	. "github.com/onsi/gomega"
@@ -62,9 +61,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator controller (WITH COVERAGE)")
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (WITH DYNAMIC TAG)")
-	_, _ = fmt.Fprintln(writer, "  └── Notification controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
+	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2 minutes (parallel)")
 	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind()")
+	_, _ = fmt.Fprintln(writer, "  Note: Notification controller NOT needed - only CRD validation required")
 
 	type imageBuildResult struct {
 		name  string
@@ -100,17 +100,17 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
 	}()
 
-	// Build Notification controller in parallel using consolidated API
+	// Build AuthWebhook in parallel using consolidated API
 	go func() {
 		cfg := E2EImageConfig{
-			ServiceName:      "notification",
-			ImageName:        "kubernaut/notification",
-			DockerfilePath:   "docker/notification-controller-ubi9.Dockerfile",
+			ServiceName:      "webhooks",
+			ImageName:        "webhooks",
+			DockerfilePath:   "docker/webhooks.Dockerfile",
 			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		ntImage, err := BuildImageForKind(cfg, writer)
-		buildResults <- imageBuildResult{name: "Notification", image: ntImage, err: err}
+		awImage, err := BuildImageForKind(cfg, writer)
+		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
 	}()
 
 	// Wait for all three builds to complete and collect image names
@@ -140,40 +140,13 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
-	// Determine notification output directory based on OS (same pattern as NT E2E)
-	// macOS: Use $HOME/.kubernaut/ro-e2e-notifications (Podman VM limitation)
-	// Linux/CI: Use /tmp/kubernaut-ro-e2e-notifications (direct access works)
-	var notificationOutputDir string
-	if runtime.GOOS == "darwin" {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("failed to get home directory: %w", err)
-		}
-		notificationOutputDir = filepath.Join(homeDir, ".kubernaut", "ro-e2e-notifications")
-	} else {
-		notificationOutputDir = "/tmp/kubernaut-ro-e2e-notifications"
-	}
-
-	// Create notification output directory
-	_, _ = fmt.Fprintf(writer, "📁 Creating Notification output directory: %s\n", notificationOutputDir)
-	if err := os.MkdirAll(notificationOutputDir, 0755); err != nil {
-		return fmt.Errorf("failed to create notification output directory: %w", err)
-	}
-
-	// Create Kind cluster with both extraMounts (coverage + notification) added programmatically
-	// This prevents duplicate extraMounts keys in the Kind config YAML
+	// Create Kind cluster with coverage extraMount
 	// Use absolute paths to ensure correct mount resolution regardless of working directory
 	extraMounts := []ExtraMount{
 		// Coverage data collection (DD-TEST-007) - use absolute path from earlier calculation
 		{
 			HostPath:      coverdataPath, // Already absolute: /workspace/coverdata
 			ContainerPath: "/coverdata",
-			ReadOnly:      false,
-		},
-		// Notification output directory (OS-specific) - already absolute
-		{
-			HostPath:      notificationOutputDir,
-			ContainerPath: "/tmp/e2e-notifications",
 			ReadOnly:      false,
 		},
 	}
@@ -225,9 +198,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ├── RemediationOrchestrator coverage image")
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (with dynamic tag)")
-	_, _ = fmt.Fprintln(writer, "  └── Notification controller image")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image (SOC2 CC8.1 user attribution)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind()")
+	_, _ = fmt.Fprintln(writer, "  Note: OAuth2-Proxy pulled automatically from quay.io during deployment")
 
 	type loadResult struct {
 		name string
@@ -249,11 +223,11 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
-	// Load Notification controller image using consolidated API
+	// Load AuthWebhook image
 	go func() {
-		ntImage := builtImages["Notification"]
-		err := LoadImageToKind(ntImage, "notification", clusterName, writer)
-		loadResults <- loadResult{name: "Notification controller", err: err}
+		awImage := builtImages["AuthWebhook"]
+		err := LoadImageToKind(awImage, "webhooks", clusterName, writer)
+		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
 	// Wait for all three loads to complete
@@ -287,7 +261,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		name string
 		err  error
 	}
-	deployResults := make(chan deployResult, 6)
+	deployResults := make(chan deployResult, 5)
 
 	// Launch ALL kubectl apply commands concurrently
 	go func() {
@@ -306,6 +280,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		// Use the dynamically generated image from build phase
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 		dsImage := builtImages["DataStorage"]
+		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar (image from quay.io)
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
@@ -314,15 +289,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer)
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
-	go func() {
-		ntImage := builtImages["Notification"]
-		err := DeployNotificationController(ctx, namespace, kubeconfigPath, ntImage, writer)
-		deployResults <- deployResult{"Notification", err}
-	}()
 
 	// Collect ALL results before proceeding (MANDATORY)
 	var deployErrors []error
-	for i := 0; i < 6; i++ {
+	for i := 0; i < 5; i++ {
 		result := <-deployResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s deployment failed: %v\n", result.name, result.err)
@@ -343,14 +313,15 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	// PHASE 4.5: Deploy AuthWebhook for SOC2-compliant CRD operations
+	// PHASE 4.5: Deploy AuthWebhook manifests (using pre-built + pre-loaded image)
 	// Per DD-WEBHOOK-001: Required for RemediationApprovalRequest approval decisions
 	// Per SOC2 CC8.1: Captures WHO approved/rejected remediation requests
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook for Operator Attribution")
+	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook Manifests")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	if err := DeployAuthWebhookToCluster(ctx, clusterName, namespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
+	awImage := builtImages["AuthWebhook"]
+	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, namespace, kubeconfigPath, awImage, writer); err != nil {
+		return fmt.Errorf("failed to deploy AuthWebhook manifests: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook deployed - SOC2 CC8.1 user attribution enabled")
 
@@ -474,8 +445,8 @@ data:
       timeout: 10s
       buffer:
         buffer_size: 10000
-        batch_size: 100
-        flush_interval: 1s
+        batch_size: 50       # E2E: Standard pattern (same as HAPI, AIAnalysis)
+        flush_interval: 100ms  # E2E: Fast flush for test visibility (0.1s)
         max_retries: 3
     controller:
       metrics_addr: :9093
@@ -583,13 +554,13 @@ rules:
   verbs: ["get"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["aianalyses"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["aianalyses/status"]
   verbs: ["get"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions"]
-  verbs: ["get", "list", "watch"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["workflowexecutions/status"]
   verbs: ["get"]
@@ -675,6 +646,7 @@ subjects:
 
 	return fmt.Errorf("RemediationOrchestrator not ready within timeout")
 }
+
 // waitForROServicesReady waits for DataStorage and RemediationOrchestrator pods to be ready
 // Per DD-TEST-002: Single readiness check after parallel deployment
 func waitForROServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {

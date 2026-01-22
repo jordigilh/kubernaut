@@ -92,7 +92,7 @@ data:
 
 ### **Fix 2: Health Check Handlers (10 minutes - Option A)**
 
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 
 **User Decision**: **Option A** - Register health check handlers (industry best practice)
 
@@ -226,7 +226,7 @@ if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 | File | Lines Changed | Purpose |
 |------|---------------|---------|
 | `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml` | -9 lines | Remove empty Secret definition |
-| `cmd/webhooks/main.go` | +11 lines | Add health check handlers |
+| `cmd/authwebhook/main.go` | +11 lines | Add health check handlers |
 | **Total** | **+2 net lines** | **Complete fix** |
 
 ---

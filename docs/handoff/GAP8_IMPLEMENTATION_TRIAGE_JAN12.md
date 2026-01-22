@@ -214,7 +214,7 @@ grep "Status.TimeoutConfig" pkg/remediationorchestrator/timeout/detector.go | wc
    - **Why Different**: OpenAPI schema naming convention
    - **Impact**: None - functionally equivalent
 
-**File**: `pkg/webhooks/remediationrequest_handler.go`
+**File**: `pkg/authwebhook/remediationrequest_handler.go`
 
 **Assessment**: ✨ **IMPROVEMENTS** - Custom comparison more maintainable than `reflect.DeepEqual()`
 
@@ -234,7 +234,7 @@ grep "Status.TimeoutConfig" pkg/remediationorchestrator/timeout/detector.go | wc
 - **Why Different**: Consistency with existing webhook patterns (WFE, RAR don't have `-status` suffix)
 - **Impact**: Manifest must match
 
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 
 **Assessment**: ⚠️ **VERIFY MANIFEST MATCHES** - Path consistency is critical
 
@@ -318,7 +318,7 @@ grep "Status.TimeoutConfig" pkg/remediationorchestrator/timeout/detector.go | wc
 ### **Phase 3 Complete (Webhook)**: ⚠️ 5/6 ❌ 1/6
 
 - ✅ `RemediationRequestStatusHandler` webhook implemented
-- ✅ Webhook registered in `cmd/webhooks/main.go`
+- ✅ Webhook registered in `cmd/authwebhook/main.go`
 - ✅ `webhook.remediationrequest.timeout_modified` event emitted
 - ✅ Status fields `LastModifiedBy`, `LastModifiedAt` populated
 - ✅ OpenAPI schema updated

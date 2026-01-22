@@ -208,7 +208,7 @@ Actual RR phase: Processing
 
 **Validation Checklist**:
 - ✅ Webhook handler implemented
-- ✅ Webhook registered in cmd/webhooks/main.go
+- ✅ Webhook registered in cmd/authwebhook/main.go
 - ✅ Production manifests created
 - ✅ RBAC permissions configured
 - ⏳ E2E test pending cluster deployment

@@ -61,7 +61,7 @@ SUCCESS! -- 47 Passed | 0 Failed | 0 Pending | 0 Skipped
    - TLS certificates for webhook communication
    - Webhook server deployment (HTTP server listening for admission requests)
 
-4. **The webhook DOES exist and is implemented**: `pkg/webhooks/remediationrequest_handler.go`
+4. **The webhook DOES exist and is implemented**: `pkg/authwebhook/remediationrequest_handler.go`
 5. **But it can't run in envtest** - requires E2E environment with Kind cluster
 
 ---
@@ -179,7 +179,7 @@ Context("E2E-GAP8-01: Operator Modifies TimeoutConfig", func() {
 |-----------|--------|----------|
 | **CRD Schema** | ✅ Complete | `api/remediation/v1alpha1/remediationrequest_types.go` |
 | **Controller Initialization** | ✅ Complete | `pkg/remediationorchestrator/controllers/remediationrequest_controller.go` |
-| **Webhook Handler** | ✅ Complete | `pkg/webhooks/remediationrequest_handler.go` |
+| **Webhook Handler** | ✅ Complete | `pkg/authwebhook/remediationrequest_handler.go` |
 | **Webhook Deployment** | ✅ Complete | `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml` |
 | **Integration Tests** | ✅ Complete | 2/2 scenarios passing |
 | **E2E Tests** | ⏳ Pending | Test created, audit helper integration needed |
@@ -249,7 +249,7 @@ Context("E2E-GAP8-01: Operator Modifies TimeoutConfig", func() {
 |----------|---------|--------|
 | `docs/handoff/GAP8_COMPLETE_IMPLEMENTATION_SUMMARY_JAN12.md` | Gap #8 implementation complete | ✅ Complete |
 | `docs/handoff/GAP8_WEBHOOK_TEST_RELOCATION_JAN13.md` | Test relocation summary (this file) | ✅ Complete |
-| `pkg/webhooks/remediationrequest_handler.go` | Webhook implementation | ✅ Complete |
+| `pkg/authwebhook/remediationrequest_handler.go` | Webhook implementation | ✅ Complete |
 | `test/e2e/authwebhook/02_gap8_remediationrequest_timeout_mutation_test.go` | E2E test | ⏳ Pending helper integration |
 
 ---

@@ -63,7 +63,7 @@ Focus: Handler logic      Focus: HTTP integration      Focus: Business flows
 
 | Tier | Coverage Target | What It Validates | Measurement |
 |------|----------------|-------------------|-------------|
-| **Unit** | **70%+** | Handler logic, auth extraction, validation | `go test -v -p 4 -cover pkg/webhooks/...` |
+| **Unit** | **70%+** | Handler logic, auth extraction, validation | `go test -v -p 4 -cover pkg/authwebhook/...` |
 | **Integration** | **50%** | HTTP admission flow, TLS, webhook server | `go test -v -p 4 -cover test/integration/webhooks/...` |
 | **E2E** | **50%** | Deployed webhook, K8s API, CRD operations | Binary coverage (`GOCOVERDIR`) |
 
@@ -83,7 +83,7 @@ Focus: Handler logic      Focus: HTTP integration      Focus: Business flows
 
 ```bash
 # Unit coverage (parallel execution per DD-TEST-002)
-go test -v -p 4 -cover -coverprofile=unit-coverage.txt ./pkg/webhooks/...
+go test -v -p 4 -cover -coverprofile=unit-coverage.txt ./pkg/authwebhook/...
 go tool cover -html=unit-coverage.txt -o unit-coverage.html
 
 # Integration coverage (parallel execution per DD-TEST-002)
@@ -91,7 +91,7 @@ go test -v -p 4 -cover -coverprofile=integration-coverage.txt ./test/integration
 go tool cover -html=integration-coverage.txt -o integration-coverage.html
 
 # E2E coverage (Go 1.20+)
-GOFLAGS=-cover go build -o bin/webhooks-controller ./cmd/webhooks/
+GOFLAGS=-cover go build -o bin/webhooks-controller ./cmd/authwebhook/
 # Deploy to Kind with GOCOVERDIR=/coverdata
 # Run E2E tests (parallel execution per DD-TEST-002)
 go test -v -p 4 ./test/e2e/webhooks/...
@@ -108,7 +108,7 @@ go tool cover -html=e2e-coverage.txt -o e2e-coverage.html
 
 ```bash
 # CI pipeline enforces minimum coverage targets (parallel per DD-TEST-002)
-go test -v -p 4 -cover ./pkg/webhooks/... | grep "coverage:" | awk '{if ($4 < 70.0) exit 1}'
+go test -v -p 4 -cover ./pkg/authwebhook/... | grep "coverage:" | awk '{if ($4 < 70.0) exit 1}'
 go test -v -p 4 -cover ./test/integration/webhooks/... | grep "coverage:" | awk '{if ($4 < 50.0) exit 1}'
 # E2E: Manual verification (binary coverage extraction)
 ```
@@ -415,7 +415,7 @@ Context("when handling special user scenarios", func() {
 
 ---
 
-### **Component: WorkflowExecution Handler (`pkg/webhooks/workflowexecution_handler_test.go`)**
+### **Component: WorkflowExecution Handler (`pkg/authwebhook/workflowexecution_handler_test.go`)**
 
 **20 tests, <200ms total**
 
@@ -1243,7 +1243,7 @@ make clean-authwebhook-integration
 ### **Day 1: Common Auth Tests** (30 min)
 ```bash
 # Run unit tests for common auth logic
-cd pkg/webhooks/auth
+cd pkg/authwebhook/auth
 go test -v -cover
 
 # Expected: 10 tests passing, >90% coverage
@@ -1254,7 +1254,7 @@ go test -v -cover
 ### **Day 2: WorkflowExecution Tests** (2 hours)
 ```bash
 # Unit tests
-cd pkg/webhooks
+cd pkg/authwebhook
 go test -v -run TestWEHandler -cover
 
 # Integration tests
@@ -1334,7 +1334,7 @@ ginkgo -v --label-filter="e2e && webhook"
 go test -v -run TestWEHandler_PopulateClearedBy
 
 # Step 2: Check handler implementation
-cat pkg/webhooks/workflowexecution_handler.go
+cat pkg/authwebhook/workflowexecution_handler.go
 
 # Step 3: Debug with print statements
 # (Add logging to handler)

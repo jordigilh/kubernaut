@@ -232,9 +232,9 @@ Expect(event.EventOutcome).To(Equal("success"))
 ### **Phase 5: Update Webhook Handlers** (30 min)
 
 **Files**:
-- `pkg/webhooks/workflowexecution_handler.go`
-- `pkg/webhooks/remediationapprovalrequest_handler.go`
-- `pkg/webhooks/notificationrequest_handler.go`
+- `pkg/authwebhook/workflowexecution_handler.go`
+- `pkg/authwebhook/remediationapprovalrequest_handler.go`
+- `pkg/authwebhook/notificationrequest_handler.go`
 
 **Changes**:
 

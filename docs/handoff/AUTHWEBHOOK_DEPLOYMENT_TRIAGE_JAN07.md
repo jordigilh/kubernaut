@@ -31,8 +31,8 @@
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| **Webhook Server** | ✅ Complete | `cmd/webhooks/` |
-| **3 Handlers** | ✅ Complete | `pkg/webhooks/handlers/` |
+| **Webhook Server** | ✅ Complete | `cmd/authwebhook/` |
+| **3 Handlers** | ✅ Complete | `pkg/authwebhook/handlers/` |
 | - WorkflowExecution | ✅ Complete | Block clearance attribution |
 | - RemediationApprovalRequest | ✅ Complete | Approval/rejection attribution |
 | - NotificationRequest | ✅ Complete | Deletion attribution |

@@ -55,6 +55,7 @@ func SetupGatewayInfrastructureHybridWithCoverage(ctx context.Context, clusterNa
 	// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 	dataStorageImageName := GenerateInfraImageName("datastorage", "gateway")
 	_, _ = fmt.Fprintf(writer, "📛 DataStorage dynamic tag: %s\n", dataStorageImageName)
+
 	_, _ = fmt.Fprintln(writer, "   (Ensures fresh build with latest DataStorage code)")
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -87,8 +88,8 @@ func SetupGatewayInfrastructureHybridWithCoverage(ctx context.Context, clusterNa
 		buildResults <- buildResult{name: "DataStorage", err: err}
 	}()
 
-	// Wait for both builds to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	// Wait for all 3 builds to complete (TD-E2E-001: Now includes OAuth2-Proxy)
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
 	var buildErrors []error
 	for i := 0; i < 2; i++ {
 		result := <-buildResults
@@ -159,7 +160,7 @@ func SetupGatewayInfrastructureHybridWithCoverage(ctx context.Context, clusterNa
 		loadResults <- buildResult{name: "DataStorage", err: err}
 	}()
 
-	// Wait for both loads to complete
+	// Wait for all 3 loads to complete (TD-E2E-001: Now includes OAuth2-Proxy)
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
 	for i := 0; i < 2; i++ {
@@ -207,6 +208,7 @@ func SetupGatewayInfrastructureHybridWithCoverage(ctx context.Context, clusterNa
 		// CRITICAL: Use the tag generated in Phase 0 (UUID-based, non-idempotent)
 		// Per DD-TEST-001: Dynamic tags for parallel E2E isolation
 		// This ensures we deploy the SAME fresh-built image with latest DataStorage code
+		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar
 		err := deployDataStorageServiceInNamespace(ctx, namespace, kubeconfigPath, dataStorageImageName, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()

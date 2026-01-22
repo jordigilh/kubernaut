@@ -58,7 +58,7 @@ Eventually(func() string {
 
 2. **Project Conventions** ✅
    - Follows `pkg/` structure for business logic
-   - Uses `cmd/webhooks/main.go` entry point
+   - Uses `cmd/authwebhook/main.go` entry point
    - Test directory structure: `test/{unit,integration,e2e}/webhooks/`
    - Uses controller-runtime webhook patterns
 
@@ -70,7 +70,7 @@ Eventually(func() string {
 
 4. **DD-AUTH-001 Compliance** ✅
    - Single consolidated webhook service
-   - Shared authentication logic (`pkg/webhooks/auth/common.go`)
+   - Shared authentication logic (`pkg/authwebhook/auth/common.go`)
    - Handler per CRD type (WE, RAR, NR)
 
 5. **SOC2 CC8.1 Compliance** ✅

@@ -17,7 +17,7 @@
 
 ## 🔍 **Current Webhook Infrastructure**
 
-### **Existing Webhooks** (cmd/webhooks/main.go)
+### **Existing Webhooks** (cmd/authwebhook/main.go)
 
 | Webhook | CRD | Operation | Audit Event | Status |
 |---------|-----|-----------|-------------|--------|
@@ -31,7 +31,7 @@
 ### **Webhook Server Configuration**
 
 ```go
-// cmd/webhooks/main.go:83-105
+// cmd/authwebhook/main.go:83-105
 auditStore, err := audit.NewBufferedStore(
     dsClient,
     auditConfig,
@@ -104,7 +104,7 @@ Captured By: NEW RemediationRequest mutating webhook
 
 #### **Step 1: Create RemediationRequest Webhook Handler** (+1 hour)
 
-**File**: `pkg/webhooks/remediationrequest_handler.go`
+**File**: `pkg/authwebhook/remediationrequest_handler.go`
 
 ```go
 package webhooks
@@ -261,7 +261,7 @@ func (h *RemediationRequestStatusHandler) InjectDecoder(d admission.Decoder) err
 
 #### **Step 2: Register Webhook Handler** (+15 minutes)
 
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 
 ```go
 // After line 143, add:
@@ -385,7 +385,7 @@ webhooks:
 | | | |
 | **Phase 2** (Webhook Extension - OPTIONAL) | | |
 | 2.1 | Create RemediationRequest webhook handler | 1 hour |
-| 2.2 | Register webhook in cmd/webhooks | 15 min |
+| 2.2 | Register webhook in cmd/authwebhook | 15 min |
 | 2.3 | Add status fields to CRD | 15 min |
 | 2.4 | Add OpenAPI audit event type | 15 min |
 | 2.5 | Create webhook deployment manifest | 15 min |
@@ -468,7 +468,7 @@ webhooks:
 - **Gap #8 Core**: `TIMEOUTCONFIG_MIGRATION_TO_STATUS_TRIAGE_JAN12.md`
 - **SOC2 Operator Attribution**: `TRIAGE_OPERATOR_ACTIONS_SOC2_EXTENSION.md`
 - **Webhook Pattern**: `DD-WEBHOOK-003` (Webhook-Complete Audit Pattern)
-- **Existing Handlers**: `pkg/webhooks/remediationapprovalrequest_handler.go` (reference implementation)
+- **Existing Handlers**: `pkg/authwebhook/remediationapprovalrequest_handler.go` (reference implementation)
 
 ---
 

@@ -244,10 +244,10 @@ $ find . -name "webhook*.go" -not -path "./vendor/*" -not -path "./test/*"
 
 ### **Phase 1: Webhook Service Scaffolding** (1 day)
 
-**Deliverable**: Create `cmd/webhooks/main.go` with HTTP server
+**Deliverable**: Create `cmd/authwebhook/main.go` with HTTP server
 
 ```go
-// cmd/webhooks/main.go
+// cmd/authwebhook/main.go
 package main
 
 import (
@@ -447,7 +447,7 @@ webhooks:
 | Component | Status | Next Action |
 |-----------|--------|-------------|
 | **Shared Library** | ✅ **COMPLETE** | None - ready to use |
-| **Webhook Service** | ❌ **NOT STARTED** | Create `cmd/webhooks/main.go` |
+| **Webhook Service** | ❌ **NOT STARTED** | Create `cmd/authwebhook/main.go` |
 | **CRD Handlers** | ❌ **NOT STARTED** | Implement 2 handlers |
 | **K8s Config** | ❌ **NOT STARTED** | Create webhook manifests |
 | **Tests** | ❌ **NOT STARTED** | 46 tests (36 unit + 6 integration + 4 E2E) |
@@ -479,7 +479,7 @@ webhooks:
 
 **Status**: ✅ **ANALYSIS COMPLETE**
 **Recommendation**: ✅ **CONSOLIDATED WEBHOOK** (DD-AUTH-001 mandated)
-**Next**: Implement `cmd/webhooks/main.go` + CRD handlers
+**Next**: Implement `cmd/authwebhook/main.go` + CRD handlers
 
 **Compliance**: DD-AUTH-001, DD-WEBHOOK-001, BR-WE-013, SOC2 CC8.1
 

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhooks
+package authwebhook
 
 import (
 	"context"
@@ -24,7 +24,6 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -44,7 +43,7 @@ import (
 // Per Gap #8: Operators can adjust TimeoutConfig mid-remediation via kubectl edit.
 // This webhook ensures all mutations are audited for SOC2 compliance.
 type RemediationRequestStatusHandler struct {
-	authenticator *authwebhook.Authenticator
+	authenticator *Authenticator
 	decoder       admission.Decoder
 	auditStore    audit.AuditStore
 }
@@ -52,7 +51,7 @@ type RemediationRequestStatusHandler struct {
 // NewRemediationRequestStatusHandler creates a new RemediationRequest status handler
 func NewRemediationRequestStatusHandler(auditStore audit.AuditStore) *RemediationRequestStatusHandler {
 	return &RemediationRequestStatusHandler{
-		authenticator: authwebhook.NewAuthenticator(),
+		authenticator: NewAuthenticator(),
 		auditStore:    auditStore,
 	}
 }

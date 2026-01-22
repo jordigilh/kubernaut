@@ -73,7 +73,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "HighCPUUsage",
-					Severity:          "warning",
+					Severity:          "medium",
 					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -123,7 +123,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					Signal: signalprocessingv1.SignalData{
 						Fingerprint:  fingerprint,
 						Name:         "HighCPUUsage",
-						Severity:     "warning",
+						Severity:     "medium",
 						Type:         "prometheus",
 						ReceivedTime: metav1.Now(),
 						TargetType:   "kubernetes",
@@ -177,7 +177,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fingerprint,
-							Severity:         "warning",
+							Severity:         "medium",
 							SignalType:       "prometheus",
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -491,7 +491,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "TransientError",
-					Severity:          "info",
+					Severity:          "low",
 					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -540,7 +540,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fingerprint,
-							Severity:         "info",
+							Severity:         "low",
 							SignalType:       "prometheus",
 							Environment:      "staging",
 							BusinessPriority: "P3",
@@ -592,7 +592,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "CascadeTest",
-					Severity:          "warning",
+					Severity:          "medium",
 					SignalType:        "prometheus",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -642,7 +642,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 					Signal: signalprocessingv1.SignalData{
 						Fingerprint:  fingerprint,
 						Name:         "CascadeTest",
-						Severity:     "warning",
+						Severity:     "medium",
 						Type:         "prometheus",
 						ReceivedTime: metav1.Now(),
 						TargetType:   "kubernetes",

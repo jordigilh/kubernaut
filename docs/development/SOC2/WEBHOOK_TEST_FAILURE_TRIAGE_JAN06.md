@@ -97,7 +97,7 @@ To equal: delete
 
 ### Webhook Implementation Issue
 
-**File**: `pkg/webhooks/notificationrequest_validator.go`
+**File**: `pkg/authwebhook/notificationrequest_validator.go`
 **Lines**: 122-130
 
 **Current Implementation** (INCORRECT):
@@ -142,7 +142,7 @@ eventData := map[string]interface{}{
 ## 🔧 **Fix Required**
 
 ### File to Modify
-`pkg/webhooks/notificationrequest_validator.go` lines 122-130
+`pkg/authwebhook/notificationrequest_validator.go` lines 122-130
 
 ### Changes Needed
 
@@ -232,7 +232,7 @@ make test-integration-authwebhook
 - **Helper**: `helpers.go:275-291` (validateEventData)
 
 ### Webhook Implementation
-- **File**: `pkg/webhooks/notificationrequest_validator.go`
+- **File**: `pkg/authwebhook/notificationrequest_validator.go`
 - **Lines**: 122-130 (event_data payload)
 - **Pattern**: Kubebuilder CustomValidator with ValidateDelete()
 

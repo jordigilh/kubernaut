@@ -1,4 +1,4 @@
-# Webhooks Service - Multi-Architecture Dockerfile using Red Hat UBI9
+# AuthWebhook Service - Multi-Architecture Dockerfile using Red Hat UBI9
 # Supports: linux/amd64, linux/arm64
 # Based on: ADR-027 (Multi-Architecture Build Strategy with Red Hat UBI)
 # Per ADR-028-EXCEPTION-001: Using upstream Go builder mirrored to quay.io for ARM64 compatibility
@@ -40,16 +40,16 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	echo "   Simple build (no -a, -installsuffix, -extldflags)"; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
-	-o webhooks \
-	./cmd/webhooks/main.go; \
+	-o authwebhook \
+	./cmd/authwebhook/main.go; \
 	else \
 	echo "🚀 Production build with optimizations..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} go build \
 	-mod=mod \
 	-ldflags='-w -s -extldflags "-static"' \
 	-a -installsuffix cgo \
-	-o webhooks \
-	./cmd/webhooks/main.go; \
+	-o authwebhook \
+	./cmd/authwebhook/main.go; \
 	fi
 
 # Runtime stage - Red Hat UBI9 minimal runtime image
@@ -64,10 +64,10 @@ RUN microdnf update -y && \
 RUN useradd -r -u 1001 -g root webhooks-user
 
 # Copy the binary from builder stage
-COPY --from=builder /workspace/webhooks /usr/local/bin/webhooks
+COPY --from=builder /workspace/authwebhook /usr/local/bin/authwebhook
 
 # Set proper permissions
-RUN chmod +x /usr/local/bin/webhooks
+RUN chmod +x /usr/local/bin/authwebhook
 
 # Switch to non-root user for security
 USER webhooks-user
@@ -81,7 +81,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 	CMD ["/usr/bin/curl", "-f", "-k", "https://localhost:9443/healthz"] || exit 1
 
 # Set entrypoint
-ENTRYPOINT ["/usr/local/bin/webhooks"]
+ENTRYPOINT ["/usr/local/bin/authwebhook"]
 
 # Default: no arguments (rely on environment variables or CLI flags)
 # Configuration can be provided via:
@@ -91,18 +91,18 @@ ENTRYPOINT ["/usr/local/bin/webhooks"]
 CMD []
 
 # Red Hat UBI9 compatible metadata labels (REQUIRED per ADR-027)
-LABEL name="kubernaut-webhooks" \
+LABEL name="kubernaut-authwebhook" \
 	vendor="Kubernaut" \
 	version="0.1.0" \
 	release="1" \
-	summary="Kubernaut Webhooks Service - Kubernetes Admission Webhooks for SOC2 Attribution" \
+	summary="Kubernaut AuthWebhook Service - Kubernetes Admission Webhooks for SOC2 Attribution" \
 	description="A microservice component of Kubernaut that provides Kubernetes admission webhooks for capturing authenticated user identity for operational decisions (SOC2 CC8.1 attribution). Handles WorkflowExecution block clearance, RemediationApprovalRequest approval/rejection, and NotificationRequest deletion attribution." \
 	maintainer="jgil@redhat.com" \
-	component="webhooks" \
+	component="authwebhook" \
 	part-of="kubernaut" \
-	io.k8s.description="Webhooks Service for SOC2 CC8.1 operator attribution" \
-	io.k8s.display-name="Kubernaut Webhooks Service" \
-	io.openshift.tags="kubernaut,webhooks,admission,authentication,soc2,audit,attribution,microservice"
+	io.k8s.description="AuthWebhook Service for SOC2 CC8.1 operator attribution" \
+	io.k8s.display-name="Kubernaut AuthWebhook Service" \
+	io.openshift.tags="kubernaut,authwebhook,admission,authentication,soc2,audit,attribution,microservice"
 
 
 

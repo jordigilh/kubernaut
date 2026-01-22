@@ -29,7 +29,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: authwebhook
-          image: quay.io/jordigilh/kubernaut-webhooks:latest
+          image: quay.io/jordigilh/kubernaut-authwebhook:latest
           imagePullPolicy: Always
           ports:
             - name: webhook

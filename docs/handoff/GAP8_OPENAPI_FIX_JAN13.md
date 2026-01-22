@@ -183,7 +183,7 @@ holmesgpt-api/src/clients/datastorage/ (entire directory)
 **Source Files** (unchanged):
 ```
 api/openapi/data-storage-v1.yaml (already correct)
-pkg/webhooks/remediationrequest_handler.go (already correct)
+pkg/authwebhook/remediationrequest_handler.go (already correct)
 ```
 
 ---

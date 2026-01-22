@@ -39,7 +39,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -103,21 +102,12 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 
 			Expect(k8sClient.Create(ctx, testRR)).To(Succeed())
 
-			// Get UID as correlation ID
-			Eventually(func() bool {
-				if err := k8sClient.Get(ctx, types.NamespacedName{
-					Name:      testRR.Name,
-					Namespace: testNamespace,
-				}, testRR); err != nil {
-					return false
-				}
-				return testRR.UID != ""
-			}, e2eTimeout, e2eInterval).Should(BeTrue())
+		// DD-AUDIT-CORRELATION-002: Use rr.Name (not rr.UID) as correlation ID
+		// Per universal standard: All services use RemediationRequest.Name for audit correlation
+		correlationID = testRR.Name
 
-			correlationID = string(testRR.UID)
-
-			GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (UID: %s)\n",
-				testNamespace, testRR.Name, correlationID)
+		GinkgoWriter.Printf("🚀 E2E: Created RemediationRequest %s/%s (correlation_id: %s)\n",
+			testNamespace, testRR.Name, correlationID)
 		})
 
 		AfterEach(func() {

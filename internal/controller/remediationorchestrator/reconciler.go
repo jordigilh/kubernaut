@@ -72,6 +72,8 @@ type Reconciler struct {
 	scheme              *runtime.Scheme
 	statusAggregator    *aggregator.StatusAggregator
 	aiAnalysisHandler   *handler.AIAnalysisHandler
+	spHandler           *handler.SignalProcessingHandler     // Handler Consistency Refactoring (2026-01-22)
+	weHandler           *handler.WorkflowExecutionHandler    // Handler Consistency Refactoring (2026-01-22)
 	notificationCreator *creator.NotificationCreator
 	spCreator           *creator.SignalProcessingCreator
 	aiAnalysisCreator   *creator.AIAnalysisCreator
@@ -179,11 +181,10 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 	// ========================================
 	statusManager := status.NewManager(c, apiReader)
 
-	return &Reconciler{
+	r := &Reconciler{
 		client:              c,
 		scheme:              s,
 		statusAggregator:    aggregator.NewStatusAggregator(c),
-		aiAnalysisHandler:   handler.NewAIAnalysisHandler(c, s, nc, m),
 		notificationCreator: nc,
 		spCreator:           creator.NewSignalProcessingCreator(c, s, m),
 		aiAnalysisCreator:   creator.NewAIAnalysisCreator(c, s, m),
@@ -199,6 +200,22 @@ func NewReconciler(c client.Client, apiReader client.Reader, s *runtime.Scheme, 
 		Recorder:            recorder,
 		StatusManager:       statusManager, // DD-PERF-001: Atomic status updates
 	}
+
+	// ========================================
+	// HANDLER INITIALIZATION (Handler Consistency Refactoring 2026-01-22)
+	// Initialize handlers with transition callbacks for audit emission (BR-AUDIT-005, DD-AUDIT-003)
+	// ========================================
+	
+	// SignalProcessingHandler: delegates phase transitions
+	r.spHandler = handler.NewSignalProcessingHandler(c, s, r.transitionPhase)
+	
+	// AIAnalysisHandler: delegates failure transitions
+	r.aiAnalysisHandler = handler.NewAIAnalysisHandler(c, s, nc, m, r.transitionToFailed)
+	
+	// WorkflowExecutionHandler: delegates completion and failure transitions
+	r.weHandler = handler.NewWorkflowExecutionHandler(c, s, m, r.transitionToFailed, r.transitionToCompleted)
+
+	return r
 }
 
 // ========================================
@@ -621,20 +638,21 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing not found")
 	}
 
-	switch agg.SignalProcessingPhase {
-	case string(signalprocessingv1.PhaseCompleted):
-		logger.Info("SignalProcessing completed, creating AIAnalysis")
+	// Fetch SignalProcessing CRD
+	sp := &signalprocessingv1.SignalProcessing{}
+	err := r.client.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.SignalProcessingRef.Name,
+		Namespace: rr.Status.SignalProcessingRef.Namespace,
+	}, sp)
+	if err != nil {
+		logger.Error(err, "Failed to fetch SignalProcessing CRD")
+		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
+	}
 
-		// Fetch SignalProcessing CRD to pass enrichment data to AIAnalysis
-		sp := &signalprocessingv1.SignalProcessing{}
-		err := r.client.Get(ctx, client.ObjectKey{
-			Name:      rr.Status.SignalProcessingRef.Name,
-			Namespace: rr.Status.SignalProcessingRef.Namespace,
-		}, sp)
-		if err != nil {
-			logger.Error(err, "Failed to fetch SignalProcessing CRD")
-			return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-		}
+	// Special handling for Completed status: create AIAnalysis before transitioning
+	// This is unique to SP because AIAnalysis creation requires SP enrichment data
+	if sp.Status.Phase == signalprocessingv1.PhaseCompleted {
+		logger.Info("SignalProcessing completed, creating AIAnalysis")
 
 		// Create AIAnalysis CRD (BR-ORCH-025, BR-ORCH-031)
 		// DD-CRD-002-RR: Creator sets AIAnalysisReady condition in-memory
@@ -693,41 +711,11 @@ func (r *Reconciler) handleProcessingPhase(ctx context.Context, rr *remediationv
 			logger.Error(err, "Failed to update SignalProcessingComplete condition")
 			// Continue - condition update is best-effort
 		}
-
-		// Transition to Analyzing phase
-		return r.transitionPhase(ctx, rr, phase.Analyzing)
-
-	case string(signalprocessingv1.PhaseFailed):
-		logger.Info("SignalProcessing failed, transitioning to Failed")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set SignalProcessingComplete condition
-		// ========================================
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
-			remediationrequest.SetSignalProcessingComplete(rr, false,
-				remediationrequest.ReasonSignalProcessingFailed,
-				"SignalProcessing failed", r.Metrics)
-			return nil
-		}); err != nil {
-			logger.Error(err, "Failed to update SignalProcessingComplete condition")
-			// Continue - condition update is best-effort
-		}
-		return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing failed")
-	case "":
-		// Empty phase could mean: 1) not created yet, or 2) missing/deleted
-		// Check if the child is actually missing (AllChildrenHealthy=false)
-		if !agg.AllChildrenHealthy {
-			// Child is missing - this is an error
-			logger.Error(nil, "SignalProcessing CRD not found",
-				"signalProcessingRef", rr.Status.SignalProcessingRef.Name)
-			return r.transitionToFailed(ctx, rr, "signal_processing", "SignalProcessing not found")
-		}
-		// SignalProcessing not created yet, requeue
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	default:
-		// Still in progress
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+
+	// Delegate to SignalProcessingHandler for status-based transitions
+	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
+	return r.spHandler.HandleStatus(ctx, rr, sp)
 }
 
 // handleAnalyzingPhase handles the Analyzing phase.
@@ -1114,14 +1102,27 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
 	}
 
-	// Phase values per api/workflowexecution/v1alpha1: Pending|Running|Completed|Failed|Skipped
-	switch agg.WorkflowExecutionPhase {
-	case "Completed":
-		logger.Info("WorkflowExecution completed, transitioning to Completed")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set WorkflowExecutionComplete condition
-		// ========================================
+	// Check if child is missing (AllChildrenHealthy=false)
+	if agg.WorkflowExecutionPhase == "" && !agg.AllChildrenHealthy {
+		logger.Error(nil, "WorkflowExecution CRD not found",
+			"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
+		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+	}
+
+	// Fetch WorkflowExecution CRD
+	we := &workflowexecutionv1.WorkflowExecution{}
+	err := r.client.Get(ctx, client.ObjectKey{
+		Name:      rr.Status.WorkflowExecutionRef.Name,
+		Namespace: rr.Status.WorkflowExecutionRef.Namespace,
+	}, we)
+	if err != nil {
+		logger.Error(err, "Failed to fetch WorkflowExecution CRD")
+		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
+	}
+
+	// Set WorkflowExecutionComplete condition before delegating to handler
+	// DD-PERF-001: Atomic status updates with conditions
+	if we.Status.Phase == workflowexecutionv1.PhaseCompleted {
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, true,
 				remediationrequest.ReasonWorkflowSucceeded,
@@ -1131,13 +1132,7 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToCompleted(ctx, rr, "Remediated") // CRD enum: Remediated, NoActionRequired, ManualReviewRequired
-	case "Failed":
-		logger.Info("WorkflowExecution failed, transitioning to Failed")
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE
-		// Set WorkflowExecutionComplete condition
-		// ========================================
+	} else if we.Status.Phase == workflowexecutionv1.PhaseFailed {
 		if err := r.StatusManager.AtomicStatusUpdate(ctx, rr, func() error {
 			remediationrequest.SetWorkflowExecutionComplete(rr, false,
 				remediationrequest.ReasonWorkflowFailed,
@@ -1147,22 +1142,11 @@ func (r *Reconciler) handleExecutingPhase(ctx context.Context, rr *remediationv1
 			logger.Error(err, "Failed to update WorkflowExecutionComplete condition")
 			// Continue - condition update is best-effort
 		}
-		return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution failed")
-	case "":
-		// Empty phase could mean: 1) not created yet, or 2) missing/deleted
-		// Check if the child is actually missing (AllChildrenHealthy=false)
-		if !agg.AllChildrenHealthy {
-			// Child is missing - this is an error
-			logger.Error(nil, "WorkflowExecution CRD not found",
-				"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
-			return r.transitionToFailed(ctx, rr, "workflow_execution", "WorkflowExecution not found")
-		}
-		// WorkflowExecution not created yet, requeue
-		return ctrl.Result{RequeueAfter: config.RequeueGenericError}, nil // REFACTOR-RO-003
-	default:
-		// Still in progress
-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
+
+	// Delegate to WorkflowExecutionHandler for status-based transitions
+	// Handler Consistency Refactoring (2026-01-22): Extract status handling logic
+	return r.weHandler.HandleStatus(ctx, rr, we)
 }
 
 // handleBlocked updates RR status when routing is blocked and requeues appropriately.

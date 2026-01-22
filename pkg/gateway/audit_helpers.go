@@ -67,11 +67,12 @@ var deduplicationStatusMapping = map[string]api.GatewayAuditPayloadDeduplication
 // Used by toAPIErrorDetails() for error context in audit events.
 //
 // **Authority**: api/openapi/data-storage-v1.yaml (ErrorDetails.component enum)
+// **Refactoring**: 2026-01-22 - Updated "webhooks" → "authwebhook" per pkg refactoring
 var componentMapping = map[string]api.ErrorDetailsComponent{
 	"gateway":                 api.ErrorDetailsComponentGateway,
 	"aianalysis":              api.ErrorDetailsComponentAianalysis,
 	"workflowexecution":       api.ErrorDetailsComponentWorkflowexecution,
-	"webhooks":                api.ErrorDetailsComponentWebhooks,
+	"authwebhook":             api.ErrorDetailsComponentAuthwebhook,
 	"remediationorchestrator": api.ErrorDetailsComponentRemediationorchestrator,
 	"signalprocessing":        api.ErrorDetailsComponentSignalprocessing,
 }

@@ -667,7 +667,7 @@ kubectl describe pod authwebhook-7dcddc8f6b-zc7vq -n notification-e2e
 - PostgreSQL logs (worker, working): `notification-e2e-worker/pods/notification-e2e_postgresql-*/postgresql/0.log`
 
 **Deployment YAML**: `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml`
-**WebHook Main**: `cmd/webhooks/main.go` (lines 158-166 - health endpoint setup)
+**WebHook Main**: `cmd/authwebhook/main.go` (lines 158-166 - health endpoint setup)
 
 ### **Reproduction**
 

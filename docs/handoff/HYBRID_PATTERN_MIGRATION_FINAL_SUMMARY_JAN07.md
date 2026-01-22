@@ -249,7 +249,7 @@ PHASE 6: Wait for ready (if applicable)
 - `test/infrastructure/authwebhook_e2e.go` - Hybrid pattern + webhook fixes
 
 ### Application Code
-- `cmd/webhooks/main.go` - Health probe server configuration
+- `cmd/authwebhook/main.go` - Health probe server configuration
 
 ### Deployment Manifests
 - `test/e2e/authwebhook/manifests/authwebhook-deployment.yaml` - Health probe configuration

@@ -165,10 +165,10 @@ event.EventData = ogenclient.NewNotificationMessageSentPayloadAuditEventRequestE
 
 #### 7. Webhooks Service (4 handlers)
 **Files**:
-- `pkg/webhooks/notificationrequest_handler.go`
-- `pkg/webhooks/notificationrequest_validator.go`
-- `pkg/webhooks/workflowexecution_handler.go`
-- `pkg/webhooks/remediationapprovalrequest_handler.go`
+- `pkg/authwebhook/notificationrequest_handler.go`
+- `pkg/authwebhook/notificationrequest_validator.go`
+- `pkg/authwebhook/workflowexecution_handler.go`
+- `pkg/authwebhook/remediationapprovalrequest_handler.go`
 
 **Status**: ⏳ Pending
 

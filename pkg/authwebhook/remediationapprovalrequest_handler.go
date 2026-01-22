@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package webhooks
+package authwebhook
 
 import (
 	"context"
@@ -24,7 +24,6 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -40,7 +39,7 @@ import (
 // 2. Populates status.DecidedAt (timestamp)
 // 3. Writes complete audit event (WHO + WHAT + ACTION)
 type RemediationApprovalRequestAuthHandler struct {
-	authenticator *authwebhook.Authenticator
+	authenticator *Authenticator
 	decoder       admission.Decoder
 	auditStore    audit.AuditStore
 }
@@ -48,7 +47,7 @@ type RemediationApprovalRequestAuthHandler struct {
 // NewRemediationApprovalRequestAuthHandler creates a new RemediationApprovalRequest authentication handler
 func NewRemediationApprovalRequestAuthHandler(auditStore audit.AuditStore) *RemediationApprovalRequestAuthHandler {
 	return &RemediationApprovalRequestAuthHandler{
-		authenticator: authwebhook.NewAuthenticator(),
+		authenticator: NewAuthenticator(),
 		auditStore:    auditStore,
 	}
 }

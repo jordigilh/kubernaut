@@ -280,12 +280,12 @@ var _ = BeforeSuite(func() {
 ### **3. Update Test Count and Tiers**
 
 **Before (WRONG)**:
-- Unit: 70 tests (pkg/webhooks)
+- Unit: 70 tests (pkg/authwebhook)
 - Integration: 11 tests (HTTP webhook calls)
 - E2E: 14 tests (Kind cluster)
 
 **After (CORRECT)**:
-- Unit: 70 tests (pkg/webhooks) ✅ Keep as-is
+- Unit: 70 tests (pkg/authwebhook) ✅ Keep as-is
 - Integration: 9 tests (envtest with webhook, CRD operations)
 - E2E: 14 tests (Kind cluster) ✅ Keep as-is
 
@@ -349,7 +349,7 @@ var _ = BeforeSuite(func() {
 
 ```bash
 # CI check for wrong pattern
-if grep -r "httpClient.Post.*webhook\|admission.Request" test/integration/webhooks --include="*_test.go" | grep -v "pkg/webhooks"; then
+if grep -r "httpClient.Post.*webhook\|admission.Request" test/integration/webhooks --include="*_test.go" | grep -v "pkg/authwebhook"; then
     echo "⚠️  ERROR: Integration tests should NOT make HTTP webhook calls"
     echo "   Integration tests should create CRDs and verify webhook side effects"
     echo "   See: TESTING_GUIDELINES.md §1688-1949"

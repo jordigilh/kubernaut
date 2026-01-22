@@ -4325,7 +4325,7 @@ const (
 	ErrorDetailsComponentWorkflowexecution       ErrorDetailsComponent = "workflowexecution"
 	ErrorDetailsComponentRemediationorchestrator ErrorDetailsComponent = "remediationorchestrator"
 	ErrorDetailsComponentSignalprocessing        ErrorDetailsComponent = "signalprocessing"
-	ErrorDetailsComponentWebhooks                ErrorDetailsComponent = "webhooks"
+	ErrorDetailsComponentAuthwebhook             ErrorDetailsComponent = "authwebhook"
 )
 
 // AllValues returns all ErrorDetailsComponent values.
@@ -4336,7 +4336,7 @@ func (ErrorDetailsComponent) AllValues() []ErrorDetailsComponent {
 		ErrorDetailsComponentWorkflowexecution,
 		ErrorDetailsComponentRemediationorchestrator,
 		ErrorDetailsComponentSignalprocessing,
-		ErrorDetailsComponentWebhooks,
+		ErrorDetailsComponentAuthwebhook,
 	}
 }
 
@@ -4353,7 +4353,7 @@ func (s ErrorDetailsComponent) MarshalText() ([]byte, error) {
 		return []byte(s), nil
 	case ErrorDetailsComponentSignalprocessing:
 		return []byte(s), nil
-	case ErrorDetailsComponentWebhooks:
+	case ErrorDetailsComponentAuthwebhook:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -4378,8 +4378,8 @@ func (s *ErrorDetailsComponent) UnmarshalText(data []byte) error {
 	case ErrorDetailsComponentSignalprocessing:
 		*s = ErrorDetailsComponentSignalprocessing
 		return nil
-	case ErrorDetailsComponentWebhooks:
-		*s = ErrorDetailsComponentWebhooks
+	case ErrorDetailsComponentAuthwebhook:
+		*s = ErrorDetailsComponentAuthwebhook
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

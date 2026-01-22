@@ -182,7 +182,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	_, _ = fmt.Fprintln(writer, "  └── PostgreSQL + Redis + DataStorage + Migrations")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Must complete before workflow seeding")
 
-	// Deploy Data Storage infrastructure using shared function (DD-TEST-001 v1.3)
+	// Deploy Data Storage infrastructure with OAuth2-Proxy (TD-E2E-001 Phase 1)
 	if err := DeployDataStorageTestServices(ctx, namespace, kubeconfigPath, builtImages["datastorage"], writer); err != nil {
 		return fmt.Errorf("DataStorage infrastructure deployment failed: %w", err)
 	}

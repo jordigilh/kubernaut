@@ -29,7 +29,7 @@
 
 ### 0. **Webhook Deletion Event (1 schema) - CRITICAL**
 
-**Location**: `pkg/webhooks/notificationrequest_validator.go`  
+**Location**: `pkg/authwebhook/notificationrequest_validator.go`  
 **Current State**: ✅ Using structured `NotificationAuditPayload` BUT ❌ Event type NOT in discriminator
 
 | Event Type | Go Struct | Status |

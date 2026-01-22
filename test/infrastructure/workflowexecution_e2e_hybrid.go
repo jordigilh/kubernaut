@@ -102,7 +102,8 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building images in parallel...")
 	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (WITH COVERAGE)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2-3 minutes (parallel)")
 
 	type buildResult struct {
@@ -111,7 +112,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		err       error
 	}
 
-	buildResults := make(chan buildResult, 2)
+	buildResults := make(chan buildResult, 3)
 	builtImages := make(map[string]string)
 
 	// Build WorkflowExecution controller with coverage in parallel
@@ -144,10 +145,23 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
-	// Wait for both builds to complete
-	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for both builds to complete...")
+	// Build AuthWebhook in parallel
+	go func() {
+		cfg := E2EImageConfig{
+			ServiceName:      "webhooks",
+			ImageName:        "webhooks",
+			DockerfilePath:   "docker/webhooks.Dockerfile",
+			BuildContextPath: "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		}
+		imageName, err := BuildImageForKind(cfg, writer)
+		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
+	}()
+
+	// Wait for all 4 builds to complete (TD-E2E-001: Now includes OAuth2-Proxy)
+	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for all builds to complete...")
 	var buildErrors []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-buildResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s build failed: %v\n", result.name, result.err)
@@ -224,7 +238,8 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// - Authority: docs/handoff/CONSOLIDATED_API_MIGRATION_GUIDE_JAN07.md
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading images into Kind cluster...")
 	_, _ = fmt.Fprintln(writer, "  ├── WorkflowExecution controller (coverage)")
-	_, _ = fmt.Fprintln(writer, "  └── DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image")
+	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (SOC2)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 
 	type loadResult struct {
@@ -232,7 +247,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		err  error
 	}
 
-	loadResults := make(chan loadResult, 2)
+	loadResults := make(chan loadResult, 3)
 
 	// Load WorkflowExecution controller image
 	go func() {
@@ -248,10 +263,17 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
-	// Wait for both loads to complete
+	// Load AuthWebhook image
+	go func() {
+		awImage := builtImages["AuthWebhook"]
+		err := LoadImageToKind(awImage, "webhooks", clusterName, writer)
+		loadResults <- loadResult{name: "AuthWebhook", err: err}
+	}()
+
+	// Wait for all 4 loads to complete (TD-E2E-001: Now includes OAuth2-Proxy)
 	_, _ = fmt.Fprintln(writer, "\n⏳ Waiting for images to load...")
 	var loadErrors []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		result := <-loadResults
 		if result.err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", result.name, result.err)
@@ -303,6 +325,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		// Per Consolidated API Migration (January 2026):
 		// Use DataStorage image name from builtImages map (built in Phase 1)
 		dsImage := builtImages["DataStorage"]
+		// TD-E2E-001 Phase 1: Deploy DataStorage with OAuth2-Proxy sidecar
 		err := deployDataStorageServiceInNamespace(ctx, WorkflowExecutionNamespace, kubeconfigPath, dsImage, writer)
 		deployResults <- deployResult{"DataStorage", err}
 	}()
@@ -338,15 +361,16 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// PHASE 4.5: Deploy AuthWebhook for SOC2-compliant CRD operations
+	// PHASE 4.5: Deploy AuthWebhook manifests (using pre-built + pre-loaded image)
 	// ═══════════════════════════════════════════════════════════════════════
 	// Per DD-WEBHOOK-001: Required for WorkflowExecution block clearance
 	// Per SOC2 CC8.1: Captures WHO cleared execution blocks after failures
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook for Block Clearance Attribution")
+	_, _ = fmt.Fprintln(writer, "🔐 PHASE 4.5: Deploying AuthWebhook Manifests")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	if err := DeployAuthWebhookToCluster(ctx, clusterName, WorkflowExecutionNamespace, kubeconfigPath, writer); err != nil {
-		return fmt.Errorf("failed to deploy AuthWebhook: %w", err)
+	awImage := builtImages["AuthWebhook"]
+	if err := DeployAuthWebhookManifestsOnly(ctx, clusterName, WorkflowExecutionNamespace, kubeconfigPath, awImage, writer); err != nil {
+		return fmt.Errorf("failed to deploy AuthWebhook manifests: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ AuthWebhook deployed - SOC2 CC8.1 block clearance attribution enabled")
 

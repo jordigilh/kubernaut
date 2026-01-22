@@ -258,7 +258,7 @@ func (m *Manager) RecordFailure(...) {
 4. `pkg/aianalysis/audit/audit.go`
 5. `pkg/workflowexecution/audit/manager.go`
 6. `pkg/notification/audit/manager.go`
-7. `pkg/webhooks/*_handler.go` (4 files)
+7. `pkg/authwebhook/*_handler.go` (4 files)
 8. `pkg/datastorage/audit/workflow_*.go` (2 files)
 
 **Integration Tests** (~15 files):
@@ -417,7 +417,7 @@ rm -rf pkg/datastorage/client/
 - `pkg/aianalysis/audit/event_types.go` (if it exists)
 - `pkg/workflowexecution/audit_types.go`
 - `pkg/notification/audit/event_types.go` (if it exists)
-- `pkg/webhooks/audit_types.go`
+- `pkg/authwebhook/audit_types.go`
 
 **All replaced by**: `pkg/datastorage/ogen-client/oas_schemas_gen.go`
 

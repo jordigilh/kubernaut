@@ -40,8 +40,8 @@ class ErrorDetails(BaseModel):
     @field_validator('component')
     def component_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in ('gateway', 'aianalysis', 'workflowexecution', 'remediationorchestrator', 'signalprocessing', 'webhooks'):
-            raise ValueError("must be one of enum values ('gateway', 'aianalysis', 'workflowexecution', 'remediationorchestrator', 'signalprocessing', 'webhooks')")
+        if value not in ('gateway', 'aianalysis', 'workflowexecution', 'remediationorchestrator', 'signalprocessing', 'authwebhook'):
+            raise ValueError("must be one of enum values ('gateway', 'aianalysis', 'workflowexecution', 'remediationorchestrator', 'signalprocessing', 'authwebhook')")
         return value
 
     model_config = {

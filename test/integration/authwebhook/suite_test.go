@@ -31,7 +31,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/webhooks"
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
@@ -57,7 +57,7 @@ var (
 	infra      *testinfra.AuthWebhookInfrastructure
 )
 
-// auditStoreAdapter adapts audit.AuditStore to webhooks.AuditManager interface
+// auditStoreAdapter adapts audit.AuditStore to authwebhook.AuditManager interface
 // This allows webhook handlers to use the real audit store
 func TestAuthWebhookIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -186,19 +186,19 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	decoder := admission.NewDecoder(scheme.Scheme)
 
 	// Register WorkflowExecution mutating webhook (DD-WEBHOOK-003: Complete audit events)
-	wfeHandler := webhooks.NewWorkflowExecutionAuthHandler(auditStore)
+	wfeHandler := authwebhook.NewWorkflowExecutionAuthHandler(auditStore)
 	_ = wfeHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
 
 	// Register RemediationApprovalRequest mutating webhook (DD-WEBHOOK-003: Complete audit events)
-	rarHandler := webhooks.NewRemediationApprovalRequestAuthHandler(auditStore)
+	rarHandler := authwebhook.NewRemediationApprovalRequestAuthHandler(auditStore)
 	_ = rarHandler.InjectDecoder(decoder) // InjectDecoder always returns nil
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 
 	// Register NotificationRequest DELETE validator (DD-WEBHOOK-003: Complete audit events)
 	// Uses Kubebuilder CustomValidator interface for envtest compatibility
 	// Reference: https://book.kubebuilder.io/cronjob-tutorial/webhook-implementation
-	nrValidator := webhooks.NewNotificationRequestValidator(auditStore)
+	nrValidator := authwebhook.NewNotificationRequestValidator(auditStore)
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{
 		Handler: admission.WithCustomValidator(scheme.Scheme, &notificationv1.NotificationRequest{}, nrValidator),
 	})

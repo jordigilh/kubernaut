@@ -26,7 +26,7 @@
 - ✅ RemediationOrchestrator (cmd/remediationorchestrator)
 - ✅ AIAnalysis (cmd/aianalysis)
 - ✅ Notification (cmd/notification)
-- ✅ Webhooks (cmd/webhooks)
+- ✅ Webhooks (cmd/authwebhook)
 
 ---
 
@@ -161,7 +161,7 @@ $ grep -r "sql.Open\|database/sql" cmd/workflowexecution/
 **Pattern**: Same as Gateway
 
 ### **8. Webhooks** ✅ N/A (No Database)
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 **Status**: ✅ No PostgreSQL connection (assumed, not verified in detail)
 **Architecture**: Kubernetes CRD controller (admission webhooks)
 **Data Persistence**: Via DataStorage API

@@ -389,7 +389,7 @@ make generate
 
 ### **Step 3.1: Create Webhook Handler** (1 hour)
 
-**File**: `pkg/webhooks/remediationrequest_handler.go` (NEW)
+**File**: `pkg/authwebhook/remediationrequest_handler.go` (NEW)
 
 ```go
 /*
@@ -562,7 +562,7 @@ func (h *RemediationRequestStatusHandler) InjectDecoder(d admission.Decoder) err
 
 ### **Step 3.2: Register Webhook** (15 minutes)
 
-**File**: `cmd/webhooks/main.go`
+**File**: `cmd/authwebhook/main.go`
 
 **Add after line 153**:
 ```go
@@ -675,7 +675,7 @@ webhooks:
 
 ### **Phase 3 Complete (Webhook)**:
 - [ ] `RemediationRequestStatusHandler` webhook implemented
-- [ ] Webhook registered in `cmd/webhooks/main.go`
+- [ ] Webhook registered in `cmd/authwebhook/main.go`
 - [ ] `webhook.remediationrequest.timeout_modified` event emitted
 - [ ] Status fields `LastModifiedBy`, `LastModifiedAt` populated
 - [ ] OpenAPI schema updated

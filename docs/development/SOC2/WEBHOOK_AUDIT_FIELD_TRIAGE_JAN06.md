@@ -62,7 +62,7 @@ event_data: {
 
 ### **1. WorkflowExecution Webhook**
 
-#### **Current Implementation** (`pkg/webhooks/workflowexecution_handler.go:111-117`)
+#### **Current Implementation** (`pkg/authwebhook/workflowexecution_handler.go:111-117`)
 ```go
 eventData := map[string]interface{}{
     "workflow_name": wfe.Name,           // ✅ CORRECT (business field)
@@ -89,7 +89,7 @@ EventData: marshalJSON({
 
 ### **2. RemediationApprovalRequest Webhook**
 
-#### **Current Implementation** (`pkg/webhooks/remediationapprovalrequest_handler.go:111-117`)
+#### **Current Implementation** (`pkg/authwebhook/remediationapprovalrequest_handler.go:111-117`)
 ```go
 eventData := map[string]interface{}{
     "approval_request_name": rar.Name,   // ✅ CORRECT (business field)
@@ -116,7 +116,7 @@ EventData: marshalJSON({
 
 ### **3. NotificationRequest Webhook**
 
-#### **Current Implementation** (`pkg/webhooks/notificationrequest_validator.go:123-136`)
+#### **Current Implementation** (`pkg/authwebhook/notificationrequest_validator.go:123-136`)
 ```go
 eventData := map[string]interface{}{
     // ❌ Test expectations (NOT in DD-WEBHOOK-003)
@@ -189,7 +189,7 @@ validateEventData(event, map[string]interface{}{
 
 ### **Priority 1: Fix NotificationRequest Webhook** (BREAKING)
 
-**File**: `pkg/webhooks/notificationrequest_validator.go:123-136`
+**File**: `pkg/authwebhook/notificationrequest_validator.go:123-136`
 
 **BEFORE** (WRONG):
 ```go
@@ -261,7 +261,7 @@ validateEventData(event, map[string]interface{}{
 
 ### **Priority 3: Align WorkflowExecution Webhook** (NON-BREAKING)
 
-**File**: `pkg/webhooks/workflowexecution_handler.go:111-117`
+**File**: `pkg/authwebhook/workflowexecution_handler.go:111-117`
 
 **Recommended Changes**:
 1. **Remove** `"cleared_by"` (redundant with `actor_id` column)
@@ -283,7 +283,7 @@ eventData := map[string]interface{}{
 
 ### **Priority 4: Align RemediationApprovalRequest Webhook** (NON-BREAKING)
 
-**File**: `pkg/webhooks/remediationapprovalrequest_handler.go:111-117`
+**File**: `pkg/authwebhook/remediationapprovalrequest_handler.go:111-117`
 
 **Recommended Changes**:
 1. **Remove** `"decided_by"` (redundant with `actor_id` column)
@@ -389,7 +389,7 @@ eventData := map[string]interface{}{
 ## 📅 **Implementation Plan**
 
 ### **Phase 1: Fix NotificationRequest Webhook** (CRITICAL)
-1. Update `pkg/webhooks/notificationrequest_validator.go` event_data per DD-WEBHOOK-003 lines 335-340
+1. Update `pkg/authwebhook/notificationrequest_validator.go` event_data per DD-WEBHOOK-003 lines 335-340
 2. Remove "operator", "crd_name", "namespace", "action" from event_data
 3. Add "notification_name", "notification_type", "final_status", "recipients"
 

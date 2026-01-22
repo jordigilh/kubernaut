@@ -948,7 +948,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "status", Operator: "->>", Value: "Cancelled", ExpectedRows: 1},
+			{Field: "final_status", Operator: "->>", Value: "Cancelled", ExpectedRows: 1}, // Fixed: OpenAPI spec defines "final_status" not "status"
 		},
 	},
 	{
@@ -979,7 +979,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "status", Operator: "->>", Value: "Acknowledged", ExpectedRows: 1},
+			{Field: "final_status", Operator: "->>", Value: "Sent", ExpectedRows: 1}, // Fixed: Event creates with FinalStatusSent, OpenAPI enum: [Pending,Sending,Sent,Failed,Cancelled]
 		},
 	},
 	{
@@ -1003,12 +1003,18 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(wfeName),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewWorkflowExecutionWebhookAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowExecutionWebhookAuditPayload{
-					EventType: ogenclient.WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked,
+					EventType:     ogenclient.WorkflowExecutionWebhookAuditPayloadEventTypeWebhookWorkflowUnblocked,
+					WorkflowName:  wfeName,
+					ClearReason:   "Manual approval by ops team - E2E test",
+					ClearedAt:     time.Now().UTC(),
+					PreviousState: ogenclient.WorkflowExecutionWebhookAuditPayloadPreviousStateBlocked,
+					NewState:      ogenclient.WorkflowExecutionWebhookAuditPayloadNewStateRunning,
 				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "action", Operator: "->>", Value: "unblock", ExpectedRows: 1},
+			// FIX: Query 'previous_state' = 'Blocked' which exists in WorkflowExecutionWebhookAuditPayload
+			{Field: "previous_state", Operator: "->>", Value: "Blocked", ExpectedRows: 1},
 		},
 	},
 	{
@@ -1032,13 +1038,18 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(approvalName),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewRemediationApprovalAuditPayloadAuditEventRequestEventData(ogenclient.RemediationApprovalAuditPayload{
-					EventType: ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
-					Decision:  "approved",
+					EventType:        ogenclient.RemediationApprovalAuditPayloadEventTypeWebhookApprovalDecided,
+					RequestName:      approvalName,
+					Decision:         ogenclient.RemediationApprovalAuditPayloadDecisionApproved,
+					DecidedAt:        time.Now().UTC(),
+					DecisionMessage:  "Approved by ops team for E2E testing",
+					AiAnalysisRef:    "aianalysis-test-ref-123",
 				}),
 			}
 		},
 		JSONBQueries: []jsonbQueryTest{
-			{Field: "decision", Operator: "->>", Value: "approved", ExpectedRows: 1},
+			// FIX: OpenAPI enum is "Approved" (title case), not "approved"
+			{Field: "decision", Operator: "->>", Value: "Approved", ExpectedRows: 1},
 		},
 	},
 	{
@@ -1062,9 +1073,11 @@ var eventTypeCatalog = []eventTypeTestCase{
 				ResourceID:     ogenclient.NewOptString(rrName),
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewRemediationRequestWebhookAuditPayloadAuditEventRequestEventData(ogenclient.RemediationRequestWebhookAuditPayload{
-					EventType: ogenclient.RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified,
-					RrName:    rrName,
-					Namespace: "default",
+					EventType:  ogenclient.RemediationRequestWebhookAuditPayloadEventTypeWebhookRemediationrequestTimeoutModified,
+					RrName:     rrName,
+					Namespace:  "default",
+					ModifiedBy: "admin@example.com",
+					ModifiedAt: time.Now().UTC(),
 				}),
 			}
 		},
@@ -1098,6 +1111,17 @@ var eventTypeCatalog = []eventTypeTestCase{
 				CorrelationID:  correlationID,
 				EventData: ogenclient.NewWorkflowSearchAuditPayloadAuditEventRequestEventData(ogenclient.WorkflowSearchAuditPayload{
 					EventType: ogenclient.WorkflowSearchAuditPayloadEventTypeWorkflowCatalogSearchCompleted,
+					Query: ogenclient.QueryMetadata{
+						TopK: 5,
+					},
+					Results: ogenclient.ResultsMetadata{
+						TotalFound: 5,
+						Returned:   5,
+						Workflows:  []ogenclient.WorkflowResultAudit{},
+					},
+					SearchMetadata: ogenclient.SearchExecutionMetadata{
+						DurationMs: 150,
+					},
 				}),
 			}
 		},
