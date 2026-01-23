@@ -15,6 +15,9 @@ IMAGE_TAG ?= v1.0.0
 IMAGE_LATEST ?= latest
 LOCAL_IMAGE_NAME ?= localhost/$(IMAGE_NAME)
 
+# Platform auto-detection (amd64 for x86_64, arm64 for aarch64)
+PLATFORM ?= $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
 # Paths
 TEST_DIR := test
 TEMPLATES_DIR := templates
@@ -24,12 +27,12 @@ help: ## Show this help message
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-build-local: ## Build ARM64-only image for local testing (Apple Silicon)
-	@echo "Building ARM64 must-gather image for local development..."
-	podman build --platform linux/arm64 \
+build-local: ## Build image for native platform (auto-detected: amd64 or arm64)
+	@echo "Building $(PLATFORM) must-gather image for local development..."
+	podman build --platform linux/$(PLATFORM) \
 		-t $(LOCAL_IMAGE_NAME):test \
 		.
-	@echo "✅ Local ARM64 build complete!"
+	@echo "✅ Local $(PLATFORM) build complete!"
 
 build-multiarch: ## Build multi-arch image (AMD64 + ARM64) for CI/production
 	@echo "Building multi-arch must-gather image..."
@@ -51,10 +54,10 @@ build-push: build-multiarch push ## Build multi-arch and push
 
 test: test-container ## Run all tests in ARM64 container (host-agnostic)
 
-test-container: build-local ## Run unit tests inside ARM64 container
-	@echo "Running unit tests in ARM64 container..."
+test-container: build-local ## Run unit tests inside native platform container (auto-detected)
+	@echo "Running unit tests in $(PLATFORM) container..."
 	podman run --rm \
-		--platform linux/arm64 \
+		--platform linux/$(PLATFORM) \
 		-v $(PWD)/test:/must-gather/test:ro \
 		-v $(PWD)/collectors:/usr/share/must-gather/collectors:ro \
 		-v $(PWD)/sanitizers:/usr/share/must-gather/sanitizers:ro \
@@ -68,10 +71,10 @@ test-container: build-local ## Run unit tests inside ARM64 container
 		    bats /must-gather/test/test_*.bats"
 	@echo "✅ Container tests complete!"
 
-test-verbose: build-local ## Run container tests with verbose output
-	@echo "Running unit tests in ARM64 container (verbose)..."
+test-verbose: build-local ## Run container tests with verbose output (native platform)
+	@echo "Running unit tests in $(PLATFORM) container (verbose)..."
 	podman run --rm \
-		--platform linux/arm64 \
+		--platform linux/$(PLATFORM) \
 		-v $(PWD)/test:/must-gather/test:ro \
 		-v $(PWD)/collectors:/usr/share/must-gather/collectors:ro \
 		-v $(PWD)/sanitizers:/usr/share/must-gather/sanitizers:ro \
