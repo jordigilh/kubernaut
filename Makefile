@@ -25,8 +25,9 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 # Service auto-discovery from cmd/ directory
-SERVICES := $(filter-out README.md, $(notdir $(wildcard cmd/*)))
-# Result: aianalysis datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
+SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
+# Result: aianalysis authwebhook datastorage gateway notification remediationorchestrator signalprocessing workflowexecution
+# Note: must-gather is a bash tool, built separately via cmd/must-gather/Makefile
 
 # Test configuration
 # Dynamically detect CPU cores (works on Linux and macOS)
