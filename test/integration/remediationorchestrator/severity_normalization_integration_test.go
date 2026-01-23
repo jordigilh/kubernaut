@@ -17,9 +17,11 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
-	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,7 +65,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-severity-sev")
-			rrName = fmt.Sprintf("rr-sev1-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-sev1-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -79,11 +81,14 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					Namespace: namespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-					SignalName:        "ProductionOutage",
-					Severity:          "Sev1", // External (Enterprise severity scheme)
-					SignalType:        "prometheus",
-					TargetType:        "kubernetes",
+					SignalFingerprint: func() string { // UNIQUE per test to avoid routing deduplication (DD-RO-002)
+						h := sha256.Sum256([]byte(uuid.New().String()))
+						return hex.EncodeToString(h[:])
+					}(),
+					SignalName: "ProductionOutage",
+					Severity:   "Sev1", // External (Enterprise severity scheme)
+					SignalType: "prometheus",
+					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "api-server",
@@ -113,10 +118,10 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Expect(sp.Spec.Signal.Severity).To(Equal("Sev1"),
 				"SignalProcessing.Spec should copy external severity from RemediationRequest")
 
-		By("4. Simulate SignalProcessing Rego normalization by updating Status")
-		// In real environment, SignalProcessing controller runs Rego policy
-		// For integration test, we use helper to consistently set normalized severity
-		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			By("4. Simulate SignalProcessing Rego normalization by updating Status")
+			// In real environment, SignalProcessing controller runs Rego policy
+			// For integration test, we use helper to consistently set normalized severity
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("5. Wait for RO to create AIAnalysis")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -148,7 +153,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 		It("[RO-INT-SEV-002] should create AIAnalysis with normalized severity (Sev2 → high)", func() {
 			By("1. Create RemediationRequest with external 'Sev2' severity")
-			rrName := fmt.Sprintf("rr-sev2-%d", time.Now().UnixNano())
+			rrName := fmt.Sprintf("rr-sev2-%s", uuid.New().String()[:13])
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -184,8 +189,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
-		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
+			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -216,7 +221,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-severity-pd")
-			rrName = fmt.Sprintf("rr-p0-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-p0-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -263,8 +268,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			Expect(sp.Spec.Signal.Severity).To(Equal("P0"),
 				"SignalProcessing should preserve external 'P0' in Spec")
 
-		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -288,7 +293,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 		It("[RO-INT-SEV-004] should create AIAnalysis with normalized severity (P3 → medium)", func() {
 			By("1. Create RemediationRequest with external 'P3' severity")
-			rrName := fmt.Sprintf("rr-p3-%d", time.Now().UnixNano())
+			rrName := fmt.Sprintf("rr-p3-%s", uuid.New().String()[:13])
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -324,8 +329,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
-		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
+			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -356,7 +361,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-severity-std")
-			rrName = fmt.Sprintf("rr-standard-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-standard-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -400,8 +405,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
-		// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
+			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify severity")
 			var createdAA *aianalysisv1.AIAnalysis

@@ -20,9 +20,12 @@ limitations under the License.
 package remediationorchestrator
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -57,10 +60,14 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 				Name:      fmt.Sprintf("test-rr-%d", time.Now().UnixNano()),
 				Namespace: testNamespace,
 			},
-			Spec: remediationv1.RemediationRequestSpec{
-				// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
-				// UNIQUE per test to avoid routing deduplication
-				SignalFingerprint: fmt.Sprintf("%064x", time.Now().UnixNano()),
+		Spec: remediationv1.RemediationRequestSpec{
+			// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
+			// UNIQUE per test to avoid routing deduplication
+			// Using SHA256(UUID) for guaranteed uniqueness in parallel execution
+			SignalFingerprint: func() string {
+				h := sha256.Sum256([]byte(uuid.New().String()))
+				return hex.EncodeToString(h[:])
+			}(),
 				SignalName:        "NotificationLifecycleTest",
 				Severity:          "warning",
 				SignalType:        "prometheus",
