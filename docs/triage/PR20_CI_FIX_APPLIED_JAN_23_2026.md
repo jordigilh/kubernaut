@@ -1,8 +1,8 @@
 # PR #20 CI Failures - Fix Applied (Jan 23, 2026)
 
-**Status**: ✅ **FIX APPLIED AND PUSHED**  
-**Branch**: `feature/soc2-compliance`  
-**Commit**: `3b96581b`  
+**Status**: ✅ **FIX APPLIED AND PUSHED**
+**Branch**: `feature/soc2-compliance`
+**Commit**: `3b96581b`
 **Related**: `docs/triage/PR20_CI_FAILURES_JAN_23_2026.md`
 
 ---
@@ -115,7 +115,7 @@ test-container: build-local ## Run unit tests inside native platform container (
 
 After this fix, PR #20 CI should:
 
-1. **Container Build (amd64)**: 
+1. **Container Build (amd64)**:
    - `TARGETARCH=amd64` correctly passed to Dockerfile
    - `kubectl` downloads for `linux/amd64` architecture
    - Build completes successfully
@@ -169,7 +169,7 @@ Once CI re-runs:
 - Platform auto-detection improves maintainability for local development
 - No other CI jobs affected by this change
 
-**Risk**: 
+**Risk**:
 - Low risk - changes are isolated to must-gather CI workflow and Makefile
 - Workflow changes only affect verification steps (not build or test logic)
 - Makefile changes improve cross-platform support without breaking existing behavior

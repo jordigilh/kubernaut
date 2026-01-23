@@ -109,13 +109,15 @@ jobs:
             e2e-logs/
           retention-days: 7
 
-      - name: Upload failure diagnostics
+      - name: Upload failure diagnostics (must-gather + Kind logs)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.service }}-e2e-diagnostics
+          name: ${{ inputs.service }}-e2e-diagnostics-${{ github.run_id }}
           path: |
             /tmp/kind-logs-*
-            /tmp/${{ inputs.service }}-*
-          retention-days: 3
+            /tmp/${{ inputs.service }}-e2e-logs-*
+            /tmp/holmesgpt-api-e2e-logs-*
+          retention-days: 14
+          if-no-files-found: warn
 
