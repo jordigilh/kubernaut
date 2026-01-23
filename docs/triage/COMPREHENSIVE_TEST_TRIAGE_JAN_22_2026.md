@@ -221,7 +221,7 @@ for _, existing := range notification.Status.DeliveryAttempts {
 
 **Result**: ✅ **117/117 tests passing** (no regressions)
 
-**Documentation**: 
+**Documentation**:
 - `docs/triage/NOTIFICATION_RACE_CONDITION_ANALYSIS.md`
 - `docs/triage/NOTIFICATION_RACE_DD_SOLUTION.md`
 - `docs/triage/NOTIFICATION_RACE_CONDITION_FIX.md`
