@@ -1,8 +1,8 @@
 # PR #20 CI Build-All Must-Gather Fix (Jan 23, 2026)
 
-**Status**: ✅ **FIX APPLIED AND PUSHED**  
-**Branch**: `feature/soc2-compliance`  
-**Commit**: `c61a0ac0`  
+**Status**: ✅ **FIX APPLIED AND PUSHED**
+**Branch**: `feature/soc2-compliance`
+**Commit**: `c61a0ac0`
 **Related**: Previous fixes for must-gather CI tests
 
 ---
@@ -11,7 +11,7 @@
 
 After fixing must-gather's own CI workflow (commits `3b96581b`, `3bc6adef`), a **new issue appeared in the main Build & Lint job**:
 
-✅ **Must-gather Tests**: SUCCESS (fixed by previous commits)  
+✅ **Must-gather Tests**: SUCCESS (fixed by previous commits)
 ❌ **Build & Lint (Go Services)**: FAILURE
 
 ### **Error**

@@ -181,11 +181,14 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 ) *BlockingCondition {
 	logger := log.FromContext(ctx)
 
-	// Query for all RemediationRequests with the same fingerprint
+	// Query for all RemediationRequests with the same fingerprint in the SAME NAMESPACE
+	// BR-ORCH-042: Consecutive failure blocking MUST be namespace-scoped (multi-tenant isolation)
 	list := &remediationv1.RemediationRequestList{}
-	err := r.client.List(ctx, list, client.MatchingFields{
-		"spec.signalFingerprint": rr.Spec.SignalFingerprint,
-	})
+	err := r.client.List(ctx, list,
+		client.InNamespace(rr.Namespace), // MULTI-TENANT SAFETY: Isolate by namespace
+		client.MatchingFields{
+			"spec.signalFingerprint": rr.Spec.SignalFingerprint,
+		})
 	if err != nil {
 		// Log error but don't block on query failure
 		logger.Error(err, "Failed to query RRs by fingerprint", "fingerprint", rr.Spec.SignalFingerprint)

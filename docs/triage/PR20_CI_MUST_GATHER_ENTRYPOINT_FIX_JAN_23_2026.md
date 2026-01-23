@@ -1,8 +1,8 @@
 # PR #20 CI Must-Gather ENTRYPOINT Fix (Jan 23, 2026)
 
-**Status**: ✅ **FIX APPLIED AND PUSHED**  
-**Branch**: `feature/soc2-compliance`  
-**Commit**: `3bc6adef`  
+**Status**: ✅ **FIX APPLIED AND PUSHED**
+**Branch**: `feature/soc2-compliance`
+**Commit**: `3bc6adef`
 **Related**: `docs/triage/PR20_CI_FIX_APPLIED_JAN_23_2026.md`
 
 ---
@@ -11,7 +11,7 @@
 
 After the first fix (commit `3b96581b`), PR #20 CI still failed:
 
-✅ **Unit Tests (45 bats)**: SUCCESS (fixed by previous commit)  
+✅ **Unit Tests (45 bats)**: SUCCESS (fixed by previous commit)
 ❌ **Container Build (amd64)**: FAILURE (new issue discovered)
 
 ### **Root Cause - ENTRYPOINT Override Issue**

@@ -283,6 +283,29 @@ jobs:
       - name: Validate Data Storage OpenAPI spec (ADR-031)
         if: matrix.service == 'datastorage'
         run: make validate-openapi-datastorage
+      - name: Collect must-gather logs on failure
+        if: failure()
+        run: |
+          echo "📋 Collecting must-gather logs for triage..."
+          if [ -d "/tmp/kubernaut-must-gather" ]; then
+            echo "✅ Found must-gather directory"
+            ls -la /tmp/kubernaut-must-gather/
+            # Create timestamped archive for this service
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            tar -czf must-gather-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp kubernaut-must-gather/
+            echo "✅ Created must-gather archive: must-gather-${{ matrix.service }}-${TIMESTAMP}.tar.gz"
+          else
+            echo "⚠️  No must-gather directory found at /tmp/kubernaut-must-gather"
+            echo "    This may be expected if tests failed before must-gather was triggered"
+          fi
+      - name: Upload must-gather logs as artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: must-gather-logs-${{ matrix.service }}-${{ github.run_id }}
+          path: must-gather-*.tar.gz
+          retention-days: 14
+          if-no-files-found: warn
       - name: Cleanup
         if: always()
         run: podman ps -a --filter "name=${{ matrix.service }}-" --format "{{.Names}}" | xargs -r podman rm -f
