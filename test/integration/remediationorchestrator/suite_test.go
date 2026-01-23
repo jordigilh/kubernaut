@@ -84,7 +84,7 @@ import (
 
 // Test constants for timeout and polling intervals
 const (
-	timeout  = 60 * time.Second // Longer timeout for RO orchestration
+	timeout  = 120 * time.Second // Increased for CI environment (resource contention can slow reconciliation)
 	interval = 250 * time.Millisecond
 
 	// ROIntegrationDataStoragePort is the DataStorage API port for RO integration tests

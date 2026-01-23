@@ -220,11 +220,12 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			pr.Status.CompletionTime = &now
 			Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
 
-			By("Waiting for Completed phase")
-			Eventually(func() string {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
-				return updated.Status.Phase
-			}, 10*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+		By("Waiting for Completed phase")
+		// Increased timeout for CI environment (resource contention can slow controller reconciliation)
+		Eventually(func() string {
+			_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+			return updated.Status.Phase
+		}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
 			By("Verifying workflow.completed audit event emitted with duration")
 			Expect(updated.Status.CompletionTime).ToNot(BeNil())

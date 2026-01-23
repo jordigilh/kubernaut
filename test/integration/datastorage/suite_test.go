@@ -85,8 +85,10 @@ var (
 	schemaName  string // Schema name for this parallel process (test_process_N)
 )
 // This enables parallel test execution by ensuring each test has unique data
+// Uses UUID for guaranteed uniqueness across parallel processes and fast CI environments.
+// UnixNano() has ~100ns resolution which can cause collisions in parallel tests.
 func generateTestID() string { //nolint:unused
-	return fmt.Sprintf("test-%d-%d", GinkgoParallelProcess(), time.Now().UnixNano())
+	return fmt.Sprintf("test-%d-%s", GinkgoParallelProcess(), uuid.New().String())
 }
 
 // generateTestUUID creates a unique UUID for test data isolation

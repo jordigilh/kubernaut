@@ -355,7 +355,7 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.PostgresContainer,
 		"--network", infra.Network,
-		"-p", fmt.Sprintf("%d:5432", cfg.PostgresPort),
+		"-p", fmt.Sprintf("127.0.0.1:%d:5432", cfg.PostgresPort), // Explicit IPv4 binding for CI compatibility
 		"-e", fmt.Sprintf("POSTGRES_USER=%s", defaultPostgresUser),
 		"-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", defaultPostgresPassword),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", defaultPostgresDB),
@@ -365,6 +365,7 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 	cmd.Stderr = writer
 	return cmd.Run()
 }
+
 // runDSBootstrapMigrations applies database migrations
 // Migrations are always located at {project_root}/migrations (universal location)
 func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {
@@ -409,7 +410,7 @@ func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"--network", infra.Network,
-		"-p", fmt.Sprintf("%d:6379", cfg.RedisPort),
+		"-p", fmt.Sprintf("127.0.0.1:%d:6379", cfg.RedisPort), // Explicit IPv4 binding for CI compatibility
 		"redis:7-alpine",
 	)
 	cmd.Stdout = writer
