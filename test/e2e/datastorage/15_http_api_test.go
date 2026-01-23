@@ -146,7 +146,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 
 			// ✅ CORRECTNESS TEST: No data persisted
 			var count int
-			testDB.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE recipient = $1",
+			_ = testDB.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE recipient = $1",
 				invalidAudit.Recipient).Scan(&count)
 			Expect(count).To(Equal(0), "Invalid audit should not be persisted")
 		})
@@ -176,7 +176,7 @@ var _ = Describe("HTTP API Integration - POST /api/v1/audit/notifications", Orde
 
 			// ✅ CORRECTNESS TEST: Only one record in database
 			var count int
-			testDB.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE notification_id = $1",
+			_ = testDB.QueryRow("SELECT COUNT(*) FROM notification_audit WHERE notification_id = $1",
 				validAudit.NotificationID).Scan(&count)
 			Expect(count).To(Equal(1), "Duplicate write should not create second record")
 		})

@@ -416,7 +416,10 @@ func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) err
 			eventDataMap := make(map[string]interface{})
 			for k, v := range event.EventData.Value {
 				var val interface{}
-				json.Unmarshal(v, &val)
+				if err := json.Unmarshal(v, &val); err != nil {
+					s.logger.Error(err, "Failed to unmarshal event data field", "key", k)
+					continue // Skip malformed field
+				}
 				eventDataMap[k] = val
 			}
 
@@ -451,5 +454,6 @@ func writeRFC7807Error(w http.ResponseWriter, status int, title, detail, instanc
 		"instance": instance,
 	}
 
-	json.NewEncoder(w).Encode(problem)
+	// Ignore encoding errors - response is already committed
+	_ = json.NewEncoder(w).Encode(problem)
 }

@@ -136,7 +136,11 @@ func (r *AuditEventsRepository) Export(ctx context.Context, filters ExportFilter
 		r.logger.Error(err, "Failed to query audit events for export")
 		return nil, fmt.Errorf("failed to query audit events: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			r.logger.Error(err, "Failed to close database rows")
+		}
+	}()
 
 	var events []*AuditEvent
 	for rows.Next() {

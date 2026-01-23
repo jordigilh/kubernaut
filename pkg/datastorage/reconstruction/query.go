@@ -62,7 +62,11 @@ func QueryAuditEventsForReconstruction(
 			"correlationID", correlationID)
 		return nil, fmt.Errorf("failed to query audit events: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			logger.Error(err, "Failed to close database rows")
+		}
+	}()
 
 	var events []ogenclient.AuditEvent
 	for rows.Next() {

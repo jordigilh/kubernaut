@@ -309,7 +309,11 @@ func (s *Server) HandleListLegalHolds(w http.ResponseWriter, r *http.Request) {
 			"Failed to query legal holds", s.logger)
 		return
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			s.logger.Error(err, "Failed to close database rows")
+		}
+	}()
 
 	// 2. Parse results
 	holds := []LegalHold{}
