@@ -286,9 +286,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		Env: map[string]string{
 			"LLM_ENDPOINT":     infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig), // http://mock-llm-aianalysis:8080 (container-to-container)
 			"LLM_MODEL":        "mock-model",
-			"LLM_PROVIDER":     "openai",                                  // Required by litellm
-			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests",      // Required by litellm even for mock endpoints
-			"DATA_STORAGE_URL": "http://aianalysis_datastorage_test:8080", // Container-to-container communication
+			"LLM_PROVIDER":     "openai",                             // Required by litellm
+			"OPENAI_API_KEY":   "mock-api-key-for-integration-tests", // Required by litellm even for mock endpoints
+			"DATA_STORAGE_URL": "http://host.containers.internal:18095", // DD-TEST-001 v2.2: Use host mapping like Gateway/Notification/HAPI
 			"PORT":             "8080",
 			"LOG_LEVEL":        "DEBUG",
 		},
