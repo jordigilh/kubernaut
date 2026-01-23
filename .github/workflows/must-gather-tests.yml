@@ -133,14 +133,16 @@ jobs:
 
           # Verify main script
           podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
             localhost/must-gather:ci-test \
-            sh -c "test -x /usr/bin/gather"
+            -c "test -x /usr/bin/gather"
           echo "✅ Main script present"
 
           # Verify collectors
           COUNT=$(podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
             localhost/must-gather:ci-test \
-            sh -c "ls /usr/share/must-gather/collectors/ | wc -l")
+            -c "ls /usr/share/must-gather/collectors/ | wc -l")
           if [ "$COUNT" -eq 9 ]; then
             echo "✅ All 9 collectors present"
           else
@@ -150,20 +152,23 @@ jobs:
 
           # Verify sanitizers
           podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
             localhost/must-gather:ci-test \
-            sh -c "test -x /usr/share/must-gather/sanitizers/sanitize-all.sh"
+            -c "test -x /usr/share/must-gather/sanitizers/sanitize-all.sh"
           echo "✅ Sanitization framework present"
 
           # Verify tools
           echo "🔍 Verifying required tools..."
           podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
             localhost/must-gather:ci-test \
-            sh -c "which kubectl"
+            -c "which kubectl"
           echo "✅ kubectl installed"
 
           podman run --rm --platform linux/amd64 \
+            --entrypoint sh \
             localhost/must-gather:ci-test \
-            sh -c "which jq"
+            -c "which jq"
           echo "✅ jq installed"
 
           echo ""
@@ -174,7 +179,7 @@ jobs:
           echo "🧪 Testing container can execute..."
           OUTPUT=$(podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            sh -c "/usr/bin/gather --help")
+            --help)
           if echo "$OUTPUT" | grep -q "Kubernaut Must-Gather"; then
             echo "✅ Container executes successfully"
           else
