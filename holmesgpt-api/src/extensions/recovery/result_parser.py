@@ -214,6 +214,26 @@ def _parse_recovery_specific_result(analysis_text: str, request_data: Dict[str, 
         recovery_analysis = structured.get("recovery_analysis", {})
         recovery_strategy = structured.get("recovery_strategy", {})
         selected_workflow = structured.get("selected_workflow")
+        
+        # BR-AI-081: If this is a recovery request but LLM didn't return recovery_analysis,
+        # construct it from the RCA (LLM may not have been configured to return it)
+        is_recovery = request_data.get("is_recovery_attempt", False)
+        if is_recovery and not recovery_analysis:
+            # Extract RCA fields to populate recovery_analysis
+            rca = structured.get("root_cause_analysis", {})
+            recovery_analysis = {
+                "previous_attempt_assessment": {
+                    "failure_understood": True,
+                    "failure_reason_analysis": rca.get("summary", "Previous workflow execution failed"),
+                    "state_changed": False,
+                    "current_signal_type": rca.get("signal_type", request_data.get("signal_type", "Unknown"))
+                }
+            }
+            logger.info({
+                "event": "recovery_analysis_constructed",
+                "incident_id": incident_id,
+                "reason": "LLM response did not include recovery_analysis field",
+            })
 
         # Build recovery response
         can_recover = selected_workflow is not None

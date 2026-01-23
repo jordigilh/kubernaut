@@ -447,12 +447,22 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
     def _detect_scenario(self, messages: List[Dict[str, Any]]) -> MockScenario:
         """Detect which scenario to use based on message content."""
-        # Combine all message content for analysis
+        # Combine all message content for analysis (including stringified objects)
+        # This ensures we catch JSON fields like {"is_recovery_attempt": true}
         content = " ".join(
             str(m.get("content", ""))
             for m in messages
             if m.get("content")
         ).lower()
+
+        # ALSO check all messages for tool_calls that might contain recovery request data
+        all_text = " ".join(str(m) for m in messages).lower()
+
+        # DEBUG: Log scenario detection
+        logger.info(f"🔍 SCENARIO DETECTION - Content preview: {content[:200]}...")
+        logger.info(f"🔍 SCENARIO DETECTION - Has 'is_recovery_attempt': {('is_recovery_attempt' in all_text)}")
+        logger.info(f"🔍 SCENARIO DETECTION - Has 'recovery_attempt_number': {('recovery_attempt_number' in all_text)}")
+        logger.info(f"🔍 SCENARIO DETECTION - Has 'recovery' + 'previous': {('recovery' in content and 'previous' in content)}")
 
         # Check for test-specific signal types first (human review tests)
         if "mock_no_workflow_found" in content or "mock no workflow found" in content:
@@ -469,10 +479,12 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
             return MOCK_SCENARIOS.get("test_signal", DEFAULT_SCENARIO)
 
         # Check for recovery scenario (has priority over regular signals)
-        # Be VERY specific: Only match if explicitly marked as recovery attempt
-        # Don't match on validation errors or retry messages
-        if ("recovery" in content and ("previous remediation" in content or "failed attempt" in content)) or \
+        # DD-TEST-011 v2.1: Detect recovery via JSON fields OR prompt keywords
+        # Recovery requests include: {"is_recovery_attempt": true, "recovery_attempt_number": 1}
+        if ("is_recovery_attempt" in all_text or "recovery_attempt_number" in all_text) or \
+           ("recovery" in content and ("previous remediation" in content or "failed attempt" in content or "previous execution" in content)) or \
            ("workflow execution failed" in content and "recovery" in content):
+            logger.info("✅ SCENARIO DETECTED: RECOVERY")
             return MOCK_SCENARIOS.get("recovery", DEFAULT_SCENARIO)
 
         # Check for signal types (most specific first to avoid false matches)
@@ -549,6 +561,27 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
 
     def _final_analysis_response(self, scenario: MockScenario, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate final analysis response after tool result (Phase 2)."""
+        # Detect if this is a recovery scenario
+        # Priority 1: Check for recovery fields in messages (structured data from HolmesGPT SDK)
+        messages = request_data.get("messages", [])
+        is_recovery = False
+        
+        # Check each message for recovery context (SDK passes it as structured data)
+        for msg in messages:
+            msg_content = msg.get("content", "")
+            # Check if the content contains recovery-related structured data
+            if isinstance(msg_content, str):
+                # HolmesGPT SDK may pass recovery context as string representation
+                if "is_recovery_attempt" in msg_content.lower() or "recovery_attempt_number" in msg_content.lower():
+                    is_recovery = True
+                    break
+                # Also check for recovery keywords in prompt text
+                if "recovery" in msg_content.lower() and ("previous remediation" in msg_content.lower() or "previous execution" in msg_content.lower()):
+                    is_recovery = True
+                    break
+        
+        logger.info(f"🔍 Recovery detection: is_recovery={is_recovery}, scenario={scenario.name}")
+
         # Build the analysis content
         analysis_json = {
             "root_cause_analysis": {
@@ -558,6 +591,20 @@ class MockLLMRequestHandler(BaseHTTPRequestHandler):
                 "contributing_factors": ["identified_by_mock_llm"] if scenario.workflow_id else []
             }
         }
+
+        # BR-AI-081: Add recovery_analysis for recovery scenarios
+        if is_recovery:
+            logger.info(f"✅ RECOVERY DETECTED in _final_analysis_response - Adding recovery_analysis field")
+            analysis_json["recovery_analysis"] = {
+                "previous_attempt_assessment": {
+                    "failure_understood": True,
+                    "failure_reason_analysis": scenario.root_cause,
+                    "state_changed": False,
+                    "current_signal_type": scenario.signal_type
+                }
+            }
+        else:
+            logger.info(f"⚠️  NO RECOVERY detected in _final_analysis_response - is_recovery={is_recovery}")
 
         # BR-HAPI-212: Conditionally include affectedResource in RCA
         # This allows testing scenarios where affectedResource is missing despite workflow being selected
@@ -598,7 +645,28 @@ The problem has self-resolved. No remediation workflow is needed.
         elif not scenario.workflow_id:
             analysis_json["selected_workflow"] = None
             analysis_json["confidence"] = scenario.confidence  # Low confidence (0.0) triggers human review
-            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+            # Use recovery format if this is a recovery attempt
+            if is_recovery:
+                content = f"""Based on my investigation of the recovery scenario:
+
+## Previous Attempt Assessment
+
+The previous remediation attempt failed. I've analyzed the current cluster state.
+
+## Root Cause Analysis
+
+{scenario.root_cause}
+
+## Workflow Search Result
+
+No suitable alternative workflow found. Human review required.
+
+```json
+{json.dumps(analysis_json, indent=2)}
+```
+"""
+            else:
+                content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 ## Root Cause Analysis
 
@@ -622,7 +690,28 @@ No suitable workflow found in the catalog for this scenario. Human review requir
                 "parameters": scenario.parameters
             }
             # Format as markdown with JSON block (like real LLM would)
-            content = f"""Based on my investigation of the {scenario.signal_type} signal:
+            # Use recovery format if this is a recovery attempt
+            if is_recovery:
+                content = f"""Based on my investigation of the recovery scenario:
+
+## Previous Attempt Assessment
+
+The previous remediation attempt failed. I've analyzed the current cluster state.
+
+## Root Cause Analysis
+
+{scenario.root_cause}
+
+## Alternative Workflow Recommendation
+
+I've identified an alternative remediation workflow from the catalog.
+
+```json
+{json.dumps(analysis_json, indent=2)}
+```
+"""
+            else:
+                content = f"""Based on my investigation of the {scenario.signal_type} signal:
 
 ## Root Cause Analysis
 
@@ -636,6 +725,14 @@ I've identified a suitable remediation workflow from the catalog.
 {json.dumps(analysis_json, indent=2)}
 ```
 """
+
+        # DEBUG: Log what we're returning
+        logger.info(f"📤 FINAL RESPONSE - Scenario: {scenario.name}, is_recovery: {is_recovery}")
+        logger.info(f"📤 FINAL RESPONSE - analysis_json keys: {list(analysis_json.keys())}")
+        if "recovery_analysis" in analysis_json:
+            logger.info(f"✅ recovery_analysis IS in analysis_json")
+        else:
+            logger.info(f"❌ recovery_analysis NOT in analysis_json")
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",

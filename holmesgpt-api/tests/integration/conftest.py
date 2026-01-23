@@ -404,7 +404,8 @@ def pytest_configure(config):
     # Set LLM configuration for all integration tests
     # These must be set BEFORE any test modules import src.main
     os.environ["LLM_MODEL"] = "gpt-4-turbo"
-    os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:8080"
+    # DD-TEST-001 v2.5: Mock LLM on port 18140 (HAPI integration tests)
+    os.environ["LLM_ENDPOINT"] = "http://127.0.0.1:18140"
     os.environ["MOCK_LLM_MODE"] = "true"
     os.environ["CONFIG_FILE"] = "config.yaml"
     os.environ["OPENAI_API_KEY"] = "test-api-key-for-integration-tests"
