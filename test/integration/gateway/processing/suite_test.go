@@ -19,8 +19,6 @@ package processing
 import (
 	"context"
 	"os"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 

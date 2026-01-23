@@ -19,7 +19,6 @@ package workflowexecution
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -162,11 +161,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		},
 		ErrorIfCRDPathMissing: true, // FAIL if CRDs not found - no silent fallback
 	}
-
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
 
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -344,23 +339,6 @@ var _ = SynchronizedAfterSuite(func() {
 
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
-
 // ========================================
 // Test Helpers - Parallel-Safe (4 procs)
 // ========================================
