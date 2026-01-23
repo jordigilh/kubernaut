@@ -122,6 +122,7 @@ jobs:
           echo ""
           podman build \
             --platform linux/amd64 \
+            --build-arg TARGETARCH=amd64 \
             -t localhost/must-gather:ci-test \
             -f Dockerfile \
             .
@@ -133,29 +134,37 @@ jobs:
           # Verify main script
           podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            test -x /usr/bin/gather && echo "✅ Main script present" || exit 1
+            sh -c "test -x /usr/bin/gather"
+          echo "✅ Main script present"
 
           # Verify collectors
-          podman run --rm --platform linux/amd64 \
+          COUNT=$(podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            ls /usr/share/must-gather/collectors/ | wc -l | grep -q "9" && \
-            echo "✅ All 9 collectors present" || exit 1
+            sh -c "ls /usr/share/must-gather/collectors/ | wc -l")
+          if [ "$COUNT" -eq 9 ]; then
+            echo "✅ All 9 collectors present"
+          else
+            echo "❌ Expected 9 collectors, found $COUNT"
+            exit 1
+          fi
 
           # Verify sanitizers
           podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            test -x /usr/share/must-gather/sanitizers/sanitize-all.sh && \
-            echo "✅ Sanitization framework present" || exit 1
+            sh -c "test -x /usr/share/must-gather/sanitizers/sanitize-all.sh"
+          echo "✅ Sanitization framework present"
 
           # Verify tools
           echo "🔍 Verifying required tools..."
           podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            which kubectl && echo "✅ kubectl installed" || exit 1
+            sh -c "which kubectl"
+          echo "✅ kubectl installed"
 
           podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            which jq && echo "✅ jq installed" || exit 1
+            sh -c "which jq"
+          echo "✅ jq installed"
 
           echo ""
           echo "✅ Container build validation complete!"
@@ -163,10 +172,15 @@ jobs:
       - name: Test container execution
         run: |
           echo "🧪 Testing container can execute..."
-          podman run --rm --platform linux/amd64 \
+          OUTPUT=$(podman run --rm --platform linux/amd64 \
             localhost/must-gather:ci-test \
-            --help | grep -q "Kubernaut Must-Gather" && \
-            echo "✅ Container executes successfully" || exit 1
+            sh -c "/usr/bin/gather --help")
+          if echo "$OUTPUT" | grep -q "Kubernaut Must-Gather"; then
+            echo "✅ Container executes successfully"
+          else
+            echo "❌ Container execution failed or help text not found"
+            exit 1
+          fi
 
   # ========================================
   # FINAL STATUS: Overall test summary
