@@ -147,7 +147,7 @@ var _ = Describe("Multi-Channel Fanout E2E (BR-NOT-053)", func() {
 
 			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 60*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
-			defer CleanupCopiedFile(copiedFilePath)
+			defer func() { _ = CleanupCopiedFile(copiedFilePath) }()
 
 			By("Validating file content matches notification")
 			fileContent, err := os.ReadFile(copiedFilePath)

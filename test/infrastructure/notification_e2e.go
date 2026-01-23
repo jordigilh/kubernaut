@@ -180,7 +180,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	_, _ = fmt.Fprintln(writer, "\n✅ All images loaded successfully!")
 
 	// Store AuthWebhook image for later use in suite
-	os.Setenv("E2E_AUTHWEBHOOK_IMAGE", builtImages["AuthWebhook"])
+	_ = os.Setenv("E2E_AUTHWEBHOOK_IMAGE", builtImages["AuthWebhook"])
 
 	// ============================================================
 	// PHASE 4: Install CRDs

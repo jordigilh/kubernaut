@@ -147,7 +147,7 @@ var _ = Describe("Audit Events Schema Integration Tests", func() {
 				ORDER BY event_timestamp
 			`, correlationID)
 			Expect(err).ToNot(HaveOccurred())
-			defer rows.Close()
+			defer func() { _ = rows.Close() }()
 
 			var count int
 			for rows.Next() {

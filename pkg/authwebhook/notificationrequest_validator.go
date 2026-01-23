@@ -84,14 +84,11 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 		return nil, fmt.Errorf("expected NotificationRequest but got %T", obj)
 	}
 
-	fmt.Printf("🔍 ValidateDelete invoked: Name=%s, Namespace=%s, UID=%s\n",
-		nr.Name, nr.Namespace, nr.UID)
 
 	// Extract authenticated user from admission request context
 	// Note: admission.RequestFromContext requires the request to be injected by controller-runtime
 	req, err := admission.RequestFromContext(ctx)
 	if err != nil {
-		fmt.Printf("⚠️  Warning: Could not extract admission request from context: %v\n", err)
 		// Allow DELETE to proceed even if we can't capture attribution
 		// (audit failure should not block business operations)
 		return admission.Warnings{"audit attribution unavailable"}, nil
@@ -99,15 +96,12 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 
 	authCtx, err := v.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
 	if err != nil {
-		fmt.Printf("⚠️  Warning: Authentication failed: %v\n", err)
 		// Allow DELETE to proceed even if authentication fails
 		// (audit failure should not block business operations)
 		return admission.Warnings{"authentication unavailable"}, nil
 	}
-	fmt.Printf("✅ Authenticated user: %s (UID: %s)\n", authCtx.Username, authCtx.UID)
 
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
-	fmt.Printf("📝 Creating audit event for DELETE operation...\n")
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, "webhook.notification.cancelled") // DD-WEBHOOK-001 line 349 - Must match payload EventType
 	audit.SetEventCategory(auditEvent, "webhook") // Per ADR-034 v1.4: event_category = emitter service
@@ -162,21 +156,15 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	// - namespace: nr.Namespace (via audit.SetNamespace)
 	// - event_action: "deleted" (via audit.SetEventAction)
 	auditEvent.EventData = api.NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData(payload)
-	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
-		auditEvent.EventType, auditEvent.CorrelationID)
 
 	// Store audit event asynchronously (buffered write)
-	fmt.Printf("💾 Storing audit event to Data Storage...\n")
 	if err := v.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 		// Log error but don't fail the webhook (audit should not block operations)
 		// The audit store has retry + DLQ mechanisms
-		fmt.Printf("❌ WARNING: Failed to store audit event: %v\n", err)
 		return admission.Warnings{fmt.Sprintf("audit storage failed: %v", err)}, nil
 	}
-	fmt.Printf("✅ Audit event stored successfully\n")
 
 	// Allow DELETE to proceed (return nil error)
-	fmt.Printf("✅ Allowing DELETE operation for %s/%s\n", nr.Namespace, nr.Name)
 	return nil, nil
 }
 

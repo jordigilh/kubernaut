@@ -141,7 +141,7 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 					 ORDER BY event_timestamp ASC, event_id ASC`,
 					correlationID)
 				Expect(err).ToNot(HaveOccurred())
-				defer rows.Close()
+				defer func() { _ = rows.Close() }()
 
 				var chainLinks []struct {
 					EventID           uuid.UUID

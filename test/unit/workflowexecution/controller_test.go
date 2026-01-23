@@ -3637,24 +3637,22 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		Context("Pre-Execution Failure Reasons", func() {
-			It("should map ImagePullBackOff from message", func() {
-				// Given: Tekton failure with ImagePullBackOff in message
-				reason := "TaskRunFailed"
-				message := "Failed to pull image: ImagePullBackOff"
+		It("should map ImagePullBackOff from message", func() {
+			// Given: Tekton failure with ImagePullBackOff in message
+			reason := "TaskRunFailed"
+			message := "Failed to pull image: ImagePullBackOff"
 
-				// When: mapTektonReasonToFailureReason is called
-				result := reconciler.ExtractFailureDetails(ctx, &tektonv1.PipelineRun{
-					Status: tektonv1.PipelineRunStatus{},
-				}, nil)
-				// Simulate by setting condition
-				pr := &tektonv1.PipelineRun{}
-				pr.Status.SetCondition(&apis.Condition{
-					Type:    apis.ConditionSucceeded,
-					Status:  corev1.ConditionFalse,
-					Reason:  reason,
-					Message: message,
-				})
-				result = reconciler.ExtractFailureDetails(ctx, pr, nil)
+		// When: mapTektonReasonToFailureReason is called
+		// (extracting failure details from PipelineRun)
+		// Simulate by setting condition
+		pr := &tektonv1.PipelineRun{}
+			pr.Status.SetCondition(&apis.Condition{
+				Type:    apis.ConditionSucceeded,
+				Status:  corev1.ConditionFalse,
+				Reason:  reason,
+				Message: message,
+			})
+			result := reconciler.ExtractFailureDetails(ctx, pr, nil)
 
 				// Then: Should map to ImagePullBackOff
 				Expect(result.Reason).To(Equal(workflowexecutionv1alpha1.FailureReasonImagePullBackOff))

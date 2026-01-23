@@ -310,7 +310,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					// Integration tests receive map[string]interface{} from HTTP API
 					eventDataBytes_event, _ := json.Marshal(event.EventData)
 					var eventData_event map[string]interface{}
-					json.Unmarshal(eventDataBytes_event, &eventData_event)
+					_ = json.Unmarshal(eventDataBytes_event, &eventData_event)
 					if eventData_event != nil {
 						eventData := eventData_event
 						fromPhase := eventData["from_phase"]
@@ -336,7 +336,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				if event.EventType == aiaudit.EventTypePhaseTransition {
 					eventDataBytes_event, _ := json.Marshal(event.EventData)
 					var eventData_event map[string]interface{}
-					json.Unmarshal(eventDataBytes_event, &eventData_event)
+					_ = json.Unmarshal(eventDataBytes_event, &eventData_event)
 					if eventData_event != nil {
 						eventData := eventData_event
 						// FIXED: AI Analysis uses "old_phase"/"new_phase" (not "from_phase"/"to_phase")
@@ -694,7 +694,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// DD-TESTING-001: Validate event_data structure per DD-AUDIT-004
 			eventDataBytes, _ := json.Marshal(event.EventData)
 			var eventData map[string]interface{}
-			json.Unmarshal(eventDataBytes, &eventData)
+			_ = json.Unmarshal(eventDataBytes, &eventData)
 			Expect(eventData).To(HaveKey("decision"), "event_data should include approval decision")
 			Expect(eventData).To(HaveKey("reason"), "event_data should include decision reason")
 

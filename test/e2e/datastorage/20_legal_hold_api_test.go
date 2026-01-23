@@ -183,7 +183,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// 3. Verify response (print body for debugging if not 200)
 				if resp.StatusCode != http.StatusOK {
@@ -237,7 +237,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// 2. Expect 400 Bad Request or 404 Not Found
 				Expect(resp.StatusCode).To(Or(Equal(http.StatusBadRequest), Equal(http.StatusNotFound)))
@@ -281,7 +281,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
@@ -335,7 +335,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// 3. Verify response
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
@@ -398,7 +398,7 @@ var _ = Describe("SOC2 Gap #8: Legal Hold & Retention Integration Tests", func()
 
 				resp, err := http.DefaultClient.Do(req)
 				Expect(err).ToNot(HaveOccurred())
-				defer resp.Body.Close()
+				defer func() { _ = resp.Body.Close() }()
 
 				// 3. Verify response
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))

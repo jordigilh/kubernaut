@@ -87,7 +87,7 @@ AfterEach(func() {
 		malformedJSON := `{invalid json structure without quotes`
 
 		By("Sending malformed JSON to Gateway")
-		req, err := http.NewRequest("POST",
+		req, _ := http.NewRequest("POST",
 			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(malformedJSON))
 		req.Header.Set("Content-Type", "application/json")
@@ -142,7 +142,7 @@ AfterEach(func() {
 		}`, testNamespace, largeAnnotation)
 
 		By("Sending large payload to Gateway")
-		req, err := http.NewRequest("POST",
+		req, _ := http.NewRequest("POST",
 			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(largePayload))
 		req.Header.Set("Content-Type", "application/json")
@@ -184,7 +184,7 @@ AfterEach(func() {
 		// Missing: alertname field
 
 		By("Sending alert with missing required field")
-		req, err := http.NewRequest("POST",
+		req, _ := http.NewRequest("POST",
 			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(invalidAlert))
 		req.Header.Set("Content-Type", "application/json")
@@ -242,7 +242,7 @@ AfterEach(func() {
 		}`, nonExistentNamespace)
 
 		By("Sending alert for non-existent namespace")
-		req, err := http.NewRequest("POST",
+		req, _ := http.NewRequest("POST",
 			gatewayURL+"/api/v1/signals/prometheus",
 			bytes.NewBufferString(alertPayload))
 		req.Header.Set("Content-Type", "application/json")

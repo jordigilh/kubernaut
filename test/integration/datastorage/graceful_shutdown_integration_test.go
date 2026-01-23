@@ -828,7 +828,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 			testDB, err := sql.Open("pgx", dbConnStr)
 			Expect(err).ToNot(HaveOccurred())
-			defer testDB.Close()
+			defer func() { _ = testDB.Close() }()
 
 			// Query database to verify DLQ messages were persisted
 			// Check for our test notification IDs in the database
@@ -888,7 +888,7 @@ var _ = Describe("BR-STORAGE-028: DD-007 Kubernetes-Aware Graceful Shutdown", La
 
 				tempDB, err := sql.Open("pgx", dbConnStr)
 				Expect(err).ToNot(HaveOccurred())
-				defer tempDB.Close()
+				defer func() { _ = tempDB.Close() }()
 
 				notificationRepo := repository.NewNotificationAuditRepository(tempDB, logger)
 				_, err = dlqClient.DrainWithTimeout(drainCtx, notificationRepo, nil)

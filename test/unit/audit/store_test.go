@@ -365,7 +365,7 @@ var _ = Describe("BufferedAuditStore", func() {
 			}
 			smallStore, err := audit.NewBufferedStore(mockClient, smallBufferConfig, "test-service", logger)
 			Expect(err).ToNot(HaveOccurred())
-			defer smallStore.Close()
+			defer func() { _ = smallStore.Close() }()
 
 			// Rapidly fill the small buffer (background worker is slow)
 			var bufferFullErr error

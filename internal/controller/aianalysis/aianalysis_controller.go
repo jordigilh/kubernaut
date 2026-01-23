@@ -160,7 +160,6 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if currentPhase == "" {
 		// Initialize phase to Pending on first reconciliation
 		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
-		currentPhase = PhasePending
 		analysis.Status.Phase = PhasePending
 		analysis.Status.Message = "AIAnalysis created"
 		if err := r.Status().Update(ctx, analysis); err != nil {

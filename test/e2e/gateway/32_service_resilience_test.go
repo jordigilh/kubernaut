@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -55,11 +54,6 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-resilience")
 
 		// Get DataStorage URL from environment (for reference, though not used in all tests)
-		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
-		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18091" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
-		}
-
 		// Use suite-level gatewayURL (deployed Gateway service)
 		// Note: gatewayURL is defined at suite level in gateway_e2e_suite_test.go
 	})
@@ -89,7 +83,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -110,7 +104,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			if resp.StatusCode == http.StatusServiceUnavailable {
 				// Validate RFC 7807 error response
 				var errorResp map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResp)
+				err = json.NewDecoder(resp.Body).Decode(&errorResp) //nolint:ineffassign // Test pattern: error reassignment across phases
 
 				// Validate Retry-After header present
 				retryAfter := resp.Header.Get("Retry-After")
@@ -139,7 +133,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				Severity:  "warning",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -172,7 +166,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				Severity:  "critical",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -185,7 +179,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 			// Either succeeds (happy path) or returns HTTP 500 with K8s API error details
 			if resp.StatusCode == http.StatusInternalServerError {
 				var errorResp map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResp)
+				err = json.NewDecoder(resp.Body).Decode(&errorResp) //nolint:ineffassign // Test pattern: error reassignment across phases
 
 				// Validate error message includes K8s context
 				detail := errorResp["detail"].(string)
@@ -212,7 +206,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -260,7 +254,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				Severity:  "info",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -310,7 +304,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				Severity:  "warning",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -357,7 +351,7 @@ var _ = Describe("Gateway Service Resilience (BR-GATEWAY-186, BR-GATEWAY-187)", 
 				Severity:  "critical",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")

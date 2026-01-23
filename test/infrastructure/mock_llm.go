@@ -258,15 +258,15 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		default:
 		}
 
-		resp, err := http.Get(healthURL)
-		if err == nil && resp.StatusCode == http.StatusOK {
-			resp.Body.Close()
-			_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)
-			return nil
-		}
-		if resp != nil {
-			resp.Body.Close()
-		}
+	resp, err := http.Get(healthURL)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		_ = resp.Body.Close()
+		_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)
+		return nil
+	}
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 
 		if i < maxRetries-1 {
 			_, _ = fmt.Fprintf(writer, "⏳ Mock LLM not ready yet (attempt %d/%d), retrying in %v...\n",

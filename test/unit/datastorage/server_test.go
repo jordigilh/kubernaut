@@ -82,7 +82,7 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 			// but we can test the DB configuration directly
 			db, err := sql.Open("pgx", cfg.Database.GetConnectionString())
 			Expect(err).ToNot(HaveOccurred(), "Database connection should open")
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// EXPECTED BEHAVIOR (from config):
 			// server.NewServer() should call:
@@ -148,7 +148,7 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 
 			db, err := sql.Open("pgx", cfg.Database.GetConnectionString())
 			Expect(err).ToNot(HaveOccurred())
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// ACT: Apply config (what server.NewServer() SHOULD do)
 			db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
@@ -198,7 +198,7 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 
 			db, err := sql.Open("pgx", cfg.Database.GetConnectionString())
 			Expect(err).ToNot(HaveOccurred())
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// ACT: Parse and apply lifetime
 			connMaxLifetime, err := time.ParseDuration(cfg.Database.ConnMaxLifetime)
@@ -278,7 +278,7 @@ var _ = Describe("Server Connection Pool Configuration (BR-STORAGE-027)", func()
 
 			db, err := sql.Open("pgx", "host=localhost dbname=test")
 			Expect(err).ToNot(HaveOccurred())
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			// ACT: Apply zero config
 			db.SetMaxOpenConns(cfg.Database.MaxOpenConns)

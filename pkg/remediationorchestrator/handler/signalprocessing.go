@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-logr/logr"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
@@ -105,10 +104,3 @@ func (h *SignalProcessingHandler) HandleStatus(
 	}
 }
 
-// getLogger returns a logger with handler-specific context.
-func (h *SignalProcessingHandler) getLogger(ctx context.Context, rr *remediationv1.RemediationRequest) logr.Logger {
-	return log.FromContext(ctx).WithValues(
-		"handler", "SignalProcessingHandler",
-		"remediationRequest", rr.Name,
-	)
-}

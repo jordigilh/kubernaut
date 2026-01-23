@@ -304,7 +304,7 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 
 			copiedFilePath, err = WaitForFileInPod(ctx, "notification-e2e-priority-validation-*.json", 20*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
-			defer CleanupCopiedFile(copiedFilePath)
+			defer func() { _ = CleanupCopiedFile(copiedFilePath) }()
 
 			// Read the copied file
 			fileContent, err := os.ReadFile(copiedFilePath)

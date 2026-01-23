@@ -368,7 +368,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 
@@ -612,7 +612,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})

@@ -130,7 +130,6 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 		// Log error but don't fail the webhook (audit should not block operations)
 		// The audit store has retry + DLQ mechanisms
-		fmt.Printf("WARNING: Failed to store audit event: %v\n", err)
 	}
 
 	// Marshal the patched object

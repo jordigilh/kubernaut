@@ -232,7 +232,7 @@ func loadBundleIntoKind(clusterName, bundleRef string, output io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 	_ = tmpFile.Close()
 
 	// Save bundle image to tar file using podman

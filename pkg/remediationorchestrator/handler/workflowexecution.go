@@ -20,7 +20,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-logr/logr"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -147,10 +146,3 @@ func (h *WorkflowExecutionHandler) HandleStatus(
 	}
 }
 
-// getLogger returns a logger with handler-specific context.
-func (h *WorkflowExecutionHandler) getLogger(ctx context.Context, rr *remediationv1.RemediationRequest) logr.Logger {
-	return log.FromContext(ctx).WithValues(
-		"handler", "WorkflowExecutionHandler",
-		"remediationRequest", rr.Name,
-	)
-}

@@ -176,7 +176,7 @@ func extractKubernautServiceLogs(logsDir, serviceName string, writer io.Writer) 
 				// Display last 100 lines
 				tailCmd := exec.Command("tail", "-100", logPath)
 				if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
-					fmt.Fprintln(writer, string(tailOutput))
+					_, _ = fmt.Fprintln(writer, string(tailOutput))
 				} else {
 					_, _ = fmt.Fprintf(writer, "⚠️  Could not read log: %v\n", tailErr)
 				}

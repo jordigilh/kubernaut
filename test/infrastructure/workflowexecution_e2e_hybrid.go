@@ -821,7 +821,7 @@ spec:
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(pipelineYAML); err != nil {
 		return fmt.Errorf("failed to write pipeline YAML: %w", err)

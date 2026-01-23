@@ -335,7 +335,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			// RACE FIX: Ensure SignalProcessing status is fully propagated before expecting AIAnalysis
 			// In CI's faster environment, the RO controller might not see the SP status update
 			// immediately, causing it to delay AIAnalysis creation
-			Eventually(func() signalprocessingv1.ProcessingPhase {
+			Eventually(func() signalprocessingv1.SignalProcessingPhase {
 				err := k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 				if err != nil {
 					return ""
