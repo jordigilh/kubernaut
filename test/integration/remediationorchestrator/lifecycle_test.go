@@ -19,7 +19,7 @@ package remediationorchestrator
 import (
 	"context"
 	"fmt"
-	"time"
+	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -50,7 +50,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-lifecycle")
-			rrName = fmt.Sprintf("rr-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -137,7 +137,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-phase")
-			rrName = fmt.Sprintf("rr-phase-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-phase-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -201,7 +201,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-manual-review")
-			rrName = fmt.Sprintf("rr-mr-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-mr-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -272,7 +272,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-no-action")
-			rrName = fmt.Sprintf("rr-na-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-na-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -347,7 +347,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-approval")
-			rrName = fmt.Sprintf("rr-appr-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-appr-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
@@ -489,7 +489,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		ctx := context.Background()
 
 		By("Creating RR and progressing to AwaitingApproval naturally")
-		rrName := fmt.Sprintf("rr-missing-rar-%d", time.Now().UnixNano())
+		rrName := fmt.Sprintf("rr-missing-rar-%s", uuid.New().String()[:13])
 		_ = createRemediationRequest(namespace, rrName)
 
 		// Progress through SP (natural flow)

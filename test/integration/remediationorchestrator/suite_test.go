@@ -35,11 +35,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -212,11 +213,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
 	}
-
-	// Retrieve the first found binary directory to allow running tests from IDEs
-	if getFirstFoundEnvTestBinaryDir() != "" {
-		testEnv.BinaryAssetsDirectory = getFirstFoundEnvTestBinaryDir()
-	}
+	// KUBEBUILDER_ASSETS is set by Makefile via setup-envtest dependency
 
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
@@ -485,34 +482,15 @@ var _ = SynchronizedAfterSuite(func() {
 
 	GinkgoWriter.Println("✅ Cleanup complete - all per-process controllers stopped, shared infrastructure cleaned")
 })
-
-// getFirstFoundEnvTestBinaryDir locates the first binary in the specified path.
-// ENVTEST-based tests depend on specific binaries, usually located in paths set by
-// controller-runtime. When running tests directly (e.g., via an IDE) without using
-// Makefile targets, the 'BinaryAssetsDirectory' must be explicitly configured.
-func getFirstFoundEnvTestBinaryDir() string {
-	basePath := filepath.Join("..", "..", "..", "bin", "k8s")
-	entries, err := os.ReadDir(basePath)
-	if err != nil {
-		logf.Log.Error(err, "Failed to read directory", "path", basePath)
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			return filepath.Join(basePath, entry.Name())
-		}
-	}
-	return ""
-}
-
 // ============================================================================
 // TEST HELPER FUNCTIONS (for parallel execution isolation)
 // ============================================================================
 
 // createTestNamespace creates a unique namespace for test isolation in parallel execution.
 // MANDATORY per 03-testing-strategy.mdc: Each test must use unique identifiers.
+// Using UUID for guaranteed uniqueness in parallel execution (12 procs)
 func createTestNamespace(prefix string) string {
-	ns := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+	ns := fmt.Sprintf("%s-%s", prefix, uuid.New().String()[:13])
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: ns,
@@ -525,7 +503,7 @@ func createTestNamespace(prefix string) string {
 
 // deleteTestNamespace initiates namespace cleanup without blocking.
 // Namespace deletion happens asynchronously - no need to wait since:
-// 1. Each test uses unique namespace name (time.Now().UnixNano())
+// 1. Each test uses unique namespace name (UUID-based)
 // 2. Cluster teardown (SynchronizedAfterSuite) handles final cleanup
 // 3. No cross-test namespace conflicts due to unique naming
 func deleteTestNamespace(ns string) {
@@ -553,7 +531,11 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 		Spec: remediationv1.RemediationRequestSpec{
 			// Valid 64-char hex fingerprint (SHA256 format per CRD validation)
 			// UNIQUE per test to avoid routing deduplication (DD-RO-002)
-			SignalFingerprint: fmt.Sprintf("%064x", time.Now().UnixNano()),
+			// Using SHA256(UUID) for guaranteed uniqueness in parallel execution (12 procs)
+			SignalFingerprint: func() string {
+				h := sha256.Sum256([]byte(uuid.New().String()))
+				return hex.EncodeToString(h[:])
+			}(),
 			SignalName:        "TestHighMemoryAlert",
 			Severity:          "critical",
 			SignalType:        "prometheus",

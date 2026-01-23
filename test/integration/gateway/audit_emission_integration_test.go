@@ -17,6 +17,8 @@ limitations under the License.
 package gateway
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -205,10 +207,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				signal2.Fingerprint = fingerprint // Same fingerprint
 
-			response2, err := gwServer.ProcessSignal(ctx, signal2)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response2.Status).To(Equal("duplicate"), "BR-GATEWAY-057: Duplicate signal status (OpenAPI-aligned)")
-			Expect(response2.Duplicate).To(BeTrue())
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response2.Status).To(Equal("duplicate"), "BR-GATEWAY-057: Duplicate signal status (OpenAPI-aligned)")
+				Expect(response2.Duplicate).To(BeTrue())
 				Expect(response2.RemediationRequestName).To(Equal(firstCRDName),
 					"Duplicate should reference existing CRD")
 
@@ -879,11 +881,11 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal2, err := prometheusAdapter.Parse(ctx, alert2)
 				Expect(err).ToNot(HaveOccurred())
 
-			response2, err := gwServer.ProcessSignal(ctx, signal2)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response2.Status).To(Equal("duplicate"))
+				response2, err := gwServer.ProcessSignal(ctx, signal2)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response2.Status).To(Equal("duplicate"))
 
-			By("3. Query gateway.signal.deduplicated audit event")
+				By("3. Query gateway.signal.deduplicated audit event")
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -958,11 +960,11 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				signal3, err := prometheusAdapter.Parse(ctx, alert3)
 				Expect(err).ToNot(HaveOccurred())
 
-			response3, err := gwServer.ProcessSignal(ctx, signal3)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(response3.Status).To(Equal("duplicate"))
+				response3, err := gwServer.ProcessSignal(ctx, signal3)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(response3.Status).To(Equal("duplicate"))
 
-			By("4. Verify deduplication audit references correct RR (fingerprint A)")
+				By("4. Verify deduplication audit references correct RR (fingerprint A)")
 				client, err := createOgenClient()
 				Expect(err).ToNot(HaveOccurred())
 
@@ -1399,7 +1401,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Make 10 failing requests to trip circuit breaker (50% failure rate threshold)
 				for i := 0; i < 10; i++ {
-					fingerprint := fmt.Sprintf("cb-trip-%d-%064x", i, time.Now().UnixNano())
+					fingerprint := func() string {
+						h := sha256.Sum256([]byte(fmt.Sprintf("cb-trip-%d-%s", i, uuid.New().String())))
+						return hex.EncodeToString(h[:])
+					}()
 					correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
 					alertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerTripTest", "critical", fingerprint, correlationID)
 

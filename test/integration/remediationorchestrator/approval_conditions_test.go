@@ -18,6 +18,7 @@ package remediationorchestrator
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -40,7 +41,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 
 		BeforeEach(func() {
 			namespace = createTestNamespace("ro-rar-create")
-			rrName = fmt.Sprintf("rr-create-%d", time.Now().UnixNano())
+			rrName = fmt.Sprintf("rr-create-%s", uuid.New().String()[:13])
 		})
 
 		AfterEach(func() {
