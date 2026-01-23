@@ -294,6 +294,8 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 		It("[RO-INT-SEV-004] should create AIAnalysis with normalized severity (P3 → medium)", func() {
 			By("1. Create RemediationRequest with external 'P3' severity")
 			rrName := fmt.Sprintf("rr-p3-%s", uuid.New().String()[:13])
+			// Generate unique SignalFingerprint to prevent routing collision in parallel tests
+			hash := sha256.Sum256([]byte(uuid.New().String()))
 			now := metav1.Now()
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -301,7 +303,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 					Namespace: namespace,
 				},
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+					SignalFingerprint: hex.EncodeToString(hash[:]),
 					SignalName:        "MinorIssue",
 					Severity:          "P3", // External (PagerDuty severity scheme)
 					SignalType:        "pagerduty",
