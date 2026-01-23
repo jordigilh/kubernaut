@@ -19,9 +19,8 @@ package authwebhook
 import (
 	"context"
 	"fmt"
-	"os/exec"
+	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -32,8 +31,8 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	testinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 
