@@ -98,9 +98,9 @@ var _ = Describe("DataStorage Configuration", func() {
 		It("should result in zero values for unmatched snake_case keys", func() {
 			// This test documents the bug behavior (snake_case silently ignored)
 			// Create a temporary config file with snake_case keys
-			tmpFile, err := os.CreateTemp("", "bad-config-*.yaml")
-			Expect(err).ToNot(HaveOccurred())
-			defer os.Remove(tmpFile.Name())
+		tmpFile, err := os.CreateTemp("", "bad-config-*.yaml")
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 			badConfig := `
 server:
@@ -121,7 +121,7 @@ redis:
 `
 			_, err = tmpFile.WriteString(badConfig)
 			Expect(err).ToNot(HaveOccurred())
-			tmpFile.Close()
+			_ = tmpFile.Close()
 
 			// Load config with snake_case keys
 			cfg, err := config.LoadFromFile(tmpFile.Name())

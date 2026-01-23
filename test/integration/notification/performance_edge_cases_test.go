@@ -251,7 +251,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -418,7 +418,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 

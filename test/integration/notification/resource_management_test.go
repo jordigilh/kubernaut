@@ -141,7 +141,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -240,7 +240,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -331,7 +331,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -430,7 +430,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 		})
 	})
@@ -501,7 +501,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 
 			// BEHAVIOR: Resources cleaned up after deletion
@@ -642,7 +642,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 						Generation: 1, // K8s increments on create/update
 					},
 				}
-				deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			}
 
 			// BEHAVIOR: Resources recovered after burst

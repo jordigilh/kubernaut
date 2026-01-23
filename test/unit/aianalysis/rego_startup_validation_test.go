@@ -68,7 +68,7 @@ var _ = Describe("Rego Startup Validation", Label("unit", "rego", "startup-valid
 	createInvalidPolicyFile := func() string {
 		tmpFile, err := os.CreateTemp("", "invalid-policy-*.rego")
 		Expect(err).NotTo(HaveOccurred())
-		defer tmpFile.Close()
+		defer func() { _ = tmpFile.Close() }()
 
 		// Write syntactically invalid Rego
 		_, err = tmpFile.WriteString(`package aianalysis

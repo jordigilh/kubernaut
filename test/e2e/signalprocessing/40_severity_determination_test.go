@@ -265,12 +265,12 @@ determine_severity := "high" if {
 			},
 		}
 		g.Expect(k8sClient.Create(ctx, validationSP)).To(Succeed())
-		defer k8sClient.Delete(ctx, validationSP)
+		defer func() { _ = k8sClient.Delete(ctx, validationSP) }()
 
 		// Wait for validation SP to complete processing
 		var processed signalprocessingv1alpha1.SignalProcessing
 		g.Eventually(func() signalprocessingv1alpha1.SignalProcessingPhase {
-			k8sClient.Get(ctx, client.ObjectKeyFromObject(validationSP), &processed)
+			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(validationSP), &processed)
 			return processed.Status.Phase
 		}, "20s", "1s").Should(Equal(signalprocessingv1alpha1.PhaseCompleted))
 

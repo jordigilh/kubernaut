@@ -131,7 +131,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
-		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
 	return []byte{} // No data to share between processes

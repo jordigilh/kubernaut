@@ -127,7 +127,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 			// Cleanup
 			for _, notif := range notifications {
-				deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 			}
 		})
 
@@ -187,7 +187,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 
 			// Cleanup
 			for _, notif := range notifications {
-				deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
+				_ = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 			}
 		})
 
@@ -252,7 +252,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						"Should have exactly 1 successful delivery")
 
 					// Cleanup
-					deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
+					_ = deleteAndWait(ctx, k8sClient, notif, 10*time.Second)
 				}(i)
 			}
 

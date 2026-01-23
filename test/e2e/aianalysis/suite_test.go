@@ -185,15 +185,14 @@ var _ = SynchronizedBeforeSuite(
 		// Wait for all services to be ready
 		// Per DD-TEST-002: Coverage-instrumented binaries take longer to start
 		// Increase timeout from 60s to 300s for coverage builds (5 min)
-		// Initial delay to allow HTTP servers to start accepting connections
-		healthTimeout := 60 * time.Second
-		initialDelay := 0 * time.Second
-		if os.Getenv("E2E_COVERAGE") == "true" {
-			healthTimeout = 300 * time.Second // 5 minutes for coverage builds
-			initialDelay = 10 * time.Second   // Give servers 10s to start
-			logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
-			time.Sleep(initialDelay)
-		}
+	// Initial delay to allow HTTP servers to start accepting connections
+	healthTimeout := 60 * time.Second
+	if os.Getenv("E2E_COVERAGE") == "true" {
+		healthTimeout = 300 * time.Second // 5 minutes for coverage builds
+		initialDelay := 10 * time.Second  // Give servers 10s to start
+		logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
+		time.Sleep(initialDelay)
+	}
 		logger.Info("Waiting for services to be ready...")
 		Eventually(func() bool {
 			ready := checkServicesReady()

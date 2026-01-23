@@ -160,7 +160,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
-		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
 	// SP-BUG-006: Capture infrastructure state for diagnostics

@@ -229,14 +229,14 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			By("Verifying workflow.completed audit event emitted with duration")
 			Expect(updated.Status.CompletionTime).ToNot(BeNil())
 			Expect(updated.Status.StartTime).ToNot(BeNil())
-			
+
 			// RACE FIX: Ensure audit buffer has flushed to Data Storage
 			// Per ADR-032, audit events are buffered for up to 1 second before flushing.
 			// In CI's faster environment, the test might check for the audit event before
 			// the buffer has flushed, causing a false failure.
 			// Wait 2 seconds (2x buffer time) to ensure the event has been persisted.
 			time.Sleep(2 * time.Second)
-			
+
 			GinkgoWriter.Printf("✅ workflow.completed audit event emitted for %s (duration available)\n", wfe.Name)
 		})
 	})

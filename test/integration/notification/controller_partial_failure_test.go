@@ -135,7 +135,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 			// PHASE 1: Wait for delivery attempts
 			// ========================================
 			By("Waiting for controller to attempt delivery to all channels")
-			
+
 			// RACE FIX: First ensure all delivery attempts are recorded
 			// In CI's faster environment, the phase transition might happen before
 			// all delivery attempts are persisted, causing the test to see an
@@ -151,7 +151,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				return len(notification.Status.DeliveryAttempts)
 			}, 15*time.Second, 500*time.Millisecond).Should(BeNumerically(">=", 3),
 				"All 3 delivery attempts must be recorded before checking phase")
-			
+
 			// Now check the phase (should be PartiallySent)
 			// DD-STATUS-001: Increased timeout for parallel execution (12 procs)
 			Eventually(func() notificationv1alpha1.NotificationPhase {

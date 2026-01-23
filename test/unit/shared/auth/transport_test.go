@@ -51,7 +51,7 @@ var _ = Describe("AuthTransport", func() {
 				w.Header().Set("X-Echo-User", user)
 			}
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
+			_, _ = w.Write([]byte("OK"))
 		}))
 	})
 
@@ -68,7 +68,7 @@ var _ = Describe("AuthTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify X-Auth-Request-User header was injected
 			Expect(resp.Header.Get("X-Echo-User")).To(Equal("test-user@example.com"))
@@ -83,7 +83,7 @@ var _ = Describe("AuthTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify no headers injected
 			Expect(resp.Header.Get("X-Echo-User")).To(BeEmpty())
@@ -108,7 +108,7 @@ var _ = Describe("AuthTransport", func() {
 			// Make request (token file doesn't exist)
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify no headers injected (graceful degradation)
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(BeEmpty())
@@ -146,7 +146,7 @@ var _ = Describe("AuthTransport", func() {
 				case resp := <-responses:
 					// Verify header was injected correctly
 					Expect(resp.Header.Get("X-Echo-User")).To(Equal("concurrent-user@example.com"))
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				case <-time.After(5 * time.Second):
 					Fail("Timeout waiting for response")
 				}
@@ -170,7 +170,7 @@ var _ = Describe("AuthTransport", func() {
 			// Make request
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify original request headers were NOT mutated
 			Expect(req.Header).To(Equal(originalHeaders))
@@ -192,7 +192,7 @@ var _ = Describe("AuthTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify both auth header and custom base were used
 			Expect(resp.Header.Get("X-Echo-User")).To(Equal("test-user@example.com"))
@@ -207,7 +207,7 @@ var _ = Describe("AuthTransport", func() {
 			// Make request (should not panic)
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify request succeeded
 			body, err := io.ReadAll(resp.Body)

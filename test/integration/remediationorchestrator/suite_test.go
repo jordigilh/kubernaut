@@ -155,7 +155,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Println("✅ All external services started and healthy")
 
 	DeferCleanup(func() {
-		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
 	GinkgoWriter.Println("✅ Phase 1 complete - infrastructure ready for all processes")

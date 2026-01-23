@@ -58,12 +58,9 @@ func NewNotificationRequestDeleteHandler(auditStore audit.AuditStore) *Notificat
 // Handle processes the admission request for NotificationRequest DELETE
 // Implements admission.Handler interface from controller-runtime
 func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admission.Request) admission.Response {
-	fmt.Printf("🔍 DELETE webhook invoked: Operation=%s, Name=%s, Namespace=%s\n",
-		req.Operation, req.Name, req.Namespace)
 
 	// Only handle DELETE operations
 	if req.Operation != admissionv1.Delete {
-		fmt.Printf("⏩ Skipping non-DELETE operation: %s\n", req.Operation)
 		return admission.Allowed("not a DELETE operation")
 	}
 
@@ -72,23 +69,18 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	// For DELETE operations, the object to delete is in OldObject
 	err := json.Unmarshal(req.OldObject.Raw, nr)
 	if err != nil {
-		fmt.Printf("❌ Failed to unmarshal NotificationRequest: %v\n", err)
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode NotificationRequest: %w", err))
 	}
-	fmt.Printf("✅ Unmarshaled NotificationRequest: %s/%s (UID: %s)\n", nr.Namespace, nr.Name, nr.UID)
 
 	// Extract authenticated user from admission request
 	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
 	if err != nil {
-		fmt.Printf("❌ Authentication failed: %v\n", err)
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
-	fmt.Printf("✅ Authenticated user: %s (UID: %s)\n", authCtx.Username, authCtx.UID)
 
 	// Note: Kubernetes API server does NOT allow mutating objects during DELETE operations.
 	// However, we CAN write audit traces to capture attribution for SOC2 compliance.
 
-	fmt.Printf("📝 Creating audit event for DELETE operation...\n")
 
 	// Write complete deletion audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
 	auditEvent := audit.NewAuditEventRequest()
@@ -116,21 +108,15 @@ func (h *NotificationRequestDeleteHandler) Handle(ctx context.Context, req admis
 	payload.Action.SetTo(api.NotificationAuditPayloadActionNotificationCancelled)
 
 	auditEvent.EventData = api.NewAuditEventRequestEventDataWebhookNotificationCancelledAuditEventRequestEventData(payload)
-	fmt.Printf("✅ Audit event created: type=%s, correlation_id=%s\n",
-		auditEvent.EventType, auditEvent.CorrelationID)
 
 	// Store audit event asynchronously (buffered write)
-	fmt.Printf("💾 Storing audit event to Data Storage...\n")
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 		// Log error but don't fail the webhook (audit should not block operations)
 		// The audit store has retry + DLQ mechanisms
-		fmt.Printf("❌ WARNING: Failed to store audit event: %v\n", err)
 		return admission.Allowed(fmt.Sprintf("DELETE allowed with audit warning: %v", err))
 	}
-	fmt.Printf("✅ Audit event stored successfully\n")
 
 	// Allow DELETE to proceed
-	fmt.Printf("✅ Allowing DELETE operation for %s/%s\n", nr.Namespace, nr.Name)
 	return admission.Allowed(fmt.Sprintf("DELETE allowed, attribution recorded (user: %s)", authCtx.Username))
 }
 

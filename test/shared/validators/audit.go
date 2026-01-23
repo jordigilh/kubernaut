@@ -209,6 +209,11 @@ func (m *AuditEventMatcher) FailureMessage(actual interface{}) string {
 	if m.expected.Severity != nil {
 		expectedSeverityStr = *m.expected.Severity
 	}
+	// Handle EventOutcome pointer
+	expectedOutcomeStr := "<nil>"
+	if m.expected.EventOutcome != nil {
+		expectedOutcomeStr = string(*m.expected.EventOutcome)
+	}
 	return fmt.Sprintf(
 		"Expected audit event to match:\n"+
 			"  EventType: %s (got %s)\n"+
@@ -220,7 +225,7 @@ func (m *AuditEventMatcher) FailureMessage(actual interface{}) string {
 		m.expected.EventType, event.EventType,
 		m.expected.EventCategory, event.EventCategory,
 		m.expected.EventAction, event.EventAction,
-		m.expected.EventOutcome, event.EventOutcome,
+		expectedOutcomeStr, event.EventOutcome,
 		m.expected.CorrelationID, event.CorrelationID,
 		expectedSeverityStr, severityStr,
 	)

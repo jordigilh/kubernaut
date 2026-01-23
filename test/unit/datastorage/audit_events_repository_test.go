@@ -66,7 +66,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 	})
 
 	AfterEach(func() {
-		mockDB.Close()
+		_ = mockDB.Close()
 	})
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

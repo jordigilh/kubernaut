@@ -66,7 +66,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify Authorization header was injected
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(Equal("Bearer " + saToken))
@@ -83,7 +83,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify Authorization header was injected
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(Equal("Bearer " + kubeadminToken))
@@ -97,7 +97,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify no headers injected
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(BeEmpty())
@@ -114,7 +114,7 @@ var _ = Describe("StaticTokenTransport", func() {
 
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify token was accepted and injected
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(ContainSubstring("Bearer "))
@@ -130,7 +130,7 @@ var _ = Describe("StaticTokenTransport", func() {
 
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify token was accepted and injected
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(Equal("Bearer " + validKubeconfigToken))
@@ -147,7 +147,7 @@ var _ = Describe("StaticTokenTransport", func() {
 
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Transport injects it (oauth-proxy will reject it later)
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(Equal("Bearer " + invalidToken))
@@ -170,7 +170,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Make request
 			resp, err := client.Do(req)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify original request headers were NOT mutated
 			Expect(req.Header).To(Equal(originalHeaders))
@@ -192,7 +192,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Make request
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify both auth header and custom base were used
 			Expect(resp.Header.Get("X-Echo-Authorization")).To(Equal("Bearer test-token"))
@@ -207,7 +207,7 @@ var _ = Describe("StaticTokenTransport", func() {
 			// Make request (should not panic)
 			resp, err := client.Get(server.URL)
 			Expect(err).ToNot(HaveOccurred())
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify request succeeded
 			body, err := io.ReadAll(resp.Body)

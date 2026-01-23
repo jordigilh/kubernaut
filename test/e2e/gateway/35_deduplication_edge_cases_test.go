@@ -21,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -53,11 +52,6 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-dedup-test")
 
 		// Get DataStorage URL from environment
-		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
-		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18091" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
-		}
-
 		// Note: gatewayURL is the globally deployed Gateway service at http://127.0.0.1:8080
 	})
 
@@ -89,7 +83,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -131,7 +125,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				Severity:  "warning",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -165,7 +159,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				Severity:  "info",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -276,7 +270,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -373,7 +367,7 @@ var _ = Describe("Gateway Deduplication Edge Cases (BR-GATEWAY-185)", func() {
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")

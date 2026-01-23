@@ -323,7 +323,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 		It("should allow success on one channel while another is open", func() {
 			// Open slack circuit
 			for i := 0; i < 3; i++ {
-				manager.Execute("slack", func() (interface{}, error) {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
 					return nil, fmt.Errorf("slack failure")
 				})
 			}
@@ -360,7 +360,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 		It("should return ErrOpenState when circuit is open", func() {
 			// Open the circuit
 			for i := 0; i < 3; i++ {
-				manager.Execute("slack", func() (interface{}, error) {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
 					return nil, fmt.Errorf("failure")
 				})
 			}
@@ -384,7 +384,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 		It("should return Open state after threshold failures", func() {
 			// Trigger circuit open
 			for i := 0; i < 3; i++ {
-				manager.Execute("slack", func() (interface{}, error) {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
 					return nil, fmt.Errorf("failure")
 				})
 			}
@@ -402,7 +402,7 @@ var _ = Describe("BR-NOT-061: Circuit Breaker Manager", func() {
 		It("should return false for open circuit", func() {
 			// Open circuit
 			for i := 0; i < 3; i++ {
-				manager.Execute("slack", func() (interface{}, error) {
+				_, _ = manager.Execute("slack", func() (interface{}, error) {
 					return nil, fmt.Errorf("failure")
 				})
 			}

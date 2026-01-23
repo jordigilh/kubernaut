@@ -225,7 +225,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	// Clean up infrastructure on exit
 	DeferCleanup(func() {
-		infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
+		_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 	})
 
 	// Seed test workflows into DataStorage BEFORE starting Mock LLM
@@ -248,7 +248,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	// Clean up config file on exit
 	DeferCleanup(func() {
-		os.Remove(mockLLMConfigPath)
+		_ = os.Remove(mockLLMConfigPath)
 	})
 
 	By("Starting Mock LLM service with configuration file (DD-TEST-011 v2.0)")
@@ -317,7 +317,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		_ = logsCmd.Run()
 		GinkgoWriter.Println("")
 
-		infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
+		_ = infrastructure.StopGenericContainer(hapiContainer, GinkgoWriter)
 	})
 
 	GinkgoWriter.Println("✅ Infrastructure startup complete (Phase 1)")

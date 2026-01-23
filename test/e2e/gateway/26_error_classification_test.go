@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -53,11 +52,6 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 		testNamespace = helpers.CreateTestNamespaceAndWait(k8sClient, "gw-error-test")
 
 		// Get DataStorage URL from environment
-		dataStorageURL := os.Getenv("TEST_DATA_STORAGE_URL")
-		if dataStorageURL == "" {
-			dataStorageURL = "http://127.0.0.1:18091" // Fallback - Use 127.0.0.1 for CI/CD IPv4 compatibility
-		}
-
 		// Create Gateway server
 	})
 
@@ -84,7 +78,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -141,7 +135,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				Severity:  "info",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -177,7 +171,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				Severity:  "warning",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -210,7 +204,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				"alerts": "this should be an array not a string"
 			}`)
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(invalidPayload))
 			req.Header.Set("Content-Type", "application/json")
@@ -241,7 +235,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 
 			invalidPayload := []byte(`{"invalid": "payload"}`)
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(invalidPayload))
 			req.Header.Set("Content-Type", "application/json")
@@ -270,7 +264,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				}]
 			}`)
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(invalidPayload))
 			req.Header.Set("Content-Type", "application/json")
@@ -282,7 +276,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 
 			if resp.StatusCode >= 400 && resp.StatusCode < 500 {
 				var errorResp map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResp)
+				err = json.NewDecoder(resp.Body).Decode(&errorResp) //nolint:ineffassign // Test pattern: error reassignment across phases
 
 				// Validate error message is actionable
 				detail := errorResp["detail"]
@@ -312,7 +306,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				},
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -325,7 +319,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 			// If retries exhausted, should return error
 			if resp.StatusCode >= 500 {
 				var errorResp map[string]interface{}
-				err = json.NewDecoder(resp.Body).Decode(&errorResp)
+				err = json.NewDecoder(resp.Body).Decode(&errorResp) //nolint:ineffassign // Test pattern: error reassignment across phases
 
 				// Error should indicate exhaustion, not transient failure
 				detail := errorResp["detail"].(string)
@@ -352,7 +346,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				Severity:  "warning",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")
@@ -391,7 +385,7 @@ var _ = Describe("Gateway Error Classification & Retry Logic (BR-GATEWAY-111 to 
 				Severity:  "info",
 			})
 
-			req, err := http.NewRequest("POST",
+			req, _ := http.NewRequest("POST",
 				fmt.Sprintf("%s/api/v1/signals/prometheus", gatewayURL),
 				bytes.NewBuffer(payload))
 			req.Header.Set("Content-Type", "application/json")

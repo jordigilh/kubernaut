@@ -152,7 +152,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 60*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
-			defer CleanupCopiedFile(copiedFilePath)
+			defer func() { _ = CleanupCopiedFile(copiedFilePath) }()
 
 			By("Validating priority field preserved in file audit")
 			fileContent, err := os.ReadFile(copiedFilePath)
@@ -261,7 +261,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 				copiedFilePath, err := WaitForFileInPod(ctx, pattern, 60*time.Second)
 				Expect(err).ToNot(HaveOccurred(), "Should copy file from pod for "+p.name)
-				defer CleanupCopiedFile(copiedFilePath)
+				defer func() { _ = CleanupCopiedFile(copiedFilePath) }()
 
 				// Validate priority preserved in file
 				fileContent, err := os.ReadFile(copiedFilePath)
@@ -362,7 +362,7 @@ var _ = Describe("Priority-Based Routing E2E (BR-NOT-052)", func() {
 
 			copiedFilePath, err := WaitForFileInPod(ctx, pattern, 60*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "Should copy file from pod")
-			defer CleanupCopiedFile(copiedFilePath)
+			defer func() { _ = CleanupCopiedFile(copiedFilePath) }()
 
 			fileContent, err := os.ReadFile(copiedFilePath)
 			Expect(err).ToNot(HaveOccurred())
