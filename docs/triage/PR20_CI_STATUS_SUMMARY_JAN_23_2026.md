@@ -221,8 +221,8 @@ Based on patterns, apply fixes:
 
 ---
 
-**Author**: AI Assistant  
-**Date**: January 23, 2026, 11:40 AM EST  
-**PR**: #20 (feature/soc2-compliance → main)  
-**Commit**: 99361f9f  
+**Author**: AI Assistant
+**Date**: January 23, 2026, 11:40 AM EST
+**PR**: #20 (feature/soc2-compliance → main)
+**Commit**: 99361f9f
 **CI Run**: https://github.com/jordigilh/kubernaut/actions/runs/21293284930

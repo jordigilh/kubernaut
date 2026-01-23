@@ -135,7 +135,11 @@ func (s *Server) verifyHashChain(ctx context.Context, correlationID string) (*Ve
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			s.logger.Error(err, "Failed to close database rows")
+		}
+	}()
 
 	var events []*repository.AuditEvent
 	for rows.Next() {

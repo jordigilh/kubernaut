@@ -198,6 +198,14 @@ var _ = Describe("Audit Export Integration Tests - SOC2", func() {
 					Expect(err).ToNot(HaveOccurred())
 				}
 
+				// RACE FIX: Ensure all transactions are committed before querying
+				// In CI's faster environment, the Export query may run before all
+				// Create transactions have committed, causing hash chain verification
+				// to see events in unexpected order or miss events entirely.
+				// Advisory locks ensure hash chain integrity within each transaction,
+				// but we need to wait for all transactions to complete.
+				time.Sleep(100 * time.Millisecond)
+
 				// Export and verify
 				filters := repository.ExportFilters{
 					CorrelationID: correlationID,

@@ -2,9 +2,9 @@
 
 ## Executive Summary
 
-**Status**: 4 integration test failures in CI (all tests pass locally 100%)  
-**Root Cause**: Environment-specific timing differences between local and CI  
-**Severity**: MEDIUM - Tests are flaky/timing-sensitive, not functional bugs  
+**Status**: 4 integration test failures in CI (all tests pass locally 100%)
+**Root Cause**: Environment-specific timing differences between local and CI
+**Severity**: MEDIUM - Tests are flaky/timing-sensitive, not functional bugs
 **CI Run**: [21293284930](https://github.com/jordigilh/kubernaut/actions/runs/21293284930)
 
 ---
@@ -24,15 +24,15 @@ The must-gather logs **are working correctly** and were uploaded to CI artifacts
 ## 🔍 Detailed Failure Analysis
 
 ### 1. Data Storage: Hash Chain Verification ❌
-**Test**: `should verify hash chain integrity correctly`  
-**Status**: 109 Passed | 1 Failed (local: 110 Passed | 0 Failed)  
+**Test**: `should verify hash chain integrity correctly`
+**Status**: 109 Passed | 1 Failed (local: 110 Passed | 0 Failed)
 **File**: `test/integration/datastorage/audit_export_integration_test.go`
 
 **CI Failure**:
 ```
 [FAILED] All events should have valid hash chain
-[FAIL] Audit Export Integration Tests - SOC2 Hash Chain Verification 
-       when exporting audit events with valid hash chain 
+[FAIL] Audit Export Integration Tests - SOC2 Hash Chain Verification
+       when exporting audit events with valid hash chain
        [It] should verify hash chain integrity correctly
 ```
 
@@ -64,14 +64,14 @@ Expect(verifyHashChain(events)).To(BeTrue())
 ---
 
 ### 2. Notification: Partial Failure Handling ❌
-**Test**: `should mark notification as PartiallySent (not Sent, not Failed)`  
-**Status**: 116 Passed | 1 Failed (local: 117 Passed | 0 Failed)  
+**Test**: `should mark notification as PartiallySent (not Sent, not Failed)`
+**Status**: 116 Passed | 1 Failed (local: 117 Passed | 0 Failed)
 **File**: `test/integration/notification/controller_partial_failure_test.go:192`
 
 **CI Failure**:
 ```
-[FAIL] Controller Partial Failure Handling (BR-NOT-053) 
-       When file channel fails but console/log channels succeed 
+[FAIL] Controller Partial Failure Handling (BR-NOT-053)
+       When file channel fails but console/log channels succeed
        [It] should mark notification as PartiallySent (not Sent, not Failed)
 ```
 
@@ -107,14 +107,14 @@ Eventually(func() int {
 ---
 
 ### 3. Remediation Orchestrator: Severity Normalization ❌
-**Test**: `[RO-INT-SEV-004] should create AIAnalysis with normalized severity (P3 → medium)`  
-**Status**: 58 Passed | 1 Failed (local: 59 Passed | 0 Failed)  
+**Test**: `[RO-INT-SEV-004] should create AIAnalysis with normalized severity (P3 → medium)`
+**Status**: 58 Passed | 1 Failed (local: 59 Passed | 0 Failed)
 **File**: `test/integration/remediationorchestrator/severity_normalization_integration_test.go:330`
 
 **CI Failure**:
 ```
-[FAIL] DD-SEVERITY-001: Severity Normalization Integration 
-       PagerDuty Severity Scheme (P0-P4) 
+[FAIL] DD-SEVERITY-001: Severity Normalization Integration
+       PagerDuty Severity Scheme (P0-P4)
        [It] [RO-INT-SEV-004] should create AIAnalysis with normalized severity (P3 → medium)
 ```
 
@@ -155,14 +155,14 @@ Eventually(func() error {
 ---
 
 ### 4. Workflow Execution: Audit Event Emission ❌
-**Test**: `should emit workflow.completed when PipelineRun succeeds`  
-**Status**: 73 Passed | 1 Failed (local: 74 Passed | 0 Failed)  
+**Test**: `should emit workflow.completed when PipelineRun succeeds`
+**Status**: 73 Passed | 1 Failed (local: 74 Passed | 0 Failed)
 **File**: `test/integration/workflowexecution/audit_comprehensive_test.go:227`
 
 **CI Failure**:
 ```
-[FAIL] Comprehensive Audit Trail Integration Tests 
-       workflow.completed audit event 
+[FAIL] Comprehensive Audit Trail Integration Tests
+       workflow.completed audit event
        [It] should emit workflow.completed when PipelineRun succeeds
 ```
 
@@ -221,8 +221,8 @@ All 4 failures share these characteristics:
 ## 💡 Recommended Fix Strategy
 
 ### Phase 1: Increase Timeouts for CI Environment (Quick Fix)
-**Goal**: Make tests more resilient to timing differences  
-**Impact**: Minimal code changes, high success probability  
+**Goal**: Make tests more resilient to timing differences
+**Impact**: Minimal code changes, high success probability
 **Risk**: Tests will take longer, but only in CI
 
 **Implementation**:
@@ -240,8 +240,8 @@ All 4 failures share these characteristics:
 ---
 
 ### Phase 2: Add CI-Specific Environment Detection (Medium Term)
-**Goal**: Automatically adjust timeouts based on environment  
-**Impact**: Better long-term maintainability  
+**Goal**: Automatically adjust timeouts based on environment
+**Impact**: Better long-term maintainability
 **Risk**: Requires test framework changes
 
 **Implementation**:
@@ -271,8 +271,8 @@ Eventually(func() bool {
 ---
 
 ### Phase 3: Fix Underlying Race Conditions (Long Term)
-**Goal**: Eliminate timing dependencies entirely  
-**Impact**: Most robust, but requires business logic changes  
+**Goal**: Eliminate timing dependencies entirely
+**Impact**: Most robust, but requires business logic changes
 **Risk**: Higher complexity, may introduce regressions
 
 **Areas to Investigate**:
@@ -356,8 +356,8 @@ Eventually(func() bool {
 
 ---
 
-**Author**: AI Assistant  
-**Date**: January 23, 2026, 11:50 AM EST  
-**Analysis Method**: GitHub CLI + must-gather artifacts + local test comparison  
-**CI Run**: https://github.com/jordigilh/kubernaut/actions/runs/21293284930  
+**Author**: AI Assistant
+**Date**: January 23, 2026, 11:50 AM EST
+**Analysis Method**: GitHub CLI + must-gather artifacts + local test comparison
+**CI Run**: https://github.com/jordigilh/kubernaut/actions/runs/21293284930
 **Artifacts**: Successfully collected via `.github/workflows/ci-pipeline.yml` (lines 286-308)

@@ -332,6 +332,18 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
 			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted, "medium")).To(Succeed())
 
+			// RACE FIX: Ensure SignalProcessing status is fully propagated before expecting AIAnalysis
+			// In CI's faster environment, the RO controller might not see the SP status update
+			// immediately, causing it to delay AIAnalysis creation
+			Eventually(func() signalprocessingv1.ProcessingPhase {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				if err != nil {
+					return ""
+				}
+				return sp.Status.Phase
+			}, timeout, interval).Should(Equal(signalprocessingv1.PhaseCompleted),
+				"SignalProcessing status must be Completed before RO creates AIAnalysis")
+
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
