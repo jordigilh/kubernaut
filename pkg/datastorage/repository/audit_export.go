@@ -365,7 +365,8 @@ func calculateEventHashForVerification(previousHash string, event *AuditEvent) (
 	eventCopy.LegalHoldPlacedAt = nil
 
 	// Serialize event to JSON (canonical form for consistent hashing)
-	eventJSON, err := json.Marshal(&eventCopy)
+	// CRITICAL: Must match audit_events_repository.go - pass by value, not pointer
+	eventJSON, err := json.Marshal(eventCopy)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal event for hashing: %w", err)
 	}
