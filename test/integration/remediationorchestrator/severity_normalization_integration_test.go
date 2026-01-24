@@ -110,7 +110,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			sp := &signalprocessingv1.SignalProcessing{}
 
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed(),
 				"RO should create SignalProcessing when RR is created")
 
@@ -127,7 +127,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
-				err := k8sClient.List(ctx, &aaList,
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
 					client.InNamespace(namespace),
 					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
@@ -144,7 +144,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 
 			By("7. Verify RemediationRequest still has external severity")
 			var updatedRR remediationv1.RemediationRequest
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, &updatedRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, &updatedRR)).To(Succeed())
 			Expect(updatedRR.Spec.Severity).To(Equal("Sev1"),
 				"RemediationRequest should preserve external severity for operator-facing messages")
 
@@ -186,7 +186,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
@@ -196,7 +196,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
-				err := k8sClient.List(ctx, &aaList,
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
 					client.InNamespace(namespace),
 					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
@@ -262,7 +262,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			Expect(sp.Spec.Signal.Severity).To(Equal("P0"),
@@ -275,7 +275,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
-				err := k8sClient.List(ctx, &aaList,
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
 					client.InNamespace(namespace),
 					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
@@ -328,7 +328,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
@@ -338,7 +338,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			// In CI's faster environment, the RO controller might not see the SP status update
 			// immediately, causing it to delay AIAnalysis creation
 			Eventually(func() signalprocessingv1.SignalProcessingPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 				if err != nil {
 					return ""
 				}
@@ -350,7 +350,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
-				err := k8sClient.List(ctx, &aaList,
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
 					client.InNamespace(namespace),
 					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {
@@ -416,7 +416,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
@@ -426,7 +426,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			var createdAA *aianalysisv1.AIAnalysis
 			Eventually(func() bool {
 				var aaList aianalysisv1.AIAnalysisList
-				err := k8sClient.List(ctx, &aaList,
+				err := k8sManager.GetAPIReader().List(ctx, &aaList,
 					client.InNamespace(namespace),
 					client.MatchingLabels{"kubernaut.ai/remediation-request": rrName})
 				if err != nil || len(aaList.Items) == 0 {

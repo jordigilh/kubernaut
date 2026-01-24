@@ -159,7 +159,7 @@ correlationID := rr.Name
 
 			// Validate RR status was initialized with TimeoutConfig
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Namespace: testNamespace,
 					Name:      "rr-gap8-defaults",
 				}, rr)

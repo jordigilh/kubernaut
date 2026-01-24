@@ -73,7 +73,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			spName := "sp-" + rrName
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
 
 			// Step 3: Complete SignalProcessing to trigger AI creation
@@ -84,7 +84,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			var analysis *aianalysisv1.AIAnalysis
 			Eventually(func() error {
 				analysis = &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, analysis)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, analysis)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "AIAnalysis should be created by RO")
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (simulating HAPI response)
@@ -101,7 +101,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			var notificationList *notificationv1.NotificationRequestList
 			Eventually(func() int {
 				notificationList = &notificationv1.NotificationRequestList{}
-				_ = k8sClient.List(ctx, notificationList, client.InNamespace(testNamespace))
+				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(testNamespace))
 				return len(notificationList.Items)
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(1), "NotificationRequest should be created")
 
@@ -115,20 +115,20 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			// Step 6: Validate RemediationRequest status was updated
 			Eventually(func() remediationv1.RemediationPhase {
 				updatedRR := &remediationv1.RemediationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)
 				return updatedRR.Status.OverallPhase
 			}, 10*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
 
 			// Step 7: Validate RR status was updated
 			Eventually(func() remediationv1.RemediationPhase {
 				updatedRR := &remediationv1.RemediationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)
 				return updatedRR.Status.OverallPhase
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
 
 			// Validate RR status fields
 			updatedRR := &remediationv1.RemediationRequest{}
-			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)).To(Succeed())
 			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
 			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
 
@@ -156,7 +156,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			spName := "sp-" + rrName
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 3: Complete SignalProcessing
@@ -167,7 +167,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			var analysis *aianalysisv1.AIAnalysis
 			Eventually(func() error {
 				analysis = &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, analysis)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, analysis)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (low_confidence reason)
@@ -183,14 +183,14 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			// Step 6: Wait for NotificationRequest to be created
 			Eventually(func() int {
 				notificationList := &notificationv1.NotificationRequestList{}
-				_ = k8sClient.List(ctx, notificationList, client.InNamespace(testNamespace))
+				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(testNamespace))
 				return len(notificationList.Items)
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(1), "NotificationRequest should be created")
 
 			// Step 6: Verify NO WorkflowExecution was created
 			Consistently(func() int {
 				weList := &workflowexecutionv1.WorkflowExecutionList{}
-				_ = k8sClient.List(ctx, weList, client.InNamespace(testNamespace))
+				_ = k8sManager.GetAPIReader().List(ctx, weList, client.InNamespace(testNamespace))
 				return len(weList.Items)
 			}, 5*time.Second, 500*time.Millisecond).Should(Equal(0), "WorkflowExecution should NOT be created")
 
@@ -218,7 +218,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			spName := "sp-" + rrName
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: testNamespace}, sp)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 3: Complete SignalProcessing
@@ -229,7 +229,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			var analysis *aianalysisv1.AIAnalysis
 			Eventually(func() error {
 				analysis = &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, analysis)
+				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: aiName, Namespace: testNamespace}, analysis)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (rca_incomplete reason)
@@ -247,7 +247,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			var notificationList *notificationv1.NotificationRequestList
 			Eventually(func() int {
 				notificationList = &notificationv1.NotificationRequestList{}
-				_ = k8sClient.List(ctx, notificationList, client.InNamespace(testNamespace))
+				_ = k8sManager.GetAPIReader().List(ctx, notificationList, client.InNamespace(testNamespace))
 				return len(notificationList.Items)
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(1), "NotificationRequest should be created")
 
@@ -260,12 +260,12 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			// Step 7: Validate RR status
 			Eventually(func() remediationv1.RemediationPhase {
 				updatedRR := &remediationv1.RemediationRequest{}
-				_ = k8sClient.Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)
 				return updatedRR.Status.OverallPhase
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal(remediationv1.PhaseFailed), "RR should be in Failed phase")
 
 			updatedRR := &remediationv1.RemediationRequest{}
-			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: rrName, Namespace: testNamespace}, updatedRR)).To(Succeed())
 			Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"), "Outcome should be ManualReviewRequired")
 			Expect(updatedRR.Status.RequiresManualReview).To(BeTrue(), "RequiresManualReview flag should be true")
 		})

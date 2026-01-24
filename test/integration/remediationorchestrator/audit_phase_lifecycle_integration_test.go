@@ -128,7 +128,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			spName := "sp-" + rr.Name
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
 					Namespace: testNamespace,
 				}, sp)
@@ -140,7 +140,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			// Wait for RR to transition to Processing phase
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKey{
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
 					Namespace: testNamespace,
 				}, rr)
@@ -198,7 +198,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Wait for SignalProcessing and complete it
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
 					Namespace: testNamespace,
 				}, sp)
@@ -210,7 +210,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Wait for RO to create AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      aiName,
 					Namespace: testNamespace,
 				}, ai)
@@ -223,7 +223,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			// Wait for RR to transition to Analyzing phase
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKey{
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
 					Namespace: testNamespace,
 				}, rr)
@@ -283,7 +283,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Complete SignalProcessing
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
 					Namespace: testNamespace,
 				}, sp)
@@ -295,7 +295,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Complete AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      aiName,
 					Namespace: testNamespace,
 				}, ai)
@@ -313,7 +313,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Complete WorkflowExecution
 			we := &workflowexecutionv1.WorkflowExecution{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      weName,
 					Namespace: testNamespace,
 				}, we)
@@ -325,7 +325,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			// Wait for RR to complete successfully
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKey{
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
 					Namespace: testNamespace,
 				}, rr)
@@ -383,7 +383,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Complete SignalProcessing
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      spName,
 					Namespace: testNamespace,
 				}, sp)
@@ -395,7 +395,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Fail AIAnalysis to trigger remediation failure
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      aiName,
 					Namespace: testNamespace,
 				}, ai)
@@ -408,7 +408,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			// Wait for RR to fail
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, client.ObjectKey{
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
 					Namespace: testNamespace,
 				}, rr)

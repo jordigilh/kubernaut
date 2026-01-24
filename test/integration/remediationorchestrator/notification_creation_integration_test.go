@@ -140,7 +140,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Update RemediationRequest to AwaitingApproval phase
 			Eventually(func() error {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				if err != nil {
 					return err
 				}
@@ -179,7 +179,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Validate NotificationRequest exists with correct labels
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), nr)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(nr), nr)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
@@ -216,7 +216,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Simulate workflow skip by updating status to Skipped
 			Eventually(func() error {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				if err != nil {
 					return err
 				}
@@ -247,7 +247,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Validate NotificationRequest exists with correct type
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), nr)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(nr), nr)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
@@ -309,7 +309,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Validate all expected labels are present
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(nr), nr)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(nr), nr)
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
@@ -321,14 +321,14 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Test label-based querying (important for notification filtering)
 			nrList := &notificationv1.NotificationRequestList{}
-			err := k8sClient.List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
+			err := k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
 				"kubernaut.ai/remediation-request": rrName,
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(len(nrList.Items)).To(BeNumerically(">=", 1), "Should find NotificationRequest by RR label")
 
 			// Test filtering by notification type
-			err = k8sClient.List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
+			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
 				"kubernaut.ai/notification-type": string(notificationv1.NotificationTypeEscalation),
 			})
 			Expect(err).ToNot(HaveOccurred())
@@ -340,7 +340,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// DEBUG: First list all RRs to see what's in the namespace
 			allRRs := &remediationv1.RemediationRequestList{}
-			err = k8sClient.List(ctx, allRRs, client.InNamespace(testNamespace))
+			err = k8sManager.GetAPIReader().List(ctx, allRRs, client.InNamespace(testNamespace))
 			Expect(err).ToNot(HaveOccurred())
 			GinkgoWriter.Printf("DEBUG: Found %d RRs in namespace %s\n", len(allRRs.Items), testNamespace)
 			for i, rr := range allRRs.Items {
@@ -350,7 +350,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			// Now try field selector query
 			rrList := &remediationv1.RemediationRequestList{}
 			GinkgoWriter.Printf("DEBUG: Querying with field selector: spec.signalFingerprint=%s (len=%d)\n", fingerprint, len(fingerprint))
-			err = k8sClient.List(ctx, rrList, client.InNamespace(testNamespace), client.MatchingFields{
+			err = k8sManager.GetAPIReader().List(ctx, rrList, client.InNamespace(testNamespace), client.MatchingFields{
 				"spec.signalFingerprint": fingerprint, // Full 64-char SHA256 fingerprint
 			})
 			if err != nil {
@@ -363,7 +363,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 
 			// Validate NotificationRequests are correlated to the RR
 			nrList = &notificationv1.NotificationRequestList{}
-			err = k8sClient.List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
+			err = k8sManager.GetAPIReader().List(ctx, nrList, client.InNamespace(testNamespace), client.MatchingLabels{
 				"kubernaut.ai/remediation-request": rrName,
 			})
 			Expect(err).ToNot(HaveOccurred())

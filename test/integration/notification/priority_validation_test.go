@@ -101,7 +101,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 				// Verify priority is preserved
 				created := &notificationv1alpha1.NotificationRequest{}
 				Eventually(func() error {
-					return k8sClient.Get(ctx, types.NamespacedName{
+					return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, created)
@@ -112,7 +112,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 
 				// Wait for delivery to complete
 				Eventually(func() notificationv1alpha1.NotificationPhase {
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, created)
@@ -175,7 +175,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			// Verify a priority value was assigned (default enum value)
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -225,7 +225,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 
 			// Check priority at various lifecycle points
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -290,7 +290,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			// Verify delivery completes
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -343,7 +343,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			// Verify delivery completes
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -406,7 +406,7 @@ var _ = Describe("BR-NOT-057: Priority-Based Processing", Label("integration", "
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)

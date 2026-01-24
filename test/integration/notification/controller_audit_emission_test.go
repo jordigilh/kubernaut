@@ -131,7 +131,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Wait for notification to be sent
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
 					return ""
 				}
 				return n.Status.Phase
@@ -209,7 +209,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Wait for notification to be sent (Slack delivery to mock server)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
 					return ""
 				}
 				return n.Status.Phase
@@ -280,7 +280,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Wait for notification to be processed
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
 					return ""
 				}
 				return n.Status.Phase
@@ -348,7 +348,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Wait for notification to be processed
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
 					return ""
 				}
 				return n.Status.Phase
@@ -401,7 +401,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Wait for notification to be sent
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
 					return ""
 				}
 				return n.Status.Phase
@@ -488,7 +488,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// (Slack delivery will fail due to mock returning 503)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				var n notificationv1alpha1.NotificationRequest
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, &n); err != nil {
 					return ""
 				}
 				return n.Status.Phase

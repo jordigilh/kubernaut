@@ -50,7 +50,8 @@ import (
 // NotificationRequestReconciler reconciles a NotificationRequest object
 type NotificationRequestReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	APIReader client.Reader // DD-STATUS-001: Cache-bypassed reader for critical status checks
+	Scheme    *runtime.Scheme
 
 	// Delivery services
 	ConsoleService *delivery.ConsoleDeliveryService
@@ -313,7 +314,9 @@ func (r *NotificationRequestReconciler) Reconcile(ctx context.Context, req ctrl.
 	}
 
 	// BR-NOT-053: CRITICAL - Re-read notification RIGHT BEFORE delivery loop
-	if err := r.Get(ctx, req.NamespacedName, notification); err != nil {
+	// DD-STATUS-001: Use APIReader (cache-bypassed) to prevent duplicate deliveries
+	// during rapid reconciles from stale cached status reads
+	if err := r.APIReader.Get(ctx, req.NamespacedName, notification); err != nil {
 		log.Error(err, "Failed to refresh notification before channel delivery loop")
 		return ctrl.Result{}, err
 	}

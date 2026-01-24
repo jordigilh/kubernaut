@@ -139,7 +139,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			By("Waiting for controller to attempt initial delivery")
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      notification.Name,
 					Namespace: notification.Namespace,
 				}, notification)
@@ -159,7 +159,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 		// Expected retry intervals: 1s, 2s, 4s, 8s = 15s total backoff
 		// + 5s for controller reconciliation and status propagation
 		Eventually(func() int {
-			err := k8sClient.Get(ctx, client.ObjectKey{
+			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 				Name:      notification.Name,
 				Namespace: notification.Namespace,
 			}, notification)
@@ -175,7 +175,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			By("Verifying notification marked as PartiallySent after max retries")
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      notification.Name,
 					Namespace: notification.Namespace,
 				}, notification)
@@ -325,7 +325,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// ========================================
 			By("Waiting for delivery to succeed on 3rd attempt")
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, client.ObjectKey{
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      notification.Name,
 					Namespace: notification.Namespace,
 				}, notification)

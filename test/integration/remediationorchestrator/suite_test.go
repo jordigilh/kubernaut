@@ -561,7 +561,7 @@ func createRemediationRequest(namespace, name string) *remediationv1.Remediation
 // updateSPStatus updates the SignalProcessing status to simulate completion.
 func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
+	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
 		return err
 	}
 

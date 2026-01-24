@@ -63,7 +63,7 @@ package notification
 //     // 2. Wait for controller to deliver
 //     Eventually(func() Phase {
 //         var updated NotificationRequest
-//         k8sClient.Get(ctx, ..., &updated)
+//         k8sManager.GetAPIReader().Get(ctx, ..., &updated)
 //         return updated.Status.Phase
 //     }).Should(Equal(NotificationPhaseSent))
 //

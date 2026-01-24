@@ -89,7 +89,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// Verify CRD exists
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -172,7 +172,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// Verify CRD exists
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -251,7 +251,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Wait for controller to initialize status and complete delivery
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -334,7 +334,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// Verify CRD exists and controller started processing
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -427,7 +427,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Verify CRD exists
 			created := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      longName,
 				Namespace: testNamespace,
 			}, created)
@@ -474,7 +474,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 			// Wait for status to be updated by controller
 			var reconcileTime time.Time
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -544,7 +544,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 					// Wait for resource to exist and be in a stable state before updating
 					Eventually(func() error {
 						temp := &notificationv1alpha1.NotificationRequest{}
-						err := k8sClient.Get(ctx, types.NamespacedName{
+						err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 							Name:      notifName,
 							Namespace: testNamespace,
 						}, temp)
@@ -560,7 +560,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Verify controller eventually succeeds in updating status despite conflicts
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -617,7 +617,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Wait for controller to start processing (status initialized)
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -634,7 +634,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Verify CRD is eventually deleted (controller handles deletion gracefully)
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -683,7 +683,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Wait for delivery to complete (status = Sent = terminal state)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -696,7 +696,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Get latest version after delivery completes (no more controller updates)
 			fresh := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      notifName,
 				Namespace: testNamespace,
 			}, fresh)
@@ -724,7 +724,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Verify original spec is unchanged
 			retrieved := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      notifName,
 				Namespace: testNamespace,
 			}, retrieved)
@@ -780,7 +780,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 
 			// Verify CRD is deleted
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)

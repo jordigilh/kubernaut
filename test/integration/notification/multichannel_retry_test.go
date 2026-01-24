@@ -91,7 +91,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 
 			// Wait for successful delivery
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -175,7 +175,7 @@ var _ = Describe("Category 2 & 3: Multi-Channel Delivery and Retry/Circuit Break
 
 			// Wait for delivery to complete (partial success = PartiallySent)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)

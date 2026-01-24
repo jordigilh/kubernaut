@@ -85,7 +85,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 
 			// Wait for RR to be initialized (controller assigns a phase)
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
 				return rr.Status.OverallPhase
 			}, timeout, interval).ShouldNot(BeEmpty())
 
@@ -93,7 +93,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// This simulates a cooldown that has already expired
 			pastTime := metav1.NewTime(time.Now().Add(-10 * time.Second))
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr); err != nil {
 					return err
 				}
 
@@ -108,13 +108,13 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Verify RR transitions from Blocked → Failed after controller detects expired cooldown
 			// BR-ORCH-042: Controller checks BlockedUntil on each reconcile
 			Eventually(func() remediationv1.RemediationPhase {
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)
 				return rr.Status.OverallPhase
 			}, "10s", interval).Should(Equal(remediationv1.PhaseFailed),
 				"RR should transition to Failed when BlockedUntil is in the past")
 
 			// Refresh RR to get latest status
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rr)).To(Succeed())
 
 			// Verify failure details indicate cooldown expiry
 			Expect(rr.Status.FailurePhase).ToNot(BeNil())
@@ -153,7 +153,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			GinkgoWriter.Println("⏳ Waiting for RR1 to be initialized...")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
 				if err != nil {
 					return ""
 				}
@@ -179,7 +179,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			GinkgoWriter.Println("⏳ Waiting for RR2 to transition to Blocked phase...")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
 				if err != nil {
 					return ""
 				}
@@ -189,7 +189,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			// Verify BlockReason is DuplicateInProgress
 			GinkgoWriter.Println("✅ Verifying BlockReason is DuplicateInProgress...")
 			rr2Updated := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr2Updated)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr2Updated)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rr2Updated.Status.BlockReason).To(Equal("DuplicateInProgress"),
 				"BlockReason should be DuplicateInProgress")
@@ -204,7 +204,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 			GinkgoWriter.Println("✅ Verifying NO SignalProcessing created for blocked RR2...")
 			Consistently(func() bool {
 				sp := &signalprocessingv1.SignalProcessing{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      rr2.Name + "-sp",
 					Namespace: ns,
 				}, sp)
@@ -230,7 +230,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("⏳ Waiting for RR1 to reach Processing phase...")
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
 			if err != nil {
 				return ""
 			}
@@ -246,7 +246,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		// Delete SignalProcessing CRD if it exists
 		spName := "sp-rr-signal-complete-1"
 		sp := &signalprocessingv1.SignalProcessing{}
-		err := k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
+		err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ns}, sp)
 		if err == nil {
 			GinkgoWriter.Println("🗑️  Deleting SP CRD to unblock RR1...")
 			Expect(k8sClient.Delete(ctx, sp)).To(Succeed())
@@ -256,7 +256,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("✅ Manually setting RR1 to Completed...")
 		Eventually(func() error {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
 			if err != nil {
 				return err
 			}
@@ -270,7 +270,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("⏳ Waiting for RR1 completion to be observed by controller...")
 		Eventually(func() bool {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr1.Name, Namespace: ns}, rr)
 			if err != nil {
 				return false
 			}
@@ -292,7 +292,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		GinkgoWriter.Println("⏳ Waiting for RR2 to proceed (not blocked)...")
 		Eventually(func() bool {
 			rr := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr2.Name, Namespace: ns}, rr)
 			if err != nil {
 				return false
 			}

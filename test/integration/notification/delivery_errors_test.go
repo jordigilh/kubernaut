@@ -96,7 +96,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 
 			// Wait for failure
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -112,7 +112,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			var totalAttempts int
 			Eventually(func() int {
 				refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 				if err != nil {
 					return -1
 				}
@@ -159,7 +159,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -172,7 +172,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			// FIX: Refetch to avoid stale status in parallel execution
 			Eventually(func() int {
 				refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 				if err != nil {
 					return -1
 				}
@@ -216,7 +216,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -229,7 +229,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			// FIX: Refetch to avoid stale status in parallel execution
 			Eventually(func() int {
 				refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 				if err != nil {
 					return -1
 				}
@@ -273,7 +273,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -286,7 +286,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			// FIX: Refetch to avoid stale status in parallel execution
 			Eventually(func() int {
 				refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 				if err != nil {
 					return -1
 				}
@@ -347,7 +347,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			Expect(err).NotTo(HaveOccurred(), "Cleanup should complete")
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -401,7 +401,7 @@ var _ = Describe("Category 4: Delivery Service Error Handling", Label("integrati
 			// CORRECTNESS VALIDATION: Verify error classification
 			// Refetch once more to get latest delivery attempts
 			refetchedNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, refetchedNotif)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(refetchedNotif.Status.DeliveryAttempts[0].Status).To(Equal("failed"))
 			Expect(refetchedNotif.Status.DeliveryAttempts[0].Error).To(ContainSubstring("502"),

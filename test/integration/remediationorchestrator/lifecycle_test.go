@@ -91,7 +91,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 			By("Waiting for RO to process the RemediationRequest")
 			Eventually(func() string {
 				fetched := &remediationv1.RemediationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetched)
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetched)
 				if err != nil {
 					return ""
 				}
@@ -100,7 +100,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 
 			By("Verifying the RemediationRequest has been processed")
 			fetched := &remediationv1.RemediationRequest{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetched)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetched)).To(Succeed())
 			GinkgoWriter.Printf("✅ RR phase: %s\n", fetched.Status.OverallPhase)
 		})
 
@@ -113,7 +113,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 			sp := &signalprocessingv1.SignalProcessing{}
 
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			By("Verifying owner reference is set (BR-ORCH-031)")
@@ -152,7 +152,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 			spName := fmt.Sprintf("sp-%s", rrName)
 			sp := &signalprocessingv1.SignalProcessing{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
@@ -162,7 +162,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 			By("Waiting for RR to transition to Analyzing phase")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
 				return string(rr.Status.OverallPhase)
@@ -172,7 +172,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			ai := &aianalysisv1.AIAnalysis{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			By("Verifying AIAnalysis has owner reference")
@@ -216,7 +216,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			spName := fmt.Sprintf("sp-%s", rrName)
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
@@ -226,12 +226,12 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			Eventually(func() error {
 				ai := &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating AIAnalysis failure with WorkflowResolutionFailed")
 			ai := &aianalysisv1.AIAnalysis{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = "Failed"
 			ai.Status.Reason = "WorkflowResolutionFailed"
@@ -243,12 +243,12 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			nrName := fmt.Sprintf("nr-manual-review-%s", rrName)
 			Eventually(func() error {
 				nr := &notificationv1.NotificationRequest{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)
 			}, timeout, interval).Should(Succeed())
 
 			By("Verifying NotificationRequest properties")
 			nr := &notificationv1.NotificationRequest{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: nrName, Namespace: namespace}, nr)).To(Succeed())
 
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 			Expect(nr.Labels["kubernaut.ai/notification-type"]).To(Equal("manual-review"))
@@ -256,7 +256,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 			By("Verifying RR status updated")
 			rr := &remediationv1.RemediationRequest{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 			Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"))
 
@@ -287,7 +287,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			spName := fmt.Sprintf("sp-%s", rrName)
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
@@ -295,12 +295,12 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			Eventually(func() error {
 				ai := &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating AIAnalysis completion with WorkflowNotNeeded (problem self-resolved)")
 			ai := &aianalysisv1.AIAnalysis{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = "Completed"
 			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
@@ -315,7 +315,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			By("Waiting for RR to complete with NoActionRequired")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
 				return rr.Status.Outcome
@@ -323,7 +323,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 
 			By("Verifying RR status")
 			rr := &remediationv1.RemediationRequest{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
 			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
 
 			GinkgoWriter.Printf("✅ BR-ORCH-037: RR completed with NoActionRequired for WorkflowNotNeeded\n")
@@ -362,7 +362,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			spName := fmt.Sprintf("sp-%s", rrName)
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
@@ -370,12 +370,12 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			Eventually(func() error {
 				ai := &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating AIAnalysis completion requiring approval (confidence 60-79%)")
 			ai := &aianalysisv1.AIAnalysis{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = "Completed"
 			ai.Status.ApprovalRequired = true
@@ -395,7 +395,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			By("Waiting for RR to transition to AwaitingApproval")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
 				return string(rr.Status.OverallPhase)
@@ -405,7 +405,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			rarName := fmt.Sprintf("rar-%s", rrName)
 			rar := &remediationv1.RemediationApprovalRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
 			}, timeout, interval).Should(Succeed())
 
 			By("Verifying RAR spec")
@@ -425,7 +425,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			spName := fmt.Sprintf("sp-%s", rrName)
 			Eventually(func() error {
 				sp := &signalprocessingv1.SignalProcessing{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 			}, timeout, interval).Should(Succeed())
 			Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
@@ -433,11 +433,11 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			aiName := fmt.Sprintf("ai-%s", rrName)
 			Eventually(func() error {
 				ai := &aianalysisv1.AIAnalysis{}
-				return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 			}, timeout, interval).Should(Succeed())
 
 			ai := &aianalysisv1.AIAnalysis{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 			ai.Status.Phase = "Completed"
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below threshold"
@@ -456,11 +456,11 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			rarName := fmt.Sprintf("rar-%s", rrName)
 			rar := &remediationv1.RemediationApprovalRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
 			}, timeout, interval).Should(Succeed())
 
 			By("Approving the RemediationApprovalRequest")
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)).To(Succeed())
 			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
 			rar.Status.DecidedBy = "test-admin@kubernaut.ai"
 			rar.Status.DecisionMessage = "Approved for testing"
@@ -471,7 +471,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			By("Waiting for RR to transition to Executing")
 			Eventually(func() string {
 				rr := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 					return ""
 				}
 				return string(rr.Status.OverallPhase)
@@ -496,7 +496,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		spName := fmt.Sprintf("sp-%s", rrName)
 		Eventually(func() error {
 			sp := &signalprocessingv1.SignalProcessing{}
-			return k8sClient.Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: namespace}, sp)
 		}, timeout, interval).Should(Succeed())
 		Expect(updateSPStatus(namespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
 
@@ -504,11 +504,11 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {
 			ai := &aianalysisv1.AIAnalysis{}
-			return k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)
 		}, timeout, interval).Should(Succeed())
 
 		ai := &aianalysisv1.AIAnalysis{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
+		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: namespace}, ai)).To(Succeed())
 		ai.Status.Phase = "Completed"
 		ai.Status.ApprovalRequired = true
 		ai.Status.ApprovalReason = "Confidence below threshold"
@@ -526,7 +526,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		By("Waiting for RR to reach AwaitingApproval")
 		Eventually(func() string {
 			rr := &remediationv1.RemediationRequest{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 				return ""
 			}
 			return string(rr.Status.OverallPhase)
@@ -536,7 +536,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		rarName := fmt.Sprintf("rar-%s", rrName)
 		rar := &remediationv1.RemediationApprovalRequest{}
 		Eventually(func() error {
-			return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
 		}, timeout, interval).Should(Succeed())
 
 		By("Deleting the RAR to simulate accidental deletion")
@@ -544,7 +544,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 		By("Verifying RAR deletion")
 		Eventually(func() bool {
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
 			return errors.IsNotFound(err)
 		}, timeout, interval).Should(BeTrue(), "RAR should be deleted")
 
@@ -553,7 +553,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		// Logs should show: "RemediationApprovalRequest not found, will be created by approval handler"
 		Consistently(func() remediationv1.RemediationPhase {
 			rr := &remediationv1.RemediationRequest{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
+			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr); err != nil {
 				return ""
 			}
 			return rr.Status.OverallPhase
@@ -563,7 +563,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		By("Verifying RR doesn't crash or error out")
 		// Final check: RR should still be healthy after RAR deletion
 		rr := &remediationv1.RemediationRequest{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
+		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, rr)).To(Succeed())
 		Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval))
 		// Message should indicate waiting for approval (not an error state)
 		Expect(rr.Status.Message).ToNot(ContainSubstring("error"))

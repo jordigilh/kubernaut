@@ -88,7 +88,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 			// BEHAVIOR: Status populated during delivery lifecycle
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -100,7 +100,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 
 			// CORRECTNESS: Status fields provide accurate observability
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify observable metrics in status
@@ -161,7 +161,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 			// BEHAVIOR: Delivery observable in status
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -174,7 +174,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 
 			// CORRECTNESS: Attempt tracking observable
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(freshNotif.Status.TotalAttempts).To(BeNumerically(">=", 1),
@@ -229,7 +229,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 			// BEHAVIOR: Delivery completes and timing is observable
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -241,7 +241,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 
 			// CORRECTNESS: Timing information observable
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify timing observability
@@ -315,7 +315,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 			// BEHAVIOR: Multi-channel delivery observable
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -330,7 +330,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 
 			// CORRECTNESS: Status provides channel-level visibility
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			totalDeliveries := freshNotif.Status.SuccessfulDeliveries + freshNotif.Status.FailedDeliveries
@@ -388,7 +388,7 @@ var _ = Describe("Category 12: Observability & Status", Label("integration", "ob
 			// Watch for phase transitions
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)

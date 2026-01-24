@@ -103,7 +103,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -193,7 +193,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -295,7 +295,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -392,7 +392,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -407,7 +407,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 
 				// Count successes
 				notif := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}
@@ -481,7 +481,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -537,7 +537,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			// DD-TEST-002: Test isolation - only check current test namespace
 			Eventually(func() int {
 				list := &notificationv1alpha1.NotificationRequestList{}
-				err := k8sClient.List(ctx, list, client.InNamespace(testNamespace))
+				err := k8sManager.GetAPIReader().List(ctx, list, client.InNamespace(testNamespace))
 				if err != nil {
 					return -1
 				}
@@ -622,7 +622,7 @@ var _ = Describe("Category 11: Resource Management", Label("integration", "resou
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)

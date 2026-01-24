@@ -109,7 +109,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Retrieve and verify labels are preserved
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
@@ -179,7 +179,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 				// Verify label is set correctly
 				created := &notificationv1alpha1.NotificationRequest{}
 				Eventually(func() string {
-					_ = k8sClient.Get(ctx, types.NamespacedName{
+					_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, created)
@@ -275,7 +275,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 			// Verify all labels are preserved after processing
 			processed := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      notifName,
 				Namespace: testNamespace,
 			}, processed)
@@ -334,7 +334,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 			// Verify skip-reason label is NOT present
 			processed := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 				Name:      notifName,
 				Namespace: testNamespace,
 			}, processed)
@@ -396,7 +396,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 			// Retrieve
 			created := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, created)
