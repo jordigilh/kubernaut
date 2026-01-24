@@ -220,13 +220,13 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
-		var slackEvent *ogenclient.AuditEvent
-		Eventually(func() bool {
-			// Flush audit buffer on each retry to ensure events are written to DataStorage
-			_ = realAuditStore.Flush(queryCtx)
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
+			var slackEvent *ogenclient.AuditEvent
+			Eventually(func() bool {
+				// Flush audit buffer on each retry to ensure events are written to DataStorage
+				_ = realAuditStore.Flush(queryCtx)
 
-			events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 201
+				events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 201
 				if len(events) > 0 {
 					slackEvent = &events[0]
 					return true

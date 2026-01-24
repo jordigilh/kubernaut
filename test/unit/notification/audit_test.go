@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
@@ -377,14 +378,15 @@ var _ = Describe("Audit Helpers", func() {
 
 		Context("when RemediationID is missing", func() {
 			It("should use notification UID as correlation_id fallback", func() {
-				// Edge Case: Missing correlation ID in metadata
+				// Edge Case: Missing correlation ID (DD-AUDIT-CORRELATION-002)
+				notification.Spec.RemediationRequestRef = nil // No RemediationRequestRef
 				notification.Spec.Metadata = map[string]string{} // No remediationRequestName
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(event.CorrelationID).To(Equal(string(notification.UID)),
-					"Correlation ID MUST fallback to notification.UID when remediationRequestName is empty (per ADR-032)")
+					"Correlation ID MUST fallback to notification.UID when RemediationRequestRef is nil (per DD-AUDIT-CORRELATION-002)")
 			})
 		})
 
@@ -428,7 +430,8 @@ var _ = Describe("Audit Helpers", func() {
 			It("should use notification UID as correlation_id fallback", func() {
 				// Edge Case: nil Metadata (different from empty map)
 				// BEHAVIOR: Event creation succeeds
-				// CORRECTNESS: correlation_id falls back to notification.UID (per ADR-032)
+				// CORRECTNESS: correlation_id falls back to notification.UID (per DD-AUDIT-CORRELATION-002)
+				notification.Spec.RemediationRequestRef = nil // No RemediationRequestRef
 				notification.Spec.Metadata = nil // nil, not map[string]string{}
 
 				event, err := helpers.CreateMessageSentEvent(notification, "slack")
@@ -436,7 +439,7 @@ var _ = Describe("Audit Helpers", func() {
 				Expect(err).ToNot(HaveOccurred(),
 					"BEHAVIOR: Event creation should succeed with nil Metadata")
 				Expect(event.CorrelationID).To(Equal(string(notification.UID)),
-					"CORRECTNESS: Correlation ID MUST fallback to notification.UID when Metadata is nil (per ADR-032)")
+					"CORRECTNESS: Correlation ID MUST fallback to notification.UID when RemediationRequestRef is nil (per DD-AUDIT-CORRELATION-002)")
 			})
 		})
 
@@ -700,6 +703,13 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 			Namespace: "default",
 		},
 		Spec: notificationv1alpha1.NotificationRequestSpec{
+			// DD-AUDIT-CORRELATION-002: RemediationRequestRef is used for correlation_id
+			RemediationRequestRef: &corev1.ObjectReference{
+				APIVersion: "remediation.kubernaut.ai/v1",
+				Kind:       "RemediationRequest",
+				Name:       "remediation-123",
+				Namespace:  "default",
+			},
 			Type:     notificationv1alpha1.NotificationTypeSimple,
 			Priority: notificationv1alpha1.NotificationPriorityCritical,
 			Subject:  "Test Alert: Database Connection Failed",
@@ -726,6 +736,8 @@ func createTestNotification() *notificationv1alpha1.NotificationRequest {
 func createTestNotificationWithID(id int) *notificationv1alpha1.NotificationRequest {
 	notification := createTestNotification()
 	notification.Name = fmt.Sprintf("test-notification-%d", id)
+	// DD-AUDIT-CORRELATION-002: Update RemediationRequestRef.Name (not metadata)
+	notification.Spec.RemediationRequestRef.Name = fmt.Sprintf("remediation-%d", id)
 	notification.Spec.Metadata["remediationRequestName"] = fmt.Sprintf("remediation-%d", id)
 	return notification
 }
