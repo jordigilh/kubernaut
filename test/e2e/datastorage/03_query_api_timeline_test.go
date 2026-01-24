@@ -202,37 +202,72 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("✅ Total: 10 audit events created")
 
 		// Step 2: Query by correlation_id → verify all 10 events returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 2: Query by correlation_id...")
-	// DD-API-001: Use typed OpenAPI client for queries
-	queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	// Status code comparison removed - queryResp is *QueryAuditEventsOK, not an int
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		var allEventsStep2 []dsgen.AuditEvent
+		offset := 0
+		limit := 100
 
-		data := queryResp.Data
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
+			}
+
+			allEventsStep2 = append(allEventsStep2, queryResp.Data...)
+
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data := allEventsStep2
 		// Note: Self-auditing may add extra events (datastorage.audit.written)
 		// We expect at least 10 events (the ones we created), but may have more
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events")
 		testLogger.Info("✅ Query by correlation_id returned events", "count", len(data))
 
 		// Step 3: Query by event_category=gateway (ADR-034) → verify only Gateway events returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 3: Query by event_category=gateway...")
-		// DD-API-001: Use typed OpenAPI client with event_category filter
-	gatewayCategory := "gateway"
-	queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-		EventCategory: dsgen.NewOptString(gatewayCategory),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		gatewayCategory := "gateway"
+		var allEventsStep3 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
 
-		data = queryResp.Data
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventCategory: dsgen.NewOptString(gatewayCategory),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
+			}
+
+			allEventsStep3 = append(allEventsStep3, queryResp.Data...)
+
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep3
 		Expect(data).To(HaveLen(4), "Should return 4 Gateway events")
 
 		// Verify all events are from gateway event_category (ADR-034)
@@ -242,19 +277,37 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("✅ Query by event_category=gateway returned 4 events")
 
 		// Step 4: Query by event_type → verify only matching events returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 4: Query by event_type=analysis.analysis.completed...")
-		// DD-API-001: Use typed OpenAPI client with event_type filter
-	eventType := "analysis.analysis.completed"
-	queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-		EventType:     dsgen.NewOptString(eventType),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		eventType := "analysis.analysis.completed"
+		var allEventsStep4 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
 
-		data = queryResp.Data
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				EventType:     dsgen.NewOptString(eventType),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
+			}
+
+			allEventsStep4 = append(allEventsStep4, queryResp.Data...)
+
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep4
 		Expect(data).To(HaveLen(3), "Should return 3 AIAnalysis events")
 
 		// Verify all events have correct event_type
@@ -264,41 +317,60 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("✅ Query by event_type returned 3 events")
 
 		// Step 5: Query by time_range → verify only events in range returned
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
 		testLogger.Info("🔍 Step 5: Query by time_range...")
 		endTime := time.Now()
-		// DD-API-001: Use typed OpenAPI client with time range filters (Since/Until)
 		startTimeStr := startTime.Format(time.RFC3339)
 		endTimeStr := endTime.Format(time.RFC3339)
-	queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-		Since:         dsgen.NewOptString(startTimeStr),
-		Until:         dsgen.NewOptString(endTimeStr),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		var allEventsStep5 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
 
-		data = queryResp.Data
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Since:         dsgen.NewOptString(startTimeStr),
+				Until:         dsgen.NewOptString(endTimeStr),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
+			}
+
+			allEventsStep5 = append(allEventsStep5, queryResp.Data...)
+
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep5
 		Expect(len(data)).To(BeNumerically(">=", 10), "Should return at least 10 events within time range")
 		testLogger.Info("✅ Query by time_range returned events", "count", len(data))
 
 		// Step 6: Query with pagination (limit=5, offset=0) → verify first 5 events
+		// NOTE: This step explicitly tests the pagination API feature (not a bug fix)
 		testLogger.Info("🔍 Step 6: Query with pagination (limit=5, offset=0)...")
 		// DD-API-001: Use typed OpenAPI client with pagination parameters
-		limit := 5
-	offset := 0
-	queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-		Limit:         dsgen.NewOptInt(limit),
-		Offset:        dsgen.NewOptInt(offset),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		limit = 5
+		offset = 0
+		queryRespStep6, errStep6 := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Limit:         dsgen.NewOptInt(limit),
+			Offset:        dsgen.NewOptInt(offset),
+		})
+		Expect(errStep6).ToNot(HaveOccurred())
+		// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
+		Expect(queryRespStep6).ToNot(BeNil())
+		Expect(queryRespStep6.Data).ToNot(BeNil())
 
-		data = queryResp.Data
+		data = queryRespStep6.Data
 		Expect(data).To(HaveLen(5), "Should return first 5 events")
 
 		// Store first event ID for comparison
@@ -306,20 +378,21 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		testLogger.Info("✅ Pagination (limit=5, offset=0) returned 5 events")
 
 		// Step 7: Query with pagination (limit=5, offset=5) → verify next 5 events
+		// NOTE: This step explicitly tests the pagination API feature (not a bug fix)
 		testLogger.Info("🔍 Step 7: Query with pagination (limit=5, offset=5)...")
-	// DD-API-001: Use typed OpenAPI client with offset pagination
-	offset = 5
-	queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-		Limit:         dsgen.NewOptInt(limit),
-		Offset:        dsgen.NewOptInt(offset),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		// DD-API-001: Use typed OpenAPI client with offset pagination
+		offset = 5
+		queryRespStep7, errStep7 := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+			CorrelationID: dsgen.NewOptString(correlationID),
+			Limit:         dsgen.NewOptInt(limit),
+			Offset:        dsgen.NewOptInt(offset),
+		})
+		Expect(errStep7).ToNot(HaveOccurred())
+		// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
+		Expect(queryRespStep7).ToNot(BeNil())
+		Expect(queryRespStep7.Data).ToNot(BeNil())
 
-		data = queryResp.Data
+		data = queryRespStep7.Data
 		Expect(data).To(HaveLen(5), "Should return next 5 events")
 
 		// Verify second page has different events
@@ -327,18 +400,36 @@ var _ = Describe("BR-DS-002: Query API Performance - Multi-Filter Retrieval (<5s
 		Expect(secondPageFirstEventID).ToNot(Equal(firstPageFirstEventID), "Second page should have different events")
 		testLogger.Info("✅ Pagination (limit=5, offset=5) returned next 5 events")
 
-	// Step 8: Verify chronological order
-	testLogger.Info("🔍 Step 8: Verifying chronological order...")
-	// DD-API-001: Use typed OpenAPI client for chronological verification
-	queryResp, err = dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-		CorrelationID: dsgen.NewOptString(correlationID),
-	})
-	Expect(err).ToNot(HaveOccurred())
-	// Note: ogen client returns typed response struct on success (HTTP 200 implicit)
-	Expect(queryResp).ToNot(BeNil())
-	Expect(queryResp.Data).ToNot(BeNil())
+		// Step 8: Verify chronological order
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS use pagination
+		testLogger.Info("🔍 Step 8: Verifying chronological order...")
+		var allEventsStep8 []dsgen.AuditEvent
+		offset = 0
+		limit = 100
 
-		data = queryResp.Data
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(queryResp).ToNot(BeNil())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
+			}
+
+			allEventsStep8 = append(allEventsStep8, queryResp.Data...)
+
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		data = allEventsStep8
 
 		// Sort events by timestamp (API doesn't guarantee order)
 		sort.Slice(data, func(i, j int) bool {

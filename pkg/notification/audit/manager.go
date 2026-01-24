@@ -107,19 +107,14 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 		return nil, fmt.Errorf("channel cannot be empty")
 	}
 
-	// Extract correlation ID (BR-NOT-064: Use remediation_id for tracing)
-	// Priority: RemediationRequestRef.Name > Metadata["remediationRequestName"] > Notification UID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
+	// MANDATORY: Use RemediationRequest.Name as correlation_id (not UID)
 	correlationID := ""
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
-		// Primary: Use dedicated RemediationRequestRef field (proper design)
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
-	} else if notification.Spec.Metadata != nil {
-		// Fallback: Legacy metadata field (backward compatibility)
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Final fallback: Notification UID for standalone notifications
-		// UID ensures unique correlation across notifications (per ADR-032)
+	} else {
+		// Fallback: Notification UID for standalone notifications (not part of remediation workflow)
 		correlationID = string(notification.UID)
 	}
 
@@ -181,14 +176,13 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 		return nil, fmt.Errorf("channel cannot be empty")
 	}
 
-	// Extract correlation ID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications
 		correlationID = string(notification.UID)
 	}
 
@@ -248,14 +242,13 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 		return nil, fmt.Errorf("notification cannot be nil")
 	}
 
-	// Extract correlation ID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications
 		correlationID = string(notification.UID)
 	}
 
@@ -308,14 +301,13 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 		return nil, fmt.Errorf("notification cannot be nil")
 	}
 
-	// Extract correlation ID
+	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	correlationID := ""
-	if notification.Spec.Metadata != nil {
-		correlationID = notification.Spec.Metadata["remediationRequestName"]
-	}
-	if correlationID == "" {
-		// Fallback to notification UID if remediationRequestName not found
-		// UID ensures unique correlation across notifications (per ADR-032)
+	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
+		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
+		correlationID = notification.Spec.RemediationRequestRef.Name
+	} else {
+		// Fallback: Notification UID for standalone notifications
 		correlationID = string(notification.UID)
 	}
 

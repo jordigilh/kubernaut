@@ -73,20 +73,42 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 		}
 
 		eventCategory := "orchestration"
+
+		// PAGINATION FIX (2026-01-24): Fetch ALL pages to avoid missing events under concurrent load
+		// Root Cause: Under high load (12 procs), 100+ events can exist, causing first-page-only
+		//             queries to miss events beyond position 100.
+		// Reference: test/AUDIT_QUERY_PAGINATION_STANDARDS.md
+		var allEvents []ogenclient.AuditEvent
+		offset := 0
 		limit := 100
 
-		resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
-			CorrelationID: ogenclient.NewOptString(correlationID),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			EventType:     ogenclient.NewOptString(eventType),
-			Limit:         ogenclient.NewOptInt(limit),
-		})
+		for {
+			resp, err := dsClient.QueryAuditEvents(context.Background(), ogenclient.QueryAuditEventsParams{
+				CorrelationID: ogenclient.NewOptString(correlationID),
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				EventType:     ogenclient.NewOptString(eventType),
+				Limit:         ogenclient.NewOptInt(limit),
+				Offset:        ogenclient.NewOptInt(offset),
+			})
 
-		if err != nil {
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
+
+			if resp.Data == nil || len(resp.Data) == 0 {
+				break
+			}
+
+			allEvents = append(allEvents, resp.Data...)
+
+			if len(resp.Data) < limit {
+				break
+			}
+
+			offset += limit
 		}
 
-		return resp.Data, nil
+		return allEvents, nil
 	}
 
 	// Helper to create valid RemediationRequest

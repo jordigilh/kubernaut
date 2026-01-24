@@ -247,16 +247,38 @@ var _ = Describe("BR-DS-001: Audit Event Persistence - Complete Remediation Audi
 		Expect(count).To(BeNumerically(">=", 5), "Should have at least 5 audit events in database")
 		testLogger.Info("✅ All audit events persisted to database", "count", count)
 
-		// Verification: Query via REST API using OpenAPI client
+		// Verification: Query via REST API using OpenAPI client with pagination
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS handle pagination under concurrent load
 		testLogger.Info("🔍 Querying audit trail via REST API...")
-		queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
-			CorrelationID: dsgen.NewOptString(correlationID),
-		})
-		Expect(err).ToNot(HaveOccurred())
-		Expect(queryResp.Data).ToNot(BeNil(), "Query response should have data array")
+		var allEvents []dsgen.AuditEvent
+		offset := 0
+		limit := 100
+
+		for {
+			queryResp, err := dsClient.QueryAuditEvents(ctx, dsgen.QueryAuditEventsParams{
+				CorrelationID: dsgen.NewOptString(correlationID),
+				Limit:         dsgen.NewOptInt(limit),
+				Offset:        dsgen.NewOptInt(offset),
+			})
+			Expect(err).ToNot(HaveOccurred())
+
+			if queryResp.Data == nil || len(queryResp.Data) == 0 {
+				break
+			}
+
+			allEvents = append(allEvents, queryResp.Data...)
+
+			if len(queryResp.Data) < limit {
+				break
+			}
+
+			offset += limit
+		}
+
+		Expect(allEvents).ToNot(BeNil(), "Query response should have data array")
 
 		// Self-auditing creates additional events, so we expect at least 5
-		data := queryResp.Data
+		data := allEvents
 		Expect(len(data)).To(BeNumerically(">=", 5), "Query API should return at least 5 events")
 		testLogger.Info("✅ Query API returned complete audit trail", "event_count", len(data))
 
