@@ -1,8 +1,8 @@
 # Root Cause Analysis: NT Audit Emission Flaky Tests
 
-**Date**: 2026-01-24  
-**Status**: ⚠️ FLAKY (2/117 tests failed on Run 3/3)  
-**Severity**: LOW (pre-existing flakiness, not a regression from cache fixes)  
+**Date**: 2026-01-24
+**Status**: ⚠️ FLAKY (2/117 tests failed on Run 3/3)
+**Severity**: LOW (pre-existing flakiness, not a regression from cache fixes)
 **Related Issue**: None yet
 
 ---
@@ -95,7 +95,7 @@ queryAuditEvents := func(eventType, resourceID string) []ogenclient.AuditEvent {
     if err != nil || resp.Data == nil {
         return nil
     }
-    
+
     // Client-side filtering by resource_id
     var filtered []ogenclient.AuditEvent
     for _, event := range resp.Data {
@@ -186,7 +186,7 @@ queryAuditEvents := func(eventType, resourceID string) []ogenclient.AuditEvent {
     if err != nil || resp.Data == nil {
         return nil
     }
-    
+
     // Client-side filtering (only on FIRST PAGE!)
     var filtered []ogenclient.AuditEvent
     for _, event := range resp.Data {  // ❌ Only loops through first 50!
