@@ -51,6 +51,8 @@ const (
 	EventTypeError = "signalprocessing.error.occurred"
 	// CategorySignalProcessing is the service-level category per ADR-034 v1.2
 	CategorySignalProcessing = "signalprocessing"
+	// EventCategorySignalProcessing is an alias for consistency with other services
+	EventCategorySignalProcessing = CategorySignalProcessing
 )
 
 // AuditClient handles audit event storage using pkg/audit shared library.

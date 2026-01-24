@@ -536,7 +536,7 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 		if rr.Name == excludeName {
 			continue // Skip self
 		}
-		
+
 		// Refetch with APIReader to bypass cache and get fresh status
 		// This prevents false "DuplicateInProgress" blocks due to stale status in cache
 		freshRR := &remediationv1.RemediationRequest{}
@@ -545,7 +545,7 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 			// Fall back to cached status if refetch fails
 			freshRR = rr
 		}
-		
+
 		if !IsTerminalPhase(freshRR.Status.OverallPhase) {
 			logger.V(1).Info("Found active RR with fingerprint",
 				"rr", freshRR.Name,
@@ -586,7 +586,7 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 	// DD-STATUS-001: Refetch each candidate with APIReader to get fresh status
 	for i := range wfeList.Items {
 		wfe := &wfeList.Items[i]
-		
+
 		// Refetch with APIReader to bypass cache and get fresh status
 		// This prevents false "ResourceBusy" blocks due to stale status in cache
 		freshWFE := &workflowexecutionv1.WorkflowExecution{}
@@ -595,7 +595,7 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 			// Fall back to cached status if refetch fails
 			freshWFE = wfe
 		}
-		
+
 		// Check if phase is not terminal (Running, Pending, etc.)
 		// V1.0: Only Completed and Failed are terminal phases
 		if freshWFE.Status.Phase != workflowexecutionv1.PhaseCompleted &&

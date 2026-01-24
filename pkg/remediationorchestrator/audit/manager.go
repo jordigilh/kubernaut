@@ -59,6 +59,11 @@ const (
 	EventTypeApprovalRejected      = "orchestrator.approval.rejected"
 )
 
+// Event category constant (from OpenAPI spec)
+const (
+	EventCategoryOrchestration = "orchestration"
+)
+
 // Event actions for RO audit events (per DD-AUDIT-003)
 const (
 	ActionStarted           = "started"

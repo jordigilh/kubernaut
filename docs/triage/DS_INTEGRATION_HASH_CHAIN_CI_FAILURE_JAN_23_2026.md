@@ -1,9 +1,9 @@
 # DataStorage Integration Test Failure - Hash Chain Verification (CI Run 21303736506)
 
-**Date**: 2026-01-23 (CI Run) / 2026-01-24 (Triage)  
-**Status**: ✅ **RESOLVED** (Fix already committed and pushed)  
-**Severity**: HIGH (1/110 tests failing, SOC2 compliance issue)  
-**CI Run**: [21303736506](https://github.com/jordigilh/kubernaut/actions/runs/21303736506)  
+**Date**: 2026-01-23 (CI Run) / 2026-01-24 (Triage)
+**Status**: ✅ **RESOLVED** (Fix already committed and pushed)
+**Severity**: HIGH (1/110 tests failing, SOC2 compliance issue)
+**CI Run**: [21303736506](https://github.com/jordigilh/kubernaut/actions/runs/21303736506)
 **Job**: DataStorage Integration Tests (61327512855)
 
 ---
@@ -24,7 +24,7 @@ The DataStorage integration test suite failed with **1/110 tests** failing in CI
 
 **File**: `test/integration/datastorage/audit_export_integration_test.go:221`
 
-**Expected**: 5 valid events (100% integrity)  
+**Expected**: 5 valid events (100% integrity)
 **Actual**: 0 valid events (0% integrity)
 
 ---
@@ -108,9 +108,9 @@ func calculateEventHash(previousHash string, event *AuditEvent) (string, error) 
     eventForHashing.EventHash = ""
     eventForHashing.PreviousEventHash = ""
     eventForHashing.EventDate = DateOnly{} // Clear derived field only
-    
+
     // ❌ Legal hold fields NOT cleared here (included in hash)
-    
+
     eventJSON, err := json.Marshal(eventForHashing)
     // ... hash calculation
 }
@@ -126,13 +126,13 @@ func calculateEventHashForVerification(previousHash string, event *AuditEvent) (
     eventCopy.EventHash = ""
     eventCopy.PreviousEventHash = ""
     eventCopy.EventDate = DateOnly{}
-    
+
     // ✅ Legal hold fields WERE cleared in verification
     eventCopy.LegalHold = false
     eventCopy.LegalHoldReason = ""
     eventCopy.LegalHoldPlacedBy = ""
     eventCopy.LegalHoldPlacedAt = nil
-    
+
     eventJSON, err := json.Marshal(&eventCopy)
     // ... hash calculation
 }
@@ -198,9 +198,9 @@ The failure was **purely a code logic issue**, not an infrastructure problem.
 
 ### Commit Details
 
-**Commit**: `f7114cef`  
-**Date**: 2026-01-24  
-**Title**: `fix(datastorage): exclude legal hold fields from hash calculation (SOC2 Gap #8)`  
+**Commit**: `f7114cef`
+**Date**: 2026-01-24
+**Title**: `fix(datastorage): exclude legal hold fields from hash calculation (SOC2 Gap #8)`
 **Status**: ✅ Committed and Pushed
 
 ### Code Changes

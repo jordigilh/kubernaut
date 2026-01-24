@@ -34,6 +34,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
@@ -469,7 +470,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflowexecution" // Per ADR-034 v1.5
+			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var auditEvents []ogenclient.AuditEvent
 			Eventually(func() int {
 				resp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
@@ -580,7 +581,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflowexecution" // Per ADR-034 v1.5
+			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var failedEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
 				resp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
@@ -693,7 +694,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			auditClient, err := ogenclient.NewClient(dataStorageServiceURL)
 			Expect(err).ToNot(HaveOccurred(), "Failed to create OpenAPI audit client")
 
-			eventCategory := "workflowexecution" // Per ADR-034 v1.5
+			eventCategory := weaudit.CategoryWorkflowExecution // Per ADR-034 v1.5
 			var auditEvents []ogenclient.AuditEvent
 			Eventually(func() int {
 				resp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{

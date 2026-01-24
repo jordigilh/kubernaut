@@ -232,6 +232,20 @@ func createProcessSchema(db *sqlx.DB, processNum int) (string, error) {
 	}
 	GinkgoWriter.Printf("  ✅ [Process %d] Created FK constraint: fk_audit_events_parent\n", processNum)
 
+	// UNIQUE constraint: remediation_workflow_catalog (workflow_name, version)
+	// Prevents duplicate workflows with same name and version (Migration 019)
+	// DD-WORKFLOW-012: Workflow immutability enforcement
+	uniqueConstraintSQL := fmt.Sprintf(`
+		ALTER TABLE %s.remediation_workflow_catalog
+		ADD CONSTRAINT uq_workflow_name_version UNIQUE (workflow_name, version)
+	`, schemaName)
+
+	_, err = db.Exec(uniqueConstraintSQL)
+	if err != nil {
+		return "", fmt.Errorf("failed to create UNIQUE constraint uq_workflow_name_version: %w", err)
+	}
+	GinkgoWriter.Printf("  ✅ [Process %d] Created UNIQUE constraint: uq_workflow_name_version\n", processNum)
+
 	// ========================================
 	// SOC2 Gap #8: Copy Trigger Functions
 	// ========================================

@@ -2537,12 +2537,12 @@ func queryAuditEvents(correlationID string) ([]dsgen.AuditEvent, error) {
 		return nil, fmt.Errorf("failed to create OpenAPI client: %w", err)
 	}
 
-	// Query audit events filtered by correlation_id to avoid getting events from other parallel tests
+	// Query audit events filtered by correlation_id + event_category to avoid getting events from other parallel tests
+	// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS filter by correlationID + eventCategory
 	// In parallel E2E runs, there can be 100+ events from other tests, so filtering is critical
-	limit := 100
 	params := dsgen.QueryAuditEventsParams{
-		Limit:         dsgen.NewOptInt(limit),
 		CorrelationID: dsgen.NewOptString(correlationID),
+		EventCategory: dsgen.NewOptString(spaudit.CategorySignalProcessing),
 	}
 
 	// Call OpenAPI-generated query method

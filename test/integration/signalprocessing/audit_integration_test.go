@@ -82,9 +82,11 @@ func flushAuditStoreAndWait() {
 
 // countAuditEvents counts events by type and correlation ID via HTTP API
 // Per AIAnalysis proven pattern: Enhanced logging for debugging parallel execution issues
+// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS filter by eventType + eventCategory + correlationID
 func countAuditEvents(eventType, correlationID string) int {
 	params := ogenclient.QueryAuditEventsParams{
 		EventType:     ogenclient.NewOptString(eventType),
+		EventCategory: ogenclient.NewOptString(spaudit.CategorySignalProcessing),
 		CorrelationID: ogenclient.NewOptString(correlationID),
 	}
 
@@ -124,9 +126,11 @@ func countAuditEventsByCategory(category, correlationID string) int {
 }
 
 // getLatestAuditEvent retrieves the most recent event by type and correlation ID
+// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS filter by eventType + eventCategory + correlationID
 func getLatestAuditEvent(eventType, correlationID string) (*ogenclient.AuditEvent, error) {
 	params := ogenclient.QueryAuditEventsParams{
 		EventType:     ogenclient.NewOptString(eventType),
+		EventCategory: ogenclient.NewOptString(spaudit.CategorySignalProcessing),
 		CorrelationID: ogenclient.NewOptString(correlationID),
 		Limit:         ogenclient.NewOptInt(1),
 	}
@@ -145,12 +149,12 @@ func getLatestAuditEvent(eventType, correlationID string) (*ogenclient.AuditEven
 // getFirstAuditEvent retrieves the earliest event by type and correlation ID
 // Note: For now, we query all events and return the last one (earliest by timestamp)
 // TODO: Add sort_order parameter to DataStorage API for more efficient queries
+// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS filter by eventType + eventCategory + correlationID
 func getFirstAuditEvent(eventType, correlationID string) (*ogenclient.AuditEvent, error) {
 	params := ogenclient.QueryAuditEventsParams{
 		EventType:     ogenclient.NewOptString(eventType),
+		EventCategory: ogenclient.NewOptString(spaudit.CategorySignalProcessing),
 		CorrelationID: ogenclient.NewOptString(correlationID),
-		// Query more events to ensure we get the earliest one
-		Limit: ogenclient.NewOptInt(100),
 	}
 
 	resp, err := dsClient.QueryAuditEvents(ctx, params)
@@ -243,8 +247,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
-			By("8. Validate audit event fields")
-			Expect(string(event.EventCategory)).To(Equal("signalprocessing"), "Event category must match")
+		By("8. Validate audit event fields")
+		Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing), "Event category must match")
 			Expect(event.EventAction).To(Equal("processed"), "Event action must match")
 			Expect(string(event.EventOutcome)).To(Equal("success"), "Event outcome must be success")
 			actorType, _ := event.ActorType.Get()
@@ -335,7 +339,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
-			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing))
 			Expect(event.EventAction).To(Equal("classification"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 
@@ -424,7 +428,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
-			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing))
 			Expect(event.EventAction).To(Equal("classification"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 
@@ -539,7 +543,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 			GinkgoWriter.Printf("\n📊 Found 1 enrichment audit event\n")
 
-			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing))
 			Expect(event.EventAction).To(Equal("enrichment"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 
@@ -642,7 +646,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
 			By("10. Validate phase transition event structure")
-			Expect(string(event.EventCategory)).To(Equal("signalprocessing"))
+			Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing))
 			Expect(event.EventAction).To(Equal("phase_transition"))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 

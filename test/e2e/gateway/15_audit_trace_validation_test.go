@@ -173,7 +173,7 @@ var _ = Describe("Test 15: Audit Trace Validation (DD-AUDIT-003)", Ordered, func
 		Eventually(func() int {
 			// Query using OpenAPI client with typed parameters
 			// Note: No "Service" parameter - use EventCategory instead
-			eventCategory := "gateway"
+			eventCategory := gateway.CategoryGateway
 			resp, err := auditClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
 				EventCategory: dsgen.NewOptString(eventCategory),
 				CorrelationID: dsgen.NewOptString(correlationID),
