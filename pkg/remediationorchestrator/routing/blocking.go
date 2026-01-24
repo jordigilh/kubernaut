@@ -278,7 +278,8 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	rr *remediationv1.RemediationRequest,
 ) (*BlockingCondition, error) {
 	// Find active RR with same fingerprint (excluding self)
-	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Spec.SignalFingerprint, rr.Name)
+	// Multi-tenant isolation: Pass rr.Namespace to scope search to current namespace
+	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check for duplicate: %w", err)
 	}
@@ -506,8 +507,10 @@ func (r *RoutingEngine) CalculateExponentialBackoff(consecutiveFailures int32) t
 // Uses field index on spec.signalFingerprint for O(1) lookup (configured in Day 1).
 //
 // Reference: BR-ORCH-042 (Fingerprint Field Index)
+// Multi-Tenant Isolation: Scoped to namespace parameter for tenant isolation (BR-ORCH-042)
 func (r *RoutingEngine) FindActiveRRForFingerprint(
 	ctx context.Context,
+	namespace string,
 	fingerprint string,
 	excludeName string,
 ) (*remediationv1.RemediationRequest, error) {
@@ -515,9 +518,10 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 
 	// List all RRs with matching fingerprint using field index
 	// NOTE: Must use cached client for field index queries (indexes not available on APIReader)
+	// CRITICAL: Use namespace parameter (not r.namespace) for multi-tenant isolation
 	rrList := &remediationv1.RemediationRequestList{}
 	listOpts := []client.ListOption{
-		client.InNamespace(r.namespace),
+		client.InNamespace(namespace),
 		client.MatchingFields{"spec.signalFingerprint": fingerprint},
 	}
 
