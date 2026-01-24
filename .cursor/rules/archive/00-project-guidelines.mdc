@@ -1,8 +1,6 @@
 ---
-alwaysApply: true
-description: "Mandatory project guidelines and development principles for kubernaut"
+alwaysApply: false
 ---
-
 # Project Guidelines - Mandatory Development Principles
 
 ## 🚨 **ALWAYS FOLLOW THESE PRINCIPLES**

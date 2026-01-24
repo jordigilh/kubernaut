@@ -1,7 +1,6 @@
 ---
-alwaysApply: true
+alwaysApply: false
 ---
-
 # AI Assistant Behavioral Constraints for TDD Enforcement - COMPREHENSIVE
 
 ## 🚨 **PRIORITY HIERARCHY**
