@@ -23,8 +23,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -78,9 +80,16 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	})
 
 	// Helper function to query audit events from Data Storage REST API
-	// Note: OpenAPI spec doesn't have resource_id query param, so we filter client-side
-	queryAuditEvents := func(eventType, resourceID string) []ogenclient.AuditEvent {
+	//
+	// BUG FIX (2026-01-24): Use proper query filters instead of pagination
+	// Root Cause: Querying by event_type only returns ALL events from ALL tests (200+ under load).
+	//             Client-side filtering by resource_id was a workaround for missing correlation_id filter.
+	// Fix: Query by correlation_id (notification UID) + event_type + event_category.
+	// Result: Returns 1-2 events per test, no pagination needed ✅
+	// Authority: docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md
+	queryAuditEvents := func(eventType, correlationID string) []ogenclient.AuditEvent {
 		params := ogenclient.QueryAuditEventsParams{
+			CorrelationID: ogenclient.NewOptString(correlationID), // ← CRITICAL: Isolates test data
 			EventType:     ogenclient.NewOptString(eventType),
 			EventCategory: ogenclient.NewOptString("notification"),
 		}
@@ -89,14 +98,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			return nil
 		}
 
-		// Client-side filtering by resource_id (OpenAPI spec gap)
-		var filtered []ogenclient.AuditEvent
-		for _, event := range resp.Data {
-			if event.ResourceID.IsSet() && event.ResourceID.Value == resourceID {
-				filtered = append(filtered, event)
-			}
-		}
-		return filtered
+		return resp.Data // Returns 1-2 events, no pagination needed
 	}
 
 	// ========================================
@@ -106,8 +108,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	Context("BR-NOT-062: Audit on Successful Delivery", func() {
 		It("should emit notification.message.sent when Console delivery succeeds", func() {
 			// Create unique notification name for this test
-			testID := fmt.Sprintf("audit-sent-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-console-success-%s", testID[:8])
+			// Per DD-AUDIT-CORRELATION-002: Use UUID for uniqueness (not UnixNano())
+			testID := fmt.Sprintf("audit-sent-%s", uuid.New().String()[:8])
+			notificationName := fmt.Sprintf("audit-console-success-%s", testID)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -137,21 +140,21 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
-		// Per DD-AUDIT-003: Integration tests MUST use real Data Storage service (no mocks)
-		var sentEvent *ogenclient.AuditEvent
-		Eventually(func() bool {
-			// Flush audit buffer on each retry to ensure events are written to DataStorage
-			_ = realAuditStore.Flush(queryCtx)
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for sent event
+			// Per DD-AUDIT-003: Integration tests MUST use real Data Storage service (no mocks)
+			var sentEvent *ogenclient.AuditEvent
+			Eventually(func() bool {
+				// Flush audit buffer on each retry to ensure events are written to DataStorage
+				_ = realAuditStore.Flush(queryCtx)
 
-			events := queryAuditEvents("notification.message.sent", notificationName)
-			if len(events) > 0 {
-				sentEvent = &events[0]
-				return true
-			}
-			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Controller should emit notification.message.sent audit event to Data Storage")
+				events := queryAuditEvents("notification.message.sent", string(notification.UID))
+				if len(events) > 0 {
+					sentEvent = &events[0]
+					return true
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should emit notification.message.sent audit event to Data Storage")
 
 			Expect(sentEvent).ToNot(BeNil(), "Controller must emit 'notification.message.sent' event (DD-AUDIT-003)")
 
@@ -179,8 +182,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	Context("BR-NOT-062: Audit on Slack Delivery", func() {
 		It("should emit notification.message.sent when Slack delivery succeeds", func() {
 			// Create unique notification name
-			testID := fmt.Sprintf("audit-slack-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-slack-success-%s", testID[:8])
+			// Per DD-AUDIT-CORRELATION-002: Use UUID for uniqueness (not UnixNano())
+			testID := fmt.Sprintf("audit-slack-%s", uuid.New().String()[:8])
+			notificationName := fmt.Sprintf("audit-slack-success-%s", testID)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -197,8 +201,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test-channel"},
 					},
-					Metadata: map[string]string{
-						"remediationRequestName": testID,
+					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: testID, // RR name is universal correlation ID
 					},
 				},
 			}
@@ -221,14 +226,14 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// Flush audit buffer on each retry to ensure events are written to DataStorage
 			_ = realAuditStore.Flush(queryCtx)
 
-			events := queryAuditEvents("notification.message.sent", notificationName)
-			if len(events) > 0 {
-				slackEvent = &events[0]
-				return true
-			}
-			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Controller should emit audit event for Slack delivery to Data Storage")
+			events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 201
+				if len(events) > 0 {
+					slackEvent = &events[0]
+					return true
+				}
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Controller should emit audit event for Slack delivery to Data Storage")
 
 			Expect(slackEvent).ToNot(BeNil(), "Controller must emit audit event for Slack delivery")
 
@@ -252,9 +257,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	Context("BR-NOT-064: Correlation ID Propagation", func() {
 		It("should include remediationRequestName as correlation_id in audit events", func() {
 			// Create notification with specific remediation context
-			testID := fmt.Sprintf("audit-corr-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-correlation-%s", testID[:8])
-			remediationID := fmt.Sprintf("remediation-%s", testID[:12])
+			// Per DD-AUDIT-CORRELATION-002: Use UUID for uniqueness (not UnixNano())
+			shortUUID := uuid.New().String()[:8]
+			notificationName := fmt.Sprintf("audit-correlation-%s", shortUUID)
+			remediationID := fmt.Sprintf("rr-test-%s", shortUUID) // DD-AUDIT-CORRELATION-002 format
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -268,8 +274,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Subject:  "Correlation ID Test",
 					Body:     "Testing correlation_id propagation to audit events",
 					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
-					Metadata: map[string]string{
-						"remediationRequestName": remediationID, // Used as correlation_id
+					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: remediationID, // RR name is universal correlation ID
 					},
 				},
 			}
@@ -289,12 +296,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check correlation_id matches remediationID
 			var corrEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.sent", notificationName)
-				for _, e := range events {
-					if e.CorrelationID == remediationID {
-						corrEvent = &e
-						return true
-					}
+				events := queryAuditEvents("notification.message.sent", remediationID)
+				if len(events) > 0 {
+					corrEvent = &events[0]
+					return true
 				}
 				return false
 			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
@@ -315,8 +320,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	Context("BR-NOT-062: Multi-Channel Audit Events", func() {
 		It("should emit separate audit event for each channel delivery", func() {
 			// Create notification with multiple channels
-			testID := fmt.Sprintf("audit-multi-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-multichannel-%s", testID[:8])
+			// Per DD-AUDIT-CORRELATION-002: Use UUID for uniqueness (not UnixNano())
+			shortUUID := uuid.New().String()[:8]
+			testID := fmt.Sprintf("rr-multichannel-%s", shortUUID) // DD-AUDIT-CORRELATION-002 format
+			notificationName := fmt.Sprintf("audit-multichannel-%s", shortUUID)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -336,8 +343,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test-channel"},
 					},
-					Metadata: map[string]string{
-						"remediationRequestName": testID,
+					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: testID, // RR name is universal correlation ID
 					},
 				},
 			}
@@ -354,15 +362,15 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for events from each channel
-		Eventually(func() int {
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for events from each channel
 			// Flush audit buffer on each retry to ensure events are written to DataStorage
 			_ = realAuditStore.Flush(queryCtx)
+			Eventually(func() int {
 
-			events := queryAuditEvents("notification.message.sent", notificationName)
-			return len(events)
-		}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
-			"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
+				events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 338
+				return len(events)
+			}, 10*time.Second, 500*time.Millisecond).Should(Equal(2),
+				"Controller should emit exactly 2 audit events (1 per channel: Console + Slack) to Data Storage (DD-AUDIT-003, DD-TESTING-001)")
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, notification)).To(Succeed())
@@ -374,8 +382,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 	// ========================================
 	Context("ADR-034: Field Compliance in Controller Events", func() {
 		It("should emit events with all ADR-034 required fields", func() {
-			testID := fmt.Sprintf("audit-adr034-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-adr034-%s", testID[:8])
+			// Per DD-AUDIT-CORRELATION-002: Use UUID for uniqueness (not UnixNano())
+			shortUUID := uuid.New().String()[:8]
+			testID := fmt.Sprintf("rr-adr034-%s", shortUUID) // DD-AUDIT-CORRELATION-002 format
+			notificationName := fmt.Sprintf("audit-adr034-%s", shortUUID)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -389,8 +399,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Subject:  "ADR-034 Compliance Test",
 					Body:     "Testing ADR-034 field compliance",
 					Channels: []notificationv1alpha1.Channel{notificationv1alpha1.ChannelConsole},
-					Metadata: map[string]string{
-						"remediationRequestName": testID,
+					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: testID, // RR name is universal correlation ID
 					},
 				},
 			}
@@ -407,29 +418,29 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 				return n.Status.Phase
 			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
-		// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check ADR-034 fields
-		var validEvent *ogenclient.AuditEvent
-		Eventually(func() bool {
-			// Flush audit buffer on each retry to ensure events are written to DataStorage
-			_ = realAuditStore.Flush(queryCtx)
+			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage and check ADR-034 fields
+			var validEvent *ogenclient.AuditEvent
+			Eventually(func() bool {
+				// Flush audit buffer on each retry to ensure events are written to DataStorage
+				_ = realAuditStore.Flush(queryCtx)
 
-			events := queryAuditEvents("notification.message.sent", notificationName)
-			for _, e := range events {
-				// Verify all ADR-034 required fields (OptString types)
-				if string(e.EventCategory) == "notification" &&
-					e.EventAction == "sent" &&
-					string(e.EventOutcome) == "success" &&
-					e.ActorType.IsSet() && e.ActorType.Value == "service" &&
-					e.ActorID.IsSet() && e.ActorID.Value == "notification-controller" &&
-					e.ResourceType.IsSet() && e.ResourceType.Value == "NotificationRequest" &&
-					e.ResourceID.IsSet() && e.ResourceID.Value == notificationName {
-					validEvent = &e
-					return true
+				events := queryAuditEvents("notification.message.sent", testID) // testID is correlation_id per line 391
+				for _, e := range events {
+					// Verify all ADR-034 required fields (OptString types)
+					if string(e.EventCategory) == "notification" &&
+						e.EventAction == "sent" &&
+						string(e.EventOutcome) == "success" &&
+						e.ActorType.IsSet() && e.ActorType.Value == "service" &&
+						e.ActorID.IsSet() && e.ActorID.Value == "notification-controller" &&
+						e.ResourceType.IsSet() && e.ResourceType.Value == "NotificationRequest" &&
+						e.ResourceID.IsSet() && e.ResourceID.Value == notificationName {
+						validEvent = &e
+						return true
+					}
 				}
-			}
-			return false
-		}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			"Audit event should have all ADR-034 required fields populated correctly (DD-AUDIT-003)")
+				return false
+			}, 10*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				"Audit event should have all ADR-034 required fields populated correctly (DD-AUDIT-003)")
 
 			Expect(validEvent).ToNot(BeNil(), "Must find valid ADR-034 compliant event in Data Storage")
 
@@ -449,8 +460,10 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			defer ConfigureFailureMode("none", 0, 0) // Reset after test
 
 			// Create notification with Slack channel to trigger failure
-			testID := fmt.Sprintf("audit-failed-%d", time.Now().UnixNano())
-			notificationName := fmt.Sprintf("audit-slack-failure-%s", testID[:8])
+			// Per DD-AUDIT-CORRELATION-002: Use UUID for uniqueness (not UnixNano())
+			shortUUID := uuid.New().String()[:8]
+			testID := fmt.Sprintf("rr-failed-%s", shortUUID) // DD-AUDIT-CORRELATION-002 format
+			notificationName := fmt.Sprintf("audit-slack-failure-%s", shortUUID)
 
 			notification := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{
@@ -467,8 +480,9 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 					Recipients: []notificationv1alpha1.Recipient{
 						{Slack: "#test-failure"},
 					},
-					Metadata: map[string]string{
-						"remediationRequestName": testID,
+					// DD-AUDIT-CORRELATION-002: Use RemediationRequestRef.Name as correlation_id
+					RemediationRequestRef: &corev1.ObjectReference{
+						Name: testID, // RR name is universal correlation ID
 					},
 					// Add retry policy with shorter backoff for test completion
 					// Default 30s initial backoff would cause test timeout
@@ -499,7 +513,7 @@ var _ = Describe("Controller Audit Event Emission (Defense-in-Depth Layer 4)", f
 			// DEFENSE-IN-DEPTH VERIFICATION: Query REAL Data Storage for failed event
 			var failedEvent *ogenclient.AuditEvent
 			Eventually(func() bool {
-				events := queryAuditEvents("notification.message.failed", notificationName)
+				events := queryAuditEvents("notification.message.failed", testID) // testID is correlation_id per line 469
 				if len(events) > 0 {
 					failedEvent = &events[0]
 					return true

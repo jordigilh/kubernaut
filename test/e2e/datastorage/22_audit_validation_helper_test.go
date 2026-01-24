@@ -93,17 +93,39 @@ var _ = Describe("Audit Event Validation Helper", func() {
 			// E2E tests use HTTP API only (no direct DB access).
 			// The DataStorage server handles all database operations internally.
 
-			// Query the event back via HTTP API
-			resp, err := client.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-			})
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.Data).ToNot(BeNil())
-			Expect(resp.Data).To(HaveLen(1), "should return exactly one event")
+			// Query the event back via HTTP API with pagination
+			// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: ALWAYS handle pagination
+			var allEvents []ogenclient.AuditEvent
+			offset := 0
+			limit := 100
+
+			for {
+				resp, err := client.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					Limit:         ogenclient.NewOptInt(limit),
+					Offset:        ogenclient.NewOptInt(offset),
+				})
+				Expect(err).ToNot(HaveOccurred())
+
+				if resp.Data == nil || len(resp.Data) == 0 {
+					break
+				}
+
+				allEvents = append(allEvents, resp.Data...)
+
+				if len(resp.Data) < limit {
+					break
+				}
+
+				offset += limit
+			}
+
+			Expect(allEvents).ToNot(BeNil())
+			Expect(allEvents).To(HaveLen(1), "should return exactly one event")
 
 			// ASSERT: Validate using testutil helper (V1.0 maturity requirement)
 			expectedOutcome := ogenclient.AuditEventEventOutcomeSuccess
-			validators.ValidateAuditEvent(resp.Data[0], validators.ExpectedAuditEvent{
+			validators.ValidateAuditEvent(allEvents[0], validators.ExpectedAuditEvent{
 				EventType:     "gateway.signal.received",
 				EventCategory: ogenclient.AuditEventEventCategoryGateway,
 				EventAction:   "test_action",
