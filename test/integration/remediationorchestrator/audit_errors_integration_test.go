@@ -114,7 +114,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 
 		// Wait for controller to initialize status.timeoutConfig with defaults
 			Eventually(func() bool {
-				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 				return rr.Status.TimeoutConfig != nil
 			}, timeout, interval).Should(BeTrue(), "Controller should initialize status.timeoutConfig")
 
@@ -126,7 +126,7 @@ var _ = Describe("BR-AUDIT-005 Gap #7: RemediationOrchestrator Error Audit Stand
 
 		// Then: Controller should detect invalid config and transition to Failed
 		Eventually(func() remediationv1.RemediationPhase {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr)
+			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed), "RR should transition to Failed on invalid timeout")
 

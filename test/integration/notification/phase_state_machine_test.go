@@ -98,7 +98,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for Sent phase (may skip Pending/Sending due to fast delivery)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -163,7 +163,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for Failed phase (permanent error, no retry)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -230,7 +230,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for PartiallySent phase (mixed success/failure)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -292,7 +292,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 			// Note: These phases are transient and may be skipped for fast deliveries
 			var observedPending, observedSending bool
 			for i := 0; i < 10; i++ {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -314,7 +314,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Eventually reach terminal state
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -367,7 +367,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -384,7 +384,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait additional time to ensure phase doesn't change
 			Consistently(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -446,7 +446,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -461,7 +461,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait additional time to ensure phase doesn't change
 			Consistently(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -513,7 +513,7 @@ var _ = Describe("BR-NOT-056: CRD Lifecycle and Phase State Machine", Label("int
 
 			// Wait for terminal phase
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)

@@ -93,7 +93,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 		// Wait for controller to initialize the RR
 		Eventually(func() bool {
-			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)
+			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)
 			return err == nil && testRR.Status.OverallPhase != ""
 		}, timeout, interval).Should(BeTrue())
 	})
@@ -128,7 +128,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Update RemediationRequest status to reference notification
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
 				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
@@ -144,7 +144,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 			}, timeout, interval).Should(Succeed())
 
 			// Capture phase before notification deletion
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
 			phaseBeforeDeletion := testRR.Status.OverallPhase
 
 			// User deletes NotificationRequest (simulates user cancellation)
@@ -152,20 +152,20 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Wait for NotificationRequest to be deleted
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notif), notif)
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(notif), notif)
 				return apierrors.IsNotFound(err)
 			}, timeout, interval).Should(BeTrue())
 
 			// Verify RemediationRequest status updated to "Cancelled"
 			Eventually(func() string {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return ""
 				}
 				return testRR.Status.NotificationStatus
 			}, timeout, interval).Should(Equal("Cancelled"))
 
 			// CRITICAL: Verify overallPhase unchanged after notification deletion
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
 			Expect(testRR.Status.OverallPhase).To(Equal(phaseBeforeDeletion), "Phase should not change when notification is cancelled")
 
 			// Verify condition set
@@ -210,7 +210,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Update RemediationRequest status with both refs
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
 				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
@@ -237,14 +237,14 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Verify status updated (tracks first notification)
 			Eventually(func() string {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return ""
 				}
 				return testRR.Status.NotificationStatus
 			}, timeout, interval).Should(Equal("Cancelled"))
 
 			// Verify second notification still exists
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(notif2), notif2)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(notif2), notif2)).To(Succeed())
 		})
 	})
 
@@ -269,7 +269,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 				// Update RemediationRequest status to reference notification
 				Eventually(func() error {
-					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+					if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 						return err
 					}
 					testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
@@ -286,7 +286,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 				// Update NotificationRequest phase
 				Eventually(func() error {
-					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notif), notif); err != nil {
+					if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(notif), notif); err != nil {
 						return err
 					}
 					notif.Status.Phase = nrPhase
@@ -296,7 +296,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 				// Verify RemediationRequest status updated
 				Eventually(func() string {
-					if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+					if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 						return ""
 					}
 					return testRR.Status.NotificationStatus
@@ -304,7 +304,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 				// Verify condition if expected
 				if shouldSetCondition {
-					Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
 					cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 					Expect(cond).ToNot(BeNil())
 				}
@@ -334,7 +334,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Update RemediationRequest status to reference notification
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
 				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
@@ -351,7 +351,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Update NotificationRequest to Sent phase
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notif), notif); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(notif), notif); err != nil {
 					return err
 				}
 				notif.Status.Phase = notificationv1.NotificationPhaseSent
@@ -361,13 +361,13 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Verify condition
 			Eventually(func() *metav1.Condition {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return nil
 				}
 				return meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 			}, timeout, interval).ShouldNot(BeNil())
 
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
 			cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(cond.Reason).To(Equal("DeliverySucceeded"))
@@ -393,7 +393,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Update RemediationRequest status to reference notification
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return err
 				}
 				testRR.Status.NotificationRequestRefs = []corev1.ObjectReference{
@@ -411,7 +411,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 			// Update NotificationRequest to Failed phase
 			failureMessage := "SMTP server unreachable"
 			Eventually(func() error {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(notif), notif); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(notif), notif); err != nil {
 					return err
 				}
 				notif.Status.Phase = notificationv1.NotificationPhaseFailed
@@ -421,13 +421,13 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 			// Verify condition
 			Eventually(func() *metav1.Condition {
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR); err != nil {
 					return nil
 				}
 				return meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 			}, timeout, interval).ShouldNot(BeNil())
 
-			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
+			Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(testRR), testRR)).To(Succeed())
 			cond := meta.FindStatusCondition(testRR.Status.Conditions, "NotificationDelivered")
 			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(cond.Reason).To(Equal("DeliveryFailed"))

@@ -101,7 +101,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// Wait for initial status update (validate business outcome per TESTING_GUIDELINES.md)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -121,7 +121,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// so controller has no reason to update it again without actual conflicts.
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -180,7 +180,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// Wait for completion
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -267,7 +267,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// BEHAVIOR VALIDATION: Controller eventually succeeds despite potential status update failures
 			// (Kubernetes controller-runtime automatically retries on status update conflicts)
 			Eventually(func() notificationv1alpha1.NotificationPhase {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -334,7 +334,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// Wait for reconciliation to start (status phase set) before deletion race
 			Eventually(func() bool {
 				var checkNotif notificationv1alpha1.NotificationRequest
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, &checkNotif)
@@ -352,7 +352,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 
 			// BEHAVIOR VALIDATION: CRD is eventually deleted (no stuck finalizers)
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -419,7 +419,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// + jitter (~20% variance) + processing overhead (~2-3s per attempt in parallel)
 			// = ~35-40s total. 45s timeout provides 15s safety margin for parallel execution (12 procs).
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)
@@ -508,7 +508,7 @@ var _ = Describe("BR-NOT-053: Status Update Conflicts", func() {
 			// Notification enters Failed phase after attempt 1, but continues retrying
 			// We need to wait until all 7 attempts are completed before checking counts
 			Eventually(func() bool {
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, notif)

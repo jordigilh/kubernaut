@@ -94,7 +94,7 @@ package remediationorchestrator
 //     // 2. Wait for controller to initialize
 //     Eventually(func() Phase {
 //         var updated RemediationRequest
-//         k8sClient.Get(ctx, ..., &updated)
+//         k8sManager.GetAPIReader().Get(ctx, ..., &updated)
 //         return updated.Status.OverallPhase
 //     }).Should(Equal(RemediationPhaseInitializing))
 //

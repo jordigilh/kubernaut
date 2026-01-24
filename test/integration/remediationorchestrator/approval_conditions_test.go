@@ -89,7 +89,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 
 			// Fetch the created object to get server-set fields (UID, ResourceVersion, etc.)
 			Eventually(func() error {
-				return k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, rar)
 			}, timeout, interval).Should(Succeed(), "Failed to fetch created RAR")
 
 			// Set initial conditions on the fetched object (simulating creator logic)
@@ -105,7 +105,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 			By("Verifying ApprovalPending=True condition")
 			fetched := &remediationv1.RemediationApprovalRequest{}
 			Eventually(func() bool {
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, fetched); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: namespace}, fetched); err != nil {
 					return false
 				}
 				cond := meta.FindStatusCondition(fetched.Status.Conditions, rarconditions.ConditionApprovalPending)

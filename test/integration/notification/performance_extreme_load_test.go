@@ -117,7 +117,7 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 
 					// BEHAVIOR: Wait for delivery completion
 					Eventually(func() notificationv1alpha1.NotificationPhase {
-						_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+						_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 						return notif.Status.Phase
 					}, 30*time.Second, 500*time.Millisecond).Should(Or(
 						Equal(notificationv1alpha1.NotificationPhaseSent),
@@ -235,7 +235,7 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 
 					// BEHAVIOR: Wait for delivery completion
 					Eventually(func() notificationv1alpha1.NotificationPhase {
-						_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+						_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 						return notif.Status.Phase
 					}, 30*time.Second, 500*time.Millisecond).Should(Or(
 						Equal(notificationv1alpha1.NotificationPhaseSent),
@@ -352,7 +352,7 @@ var _ = Describe("Performance: Extreme Load (100 Concurrent Deliveries)", func()
 
 					// BEHAVIOR: Wait for delivery completion
 					Eventually(func() notificationv1alpha1.NotificationPhase {
-						_ = k8sClient.Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
+						_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notificationName, Namespace: testNamespace}, notif)
 						return notif.Status.Phase
 					}, 30*time.Second, 500*time.Millisecond).Should(Or(
 						Equal(notificationv1alpha1.NotificationPhaseSent),

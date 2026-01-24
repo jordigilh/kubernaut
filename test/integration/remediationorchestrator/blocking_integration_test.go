@@ -85,7 +85,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 			// Verify all RRs exist
 			rrList := &remediationv1.RemediationRequestList{}
-			err := k8sClient.List(ctx, rrList)
+			err := k8sManager.GetAPIReader().List(ctx, rrList)
 			Expect(err).ToNot(HaveOccurred())
 
 			matchingCount := 0
@@ -117,7 +117,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Manually set to Blocked phase (simulating what RO does)
 			Eventually(func() error {
 				rrGet := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
 					return err
 				}
 
@@ -132,7 +132,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 			// Verify the status was persisted correctly
 			rrFinal := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
 			Expect(rrFinal.Status.BlockedUntil).ToNot(BeNil())
@@ -161,7 +161,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Set to Blocked WITHOUT BlockedUntil (manual block)
 			Eventually(func() error {
 				rrGet := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrGet); err != nil {
 					return err
 				}
 
@@ -175,7 +175,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 			// Verify BlockedUntil is nil
 			rrFinal := &remediationv1.RemediationRequest{}
-			err := k8sClient.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
+			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ns}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
 			Expect(rrFinal.Status.BlockedUntil).To(BeNil(),
@@ -236,7 +236,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Then: RR should not be blocked (unique fingerprint = no prior failures)
 			Consistently(func() string {
 				updated := &remediationv1.RemediationRequest{}
-				if err := k8sClient.Get(ctx, client.ObjectKey{
+				if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name,
 					Namespace: rr.Namespace,
 				}, updated); err != nil {
@@ -249,7 +249,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Verify: SignalProcessing is created (RR processes normally)
 			Eventually(func() int {
 				spList := &signalprocessingv1.SignalProcessingList{}
-				if err := k8sClient.List(ctx, spList, client.InNamespace(namespace)); err != nil {
+				if err := k8sManager.GetAPIReader().List(ctx, spList, client.InNamespace(namespace)); err != nil {
 					return 0
 				}
 				return len(spList.Items)
@@ -284,9 +284,11 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			// Use Eventually() to account for status propagation timing
 
 			// Then: Namespace A should have 3 failed RRs with shared fingerprint
+			// DD-STATUS-001: Use apiReader (cache-bypassed) to avoid stale reads
 			Eventually(func() int {
 				rrListA := &remediationv1.RemediationRequestList{}
-				if err := k8sClient.List(ctx, rrListA, client.InNamespace(namespace)); err != nil {
+				if err := k8sManager.GetAPIReader().List(ctx, rrListA, client.InNamespace(namespace)); err != nil {
+					GinkgoWriter.Printf("❌ Error listing RRs in namespace A: %v\n", err)
 					return -1
 				}
 				failedCountA := 0
@@ -295,14 +297,17 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 						failedCountA++
 					}
 				}
+				GinkgoWriter.Printf("🔍 Namespace A: %d/%d RRs with Failed status\n", failedCountA, len(rrListA.Items))
 				return failedCountA
 			}, timeout, interval).Should(Equal(3),
 				"Namespace A should have exactly 3 failed RRs (namespace isolation)")
 
 			// Then: Namespace B should have only 1 failed RR (not affected by ns-a)
+			// DD-STATUS-001: Use apiReader (cache-bypassed) to avoid stale reads
 			Eventually(func() int {
 				rrListB := &remediationv1.RemediationRequestList{}
-				if err := k8sClient.List(ctx, rrListB, client.InNamespace(nsB)); err != nil {
+				if err := k8sManager.GetAPIReader().List(ctx, rrListB, client.InNamespace(nsB)); err != nil {
+					GinkgoWriter.Printf("❌ Error listing RRs in namespace B: %v\n", err)
 					return -1
 				}
 				failedCountB := 0
@@ -311,6 +316,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 						failedCountB++
 					}
 				}
+				GinkgoWriter.Printf("🔍 Namespace B: %d/%d RRs with Failed status\n", failedCountB, len(rrListB.Items))
 				return failedCountB
 			}, timeout, interval).Should(Equal(1),
 				"Namespace B should have only 1 failed RR (independent from ns-a)")
@@ -364,7 +370,7 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 func simulateFailedPhase(namespace, name string) {
 	Eventually(func() error {
 		rr := &remediationv1.RemediationRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
 			return err
 		}
 
@@ -386,7 +392,7 @@ func simulateFailedPhase(namespace, name string) {
 func simulateCompletedPhase(namespace, name string) {
 	Eventually(func() error {
 		rr := &remediationv1.RemediationRequest{}
-		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
 			return err
 		}
 

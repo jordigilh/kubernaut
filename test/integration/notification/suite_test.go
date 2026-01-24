@@ -373,6 +373,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// Patterns 1-3: Metrics, StatusManager, DeliveryOrchestrator wired in
 	err = (&notification.NotificationRequestReconciler{
 		Client:               k8sManager.GetClient(),
+		APIReader:            k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               k8sManager.GetScheme(),
 		ConsoleService:       consoleService,
 		SlackService:         slackService,
@@ -400,7 +401,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Eventually(func() error {
 		// Verify manager is ready by checking if we can list CRDs
 		list := &notificationv1alpha1.NotificationRequestList{}
-		return k8sClient.List(ctx, list)
+		return k8sManager.GetAPIReader().List(ctx, list)
 	}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
 		"Controller manager cache should sync within 10 seconds")
 
@@ -679,6 +680,7 @@ type MockSlackServer struct {
 	CurrentFailures int    // Counter for failures
 	FailureStatus   int    // HTTP status code to return on failure
 }
+
 // ConfigureFailure sets failure behavior for MockSlackServer
 func (m *MockSlackServer) ConfigureFailure(mode string, count int, statusCode int) {
 	m.RequestsMu.Lock()
@@ -808,6 +810,7 @@ func deleteAndWait(ctx context.Context, client client.Client, notif *notificatio
 		return false, nil
 	})
 }
+
 // resetSlackRequests clears the slackRequests slice (thread-safe for parallel tests)
 func resetSlackRequests() {
 	slackRequestsMu.Lock()
@@ -833,6 +836,7 @@ func createSlackWebhookSecret() {
 
 	// Per TESTING_GUIDELINES.md v2.0.0: Use Eventually(), never time.Sleep()
 	// Verify deletion completed before creating new secret
+	// NOTE: Use k8sClient (not apiReader) here - this is setup code before manager starts
 	Eventually(func() bool {
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      secret.Name,

@@ -88,7 +88,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// BEHAVIOR: Status reflects delivery outcome
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -104,7 +104,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 
 			// CORRECTNESS: Status provides actionable information
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
-			err = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
+			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
 
 			totalOutcomes := freshNotif.Status.SuccessfulDeliveries + freshNotif.Status.FailedDeliveries
@@ -155,7 +155,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// BEHAVIOR: Status update succeeds despite large content
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -214,7 +214,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// In envtest, context cancellation from test won't affect controller's context
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -265,7 +265,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// BEHAVIOR: Delivery completes or times out gracefully
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -329,7 +329,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -343,7 +343,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 				), "Controller must continue processing despite panics and set terminal state (BR-NOT-014)")
 
 				notif := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}
@@ -404,7 +404,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// BEHAVIOR: Processing completes without nil pointer panics
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -459,7 +459,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// BEHAVIOR: Status update succeeds even if error serialization issues occur
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -510,7 +510,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			// BEHAVIOR: Error chains handled correctly
 			Eventually(func() notificationv1alpha1.NotificationPhase {
 				freshNotif := &notificationv1alpha1.NotificationRequest{}
-				err := k8sClient.Get(ctx, types.NamespacedName{
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 					Name:      notifName,
 					Namespace: testNamespace,
 				}, freshNotif)
@@ -574,7 +574,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 			for _, notifName := range notifNames {
 				Eventually(func() notificationv1alpha1.NotificationPhase {
 					notif := &notificationv1alpha1.NotificationRequest{}
-					err := k8sClient.Get(ctx, types.NamespacedName{
+					err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{
 						Name:      notifName,
 						Namespace: testNamespace,
 					}, notif)
@@ -588,7 +588,7 @@ var _ = Describe("Category 9: Error Propagation", Label("integration", "error-pr
 				), "All concurrent notifications must be processed to terminal state (BR-NOT-014)")
 
 				notif := &notificationv1alpha1.NotificationRequest{}
-				_ = k8sClient.Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
+				_ = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, notif)
 				if notif.Status.Phase == notificationv1alpha1.NotificationPhaseSent {
 					successCount++
 				}

@@ -366,6 +366,7 @@ func main() {
 	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
 	if err = (&notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(),                                 // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               mgr.GetScheme(),
 		ConsoleService:       consoleService,
 		SlackService:         slackService,

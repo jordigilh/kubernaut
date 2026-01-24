@@ -106,7 +106,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Name:      notif.Name,
 						Namespace: notif.Namespace,
 					}
-					Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 					return notif.Status.Phase
 				}, "30s", "500ms").Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 					"Notification %d should reach Sent phase", i)
@@ -174,7 +174,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Name:      notif.Name,
 						Namespace: notif.Namespace,
 					}
-					Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 					return notif.Status.Phase
 				}, "60s", "1s").Should(Equal(notificationv1alpha1.NotificationPhaseSent),
 					"Rapid notification %d should reach Sent phase", i)
@@ -233,7 +233,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 							Name:      notif.Name,
 							Namespace: notif.Namespace,
 						}
-						Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+						Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 						return notif.Status.Phase
 					}, "30s", "500ms").Should(Equal(notificationv1alpha1.NotificationPhaseSent))
 
@@ -242,7 +242,7 @@ var _ = Describe("P0: Concurrent Deliveries + Circuit Breaker", Label("p0", "con
 						Name:      notif.Name,
 						Namespace: notif.Namespace,
 					}
-					Expect(k8sClient.Get(ctx, key, notif)).To(Succeed())
+					Expect(k8sManager.GetAPIReader().Get(ctx, key, notif)).To(Succeed())
 
 					// Validate status consistency
 					Expect(notif.Status.Phase).To(Equal(notificationv1alpha1.NotificationPhaseSent))
