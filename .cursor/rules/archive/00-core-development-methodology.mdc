@@ -1,7 +1,5 @@
 ---
-alwaysApply: true
-globs: "**/*,pkg/ai/**/*,test/**/*ai*"
-description: "Core development methodology: principles, TDD phases, and AI-specific patterns"
+alwaysApply: false
 ---
 # Core Development Methodology
 
