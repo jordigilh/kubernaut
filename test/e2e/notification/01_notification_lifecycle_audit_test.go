@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
@@ -170,11 +171,11 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
 		By("Verifying controller emitted audit event for message sent")
 		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
-				EventCategory: ogenclient.NewOptString("notification"),
-				CorrelationID: ogenclient.NewOptString(correlationID),
-			})
+		resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+			EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
+			EventCategory: ogenclient.NewOptString(notificationaudit.EventCategoryNotification),
+			CorrelationID: ogenclient.NewOptString(correlationID),
+		})
 			if err != nil || resp.Data == nil {
 				return 0
 			}
@@ -209,7 +210,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// Validate ADR-034 compliance for controller-emitted event
 		event := foundSentEvent
 		{
-			Expect(string(event.EventCategory)).To(Equal("notification"), "Category should be 'notification'")
+			Expect(string(event.EventCategory)).To(Equal(notificationaudit.EventCategoryNotification), "Category should be 'notification'")
 			Expect(event.ActorType).ToNot(BeNil(), "Actor type should be set")
 			Expect(event.ActorType.Value).To(Equal("service"), "Actor type should be 'service'")
 			Expect(event.ActorID).ToNot(BeNil(), "Actor ID should be set")
@@ -238,7 +239,7 @@ func queryAuditEventCount(dsClient *ogenclient.Client, correlationID, eventType 
 	// Build type-safe query parameters
 	params := ogenclient.QueryAuditEventsParams{
 		CorrelationID: ogenclient.NewOptString(correlationID),
-		EventCategory: ogenclient.NewOptString("notification"), // ADR-034 v1.2 requirement
+		EventCategory: ogenclient.NewOptString(notificationaudit.EventCategoryNotification), // ADR-034 v1.2 requirement
 	}
 	if eventType != "" {
 		params.EventType = ogenclient.NewOptString(eventType)
@@ -275,7 +276,7 @@ func queryAuditEvents(dsClient *ogenclient.Client, correlationID string) []ogenc
 	// Build type-safe query parameters
 	params := ogenclient.QueryAuditEventsParams{
 		CorrelationID: ogenclient.NewOptString(correlationID),
-		EventCategory: ogenclient.NewOptString("notification"), // ADR-034 v1.2 requirement
+		EventCategory: ogenclient.NewOptString(notificationaudit.EventCategoryNotification), // ADR-034 v1.2 requirement
 	}
 
 	// ✅ Use OpenAPI generated client (type-safe, contract-validated)

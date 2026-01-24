@@ -75,6 +75,11 @@ const (
 	EventTypeExecutionStarted   = "workflowexecution.execution.started"   // Gap #6 (BR-AUDIT-005) - Per ADR-034 v1.5
 )
 
+// Event category constant (from OpenAPI spec)
+const (
+	EventCategoryWorkflowExecution = "workflowexecution"
+)
+
 // Manager handles audit trail recording for WorkflowExecution lifecycle events.
 //
 // The Manager provides typed methods for each audit event type, ensuring

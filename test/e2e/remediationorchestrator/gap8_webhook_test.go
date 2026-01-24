@@ -32,6 +32,7 @@ import (
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -194,15 +195,17 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 			// DIAGNOSTIC: First query for ALL events with this correlation ID
 			var allEvents []ogenclient.AuditEvent
 
-			Eventually(func() int {
-				// Query ALL audit events for this correlation ID (no event_type filter)
-				events, _, err := helpers.QueryAuditEvents(
-					ctx,
-					auditClient,
-					&correlationID,
-					nil, // event_type = nil (query ALL event types)
-					nil, // event_category = nil
-				)
+		Eventually(func() int {
+			// Query ALL audit events for this correlation ID (no event_type filter)
+			// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for event_category
+			eventCategory := roaudit.EventCategoryOrchestration
+			events, _, err := helpers.QueryAuditEvents(
+				ctx,
+				auditClient,
+				&correlationID,
+				nil, // event_type = nil (query ALL event types within category)
+				&eventCategory,
+			)
 				if err != nil {
 					GinkgoWriter.Printf("⚠️  Audit query error: %v\n", err)
 					return 0
@@ -224,16 +227,18 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 		// - AuthWebhook buffer flush: 5 seconds
 		// - Network + database write: 1-2 seconds
 		// - Total expected: ~7-8 seconds
-		webhookEvents := []ogenclient.AuditEvent{}
-		Eventually(func() int {
-			// Re-query ALL events to get fresh data including webhook events
-			events, _, err := helpers.QueryAuditEvents(
-				ctx,
-				auditClient,
-				&correlationID,
-				nil, // event_type = nil (query ALL event types)
-				nil, // event_category = nil
-			)
+	webhookEvents := []ogenclient.AuditEvent{}
+	Eventually(func() int {
+		// Re-query ALL events to get fresh data including webhook events
+		// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for event_category
+		eventCategory := roaudit.EventCategoryOrchestration
+		events, _, err := helpers.QueryAuditEvents(
+			ctx,
+			auditClient,
+			&correlationID,
+			nil, // event_type = nil (query ALL event types within category)
+			&eventCategory,
+		)
 			if err != nil {
 				GinkgoWriter.Printf("⚠️  Webhook event query error: %v\n", err)
 				return 0
@@ -246,7 +251,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 					webhookEvents = append(webhookEvents, evt)
 				}
 			}
-			
+
 			if len(webhookEvents) > 0 {
 				GinkgoWriter.Printf("✅ Found %d webhook events after %v\n", len(webhookEvents), time.Since(now.Time))
 			}
@@ -266,7 +271,7 @@ var _ = Describe("E2E: Gap #8 - RemediationRequest TimeoutConfig Mutation Webhoo
 		Expect(webhookEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 		Expect(webhookEvent.CorrelationID).To(Equal(correlationID))
 
-		GinkgoWriter.Printf("✅ Found %d webhook audit event(s), validating operator modification (event_id=%s)\n", 
+		GinkgoWriter.Printf("✅ Found %d webhook audit event(s), validating operator modification (event_id=%s)\n",
 			len(webhookEvents), webhookEvent.EventID)
 
 			// ========================================

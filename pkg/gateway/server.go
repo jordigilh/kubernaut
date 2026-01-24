@@ -68,6 +68,8 @@ const (
 	EventTypeCRDCreated         = "gateway.crd.created"         // DD-AUDIT-003: RR CRD successfully created
 	EventTypeCRDFailed          = "gateway.crd.failed"          // DD-AUDIT-003: RR CRD creation failed
 	CategoryGateway             = "gateway"                     // Service-level category per ADR-034
+	// EventCategoryGateway is an alias for consistency with other services
+	EventCategoryGateway        = CategoryGateway
 )
 
 // Gateway Audit Event Action Constants (ADR-034 event_action field)

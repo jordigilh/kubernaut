@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -198,7 +199,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString("gateway"), // ADR-034 v1.2 requirement
+				EventCategory: ogenclient.NewOptString(gateway.CategoryGateway), // ADR-034 v1.2 requirement
 			}
 
 			// Wait for audit event to appear (async write may have small delay)
@@ -240,7 +241,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"event_type should follow ADR-034 format: <service>.<category>.<action>")
 
 			// Field 3: event_category
-			Expect(string(event.EventCategory)).To(Equal("gateway"),
+			Expect(string(event.EventCategory)).To(Equal(gateway.CategoryGateway),
 				"event_category should be 'gateway'")
 
 			// Field 4: event_action
@@ -421,7 +422,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			params2 := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType2),
-				EventCategory: ogenclient.NewOptString("gateway"), // ADR-034 v1.2 requirement
+				EventCategory: ogenclient.NewOptString(gateway.CategoryGateway), // ADR-034 v1.2 requirement
 			}
 
 			var auditEvents2 []ogenclient.AuditEvent
@@ -459,7 +460,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 				"event_type should follow ADR-034 format: <service>.<category>.<action>")
 
 			// Field 3: event_category
-			Expect(string(event.EventCategory)).To(Equal("gateway"),
+			Expect(string(event.EventCategory)).To(Equal(gateway.CategoryGateway),
 				"event_category should be 'gateway'")
 
 			// Field 4: event_action
@@ -597,7 +598,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			params3 := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType3),
-				EventCategory: ogenclient.NewOptString("gateway"), // ADR-034 v1.2 requirement
+				EventCategory: ogenclient.NewOptString(gateway.CategoryGateway), // ADR-034 v1.2 requirement
 			}
 
 			var auditEvents3 []ogenclient.AuditEvent
@@ -624,7 +625,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(event.Version).To(Equal("1.0"), "version should be '1.0' per ADR-034")
 			Expect(event.EventType).To(Equal("gateway.crd.created"),
 				"event_type should be 'gateway.crd.created'")
-			Expect(string(event.EventCategory)).To(Equal("gateway"), "event_category should be 'gateway'")
+			Expect(string(event.EventCategory)).To(Equal(gateway.CategoryGateway), "event_category should be 'gateway'")
 			Expect(event.EventAction).To(Equal("created"), "event_action should be 'created'")
 			Expect(string(event.EventOutcome)).To(Equal("success"), "event_outcome should be 'success'")
 			Expect(event.ResourceType.Value).To(Equal("RemediationRequest"),

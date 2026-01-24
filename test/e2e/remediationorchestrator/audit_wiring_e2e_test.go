@@ -119,13 +119,13 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 		// Per DD-API-001: Direct HTTP is FORBIDDEN - this uses type-safe client
 		queryAuditEvents := func(correlationID string) ([]dsgen.AuditEvent, int, error) {
 			// Per ADR-034 v1.2: event_category is MANDATORY for queries
-			eventCategory := "orchestration"
+			// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use constants for type safety
 			limit := 100
 
 			// ✅ MANDATORY: Use generated client with type-safe parameters
 			resp, err := dsClient.QueryAuditEvents(context.Background(), dsgen.QueryAuditEventsParams{
 				CorrelationID: dsgen.NewOptString(correlationID),
-				EventCategory: dsgen.NewOptString(eventCategory),
+				EventCategory: dsgen.NewOptString(roaudit.EventCategoryOrchestration),
 				Limit:         dsgen.NewOptInt(limit),
 			})
 

@@ -51,6 +51,19 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// Event type constants for Notification audit events (from OpenAPI spec)
+const (
+	EventTypeMessageSent         = "notification.message.sent"
+	EventTypeMessageFailed       = "notification.message.failed"
+	EventTypeMessageAcknowledged = "notification.message.acknowledged"
+	EventTypeMessageEscalated    = "notification.message.escalated"
+)
+
+// Event category constant (from OpenAPI spec)
+const (
+	EventCategoryNotification = "notification"
+)
+
 // Manager provides helper functions for creating notification audit events
 // following ADR-034 unified audit table format.
 //
@@ -136,8 +149,8 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.sent")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageSent)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "sent")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
@@ -207,8 +220,8 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.failed")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageFailed)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "sent") // Action was "sent" (attempted), outcome is "failure"
 	audit.SetEventOutcome(event, audit.OutcomeFailure)
 	audit.SetActor(event, "service", m.serviceName)
@@ -266,8 +279,8 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.acknowledged")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageAcknowledged)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "acknowledged")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)
@@ -326,8 +339,8 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
-	audit.SetEventType(event, "notification.message.escalated")
-	audit.SetEventCategory(event, "notification")
+	audit.SetEventType(event, EventTypeMessageEscalated)
+	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, "escalated")
 	audit.SetEventOutcome(event, audit.OutcomeSuccess)
 	audit.SetActor(event, "service", m.serviceName)

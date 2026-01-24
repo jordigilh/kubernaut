@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	aianalysisaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
@@ -30,28 +31,54 @@ import (
 // queryAuditEvents uses OpenAPI client to query DataStorage (DD-API-001 compliance)
 // Per ADR-034 v1.2: event_category is optional for queries (omit to query all categories)
 // Per DD-API-001: Direct HTTP to DataStorage is FORBIDDEN - use generated client
-//
 // Parameters:
-//   - correlationID: Correlation ID to filter events
-//   - eventType: Optional event type filter
+//   - correlationID: RemediationRequest.Name
+//   - eventType: Use constants from aianalysisaudit package (e.g., aianalysisaudit.EventTypePhaseTransition)
 //
-// Returns: Array of audit events (OpenAPI-generated types)
-func queryAuditEvents(
+// Returns: 1-5 events (no pagination needed)
+func querySpecificAuditEvent(
 	correlationID string,
-	eventType *string,
+	eventType string, // Use aianalysisaudit.EventType* constants
 ) ([]dsgen.AuditEvent, error) {
-	// Note: AIAnalysis uses event_category = "analysis" (NOT "aianalysis")
-	// However, we omit event_category to query all categories for this correlation_id
-	// This allows querying cross-service events (llm_request, workflow_validation, etc.)
-	limit := 100
-
 	params := dsgen.QueryAuditEventsParams{
 		CorrelationID: dsgen.NewOptString(correlationID),
-		Limit:         dsgen.NewOptInt(limit),
+		EventType:     dsgen.NewOptString(eventType),
+		EventCategory: dsgen.NewOptString(aianalysisaudit.EventCategoryAIAnalysis),
 	}
 
-	if eventType != nil {
-		params.EventType = dsgen.NewOptString(*eventType)
+	resp, err := dsClient.QueryAuditEvents(context.Background(), params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query DataStorage: %w", err)
+	}
+
+	if resp.Data == nil {
+		return []dsgen.AuditEvent{}, nil
+	}
+
+	return resp.Data, nil
+}
+
+// queryAllAuditEventTypes queries for ALL AI Analysis event types
+// Per docs/testing/AUDIT_QUERY_PAGINATION_STANDARDS.md: Use when validating full timeline
+//
+// Use this when:
+// - Testing FULL audit trail (all event types)
+// - Validating metadata across ALL event types
+// - Expected result: 10-20 events (acceptable without pagination)
+//
+// ⚠️ WARNING: Use sparingly - prefer querySpecificAuditEvent() when possible
+//
+// Parameters:
+//   - correlationID: RemediationRequest.Name
+//
+// Returns: 10-20 events (all AI Analysis event types for this correlation_id)
+func queryAllAuditEventTypes(
+	correlationID string,
+) ([]dsgen.AuditEvent, error) {
+	params := dsgen.QueryAuditEventsParams{
+		CorrelationID: dsgen.NewOptString(correlationID),
+		EventCategory: dsgen.NewOptString(aianalysisaudit.EventCategoryAIAnalysis),
+		// EventType intentionally omitted - query ALL event types
 	}
 
 	resp, err := dsClient.QueryAuditEvents(context.Background(), params)
@@ -80,8 +107,8 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 // This handles the async nature of BufferedAuditStore's background flush.
 //
 // Parameters:
-//   - correlationID: Correlation ID to filter events
-//   - eventType: Event type to query (e.g., "aianalysis.phase.transition")
+//   - correlationID: RemediationRequest.Name
+//   - eventType: Use constants from aianalysisaudit package (e.g., aianalysisaudit.EventTypePhaseTransition)
 //   - minCount: Minimum number of events expected
 //
 // Returns: Array of audit events (OpenAPI-generated types)
@@ -89,16 +116,16 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 // Rationale: BufferedAuditStore flushes asynchronously, so tests must poll
 // rather than query immediately after reconciliation. Using Eventually()
 // makes tests faster (no fixed sleep) and more reliable (handles timing variance).
-func waitForAuditEvents(
+func waitForSpecificAuditEvent(
 	correlationID string,
-	eventType string,
+	eventType string, // Use aianalysisaudit.EventType* constants
 	minCount int,
 ) []dsgen.AuditEvent {
 	var events []dsgen.AuditEvent
 
 	Eventually(func() int {
 		var err error
-		events, err = queryAuditEvents(correlationID, &eventType)
+		events, err = querySpecificAuditEvent(correlationID, eventType)
 		if err != nil {
 			GinkgoWriter.Printf("⏳ Audit query error: %v\n", err)
 			return 0
@@ -179,11 +206,11 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			// can fail if audit buffer (1s flush interval) hasn't finished flushing all events yet.
 			// Solution: Eventually checks for the MINIMUM expected event count (3 phase transitions).
 			var events []dsgen.AuditEvent
-			Eventually(func() int {
-				var err error
-				events, err = queryAuditEvents(remediationID, nil) // Query all event types
-				if err != nil {
-					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+		Eventually(func() int {
+			var err error
+			events, err = queryAllAuditEventTypes(remediationID) // Query all AI Analysis event types
+			if err != nil {
+				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
 					return 0
 				}
 				// Count phase transition events specifically (most reliable indicator of completion)
@@ -303,8 +330,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-			By("Waiting for phase transition events to appear in Data Storage")
-			phaseEvents := waitForAuditEvents(remediationID, "aianalysis.phase.transition", 1)
+		By("Waiting for phase transition events to appear in Data Storage")
+		phaseEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition, 1)
 
 			By("Validating phase transition event_data structure")
 			for _, event := range phaseEvents {
@@ -365,8 +392,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-			By("Waiting for HolmesGPT-API call events to appear in Data Storage")
-			hapiEvents := waitForAuditEvents(remediationID, "aianalysis.holmesgpt.call", 1)
+		By("Waiting for HolmesGPT-API call events to appear in Data Storage")
+		hapiEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeHolmesGPTCall, 1)
 
 			By("Validating HolmesGPT-API call event_data structure")
 			for _, event := range hapiEvents {
@@ -435,8 +462,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-			By("Waiting for Rego evaluation events to appear in Data Storage")
-			regoEvents := waitForAuditEvents(remediationID, "aianalysis.rego.evaluation", 1)
+		By("Waiting for Rego evaluation events to appear in Data Storage")
+		regoEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeRegoEvaluation, 1)
 
 			By("Validating Rego evaluation event_data structure")
 			event := regoEvents[0] // Should be only one Rego evaluation per analysis
@@ -508,8 +535,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-			By("Waiting for approval decision events to appear in Data Storage")
-			approvalEvents := waitForAuditEvents(remediationID, "aianalysis.approval.decision", 1)
+		By("Waiting for approval decision events to appear in Data Storage")
+		approvalEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeApprovalDecision, 1)
 
 			By("Validating approval decision event_data structure")
 			event := approvalEvents[0]

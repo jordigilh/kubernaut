@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -237,7 +238,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 			eventType := "gateway.signal.received"
-			eventCategory := "gateway"
+			eventCategory := gateway.CategoryGateway
 
 			// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
 			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
@@ -278,7 +279,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// Standard audit fields (per ADR-034)
 			Expect(auditEvent.Version).To(Equal("1.0"), "Audit event version")
 			Expect(auditEvent.EventType).To(Equal("gateway.signal.received"), "Event type")
-			Expect(string(auditEvent.EventCategory)).To(Equal("gateway"), "Event category")
+			Expect(string(auditEvent.EventCategory)).To(Equal(gateway.CategoryGateway), "Event category")
 			Expect(auditEvent.EventAction).To(Equal("received"), "Event action")
 			Expect(string(auditEvent.EventOutcome)).To(Equal("success"), "Event outcome")
 			Expect(auditEvent.ActorType.Value).To(Equal("external"), "Actor type")
@@ -450,7 +451,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// Query Data Storage for audit event
 			eventType := "gateway.signal.received"
-			eventCategory := "gateway"
+			eventCategory := gateway.CategoryGateway
 
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
@@ -575,7 +576,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// Query Data Storage for audit event
 			eventType := "gateway.signal.received"
-			eventCategory := "gateway"
+			eventCategory := gateway.CategoryGateway
 
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
@@ -742,7 +743,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			By("Verifying gateway.signal.deduplicated event captures all 3 RR reconstruction fields")
 
 			eventType := "gateway.signal.deduplicated"
-			eventCategory := "gateway"
+			eventCategory := gateway.CategoryGateway
 
 			// ✅ Use Eventually() for async validation
 			Eventually(func() int {
@@ -910,7 +911,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			By("Verifying Prometheus alert audit event has all 3 RR reconstruction fields")
 
 			eventType := "gateway.signal.received"
-			eventCategory := "gateway"
+			eventCategory := gateway.CategoryGateway
 
 			Eventually(func() int {
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{

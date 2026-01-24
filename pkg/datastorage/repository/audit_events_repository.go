@@ -299,6 +299,16 @@ func (r *AuditEventsRepository) Create(ctx context.Context, event *AuditEvent) (
 		event.EventTimestamp = time.Now().UTC()
 	}
 
+	// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
+	// PostgreSQL stores timestamps with microsecond precision (6 decimal places).
+	// Go's time.Time has nanosecond precision (9 decimal places).
+	// If we calculate the hash with nanosecond precision but PostgreSQL stores microseconds,
+	// verification will fail because the JSON will have different timestamps:
+	//   Creation:     "2026-01-24T10:30:45.123456789Z" (9 digits)
+	//   Verification: "2026-01-24T10:30:45.123456Z"    (6 digits)
+	// This causes different JSON → different hash → broken chain.
+	event.EventTimestamp = event.EventTimestamp.Truncate(time.Microsecond)
+
 	// Set event_date from event_timestamp (for partitioning)
 	event.EventDate = DateOnly(time.Date(
 		event.EventTimestamp.Year(),
@@ -581,6 +591,10 @@ func (r *AuditEventsRepository) CreateBatch(ctx context.Context, events []*Audit
 			if event.EventTimestamp.IsZero() {
 				event.EventTimestamp = time.Now().UTC()
 			}
+
+			// CRITICAL: Truncate to microsecond precision to match PostgreSQL timestamptz
+			// (see Create() function for detailed explanation)
+			event.EventTimestamp = event.EventTimestamp.Truncate(time.Microsecond)
 
 			// Set event_date from event_timestamp (for partitioning)
 			eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
