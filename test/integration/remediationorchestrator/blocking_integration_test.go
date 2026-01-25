@@ -368,6 +368,7 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 // simulateFailedPhase updates an RR to Failed phase.
 // Used to set up consecutive failure scenarios.
 func simulateFailedPhase(namespace, name string) {
+	// Step 1: Update status to Failed
 	Eventually(func() error {
 		rr := &remediationv1.RemediationRequest{}
 		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
@@ -384,7 +385,24 @@ func simulateFailedPhase(namespace, name string) {
 		return k8sClient.Status().Update(ctx, rr)
 	}, timeout, interval).Should(Succeed(), "Should simulate Failed phase for %s/%s", namespace, name)
 
-	GinkgoWriter.Printf("✅ Simulated Failed phase: %s/%s\n", namespace, name)
+	// Step 2: CRITICAL - Wait for status to durably persist before returning
+	// This prevents race condition where controller reconciles with stale "Pending" status
+	// before the test's next Eventually block reads the RR.
+	//
+	// Bug: Without this verification, CI fails with 2/3 Failed RRs because controller
+	// reconciles ns-a-fail-0 from Pending→Processing before test counts Failed RRs.
+	//
+	// DD-TEST-003: Cache-bypassed read ensures we confirm actual persisted status,
+	// not stale cached status that controller might see.
+	Eventually(func() string {
+		rr := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
+			return "" // Return empty string if read fails
+		}
+		return string(rr.Status.OverallPhase)
+	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase persisted for %s/%s", namespace, name)
+
+	GinkgoWriter.Printf("✅ Simulated Failed phase (verified durable): %s/%s\n", namespace, name)
 }
 
 // simulateCompletedPhase updates an RR to Completed phase.
