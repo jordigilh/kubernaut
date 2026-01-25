@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -57,25 +58,36 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		// Phase 2 test moved to E2E suite: test/e2e/remediationorchestrator/blocking_e2e_test.go
 
-		It("should reset failure count when Completed RR is found (AC-042-1-2)", func() {
-			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-reset")
-			defer deleteTestNamespace(ns)
+	It("should reset failure count when Completed RR is found (AC-042-1-2)", func() {
+		// Create unique namespace for this test
+		ns := createTestNamespace("blocking-reset")
+		defer deleteTestNamespace(ns)
 
-			// Common fingerprint
-			fingerprint := "c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3"
+		// Common fingerprint
+		fingerprint := "c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3"
 
-			// Create first two Failed RRs (race-free: sets Failed immediately)
-			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-1", fingerprint)
-			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-2", fingerprint)
+		// CRITICAL: K8s creation timestamps have second precision (not millisecond).
+		// Solution: Use UUID names + Eventually() wrapper on k8sClient.Create().
+		// The Eventually() polling delay (10ms intervals) ensures distinct timestamps.
 
-			// Create a Completed RR - this should reset the counter
-			rr3 := createRemediationRequestWithFingerprint(ns, "rr-success", fingerprint)
-			simulateCompletedPhase(ns, rr3.Name)
+		// Create first two Failed RRs with UUID suffixes
+		uuid1 := uuid.New().String()[:8]
+		uuid2 := uuid.New().String()[:8]
+		createFailedRemediationRequestWithFingerprint(ns, fmt.Sprintf("rr-fail-%s", uuid1), fingerprint)
+		createFailedRemediationRequestWithFingerprint(ns, fmt.Sprintf("rr-fail-%s", uuid2), fingerprint)
 
-			// Create two more Failed RRs - should NOT trigger blocking (counter reset)
-			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-4", fingerprint)
-			createFailedRemediationRequestWithFingerprint(ns, "rr-fail-5", fingerprint)
+		// Create a Completed RR with UUID - this should reset the counter
+		// Eventually() wrapper in helpers provides natural timing separation
+		uuidSuccess := uuid.New().String()[:8]
+		rr3 := createRemediationRequestWithFingerprint(ns, fmt.Sprintf("rr-success-%s", uuidSuccess), fingerprint)
+		simulateCompletedPhase(ns, rr3.Name)
+
+		// Create two more Failed RRs with UUID - should NOT trigger blocking (counter reset)
+		// Eventually() wrapper ensures these have distinct timestamps from rr-success
+		uuid4 := uuid.New().String()[:8]
+		uuid5 := uuid.New().String()[:8]
+		createFailedRemediationRequestWithFingerprint(ns, fmt.Sprintf("rr-fail-%s", uuid4), fingerprint)
+		createFailedRemediationRequestWithFingerprint(ns, fmt.Sprintf("rr-fail-%s", uuid5), fingerprint)
 
 			// Verify all RRs exist
 			rrList := &remediationv1.RemediationRequestList{}
@@ -396,7 +408,13 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 			},
 		},
 	}
-	Expect(k8sClient.Create(ctx, rr)).To(Succeed())
+	
+	// Wrap Create() with Eventually() to add natural polling delay between object creations.
+	// This ensures different K8s creation timestamps (1-second precision) without explicit sleep.
+	Eventually(func() error {
+		return k8sClient.Create(ctx, rr)
+	}, timeout, interval).Should(Succeed())
+	
 	GinkgoWriter.Printf("✅ Created RR with fingerprint: %s/%s (fingerprint: %s...)\n",
 		namespace, name, fingerprint[:16])
 	return rr

@@ -67,12 +67,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	)
 
 	BeforeEach(func() {
-		// CRITICAL: Use public schema FIRST before any cleanup/operations
-		// remediation_workflow_catalog is NOT schema-isolated - all workflows are in public schema
-		// Without this, cleanup queries wrong schema and leaves data contamination
-		usePublicSchema()
-
 		// Create repository with real database
+		// Repository uses process-specific schema (test_process_N) for test isolation
 		workflowRepo = workflow.NewRepository(db, logger)
 
 		// Generate unique test ID for isolation
@@ -104,11 +100,8 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 	// CREATE METHOD TESTS - COMPOSITE PK VALIDATION
 	// ========================================
 	Describe("Create", func() {
-		BeforeEach(func() {
-			// CRITICAL: Use public schema - remediation_workflow_catalog is NOT schema-isolated
-			// Without this, workflow created in test_process_N schema won't be found by Get/List
-			usePublicSchema()
-		})
+		// Note: No need for usePublicSchema() - remediation_workflow_catalog IS schema-isolated
+		// Repository creates workflows in test_process_N schema for parallel test isolation
 
 		Context("with valid workflow and all required fields", func() {
 			It("should persist workflow with structured labels and composite PK", func() {
