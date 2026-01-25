@@ -43,6 +43,7 @@ package aianalysis
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -86,6 +87,25 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 		// Data Storage URL for audit event queries
 		datastorageURL = "http://127.0.0.1:18095" // AIAnalysis integration test DS port (DD-TEST-001)
 
+		// CI FIX: Ensure DataStorage is reachable before test starts
+		// Rationale: CI environment may have resource contention causing DataStorage to be temporarily unavailable
+		// even though SynchronizedBeforeSuite health check passed. Add defensive health check.
+		By("Verifying DataStorage connectivity before test")
+		Eventually(func() error {
+			healthURL := datastorageURL + "/health"
+			resp, err := http.Get(healthURL)
+			if err != nil {
+				return fmt.Errorf("health check failed: %w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				return fmt.Errorf("health check returned status %d", resp.StatusCode)
+			}
+			return nil
+		}, 30*time.Second, 2*time.Second).Should(Succeed(),
+			"DataStorage must be healthy before test starts (CI resource contention mitigation)")
+		GinkgoWriter.Println("✅ DataStorage health check passed")
+
 		// Create Data Storage client for querying audit events
 		var err error
 		dsClient, err = ogenclient.NewClient(datastorageURL)
@@ -120,6 +140,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 	// waitForAuditEvents polls Data Storage until exact expected count appears (DD-TESTING-001 §256-300).
 	// MANDATORY: Uses Equal() for deterministic count validation, not BeNumerically(">=")
+	// CI FIX: Increased timeout from 60s to 90s for CI environment resource contention
 	waitForAuditEvents := func(correlationID string, eventType string, expectedCount int) []ogenclient.AuditEvent {
 		var events []ogenclient.AuditEvent
 		Eventually(func() int {
@@ -130,7 +151,7 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 				return 0
 			}
 			return len(events)
-		}, 60*time.Second, 2*time.Second).Should(Equal(expectedCount),
+		}, 90*time.Second, 2*time.Second).Should(Equal(expectedCount),
 			fmt.Sprintf("DD-TESTING-001 violation: Should have EXACTLY %d %s events (controller idempotency)", expectedCount, eventType))
 		return events
 	}

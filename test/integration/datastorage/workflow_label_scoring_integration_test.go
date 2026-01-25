@@ -433,7 +433,7 @@ var _ = Describe("Workflow Label Scoring Integration Tests", func() {
 					}
 
 					return result != nil
-				}, 10*time.Second, 200*time.Millisecond).Should(BeTrue(), "Manual workflow should be searchable (DS-FLAKY-006: increased timeout for parallel test contention)")
+				}, 20*time.Second, 200*time.Millisecond).Should(BeTrue(), "Manual workflow should be searchable (DS-FLAKY-006: increased timeout to 20s for CI environment resource contention)")
 
 				// ASSERT: Found our test workflow
 				Expect(result).ToNot(BeNil(), "Manual workflow should be found")
