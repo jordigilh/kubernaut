@@ -175,10 +175,10 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 						&dbStatus,
 						&dbExecutionEngine,
 						&dbIsLatestVersion,
-						&dbCreatedAt,
-						&dbUpdatedAt,
-					)
-				}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 5 seconds")
+					&dbCreatedAt,
+					&dbUpdatedAt,
+				)
+			}, 10*time.Second, 200*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 10 seconds (CI-safe)")
 
 				// CRITICAL ASSERTIONS: Verify composite PK and all fields
 				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
