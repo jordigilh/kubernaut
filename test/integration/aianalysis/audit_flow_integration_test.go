@@ -562,7 +562,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		Eventually(func() int {
 			// Flush on each retry to catch events buffered by controller since last check
 			_ = auditStore.Flush(ctx)
-			
+
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventCategory: ogenclient.NewOptString(eventCategory),
@@ -665,7 +665,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 		Eventually(func() int {
 			// Flush on each retry to catch events buffered by controller since last check
 			_ = auditStore.Flush(ctx)
-			
+
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType),

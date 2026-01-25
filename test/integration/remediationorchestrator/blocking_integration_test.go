@@ -251,77 +251,115 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				"RR with unique fingerprint must create SignalProcessing (blocking doesn't interfere)")
 		})
 
-	It("should isolate blocking by namespace (multi-tenant)", FlakeAttempts(3), func() {
-		// DD-TEST-PARALLELISM-001: Flaky with high parallelism (controller race condition)
-		// Multiple controller processes compete to reconcile RRs, causing status oscillation
-		// FlakeAttempts(3) prevents PR failures while maintaining test value
-		
-		// Scenario: Same fingerprint in ns-a and ns-b, 3 failures in ns-a
-		// Business Outcome: ns-a blocked, ns-b processes independently
-		// Confidence: 90% - Critical multi-tenant isolation
+	It("should isolate blocking by namespace (multi-tenant)", func() {
+		// DD-TEST-PARALLELISM-003: Work WITH Controller Lifecycle
+		// Strategy: Wait for natural Pending → Processing transition, then set Failed.
+		// Eliminates race condition by letting controller stabilize before status override.
+		//
+		// Business Scenario:
+		// - Tenant A (ns-a) has 3 consecutive failures for fingerprint X
+		// - Tenant B (ns-b) has same fingerprint X but 0 failures
+		// - Expected: Blocking isolated to ns-a only (multi-tenant protection)
+		//
+		// Confidence: 95% - Stable approach that works with controller timing
 
 		ctx := context.Background()
 
-			// Create second namespace for isolation test
-			nsB := createTestNamespace("ro-fingerprint-b")
-			defer deleteTestNamespace(nsB)
+		// Create second namespace for isolation test
+		nsB := createTestNamespace("ro-fingerprint-b")
+		defer deleteTestNamespace(nsB)
 
-			sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+		sharedFP := "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
 
-			// Given: 3 failed RRs in namespace A (use existing helpers for proper handling)
-			// CRITICAL: Set Failed status IMMEDIATELY after creation to prevent controller race
-			// Bug: If we create RR then later call simulateFailedPhase(), controller starts
-			// orchestration in the gap → RR transitions to Processing before we set Failed
-			for i := 0; i < 3; i++ {
-				createFailedRemediationRequestWithFingerprint(namespace, fmt.Sprintf("ns-a-fail-%d", i), sharedFP)
+		// PHASE 1: Create 3 failed RRs in namespace A
+		// Each RR progresses naturally to Processing, then we set to Failed
+		By(fmt.Sprintf("Creating 3 failed RRs in namespace %s (after natural progression)", namespace))
+		for i := 0; i < 3; i++ {
+			createFailedRemediationRequestWithFingerprint(namespace, fmt.Sprintf("ns-a-fail-%d", i), sharedFP)
+		}
+
+		// Verify all 3 RRs in namespace A are Failed (precondition for blocking test)
+		By(fmt.Sprintf("Verifying all 3 RRs in namespace %s are in Failed status", namespace))
+		Eventually(func() int {
+			rrListA := &remediationv1.RemediationRequestList{}
+			if err := k8sManager.GetAPIReader().List(ctx, rrListA, client.InNamespace(namespace)); err != nil {
+				GinkgoWriter.Printf("❌ Error listing RRs in namespace A: %v\n", err)
+				return -1
 			}
-
-			// And: 1 failed RR in namespace B (same fingerprint, different namespace)
-			createFailedRemediationRequestWithFingerprint(nsB, "ns-b-fail-1", sharedFP)
-
-			// When: Counting failures per namespace (validates field index isolation)
-			// Use Eventually() to account for status propagation timing
-
-			// Then: Namespace A should have 3 failed RRs with shared fingerprint
-			// DD-STATUS-001: Use apiReader (cache-bypassed) to avoid stale reads
-			Eventually(func() int {
-				rrListA := &remediationv1.RemediationRequestList{}
-				if err := k8sManager.GetAPIReader().List(ctx, rrListA, client.InNamespace(namespace)); err != nil {
-					GinkgoWriter.Printf("❌ Error listing RRs in namespace A: %v\n", err)
-					return -1
+			failedCountA := 0
+			for _, rr := range rrListA.Items {
+				if rr.Spec.SignalFingerprint == sharedFP && rr.Status.OverallPhase == "Failed" {
+					failedCountA++
 				}
-				failedCountA := 0
-				for _, rr := range rrListA.Items {
-					if rr.Spec.SignalFingerprint == sharedFP && rr.Status.OverallPhase == "Failed" {
-						failedCountA++
-					}
-				}
-				GinkgoWriter.Printf("🔍 Namespace A: %d/%d RRs with Failed status\n", failedCountA, len(rrListA.Items))
-				return failedCountA
-			}, timeout, interval).Should(Equal(3),
-				"Namespace A should have exactly 3 failed RRs (namespace isolation)")
+			}
+			GinkgoWriter.Printf("🔍 Namespace A: %d/3 RRs in Failed status\n", failedCountA)
+			return failedCountA
+		}, timeout, interval).Should(Equal(3),
+			"All 3 RRs in namespace A should be in Failed status (precondition for blocking test)")
 
-			// Then: Namespace B should have only 1 failed RR (not affected by ns-a)
-			// DD-STATUS-001: Use apiReader (cache-bypassed) to avoid stale reads
-			Eventually(func() int {
-				rrListB := &remediationv1.RemediationRequestList{}
-				if err := k8sManager.GetAPIReader().List(ctx, rrListB, client.InNamespace(nsB)); err != nil {
-					GinkgoWriter.Printf("❌ Error listing RRs in namespace B: %v\n", err)
-					return -1
-				}
-				failedCountB := 0
-				for _, rr := range rrListB.Items {
-					if rr.Spec.SignalFingerprint == sharedFP && rr.Status.OverallPhase == "Failed" {
-						failedCountB++
-					}
-				}
-				GinkgoWriter.Printf("🔍 Namespace B: %d/%d RRs with Failed status\n", failedCountB, len(rrListB.Items))
-				return failedCountB
-			}, timeout, interval).Should(Equal(1),
-				"Namespace B should have only 1 failed RR (independent from ns-a)")
+		// PHASE 2: Create 1 failed RR in namespace B (same fingerprint, different namespace)
+		// This proves that namespace A's failures don't affect namespace B's failure count
+		By(fmt.Sprintf("Creating 1 failed RR in namespace %s (same fingerprint)", nsB))
+		createFailedRemediationRequestWithFingerprint(nsB, "ns-b-fail-1", sharedFP)
 
-			// Business Value: Proves blocking history is namespace-scoped (multi-tenant safety)
-		})
+		// Verify namespace B has only 1 failed RR (not affected by namespace A's 3 failures)
+		By(fmt.Sprintf("Verifying namespace %s has 1 failed RR (isolated from namespace A)", nsB))
+		Eventually(func() int {
+			rrListB := &remediationv1.RemediationRequestList{}
+			if err := k8sManager.GetAPIReader().List(ctx, rrListB, client.InNamespace(nsB)); err != nil {
+				GinkgoWriter.Printf("❌ Error listing RRs in namespace B: %v\n", err)
+				return -1
+			}
+			failedCountB := 0
+			for _, rr := range rrListB.Items {
+				if rr.Spec.SignalFingerprint == sharedFP && rr.Status.OverallPhase == "Failed" {
+					failedCountB++
+				}
+			}
+			GinkgoWriter.Printf("🔍 Namespace B: %d/1 RRs with Failed status\n", failedCountB)
+			return failedCountB
+		}, timeout, interval).Should(Equal(1),
+			"Namespace B should have exactly 1 failed RR (isolated from namespace A)")
+
+		// PHASE 3: Test Blocking Logic in Namespace A
+		// Create new RR in namespace A with same fingerprint → should be BLOCKED
+		By(fmt.Sprintf("Creating new RR in namespace %s (should be blocked due to 3 failures)", namespace))
+		newRR_A := createRemediationRequestWithFingerprint(namespace, "new-rr-a", sharedFP)
+
+		By("Verifying new RR in namespace A is blocked")
+		Eventually(func() string {
+			fetched := &remediationv1.RemediationRequest{}
+			if err := k8sManager.GetAPIReader().Get(ctx,
+				types.NamespacedName{Name: newRR_A.Name, Namespace: namespace}, fetched); err != nil {
+				return ""
+			}
+			return string(fetched.Status.OverallPhase)
+		}, 30*time.Second, 500*time.Millisecond).Should(Equal("Blocked"),
+			"New RR in namespace A should be blocked due to 3 consecutive failures")
+
+		// PHASE 4: Test Namespace Isolation
+		// Create new RR in namespace B with same fingerprint → should NOT be blocked
+		By(fmt.Sprintf("Creating new RR in namespace %s (should NOT be blocked)", nsB))
+		newRR_B := createRemediationRequestWithFingerprint(nsB, "new-rr-b", sharedFP)
+
+		By("Verifying new RR in namespace B is NOT blocked (namespace isolation)")
+		Eventually(func() string {
+			fetched := &remediationv1.RemediationRequest{}
+			if err := k8sManager.GetAPIReader().Get(ctx,
+				types.NamespacedName{Name: newRR_B.Name, Namespace: nsB}, fetched); err != nil {
+				return ""
+			}
+			return string(fetched.Status.OverallPhase)
+		}, 30*time.Second, 500*time.Millisecond).Should(Or(
+			Equal("Processing"),
+			Equal("Analyzing"),
+			Equal("Executing"),
+			Equal("Completed")),
+			"New RR in namespace B should progress normally (namespace isolation works)")
+
+		// Business Value: Multi-tenant safety - one tenant's failures don't affect another
+		GinkgoWriter.Printf("✅ Namespace isolation verified: ns-a blocked, ns-b processing\n")
+	})
 	})
 })
 
@@ -368,14 +406,38 @@ func createRemediationRequestWithFingerprint(namespace, name, fingerprint string
 // Uses same approach as simulateFailedPhase but in single function to minimize race window.
 // Used for blocking tests that need RRs pre-Failed (not transitioning during test).
 func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint string) *remediationv1.RemediationRequest {
+	// DD-TEST-PARALLELISM-003: Work WITH Controller, Not Against It
+	// Strategy: Wait for controller to naturally progress RR to Processing, THEN set to Failed.
+	// This eliminates race conditions by letting controller do its initial work first.
+	//
+	// Why this approach works:
+	// - Controller moves RR: Pending → Processing (fast, ~500ms)
+	// - We intercept: Processing → Failed (after controller has stabilized)
+	// - No fight over Pending phase (previous race condition eliminated)
+	// - Tests blocking logic with realistic Failed RRs (not artificial Pending → Failed)
+	//
+	// Confidence: 95% - Works with controller lifecycle, not against it
+
 	// Step 1: Create RR (starts in Pending)
 	rr := createRemediationRequestWithFingerprint(namespace, name, fingerprint)
 
-	// Step 2: Set to Failed using Eventually (same as simulateFailedPhase)
-	// This acknowledges the race exists and retries until successful or timeout
-	Eventually(func() error {
+	// Step 2: Wait for controller to naturally progress to Processing
+	// Controller creates SignalProcessing CRD and updates RR status
+	Eventually(func() string {
 		fetched := &remediationv1.RemediationRequest{}
 		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+			return ""
+		}
+		return string(fetched.Status.OverallPhase)
+	}, timeout, interval).Should(Equal("Processing"),
+		"Controller should naturally progress %s/%s to Processing", namespace, name)
+
+	GinkgoWriter.Printf("✅ RR naturally progressed to Processing: %s/%s\n", namespace, name)
+
+	// Step 3: Now set to Failed (controller has finished initial work, minimal race)
+	Eventually(func() error {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
 			return err
 		}
 
@@ -389,16 +451,16 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 		return k8sClient.Status().Update(ctx, fetched)
 	}, timeout, interval).Should(Succeed(), "Should set Failed status for %s/%s", namespace, name)
 
-	// Step 3: Verify Failed status durably persisted
+	// Step 4: Verify Failed status durably persisted
 	Eventually(func() string {
 		fetched := &remediationv1.RemediationRequest{}
 		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
 			return ""
 		}
 		return string(fetched.Status.OverallPhase)
-	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase for %s/%s", namespace, name)
+	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase persisted for %s/%s", namespace, name)
 
-	GinkgoWriter.Printf("✅ Created Failed RR (verified durable): %s/%s\n", namespace, name)
+	GinkgoWriter.Printf("✅ Set to Failed (after natural progression): %s/%s\n", namespace, name)
 	return rr
 }
 
@@ -445,9 +507,23 @@ func simulateFailedPhase(namespace, name string) {
 // simulateCompletedPhase updates an RR to Completed phase.
 // Used to verify that success resets the failure counter.
 func simulateCompletedPhase(namespace, name string) {
+	// DD-TEST-PARALLELISM-003: Wait for controller to progress to Processing first
+	// Same pattern as createFailedRemediationRequestWithFingerprint
+	Eventually(func() string {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+			return ""
+		}
+		return string(fetched.Status.OverallPhase)
+	}, timeout, interval).Should(Equal("Processing"),
+		"Controller should naturally progress %s/%s to Processing", namespace, name)
+
+	GinkgoWriter.Printf("✅ RR naturally progressed to Processing: %s/%s\n", namespace, name)
+
+	// Now set to Completed (controller has stabilized)
 	Eventually(func() error {
 		rr := &remediationv1.RemediationRequest{}
-		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
+		if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, rr); err != nil {
 			return err
 		}
 
@@ -457,7 +533,16 @@ func simulateCompletedPhase(namespace, name string) {
 		rr.Status.CompletedAt = &now
 
 		return k8sClient.Status().Update(ctx, rr)
-	}, timeout, interval).Should(Succeed(), "Should simulate Completed phase for %s/%s", namespace, name)
+	}, timeout, interval).Should(Succeed(), "Should set Completed status for %s/%s", namespace, name)
 
-	GinkgoWriter.Printf("✅ Simulated Completed phase: %s/%s\n", namespace, name)
+	// Verify Completed status persisted
+	Eventually(func() string {
+		fetched := &remediationv1.RemediationRequest{}
+		if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, fetched); err != nil {
+			return ""
+		}
+		return string(fetched.Status.OverallPhase)
+	}, timeout, interval).Should(Equal("Completed"), "Should confirm Completed phase persisted for %s/%s", namespace, name)
+
+	GinkgoWriter.Printf("✅ Set to Completed (after natural progression): %s/%s\n", namespace, name)
 }
